@@ -33,6 +33,8 @@ class _CanvasPageState extends State<CanvasPage> {
   // For zooming and panning with InteractiveViewer
   final TransformationController _transformationController = TransformationController();
 
+  List<Offset> _boxPositions = [];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -40,30 +42,47 @@ class _CanvasPageState extends State<CanvasPage> {
         title: const Text('Canvas App'),
       ),
       body: InteractiveViewer(
-        // Use InteractiveViewer
-        constrained: false, // IMPORTANT! Allow exceeding screen bounds
-        boundaryMargin: EdgeInsets.all(double.infinity), // For infinite panning
+        constrained: false,
+        boundaryMargin: EdgeInsets.all(double.infinity),
         transformationController: _transformationController,
         child: SizedBox(
           width: _canvasSize.width,
           height: _canvasSize.height,
           child: GestureDetector(
-            // GestureDetector *inside* InteractiveViewer
             behavior: HitTestBehavior.translucent,
             onTapDown: (details) {
               Offset canvasTapPosition = details.localPosition;
+
+              setState(() {
+                _boxPositions.add(canvasTapPosition);
+              });
               print("Canvas Tap Position: $canvasTapPosition");
             },
-            onDoubleTap: () {
-              updateCanvasSize(const Size(8000, 1500));
-              print("Updated");
-            },
-
-            child: Container(
-              color: Colors.grey[300],
-              child: CustomPaint(
-                painter: GridPainter(),
-              ),
+            child: Stack(
+              children: [
+                Container(
+                  // Background Container
+                  width: _canvasSize.width, // Explicitly set width and height
+                  height: _canvasSize.height,
+                  color: Colors.grey[300],
+                  child: CustomPaint(
+                    // Grid painter
+                    size: _canvasSize, // Provide size to the painter
+                    painter: GridPainter(),
+                  ),
+                ),
+                ..._boxPositions.map((position) {
+                  return Positioned(
+                    left: position.dx,
+                    top: position.dy,
+                    child: Container(
+                      width: 50,
+                      height: 50,
+                      color: Colors.red,
+                    ),
+                  );
+                }).toList(),
+              ],
             ),
           ),
         ),
