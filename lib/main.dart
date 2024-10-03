@@ -34,6 +34,9 @@ class _CanvasPageState extends State<CanvasPage> {
   final TransformationController _transformationController = TransformationController();
 
   List<Offset> _boxPositions = [];
+  List<TextEditingController> _textControllers = [];
+  List<Widget> _textForms = [];
+  List<double> _textFormWidths = [];
 
   @override
   Widget build(BuildContext context) {
@@ -43,21 +46,45 @@ class _CanvasPageState extends State<CanvasPage> {
       ),
       body: InteractiveViewer(
         constrained: false,
-        boundaryMargin: EdgeInsets.all(double.infinity),
+        boundaryMargin: const EdgeInsets.all(double.infinity),
         transformationController: _transformationController,
         child: SizedBox(
           width: _canvasSize.width,
           height: _canvasSize.height,
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
+            onDoubleTap: () {
+              updateCanvasSize(Size(2000, 800));
+            },
             onTapDown: (details) {
               Offset canvasTapPosition = details.localPosition;
-
               setState(() {
+                _textForms.add(TextField(
+                  autofocus: true,
+                  minLines: 1,
+                  maxLines: null,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (text) {
+                    setState(() {
+                      TextPainter textPainter = TextPainter(
+                        text: TextSpan(text: text, style: const TextStyle(fontSize: 16)), // Text style for text box
+                        textDirection: TextDirection.ltr,
+                        maxLines: null,
+                      )..layout(); // Layout without maxWidth to get the intrinsic width
+
+                      // This is a very dodgy way of doing it, will break if an older textbox needs expanding
+                      _textFormWidths[_textForms.length - 1] = (textPainter.width + 80).clamp(150, 600); // Increases width, ensures its between range (UPDATE TO USE VARIABLES)
+                    });
+                  },
+                ));
                 _boxPositions.add(canvasTapPosition);
+                _textControllers.add(TextEditingController());
+                _textFormWidths.add(150);
               });
-              print("Canvas Tap Position: $canvasTapPosition");
             },
+            // ...
             child: Stack(
               children: [
                 Container(
@@ -71,14 +98,18 @@ class _CanvasPageState extends State<CanvasPage> {
                     painter: GridPainter(),
                   ),
                 ),
-                ..._boxPositions.map((position) {
+                ..._boxPositions.asMap().entries.map((entry) {
+                  // Use asMap().entries to get index
+                  int index = entry.key; // Get index
+                  Offset position = entry.value; // Get Offset
                   return Positioned(
                     left: position.dx,
                     top: position.dy,
-                    child: Container(
-                      width: 50,
-                      height: 50,
-                      color: Colors.red,
+                    child: SizedBox(
+                      width: _textFormWidths[index], // Use _currentWidth here
+                      child: _textForms.isNotEmpty && index < _textForms.length // Check for valid index
+                          ? _textForms[index]
+                          : Container(), // Or any placeholder widget
                     ),
                   );
                 }).toList(),
