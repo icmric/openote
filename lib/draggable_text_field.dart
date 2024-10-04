@@ -66,7 +66,6 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
                 maxLines: null,
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.all(0), // Remove padding inside the TextField
                 ),
                 onChanged: (text) {
                   setState(() {
