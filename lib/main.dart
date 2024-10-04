@@ -5,7 +5,7 @@ void main() {
   runApp(const MyApp());
 }
 
-// The main application widget.
+/// The main application widget.
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -21,7 +21,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// A stateful widget representing the canvas page where draggable text fields can be added.
+/// A stateful widget representing the canvas page where draggable text fields can be added.
 class CanvasPage extends StatefulWidget {
   const CanvasPage({super.key});
 
@@ -35,11 +35,32 @@ class _CanvasPageState extends State<CanvasPage> {
   final List<DraggableTextField> _textForms = [];
   final List<FocusNode> _focusNodes = []; // List to store focus nodes
   Size _canvasSize = const Size(800, 600);
-  final TransformationController _transformationController =
-      TransformationController();
+  final TransformationController _transformationController = TransformationController();
 
-  // Handles tap down events to add a new draggable text field 
-  // if the tap is not on an existing box.
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeCanvasSize();
+      _positionCanvasTopLeft();
+    });
+  }
+
+  void _initializeCanvasSize() {
+    final Size screenSize = MediaQuery.of(context).size;
+
+    setState(() {
+      _canvasSize = Size(screenSize.width * 2, screenSize.height * 2);
+    });
+  }
+
+  void _positionCanvasTopLeft() {
+    try {
+      _transformationController.value = Matrix4.identity()..translate(100, 100); // Ensure the top-left of the canvas is at the top-left of the screen
+    } catch (e) {}
+  }
+
+  /// Handles tap down events to add a new draggable text field if the tap is not on an existing box.
   void _handleTapDown(TapDownDetails details) {
     Offset canvasTapPosition = details.localPosition;
     bool isOnExistingBox = _boxPositions.any((position) {
@@ -49,9 +70,7 @@ class _CanvasPageState extends State<CanvasPage> {
       return (canvasTapPosition.dx >= position.dx &&
           canvasTapPosition.dx <= position.dx + width &&
           canvasTapPosition.dy >= position.dy &&
-          canvasTapPosition.dy <=
-              position.dy +
-                  (_focusNodes[index].hasFocus ? 47 : 22)); // Adjust height based on focus
+          canvasTapPosition.dy <= position.dy + (_focusNodes[index].hasFocus ? 47 : 22)); // Adjust height based on focus
     });
 
     if (!isOnExistingBox) {
@@ -69,8 +88,7 @@ class _CanvasPageState extends State<CanvasPage> {
           initialWidth: 200,
           onDragEnd: (newPosition) {
             setState(() {
-              int index = _textForms
-                  .indexWhere((form) => form.controller == _textControllers.last);
+              int index = _textForms.indexWhere((form) => form.controller == _textControllers.last);
               if (index != -1) {
                 _boxPositions[index] = newPosition;
               }
@@ -78,31 +96,20 @@ class _CanvasPageState extends State<CanvasPage> {
           },
           onEmptyDelete: () {
             setState(() {
-              int index = _textForms
-                  .indexWhere((form) => form.controller == _textControllers.last);
+              int index = _textForms.indexWhere((form) => form.controller == _textControllers.last);
               if (index != -1) {
                 _boxPositions.removeAt(index);
                 _textControllers.removeAt(index);
                 _focusNodes.removeAt(index); // Remove the corresponding focus node
                 _textForms.removeAt(index);
-                /*
-                // If there are other text boxes, request focus for the last one
-                if (_textForms.isNotEmpty) {
-                  _focusNodes.last.requestFocus();
-                } else {
-                  // If no other text boxes, create a new one at the last tap position
-                  _handleTapDown(TapDownDetails(
-                      globalPosition: details.globalPosition,
-                      localPosition: details.localPosition));
-                }*/
               }
             });
           },
         ));
         // Request focus after adding to the list to avoid issues with focus jumping
-        WidgetsBinding.instance.addPostFrameCallback((_) { 
+        WidgetsBinding.instance.addPostFrameCallback((_) {
           newFocusNode.requestFocus();
-        }); 
+        });
       });
     } else {
       // Find the index of the tapped text box and request focus for it
@@ -111,11 +118,7 @@ class _CanvasPageState extends State<CanvasPage> {
         return (canvasTapPosition.dx >= position.dx &&
             canvasTapPosition.dx <= position.dx + width &&
             canvasTapPosition.dy >= position.dy &&
-            canvasTapPosition.dy <=
-                position.dy +
-                    (_focusNodes[_boxPositions.indexOf(position)].hasFocus
-                        ? 47
-                        : 22)); // Adjust height based on focus
+            canvasTapPosition.dy <= position.dy + (_focusNodes[_boxPositions.indexOf(position)].hasFocus ? 47 : 22)); // Adjust height based on focus
       });
       if (index != -1) {
         _focusNodes[index].requestFocus();
@@ -131,16 +134,13 @@ class _CanvasPageState extends State<CanvasPage> {
       ),
       body: InteractiveViewer(
         constrained: false,
-        boundaryMargin: const EdgeInsets.all(double.infinity),
+        boundaryMargin: const EdgeInsets.all(100), // amount of empty space around the canvas
         transformationController: _transformationController,
         child: SizedBox(
           width: _canvasSize.width,
           height: _canvasSize.height,
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onDoubleTap: () {
-              updateCanvasSize(const Size(2000, 800));
-            },
             onTapDown: _handleTapDown,
             child: Stack(
               children: [
@@ -162,7 +162,7 @@ class _CanvasPageState extends State<CanvasPage> {
     );
   }
 
-  // Updates the canvas size.
+  /// Updates the canvas size.
   void updateCanvasSize(Size newSize) {
     setState(() {
       _canvasSize = newSize;
@@ -170,7 +170,7 @@ class _CanvasPageState extends State<CanvasPage> {
   }
 }
 
-// A custom painter to draw a grid on the canvas.
+/// A custom painter to draw a grid on the canvas.
 class GridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
