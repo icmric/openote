@@ -84,7 +84,7 @@ class _CanvasPageState extends State<CanvasPage> {
         _textForms.add(DraggableTextField(
           controller: _textControllers.last,
           focusNode: newFocusNode, // Assign the focus node to the text field
-          initialPosition: canvasTapPosition,
+          initialPosition: canvasTapPosition - const Offset(5, 50), // Adjust for drag bar and text padding
           initialWidth: 200,
           onDragEnd: (newPosition) {
             setState(() {

@@ -60,17 +60,19 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
         child: Column(
           children: [
             // Draggable handle
-            if (isVisible)
-              Container(
-                width: width,
-                height: 25,
-                color: Colors.grey,
-                alignment: Alignment.center,
-                child: const Text(
-                  '...',
-                  style: TextStyle(color: Colors.white, fontSize: 20),
-                ),
-              ),
+            //if (isVisible)
+            Container(
+              width: width,
+              height: 25,
+              color: isVisible ? Colors.grey : Colors.transparent,
+              alignment: Alignment.center,
+              child: isVisible
+                  ? const Text(
+                      '...',
+                      style: TextStyle(color: Colors.white, fontSize: 20),
+                    )
+                  : null,
+            ),
             // Text field
             SizedBox(
               width: width,
@@ -81,9 +83,8 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
                 minLines: 1,
                 maxLines: null,
                 decoration: InputDecoration(
-                  border: isVisible
-                      ? const OutlineInputBorder()
-                      : InputBorder.none, // Show border only when focused and text is not empty
+                  contentPadding: const EdgeInsets.all(5), // Text padding
+                  border: isVisible ? const OutlineInputBorder() : InputBorder.none, // Show border only when focused and text is not empty
                 ),
                 onChanged: (text) {
                   setState(() {
