@@ -1,13 +1,12 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'draggable_text_field.dart';
+import 'canvas_grid_painter.dart'; // Moved GridPainter to a separate file
 
 void main() {
   runApp(const MyApp());
 }
 
-/// The main application widget.
+/// The root widget of the application.
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -23,7 +22,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// A stateful widget representing the canvas page where draggable text fields can be added.
+/// A stateful widget representing the canvas page.
 class CanvasPage extends StatefulWidget {
   const CanvasPage({super.key});
 
@@ -32,10 +31,7 @@ class CanvasPage extends StatefulWidget {
 }
 
 class _CanvasPageState extends State<CanvasPage> {
-  final List<Offset> _boxPositions = [];
-  final List<TextEditingController> _textControllers = [];
-  final List<DraggableTextField> _textForms = [];
-  final List<FocusNode> _focusNodes = []; // List to store focus nodes
+  final List<DraggableTextField> _textFields = []; // Simplified to store only DraggableTextField widgets
   Size _canvasSize = const Size(800, 600);
   final TransformationController _transformationController = TransformationController();
 
@@ -48,91 +44,93 @@ class _CanvasPageState extends State<CanvasPage> {
     });
   }
 
+  /// Initializes the canvas size based on the screen size.
   void _initializeCanvasSize() {
     final Size screenSize = MediaQuery.of(context).size;
-
     setState(() {
       _canvasSize = Size(screenSize.width * 2, screenSize.height * 2);
     });
   }
 
+  /// Positions the canvas so its top-left corner is at the top-left of the screen.
   void _positionCanvasTopLeft() {
+    // This might throw an exception if called before the InteractiveViewer is built.
+    // We wrap it in a try-catch to handle this gracefully.
     try {
-      _transformationController.value = Matrix4.identity()..translate(100, 100); // Ensure the top-left of the canvas is at the top-left of the screen
-    } catch (e) {}
-  }
-
-  /// Handles tap down events to add a new draggable text field if the tap is not on an existing box.
-  void _handleTapDown(TapDownDetails details) {
-    Offset canvasTapPosition = details.localPosition;
-    bool isOnExistingBox = _boxPositions.any((position) {
-      int index = _boxPositions.indexOf(position);
-      double width = _textForms[index].initialWidth;
-      // Check if tap is within the bounds of an existing box, including the header
-      return (canvasTapPosition.dx >= position.dx &&
-          canvasTapPosition.dx <= position.dx + width &&
-          canvasTapPosition.dy >= position.dy &&
-          canvasTapPosition.dy <= position.dy + (_focusNodes[index].hasFocus ? 47 : 22)); // Adjust height based on focus
-    });
-
-    if (!isOnExistingBox) {
-      // Create a new focus node and request focus for it
-      FocusNode newFocusNode = FocusNode();
-
-      setState(() {
-        _boxPositions.add(canvasTapPosition);
-        _textControllers.add(TextEditingController());
-        _focusNodes.add(newFocusNode); // Add the new focus node to the list
-        _textForms.add(DraggableTextField(
-          controller: _textControllers.last,
-          // TODO loses focus when draging the text field
-          focusNode: newFocusNode, // Assign the focus node to the text field
-          initialPosition: canvasTapPosition - const Offset(5, 50), // Adjust for drag bar and text padding
-          initialWidth: 200,
-          onDragEnd: (newPosition) {
-            setState(() {
-              int index = _textForms.indexWhere((form) => form.controller == _textControllers.last);
-              if (index != -1) {
-                _boxPositions[index] = newPosition;
-              }
-            });
-          },
-          onEmptyDelete: () {
-            setState(() {
-              int index = _textForms.indexWhere((form) => form.controller == _textControllers.last);
-              if (index != -1) {
-                _boxPositions.removeAt(index);
-                _textControllers.removeAt(index);
-                _focusNodes.removeAt(index); // Remove the corresponding focus node
-                _textForms.removeAt(index);
-              }
-            });
-          },
-          onDragStart: _unfocusAllTextFields,
-        ));
-        // Request focus after adding to the list to avoid issues with focus jumping
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          newFocusNode.requestFocus();
-        });
-      });
-    } else {
-      // Find the index of the tapped text box and request focus for it
-      int index = _boxPositions.indexWhere((position) {
-        double width = _textForms[_boxPositions.indexOf(position)].initialWidth;
-        return (canvasTapPosition.dx >= position.dx &&
-            canvasTapPosition.dx <= position.dx + width &&
-            canvasTapPosition.dy >= position.dy &&
-            canvasTapPosition.dy <= position.dy + (_focusNodes[_boxPositions.indexOf(position)].hasFocus ? 47 : 22)); // Adjust height based on focus
-      });
-      if (index != -1) {
-        _focusNodes[index].requestFocus();
-      }
+      _transformationController.value = Matrix4.identity()..translate(100, 100);
+    } catch (e) {
+      // Ignore the exception if it occurs.
     }
   }
 
+  /// Handles tap down events to add or focus text fields.
+  void _handleTapDown(TapDownDetails details) {
+    Offset canvasTapPosition = details.localPosition;
+
+    // Check if the tap is on an existing text field.
+    int tappedTextFieldIndex = _getTappedTextFieldIndex(canvasTapPosition);
+
+    if (tappedTextFieldIndex == -1) {
+      // Add a new text field if the tap is not on an existing one.
+      _addNewTextField(canvasTapPosition);
+    } else {
+      // Focus the tapped text field.
+      _textFields[tappedTextFieldIndex].focusNode.requestFocus();
+    }
+  }
+
+  /// Adds a new draggable text field to the canvas.
+  void _addNewTextField(Offset position) {
+    FocusNode newFocusNode = FocusNode();
+
+    setState(() {
+      _textFields.add(DraggableTextField(
+        initialPosition: position - const Offset(5, 50), // Adjust for drag bar and text padding
+        initialWidth: 200,
+        onDragEnd: (newPosition) {
+          setState(() {
+            int index = _textFields.indexOf(_textFields.last);
+            _textFields[index].position = newPosition;
+          });
+        },
+        onEmptyDelete: () {
+          setState(() {
+            _textFields.removeLast();
+          });
+        },
+        onDragStart: _unfocusAllTextFields,
+        focusNode: newFocusNode,
+      ));
+
+      // Request focus after the text field is added to the widget tree.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        newFocusNode.requestFocus();
+      });
+    });
+  }
+
+  /// Returns the index of the tapped text field, or -1 if no text field was tapped.
+  int _getTappedTextFieldIndex(Offset tapPosition) {
+    for (int i = 0; i < _textFields.length; i++) {
+      final textField = _textFields[i];
+      final position = textField.position;
+      final width = textField.width;
+      final height = textField.focusNode.hasFocus ? 47 : 22; // Adjust height based on focus
+
+      if (tapPosition.dx >= position.dx &&
+          tapPosition.dx <= position.dx + width &&
+          tapPosition.dy >= position.dy &&
+          tapPosition.dy <= position.dy + height) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /// Unfocuses all text fields on the canvas.
   void _unfocusAllTextFields() {
-    for (var focusNode in _focusNodes) {
-      focusNode.unfocus();
+    for (var textField in _textFields) {
+      textField.focusNode.unfocus();
     }
   }
 
@@ -144,7 +142,7 @@ class _CanvasPageState extends State<CanvasPage> {
       ),
       body: InteractiveViewer(
         constrained: false,
-        boundaryMargin: const EdgeInsets.all(100), // amount of empty space around the canvas
+        boundaryMargin: const EdgeInsets.all(100),
         transformationController: _transformationController,
         child: SizedBox(
           width: _canvasSize.width,
@@ -154,49 +152,23 @@ class _CanvasPageState extends State<CanvasPage> {
             onTapDown: _handleTapDown,
             child: Stack(
               children: [
+                // Background grid
                 Container(
                   width: _canvasSize.width,
                   height: _canvasSize.height,
                   color: Colors.grey[300],
                   child: CustomPaint(
                     size: _canvasSize,
-                    painter: GridPainter(),
+                    painter: CanvasGridPainter(), // Using the new CanvasGridPainter
                   ),
                 ),
-                ..._textForms,
+                // Draggable text fields
+                ..._textFields,
               ],
             ),
           ),
         ),
       ),
     );
-  }
-
-  /// Updates the canvas size.
-  void updateCanvasSize(Size newSize) {
-    setState(() {
-      _canvasSize = newSize;
-    });
-  }
-}
-
-/// A custom painter to draw a grid on the canvas.
-class GridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.blue
-      ..strokeWidth = 1.0;
-    for (double i = 0; i < size.width; i += 50) {
-      canvas.drawLine(Offset(i, 0), Offset(i, size.height), paint);
-    }
-    for (double i = 0; i < size.height; i += 50) {
-      canvas.drawLine(Offset(0, i), Offset(size.width, i), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return false; // Optimization: only repaint when needed.
   }
 }

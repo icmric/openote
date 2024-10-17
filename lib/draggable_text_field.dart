@@ -1,56 +1,62 @@
 import 'package:flutter/material.dart';
 
-/// A draggable text field widget that can be moved around the screen.
-/// The text field's width adjusts dynamically based on its content.
+/// A draggable text field widget.
 class DraggableTextField extends StatefulWidget {
-  final TextEditingController controller;
-  final FocusNode focusNode;
   final Offset initialPosition;
-  final Function(Offset) onDragEnd;
   final double initialWidth;
-  final Function onEmptyDelete; // Callback to notify when the text box should be deleted
-  final Function onDragStart; // Callback to notify when dragging starts
+  final Function(Offset) onDragEnd;
+  final Function onEmptyDelete;
+  final Function onDragStart;
+  final FocusNode focusNode;
 
-  const DraggableTextField({
-    required this.controller,
-    required this.focusNode,
+  Offset position; // Make position public
+  double width; // Make width public
+
+  DraggableTextField({
     required this.initialPosition,
-    required this.onDragEnd,
     required this.initialWidth,
+    required this.onDragEnd,
     required this.onEmptyDelete,
-    required this.onDragStart, // Add the new callback parameter
+    required this.onDragStart,
+    required this.focusNode,
     Key? key,
-  }) : super(key: key);
+  })  : position = initialPosition,
+        width = initialWidth,
+        super(key: key);
 
   @override
   _DraggableTextFieldState createState() => _DraggableTextFieldState();
 }
 
 class _DraggableTextFieldState extends State<DraggableTextField> {
-  late Offset position;
-  late double width;
-  bool isVisible = false; // Track visibility of the text box and header
+  bool isVisible = false; // Track visibility of the drag handle
   bool isDragging = false; // Track if the text field is being dragged
+  late TextEditingController _controller; // Moved controller here
 
   @override
   void initState() {
     super.initState();
-    position = widget.initialPosition;
-    width = widget.initialWidth;
+    _controller = TextEditingController();
 
-    // Add listener to show/hide header based on focus
+    // Add listener to show/hide header based on focus and text content.
     widget.focusNode.addListener(() {
       setState(() {
-        isVisible = widget.focusNode.hasFocus && widget.controller.text.isNotEmpty;
+        isVisible = widget.focusNode.hasFocus && _controller.text.isNotEmpty;
       });
     });
   }
 
   @override
+  void dispose() {
+    _controller.dispose(); // Dispose the controller when the widget is disposed
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Positioned(
-      left: position.dx,
-      top: position.dy,
+      left: widget.position.dx,
+      top: widget.position.dy,
       child: MouseRegion(
         onEnter: (_) {
           setState(() {
@@ -66,27 +72,27 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
         },
         child: GestureDetector(
           onPanStart: (_) {
-            widget.onDragStart(); // Unfocus all text fields when dragging
+            widget.onDragStart();
             setState(() {
               isDragging = true;
             });
           },
           onPanUpdate: (details) {
             setState(() {
-              position += details.delta;
+              widget.position += details.delta;
             });
           },
           onPanEnd: (details) {
             setState(() {
               isDragging = false;
             });
-            widget.onDragEnd(position);
+            widget.onDragEnd(widget.position);
           },
           child: Column(
             children: [
               // Drag handle
               Container(
-                width: width,
+                width: widget.width,
                 height: 15,
                 padding: const EdgeInsets.all(0),
                 color: isVisible ? Colors.grey : Colors.transparent,
@@ -104,16 +110,16 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
               ),
               // Text field
               SizedBox(
-                width: width,
+                width: widget.width,
                 child: TextField(
-                  controller: widget.controller,
+                  controller: _controller,
                   focusNode: widget.focusNode,
                   autofocus: true,
                   minLines: 1,
                   maxLines: null,
                   decoration: InputDecoration(
-                    contentPadding: const EdgeInsets.all(5), // Text padding
-                    border: isVisible ? const OutlineInputBorder() : InputBorder.none, // Show border only when focused and text is not empty
+                    contentPadding: const EdgeInsets.all(5),
+                    border: isVisible ? const OutlineInputBorder() : InputBorder.none,
                   ),
                   onChanged: (text) {
                     setState(() {
@@ -124,17 +130,17 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
                           textDirection: TextDirection.ltr,
                           maxLines: 1,
                         )..layout();
-                        width = (textPainter.width + 80).clamp(200.0, 600.0);
+                        widget.width = (textPainter.width + 80).clamp(200.0, 600.0);
                       } else {
                         isVisible = false;
                       }
                     });
                   },
                   onTapOutside: (PointerDownEvent event) {
-                    if (widget.controller.text.isEmpty) {
+                    if (_controller.text.isEmpty) {
                       widget.onEmptyDelete();
                     } else {
-                      widget.focusNode.unfocus(); // Unfocus when clicking outside
+                      widget.focusNode.unfocus();
                     }
                   },
                 ),
