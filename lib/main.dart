@@ -117,10 +117,7 @@ class _CanvasPageState extends State<CanvasPage> {
       final width = textField.width;
       final height = textField.focusNode.hasFocus ? 47 : 22; // Adjust height based on focus
 
-      if (tapPosition.dx >= position.dx &&
-          tapPosition.dx <= position.dx + width &&
-          tapPosition.dy >= position.dy &&
-          tapPosition.dy <= position.dy + height) {
+      if (tapPosition.dx >= position.dx && tapPosition.dx <= position.dx + width && tapPosition.dy >= position.dy && tapPosition.dy <= position.dy + height) {
         return i;
       }
     }

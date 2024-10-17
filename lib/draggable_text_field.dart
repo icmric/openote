@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 /// A draggable text field widget.
 class DraggableTextField extends StatefulWidget {
@@ -31,7 +32,8 @@ class DraggableTextField extends StatefulWidget {
 class _DraggableTextFieldState extends State<DraggableTextField> {
   bool isVisible = false; // Track visibility of the drag handle
   bool isDragging = false; // Track if the text field is being dragged
-  late TextEditingController _controller; // Moved controller here
+  late TextEditingController _controller;
+  bool _isEditing = true; // Flag to track if the text field is being edited
 
   @override
   void initState() {
@@ -43,6 +45,13 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
       setState(() {
         isVisible = widget.focusNode.hasFocus && _controller.text.isNotEmpty;
       });
+    });
+
+    // Add listener to delete the text field when it loses focus and is empty.
+    widget.focusNode.addListener(() {
+      if (!widget.focusNode.hasFocus && _controller.text.isEmpty) {
+        widget.onEmptyDelete();
+      }
     });
   }
 
@@ -109,9 +118,75 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
                     : null,
               ),
               // Text field
-              SizedBox(
+              Container(
                 width: widget.width,
-                child: TextField(
+                decoration: BoxDecoration(
+                  border: Border.all(color: isVisible ? Colors.black : Colors.transparent),
+                ),
+                child: _isEditing
+                    ? TextField(
+                        controller: _controller,
+                        focusNode: widget.focusNode,
+                        autofocus: true,
+                        minLines: 1,
+                        maxLines: null,
+                        decoration: const InputDecoration(
+                          contentPadding: EdgeInsets.all(5),
+                          border: InputBorder.none,
+                        ),
+                        onChanged: (text) {
+                          setState(() {
+                            if (text.isNotEmpty) {
+                              isVisible = true;
+
+                              // Calculate width based on the regular text
+                              TextPainter textPainter = TextPainter(
+                                text: TextSpan(text: text, style: const TextStyle(fontSize: 16)),
+                                textDirection: TextDirection.ltr,
+                                maxLines: 1,
+                              )..layout();
+                              widget.width = (textPainter.width + 80).clamp(200.0, 600.0);
+                            } else {
+                              isVisible = false;
+                            }
+                          });
+                        },
+                        onTapOutside: (PointerDownEvent event) {
+                          if (_controller.text.isEmpty) {
+                            // Also being done in initState, but seems to break without this?
+                            widget.onEmptyDelete();
+                          } else {
+                            setState(() {
+                              _isEditing = false; // Switch to Markdown rendering
+                            });
+                            widget.focusNode.unfocus();
+                          }
+                        },
+                      )
+                    : GestureDetector(
+                        child: Markdown(
+                          data: _controller.text, // Display Markdown when not editing
+                          selectable: true,
+                          onTapLink: (text, href, title) {
+                            // Handle link taps if needed
+                          },
+                          shrinkWrap: true,
+                          styleSheet: MarkdownStyleSheet(
+                            p: const TextStyle(fontSize: 16),
+                            h1: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                            // ... other styles
+                          ),
+                        ),
+                        onTap: () {
+                          setState(() {
+                            _isEditing = true; // Switch back to editing
+                          });
+                          widget.focusNode.requestFocus();
+                        },
+                      ),
+              ),
+
+              /*TextField(
                   controller: _controller,
                   focusNode: widget.focusNode,
                   autofocus: true,
@@ -144,7 +219,7 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
                     }
                   },
                 ),
-              ),
+              ),*/
             ],
           ),
         ),
