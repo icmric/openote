@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'draggable_text_field.dart';
 
@@ -83,6 +85,7 @@ class _CanvasPageState extends State<CanvasPage> {
         _focusNodes.add(newFocusNode); // Add the new focus node to the list
         _textForms.add(DraggableTextField(
           controller: _textControllers.last,
+          // TODO loses focus when draging the text field
           focusNode: newFocusNode, // Assign the focus node to the text field
           initialPosition: canvasTapPosition - const Offset(5, 50), // Adjust for drag bar and text padding
           initialWidth: 200,
@@ -105,6 +108,7 @@ class _CanvasPageState extends State<CanvasPage> {
               }
             });
           },
+          onDragStart: _unfocusAllTextFields,
         ));
         // Request focus after adding to the list to avoid issues with focus jumping
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -123,6 +127,12 @@ class _CanvasPageState extends State<CanvasPage> {
       if (index != -1) {
         _focusNodes[index].requestFocus();
       }
+    }
+  }
+
+  void _unfocusAllTextFields() {
+    for (var focusNode in _focusNodes) {
+      focusNode.unfocus();
     }
   }
 
