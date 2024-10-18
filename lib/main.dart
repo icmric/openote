@@ -85,7 +85,7 @@ class _CanvasPageState extends State<CanvasPage> {
 
     setState(() {
       _textFields.add(DraggableTextField(
-        initialPosition: position - const Offset(5, 50), // Adjust for drag bar and text padding
+        initialPosition: position - const Offset(10, 50), // Adjust for drag bar and text padding
         initialWidth: 200,
         onDragEnd: (newPosition) {
           setState(() {

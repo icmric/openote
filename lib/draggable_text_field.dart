@@ -1,5 +1,7 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 
 /// A draggable text field widget.
 class DraggableTextField extends StatefulWidget {
@@ -32,24 +34,25 @@ class DraggableTextField extends StatefulWidget {
 class _DraggableTextFieldState extends State<DraggableTextField> {
   bool isVisible = false; // Track visibility of the drag handle
   bool isDragging = false; // Track if the text field is being dragged
-  late TextEditingController _controller;
-  bool _isEditing = true; // Flag to track if the text field is being edited
+  QuillController _controller = QuillController.basic();
+  double _currentWidth = 200.0;
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController();
+    _controller = QuillController.basic();
 
     // Add listener to show/hide header based on focus and text content.
-    widget.focusNode.addListener(() {
+    _controller.addListener(() {
       setState(() {
-        isVisible = widget.focusNode.hasFocus && _controller.text.isNotEmpty;
+        isVisible = widget.focusNode.hasFocus && !_controller.document.isEmpty();
+        _updateWidth();
       });
     });
 
     // Add listener to delete the text field when it loses focus and is empty.
     widget.focusNode.addListener(() {
-      if (!widget.focusNode.hasFocus && _controller.text.isEmpty) {
+      if (!widget.focusNode.hasFocus && _controller.document.isEmpty()) {
         widget.onEmptyDelete();
       }
     });
@@ -57,8 +60,19 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
 
   @override
   void dispose() {
-    _controller.dispose(); // Dispose the controller when the widget is disposed
+    _controller.dispose();
     super.dispose();
+  }
+
+  void _updateWidth() {
+    // Calculate desired width based on content length (adjust logic as needed)
+    int contentLength = _controller.document.toPlainText().length;
+    double desiredWidth = min(200.0 + contentLength * 7, 600.0); // Example calculation
+
+    // Update width gradually (you can customize the animation duration)
+    setState(() {
+      _currentWidth = desiredWidth;
+    });
   }
 
   @override
@@ -118,12 +132,35 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
                     : null,
               ),
               // Text field
-              Container(
-                width: widget.width,
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 5), // Customize animation duration
+                width: _currentWidth,
                 decoration: BoxDecoration(
                   border: Border.all(color: isVisible ? Colors.black : Colors.transparent),
                 ),
-                child: _isEditing
+                child: QuillEditor.basic(
+                  controller: _controller,
+                  focusNode: widget.focusNode,
+                  configurations: QuillEditorConfigurations(
+                    padding: EdgeInsets.all(10),
+                    showCursor: true,
+                    autoFocus: true,
+                    onTapOutside: (PointerDownEvent event, FocusNode node) {
+                      if (_controller.document.isEmpty()) {
+                        widget.onEmptyDelete();
+                      } else {
+                        widget.focusNode.unfocus();
+                        setState(() {
+                          isVisible = false;
+                        });
+                      }
+                    },
+                  ),
+                ),
+              ),
+              //)
+
+              /*_isEditing
                     ? TextField(
                         controller: _controller,
                         focusNode: widget.focusNode,
@@ -183,8 +220,8 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
                           });
                           widget.focusNode.requestFocus();
                         },
-                      ),
-              ),
+                      ),*/
+              //),
 
               /*TextField(
                   controller: _controller,
