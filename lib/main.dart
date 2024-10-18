@@ -34,6 +34,7 @@ class _CanvasPageState extends State<CanvasPage> {
   final List<DraggableTextField> _textFields = []; // Simplified to store only DraggableTextField widgets
   Size _canvasSize = const Size(800, 600);
   final TransformationController _transformationController = TransformationController();
+  double sideWidth = 40;
 
   @override
   void initState() {
@@ -134,37 +135,89 @@ class _CanvasPageState extends State<CanvasPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey[900],
       appBar: AppBar(
-        title: const Text('Canvas App'),
-      ),
-      body: InteractiveViewer(
-        constrained: false,
-        boundaryMargin: const EdgeInsets.all(100),
-        transformationController: _transformationController,
-        child: SizedBox(
-          width: _canvasSize.width,
-          height: _canvasSize.height,
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTapDown: _handleTapDown,
-            child: Stack(
+        title: const Column(
+          children: [
+            Text('Canvas App'),
+            Wrap(
+              spacing: 10,
+              alignment: WrapAlignment.start,
               children: [
-                // Background grid
-                Container(
-                  width: _canvasSize.width,
-                  height: _canvasSize.height,
-                  color: Colors.grey[300],
-                  child: CustomPaint(
-                    size: _canvasSize,
-                    painter: CanvasGridPainter(), // Using the new CanvasGridPainter
-                  ),
+                Text("File"),
+                Text("Home"),
+                Text("Insert"),
+              ],
+            )
+          ],
+        ),
+      ),
+      body: Row(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 50),
+            color: Colors.grey[900],
+            width: sideWidth,
+            height: double.infinity,
+            alignment: Alignment.topLeft,
+            child: Column(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  onPressed: () {
+                    setState(() {
+                      if (sideWidth == 40) {
+                        sideWidth = 200;
+                      } else {
+                        sideWidth = 40;
+                      }
+                    });
+                  },
                 ),
-                // Draggable text fields
-                ..._textFields,
+                ListView.builder(
+                  itemCount: sideWidth > 40 ? 5 : 0,
+                  shrinkWrap: true,
+                  itemBuilder: (BuildContext context, int index) {
+                    return ListTile(
+                      title: Text("Item", style: TextStyle(color: Colors.white)),
+                    );
+                  },
+                )
               ],
             ),
           ),
-        ),
+          Expanded(
+            child: InteractiveViewer(
+              constrained: false,
+              boundaryMargin: const EdgeInsets.all(100),
+              transformationController: _transformationController,
+              child: SizedBox(
+                width: _canvasSize.width,
+                height: _canvasSize.height,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTapDown: _handleTapDown,
+                  child: Stack(
+                    children: [
+                      // Background grid
+                      Container(
+                        width: _canvasSize.width,
+                        height: _canvasSize.height,
+                        color: Colors.grey[850],
+                        child: CustomPaint(
+                          size: _canvasSize,
+                          painter: CanvasGridPainter(), // Using the new CanvasGridPainter
+                        ),
+                      ),
+                      // Draggable text fields
+                      ..._textFields,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
