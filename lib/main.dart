@@ -51,7 +51,7 @@ class _CanvasPageState extends State<CanvasPage> {
   void _initializeCanvasSize() {
     final Size screenSize = MediaQuery.of(context).size;
     setState(() {
-      _savedFiles = directory.listSync();
+      _canvasSize = Size(screenSize.width * 2, screenSize.height * 2);
     });
   }
 
@@ -170,13 +170,17 @@ class _CanvasPageState extends State<CanvasPage> {
     final List<FileSystemEntity> files = directory.listSync();
 
     setState(() {
-      _savedPages = files.where((file) => file.path.endsWith('.json')).map((file) => file.path.split('/').last.replaceAll('.json', '')).toList();
+      _savedPages = files
+          .where((file) => file.path.endsWith('.json'))
+          .map((file) => file.path.split('/').last.replaceAll('.json', ''))
+          .toList();
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey[900],
       appBar: AppBar(
         title: const Column(
           children: [
@@ -195,7 +199,6 @@ class _CanvasPageState extends State<CanvasPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.save),
-            color: Colors.green,
             onPressed: () async {
               final fileName = await _showSaveDialog();
               if (fileName != null) {
