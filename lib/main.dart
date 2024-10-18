@@ -1,218 +1,101 @@
 import 'package:flutter/material.dart';
-import 'draggable_text_field.dart';
-import 'canvas_grid_painter.dart'; // Moved GridPainter to a separate file
+import 'package:flutter_quill/flutter_quill.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:io';
+import 'dart:convert';
 
-void main() {
-  runApp(const MyApp());
-}
+import 'package:flutter_quill/quill_delta.dart';
+import 'package:path_provider/path_provider.dart';
 
-/// The root widget of the application.
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
+class MyCanvasApp extends StatefulWidget {
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Canvas App',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-      ),
-      home: const CanvasPage(),
-    );
-  }
+  _MyCanvasAppState createState() => _MyCanvasAppState();
 }
 
-/// A stateful widget representing the canvas page.
-class CanvasPage extends StatefulWidget {
-  const CanvasPage({super.key});
-
-  @override
-  State<CanvasPage> createState() => _CanvasPageState();
-}
-
-class _CanvasPageState extends State<CanvasPage> {
-  final List<DraggableTextField> _textFields = []; // Simplified to store only DraggableTextField widgets
-  Size _canvasSize = const Size(800, 600);
-  final TransformationController _transformationController = TransformationController();
-  double sideWidth = 40;
+class _MyCanvasAppState extends State<MyCanvasApp> {
+  QuillController _controller = QuillController.basic();
+  TransformationController _transformationController = TransformationController();
+  Size _canvasSize = Size(800, 600);
+  double sideWidth = 50;
+  List<FileSystemEntity> _savedFiles = [];
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeCanvasSize();
-      _positionCanvasTopLeft();
-    });
+    _loadSavedFiles();
   }
 
-  /// Initializes the canvas size based on the screen size.
-  void _initializeCanvasSize() {
-    final Size screenSize = MediaQuery.of(context).size;
+  void _loadSavedFiles() async {
+    final directory = await getApplicationDocumentsDirectory();
     setState(() {
-      _canvasSize = Size(screenSize.width * 2, screenSize.height * 2);
+      _savedFiles = directory.listSync();
     });
   }
 
-  /// Positions the canvas so its top-left corner is at the top-left of the screen.
-  void _positionCanvasTopLeft() {
-    // This might throw an exception if called before the InteractiveViewer is built.
-    // We wrap it in a try-catch to handle this gracefully.
-    try {
-      _transformationController.value = Matrix4.identity()..translate(100, 100);
-    } catch (e) {
-      // Ignore the exception if it occurs.
+  void _saveCanvas() async {
+    final json = jsonEncode(_controller.document.toDelta().toJson());
+    final result = await FilePicker.platform.saveFile(
+      dialogTitle: 'Save your canvas',
+      fileName: 'canvas.json',
+    );
+
+    if (result != null) {
+      final file = File(result);
+      await file.writeAsString(json);
+      _loadSavedFiles();
     }
   }
 
-  /// Handles tap down events to add or focus text fields.
-  void _handleTapDown(TapDownDetails details) {
-    Offset canvasTapPosition = details.localPosition;
-
-    // Check if the tap is on an existing text field.
-    int tappedTextFieldIndex = _getTappedTextFieldIndex(canvasTapPosition);
-
-    if (tappedTextFieldIndex == -1) {
-      // Add a new text field if the tap is not on an existing one.
-      _addNewTextField(canvasTapPosition);
-    } else {
-      // Focus the tapped text field.
-      _textFields[tappedTextFieldIndex].focusNode.requestFocus();
-    }
-  }
-
-  /// Adds a new draggable text field to the canvas.
-  void _addNewTextField(Offset position) {
-    FocusNode newFocusNode = FocusNode();
-
+  void _loadCanvas(String path) async {
+    final file = File(path);
+    final json = await file.readAsString();
+    final delta = Delta.fromJson(jsonDecode(json));
     setState(() {
-      _textFields.add(DraggableTextField(
-        initialPosition: position - const Offset(10, 50), // Adjust for drag bar and text padding
-        initialWidth: 200,
-        onDragEnd: (newPosition) {
-          setState(() {
-            int index = _textFields.indexOf(_textFields.last);
-            _textFields[index].position = newPosition;
-          });
-        },
-        onEmptyDelete: () {
-          setState(() {
-            _textFields.removeLast();
-          });
-        },
-        onDragStart: _unfocusAllTextFields,
-        focusNode: newFocusNode,
-      ));
-
-      // Request focus after the text field is added to the widget tree.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        newFocusNode.requestFocus();
-      });
+      _controller = QuillController(
+        document: Document.fromDelta(delta),
+        selection: TextSelection.collapsed(offset: 0),
+      );
     });
-  }
-
-  /// Returns the index of the tapped text field, or -1 if no text field was tapped.
-  int _getTappedTextFieldIndex(Offset tapPosition) {
-    for (int i = 0; i < _textFields.length; i++) {
-      final textField = _textFields[i];
-      final position = textField.position;
-      final width = textField.width;
-      final height = textField.focusNode.hasFocus ? 47 : 22; // Adjust height based on focus
-
-      if (tapPosition.dx >= position.dx && tapPosition.dx <= position.dx + width && tapPosition.dy >= position.dy && tapPosition.dy <= position.dy + height) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  /// Unfocuses all text fields on the canvas.
-  void _unfocusAllTextFields() {
-    for (var textField in _textFields) {
-      textField.focusNode.unfocus();
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[900],
       appBar: AppBar(
-        title: const Column(
-          children: [
-            Text('Canvas App'),
-            Wrap(
-              spacing: 10,
-              alignment: WrapAlignment.start,
-              children: [
-                Text("File"),
-                Text("Home"),
-                Text("Insert"),
-              ],
-            )
-          ],
-        ),
+        title: Text('Canvas App'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.save),
+            onPressed: _saveCanvas,
+          ),
+        ],
       ),
       body: Row(
         children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 50),
-            color: Colors.grey[900],
+          Container(
             width: sideWidth,
-            height: double.infinity,
-            alignment: Alignment.topLeft,
-            child: Column(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: () {
-                    setState(() {
-                      if (sideWidth == 40) {
-                        sideWidth = 200;
-                      } else {
-                        sideWidth = 40;
-                      }
-                    });
-                  },
-                ),
-                ListView.builder(
-                  itemCount: sideWidth > 40 ? 5 : 0,
-                  shrinkWrap: true,
-                  itemBuilder: (BuildContext context, int index) {
-                    return ListTile(
-                      title: Text("Item", style: TextStyle(color: Colors.white)),
-                    );
-                  },
-                )
-              ],
+            child: ListView.builder(
+              itemCount: _savedFiles.length,
+              shrinkWrap: true,
+              itemBuilder: (BuildContext context, int index) {
+                final file = _savedFiles[index];
+                return ListTile(
+                  title: Text(file.path.split('/').last, style: TextStyle(color: Colors.white)),
+                  onTap: () => _loadCanvas(file.path),
+                );
+              },
             ),
           ),
           Expanded(
             child: InteractiveViewer(
               constrained: false,
-              boundaryMargin: const EdgeInsets.all(100),
+              boundaryMargin: const EdgeInsets.all(20),
               transformationController: _transformationController,
               child: SizedBox(
                 width: _canvasSize.width,
                 height: _canvasSize.height,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTapDown: _handleTapDown,
-                  child: Stack(
-                    children: [
-                      // Background grid
-                      Container(
-                        width: _canvasSize.width,
-                        height: _canvasSize.height,
-                        color: Colors.grey[850],
-                        child: CustomPaint(
-                          size: _canvasSize,
-                          painter: CanvasGridPainter(), // Using the new CanvasGridPainter
-                        ),
-                      ),
-                      // Draggable text fields
-                      ..._textFields,
-                    ],
-                  ),
+                child: QuillEditor.basic(
+                  configurations: QuillEditorConfigurations(controller: _controller),
                 ),
               ),
             ),

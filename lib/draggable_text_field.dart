@@ -130,9 +130,9 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
                     border: Border.all(color: isVisible ? Colors.black : Colors.transparent),
                   ),
                   child: QuillEditor.basic(
-                    controller: _controller,
                     focusNode: widget.focusNode,
                     configurations: QuillEditorConfigurations(
+                      controller: _controller,
                       padding: EdgeInsets.all(10),
                       showCursor: true,
                       autoFocus: true,
