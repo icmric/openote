@@ -51,7 +51,7 @@ class _CanvasPageState extends State<CanvasPage> {
   void _initializeCanvasSize() {
     final Size screenSize = MediaQuery.of(context).size;
     setState(() {
-      _canvasSize = Size(screenSize.width * 2, screenSize.height * 2);
+      _savedFiles = directory.listSync();
     });
   }
 
@@ -177,7 +177,6 @@ class _CanvasPageState extends State<CanvasPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[900],
       appBar: AppBar(
         title: const Column(
           children: [
