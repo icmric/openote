@@ -1,9 +1,9 @@
+import 'dart:convert';
 import 'dart:math';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 
-/// A draggable text field widget.
 class DraggableTextField extends StatefulWidget {
   final Offset initialPosition;
   final double initialWidth;
@@ -12,8 +12,9 @@ class DraggableTextField extends StatefulWidget {
   final Function onDragStart;
   final FocusNode focusNode;
 
-  Offset position; // Make position public
-  double width; // Make width public
+  Offset position;
+  double width;
+  late QuillController controller;
 
   DraggableTextField({
     required this.initialPosition,
@@ -25,33 +26,59 @@ class DraggableTextField extends StatefulWidget {
     Key? key,
   })  : position = initialPosition,
         width = initialWidth,
+        controller = QuillController.basic(),
         super(key: key);
 
   @override
   _DraggableTextFieldState createState() => _DraggableTextFieldState();
+
+  Map<String, dynamic> toJson() {
+    return {
+      'position': {'dx': position.dx, 'dy': position.dy},
+      'width': width,
+      'document': jsonEncode(controller.document.toDelta().toJson()),
+    };
+  }
+
+  static DraggableTextField fromJson(
+      Map<String, dynamic> json,
+      Function(Offset) onDragEnd,
+      Function onEmptyDelete,
+      Function onDragStart,
+      ) {
+    final position = Offset(json['position']['dx'], json['position']['dy']);
+    final width = json['width'];
+    final document = Document.fromJson(jsonDecode(json['document']));
+    final focusNode = FocusNode();
+    final controller = QuillController(document: document, selection: TextSelection.collapsed(offset: 0));
+
+    return DraggableTextField(
+      initialPosition: position,
+      initialWidth: width,
+      onDragEnd: onDragEnd,
+      onEmptyDelete: onEmptyDelete,
+      onDragStart: onDragStart,
+      focusNode: focusNode,
+    )..controller = controller;
+  }
 }
 
 class _DraggableTextFieldState extends State<DraggableTextField> {
-  bool isVisible = false; // Track visibility of the drag handle
-  bool isDragging = false; // Track if the text field is being dragged
-  QuillController _controller = QuillController.basic();
-  double _currentWidth = 200.0;
+  bool isVisible = false;
+  bool isDragging = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = QuillController.basic();
 
-    // Add listener to show/hide header based on focus and text content.
-    _controller.addListener(() {
+    widget.controller.addListener(() {
       setState(() {
-        isVisible = widget.focusNode.hasFocus && !_controller.document.isEmpty();
+        isVisible = widget.focusNode.hasFocus && !widget.controller.document.isEmpty();
       });
     });
 
-    // Add listener to delete the text field when it loses focus and is empty.
     widget.focusNode.addListener(() {
-      if (!widget.focusNode.hasFocus && _controller.document.isEmpty()) {
+      if (!widget.focusNode.hasFocus && widget.controller.document.isEmpty()) {
         widget.onEmptyDelete();
       }
     });
@@ -59,7 +86,7 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
 
   @override
   void dispose() {
-    _controller.dispose();
+    widget.controller.dispose();
     super.dispose();
   }
 
@@ -102,11 +129,6 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
           child: IntrinsicWidth(
             child: Column(
               children: [
-                // QuillSimpleToolbar(
-                //   controller: _controller,
-                //   configurations: QuillSimpleToolbarConfigurations(),
-                // ),
-                // Drag handle
                 Container(
                   height: 15,
                   padding: const EdgeInsets.all(0),
@@ -117,27 +139,26 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
                           '...',
                           strutStyle: StrutStyle(
                             forceStrutHeight: true,
-                            height: 0.1, // Aligns dots correctly in container
+                            height: 0.1,
                           ),
                           style: TextStyle(color: Colors.white, fontSize: 15),
                         )
                       : null,
                 ),
-                // Text field
                 Container(
                   constraints: const BoxConstraints(minWidth: 200, maxWidth: 600),
                   decoration: BoxDecoration(
                     border: Border.all(color: isVisible ? Colors.black : Colors.transparent),
                   ),
                   child: QuillEditor.basic(
-                    controller: _controller,
                     focusNode: widget.focusNode,
+                    controller: widget.controller,
                     configurations: QuillEditorConfigurations(
-                      padding: EdgeInsets.all(10),
+                      padding: const EdgeInsets.all(10),
                       showCursor: true,
                       autoFocus: true,
                       onTapOutside: (PointerDownEvent event, FocusNode node) {
-                        if (_controller.document.isEmpty()) {
+                        if (widget.controller.document.isEmpty()) {
                           widget.onEmptyDelete();
                         } else {
                           widget.focusNode.unfocus();
