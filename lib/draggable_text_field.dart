@@ -46,7 +46,6 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
     _controller.addListener(() {
       setState(() {
         isVisible = widget.focusNode.hasFocus && !_controller.document.isEmpty();
-        _updateWidth();
       });
     });
 
@@ -62,17 +61,6 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
   void dispose() {
     _controller.dispose();
     super.dispose();
-  }
-
-  void _updateWidth() {
-    // Calculate desired width based on content length (adjust logic as needed)
-    int contentLength = _controller.document.toPlainText().length;
-    double desiredWidth = min(200.0 + contentLength * 7, 600.0); // Example calculation
-
-    // Update width gradually (you can customize the animation duration)
-    setState(() {
-      _currentWidth = desiredWidth;
-    });
   }
 
   @override
@@ -111,153 +99,158 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
             });
             widget.onDragEnd(widget.position);
           },
-          child: Column(
-            children: [
-              // Drag handle
-              Container(
-                width: widget.width,
-                height: 15,
-                padding: const EdgeInsets.all(0),
-                color: isVisible ? Colors.grey : Colors.transparent,
-                alignment: Alignment.center,
-                child: isVisible
-                    ? const Text(
-                        '...',
-                        strutStyle: StrutStyle(
-                          forceStrutHeight: true,
-                          height: 0.5, // Aligns dots correctly in container
-                        ),
-                        style: TextStyle(color: Colors.white, fontSize: 15),
-                      )
-                    : null,
-              ),
-              // Text field
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 5), // Customize animation duration
-                width: _currentWidth,
-                decoration: BoxDecoration(
-                  border: Border.all(color: isVisible ? Colors.black : Colors.transparent),
+          child: IntrinsicWidth(
+            child: Column(
+              children: [
+                // QuillSimpleToolbar(
+                //   controller: _controller,
+                //   configurations: QuillSimpleToolbarConfigurations(),
+                // ),
+                // Drag handle
+                Container(
+                  height: 15,
+                  padding: const EdgeInsets.all(0),
+                  color: isVisible ? Colors.grey : Colors.transparent,
+                  alignment: Alignment.center,
+                  child: isVisible
+                      ? const Text(
+                          '...',
+                          strutStyle: StrutStyle(
+                            forceStrutHeight: true,
+                            height: 0.1, // Aligns dots correctly in container
+                          ),
+                          style: TextStyle(color: Colors.white, fontSize: 15),
+                        )
+                      : null,
                 ),
-                child: QuillEditor.basic(
-                  controller: _controller,
-                  focusNode: widget.focusNode,
-                  configurations: QuillEditorConfigurations(
-                    padding: EdgeInsets.all(10),
-                    showCursor: true,
-                    autoFocus: true,
-                    onTapOutside: (PointerDownEvent event, FocusNode node) {
-                      if (_controller.document.isEmpty()) {
+                // Text field
+                Container(
+                  constraints: const BoxConstraints(minWidth: 200, maxWidth: 600),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: isVisible ? Colors.black : Colors.transparent),
+                  ),
+                  child: QuillEditor.basic(
+                    controller: _controller,
+                    focusNode: widget.focusNode,
+                    configurations: QuillEditorConfigurations(
+                      padding: EdgeInsets.all(10),
+                      showCursor: true,
+                      autoFocus: true,
+                      onTapOutside: (PointerDownEvent event, FocusNode node) {
+                        if (_controller.document.isEmpty()) {
+                          widget.onEmptyDelete();
+                        } else {
+                          widget.focusNode.unfocus();
+                          setState(() {
+                            isVisible = false;
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                ),
+
+                //)
+
+                /*_isEditing
+                      ? TextField(
+                          controller: _controller,
+                          focusNode: widget.focusNode,
+                          autofocus: true,
+                          minLines: 1,
+                          maxLines: null,
+                          decoration: const InputDecoration(
+                            contentPadding: EdgeInsets.all(5),
+                            border: InputBorder.none,
+                          ),
+                          onChanged: (text) {
+                            setState(() {
+                              if (text.isNotEmpty) {
+                                isVisible = true;
+            
+                                // Calculate width based on the regular text
+                                TextPainter textPainter = TextPainter(
+                                  text: TextSpan(text: text, style: const TextStyle(fontSize: 16)),
+                                  textDirection: TextDirection.ltr,
+                                  maxLines: 1,
+                                )..layout();
+                                widget.width = (textPainter.width + 80).clamp(200.0, 600.0);
+                              } else {
+                                isVisible = false;
+                              }
+                            });
+                          },
+                          onTapOutside: (PointerDownEvent event) {
+                            if (_controller.text.isEmpty) {
+                              // Also being done in initState, but seems to break without this?
+                              widget.onEmptyDelete();
+                            } else {
+                              setState(() {
+                                _isEditing = false; // Switch to Markdown rendering
+                              });
+                              widget.focusNode.unfocus();
+                            }
+                          },
+                        )
+                      : GestureDetector(
+                          child: Markdown(
+                            data: _controller.text, // Display Markdown when not editing
+                            selectable: true,
+                            onTapLink: (text, href, title) {
+                              // Handle link taps if needed
+                            },
+                            shrinkWrap: true,
+                            styleSheet: MarkdownStyleSheet(
+                              p: const TextStyle(fontSize: 16),
+                              h1: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                              // ... other styles
+                            ),
+                          ),
+                          onTap: () {
+                            setState(() {
+                              _isEditing = true; // Switch back to editing
+                            });
+                            widget.focusNode.requestFocus();
+                          },
+                        ),*/
+                //),
+
+                /*TextField(
+                    controller: _controller,
+                    focusNode: widget.focusNode,
+                    autofocus: true,
+                    minLines: 1,
+                    maxLines: null,
+                    decoration: InputDecoration(
+                      contentPadding: const EdgeInsets.all(5),
+                      border: isVisible ? const OutlineInputBorder() : InputBorder.none,
+                    ),
+                    onChanged: (text) {
+                      setState(() {
+                        if (text.isNotEmpty) {
+                          isVisible = true;
+                          TextPainter textPainter = TextPainter(
+                            text: TextSpan(text: text, style: const TextStyle(fontSize: 16)),
+                            textDirection: TextDirection.ltr,
+                            maxLines: 1,
+                          )..layout();
+                          widget.width = (textPainter.width + 80).clamp(200.0, 600.0);
+                        } else {
+                          isVisible = false;
+                        }
+                      });
+                    },
+                    onTapOutside: (PointerDownEvent event) {
+                      if (_controller.text.isEmpty) {
                         widget.onEmptyDelete();
                       } else {
                         widget.focusNode.unfocus();
-                        setState(() {
-                          isVisible = false;
-                        });
                       }
                     },
                   ),
-                ),
-              ),
-              //)
-
-              /*_isEditing
-                    ? TextField(
-                        controller: _controller,
-                        focusNode: widget.focusNode,
-                        autofocus: true,
-                        minLines: 1,
-                        maxLines: null,
-                        decoration: const InputDecoration(
-                          contentPadding: EdgeInsets.all(5),
-                          border: InputBorder.none,
-                        ),
-                        onChanged: (text) {
-                          setState(() {
-                            if (text.isNotEmpty) {
-                              isVisible = true;
-
-                              // Calculate width based on the regular text
-                              TextPainter textPainter = TextPainter(
-                                text: TextSpan(text: text, style: const TextStyle(fontSize: 16)),
-                                textDirection: TextDirection.ltr,
-                                maxLines: 1,
-                              )..layout();
-                              widget.width = (textPainter.width + 80).clamp(200.0, 600.0);
-                            } else {
-                              isVisible = false;
-                            }
-                          });
-                        },
-                        onTapOutside: (PointerDownEvent event) {
-                          if (_controller.text.isEmpty) {
-                            // Also being done in initState, but seems to break without this?
-                            widget.onEmptyDelete();
-                          } else {
-                            setState(() {
-                              _isEditing = false; // Switch to Markdown rendering
-                            });
-                            widget.focusNode.unfocus();
-                          }
-                        },
-                      )
-                    : GestureDetector(
-                        child: Markdown(
-                          data: _controller.text, // Display Markdown when not editing
-                          selectable: true,
-                          onTapLink: (text, href, title) {
-                            // Handle link taps if needed
-                          },
-                          shrinkWrap: true,
-                          styleSheet: MarkdownStyleSheet(
-                            p: const TextStyle(fontSize: 16),
-                            h1: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                            // ... other styles
-                          ),
-                        ),
-                        onTap: () {
-                          setState(() {
-                            _isEditing = true; // Switch back to editing
-                          });
-                          widget.focusNode.requestFocus();
-                        },
-                      ),*/
-              //),
-
-              /*TextField(
-                  controller: _controller,
-                  focusNode: widget.focusNode,
-                  autofocus: true,
-                  minLines: 1,
-                  maxLines: null,
-                  decoration: InputDecoration(
-                    contentPadding: const EdgeInsets.all(5),
-                    border: isVisible ? const OutlineInputBorder() : InputBorder.none,
-                  ),
-                  onChanged: (text) {
-                    setState(() {
-                      if (text.isNotEmpty) {
-                        isVisible = true;
-                        TextPainter textPainter = TextPainter(
-                          text: TextSpan(text: text, style: const TextStyle(fontSize: 16)),
-                          textDirection: TextDirection.ltr,
-                          maxLines: 1,
-                        )..layout();
-                        widget.width = (textPainter.width + 80).clamp(200.0, 600.0);
-                      } else {
-                        isVisible = false;
-                      }
-                    });
-                  },
-                  onTapOutside: (PointerDownEvent event) {
-                    if (_controller.text.isEmpty) {
-                      widget.onEmptyDelete();
-                    } else {
-                      widget.focusNode.unfocus();
-                    }
-                  },
-                ),
-              ),*/
-            ],
+                ),*/
+              ],
+            ),
           ),
         ),
       ),
