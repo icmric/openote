@@ -44,7 +44,7 @@ class _CanvasPageState extends State<CanvasPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeCanvasSize();
       _positionCanvasTopLeft();
-      _loadSavedPages();
+      _loadSavedPages(subdirectory: "/Notes Test");
     });
   }
 
@@ -131,12 +131,12 @@ class _CanvasPageState extends State<CanvasPage> {
     final jsonString = jsonEncode(textFieldsJson);
 
     await file.writeAsString(jsonString);
-    _loadSavedPages();
+    _loadSavedPages(subdirectory: "/Notes Test");
   }
 
   Future<void> _loadPage(String fileName) async {
     final directory = await getApplicationDocumentsDirectory();
-    final file = File('${directory.path}/$fileName.json');
+    final file = File('$fileName.json');
 
     if (await file.exists()) {
       final jsonString = await file.readAsString();
@@ -171,13 +171,33 @@ class _CanvasPageState extends State<CanvasPage> {
     });
   }
 
-  Future<void> _loadSavedPages() async {
+  Future<void> _loadSavedPages({String subdirectory = ''}) async {
     final directory = await getApplicationDocumentsDirectory();
-    final List<FileSystemEntity> files = directory.listSync();
+    final targetDirectory = Directory('${directory.path}$subdirectory');
+    List<String> savedPages = [];
 
+    void traverseDirectory(Directory dir) {
+      final List<FileSystemEntity> entities = dir.listSync();
+      for (var entity in entities) {
+        if (entity is File && entity.path.endsWith('.json')) {
+          // Calculate relative path from targetDirectory
+          String relativePath = entity.path.replaceFirst("${targetDirectory.path}/", '');
+          print(relativePath);
+          savedPages.add(relativePath);
+        } else if (entity is Directory) {
+          // Check if the directory is not the initial targetDirectory
+          if (entity.path != targetDirectory.path) {
+            traverseDirectory(entity);
+          }
+        }
+      }
+    }
+
+    traverseDirectory(targetDirectory);
     setState(() {
-      _savedPages = files.where((file) => file.path.endsWith('.json')).map((file) => file.path.split('/').last.replaceAll('.json', '')).toList();
+      _savedPages = savedPages;
     });
+    print(_savedPages);
   }
 
   @override
