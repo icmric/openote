@@ -165,15 +165,18 @@ class _CanvasPageState extends State<CanvasPage> {
     }
   }
 
+  void _newPage() {
+    setState(() {
+      _textFields.clear();
+    });
+  }
+
   Future<void> _loadSavedPages() async {
     final directory = await getApplicationDocumentsDirectory();
     final List<FileSystemEntity> files = directory.listSync();
 
     setState(() {
-      _savedPages = files
-          .where((file) => file.path.endsWith('.json'))
-          .map((file) => file.path.split('/').last.replaceAll('.json', ''))
-          .toList();
+      _savedPages = files.where((file) => file.path.endsWith('.json')).map((file) => file.path.split('/').last.replaceAll('.json', '')).toList();
     });
   }
 
@@ -206,6 +209,10 @@ class _CanvasPageState extends State<CanvasPage> {
               }
             },
           ),
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: _newPage,
+          ),
         ],
       ),
       body: Row(
@@ -218,7 +225,7 @@ class _CanvasPageState extends State<CanvasPage> {
             child: Column(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.add),
+                  icon: const Icon(Icons.menu),
                   alignment: Alignment.topLeft,
                   onPressed: () {
                     setState(() {
