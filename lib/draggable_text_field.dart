@@ -6,7 +6,7 @@ import 'package:flutter_quill/flutter_quill.dart';
 
 class DraggableTextField extends StatefulWidget {
   final Offset initialPosition;
-  final double initialWidth;
+  final double maxWidth;
   final Function(Offset) onDragEnd;
   final Function onEmptyDelete;
   final Function onDragStart;
@@ -18,14 +18,14 @@ class DraggableTextField extends StatefulWidget {
 
   DraggableTextField({
     required this.initialPosition,
-    required this.initialWidth,
+    required this.maxWidth,
     required this.onDragEnd,
     required this.onEmptyDelete,
     required this.onDragStart,
     required this.focusNode,
     Key? key,
   })  : position = initialPosition,
-        width = initialWidth,
+        width = maxWidth,
         controller = QuillController.basic(),
         super(key: key);
 
@@ -54,7 +54,7 @@ class DraggableTextField extends StatefulWidget {
 
     return DraggableTextField(
       initialPosition: position,
-      initialWidth: width,
+      maxWidth: width,
       onDragEnd: onDragEnd,
       onEmptyDelete: onEmptyDelete,
       onDragStart: onDragStart,
@@ -70,6 +70,10 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
   @override
   void initState() {
     super.initState();
+
+    if (widget.maxWidth < 200) {
+      widget.width = 200;
+    }
 
     widget.controller.addListener(() {
       setState(() {
@@ -146,7 +150,7 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
                       : null,
                 ),
                 Container(
-                  constraints: const BoxConstraints(minWidth: 200, maxWidth: 600),
+                  constraints: BoxConstraints(minWidth: 200, maxWidth: widget.width),
                   decoration: BoxDecoration(
                     border: Border.all(color: isVisible ? Colors.black : Colors.transparent),
                   ),

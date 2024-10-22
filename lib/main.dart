@@ -99,7 +99,7 @@ class _CanvasPageState extends State<CanvasPage> {
     setState(() {
       _textFields.add(DraggableTextField(
         initialPosition: position - const Offset(10, 50), // Initial position of the text field
-        initialWidth: 200, // Initial width of the text field
+        maxWidth: 600, // Initial width of the text field
         onDragEnd: (newPosition) {
           // Update the position of the text field when dragging ends
           setState(() {
@@ -168,9 +168,9 @@ class _CanvasPageState extends State<CanvasPage> {
   // Load a page from a JSON file
   Future<void> _loadPage(String filePath) async {
     // Get the application documents directory
-    final directory = await getApplicationDocumentsDirectory();
+    //final directory = await getApplicationDocumentsDirectory();
     // Construct the full path to the JSON file
-    final file = File('${directory.path}/$filePath'); 
+    final file = File('C:/src/temp'); 
 
     // Check if the file exists
     if (await file.exists()) {
