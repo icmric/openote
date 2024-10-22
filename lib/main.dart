@@ -44,7 +44,7 @@ class _CanvasPageState extends State<CanvasPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeCanvasSize();
       _positionCanvasTopLeft();
-      _loadSavedPages(subdirectory: "/Notes Test");
+      _loadSavedPages("C:/src/temp");
     });
   }
 
@@ -131,12 +131,12 @@ class _CanvasPageState extends State<CanvasPage> {
     final jsonString = jsonEncode(textFieldsJson);
 
     await file.writeAsString(jsonString);
-    _loadSavedPages(subdirectory: "/Notes Test");
+    _loadSavedPages("C:/src/temp");
   }
 
-  Future<void> _loadPage(String fileName) async {
+  Future<void> _loadPage(String filePath) async {
     final directory = await getApplicationDocumentsDirectory();
-    final file = File('$fileName.json');
+    final file = File('${directory.path}/$filePath'); // Construct full path
 
     if (await file.exists()) {
       final jsonString = await file.readAsString();
@@ -171,24 +171,41 @@ class _CanvasPageState extends State<CanvasPage> {
     });
   }
 
-  Future<void> _loadSavedPages({String subdirectory = ''}) async {
+  Future<void> _loadSavedPages(String filePath) async {
+    List<String> jsonFiles = [];
+    Directory directory = Directory(filePath);
+
+    if (await directory.exists()) {
+      await for (FileSystemEntity entity in directory.list(recursive: true)) {
+        if (entity is File && entity.path.endsWith('.json')) {
+          String relativePath = entity.path.substring(filePath.length + 1);
+          jsonFiles.add(relativePath.replaceAll(Platform.pathSeparator, '~/~'));
+        }
+      }
+    }
+    print(jsonFiles);
+
+    setState(() {
+      _savedPages = jsonFiles;
+    });
+  }
+
+  /*
+  Future<void> _loadSavedPages({String subdirectory = 'Notes Test'}) async {
+    // Default subdirectory
     final directory = await getApplicationDocumentsDirectory();
-    final targetDirectory = Directory('${directory.path}$subdirectory');
+    final targetDirectory = Directory('${directory.path}/$subdirectory');
     List<String> savedPages = [];
 
     void traverseDirectory(Directory dir) {
       final List<FileSystemEntity> entities = dir.listSync();
       for (var entity in entities) {
         if (entity is File && entity.path.endsWith('.json')) {
-          // Calculate relative path from targetDirectory
-          String relativePath = entity.path.replaceFirst("${targetDirectory.path}/", '');
-          print(relativePath);
+          // Calculate relative path from the subdirectory (not the root)
+          String relativePath = entity.path.replaceFirst(targetDirectory.path + '/', '');
           savedPages.add(relativePath);
         } else if (entity is Directory) {
-          // Check if the directory is not the initial targetDirectory
-          if (entity.path != targetDirectory.path) {
-            traverseDirectory(entity);
-          }
+          traverseDirectory(entity); // No need to check if it's the initial directory
         }
       }
     }
@@ -199,7 +216,7 @@ class _CanvasPageState extends State<CanvasPage> {
     });
     print(_savedPages);
   }
-
+*/
   @override
   Widget build(BuildContext context) {
     return Scaffold(
