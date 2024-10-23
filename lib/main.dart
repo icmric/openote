@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:fleather/fleather.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'draggable_text_field.dart';
@@ -46,6 +47,8 @@ class _CanvasPageState extends State<CanvasPage> {
   // List to store the names of saved pages
   List<String> _savedPages = [];
 
+  int? focusedTextFieldIndex = null;
+
   @override
   void initState() {
     super.initState();
@@ -85,9 +88,11 @@ class _CanvasPageState extends State<CanvasPage> {
     // If no text field was tapped, add a new one at the tap position
     if (tappedTextFieldIndex == -1) {
       _addNewTextField(canvasTapPosition);
+      focusedTextFieldIndex = _textFields.length - 1;
     } else {
       // Otherwise, focus the tapped text field
       _textFields[tappedTextFieldIndex].focusNode.requestFocus();
+      focusedTextFieldIndex = tappedTextFieldIndex;
     }
   }
 
@@ -145,12 +150,13 @@ class _CanvasPageState extends State<CanvasPage> {
     for (var textField in _textFields) {
       textField.focusNode.unfocus();
     }
+    focusedTextFieldIndex = null;
   }
 
   // Save the current page's text fields to a JSON file
   Future<void> _savePage(String fileName) async {
     // Get the application documents directory
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = Directory('C:/src/temp');
     // Create a File object for the JSON file
     final file = File('${directory.path}/$fileName.json');
 
@@ -170,7 +176,7 @@ class _CanvasPageState extends State<CanvasPage> {
     // Get the application documents directory
     //final directory = await getApplicationDocumentsDirectory();
     // Construct the full path to the JSON file
-    final file = File('C:/src/temp'); 
+    final file = File('C:/src/temp/$filePath');
 
     // Check if the file exists
     if (await file.exists()) {
@@ -178,19 +184,19 @@ class _CanvasPageState extends State<CanvasPage> {
       final jsonString = await file.readAsString();
       // Decode the JSON string into a list of dynamic objects
       final List<dynamic> jsonList = jsonDecode(jsonString);
-
       setState(() {
         // Clear the existing text fields
         _textFields.clear();
         // Create DraggableTextField widgets from the JSON data
         for (var json in jsonList) {
+          print(json);
           _textFields.add(DraggableTextField.fromJson(
             json,
             (newPosition) {
               // Update the position of the text field when dragging ends
               setState(() {
-                int index = _textFields.indexOf(_textFields.last);
-                _textFields[index].position = newPosition;
+              int index = _textFields.indexOf(_textFields.last);
+              _textFields[index].position = newPosition;
               });
             },
             () {
@@ -202,7 +208,7 @@ class _CanvasPageState extends State<CanvasPage> {
             _unfocusAllTextFields, // Pass the _unfocusAllTextFields function
           ));
         }
-      });
+      }); 
     }
   }
 
@@ -212,7 +218,6 @@ class _CanvasPageState extends State<CanvasPage> {
       _textFields.clear();
     });
   }
-
 
   /// Loads the names of all JSON files found within the specified directory and its subdirectories into the `_savedPages` list.
   ///
@@ -250,24 +255,16 @@ class _CanvasPageState extends State<CanvasPage> {
     });
   }
 
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[900],
       appBar: AppBar(
-        title: const Column(
+        title: Column(
           children: [
-            Text('Canvas App'),
-            Wrap(
-              spacing: 10,
-              alignment: WrapAlignment.start,
-              children: [
-                Text("File"),
-                Text("Home"),
-                Text("Insert"),
-              ],
-            )
+            const Text('Canvas App'),
+            // TODO move this to its own thing seperate from AppBar, remove AppBar?
+            focusedTextFieldIndex != null && focusedTextFieldIndex! < _textFields.length ? FleatherToolbar.basic(controller: _textFields[focusedTextFieldIndex!].controller) : Container(),
           ],
         ),
         actions: [
@@ -316,15 +313,17 @@ class _CanvasPageState extends State<CanvasPage> {
                     itemCount: _savedPages.length,
                     itemBuilder: (BuildContext context, int index) {
                       // Display list tiles only when the side panel is expanded
-                      return sideWidth > 40 ? ListTile(
-                        title: Text(
-                          _savedPages[index],
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                        onTap: () {
-                          _loadPage(_savedPages[index]);
-                        },
-                      ) : null;
+                      return sideWidth > 40
+                          ? ListTile(
+                              title: Text(
+                                _savedPages[index],
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                              onTap: () {
+                                _loadPage(_savedPages[index]);
+                              },
+                            )
+                          : null;
                     },
                   ),
                 ),

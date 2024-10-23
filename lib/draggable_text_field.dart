@@ -1,9 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter_quill/flutter_quill.dart';
-// Replace quill with fleather?
-// https://pub.dev/packages/fleather
 import 'package:fleather/fleather.dart';
 
 class DraggableTextField extends StatefulWidget {
@@ -25,11 +22,9 @@ class DraggableTextField extends StatefulWidget {
     required this.onEmptyDelete,
     required this.onDragStart,
     required this.focusNode,
-    Key? key,
+    super.key,
   })  : position = initialPosition,
-        width = maxWidth,
-        //controller = QuillController.basic(),
-        super(key: key);
+        width = maxWidth;
 
   @override
   _DraggableTextFieldState createState() => _DraggableTextFieldState();
@@ -50,11 +45,10 @@ class DraggableTextField extends StatefulWidget {
   ) {
     final position = Offset(json['position']['dx'], json['position']['dy']);
     final width = json['width'];
-    //final document = Document.fromJson(jsonDecode(json['document']));
+    final document = ParchmentDocument.fromJson(jsonDecode(json['document']));
+    
     final focusNode = FocusNode();
-    //final controller = QuillController(document: document, selection: TextSelection.collapsed(offset: 0));
-    var document = ParchmentDocument;
-    final controller = FleatherController();
+    final controller = FleatherController(document: document);
 
     return DraggableTextField(
       initialPosition: position,
