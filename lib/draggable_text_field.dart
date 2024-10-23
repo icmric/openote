@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_quill/flutter_quill.dart';
+// Replace quill with fleather?
+// https://pub.dev/packages/fleather
 
 class DraggableTextField extends StatefulWidget {
   final Offset initialPosition;
