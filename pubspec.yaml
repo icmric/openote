@@ -38,6 +38,7 @@ dependencies:
   flutter_markdown: ^0.7.4
   flutter_quill: ^10.8.4
   path_provider: ^2.0.11
+  fleather: ^1.19.0
 
 dev_dependencies:
   flutter_test:

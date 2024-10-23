@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 // Replace quill with fleather?
 // https://pub.dev/packages/fleather
+import 'package:fleather/fleather.dart';
 
 class DraggableTextField extends StatefulWidget {
   final Offset initialPosition;
@@ -15,7 +16,7 @@ class DraggableTextField extends StatefulWidget {
 
   Offset position;
   double width;
-  late QuillController controller;
+  FleatherController controller = FleatherController();
 
   DraggableTextField({
     required this.initialPosition,
@@ -27,7 +28,7 @@ class DraggableTextField extends StatefulWidget {
     Key? key,
   })  : position = initialPosition,
         width = maxWidth,
-        controller = QuillController.basic(),
+        //controller = QuillController.basic(),
         super(key: key);
 
   @override
@@ -49,9 +50,11 @@ class DraggableTextField extends StatefulWidget {
   ) {
     final position = Offset(json['position']['dx'], json['position']['dy']);
     final width = json['width'];
-    final document = Document.fromJson(jsonDecode(json['document']));
+    //final document = Document.fromJson(jsonDecode(json['document']));
     final focusNode = FocusNode();
-    final controller = QuillController(document: document, selection: TextSelection.collapsed(offset: 0));
+    //final controller = QuillController(document: document, selection: TextSelection.collapsed(offset: 0));
+    var document = ParchmentDocument;
+    final controller = FleatherController();
 
     return DraggableTextField(
       initialPosition: position,
@@ -78,12 +81,12 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
 
     widget.controller.addListener(() {
       setState(() {
-        isVisible = widget.focusNode.hasFocus && !widget.controller.document.isEmpty();
+        isVisible = widget.focusNode.hasFocus && widget.controller.document.length >= 1;
       });
     });
 
     widget.focusNode.addListener(() {
-      if (!widget.focusNode.hasFocus && widget.controller.document.isEmpty()) {
+      if (!widget.focusNode.hasFocus && widget.controller.document.length < 1) {
         widget.onEmptyDelete();
       }
     });
@@ -105,7 +108,7 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
         // Mouse starts hovering over the box
         onEnter: (_) {
           // If the box is not empty, make it visible, otherwise just show cursor
-          if (!widget.controller.document.isEmpty()) {
+          if (widget.controller.document.length >= 1) {
             setState(() {
               isVisible = true;
             });
@@ -157,12 +160,15 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
                         )
                       : null,
                 ),
+                FleatherToolbar.basic(controller: widget.controller),
                 Container(
                   constraints: BoxConstraints(minWidth: 200, maxWidth: widget.width),
                   decoration: BoxDecoration(
                     border: Border.all(color: isVisible ? Colors.black : Colors.transparent),
                   ),
-                  child: QuillEditor.basic(
+                  child: FleatherEditor(controller: widget.controller)
+
+                  /* QuillEditor.basic(
                     focusNode: widget.focusNode,
                     controller: widget.controller,
                     configurations: QuillEditorConfigurations(
@@ -180,7 +186,7 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
                         }
                       },
                     ),
-                  ),
+                  ),*/
                 ),
               ],
             ),
