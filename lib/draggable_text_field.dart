@@ -46,7 +46,7 @@ class DraggableTextField extends StatefulWidget {
     final position = Offset(json['position']['dx'], json['position']['dy']);
     final width = json['width'];
     final document = ParchmentDocument.fromJson(jsonDecode(json['document']));
-    
+
     final focusNode = FocusNode();
     final controller = FleatherController(document: document);
 
@@ -78,10 +78,20 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
         isVisible = widget.focusNode.hasFocus && widget.controller.document.length >= 2;
       });
     });
+    
+    widget.focusNode.addListener(() {
+      if (!widget.focusNode.hasFocus) {
+        setState(() {
+          isVisible = false;
+        });
+      }
+    });
 
     widget.focusNode.addListener(() {
       if (!widget.focusNode.hasFocus && widget.controller.document.length < 2) {
-        widget.onEmptyDelete();
+        setState(() {
+          widget.onEmptyDelete();
+        });
       }
     });
   }
