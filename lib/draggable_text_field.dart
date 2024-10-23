@@ -41,11 +41,11 @@ class DraggableTextField extends StatefulWidget {
   }
 
   static DraggableTextField fromJson(
-      Map<String, dynamic> json,
-      Function(Offset) onDragEnd,
-      Function onEmptyDelete,
-      Function onDragStart,
-      ) {
+    Map<String, dynamic> json,
+    Function(Offset) onDragEnd,
+    Function onEmptyDelete,
+    Function onDragStart,
+  ) {
     final position = Offset(json['position']['dx'], json['position']['dy']);
     final width = json['width'];
     final document = Document.fromJson(jsonDecode(json['document']));
@@ -99,14 +99,21 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
     return Positioned(
       left: widget.position.dx,
       top: widget.position.dy,
+      // Makes box visible/invisible when mousing over
       child: MouseRegion(
+        // Mouse starts hovering over the box
         onEnter: (_) {
-          setState(() {
-            isVisible = true;
-          });
+          // If the box is not empty, make it visible, otherwise just show cursor
+          if (!widget.controller.document.isEmpty()) {
+            setState(() {
+              isVisible = true;
+            });
+          }
         },
+        // Mouse stops hovering over the box
         onExit: (_) {
-          if (!widget.focusNode.hasFocus) {
+          // If the box is not focused, make it invisible
+          if (!widget.focusNode.hasFocus && !isDragging) {
             setState(() {
               isVisible = false;
             });
