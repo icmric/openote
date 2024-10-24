@@ -39,7 +39,6 @@ class _CanvasPageContentState extends State<_CanvasPageContent> {
         appBar: AppBar(
           title: const Column(
             children: [
-              Text('Canvas App'),
               Wrap(
                 spacing: 10,
                 alignment: WrapAlignment.start,

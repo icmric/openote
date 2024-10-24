@@ -1,4 +1,4 @@
-package com.example.canvas_test_2
+package com.example.mosapad
 
 import io.flutter.embedding.android.FlutterActivity
 

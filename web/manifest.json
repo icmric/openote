@@ -1,6 +1,6 @@
 {
-    "name": "canvas_test_2",
-    "short_name": "canvas_test_2",
+    "name": "mosapad",
+    "short_name": "mosapad",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

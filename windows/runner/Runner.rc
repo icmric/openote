@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "canvas_test_2" "\0"
+            VALUE "FileDescription", "mosapad" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "canvas_test_2" "\0"
+            VALUE "InternalName", "mosapad" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2024 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "canvas_test_2.exe" "\0"
-            VALUE "ProductName", "canvas_test_2" "\0"
+            VALUE "OriginalFilename", "mosapad.exe" "\0"
+            VALUE "ProductName", "mosapad" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

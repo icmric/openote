@@ -5,18 +5,18 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "note_taking_app",
+            "name": "mosapad",
             "request": "launch",
             "type": "dart"
         },
         {
-            "name": "note_taking_app (profile mode)",
+            "name": "mosapad (profile mode)",
             "request": "launch",
             "type": "dart",
             "flutterMode": "profile"
         },
         {
-            "name": "note_taking_app (release mode)",
+            "name": "mosapad (release mode)",
             "request": "launch",
             "type": "dart",
             "flutterMode": "release"
