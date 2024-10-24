@@ -58,7 +58,6 @@ class DraggableTextField extends StatefulWidget {
     final document = Document.fromJson(jsonDecode(json['document'])); // Decode the JSON document.
     final focusNode = FocusNode();
     final controller = QuillController(document: document, selection: const TextSelection.collapsed(offset: 0)); // Initialize QuillController.
-
     return DraggableTextField(
       initialPosition: position,
       maxWidth: width,
