@@ -2,8 +2,6 @@ import '/controllers/canvas_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-/// Widget that represents the side panel of the application.
-/// It contains a menu button to expand/collapse the panel and a list of saved pages.
 class SidePanel extends StatefulWidget {
   const SidePanel({super.key});
 
@@ -41,27 +39,63 @@ class _SidePanelState extends State<SidePanel> {
           ),
           // List of saved pages.
           Expanded(
-            child: ListView.builder(
-              itemCount: canvasController.savedPages.length,
-              itemBuilder: (BuildContext context, int index) {
-                // Display list tiles only when the side panel is expanded.
-                return sideWidth > 40
-                    ? ListTile(
-                        title: Text(
-                          canvasController.savedPages[index],
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                        onTap: () {
-                          canvasController.loadPage(
-                              canvasController.savedPages[index]); // Load the selected page.
-                        },
-                      )
-                    : null;
-              },
+            child: ListView(
+              children: sideWidth > 40 ? _buildFileList(canvasController.savedPages) : [],
             ),
           ),
         ],
       ),
     );
+  }
+
+  List<Widget> _buildFileList(List<String> savedPages) {
+    Map<String, dynamic> fileTree = {};
+
+    for (var page in savedPages) {
+      List<String> parts = page.split(r'\');
+      Map<String, dynamic> currentLevel = fileTree;
+
+      for (var part in parts) {
+        if (!currentLevel.containsKey(part)) {
+          currentLevel[part] = <String, dynamic>{};
+        }
+        currentLevel = currentLevel[part] as Map<String, dynamic>;
+      }
+    }
+
+    return _buildFileWidgets(fileTree);
+  }
+
+  List<Widget> _buildFileWidgets(Map<String, dynamic> fileTree, [String currentPath = '']) {
+    List<Widget> widgets = [];
+
+    fileTree.forEach((key, value) {
+      if (value.isEmpty) {
+        widgets.add(
+          ListTile(
+            title: Text(
+              currentPath + key,
+              style: const TextStyle(color: Colors.white),
+            ),
+            onTap: () {
+              Provider.of<CanvasController>(context, listen: false).loadPage(currentPath + key);
+            },
+          ),
+        );
+      } else {
+        widgets.add(
+          ExpansionTile(
+            title: Text(
+              key,
+              style: const TextStyle(color: Colors.white),
+            ),
+            expansionAnimationStyle: AnimationStyle(curve: Curves.easeInOut, duration: Duration(milliseconds: 100)),
+            children: _buildFileWidgets(value as Map<String, dynamic>, currentPath + key + r'\'),
+          ),
+        );
+      }
+    });
+
+    return widgets;
   }
 }
