@@ -193,16 +193,18 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
                       showCursor: true,
                       autoFocus: true,
                       onTapOutside: (PointerDownEvent event, FocusNode node) {
-                        if (widget.controller.document.isEmpty()) {
-                          widget.onEmptyDelete();
-                          // TODO make this less dodgy
-                          // Checks height of click, if its further than roughly appbar + toolbar, do this
-                          // Should instead check if click was on the toolbar idealy, or calculate height dynamicaly (or use passed value)
-                        } else if (event.position.dy > 100) {
-                          widget.focusNode.unfocus();
-                          setState(() {
-                            isVisible = false;
-                          });
+                        // Checks if tap is on the canvas, if it is then procede
+                        if (_isTapWithinCanvas(event.localPosition)) {
+                          // Checks if the text field is empty
+                          if (widget.controller.document.isEmpty()) {
+                            widget.onEmptyDelete();
+                            // if it isnt, then just unfocus and hide decoration
+                          } else {
+                            widget.focusNode.unfocus();
+                            setState(() {
+                              isVisible = false;
+                            });
+                          }
                         }
                       },
                     ),
@@ -214,5 +216,19 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
         ),
       ),
     );
+  }
+
+  bool _isTapWithinCanvas(Offset localPosition) {
+    // 1. Get the RenderBox of the CanvasArea widget
+    final canvasAreaRenderBox = context.findAncestorRenderObjectOfType<RenderBox>() as RenderBox;
+
+    // 2. Get the global offset of the CanvasArea
+    final canvasAreaGlobalOffset = canvasAreaRenderBox.localToGlobal(Offset.zero);
+
+    // 3. Calculate the tap position relative to the CanvasArea
+    final tapPositionInCanvas = localPosition - canvasAreaGlobalOffset;
+
+    // 4. Check if the tap position is within the CanvasArea's size
+    return tapPositionInCanvas.dx >= 0 && tapPositionInCanvas.dy >= 0 && tapPositionInCanvas.dx <= canvasAreaRenderBox.size.width && tapPositionInCanvas.dy <= canvasAreaRenderBox.size.height;
   }
 }

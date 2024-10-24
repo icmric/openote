@@ -45,7 +45,6 @@ class FileStorageService {
         final List<DraggableTextField> loadedTextFields = jsonList
             .map((json) => DraggableTextField.fromJson(
                   json,
-                  
                   (newPosition) {}, // Placeholder for onDragEnd callback.
                   () {}, // Placeholder for onEmptyDelete callback.
                   () {}, // Placeholder for onDragStart callback.
@@ -71,9 +70,10 @@ class FileStorageService {
     List<String> savedPages = [];
     if (await dir.exists()) {
       await for (var entity in dir.list(recursive: false)) {
-        print(entity);
         if (entity is File && entity.path.endsWith('.json')) {
           savedPages.add(entity.path.split(r'\').last.replaceAll('.json', ''));
+        } else {
+          print(entity);
         }
       }
     }

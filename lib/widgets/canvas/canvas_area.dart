@@ -3,8 +3,8 @@ import '/widgets/canvas/canvas_background.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-/// Widget that displays the canvas area where users can interact with text fields.
-/// It uses InteractiveViewer for zooming and panning, and handles tap events to add new text fields.
+// Widget that displays the canvas area where users can interact with text fields.
+// It uses InteractiveViewer for zooming and panning, and handles tap events to add new text fields.
 class CanvasArea extends StatelessWidget {
   const CanvasArea({super.key});
 
