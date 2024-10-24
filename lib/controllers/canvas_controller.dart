@@ -1,3 +1,5 @@
+import 'package:flutter_quill/flutter_quill.dart';
+
 import '/models/canvas_page_data.dart';
 import '/services/file_storage_service.dart';
 import '/widgets/canvas/draggable_text_field.dart';
@@ -6,6 +8,9 @@ import 'package:flutter/material.dart';
 /// Controller that manages the state and logic of the canvas page.
 class CanvasController with ChangeNotifier {
   final FileStorageService _fileStorageService = FileStorageService(); // Service for file storage operations.
+
+  QuillController? _activeTextFieldController;
+  QuillController? get activeTextFieldController => _activeTextFieldController;
 
   CanvasPageData _canvasPageData = CanvasPageData(
     textFields: [],
@@ -58,11 +63,13 @@ class CanvasController with ChangeNotifier {
   /// Adds a new draggable text field to the canvas at the given position.
   void _addNewTextField(Offset position) {
     FocusNode newFocusNode = FocusNode();
+    QuillController newController = QuillController.basic(); // Create a new QuillController
 
     _canvasPageData.textFields.add(
       DraggableTextField(
         initialPosition: position - const Offset(10, 50),
         maxWidth: 600,
+        controller: newController,
         onDragEnd: (newPosition) {
           int index = _canvasPageData.textFields.indexOf(_canvasPageData.textFields.last);
           _canvasPageData.textFields[index].position = newPosition;
@@ -159,5 +166,10 @@ class CanvasController with ChangeNotifier {
         );
       },
     );
+  }
+
+  void setActiveTextFieldController(QuillController? controller) {
+    _activeTextFieldController = controller;
+    notifyListeners();
   }
 }

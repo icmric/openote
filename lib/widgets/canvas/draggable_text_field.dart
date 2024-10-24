@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
+import 'package:provider/provider.dart';
+
+import '/controllers/canvas_controller.dart';
 
 /// Represents a draggable text field on the canvas.
 /// Users can drag, resize, and edit the text within these fields.
@@ -11,10 +14,11 @@ class DraggableTextField extends StatefulWidget {
   final Function onEmptyDelete; // Callback when the text field is empty and the delete key is pressed.
   final Function onDragStart; // Callback when dragging starts.
   final FocusNode focusNode; // FocusNode for managing focus.
+  final QuillController controller; // Now passed as a parameter
 
   Offset position; // Current position of the text field.
   double width; // Current width of the text field.
-  late QuillController controller; // QuillController for managing the text editing.
+  //late QuillController controller; // QuillController for managing the text editing.
 
   DraggableTextField({
     required this.initialPosition,
@@ -23,10 +27,11 @@ class DraggableTextField extends StatefulWidget {
     required this.onEmptyDelete,
     required this.onDragStart,
     required this.focusNode,
+    required this.controller,
     Key? key,
   })  : position = initialPosition,
         width = maxWidth,
-        controller = QuillController.basic(), // Initialize with a basic QuillController.
+        //controller = QuillController.basic(), // Initialize with a basic QuillController.
         super(key: key);
 
   @override
@@ -52,8 +57,7 @@ class DraggableTextField extends StatefulWidget {
     final width = json['width'];
     final document = Document.fromJson(jsonDecode(json['document'])); // Decode the JSON document.
     final focusNode = FocusNode();
-    final controller = QuillController(
-        document: document, selection: const TextSelection.collapsed(offset: 0)); // Initialize QuillController.
+    final controller = QuillController(document: document, selection: const TextSelection.collapsed(offset: 0)); // Initialize QuillController.
 
     return DraggableTextField(
       initialPosition: position,
@@ -62,7 +66,8 @@ class DraggableTextField extends StatefulWidget {
       onEmptyDelete: onEmptyDelete,
       onDragStart: onDragStart,
       focusNode: focusNode,
-    )..controller = controller; // Assign the created controller.
+      controller: controller,
+    ); // Assign the created controller.
   }
 }
 
@@ -86,6 +91,9 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
       });
     });
 
+    // Makes sure toolbar is always linked to currently selected textField
+    widget.focusNode.addListener(_handleFocusChange);
+
     // Listen for focus changes to delete the text field if it's empty and loses focus.
     widget.focusNode.addListener(() {
       if (!widget.focusNode.hasFocus && widget.controller.document.isEmpty()) {
@@ -97,8 +105,19 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
   @override
   void dispose() {
     widget.controller.dispose(); // Dispose of the QuillController when the widget is disposed.
+    widget.focusNode.removeListener(_handleFocusChange); // Remove the listener
     super.dispose();
   }
+
+  void _handleFocusChange() {
+  if (widget.focusNode.hasFocus) {
+    Provider.of<CanvasController>(context, listen: false)
+        .setActiveTextFieldController(widget.controller);
+  } else {
+    Provider.of<CanvasController>(context, listen: false)
+        .setActiveTextFieldController(null);
+  }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -163,14 +182,11 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
                         )
                       : null,
                 ),
-                // The Quill toolbar for text editing.
-                QuillToolbar.simple(controller: widget.controller),
                 // The Quill editor for text input.
                 Container(
                   constraints: BoxConstraints(minWidth: 200, maxWidth: widget.width),
                   decoration: BoxDecoration(
-                    border: Border.all(
-                        color: isVisible ? Colors.black : Colors.transparent),
+                    border: Border.all(color: isVisible ? Colors.black : Colors.transparent),
                   ),
                   child: QuillEditor.basic(
                     focusNode: widget.focusNode,

@@ -1,3 +1,4 @@
+import '/widgets/canvas/canvas_toolbar.dart';
 import '/controllers/canvas_controller.dart';
 import '/widgets/canvas/canvas_area.dart';
 import '/widgets/side_panel.dart';
@@ -11,8 +12,7 @@ class CanvasPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (context) =>
-          CanvasController(), // Provide an instance of CanvasController to its descendants.
+      create: (context) => CanvasController(), // Provide an instance of CanvasController to its descendants.
       child: _CanvasPageContent(),
     );
   }
@@ -46,6 +46,11 @@ class _CanvasPageContentState extends State<_CanvasPageContent> {
               ],
             )
           ],
+        ),
+        bottom: PreferredSize(
+          // Or place CanvasToolbar below AppBar in a Container
+          preferredSize: const Size.fromHeight(kToolbarHeight),
+          child: CanvasToolbar(controller: canvasController.activeTextFieldController),
         ),
         actions: [
           IconButton(
