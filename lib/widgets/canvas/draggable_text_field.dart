@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:provider/provider.dart';
-
+import 'dart:developer';
 import '/controllers/canvas_controller.dart';
 
 /// Represents a draggable text field on the canvas.
@@ -110,14 +110,12 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
   }
 
   void _handleFocusChange() {
-  if (widget.focusNode.hasFocus) {
-    Provider.of<CanvasController>(context, listen: false)
-        .setActiveTextFieldController(widget.controller);
-  } else {
-    Provider.of<CanvasController>(context, listen: false)
-        .setActiveTextFieldController(null);
+    if (widget.focusNode.hasFocus) {
+      Provider.of<CanvasController>(context, listen: false).setActiveTextFieldController(widget.controller);
+    } else {
+      Provider.of<CanvasController>(context, listen: false).setActiveTextFieldController(null);
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -198,7 +196,10 @@ class _DraggableTextFieldState extends State<DraggableTextField> {
                       onTapOutside: (PointerDownEvent event, FocusNode node) {
                         if (widget.controller.document.isEmpty()) {
                           widget.onEmptyDelete();
-                        } else {
+                          // TODO make this less dodgy
+                          // Checks height of click, if its further than roughly appbar + toolbar, do this
+                          // Should instead check if click was on the toolbar idealy, or calculate height dynamicaly (or use passed value)
+                        } else if (event.position.dy > 100) {
                           widget.focusNode.unfocus();
                           setState(() {
                             isVisible = false;
