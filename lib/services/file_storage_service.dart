@@ -3,8 +3,6 @@ import 'dart:io';
 import '/models/canvas_page_data.dart';
 import '/widgets/canvas/draggable_text_field.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-
 /// Service responsible for handling file storage operations, such as saving and loading canvas pages.
 class FileStorageService {
   /// Gets the local path for storing files.
@@ -33,7 +31,6 @@ class FileStorageService {
 
   /// Loads CanvasPageData from a JSON file with the specified filename.
   Future<CanvasPageData?> loadPage(String fileName) async {
-    print(fileName);
     try {
       final file = await _localFile(fileName);
 

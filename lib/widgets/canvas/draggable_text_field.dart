@@ -2,11 +2,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:provider/provider.dart';
-import 'dart:developer';
 import '/controllers/canvas_controller.dart';
 
 /// Represents a draggable text field on the canvas.
 /// Users can drag, resize, and edit the text within these fields.
+// ignore: must_be_immutable
 class DraggableTextField extends StatefulWidget {
   final Offset initialPosition; // Initial position of the text field.
   final double maxWidth; // Maximum width of the text field.
@@ -18,7 +18,6 @@ class DraggableTextField extends StatefulWidget {
 
   Offset position; // Current position of the text field.
   double width; // Current width of the text field.
-  //late QuillController controller; // QuillController for managing the text editing.
 
   DraggableTextField({
     required this.initialPosition,
@@ -31,7 +30,6 @@ class DraggableTextField extends StatefulWidget {
     Key? key,
   })  : position = initialPosition,
         width = maxWidth,
-        //controller = QuillController.basic(), // Initialize with a basic QuillController.
         super(key: key);
 
   @override
