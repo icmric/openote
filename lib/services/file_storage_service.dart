@@ -17,9 +17,7 @@ class FileStorageService {
   /// Creates a File object for the given filename in the local storage directory.
   Future<File> _localFile(String fileName) async {
     final path = await _localPath;
-    String filePath = '$path';
-    filePath += r"\";
-    filePath += "$fileName.json";
+    String filePath = path + r"\" + fileName;
     return File(filePath);
   }
 
@@ -35,6 +33,7 @@ class FileStorageService {
 
   /// Loads CanvasPageData from a JSON file with the specified filename.
   Future<CanvasPageData?> loadPage(String fileName) async {
+    print(fileName);
     try {
       final file = await _localFile(fileName);
 
@@ -68,15 +67,23 @@ class FileStorageService {
     final dir = Directory(path);
 
     List<String> savedPages = [];
-    if (await dir.exists()) {
+
+    Future<void> listFiles(Directory dir, String currentPath) async {
       await for (var entity in dir.list(recursive: false)) {
         if (entity is File && entity.path.endsWith('.json')) {
-          savedPages.add(entity.path.split(r'\').last.replaceAll('.json', ''));
-        } else {
-          print(entity);
+          final relativePath = entity.path.replaceFirst(path + r'\', '');
+          savedPages.add(currentPath + relativePath);
+        } else if (entity is Directory) {
+          //final folderName = entity.path.split(r'\').last;
+          await listFiles(entity, currentPath);
         }
       }
     }
+
+    if (await dir.exists()) {
+      await listFiles(dir, '');
+    }
+
     return savedPages;
   }
 }
