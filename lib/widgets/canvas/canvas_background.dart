@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 class CanvasBackground extends StatelessWidget {
   final Size canvasSize;
 
-  const CanvasBackground({Key? key, required this.canvasSize}) : super(key: key);
+  const CanvasBackground({super.key, required this.canvasSize});
 
   @override
   Widget build(BuildContext context) {

@@ -13,13 +13,13 @@ class CanvasPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (context) => CanvasController(), // Provide an instance of CanvasController to its descendants.
-      child: _CanvasPageContent(),
+      child: const _CanvasPageContent(),
     );
   }
 }
 
 class _CanvasPageContent extends StatefulWidget {
-  const _CanvasPageContent({super.key});
+  const _CanvasPageContent();
 
   @override
   State<_CanvasPageContent> createState() => _CanvasPageContentState();

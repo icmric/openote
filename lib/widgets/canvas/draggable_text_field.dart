@@ -27,13 +27,12 @@ class DraggableTextField extends StatefulWidget {
     required this.onDragStart,
     required this.focusNode,
     required this.controller,
-    Key? key,
+    super.key,
   })  : position = initialPosition,
-        width = maxWidth,
-        super(key: key);
+        width = maxWidth;
 
   @override
-  _DraggableTextFieldState createState() => _DraggableTextFieldState();
+  DraggableTextFieldState createState() => DraggableTextFieldState();
 
   /// Converts the DraggableTextField object to a JSON map for saving.
   Map<String, dynamic> toJson() {
@@ -68,7 +67,7 @@ class DraggableTextField extends StatefulWidget {
   }
 }
 
-class _DraggableTextFieldState extends State<DraggableTextField> {
+class DraggableTextFieldState extends State<DraggableTextField> {
   bool isVisible = false; // Whether the text field border and toolbar are visible.
   bool isDragging = false; // Whether the text field is currently being dragged.
 

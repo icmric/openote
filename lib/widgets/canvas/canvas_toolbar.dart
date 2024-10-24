@@ -4,7 +4,7 @@ import 'package:flutter_quill/flutter_quill.dart';
 class CanvasToolbar extends StatelessWidget {
   final QuillController? controller;
 
-  const CanvasToolbar({Key? key, required this.controller}) : super(key: key);
+  const CanvasToolbar({super.key, required this.controller});
 
   @override
   Widget build(BuildContext context) {

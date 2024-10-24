@@ -24,18 +24,22 @@ class _SidePanelState extends State<SidePanel> {
       child: Column(
         children: [
           // Menu button to expand/collapse the side panel.
-          IconButton(
-            icon: const Icon(Icons.menu),
-            alignment: Alignment.topLeft,
-            onPressed: () {
-              setState(() {
-                if (sideWidth == 40) {
-                  sideWidth = 200; // Expanded width.
-                } else {
-                  sideWidth = 40; // Collapsed width.
-                }
-              });
-            },
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.menu),
+                onPressed: () {
+                  setState(() {
+                    if (sideWidth == 40) {
+                      sideWidth = 200; // Expanded width.
+                    } else {
+                      sideWidth = 40; // Collapsed width.
+                    }
+                  });
+                },
+              ),
+              const Spacer(),
+            ],
           ),
           // List of saved pages.
           Expanded(
@@ -89,7 +93,7 @@ class _SidePanelState extends State<SidePanel> {
               key,
               style: const TextStyle(color: Colors.white),
             ),
-            expansionAnimationStyle: AnimationStyle(curve: Curves.easeInOut, duration: Duration(milliseconds: 100)),
+            expansionAnimationStyle: AnimationStyle(curve: Curves.easeInOut, duration: const Duration(milliseconds: 100)),
             children: _buildFileWidgets(value as Map<String, dynamic>, currentPath + key + r'\'),
           ),
         );
