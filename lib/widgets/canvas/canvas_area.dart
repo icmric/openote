@@ -17,7 +17,7 @@ class CanvasArea extends StatelessWidget {
     return Expanded(
       child: InteractiveViewer(
         constrained: false, // Allows the canvas to be larger than the screen.
-        boundaryMargin: const EdgeInsets.symmetric(horizontal: 10, vertical: 20), // Sets the boundary margin for panning.
+        boundaryMargin: const EdgeInsets.symmetric(horizontal: 10, vertical: 10), // Sets the boundary margin for panning.
         transformationController: canvasController.transformationController, // Controller for handling transformations.
         child: SizedBox(
           width: canvasPageData.canvasSize.width,

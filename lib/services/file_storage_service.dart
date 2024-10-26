@@ -12,7 +12,7 @@ class FileStorageService {
     return directory.path;
   }
 
-  /// Creates a File object for the given filename in the local storage directory.
+  // Creates a File object for the given filename in the local storage directory.
   Future<File> _localFile(String fileName) async {
     final path = await _localPath;
     String filePath = path + r"\" + fileName;

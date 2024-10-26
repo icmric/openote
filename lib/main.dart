@@ -6,8 +6,8 @@ void main() {
   runApp(const MyApp());
 }
 
-/// The root widget of the application.
-/// It sets up the MaterialApp and defines the initial route to the CanvasPage.
+// The root widget of the application.
+// It sets up the MaterialApp and defines the initial route to the CanvasPage.
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 

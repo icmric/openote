@@ -15,12 +15,13 @@ class _SidePanelState extends State<SidePanel> {
   @override
   Widget build(BuildContext context) {
     final canvasController = Provider.of<CanvasController>(context);
+    double height = MediaQuery.of(context).size.height;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 100), // Animation duration for expanding/collapsing.
       color: Colors.grey[900], // Background color of the side panel.
       width: sideWidth,
-      height: double.infinity,
+      height: height,
       child: Column(
         children: [
           // Menu button to expand/collapse the side panel.

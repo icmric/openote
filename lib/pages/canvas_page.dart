@@ -5,7 +5,7 @@ import '/widgets/side_panel.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-/// Widget that represents the main canvas page of the application.
+// Widget that represents the main canvas page of the application.
 class CanvasPage extends StatelessWidget {
   const CanvasPage({super.key});
 
@@ -66,7 +66,7 @@ class _CanvasPageContentState extends State<_CanvasPageContent> {
               onPressed: () async {
                 final fileName = await canvasController.showSaveDialog(context);
                 if (fileName != null) {
-                  canvasController.savePage(fileName);
+                  canvasController.savePage(fileName + '.json');
                 }
               },
             ),
