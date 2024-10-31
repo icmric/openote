@@ -39,6 +39,8 @@ dependencies:
   flutter_quill: ^10.8.4
   path_provider: ^2.0.11
   provider: ^6.1.2
+  sqlite3: ^2.4.7
+  sqlite3_flutter_libs: ^0.5.26
 
 dev_dependencies:
   flutter_test:
