@@ -115,13 +115,13 @@ class DraggableTextFieldState extends State<DraggableTextField> {
   }
 
   bool _isLosingFocusToAlertDialog() {
+    // If focus is being lost to an alert dialog, return true, otherwise return false
     final focusManager = FocusManager.instance;
     final primaryFocus = focusManager.primaryFocus;
     if (primaryFocus != null && primaryFocus.context != null) {
       final context = primaryFocus.context!;
       final route = ModalRoute.of(context);
 
-      print(route is DialogRoute<dynamic>);
       // Using DialogRoute<dynamic> will match any DialogRoute regardless of type parameter
       return route is DialogRoute<dynamic>;
     }
@@ -174,7 +174,7 @@ class DraggableTextFieldState extends State<DraggableTextField> {
           child: IntrinsicWidth(
             child: Column(
               children: [
-                // Container to display "..." when text overflows vertically and the field is not focused.
+                // Bar ontop of the field used to drag the field around
                 Container(
                   height: 15,
                   padding: const EdgeInsets.all(0),
@@ -205,7 +205,7 @@ class DraggableTextFieldState extends State<DraggableTextField> {
                       showCursor: true,
                       autoFocus: true,
                       onTapOutside: (PointerDownEvent event, FocusNode node) {
-                        // Checks if tap is on the canvas, if it is then procede
+                        // Checks if tap is on the canvas and is not losing focus to an AlertDialog
                         if (_isTapWithinCanvas(event.localPosition) && !_isLosingFocusToAlertDialog()) {
                           // Checks if the text field is empty
                           if (widget.controller.document.isEmpty()) {
