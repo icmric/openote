@@ -42,7 +42,8 @@ class CanvasController with ChangeNotifier {
     try {
       _transformationController.value = Matrix4.identity()..translate(100, 100);
     } catch (e) {
-      debugPrint("Error positioning canvas: $e");
+      // Will throw an error when its done before canvas is finished drawing. Catch it and move on
+      //debugPrint("Error positioning canvas: $e");
     }
   }
 

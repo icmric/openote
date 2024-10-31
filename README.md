@@ -20,6 +20,9 @@
 
 **Planned Future Updates:**
 
+* **File Storage Change:** Change from storing files as .json to a (likley) SQL database which would be faster and more robust
+    * Add option to export as PDF or Json from here (and possibly other formats)
+
 * **Maths Suport:** Write complex equations and symbols like in onenote.
 
 * **Handwriting Support:** Capture your thoughts naturally with stylus input, allowing for handwritten notes and sketches.

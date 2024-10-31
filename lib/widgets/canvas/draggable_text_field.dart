@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:provider/provider.dart';
@@ -92,7 +93,7 @@ class DraggableTextFieldState extends State<DraggableTextField> {
 
     // Listen for focus changes to delete the text field if it's empty and loses focus.
     widget.focusNode.addListener(() {
-      if (!widget.focusNode.hasFocus && widget.controller.document.isEmpty()) {
+      if (!widget.focusNode.hasFocus && widget.controller.document.isEmpty() && !_isLosingFocusToAlertDialog()) {
         widget.onEmptyDelete();
       }
     });
@@ -111,6 +112,20 @@ class DraggableTextFieldState extends State<DraggableTextField> {
     } else {
       Provider.of<CanvasController>(context, listen: false).setActiveTextFieldController(null);
     }
+  }
+
+  bool _isLosingFocusToAlertDialog() {
+    final focusManager = FocusManager.instance;
+    final primaryFocus = focusManager.primaryFocus;
+    if (primaryFocus != null && primaryFocus.context != null) {
+      final context = primaryFocus.context!;
+      final route = ModalRoute.of(context);
+
+      print(route is DialogRoute<dynamic>);
+      // Using DialogRoute<dynamic> will match any DialogRoute regardless of type parameter
+      return route is DialogRoute<dynamic>;
+    }
+    return false;
   }
 
   @override
@@ -191,7 +206,7 @@ class DraggableTextFieldState extends State<DraggableTextField> {
                       autoFocus: true,
                       onTapOutside: (PointerDownEvent event, FocusNode node) {
                         // Checks if tap is on the canvas, if it is then procede
-                        if (_isTapWithinCanvas(event.localPosition)) {
+                        if (_isTapWithinCanvas(event.localPosition) && !_isLosingFocusToAlertDialog()) {
                           // Checks if the text field is empty
                           if (widget.controller.document.isEmpty()) {
                             widget.onEmptyDelete();
