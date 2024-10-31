@@ -4,6 +4,7 @@ import '/widgets/canvas/canvas_area.dart';
 import '/widgets/side_panel.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '/services/db.dart';
 
 // Widget that represents the main canvas page of the application.
 class CanvasPage extends StatelessWidget {
@@ -31,7 +32,7 @@ class _CanvasPageContentState extends State<_CanvasPageContent> {
   @override
   Widget build(BuildContext context) {
     final canvasController = Provider.of<CanvasController>(context);
-
+    loadContentFromDB(title: "example");
     return FocusScope(
       node: _canvasFocusScopeNode,
       child: Scaffold(
@@ -66,13 +67,15 @@ class _CanvasPageContentState extends State<_CanvasPageContent> {
               onPressed: () async {
                 final fileName = await canvasController.showSaveDialog(context);
                 if (fileName != null) {
-                  canvasController.savePage(fileName + '.json');
+                  canvasController.savePage(fileName);
                 }
               },
             ),
             IconButton(
               icon: const Icon(Icons.add),
-              onPressed: canvasController.newPage,
+              onPressed: () {
+                wipeDB();
+              }, //canvasController.newPage,
             ),
           ],
         ),

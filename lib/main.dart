@@ -1,5 +1,3 @@
-import 'package:mosapad/services/db.dart';
-
 import '/pages/canvas_page.dart';
 import 'package:flutter/material.dart';
 
@@ -15,7 +13,6 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    createDBInMemory();
     return MaterialApp(
       theme: ThemeData(
         primarySwatch: Colors.blue,

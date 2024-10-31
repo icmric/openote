@@ -1,4 +1,5 @@
 import 'package:flutter_quill/flutter_quill.dart';
+import 'package:mosapad/services/db.dart';
 
 import '/models/canvas_page_data.dart';
 import '/services/file_storage_service.dart';
@@ -115,9 +116,10 @@ class CanvasController with ChangeNotifier {
   }
 
   /// Saves the current page to a file with the given filename.
-  Future<void> savePage(String fileName) async {
-    await _fileStorageService.savePage(_canvasPageData, fileName);
-    _savedPages = await _fileStorageService.loadSavedPages();
+  void savePage(String fileName) {
+    saveContentToDB(data: _canvasPageData, title: fileName);
+    // await _fileStorageService.savePage(_canvasPageData, fileName);
+    // _savedPages = await _fileStorageService.loadSavedPages();
     notifyListeners(); // Notify listeners that the saved pages list has changed.
   }
 
