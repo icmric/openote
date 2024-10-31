@@ -51,16 +51,6 @@ class _CanvasPageContentState extends State<_CanvasPageContent> {
               )
             ],
           ),
-          bottom: PreferredSize(
-            // Or place CanvasToolbar below AppBar in a Container
-            preferredSize: const Size.fromHeight(kToolbarHeight),
-            child: FocusScope(
-              canRequestFocus: false,
-              child: CanvasToolbar(
-                controller: canvasController.activeTextFieldController,
-              ),
-            ),
-          ),
           actions: [
             IconButton(
               icon: const Icon(Icons.save),
@@ -79,14 +69,28 @@ class _CanvasPageContentState extends State<_CanvasPageContent> {
             ),
           ],
         ),
-        body: Row(
+        body: Column(
           children: [
-            const SidePanel(),
-            Container(
-              width: 75,
-              color: Colors.grey[800],
+            SizedBox(
+              height: 50,
+              child: CanvasToolbar(
+                controller: canvasController.activeTextFieldController,
+              ),
             ),
-            const CanvasArea(),
+            SizedBox(
+              width: MediaQuery.of(context).size.width,
+              height: MediaQuery.of(context).size.height - kToolbarHeight - 50,
+              child: Row(
+                children: [
+                  const SidePanel(),
+                  Container(
+                    width: 75,
+                    color: Colors.grey[800],
+                  ),
+                  const CanvasArea(),
+                ],
+              ),
+            ),
           ],
         ),
       ),
