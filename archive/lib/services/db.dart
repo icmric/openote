@@ -101,6 +101,9 @@ void loadContentFromDB({required String title}) {
     final textFields = db.select('SELECT * FROM text_field WHERE page_id = ?', [pageId]);
     print(page);
     print(textFields);
+  } catch (e) {
+    print('Error loading from database: $e');
+    rethrow;
   } finally {
     db.dispose();
   }

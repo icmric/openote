@@ -32,12 +32,12 @@ class _CanvasPageContentState extends State<_CanvasPageContent> {
   @override
   Widget build(BuildContext context) {
     final canvasController = Provider.of<CanvasController>(context);
-    loadContentFromDB(title: "example");
     return FocusScope(
       node: _canvasFocusScopeNode,
       child: Scaffold(
         backgroundColor: Colors.grey[900],
-        appBar: AppBar(
+        appBar: CustomAppBar(currentRoute: "/",),
+        /* AppBar(
           title: const Column(
             children: [
               Wrap(
@@ -68,7 +68,7 @@ class _CanvasPageContentState extends State<_CanvasPageContent> {
               }, //canvasController.newPage,
             ),
           ],
-        ),
+        ),*/
         body: Column(
           children: [
             SizedBox(
