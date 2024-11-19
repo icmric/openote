@@ -3,7 +3,7 @@ import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:provider/provider.dart';
-import '/controllers/canvas_controller.dart';
+import '../../controllers/canvas_controller.dart';
 
 /// Represents a draggable text field on the canvas.
 /// Users can drag, resize, and edit the text within these fields.

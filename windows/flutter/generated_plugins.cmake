@@ -3,7 +3,11 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  sqlite3_flutter_libs
+  desktop_drop
+  file_selector_windows
+  gal
+  irondash_engine_context
+  super_native_extensions
   url_launcher_windows
 )
 

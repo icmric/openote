@@ -1,4 +1,4 @@
-import '/widgets/canvas/draggable_text_field.dart';
+import '../widgets/canvas/draggable_text_field.dart';
 import 'package:flutter/material.dart';
 
 /// Represents the data associated with a canvas page.

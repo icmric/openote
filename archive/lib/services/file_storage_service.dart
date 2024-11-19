@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import '/models/canvas_page_data.dart';
-import '/widgets/canvas/draggable_text_field.dart';
+import '../models/canvas_page_data.dart';
+import '../widgets/canvas/draggable_text_field.dart';
 import 'package:flutter/material.dart';
 /// Service responsible for handling file storage operations, such as saving and loading canvas pages.
 class FileStorageService {

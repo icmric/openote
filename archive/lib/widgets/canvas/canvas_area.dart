@@ -1,5 +1,5 @@
 import '/controllers/canvas_controller.dart';
-import '/widgets/canvas/canvas_background.dart';
+import 'canvas_background.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 

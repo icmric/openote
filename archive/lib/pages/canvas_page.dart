@@ -1,10 +1,10 @@
-import '/widgets/canvas/canvas_toolbar.dart';
+import '../widgets/canvas/canvas_toolbar.dart';
 import '/controllers/canvas_controller.dart';
-import '/widgets/canvas/canvas_area.dart';
-import '/widgets/side_panel.dart';
+import '../widgets/canvas/canvas_area.dart';
+import '../widgets/side_panel.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '/services/db.dart';
+import '../services/db.dart';
 
 // Widget that represents the main canvas page of the application.
 class CanvasPage extends StatelessWidget {

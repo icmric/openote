@@ -1,6 +1,6 @@
 import 'dart:developer';
 
-import 'package:mosapad/models/canvas_page_data.dart';
+import '../models/canvas_page_data.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 void initialiseDB({required String path}) {

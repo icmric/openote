@@ -11,7 +11,7 @@ class CanvasToolbar extends StatelessWidget {
     return Container(
       color: Colors.grey[200], // Example background color
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      child: controller != null ? QuillToolbar.simple(controller: controller) : _buildDisabledToolbar(),
+      child: controller != null ? QuillToolbar.simple(controller: controller, configurations: QuillSimpleToolbarConfigurations(buttonOptions: QuillSimpleToolbarButtonOptions())) : _buildDisabledToolbar(),
     );
   }
 

@@ -1,9 +1,9 @@
 import 'package:flutter_quill/flutter_quill.dart';
-import 'package:mosapad/services/db.dart';
+import '../services/db.dart';
 
-import '/models/canvas_page_data.dart';
-import '/services/file_storage_service.dart';
-import '/widgets/canvas/draggable_text_field.dart';
+import '../models/canvas_page_data.dart';
+import '../services/file_storage_service.dart';
+import '../widgets/canvas/draggable_text_field.dart';
 import 'package:flutter/material.dart';
 
 /// Controller that manages the state and logic of the canvas page.
