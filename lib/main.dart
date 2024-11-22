@@ -41,7 +41,7 @@ class _MyHomePageState extends State<MyHomePage> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Colors.red, Colors.blue],
+          colors: [Colors.red, Colors.blue, Colors.green, Colors.purple],
         ),
       ),
     ),
@@ -55,14 +55,15 @@ class _MyHomePageState extends State<MyHomePage> {
         backgroundColor: Theme.of(context).colorScheme.primary,
         title: Text(widget.title),
       ),
-      body: Column(
-        children: [
-          createQuillToolbar(controller),
-          Expanded(
-            child: createQuillEditor(controller),
-          )
-        ],
-      ),
+      body: //Column(
+          //children: [
+          //createQuillToolbar(controller),
+          CanvasArea(child: Image.network('https://www.nme.com/wp-content/uploads/2021/07/RickAstley2021.jpg')),
+      // Expanded(
+      //   child: createQuillEditor(controller),
+      // )
+      // ],
+      //),
     );
   }
 }
