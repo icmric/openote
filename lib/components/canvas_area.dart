@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_quill/flutter_quill.dart';
+import 'draggable_content_field.dart';
 
 /// A widget that provides a scrollable and zoomable canvas area.
 /// Implements alt-key based switching between scroll and zoom modes.
@@ -29,6 +31,10 @@ class _CanvasAreaState extends State<CanvasArea> {
 
   // Focusnode for canvas to regain focus
   FocusNode focusNode = FocusNode();
+
+  // Draggable fields for content on the canvas
+  // TODO remove from here??
+  List<DraggableContentField> contentFields = [];
 
   @override
   void initState() {
@@ -67,6 +73,29 @@ class _CanvasAreaState extends State<CanvasArea> {
     }
   }
 
+  void addNewContentField(Offset position) {
+    FocusNode focusNode = FocusNode();
+    contentFields.add(DraggableContentField(
+      initialPosition: position,
+      maxWidth: 800,
+      focusNode: FocusNode(),
+      content: [
+        Image.network('https://media.tenor.com/DOJSd6eNukMAAAAM/so-you%27re-telling-me-telling-me.gif'),
+        Container(
+          color: Colors.white,
+          child: QuillEditor.basic(
+            focusNode: focusNode,
+            controller: QuillController.basic(),
+          ),
+        ),
+      ],
+    ));
+    // Request focus for QuillEditor. Remove in the future or find better way of doing it as this will not always be a QuillEditor
+    setState(() {
+      focusNode.requestFocus();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -100,28 +129,35 @@ class _CanvasAreaState extends State<CanvasArea> {
                   scrollDirection: Axis.horizontal,
                   // Disable scrolling when Ctrl is pressed (zoom mode)
                   physics: _isCtrlPressed ? const NeverScrollableScrollPhysics() : const AlwaysScrollableScrollPhysics(),
-                  child: GestureDetector(
-                    // Handle tap events for position detection
-                    onTapDown: (gestureDetails) {
-                      // TODO: Allow this to call a function passed to it?
-                      print(gestureDetails.localPosition);
-                    },
-                    child: InteractiveViewer(
-                      // Enable zooming only when Ctrl is pressed
-                      scaleEnabled: _isCtrlPressed,
-                      // Disable panning. Make avalible when using touch input?
-                      panEnabled: false,
-                      // Aligns it to the top left corner
-                      alignment: Alignment.topLeft,
-                      // Add minimum scale to allow zooming out to fit
-                      minScale: 0.1,
-                      // Allow more zoom in if needed
-                      maxScale: 4.0,
-                      // Constrain bounds to prevent excessive panning
-                      constrained: true,
-                      // Optional: add bound limits for panning
-                      boundaryMargin: const EdgeInsets.all(double.infinity),
-                      child: widget.child,
+                  child: InteractiveViewer(
+                    // Enable zooming only when Ctrl is pressed
+                    scaleEnabled: _isCtrlPressed,
+                    // Disable panning. Make avalible when using touch input?
+                    panEnabled: false,
+                    // Aligns it to the top left corner
+                    alignment: Alignment.topLeft,
+                    // Add minimum scale to allow zooming out to fit
+                    minScale: 0.1,
+                    // Allow more zoom in if needed
+                    maxScale: 4.0,
+                    // Constrain bounds to prevent excessive panning
+                    constrained: true,
+                    // Optional: add bound limits for panning
+                    boundaryMargin: const EdgeInsets.all(0),
+                    // Gesture Detector to handle taps for adding new content fields
+                    child: GestureDetector(
+                      // Handle tap events for position detection
+                      onTapDown: (gestureDetails) {
+                        // TODO: Allow this to call a function passed to it?
+                        addNewContentField(gestureDetails.localPosition);
+                      },
+                      // Displays the canvas area (widget.child) and draggable content fields on top
+                      child: Stack(
+                        children: [
+                          widget.child,
+                          ...contentFields,
+                        ],
+                      ),
                     ),
                   ),
                 ),
