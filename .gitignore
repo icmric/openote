@@ -15,6 +15,7 @@ migrate_working_dir/
 /macos
 /web
 /windows
+/archive
 
 # IntelliJ related
 *.iml
