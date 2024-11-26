@@ -1,20 +1,30 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_quill/flutter_quill.dart';
 
 // *** NOT IMPLEMENTED YET ***
 
 /// Represents a draggable text field on the canvas.
 /// Users can drag, resize, and edit the text within these fields.
 class DraggableContentField extends StatefulWidget {
-  final Offset initialPosition; // Initial position of the text field.
-  final double maxWidth; // Maximum width of the text field.
-  final FocusNode focusNode; // FocusNode for managing focus.
-  final List<Widget>? content; // Optional passed content
+  /// The initial position of the content field
+  final Offset initialPosition;
+  /// The minimum width of the content field
+  final double? minWidth;
+  /// The maximum width the content field can expand to
+  final double maxWidth;
+  /// The FocusNode for managing focus. Primaraly used with QuillEditor
+  final FocusNode focusNode;
+  /// The content to be displayed in the content field
+  /// 
+  /// If left null, a QuillEditor will be added *** NOT IMPLEMENTED YET ***
+  /// 
+  /// Can accept any widgets and will be rendered in a column
+  final List<Widget>? content;
 
   const DraggableContentField({
     required this.initialPosition,
     required this.maxWidth,
     required this.focusNode,
+    this.minWidth,
     this.content,
     super.key,
   });
@@ -26,7 +36,8 @@ class DraggableContentField extends StatefulWidget {
 class DraggableContentFieldState extends State<DraggableContentField> {
   bool isVisible = false; // Whether the text field border and toolbar are visible.
   bool isDragging = false; // Whether the text field is currently being dragged.
-  double maxWidth = 200; // Current width of the text field.
+  double maxWidth = 800; // Current width of the text field.
+  double minWidth = 200; // Minimum width of the text field.
   Offset position = Offset(0, 0); // Current position of the text field.
   late List<Widget> content;
 
@@ -34,14 +45,14 @@ class DraggableContentFieldState extends State<DraggableContentField> {
   void initState() {
     super.initState();
 
+    // Initialize values of local variables
     content = widget.content ?? [];
     maxWidth = widget.maxWidth;
-    position = widget.initialPosition;
+    minWidth = widget.minWidth ?? 200;
   }
 
   @override
   void dispose() {
-    //widget.controller.dispose(); // Dispose of the QuillController when the widget is disposed.
     super.dispose();
   }
 
@@ -69,23 +80,28 @@ class DraggableContentFieldState extends State<DraggableContentField> {
           }
         },
         child: GestureDetector(
+          // On Field Drag Start
           onPanStart: (_) {
-            // On Drag Start
             setState(() {
               isDragging = true;
             });
           },
+          // On Field Drag
           onPanUpdate: (details) {
             setState(() {
               position += details.delta;
             });
           },
+          // On Field Drag End
           onPanEnd: (details) {
             setState(() {
               isDragging = false;
             });
-            // On Drag End
           },
+          // This is required to catch and handle a tap event on the content field
+          // Without it, the tap event is passed on to the parent widget where it is delt with (i.e. creating a new field)
+          // Should in theory be able to impelemnt some functionality here with it, however it has been left empty for now as it isnt required
+          onTap: () => null,
           child: IntrinsicWidth(
             child: Column(
               children: [
@@ -109,11 +125,12 @@ class DraggableContentFieldState extends State<DraggableContentField> {
                 // The main body of the content field
                 Container(
                   // Contraints allow for dynamic resizing
-                  constraints: BoxConstraints(minWidth: 200, maxWidth: maxWidth),
+                  constraints: BoxConstraints(minWidth: minWidth, maxWidth: maxWidth),
                   // Content field border
                   decoration: BoxDecoration(
                     border: Border.all(color: isVisible ? Colors.black : Colors.transparent),
                   ),
+                  // Content
                   child: Column(
                     children: [...content],
                   ),

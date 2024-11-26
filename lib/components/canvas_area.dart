@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart';
@@ -10,9 +12,9 @@ class CanvasArea extends StatefulWidget {
   final Widget child;
 
   const CanvasArea({
-    Key? key,
+    super.key,
     required this.child,
-  }) : super(key: key);
+  });
 
   @override
   State<CanvasArea> createState() => _CanvasAreaState();
@@ -80,7 +82,7 @@ class _CanvasAreaState extends State<CanvasArea> {
       maxWidth: 800,
       focusNode: FocusNode(),
       content: [
-        Image.network('https://media.tenor.com/DOJSd6eNukMAAAAM/so-you%27re-telling-me-telling-me.gif'),
+        //Image.network('https://media.tenor.com/DOJSd6eNukMAAAAM/so-you%27re-telling-me-telling-me.gif'),
         Container(
           color: Colors.white,
           child: QuillEditor.basic(
@@ -134,15 +136,12 @@ class _CanvasAreaState extends State<CanvasArea> {
                     scaleEnabled: _isCtrlPressed,
                     // Disable panning. Make avalible when using touch input?
                     panEnabled: false,
-                    // Aligns it to the top left corner
                     alignment: Alignment.topLeft,
-                    // Add minimum scale to allow zooming out to fit
+                    // Zoom out limit
                     minScale: 0.1,
-                    // Allow more zoom in if needed
+                    // Zoom in limit
                     maxScale: 4.0,
-                    // Constrain bounds to prevent excessive panning
-                    constrained: true,
-                    // Optional: add bound limits for panning
+                    // Margin around the canvas, visible when zoomed out (if not zero)
                     boundaryMargin: const EdgeInsets.all(0),
                     // Gesture Detector to handle taps for adding new content fields
                     child: GestureDetector(

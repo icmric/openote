@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
-import 'components/quill_content.dart';
 import 'components/canvas_area.dart';
 
 void main() {
