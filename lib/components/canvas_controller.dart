@@ -11,8 +11,6 @@ class CanvasController with ChangeNotifier {
   /// Controller for canvas transformations (zoom/pan)
   final TransformationController transformationController = TransformationController();
   
-  /// Tracks if control key is pressed for zoom functionality
-  bool isCtrlPressed = false;
 
   /// Currently focused QuillController, if any
   QuillController? _focusedQuillController;
@@ -28,16 +26,6 @@ class CanvasController with ChangeNotifier {
     }
   }
 
-  /// Initializes the canvas position
-  void initializeCanvas() {
-    try {
-      transformationController.value = Matrix4.identity()..translate(100, 100);
-    } catch (e) {
-      // Initial positioning can fail if canvas isn't ready
-      debugPrint("Canvas positioning deferred: $e");
-    }
-  }
-
   /// Adds a new content field at the specified position
   void addContentField(Offset position) {
     final focusNode = FocusNode();
@@ -46,6 +34,10 @@ class CanvasController with ChangeNotifier {
       initialPosition: position,
       maxWidth: 800,
       focusNode: focusNode,
+      quillController: controller,
+      onControllerFocus: (controller) {
+        focusedQuillController = controller;
+      },
       content: [
         Container(
           color: Colors.white,
@@ -59,12 +51,6 @@ class CanvasController with ChangeNotifier {
     _focusedQuillController = controller;
     contentFields.add(newField);
     focusNode.requestFocus();
-    notifyListeners();
-  }
-
-  /// Updates control key state for zoom functionality
-  void setCtrlPressed(bool pressed) {
-    isCtrlPressed = pressed;
     notifyListeners();
   }
 

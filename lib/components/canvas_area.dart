@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_quill/flutter_quill.dart';
 import 'canvas_controller.dart';
 import 'draggable_content_field.dart';
 
@@ -63,77 +62,6 @@ class CanvasAreaState extends State<CanvasArea> {
     _controller.dispose();
     super.dispose();
   }
-  /*
-  /// Handles keyboard events for Alt key detection
-  /// Always returns false, updates local variable instead
-  void _onKey(KeyEvent event) {
-    final keyPressed = event.logicalKey.keyLabel;
-
-    // If the pressed key is control, continue, otherwise ignore it
-    if (keyPressed == 'Control Left' || keyPressed == 'Control Right') {
-      // If control is being pressed, set the value to true
-      if (event is KeyDownEvent) {
-        _isCtrlPressed = true;
-      }
-      // If is being released, set it to false
-      if (event is KeyUpEvent) {
-        // Handle Alt key release
-        _isCtrlPressed = false;
-      }
-      // setState to reflect changes in SingleChildScrollViews and InteractiveViewer
-      setState(() {});
-    }
-  }
-
-  void addNewContentField(Offset position) {
-    FocusNode focusNode = FocusNode();
-    contentFields.add(DraggableContentField(
-      initialPosition: position,
-      maxWidth: 800,
-      focusNode: FocusNode(),
-      content: [
-        //Image.network('https://media.tenor.com/DOJSd6eNukMAAAAM/so-you%27re-telling-me-telling-me.gif'),
-        Container(
-          color: Colors.white,
-          child: QuillEditor.basic(
-            focusNode: focusNode,
-            controller: QuillController.basic(),
-          ),
-        ),
-      ],
-    ));
-    // Request focus for QuillEditor. Remove in the future or find better way of doing it as this will not always be a QuillEditor
-    setState(() {
-      focusNode.requestFocus();
-    });
-  }
-
-  /// Checks if the given position is inside any of the content fields
-  /// Returns true if the position is inside any of the content fields, false otherwise
-  ///
-  /// The position passed is a localPosition relative to the canvas area
-  bool _isPointInsideContentField(Offset localPosition) {
-    return contentFields.any(
-      (field) {
-        // Get the RenderBox of the content field
-        final RenderBox? renderBox = field.globalKey.currentContext?.findRenderObject() as RenderBox?;
-
-        if (renderBox == null) return false;
-
-        // Get the global position of the field
-        final fieldLocalPosition = renderBox.localToGlobal(Offset.zero);
-
-        // Get the size of the field
-        final fieldSize = renderBox.size;
-
-        // Check if the global tap position is within the field's bounds
-        return localPosition.dx >= fieldLocalPosition.dx &&
-            localPosition.dx <= fieldLocalPosition.dx + fieldSize.width &&
-            localPosition.dy >= fieldLocalPosition.dy &&
-            localPosition.dy <= fieldLocalPosition.dy + fieldSize.height;
-      },
-    );
-  } */
 
   @override
   Widget build(BuildContext context) {
@@ -141,9 +69,16 @@ class CanvasAreaState extends State<CanvasArea> {
       builder: (context, constraints) {
         return KeyboardListener(
           focusNode: focusNode,
+          // Requires autofocus to make sure events are captures even while a DraggabeContentField is focused
+          autofocus: true,
           onKeyEvent: (event) {
             if (event.logicalKey.keyLabel.contains('Control')) {
-              widget.controller.setCtrlPressed(event is KeyDownEvent);
+              if (event is KeyDownEvent) {
+                _isCtrlPressed = true;
+              } else if (event is KeyUpEvent) {
+                _isCtrlPressed = false;
+              }
+              setState(() {});
             }
           },
           child: Scrollbar(
@@ -184,8 +119,8 @@ class CanvasAreaState extends State<CanvasArea> {
                     boundaryMargin: const EdgeInsets.all(0),
                     child: GestureDetector(
                       // Handle tap events on the canvas
-                     onTapDown: widget.controller.handleTapDown,
-                        // TODO: Allow this to call a function passed to CanvasArea?
+                      onTapDown: widget.controller.handleTapDown,
+                      // TODO: Allow this to call a function passed to CanvasArea?
                       // Displays the canvas area (widget.child) and draggable content fields on top
                       child: Stack(
                         children: [

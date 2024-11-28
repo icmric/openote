@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 
 // *** NOT FINISHED ***
 // STILL TO DO
@@ -20,6 +21,10 @@ class DraggableContentField extends StatefulWidget {
   /// The FocusNode for managing focus. Primaraly used with QuillEditor
   final FocusNode focusNode;
 
+  final Function(QuillController)? onControllerFocus;
+
+  final QuillController? quillController; // Add this to store the controller
+
   /// The content to be displayed in the content field
   ///
   /// If left null, a QuillEditor will be added *** NOT IMPLEMENTED YET ***
@@ -34,6 +39,8 @@ class DraggableContentField extends StatefulWidget {
     required this.maxWidth,
     required this.focusNode,
     this.minWidth,
+    this.onControllerFocus,
+    this.quillController,
     this.content,
     super.key,
   });
@@ -124,7 +131,13 @@ class DraggableContentFieldState extends State<DraggableContentField> {
                 isDragging = false;
               });
             },
-            //behavior: HitTestBehavior.opaque,
+            onTap: () {
+              if (widget.quillController != null) {
+                setState(() {
+                  widget.onControllerFocus?.call(widget.quillController!);
+                });
+              }
+            },
             child: IntrinsicWidth(
               child: Column(
                 children: [
@@ -148,10 +161,15 @@ class DraggableContentFieldState extends State<DraggableContentField> {
                   // The main body of the content field
                   Container(
                     // Contraints allow for dynamic resizing
-                    constraints: BoxConstraints(minWidth: minWidth, maxWidth: maxWidth),
+                    constraints: BoxConstraints(
+                      minWidth: minWidth,
+                      maxWidth: maxWidth,
+                    ),
                     // Content field border
                     decoration: BoxDecoration(
-                      border: Border.all(color: isVisible ? Colors.black : Colors.transparent),
+                      border: Border.all(
+                        color: isVisible ? Colors.black : Colors.transparent,
+                      ),
                     ),
                     // Content
                     child: Column(
