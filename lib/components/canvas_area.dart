@@ -1,12 +1,17 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'draggable_content_field.dart';
 
 /// A widget that provides a scrollable and zoomable canvas area.
-/// Implements alt-key based switching between scroll and zoom modes.
+/// NOTE: This widget is not yet fully implemented and may not work as expected.
+/// Trackpad and touch input is not yet fully supported.
+/// 
+/// Scrollwheel to scroll vertically
+/// 
+/// Scrollwheel + Shift to scroll horizontally
+/// 
+/// Scrollwheel + Ctrl to zoom in and out
 class CanvasArea extends StatefulWidget {
   /// The child widget to be displayed within the canvas area
   final Widget child;
@@ -98,6 +103,33 @@ class _CanvasAreaState extends State<CanvasArea> {
     });
   }
 
+  /// Checks if the given position is inside any of the content fields
+  /// Returns true if the position is inside any of the content fields, false otherwise
+  ///
+  /// The position passed is a localPosition relative to the canvas area
+  bool _isPointInsideContentField(Offset localPosition) {
+    return contentFields.any(
+      (field) {
+        // Get the RenderBox of the content field
+        final RenderBox? renderBox = field.globalKey.currentContext?.findRenderObject() as RenderBox?;
+
+        if (renderBox == null) return false;
+
+        // Get the global position of the field
+        final fieldLocalPosition = renderBox.localToGlobal(Offset.zero);
+
+        // Get the size of the field
+        final fieldSize = renderBox.size;
+
+        // Check if the global tap position is within the field's bounds
+        return localPosition.dx >= fieldLocalPosition.dx &&
+            localPosition.dx <= fieldLocalPosition.dx + fieldSize.width &&
+            localPosition.dy >= fieldLocalPosition.dy &&
+            localPosition.dy <= fieldLocalPosition.dy + fieldSize.height;
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -143,17 +175,22 @@ class _CanvasAreaState extends State<CanvasArea> {
                     maxScale: 4.0,
                     // Margin around the canvas, visible when zoomed out (if not zero)
                     boundaryMargin: const EdgeInsets.all(0),
-                    // Gesture Detector to handle taps for adding new content fields
                     child: GestureDetector(
-                      // Handle tap events for position detection
+                      // Handle tap events on the canvas
                       onTapDown: (gestureDetails) {
-                        // TODO: Allow this to call a function passed to it?
-                        addNewContentField(gestureDetails.localPosition);
+                        // Check if the tap was on a content field or not. If it was on a content field, ignore it and move on
+                        // If not, add a new content field
+                        if (!_isPointInsideContentField(gestureDetails.globalPosition)) {
+                          addNewContentField(gestureDetails.localPosition);
+                        }
+                        // TODO: Allow this to call a function passed to CanvasArea?
                       },
                       // Displays the canvas area (widget.child) and draggable content fields on top
                       child: Stack(
                         children: [
                           widget.child,
+                          // I belive order of children determines which is on top (with the last one being on top)
+                          // When implementing a bring forwards/backwards feature, try just reordering the children??
                           ...contentFields,
                         ],
                       ),
