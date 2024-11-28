@@ -1,31 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart';
+import 'canvas_controller.dart';
 import 'draggable_content_field.dart';
 
 /// A widget that provides a scrollable and zoomable canvas area.
 /// NOTE: This widget is not yet fully implemented and may not work as expected.
 /// Trackpad and touch input is not yet fully supported.
-/// 
+///
 /// Scrollwheel to scroll vertically
-/// 
+///
 /// Scrollwheel + Shift to scroll horizontally
-/// 
+///
 /// Scrollwheel + Ctrl to zoom in and out
 class CanvasArea extends StatefulWidget {
   /// The child widget to be displayed within the canvas area
   final Widget child;
 
+  /// WRITE DOCUMENTATION
+  final CanvasController controller;
+
   const CanvasArea({
     super.key,
     required this.child,
+    required this.controller,
   });
 
   @override
-  State<CanvasArea> createState() => _CanvasAreaState();
+  State<CanvasArea> createState() => CanvasAreaState();
 }
 
-class _CanvasAreaState extends State<CanvasArea> {
+class CanvasAreaState extends State<CanvasArea> {
   // Controllers for handling vertical and horizontal scrolling
   final ScrollController _verticalController = ScrollController();
   final ScrollController _horizontalController = ScrollController();
@@ -58,7 +63,7 @@ class _CanvasAreaState extends State<CanvasArea> {
     _controller.dispose();
     super.dispose();
   }
-
+  /*
   /// Handles keyboard events for Alt key detection
   /// Always returns false, updates local variable instead
   void _onKey(KeyEvent event) {
@@ -128,7 +133,7 @@ class _CanvasAreaState extends State<CanvasArea> {
             localPosition.dy <= fieldLocalPosition.dy + fieldSize.height;
       },
     );
-  }
+  } */
 
   @override
   Widget build(BuildContext context) {
@@ -136,8 +141,10 @@ class _CanvasAreaState extends State<CanvasArea> {
       builder: (context, constraints) {
         return KeyboardListener(
           focusNode: focusNode,
-          onKeyEvent: (value) {
-            _onKey(value);
+          onKeyEvent: (event) {
+            if (event.logicalKey.keyLabel.contains('Control')) {
+              widget.controller.setCtrlPressed(event is KeyDownEvent);
+            }
           },
           child: Scrollbar(
             // Vertical scrollbar configuration
@@ -177,21 +184,15 @@ class _CanvasAreaState extends State<CanvasArea> {
                     boundaryMargin: const EdgeInsets.all(0),
                     child: GestureDetector(
                       // Handle tap events on the canvas
-                      onTapDown: (gestureDetails) {
-                        // Check if the tap was on a content field or not. If it was on a content field, ignore it and move on
-                        // If not, add a new content field
-                        if (!_isPointInsideContentField(gestureDetails.globalPosition)) {
-                          addNewContentField(gestureDetails.localPosition);
-                        }
+                     onTapDown: widget.controller.handleTapDown,
                         // TODO: Allow this to call a function passed to CanvasArea?
-                      },
                       // Displays the canvas area (widget.child) and draggable content fields on top
                       child: Stack(
                         children: [
                           widget.child,
                           // I belive order of children determines which is on top (with the last one being on top)
                           // When implementing a bring forwards/backwards feature, try just reordering the children??
-                          ...contentFields,
+                          ...widget.controller.contentFields,
                         ],
                       ),
                     ),

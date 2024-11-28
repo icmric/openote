@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
-// *** NOT IMPLEMENTED YET ***
+// *** NOT FINISHED ***
+// STILL TO DO
+// * Fix trackpad input (lock scrolling, unlock panning?)
+// * Fix touch input (same as above)
 
 /// Represents a draggable text field on the canvas.
 /// Users can drag, resize, and edit the text within these fields.
@@ -58,10 +61,22 @@ class DraggableContentFieldState extends State<DraggableContentField> {
     minWidth = widget.minWidth ?? 200;
     position = widget.initialPosition;
     _contentFieldKey = widget.globalKey;
+
+    // Add focus listener
+    widget.focusNode.addListener(_handleFocusChange);
+  }
+
+  void _handleFocusChange() {
+    if (!widget.focusNode.hasFocus && !isDragging) {
+      setState(() {
+        isVisible = false;
+      });
+    }
   }
 
   @override
   void dispose() {
+    widget.focusNode.removeListener(_handleFocusChange);
     super.dispose();
   }
 
@@ -109,7 +124,7 @@ class DraggableContentFieldState extends State<DraggableContentField> {
                 isDragging = false;
               });
             },
-            behavior: HitTestBehavior.opaque,
+            //behavior: HitTestBehavior.opaque,
             child: IntrinsicWidth(
               child: Column(
                 children: [
