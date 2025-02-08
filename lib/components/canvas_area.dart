@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart';
@@ -9,7 +7,14 @@ import 'draggable_content_field.dart';
 import 'package:fleather/fleather.dart';
 
 /// A widget that provides a scrollable and zoomable canvas area.
-/// Implements alt-key based switching between scroll and zoom modes.
+/// NOTE: This widget is not yet fully implemented and may not work as expected.
+/// Trackpad and touch input is not yet fully supported.
+///
+/// Scrollwheel to scroll vertically
+///
+/// Scrollwheel + Shift to scroll horizontally
+///
+/// Scrollwheel + Ctrl to zoom in and out
 class CanvasArea extends StatefulWidget {
   final Widget child;
   final Function(Offset position) onTapDown;
@@ -107,8 +112,17 @@ void addNewContentField(Offset position, FleatherController controller, FocusNod
       builder: (context, constraints) {
         return KeyboardListener(
           focusNode: focusNode,
-          onKeyEvent: (value) {
-            _onKey(value);
+          // Requires autofocus to make sure events are captures even while a DraggabeContentField is focused
+          autofocus: true,
+          onKeyEvent: (event) {
+            if (event.logicalKey.keyLabel.contains('Control')) {
+              if (event is KeyDownEvent) {
+                _isCtrlPressed = true;
+              } else if (event is KeyUpEvent) {
+                _isCtrlPressed = false;
+              }
+              setState(() {});
+            }
           },
           child: Scrollbar(
             // Vertical scrollbar configuration
@@ -146,7 +160,6 @@ void addNewContentField(Offset position, FleatherController controller, FocusNod
                     maxScale: 4.0,
                     // Margin around the canvas, visible when zoomed out (if not zero)
                     boundaryMargin: const EdgeInsets.all(0),
-                    // Gesture Detector to handle taps for adding new content fields
                     child: GestureDetector(
                       // Handle tap events for position detection
                       onTapDown: (gestureDetails) {
@@ -156,7 +169,9 @@ void addNewContentField(Offset position, FleatherController controller, FocusNod
                       child: Stack(
                         children: [
                           widget.child,
-                          ...contentFields,
+                          // I belive order of children determines which is on top (with the last one being on top)
+                          // When implementing a bring forwards/backwards feature, try just reordering the children??
+                          ...widget.controller.contentFields,
                         ],
                       ),
                     ),
