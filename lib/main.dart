@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'components/canvas_area.dart';
+import 'pages/notebook_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -32,37 +33,11 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  final canvas = CanvasArea(
-    child: Container(
-      width: 4000,
-      height: 3000,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Colors.red, Colors.blue, Colors.green, Colors.purple],
-        ),
-      ),
-    ),
-  );
-  final controller = QuillController.basic();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        title: Text(widget.title),
-      ),
-      body: //Column(
-          //children: [
-          //createQuillToolbar(controller),
-          CanvasArea(child: Image.network('https://www.nme.com/wp-content/uploads/2021/07/RickAstley2021.jpg')),
-      // Expanded(
-      //   child: createQuillEditor(controller),
-      // )
-      // ],
-      //),
+      body: NotebookPage(),
     );
   }
 }

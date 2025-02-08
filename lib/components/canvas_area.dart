@@ -3,24 +3,28 @@ import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart';
+import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
+import 'package:mosapad/components/image_embed.dart';
 import 'draggable_content_field.dart';
+import 'package:fleather/fleather.dart';
 
 /// A widget that provides a scrollable and zoomable canvas area.
 /// Implements alt-key based switching between scroll and zoom modes.
 class CanvasArea extends StatefulWidget {
-  /// The child widget to be displayed within the canvas area
   final Widget child;
+  final Function(Offset position) onTapDown;
 
   const CanvasArea({
     super.key,
     required this.child,
+    required this.onTapDown,
   });
 
   @override
-  State<CanvasArea> createState() => _CanvasAreaState();
+  State<CanvasArea> createState() => CanvasAreaState();
 }
 
-class _CanvasAreaState extends State<CanvasArea> {
+class CanvasAreaState extends State<CanvasArea> {
   // Controllers for handling vertical and horizontal scrolling
   final ScrollController _verticalController = ScrollController();
   final ScrollController _horizontalController = ScrollController();
@@ -37,6 +41,9 @@ class _CanvasAreaState extends State<CanvasArea> {
   // Draggable fields for content on the canvas
   // TODO remove from here??
   List<DraggableContentField> contentFields = [];
+
+  FleatherController? activeController;
+  final ValueNotifier<FleatherController?> activeControllerNotifier = ValueNotifier<FleatherController?>(null);
 
   @override
   void initState() {
@@ -75,26 +82,22 @@ class _CanvasAreaState extends State<CanvasArea> {
     }
   }
 
-  void addNewContentField(Offset position) {
-    FocusNode focusNode = FocusNode();
-    contentFields.add(DraggableContentField(
-      initialPosition: position,
-      maxWidth: 800,
-      focusNode: FocusNode(),
-      content: [
-        //Image.network('https://media.tenor.com/DOJSd6eNukMAAAAM/so-you%27re-telling-me-telling-me.gif'),
-        Container(
-          color: Colors.white,
-          child: QuillEditor.basic(
-            focusNode: focusNode,
-            controller: QuillController.basic(),
-          ),
-        ),
-      ],
-    ));
-    // Request focus for QuillEditor. Remove in the future or find better way of doing it as this will not always be a QuillEditor
+void addNewContentField(Offset position, FleatherController controller, FocusNode focusNode) {
     setState(() {
-      focusNode.requestFocus();
+      contentFields.add(DraggableContentField(
+        initialPosition: position,
+        maxWidth: 800,
+        focusNode: focusNode,
+        content: [
+          Container(
+            color: Colors.white,
+            child: FleatherEditor(
+              controller: controller,
+              focusNode: focusNode,
+            ),
+          ),
+        ],
+      ));
     });
   }
 
@@ -147,8 +150,7 @@ class _CanvasAreaState extends State<CanvasArea> {
                     child: GestureDetector(
                       // Handle tap events for position detection
                       onTapDown: (gestureDetails) {
-                        // TODO: Allow this to call a function passed to it?
-                        addNewContentField(gestureDetails.localPosition);
+                        widget.onTapDown(gestureDetails.localPosition);
                       },
                       // Displays the canvas area (widget.child) and draggable content fields on top
                       child: Stack(

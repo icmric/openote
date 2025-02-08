@@ -49,6 +49,7 @@ class DraggableContentFieldState extends State<DraggableContentField> {
     content = widget.content ?? [];
     maxWidth = widget.maxWidth;
     minWidth = widget.minWidth ?? 200;
+    position = widget.initialPosition;
   }
 
   @override
