@@ -47,6 +47,7 @@ dependencies:
   flutter_markdown: ^0.7.6+1
   markdown: ^7.3.0
   fleather: ^1.19.0
+  rename: ^3.0.2
 
 dev_dependencies:
   flutter_test:
