@@ -1,46 +1,30 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_quill/flutter_quill.dart';
 
-// *** NOT FINISHED ***
-// STILL TO DO
-// * Fix trackpad input (lock scrolling, unlock panning?)
-// * Fix touch input (same as above)
+// *** NOT IMPLEMENTED YET ***
 
 /// Represents a draggable text field on the canvas.
 /// Users can drag, resize, and edit the text within these fields.
 class DraggableContentField extends StatefulWidget {
   /// The initial position of the content field
   final Offset initialPosition;
-
   /// The minimum width of the content field
   final double? minWidth;
-
   /// The maximum width the content field can expand to
   final double maxWidth;
-
   /// The FocusNode for managing focus. Primaraly used with QuillEditor
   final FocusNode focusNode;
-
-  final Function(QuillController)? onControllerFocus;
-
-  final QuillController? quillController; // Add this to store the controller
-
   /// The content to be displayed in the content field
-  ///
+  /// 
   /// If left null, a QuillEditor will be added *** NOT IMPLEMENTED YET ***
-  ///
+  /// 
   /// Can accept any widgets and will be rendered in a column
   final List<Widget>? content;
 
-  final GlobalKey globalKey = GlobalKey();
-
-  DraggableContentField({
+  const DraggableContentField({
     required this.initialPosition,
     required this.maxWidth,
     required this.focusNode,
     this.minWidth,
-    this.onControllerFocus,
-    this.quillController,
     this.content,
     super.key,
   });
@@ -56,7 +40,6 @@ class DraggableContentFieldState extends State<DraggableContentField> {
   double minWidth = 200; // Minimum width of the text field.
   Offset position = Offset(0, 0); // Current position of the text field.
   late List<Widget> content;
-  late GlobalKey _contentFieldKey;
 
   @override
   void initState() {
@@ -71,7 +54,6 @@ class DraggableContentFieldState extends State<DraggableContentField> {
 
   @override
   void dispose() {
-    widget.focusNode.removeListener(_handleFocusChange);
     super.dispose();
   }
 
@@ -98,74 +80,63 @@ class DraggableContentFieldState extends State<DraggableContentField> {
             });
           }
         },
-        child: Container(
-          key: _contentFieldKey,
-          child: GestureDetector(
-            // On Field Drag Start
-            onPanStart: (_) {
-              setState(() {
-                isDragging = true;
-              });
-            },
-            // On Field Drag
-            onPanUpdate: (details) {
-              setState(() {
-                position += details.delta;
-              });
-            },
-            // On Field Drag End
-            onPanEnd: (details) {
-              setState(() {
-                isDragging = false;
-              });
-            },
-            onTap: () {
-              if (widget.quillController != null) {
-                setState(() {
-                  widget.onControllerFocus?.call(widget.quillController!);
-                });
-              }
-            },
-            child: IntrinsicWidth(
-              child: Column(
-                children: [
-                  // Bar ontop of the field used to drag the field around
-                  Container(
-                    height: 15,
-                    padding: const EdgeInsets.all(0),
-                    color: isVisible ? Colors.grey : Colors.transparent,
-                    alignment: Alignment.center,
-                    child: isVisible
-                        ? const Text(
-                            '...',
-                            strutStyle: StrutStyle(
-                              forceStrutHeight: true,
-                              height: 0.1,
-                            ),
-                            style: TextStyle(color: Colors.white, fontSize: 15),
-                          )
-                        : null,
+        child: GestureDetector(
+          // On Field Drag Start
+          onPanStart: (_) {
+            setState(() {
+              isDragging = true;
+            });
+          },
+          // On Field Drag
+          onPanUpdate: (details) {
+            setState(() {
+              position += details.delta;
+            });
+          },
+          // On Field Drag End
+          onPanEnd: (details) {
+            setState(() {
+              isDragging = false;
+            });
+          },
+          // This is required to catch and handle a tap event on the content field
+          // Without it, the tap event is passed on to the parent widget where it is delt with (i.e. creating a new field)
+          // Should in theory be able to impelemnt some functionality here with it, however it has been left empty for now as it isnt required
+          onTap: () => null,
+          child: IntrinsicWidth(
+            child: Column(
+              children: [
+                // Bar ontop of the field used to drag the field around
+                Container(
+                  height: 15,
+                  padding: const EdgeInsets.all(0),
+                  color: isVisible ? Colors.grey : Colors.transparent,
+                  alignment: Alignment.center,
+                  child: isVisible
+                      ? const Text(
+                          '...',
+                          strutStyle: StrutStyle(
+                            forceStrutHeight: true,
+                            height: 0.1,
+                          ),
+                          style: TextStyle(color: Colors.white, fontSize: 15),
+                        )
+                      : null,
+                ),
+                // The main body of the content field
+                Container(
+                  // Contraints allow for dynamic resizing
+                  constraints: BoxConstraints(minWidth: minWidth, maxWidth: maxWidth),
+                  // Content field border
+                  decoration: BoxDecoration(
+                    border: Border.all(color: isVisible ? Colors.black : Colors.transparent),
                   ),
-                  // The main body of the content field
-                  Container(
-                    // Contraints allow for dynamic resizing
-                    constraints: BoxConstraints(
-                      minWidth: minWidth,
-                      maxWidth: maxWidth,
-                    ),
-                    // Content field border
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: isVisible ? Colors.black : Colors.transparent,
-                      ),
-                    ),
-                    // Content
-                    child: Column(
-                      children: [...content],
-                    ),
+                  // Content
+                  child: Column(
+                    children: [...content],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
