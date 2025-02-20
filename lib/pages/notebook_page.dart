@@ -1,7 +1,7 @@
 import 'package:fleather/fleather.dart';
 import 'package:flutter/material.dart';
 import '../components/toolbar.dart';
-import '../components/canvas_area.dart';
+import '../components/canvas.dart';
 
 class NotebookPage extends StatefulWidget {
   const NotebookPage({super.key});
@@ -33,9 +33,6 @@ class NotebookPageState extends State<NotebookPage> {
         }
       }
     });
-
-    textControllers.add(controller);
-    _canvasKey.currentState?.addNewContentField(position, controller, focusNode);
   }
 
   @override

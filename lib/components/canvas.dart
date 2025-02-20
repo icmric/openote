@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
-import 'package:mosapad/components/image_embed.dart';
 import 'draggable_content_field.dart';
 import 'package:fleather/fleather.dart';
 
@@ -42,9 +41,6 @@ class CanvasAreaState extends State<CanvasArea> {
   // TODO remove from here??
   List<DraggableContentField> contentFields = [];
 
-  FleatherController? activeController;
-  final ValueNotifier<FleatherController?> activeControllerNotifier = ValueNotifier<FleatherController?>(null);
-
   @override
   void initState() {
     super.initState();
@@ -80,25 +76,6 @@ class CanvasAreaState extends State<CanvasArea> {
       // setState to reflect changes in SingleChildScrollViews and InteractiveViewer
       setState(() {});
     }
-  }
-
-void addNewContentField(Offset position, FleatherController controller, FocusNode focusNode) {
-    setState(() {
-      contentFields.add(DraggableContentField(
-        initialPosition: position,
-        maxWidth: 800,
-        focusNode: focusNode,
-        content: [
-          Container(
-            color: Colors.white,
-            child: FleatherEditor(
-              controller: controller,
-              focusNode: focusNode,
-            ),
-          ),
-        ],
-      ));
-    });
   }
 
   @override

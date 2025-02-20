@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
-import 'components/canvas_area.dart';
+import 'components/canvas.dart';
 import 'pages/notebook_page.dart';
 
 void main() {
