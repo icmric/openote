@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
+enum PageBackgroundType {
+  none,
+  solidColor,
+  canvasGrid,
+}
+
 class Notebook {
   /// Unique identifier for the notebook (Auto generated)
   String uuid;
@@ -14,8 +20,8 @@ class Notebook {
   /// Colour of the icon for the notebook
   String iconColour;
 
-  /// List of sections in the notebook
-  List<Section> sections;
+  /// List of chapters in the notebook
+  List<Chapter> chapters;
 
   /// List of groups in the notebook
   List<Group> groups;
@@ -24,24 +30,8 @@ class Notebook {
     required this.name,
     required this.createdAt,
     required this.iconColour,
-    this.sections = const [],
-    this.groups = const [],
-  }) : uuid = const Uuid().v4();
-}
-
-class Section {
-  /// Unique identifier for the section (Auto generated)
-  String uuid;
-
-  /// Name of the section
-  String name;
-
-  /// List of chapters in the section
-  List<Chapter> chapters;
-
-  Section({
-    required this.name,
     this.chapters = const [],
+    this.groups = const [],
   }) : uuid = const Uuid().v4();
 }
 
@@ -52,12 +42,16 @@ class Group {
   /// Name of the group
   String name;
 
+  /// Colour of the icon for the group
+  String groupColour;
+
   /// List of sections in the group
-  List<Section> sections;
+  List<Chapter> chapters;
 
   Group({
     required this.name,
-    this.sections = const [],
+    required this.groupColour,
+    this.chapters = const [],
   }) : uuid = const Uuid().v4();
 }
 
@@ -68,11 +62,15 @@ class Chapter {
   /// Name of the chapter
   String name;
 
+  /// Colour of the icon for the chapter
+  String chapterColour;
+
   /// List of pages in the chapter
   List<Page> pages;
 
   Chapter({
     required this.name,
+    required this.chapterColour,
     this.pages = const [],
   }) : uuid = const Uuid().v4();
 }
@@ -93,12 +91,44 @@ class Page {
   /// List of content fields in the page
   List<DraggableContentField> contentFields;
 
+  /// List of tags for the page
+  List<String>? tags;
+
+  /// Background type of the page using the PageBackgroundType enum
+  PageBackgroundType backgroundType;
+
+  /// Background colour of the page
+  Color? backgroundColor;
+
+  /// Height of the page
+  double? pageWidth;
+
+  /// width of the page
+  double? pageHeight;
+
+  /// Current view state of the page
+  ViewState? viewState;
+
   Page({
     required this.title,
     required this.createdAt,
     required this.lastModifiedAt,
     this.contentFields = const [],
+    this.tags,
+    this.backgroundType = PageBackgroundType.none,
+    this.backgroundColor,
+    this.pageWidth,
+    this.pageHeight,
+    this.viewState,
   }) : uuid = const Uuid().v4();
+}
+
+class ViewState {
+  double? zoomLevel;
+  double? scrollOffsetX;
+  double? scrollOffsetY;
+
+  ViewState({this.zoomLevel, this.scrollOffsetX, this.scrollOffsetY});
 }
 
 class DraggableContentField {
