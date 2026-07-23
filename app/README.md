@@ -2,7 +2,70 @@
 
 The walking-skeleton MVP of Openote: a runnable, **pure-Dart** slice of the full architecture. It creates real `.onote` files per the [File Format Spec](../docs/specs/10-file-format-spec.md), operating in the spec's documented **mirror-write mode** (§4) until the Rust core lands — so nothing about your notebooks changes when it does.
 
-## What works in this cut (iteration 5 — MVP polish)
+## What works in this cut (iteration 10)
+
+- **App icon, reliably:** copy `build/app_icon.ico` → `windows/runner/resources/app_icon.ico`, `flutter clean`, rebuild (see note below).
+- **Auto-width fixed** — boxes now widen *before* text reaches the edge (no clipping), still locking on manual resize.
+- **Full colour picker** — split button: click applies current colour, arrow opens the picker (palette grid, your recent/custom colours persisted, hue + saturation/value field, RGBA sliders incl. alpha, hex entry). Ctrl+Shift+C stays as a shortcut only.
+- **System fonts** — the font button now lists your *installed* fonts (parsed from the OS font folders), searchable, each previewed in its own face.
+- **Remembers your place** — per-page scroll & zoom survive flicking between pages, and the app reopens exactly where you closed it (notebook, page, view).
+- **Version history** — automatic snapshots (~10 min apart, 30 kept) per page; right-click a page ▸ Version history to restore.
+- **Page templates** — right-click a page ▸ Save as template; Insert ▸ Template applies one.
+- **Faster** — ink strokes are no longer JSON-decoded every frame (cached + isolated repaint layer); UI latency budgets are now in the style guide (§7a.6).
+
+No new runtime dependencies (`flutter_launcher_icons` in dev-deps is optional now) — but run **`flutter pub get`** anyway after replacing pubspec.
+
+## What worked as of iteration 9
+
+> **App icon (reliable method):** copy **`build/app_icon.ico`** over **`windows/runner/resources/app_icon.ico`** (the file `flutter create` generated), then run **`flutter clean`** and rebuild. That resource IS the window/taskbar/exe icon on Windows, so this cannot miss. (`dart run flutter_launcher_icons` does the same thing via tooling; the manual copy works even when the tool's config doesn't take. Windows Explorer aggressively caches icons — if the *old* icon lingers on the .exe in Explorer, that's the icon cache, not the build.)
+
+- **App icon** — the design-doc logo (ink "O" + brass nib) is now the app icon, via `flutter_launcher_icons`.
+- **Formatting buttons fixed** — the Home-tab formatting no longer greys out when you click back into a box.
+- **Text boxes auto-size** — a new box grows in width with your text up to a comfortable max, then wraps; drag the right-edge handle (now grabbable while editing) to lock a custom width.
+- **Text colour + font** — colour a selection from the Home tab (or long-press the swatch to pick); **Ctrl+Shift+C** flicks the selection between your last colour and default. Box-level font (sans/serif/mono).
+- **Insert into the current box** — Insert ▸ Page link drops the link at your cursor when you're editing a box (instead of making a new one).
+- **Code Tab indent** — Tab in a code block inserts spaces instead of moving focus.
+- **Table navigation** — Tab/Shift+Tab between cells, arrow keys move (caret-aware left/right), Enter adds/moves to the next row, Ctrl+Enter is a line break.
+- **Seamless page + zoom-out placement** — the page is one continuous surface at every zoom; zoom out and you can drop a box anywhere in the margin (it extends the page; unused space snaps back). Horizontal scroll stays constrained to your content.
+- **Title-first flow** — a new page puts the cursor in the title; press Enter to jump straight into the first text box. Background lines no longer run over the title.
+
+## What worked as of iteration 8 (Phase 2 features)
+
+- **Horizontal scroll:** hold **Shift** and use the wheel to scroll the page sideways (OneNote parity).
+- **Tables** (Insert ▸ Table, or right-click canvas): editable cells with add/remove row & column; exports as a GitHub-flavored Markdown table.
+- **Recycle bin** (trash icon at the bottom of the sidebar): deleting a section/page now soft-deletes it and its subtree; restore brings it (and its parents) back, or delete permanently.
+- **Backlinks panel** (the tree icon in the command bar): shows pages that link *to* the current page and the pages it links *out* to, both clickable. Links are indexed on save.
+
+No new dependencies — no `pub get` needed.
+
+## What worked as of iteration 7 (Phase 2 UI overhaul)
+
+The clunky single-row toolbar is gone, replaced by a **tabbed command bar** — OneNote's few-clicks accessibility in Openote's calm style:
+
+- **Home** — undo/redo + live formatting that acts on your selection: bold (Ctrl+B), italic (Ctrl+I), strike, inline code, highlight, H1/H2/H3, bullet/numbered/checkbox lists, quote. Buttons enable when you're in a text or code box.
+- **Insert** — text box, equation, code, image, file, page link.
+- **Draw** — tools, per-tool colors, pen size (with a "Done" chip on the tab row to hop back to Select from anywhere).
+- **View** — page backgrounds, snap toggle, zoom controls with %, zoom-to-fit, and a **theme switcher** (Auto/Light/Dark).
+- **Right-click menus everywhere**: on a block — edit, copy/cut, duplicate, bring-to-front/send-to-back, delete; on empty canvas — new text/equation here, paste, backgrounds.
+- **Block clipboard**: Ctrl+C/X/V copies, cuts, and pastes whole blocks (with fresh IDs per the data-model spec); works from the context menus too.
+- Review fixes: blocks now **paint in z-order** (so front/back actually works), and repeated drag-to-subpage drops no longer collide.
+
+No new dependencies — no `pub get` needed.
+
+## What worked as of iteration 6
+
+The big one: **live-Markdown editing.** While you type, Markdown now formats in real time — finish `**bold**` and the text goes bold with the `*` markers collapsing away; move the caret back in and they reveal so you can edit them (Obsidian-style). Built as a custom `LiveMarkdownController` with a coverage-verification safety net, so a parse slip can never corrupt text. Also this cut:
+
+- **Fixed the missing-keys bug.** Letter keys (V/T/P/H/E and others) were being swallowed by global shortcuts — a known Flutter desktop issue where bare-letter `Shortcuts` shadow text fields. Keyboard handling was rewritten to detect a focused field and only ever grab Escape then; every other key flows to your text.
+- **VS Code-style wrap:** select text and press `(` `[` `{` `"` `'` `` ` `` `*` `_` `~` `=` `<` to wrap the selection instead of replacing it.
+- **Images:** no more hover flicker (cached provider + gapless playback), and drag the right-edge handle to resize proportionally.
+- **Collapsible hierarchy:** collapse section groups, sections, *and* pages-with-subpages (chevrons in the sidebar) — fold your notebook down to just what you need.
+- **Seamless page:** at normal zoom the page fills the window as one continuous surface; zoom out below ~85% and it becomes a bounded sheet on the backdrop (canvas on demand).
+- **Snap-to-grid on by default**, but the grid is invisible until you start dragging a block, then a faint alignment grid appears. Dropping a box near the left tucks it to the writing margin.
+
+No new dependencies — no `pub get` needed.
+
+## What worked as of iteration 5 (MVP polish)
 
 Iteration 5 closes the remaining MVP gaps: **code syntax highlighting** (dependency-free, ~15 languages), **clickable page links** (`[[Page|id]]` wiki-links — Insert ▸ Link to page, or type them; click to navigate, resolved by stable ID), **palm rejection** (with a pen/stylus the finger pans & pinch-zooms while only the pen draws — OneNote's default), and an **accessibility pass** (blocks, title, and controls expose labels to screen readers). No new dependencies — no `pub get` needed.
 

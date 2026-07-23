@@ -1,6 +1,6 @@
-^C:\SRC\OPENOTE-MVP\OPENOTE\APP\WINDOWS\RUNNER\CMAKELISTS.TXT
+^C:\SRC\OPENOTE\APP\WINDOWS\RUNNER\CMAKELISTS.TXT
 setlocal
-"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote-mvp/openote/app/windows -BC:/src/openote-mvp/openote/app/build/windows/x64 --check-stamp-file C:/src/openote-mvp/openote/app/build/windows/x64/runner/CMakeFiles/generate.stamp
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote/app/windows -BC:/src/openote/app/build/windows/x64 --check-stamp-file C:/src/openote/app/build/windows/x64/runner/CMakeFiles/generate.stamp
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone

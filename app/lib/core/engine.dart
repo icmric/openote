@@ -1,8 +1,14 @@
 /// The seam where the Rust core (onote-core: Loro CRDT via flutter_rust_bridge,
-/// ADR-0002) will slot in. Until then, [MirrorEngine] implements the same
-/// interface in pure Dart using the File Format Spec's documented
-/// "mirror-write mode" (§4). The app depends ONLY on [DocumentEngine];
-/// swapping engines must not touch UI or repository call sites.
+/// ADR-0002) will slot in. The crate exists at `rust/onote_core` and is now
+/// **linked at runtime over `dart:ffi`** (see `core/onote_ffi.dart`): when the
+/// native library is present the app calls into Rust for the page-mirror
+/// **merge** and content **hash** (the latter runs on every save today), and
+/// the status bar shows the active engine; when it's absent everything falls
+/// back to this pure-Dart [MirrorEngine], which implements the same interface
+/// using the File Format Spec's documented "mirror-write mode" (§4). The next
+/// step is a `RustEngine` implementing [DocumentEngine] end-to-end; because the
+/// app depends ONLY on [DocumentEngine], swapping engines never touches UI or
+/// repository call sites.
 library;
 
 import '../model/models.dart';

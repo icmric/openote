@@ -64,13 +64,16 @@ class OpenoteApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Openote',
-      debugShowCheckedModeBanner: false,
-      theme: onoteTheme(Brightness.light),
-      darkTheme: onoteTheme(Brightness.dark),
-      themeMode: ThemeMode.system,
-      home: AppShell(app: app),
+    return ListenableBuilder(
+      listenable: app,
+      builder: (context, _) => MaterialApp(
+        title: 'Openote',
+        debugShowCheckedModeBanner: false,
+        theme: onoteTheme(Brightness.light),
+        darkTheme: onoteTheme(Brightness.dark),
+        themeMode: app.themeMode, // View tab: Auto / Light / Dark
+        home: AppShell(app: app),
+      ),
     );
   }
 }

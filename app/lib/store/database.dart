@@ -28,6 +28,16 @@ Database openOnote(String path, {required String notebookId, required String tit
       throw StateError('Notebook format v$ver is newer than this app supports.');
     }
   }
+  // Idempotent migrations for optional tables (run on every open so
+  // notebooks created by earlier builds gain them too).
+  db.execute('''
+    CREATE TABLE IF NOT EXISTS page_versions (
+      page_id TEXT NOT NULL,
+      version_at INTEGER NOT NULL,
+      snapshot BLOB NOT NULL,
+      label TEXT,
+      PRIMARY KEY (page_id, version_at));
+  ''');
   return db;
 }
 

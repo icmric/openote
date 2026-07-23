@@ -1,4 +1,4 @@
-# Install script for directory: C:/src/openote-mvp/openote/app/windows/flutter
+# Install script for directory: C:/src/openote/app/windows/flutter
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

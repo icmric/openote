@@ -1,13 +1,13 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="16.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <CustomBuild Include="C:\src\openote-mvp\openote\app\build\windows\x64\CMakeFiles\6cec00db629e575030687cba21a83d70\INSTALL_force.rule">
+    <CustomBuild Include="C:\src\openote\app\build\windows\x64\CMakeFiles\a28d08d9d5a267af3ba2816aeb58f65c\INSTALL_force.rule">
       <Filter>CMake Rules</Filter>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="CMake Rules">
-      <UniqueIdentifier>{A73C8FC3-D15F-3FC7-81E3-BD6BFDCABA23}</UniqueIdentifier>
+      <UniqueIdentifier>{C2FA5A6F-E2B9-36AB-A424-86E08C790637}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

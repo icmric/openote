@@ -60,6 +60,14 @@ class _PageTitleViewState extends State<PageTitleView> {
     final page = _page;
     if (page == null) return const SizedBox.shrink();
 
+    // New page → drop the cursor straight into the title (OneNote behaviour).
+    if (!_editing && widget.app.pendingTitleEdit == page.id) {
+      widget.app.pendingTitleEdit = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startEdit();
+      });
+    }
+
     final titleColor = dark ? OnoteColors.moon0 : OnoteColors.graphite900;
     final titleStyle = TextStyle(
       fontSize: 26,
@@ -86,7 +94,11 @@ class _PageTitleViewState extends State<PageTitleView> {
                 border: InputBorder.none,
                 hintText: 'Page title',
               ),
-              onSubmitted: (_) => _commit(),
+              onSubmitted: (_) {
+                _commit();
+                // Enter from the title → straight into the first body box.
+                widget.app.startBodyFromTitle();
+              },
               onTapOutside: (_) {
                 if (_editing) _commit();
               },

@@ -5,78 +5,174 @@ import '../canvas/page_canvas.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'command_bar.dart';
 import 'sidebar.dart';
-import 'toolbar.dart';
 
 /// Layout per style guide §5.4: navigator | (toolbar / canvas-as-hero / status).
-/// Keyboard shortcuts live here; letter shortcuts are guarded so they never
-/// fire while a text field is being edited.
-class AppShell extends StatelessWidget {
+///
+/// Keyboard handling uses a global HardwareKeyboard handler rather than
+/// widget-tree Shortcuts. This is deliberate: on desktop, Flutter's
+/// EditableText inserts printable characters via the text-input channel and
+/// does NOT consume the raw KeyDownEvent, so ancestor `Shortcuts` with
+/// bare-letter activators (V/T/P/H/E …) *shadow* text fields — the exact bug
+/// that made those letters untypeable. Here we detect whether a text field is
+/// focused and, if so, handle only Escape and let every other key through.
+class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.app});
   final AppState app;
 
-  /// True whenever a text field may own the keyboard (block editor, page
-  /// title, or find bar) — letter shortcuts must never fire then.
-  bool get _typing =>
-      app.editingBlockId != null || app.findOpen || app.titleEditing;
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
 
-  Map<ShortcutActivator, VoidCallback> _bindings(BuildContext context) => {
-        // Tools (guarded)
-        const SingleActivator(LogicalKeyboardKey.keyV): () {
-          if (!_typing) app.setTool(Tool.select);
-        },
-        const SingleActivator(LogicalKeyboardKey.keyT): () {
-          if (!_typing) app.setTool(Tool.text);
-        },
-        const SingleActivator(LogicalKeyboardKey.keyP): () {
-          if (!_typing) app.setTool(Tool.pen);
-        },
-        const SingleActivator(LogicalKeyboardKey.keyH): () {
-          if (!_typing) app.setTool(Tool.highlighter);
-        },
-        const SingleActivator(LogicalKeyboardKey.keyE): () {
-          if (!_typing) app.setTool(Tool.eraser);
-        },
-        // Block ops (guarded)
-        const SingleActivator(LogicalKeyboardKey.delete): () {
-          if (!_typing && app.selectedIds.isNotEmpty) {
-            app.removeSelected();
-          }
-        },
-        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
-          app.toggleFind();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyD, control: true): () {
-          if (!_typing && app.selectedBlockId != null) {
-            app.duplicateBlock(app.selectedBlockId!);
-          }
-        },
-        const SingleActivator(LogicalKeyboardKey.escape): () {
-          if (app.findOpen) {
-            app.toggleFind();
-          } else {
-            app.select(null);
-          }
-        },
-        // History (guarded — text fields have their own undo)
-        const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () {
-          if (!_typing) app.undo();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyY, control: true): () {
-          if (!_typing) app.redo();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyZ,
-            control: true, shift: true): () {
-          if (!_typing) app.redo();
-        },
-        // Zoom (always available)
-        const SingleActivator(LogicalKeyboardKey.equal, control: true): () =>
-            app.canvas.setZoom(app.canvas.scale * 1.2),
-        const SingleActivator(LogicalKeyboardKey.minus, control: true): () =>
-            app.canvas.setZoom(app.canvas.scale / 1.2),
-        const SingleActivator(LogicalKeyboardKey.digit0, control: true): () =>
-            app.canvas.reset(),
-      };
+class _AppShellState extends State<AppShell> {
+  AppState get app => widget.app;
+
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    super.dispose();
+  }
+
+  /// True when a real text field (block editor, page title, find, or any
+  /// dialog field) currently owns the keyboard.
+  bool _editableFocused() {
+    final ctx = FocusManager.instance.primaryFocus?.context;
+    if (ctx == null) return false;
+    if (ctx.widget is EditableText) return true;
+    var found = false;
+    ctx.visitAncestorElements((e) {
+      if (e.widget is EditableText) {
+        found = true;
+        return false;
+      }
+      return true;
+    });
+    return found;
+  }
+
+  bool _onKey(KeyEvent e) {
+    if (e is! KeyDownEvent) return false;
+    final k = e.logicalKey;
+    final editable = _editableFocused();
+    final ctrl = HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed;
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+
+    // Escape: close find / exit our editors / clear selection. Gated on our
+    // own state so a dialog's own Escape-to-cancel still works.
+    if (k == LogicalKeyboardKey.escape) {
+      if (app.findOpen) {
+        app.toggleFind();
+        return true;
+      }
+      if (app.editingBlockId != null || app.titleEditing) {
+        FocusManager.instance.primaryFocus?.unfocus();
+        app.select(null);
+        return true;
+      }
+      if (!editable && app.selectedIds.isNotEmpty) {
+        app.select(null);
+        return true;
+      }
+      return false;
+    }
+
+    // While typing: allow only formatting accelerators; everything else
+    // flows to the field untouched.
+    if (editable) {
+      if (ctrl && app.activeEditor != null) {
+        if (k == LogicalKeyboardKey.keyB) {
+          app.wrapSelection('**');
+          return true;
+        }
+        if (k == LogicalKeyboardKey.keyI) {
+          app.wrapSelection('*');
+          return true;
+        }
+        // Ctrl+Shift+C — flick the selection to the last colour and back.
+        if (shift && k == LogicalKeyboardKey.keyC) {
+          app.toggleTextColor();
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (ctrl) {
+      if (k == LogicalKeyboardKey.keyC) {
+        if (app.selectedIds.isEmpty) return false;
+        app.copySelectedBlocks();
+        return true;
+      }
+      if (k == LogicalKeyboardKey.keyX) {
+        if (app.selectedIds.isEmpty) return false;
+        app.cutSelectedBlocks();
+        return true;
+      }
+      if (k == LogicalKeyboardKey.keyV) {
+        if (!app.canPasteBlocks) return false;
+        app.pasteBlocks();
+        return true;
+      }
+      if (k == LogicalKeyboardKey.keyF) {
+        app.toggleFind();
+        return true;
+      }
+      if (k == LogicalKeyboardKey.keyZ && !shift) {
+        app.undo();
+        return true;
+      }
+      if ((k == LogicalKeyboardKey.keyZ && shift) ||
+          k == LogicalKeyboardKey.keyY) {
+        app.redo();
+        return true;
+      }
+      if (k == LogicalKeyboardKey.keyD) {
+        final s = app.selectedBlockId;
+        if (s != null) app.duplicateBlock(s);
+        return true;
+      }
+      if (k == LogicalKeyboardKey.equal || k == LogicalKeyboardKey.add) {
+        app.canvas.setZoom(app.canvas.scale * 1.2);
+        return true;
+      }
+      if (k == LogicalKeyboardKey.minus) {
+        app.canvas.setZoom(app.canvas.scale / 1.2);
+        return true;
+      }
+      if (k == LogicalKeyboardKey.digit0) {
+        app.canvas.reset();
+        return true;
+      }
+      return false;
+    }
+
+    // Bare keys — only reached when no text field is focused.
+    if (k == LogicalKeyboardKey.keyV) return _tool(Tool.select);
+    if (k == LogicalKeyboardKey.keyT) return _tool(Tool.text);
+    if (k == LogicalKeyboardKey.keyP) return _tool(Tool.pen);
+    if (k == LogicalKeyboardKey.keyH) return _tool(Tool.highlighter);
+    if (k == LogicalKeyboardKey.keyE) return _tool(Tool.eraser);
+    if (k == LogicalKeyboardKey.delete || k == LogicalKeyboardKey.backspace) {
+      if (app.selectedIds.isNotEmpty) {
+        app.removeSelected();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _tool(Tool t) {
+    app.setTool(t);
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -84,33 +180,38 @@ class AppShell extends StatelessWidget {
       listenable: app,
       builder: (context, _) {
         final page = app.nodes.where((n) => n.id == app.pageId).firstOrNull;
-        return CallbackShortcuts(
-          bindings: _bindings(context),
-          child: Focus(
-            autofocus: true,
-            child: Scaffold(
-              body: Row(
-                children: [
-                  Sidebar(app: app),
-                  const VerticalDivider(width: 1),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        OnoteToolbar(app: app),
-                        if (app.findOpen) _FindBar(app: app),
-                        if (page != null) _PageHeader(app: app, page: page),
-                        Expanded(
-                          child: page == null
-                              ? _EmptyState(app: app)
-                              : PageCanvas(key: ValueKey(app.pageId), state: app),
-                        ),
-                        _StatusBar(app: app),
-                      ],
+        return Scaffold(
+          body: Row(
+            children: [
+              Sidebar(app: app),
+              const VerticalDivider(width: 1),
+              Expanded(
+                child: Column(
+                  children: [
+                    CommandBar(app: app),
+                    if (app.findOpen) _FindBar(app: app),
+                    if (page != null) _PageHeader(app: app, page: page),
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: page == null
+                                ? _EmptyState(app: app)
+                                : PageCanvas(
+                                    key: ValueKey(app.pageId), state: app),
+                          ),
+                          if (app.showLinksPanel && page != null) ...[
+                            const VerticalDivider(width: 1),
+                            _LinksPanel(app: app),
+                          ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                    _StatusBar(app: app),
+                  ],
+                ),
               ),
-            ),
+            ],
           ),
         );
       },
@@ -159,8 +260,7 @@ class _FindBar extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.keyboard_arrow_up, size: 18),
             visualDensity: VisualDensity.compact,
-            onPressed:
-                app.findMatches.isEmpty ? null : () => app.findNext(-1),
+            onPressed: app.findMatches.isEmpty ? null : () => app.findNext(-1),
           ),
           IconButton(
             icon: const Icon(Icons.keyboard_arrow_down, size: 18),
@@ -179,8 +279,7 @@ class _FindBar extends StatelessWidget {
   }
 }
 
-/// Slim breadcrumb — the editable TITLE now lives in the page itself
-/// (PageTitleView); this only shows notebook › section context.
+/// Slim breadcrumb — the editable TITLE lives in the page itself.
 class _PageHeader extends StatelessWidget {
   const _PageHeader({required this.app, required this.page});
   final AppState app;
@@ -215,6 +314,97 @@ class _PageHeader extends StatelessWidget {
   }
 }
 
+/// Right-side links panel: incoming backlinks + outgoing links (TEXT-8).
+class _LinksPanel extends StatelessWidget {
+  const _LinksPanel({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final backlinks = app.backlinksForCurrent();
+    final outgoing = app.outgoingLinksForCurrent();
+
+    Widget section(String label, IconData icon, List<TreeNode> pages,
+        String empty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: Row(children: [
+              Icon(icon, size: 14, color: OnoteColors.graphite400),
+              const SizedBox(width: 6),
+              Text(label.toUpperCase(),
+                  style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: .6,
+                      color: OnoteColors.graphite400)),
+              const Spacer(),
+              Text('${pages.length}',
+                  style:
+                      TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+            ]),
+          ),
+          if (pages.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+              child: Text(empty,
+                  style:
+                      TextStyle(fontSize: 12, color: OnoteColors.graphite400)),
+            )
+          else
+            for (final p in pages)
+              InkWell(
+                onTap: () => app.selectPage(p.id),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  child: Row(children: [
+                    Icon(Icons.description_outlined,
+                        size: 14, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                        child: Text(p.title,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 13))),
+                  ]),
+                ),
+              ),
+        ],
+      );
+    }
+
+    return Container(
+      width: 240,
+      color: dark ? OnoteColors.night100 : OnoteColors.paper100,
+      child: ListView(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 6, 4),
+            child: Row(children: [
+              const Text('Links',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close, size: 16),
+                visualDensity: VisualDensity.compact,
+                onPressed: app.toggleLinksPanel,
+              ),
+            ]),
+          ),
+          section('Linked from', Icons.call_received, backlinks,
+              'No pages link here yet.'),
+          const SizedBox(height: 8),
+          section('Links to', Icons.call_made, outgoing,
+              'This page links nowhere yet.'),
+        ],
+      ),
+    );
+  }
+}
+
 class _StatusBar extends StatelessWidget {
   const _StatusBar({required this.app});
   final AppState app;
@@ -222,6 +412,8 @@ class _StatusBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final saved = !app.hasUnsavedChanges;
+    final rust = app.engineLabel.startsWith('Rust');
+    final hash = app.pageContentHash;
     return Container(
       height: 24,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -236,12 +428,35 @@ class _StatusBar extends StatelessWidget {
               color: saved ? OnoteColors.success : OnoteColors.graphite400),
           const SizedBox(width: 5),
           Text(saved ? 'Saved on this device' : 'Saving…',
-              style:
-                  TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+              style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+          const SizedBox(width: 12),
+          // Active compute engine (§ADR-0002): green chip when the Rust core
+          // is linked, with the live page content-hash it computed on save.
+          Tooltip(
+            message: rust
+                ? 'The Rust core (onote-core) is linked and computing this '
+                    'page\'s content hash on save.'
+                : 'Running the pure-Dart engine. Build the onote-core library '
+                    'to link the Rust core.',
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.memory,
+                  size: 12,
+                  color: rust ? OnoteColors.success : OnoteColors.graphite400),
+              const SizedBox(width: 4),
+              Text(
+                rust && hash != null && hash.length >= 8
+                    ? '${app.engineLabel} · ${hash.substring(0, 8)}'
+                    : app.engineLabel,
+                style: TextStyle(
+                    fontSize: 11,
+                    color: rust ? OnoteColors.success : OnoteColors.graphite400),
+              ),
+            ]),
+          ),
           const Spacer(),
           Text(
             'V select · T text · P pen · H highlight · E erase · '
-            'Ctrl+Z undo · Ctrl+scroll zoom · double-click for text',
+            'Ctrl+Z undo · Ctrl+scroll zoom',
             style: TextStyle(fontSize: 11, color: OnoteColors.graphite400),
             overflow: TextOverflow.ellipsis,
           ),

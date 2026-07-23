@@ -2,37 +2,37 @@
 	"sources" : 
 	[
 		{
-			"file" : "C:/src/openote-mvp/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/sqlite3-populate"
+			"file" : "C:/src/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/sqlite3-populate"
 		},
 		{
-			"file" : "C:/src/openote-mvp/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/23a9734674fc62dd4b19d18c0218a9bc/sqlite3-populate.rule"
+			"file" : "C:/src/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/461d964971e9d2c0fc1f01254cee24a8/sqlite3-populate.rule"
 		},
 		{
-			"file" : "C:/src/openote-mvp/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/cd44a4cd41bbc097819f93bcff81246f/sqlite3-populate-complete.rule"
+			"file" : "C:/src/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/f5829b3dce26a3c67a38b758c1b3d522/sqlite3-populate-complete.rule"
 		},
 		{
-			"file" : "C:/src/openote-mvp/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/1f226cee893334f5a8303835c548fd82/sqlite3-populate-build.rule"
+			"file" : "C:/src/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/b33a25153b3b42490d8ab38ad5c71aaa/sqlite3-populate-build.rule"
 		},
 		{
-			"file" : "C:/src/openote-mvp/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/1f226cee893334f5a8303835c548fd82/sqlite3-populate-configure.rule"
+			"file" : "C:/src/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/b33a25153b3b42490d8ab38ad5c71aaa/sqlite3-populate-configure.rule"
 		},
 		{
-			"file" : "C:/src/openote-mvp/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/1f226cee893334f5a8303835c548fd82/sqlite3-populate-download.rule"
+			"file" : "C:/src/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/b33a25153b3b42490d8ab38ad5c71aaa/sqlite3-populate-download.rule"
 		},
 		{
-			"file" : "C:/src/openote-mvp/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/1f226cee893334f5a8303835c548fd82/sqlite3-populate-install.rule"
+			"file" : "C:/src/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/b33a25153b3b42490d8ab38ad5c71aaa/sqlite3-populate-install.rule"
 		},
 		{
-			"file" : "C:/src/openote-mvp/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/1f226cee893334f5a8303835c548fd82/sqlite3-populate-mkdir.rule"
+			"file" : "C:/src/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/b33a25153b3b42490d8ab38ad5c71aaa/sqlite3-populate-mkdir.rule"
 		},
 		{
-			"file" : "C:/src/openote-mvp/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/1f226cee893334f5a8303835c548fd82/sqlite3-populate-patch.rule"
+			"file" : "C:/src/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/b33a25153b3b42490d8ab38ad5c71aaa/sqlite3-populate-patch.rule"
 		},
 		{
-			"file" : "C:/src/openote-mvp/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/1f226cee893334f5a8303835c548fd82/sqlite3-populate-test.rule"
+			"file" : "C:/src/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/b33a25153b3b42490d8ab38ad5c71aaa/sqlite3-populate-test.rule"
 		},
 		{
-			"file" : "C:/src/openote-mvp/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/1f226cee893334f5a8303835c548fd82/sqlite3-populate-update.rule"
+			"file" : "C:/src/openote/app/build/windows/x64/_deps/sqlite3-subbuild/CMakeFiles/b33a25153b3b42490d8ab38ad5c71aaa/sqlite3-populate-update.rule"
 		}
 	],
 	"target" : 

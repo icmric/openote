@@ -24,11 +24,30 @@ dependencies:
   file_selector: ^1.0.3
   # PDF export (pure Dart)
   pdf: ^3.10.0
+  # FFI to the Rust core (onote-core) — optional at runtime; the app falls
+  # back to the pure-Dart engine when the native library isn't present.
+  ffi: ^2.1.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
+
+# Run once after `flutter create` + `flutter pub get`:
+#   dart run flutter_launcher_icons
+# to generate the Windows .ico / macOS / etc. app icons from the logo.
+flutter_launcher_icons:
+  image_path: "assets/icon/openote_icon.png"
+  windows:
+    generate: true
+    image_path: "assets/icon/openote_icon.png"
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: "assets/icon/openote_icon.png"
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/icon/openote_icon.png

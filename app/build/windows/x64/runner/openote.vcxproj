@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" ToolsVersion="16.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <PreferredToolArchitecture>x64</PreferredToolArchitecture>
   </PropertyGroup>
@@ -18,9 +18,9 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{4A39D0B9-EC60-39C5-A732-E3B77CDCD5E0}</ProjectGuid>
-    <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
+    <ProjectGuid>{836CC9A0-105A-348D-90C1-F26CF5532481}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0.22621.0</WindowsTargetPlatformVersion>
     <Platform>x64</Platform>
     <ProjectName>openote</ProjectName>
     <VCProjectUpgraderObjectName>NoUpgrade</VCProjectUpgraderObjectName>
@@ -29,17 +29,17 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <CharacterSet>Unicode</CharacterSet>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Profile|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <CharacterSet>Unicode</CharacterSet>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <CharacterSet>Unicode</CharacterSet>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -50,19 +50,19 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
     <_ProjectFileVersion>10.0.20506.1</_ProjectFileVersion>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\src\openote-mvp\openote\app\build\windows\x64\runner\Debug\</OutDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\src\openote\app\build\windows\x64\runner\Debug\</OutDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">openote.dir\Debug\</IntDir>
     <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">openote</TargetName>
     <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">.exe</TargetExt>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</LinkIncremental>
     <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateManifest>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">C:\src\openote-mvp\openote\app\build\windows\x64\runner\Profile\</OutDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">C:\src\openote\app\build\windows\x64\runner\Profile\</OutDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">openote.dir\Profile\</IntDir>
     <TargetName Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">openote</TargetName>
     <TargetExt Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">.exe</TargetExt>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">false</LinkIncremental>
     <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">true</GenerateManifest>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\src\openote-mvp\openote\app\build\windows\x64\runner\Release\</OutDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\src\openote\app\build\windows\x64\runner\Release\</OutDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">openote.dir\Release\</IntDir>
     <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">openote</TargetName>
     <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|x64'">.exe</TargetExt>
@@ -71,7 +71,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>C:\src\openote-mvp\openote\app\windows;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\src\openote\app\windows;C:\src\openote\app\windows\flutter\ephemeral;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -86,15 +86,15 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <UseFullPaths>false</UseFullPaths>
       <WarningLevel>Level4</WarningLevel>
-      <PreprocessorDefinitions>WIN32;_WINDOWS;_HAS_EXCEPTIONS=0;_DEBUG;FLUTTER_VERSION="0.1.0+1";FLUTTER_VERSION_MAJOR=0;FLUTTER_VERSION_MINOR=1;FLUTTER_VERSION_PATCH=0;FLUTTER_VERSION_BUILD=1;NOMINMAX;UNICODE;_UNICODE;CMAKE_INTDIR="Debug";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;_HAS_EXCEPTIONS=0;_DEBUG;FLUTTER_VERSION="0.1.0+1";FLUTTER_VERSION_MAJOR=0;FLUTTER_VERSION_MINOR=1;FLUTTER_VERSION_PATCH=0;FLUTTER_VERSION_BUILD=1;NOMINMAX;UNICODE;_UNICODE;CMAKE_INTDIR="Debug"</PreprocessorDefinitions>
       <ObjectFileName>$(IntDir)</ObjectFileName>
     </ClCompile>
     <ResourceCompile>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_HAS_EXCEPTIONS=0;FLUTTER_VERSION=\"0.1.0+1\";FLUTTER_VERSION_MAJOR=0;FLUTTER_VERSION_MINOR=1;FLUTTER_VERSION_PATCH=0;FLUTTER_VERSION_BUILD=1;NOMINMAX;UNICODE;_UNICODE;CMAKE_INTDIR=\"Debug\";%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>C:\src\openote-mvp\openote\app\windows;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_DEBUG;_WINDOWS;_HAS_EXCEPTIONS=0;FLUTTER_VERSION=\"0.1.0+1\";FLUTTER_VERSION_MAJOR=0;FLUTTER_VERSION_MINOR=1;FLUTTER_VERSION_PATCH=0;FLUTTER_VERSION_BUILD=1;NOMINMAX;UNICODE;_UNICODE;CMAKE_INTDIR=\"Debug\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\src\openote\app\windows;C:\src\openote\app\windows\flutter\ephemeral;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
-      <AdditionalIncludeDirectories>C:\src\openote-mvp\openote\app\windows;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\src\openote\app\windows;C:\src\openote\app\windows\flutter\ephemeral;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
       <HeaderFileName>%(Filename).h</HeaderFileName>
       <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
@@ -102,25 +102,25 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <Link>
-      <AdditionalDependencies>..\flutter\Debug\flutter_wrapper_app.lib;dwmapi.lib;..\plugins\file_selector_windows\Debug\file_selector_windows_plugin.lib;..\plugins\sqlite3_flutter_libs\Debug\sqlite3_flutter_libs_plugin.lib;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_windows.dll.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalDependencies>..\flutter\Debug\flutter_wrapper_app.lib;dwmapi.lib;..\plugins\file_selector_windows\Debug\file_selector_windows_plugin.lib;..\plugins\sqlite3_flutter_libs\Debug\sqlite3_flutter_libs_plugin.lib;C:\src\openote\app\windows\flutter\ephemeral\flutter_windows.dll.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
-      <ImportLibrary>C:/src/openote-mvp/openote/app/build/windows/x64/runner/Debug/openote.lib</ImportLibrary>
-      <ProgramDataBaseFile>C:/src/openote-mvp/openote/app/build/windows/x64/runner/Debug/openote.pdb</ProgramDataBaseFile>
+      <ImportLibrary>C:/src/openote/app/build/windows/x64/runner/Debug/openote.lib</ImportLibrary>
+      <ProgramDataBaseFile>C:/src/openote/app/build/windows/x64/runner/Debug/openote.pdb</ProgramDataBaseFile>
       <SubSystem>Windows</SubSystem>
     </Link>
     <ProjectReference>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
     <Manifest>
-      <AdditionalManifestFiles>C:\src\openote-mvp\openote\app\windows\runner\runner.exe.manifest;</AdditionalManifestFiles>
+      <AdditionalManifestFiles>C:\src\openote\app\windows\runner\runner.exe.manifest;</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>C:\src\openote-mvp\openote\app\windows;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\src\openote\app\windows;C:\src\openote\app\windows\flutter\ephemeral;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <DisableSpecificWarnings>"4100"</DisableSpecificWarnings>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -133,17 +133,17 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <UseFullPaths>false</UseFullPaths>
       <WarningLevel>Level4</WarningLevel>
-      <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;_HAS_EXCEPTIONS=0;FLUTTER_VERSION="0.1.0+1";FLUTTER_VERSION_MAJOR=0;FLUTTER_VERSION_MINOR=1;FLUTTER_VERSION_PATCH=0;FLUTTER_VERSION_BUILD=1;NOMINMAX;UNICODE;_UNICODE;CMAKE_INTDIR="Profile";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;_HAS_EXCEPTIONS=0;FLUTTER_VERSION="0.1.0+1";FLUTTER_VERSION_MAJOR=0;FLUTTER_VERSION_MINOR=1;FLUTTER_VERSION_PATCH=0;FLUTTER_VERSION_BUILD=1;NOMINMAX;UNICODE;_UNICODE;CMAKE_INTDIR="Profile"</PreprocessorDefinitions>
       <ObjectFileName>$(IntDir)</ObjectFileName>
       <DebugInformationFormat>
       </DebugInformationFormat>
     </ClCompile>
     <ResourceCompile>
-      <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;_HAS_EXCEPTIONS=0;FLUTTER_VERSION=\"0.1.0+1\";FLUTTER_VERSION_MAJOR=0;FLUTTER_VERSION_MINOR=1;FLUTTER_VERSION_PATCH=0;FLUTTER_VERSION_BUILD=1;NOMINMAX;UNICODE;_UNICODE;CMAKE_INTDIR=\"Profile\";%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>C:\src\openote-mvp\openote\app\windows;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;_HAS_EXCEPTIONS=0;FLUTTER_VERSION=\"0.1.0+1\";FLUTTER_VERSION_MAJOR=0;FLUTTER_VERSION_MINOR=1;FLUTTER_VERSION_PATCH=0;FLUTTER_VERSION_BUILD=1;NOMINMAX;UNICODE;_UNICODE;CMAKE_INTDIR=\"Profile\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\src\openote\app\windows;C:\src\openote\app\windows\flutter\ephemeral;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
-      <AdditionalIncludeDirectories>C:\src\openote-mvp\openote\app\windows;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\src\openote\app\windows;C:\src\openote\app\windows\flutter\ephemeral;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
       <HeaderFileName>%(Filename).h</HeaderFileName>
       <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
@@ -151,25 +151,25 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <Link>
-      <AdditionalDependencies>..\flutter\Profile\flutter_wrapper_app.lib;dwmapi.lib;..\plugins\file_selector_windows\Profile\file_selector_windows_plugin.lib;..\plugins\sqlite3_flutter_libs\Profile\sqlite3_flutter_libs_plugin.lib;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_windows.dll.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalDependencies>..\flutter\Profile\flutter_wrapper_app.lib;dwmapi.lib;..\plugins\file_selector_windows\Profile\file_selector_windows_plugin.lib;..\plugins\sqlite3_flutter_libs\Profile\sqlite3_flutter_libs_plugin.lib;C:\src\openote\app\windows\flutter\ephemeral\flutter_windows.dll.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
-      <ImportLibrary>C:/src/openote-mvp/openote/app/build/windows/x64/runner/Profile/openote.lib</ImportLibrary>
-      <ProgramDataBaseFile>C:/src/openote-mvp/openote/app/build/windows/x64/runner/Profile/openote.pdb</ProgramDataBaseFile>
+      <ImportLibrary>C:/src/openote/app/build/windows/x64/runner/Profile/openote.lib</ImportLibrary>
+      <ProgramDataBaseFile>C:/src/openote/app/build/windows/x64/runner/Profile/openote.pdb</ProgramDataBaseFile>
       <SubSystem>Windows</SubSystem>
     </Link>
     <ProjectReference>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
     <Manifest>
-      <AdditionalManifestFiles>C:\src\openote-mvp\openote\app\windows\runner\runner.exe.manifest;</AdditionalManifestFiles>
+      <AdditionalManifestFiles>C:\src\openote\app\windows\runner\runner.exe.manifest;</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>C:\src\openote-mvp\openote\app\windows;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\src\openote\app\windows;C:\src\openote\app\windows\flutter\ephemeral;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <DisableSpecificWarnings>"4100"</DisableSpecificWarnings>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -182,17 +182,17 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <UseFullPaths>false</UseFullPaths>
       <WarningLevel>Level4</WarningLevel>
-      <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;_HAS_EXCEPTIONS=0;FLUTTER_VERSION="0.1.0+1";FLUTTER_VERSION_MAJOR=0;FLUTTER_VERSION_MINOR=1;FLUTTER_VERSION_PATCH=0;FLUTTER_VERSION_BUILD=1;NOMINMAX;UNICODE;_UNICODE;CMAKE_INTDIR="Release";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;_HAS_EXCEPTIONS=0;FLUTTER_VERSION="0.1.0+1";FLUTTER_VERSION_MAJOR=0;FLUTTER_VERSION_MINOR=1;FLUTTER_VERSION_PATCH=0;FLUTTER_VERSION_BUILD=1;NOMINMAX;UNICODE;_UNICODE;CMAKE_INTDIR="Release"</PreprocessorDefinitions>
       <ObjectFileName>$(IntDir)</ObjectFileName>
       <DebugInformationFormat>
       </DebugInformationFormat>
     </ClCompile>
     <ResourceCompile>
-      <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;_HAS_EXCEPTIONS=0;FLUTTER_VERSION=\"0.1.0+1\";FLUTTER_VERSION_MAJOR=0;FLUTTER_VERSION_MINOR=1;FLUTTER_VERSION_PATCH=0;FLUTTER_VERSION_BUILD=1;NOMINMAX;UNICODE;_UNICODE;CMAKE_INTDIR=\"Release\";%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>C:\src\openote-mvp\openote\app\windows;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;_HAS_EXCEPTIONS=0;FLUTTER_VERSION=\"0.1.0+1\";FLUTTER_VERSION_MAJOR=0;FLUTTER_VERSION_MINOR=1;FLUTTER_VERSION_PATCH=0;FLUTTER_VERSION_BUILD=1;NOMINMAX;UNICODE;_UNICODE;CMAKE_INTDIR=\"Release\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\src\openote\app\windows;C:\src\openote\app\windows\flutter\ephemeral;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Midl>
-      <AdditionalIncludeDirectories>C:\src\openote-mvp\openote\app\windows;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\src\openote\app\windows;C:\src\openote\app\windows\flutter\ephemeral;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\file_selector_windows\windows\include;C:\src\openote\app\windows\flutter\ephemeral\.plugin_symlinks\sqlite3_flutter_libs\windows\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
       <HeaderFileName>%(Filename).h</HeaderFileName>
       <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
@@ -200,28 +200,28 @@
       <ProxyFileName>%(Filename)_p.c</ProxyFileName>
     </Midl>
     <Link>
-      <AdditionalDependencies>..\flutter\Release\flutter_wrapper_app.lib;dwmapi.lib;..\plugins\file_selector_windows\Release\file_selector_windows_plugin.lib;..\plugins\sqlite3_flutter_libs\Release\sqlite3_flutter_libs_plugin.lib;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_windows.dll.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalDependencies>..\flutter\Release\flutter_wrapper_app.lib;dwmapi.lib;..\plugins\file_selector_windows\Release\file_selector_windows_plugin.lib;..\plugins\sqlite3_flutter_libs\Release\sqlite3_flutter_libs_plugin.lib;C:\src\openote\app\windows\flutter\ephemeral\flutter_windows.dll.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
-      <ImportLibrary>C:/src/openote-mvp/openote/app/build/windows/x64/runner/Release/openote.lib</ImportLibrary>
-      <ProgramDataBaseFile>C:/src/openote-mvp/openote/app/build/windows/x64/runner/Release/openote.pdb</ProgramDataBaseFile>
+      <ImportLibrary>C:/src/openote/app/build/windows/x64/runner/Release/openote.lib</ImportLibrary>
+      <ProgramDataBaseFile>C:/src/openote/app/build/windows/x64/runner/Release/openote.pdb</ProgramDataBaseFile>
       <SubSystem>Windows</SubSystem>
     </Link>
     <ProjectReference>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
     <Manifest>
-      <AdditionalManifestFiles>C:\src\openote-mvp\openote\app\windows\runner\runner.exe.manifest;</AdditionalManifestFiles>
+      <AdditionalManifestFiles>C:\src\openote\app\windows\runner\runner.exe.manifest;</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CustomBuild Include="C:\src\openote-mvp\openote\app\windows\runner\CMakeLists.txt">
-      <StdOutEncoding>UTF-8</StdOutEncoding>
-      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Building Custom Rule C:/src/openote-mvp/openote/app/windows/runner/CMakeLists.txt</Message>
+    <CustomBuild Include="C:\src\openote\app\windows\runner\CMakeLists.txt">
+      <UseUtf8Encoding>Always</UseUtf8Encoding>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Building Custom Rule C:/src/openote/app/windows/runner/CMakeLists.txt</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
-"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote-mvp/openote/app/windows -BC:/src/openote-mvp/openote/app/build/windows/x64 --check-stamp-file C:/src/openote-mvp/openote/app/build/windows/x64/runner/CMakeFiles/generate.stamp
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote/app/windows -BC:/src/openote/app/build/windows/x64 --check-stamp-file C:/src/openote/app/build/windows/x64/runner/CMakeFiles/generate.stamp
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -230,11 +230,11 @@ exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(AdditionalInputs)</AdditionalInputs>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\src\openote-mvp\openote\app\build\windows\x64\runner\CMakeFiles\generate.stamp</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\src\openote\app\build\windows\x64\runner\CMakeFiles\generate.stamp</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
-      <Message Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">Building Custom Rule C:/src/openote-mvp/openote/app/windows/runner/CMakeLists.txt</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">Building Custom Rule C:/src/openote/app/windows/runner/CMakeLists.txt</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">setlocal
-"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote-mvp/openote/app/windows -BC:/src/openote-mvp/openote/app/build/windows/x64 --check-stamp-file C:/src/openote-mvp/openote/app/build/windows/x64/runner/CMakeFiles/generate.stamp
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote/app/windows -BC:/src/openote/app/build/windows/x64 --check-stamp-file C:/src/openote/app/build/windows/x64/runner/CMakeFiles/generate.stamp
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -243,11 +243,11 @@ exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">%(AdditionalInputs)</AdditionalInputs>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">C:\src\openote-mvp\openote\app\build\windows\x64\runner\CMakeFiles\generate.stamp</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">C:\src\openote\app\build\windows\x64\runner\CMakeFiles\generate.stamp</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">false</LinkObjects>
-      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Custom Rule C:/src/openote-mvp/openote/app/windows/runner/CMakeLists.txt</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Custom Rule C:/src/openote/app/windows/runner/CMakeLists.txt</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
-"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote-mvp/openote/app/windows -BC:/src/openote-mvp/openote/app/build/windows/x64 --check-stamp-file C:/src/openote-mvp/openote/app/build/windows/x64/runner/CMakeFiles/generate.stamp
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote/app/windows -BC:/src/openote/app/build/windows/x64 --check-stamp-file C:/src/openote/app/build/windows/x64/runner/CMakeFiles/generate.stamp
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -256,41 +256,41 @@ exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(AdditionalInputs)</AdditionalInputs>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\src\openote-mvp\openote\app\build\windows\x64\runner\CMakeFiles\generate.stamp</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\src\openote\app\build\windows\x64\runner\CMakeFiles\generate.stamp</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="C:\src\openote-mvp\openote\app\windows\runner\flutter_window.cpp" />
-    <ClCompile Include="C:\src\openote-mvp\openote\app\windows\runner\main.cpp" />
-    <ClCompile Include="C:\src\openote-mvp\openote\app\windows\runner\utils.cpp" />
-    <ClCompile Include="C:\src\openote-mvp\openote\app\windows\runner\win32_window.cpp" />
-    <ClCompile Include="C:\src\openote-mvp\openote\app\windows\flutter\generated_plugin_registrant.cc" />
-    <ResourceCompile Include="C:\src\openote-mvp\openote\app\windows\runner\Runner.rc" />
+    <ClCompile Include="C:\src\openote\app\windows\runner\flutter_window.cpp" />
+    <ClCompile Include="C:\src\openote\app\windows\runner\main.cpp" />
+    <ClCompile Include="C:\src\openote\app\windows\runner\utils.cpp" />
+    <ClCompile Include="C:\src\openote\app\windows\runner\win32_window.cpp" />
+    <ClCompile Include="C:\src\openote\app\windows\flutter\generated_plugin_registrant.cc" />
+    <ResourceCompile Include="C:\src\openote\app\windows\runner\Runner.rc" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="C:\src\openote-mvp\openote\app\build\windows\x64\ZERO_CHECK.vcxproj">
-      <Project>{735390B5-F1BA-3EC9-B26F-373BB369723C}</Project>
+    <ProjectReference Include="C:\src\openote\app\build\windows\x64\ZERO_CHECK.vcxproj">
+      <Project>{C7A69CB5-CFEF-33DD-8092-A0605C08E5D6}</Project>
       <Name>ZERO_CHECK</Name>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </ProjectReference>
-    <ProjectReference Include="C:\src\openote-mvp\openote\app\build\windows\x64\plugins\file_selector_windows\file_selector_windows_plugin.vcxproj">
-      <Project>{006A0A8F-B9BC-3C1E-B840-4E62ADDA71E5}</Project>
+    <ProjectReference Include="C:\src\openote\app\build\windows\x64\plugins\file_selector_windows\file_selector_windows_plugin.vcxproj">
+      <Project>{58C15738-98C5-30F9-B86C-A4A49EEA6E94}</Project>
       <Name>file_selector_windows_plugin</Name>
     </ProjectReference>
-    <ProjectReference Include="C:\src\openote-mvp\openote\app\build\windows\x64\flutter\flutter_assemble.vcxproj">
-      <Project>{00ED5711-7F11-31C3-A74D-ED206BD66E1D}</Project>
+    <ProjectReference Include="C:\src\openote\app\build\windows\x64\flutter\flutter_assemble.vcxproj">
+      <Project>{5367E4BD-B384-32BB-B261-881E14E4390C}</Project>
       <Name>flutter_assemble</Name>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </ProjectReference>
-    <ProjectReference Include="C:\src\openote-mvp\openote\app\build\windows\x64\flutter\flutter_wrapper_app.vcxproj">
-      <Project>{9F68FCF2-9E09-3B5B-809F-5C03F18FAA9C}</Project>
+    <ProjectReference Include="C:\src\openote\app\build\windows\x64\flutter\flutter_wrapper_app.vcxproj">
+      <Project>{F07B7976-5427-3A50-878D-BDCBB9235518}</Project>
       <Name>flutter_wrapper_app</Name>
     </ProjectReference>
-    <ProjectReference Include="C:\src\openote-mvp\openote\app\build\windows\x64\plugins\sqlite3_flutter_libs\sqlite3_flutter_libs_plugin.vcxproj">
-      <Project>{B46F8D87-8ABB-32B6-9DD1-A7F1119FB385}</Project>
+    <ProjectReference Include="C:\src\openote\app\build\windows\x64\plugins\sqlite3_flutter_libs\sqlite3_flutter_libs_plugin.vcxproj">
+      <Project>{F19953B0-3085-3C35-B459-9F97FFB115B3}</Project>
       <Name>sqlite3_flutter_libs_plugin</Name>
     </ProjectReference>
   </ItemGroup>

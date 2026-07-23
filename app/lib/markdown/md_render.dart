@@ -218,7 +218,7 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
     [void Function(String label, String? id)? onWikiLink]) {
   final spans = <InlineSpan>[];
   final pattern = RegExp(
-      r'(\[\[([^\]|]+)(?:\|([^\]]+))?\]\])|(\*\*(.+?)\*\*)|(\*(.+?)\*)|(`(.+?)`)|(~~(.+?)~~)|(==(.+?)==)|(\$([^$\n]+?)\$)');
+      r'(\[\[([^\]|]+)(?:\|([^\]]+))?\]\])|(\*\*(.+?)\*\*)|(\*(.+?)\*)|(`(.+?)`)|(~~(.+?)~~)|(==(.+?)==)|(\$([^$\n]+?)\$)|(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})');
   var last = 0;
   for (final m in pattern.allMatches(text)) {
     if (m.start > last) {
@@ -235,6 +235,17 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
           onTap: onWikiLink == null ? null : () => onWikiLink(label, id),
           color: dark ? OnoteColors.ink300 : OnoteColors.ink600,
         ),
+      ));
+    } else if (m.group(16) != null) {
+      // Coloured text {{#RRGGBB[AA] text}}
+      final hx = m.group(17)!;
+      final v = int.parse(hx, radix: 16);
+      spans.add(TextSpan(
+        text: m.group(18),
+        style: TextStyle(
+            color: hx.length == 8
+                ? Color(((v & 0xFF) << 24) | (v >> 8))
+                : Color(0xFF000000 | v)),
       ));
     } else if (m.group(14) != null) {
       // Inline math $…$

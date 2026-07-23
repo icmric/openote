@@ -4,23 +4,62 @@ import '../markdown/md_render.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'live_markdown_controller.dart';
 
-/// Text block with interim inline-Markdown (TEXT-2/4 at block granularity):
-/// view mode RENDERS the Markdown; entering the block reveals the source.
-/// Replaced wholesale by the ADR-0004 bake-off winner for true span-level
-/// as-you-type rendering. Storage stays content['text'] (Markdown dialect,
-/// Data Model Spec §5.2), so the swap won't touch saved notebooks.
+/// Text block. While editing, a [LiveMarkdownController] styles Markdown in
+/// real time (markers collapse as constructs complete, reveal when the caret
+/// re-enters). When not editing, [MarkdownView] renders the full block
+/// (headings, lists, checkboxes, inline math, wiki-links). Storage stays a
+/// Markdown string in content['text'] (Data Model Spec §5.2), so the future
+/// ADR-0004 engine can drop in without migrating notebooks.
 class TextBlockView extends StatefulWidget {
   const TextBlockView({super.key, required this.block, required this.app});
   final Block block;
   final AppState app;
+
+  static const double minAutoW = 200, maxAutoW = 640;
+
+  static String? _fontFamilyOf(String? font) => switch (font) {
+        null || '' || 'sans' => null,
+        'serif' => 'Georgia', // legacy token
+        'mono' => 'monospace', // legacy token
+        _ => font, // any system family name (font picker)
+      };
+
+  /// The base text style for a block. Static so the canvas layer can measure
+  /// auto-width with the *exact* style the field will render with.
+  static TextStyle baseStyle(Block b, {required bool dark}) => TextStyle(
+        fontSize: 15,
+        height: 1.5,
+        fontFamily: _fontFamilyOf(b.content['font'] as String?),
+        color: dark ? OnoteColors.moon100 : OnoteColors.graphite700,
+      );
+
+  /// The width a text box should render at. For auto-width boxes this is the
+  /// intrinsic longest-line width (+ chrome + slack), clamped. Measured in the
+  /// *parent* build pass (see BlockView) so the box widens in the SAME frame
+  /// the text changes — no one-frame lag, so words never wrap before the box
+  /// grows. Chrome = 2×10 content padding + borders + caret ≈ 26px; slack adds
+  /// headroom for the glyph being typed. Manual resize (autoWidth == false)
+  /// pins the stored width and skips measuring.
+  static double autoWidth(Block b, {required bool dark}) {
+    if (b.type != BlockType.text || b.content['autoWidth'] == false) return b.w;
+    const chrome = 26.0, slack = 18.0;
+    final text = b.content['text'] as String? ?? '';
+    final tp = TextPainter(
+      text: TextSpan(text: text.isEmpty ? ' ' : text, style: baseStyle(b, dark: dark)),
+      textDirection: TextDirection.ltr,
+      maxLines: null,
+    )..layout(maxWidth: double.infinity); // width = intrinsic longest line
+    return (tp.width + chrome + slack).clamp(minAutoW, maxAutoW).toDouble();
+  }
 
   @override
   State<TextBlockView> createState() => _TextBlockViewState();
 }
 
 class _TextBlockViewState extends State<TextBlockView> {
-  late final TextEditingController _controller;
+  late final LiveMarkdownController _controller;
   final _focus = FocusNode();
   bool _undoPushed = false;
   bool _wasEditing = false;
@@ -30,16 +69,16 @@ class _TextBlockViewState extends State<TextBlockView> {
   @override
   void initState() {
     super.initState();
-    _controller =
-        TextEditingController(text: widget.block.content['text'] as String? ?? '');
+    _controller = LiveMarkdownController(
+        text: widget.block.content['text'] as String? ?? '',
+        dark: false);
   }
 
-  /// F-3 fix: exit cleanup runs on the STATE transition (editing → not),
-  /// never on focus ordering (select(null) used to clear editingBlockId
-  /// before focus loss, so focus-listener cleanup never ran).
+  /// F-3 fix: exit cleanup runs on the STATE transition (editing → not).
   void _handleExitTransition() {
     if (_wasEditing && !editing) {
       _undoPushed = false;
+      widget.app.clearActiveEditor(widget.block.id);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if ((widget.block.content['text'] as String? ?? '').trim().isEmpty) {
@@ -61,15 +100,13 @@ class _TextBlockViewState extends State<TextBlockView> {
   Widget build(BuildContext context) {
     _handleExitTransition();
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final style = TextStyle(
-      fontSize: 15,
-      height: 1.5,
-      color: dark ? OnoteColors.moon100 : OnoteColors.graphite700,
-    );
+    _controller.dark = dark;
+    final style = TextBlockView.baseStyle(widget.block, dark: dark);
 
     if (editing) {
+      widget.app.setActiveEditor(_controller, widget.block, 'text');
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_focus.hasFocus) _focus.requestFocus();
+        if (mounted && !_focus.hasFocus) _focus.requestFocus();
       });
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -78,6 +115,8 @@ class _TextBlockViewState extends State<TextBlockView> {
           focusNode: _focus,
           maxLines: null,
           style: style,
+          cursorColor: Theme.of(context).colorScheme.primary,
+          inputFormatters: [WrapSelectionFormatter()],
           decoration: InputDecoration(
             isDense: true,
             border: InputBorder.none,
@@ -91,6 +130,8 @@ class _TextBlockViewState extends State<TextBlockView> {
             }
             widget.block.content['text'] = v;
             widget.block.updatedAt = nowMs();
+            // Width is measured in the parent build (lag-free); markDirty here
+            // triggers that rebuild so the box grows in the same frame.
             widget.app.markDirty();
           },
         ),
@@ -98,7 +139,6 @@ class _TextBlockViewState extends State<TextBlockView> {
     }
 
     final text = widget.block.content['text'] as String? ?? '';
-    // Keep controller in sync when model changed externally (undo/redo).
     if (_controller.text != text) _controller.text = text;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),

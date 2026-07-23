@@ -88,6 +88,66 @@ Stakeholder chose to round out the MVP before the editor bake-off. Closed:
 
 With these, the only MVP item still open is the **real rich-text editor (ADR-0004 bake-off)** — the agreed next stage.
 
+## E-quater. Iteration 6 (live editor + feel)
+
+- **Live-Markdown editing (TEXT-2/4 substantially delivered).** A custom `LiveMarkdownController` renders Markdown as you type — markers collapse when a construct completes and reveal when the caret re-enters — with a span-coverage safety net that falls back to plain text if parsing ever diverges (so editing can't corrupt). This realizes the "interpret as you go" requirement without an external editor package; the [ADR-0004](../adr/ADR-0004-editor-engine.md) block-editor bake-off remains an option for full block semantics but is no longer on the MVP critical path.
+- **Keyboard bug fixed (was blocking usage).** Bare-letter `Shortcuts` shadow text fields on Flutter desktop (EditableText inserts printable chars via the text-input channel, so ancestor shortcuts win the raw key). Rewrote to a global `HardwareKeyboard` handler that detects a focused editable and only intercepts Escape then. *This is why several letters were untypeable.*
+- **VS Code-style selection wrap** (`WrapSelectionFormatter`).
+- **Image** hover-flicker fixed (cached provider + `gaplessPlayback`) and **proportional resize** via recorded intrinsic aspect.
+- **Collapsible hierarchy** for section groups, sections, and pages-with-subpages.
+- **Seamless page** at normal zoom (fills the window) → bounded sheet when zoomed out; **snap-to-grid default on** with the grid shown only during a drag; **ongoing left-margin snap** on drop.
+
+## H. Post-MVP review (iterations 4–6 audit) & Phase 2 kickoff (iteration 7)
+
+**Audit result:** the iteration-4–6 code held up well against the specs; three defects found and fixed in iteration 7 — (1) blocks stored `z` but painted in insertion order, so z-order was decorative (now sorted at paint); (2) repeated drag-to-subpage drops onto the same target produced colliding position keys (now time-suffixed); (3) Data Model Spec had drifted from code on `pageWidth`/`gridSize` defaults and the seamless-page presentation (docs updated to PRD v0.4). The style guide's "no fixed toolbar tabs" stance was formally revised: the stakeholder explicitly values OneNote's few-clicks accessibility, so §7 now specifies the **tabbed command bar** (Home/Insert/Draw/View + context menus, ≤2 clicks to most actions).
+
+**Phase 2 UI workstream (iteration 7) delivered:** the tabbed command bar; right-click context menus on blocks and canvas; selection-aware formatting commands (wrap + line-prefix toggles, Ctrl+B/I) acting on the live editor via an active-editor registration seam; an internal block clipboard (copy/cut/paste with fresh IDs); z-order commands; and a user-facing theme mode (Auto/Light/Dark). Remaining Phase 2 backlog, in rough order: tables, lasso-select ink, backlinks panel, recycle bin, page templates, version history, full open export (open-folder materialize, InkML, JSON Canvas), Obsidian/Markdown import, tablet/pen hardening, then sync (Rust core).
+
+## I. Iteration 10 review — UI standards, performance, session state
+
+**Docs first (stakeholder-requested):** Style Guide gained **§7a Interaction & component behaviour standards** — normative specs for menus, buttons/clicks, split-buttons, dialogs/pickers (incl. the colour-picker and searchable-font-picker standards), shortcuts-as-accelerators-only, state persistence, and UI latency budgets (page switch <100ms, keystroke <16ms, no hot-path JSON decoding).
+
+**Fixes:** app icon now ships as a real multi-size `.ico` replacing the runner resource (tool-independent); auto-width grows *ahead of need* with slack (no more edge clipping); colour is now the §7a split-button + full picker (palette grid, recent/custom persisted, hue+SV field, RGBA sliders, hex — supports alpha `{{#RRGGBBAA}}`); fonts enumerate the **actual system fonts** (TTF/TTC/OTF name-table parser over platform font dirs, searchable picker, per-face preview); the colour hotkey is shortcut-only (removed from menus).
+
+**Performance review findings & fixes:** (1) **ink strokes were JSON-decoded every frame** — now cached per `block.id#updatedAt` and the ink layer sits in its own `RepaintBoundary` with cheap repaint checks; (2) auto-width measurement is single-TextPainter per edit, acceptable; (3) page switch is one SQLite read + JSON parse (fast); notebooks open lazily and stay open. Budgets now documented in §7a.6.
+
+**Session state (§7a.5) implemented:** per-page scroll+zoom memory (in-memory, persisted to `workspace.json` settings), last notebook + page restored on launch, custom colours persisted.
+
+**Also landed:** **version history** (SYNC-8 — throttled snapshots into `page_versions` on save, 30 kept, restore dialog via page right-click; idempotent migration adds the table to existing notebooks) and **page templates** (ORG-9 — save current page as template, apply from Insert tab).
+
+**Remaining Phase 2 (non-Rust):** lasso-select ink (INK-7), the full open-export suite (open-folder materialize, InkML, JSON Canvas), and Markdown/Obsidian import (OPEN-9). Next batch.
+
+## J. Iteration 11 — Phase 2 rounded off + the Rust core lands
+
+Stakeholder confirmed Rust is installed and asked to finish Phase 2 (remaining components + a real Rust core) and do a consistency pass. Delivered:
+
+**Two reported nitpicks fixed.** (1) *Colour re-set no longer nests.* `applyTextColor` now detects when the selection is already the inner content of a `{{#hex …}}` wrapper (or spans a whole wrapper) and rewrites the hex in place instead of wrapping again — three explicit cases (inner-content, whole-wrapper, fresh) with a `dotAll` whole-wrapper regex. (2) *Auto-width no longer lags into a wrap.* Measurement moved out of the child's build (which ran a frame after the parent had already sized the container) into the **parent** `BlockView` build, so an auto-width text box grows in the *same* frame its text changes. To keep pan/zoom cheap, only the block being *edited* is measured live; others reuse their stored width. The measured width is written back to the model so persistence/export/hit-testing agree with the screen.
+
+**Pop-out page menu + inline rename (§7a.1).** The section/group/page right-click menu is now a pointer-anchored `showMenu` (was a centred `SimpleDialog`), focused on menu-only actions — move up/down, move-to-group, make-subpage/promote, version history, save-as-template, delete. Rename left the menu and became **double-click inline rename** on the tile itself (autofocus, select-all, commit on Enter/blur, cancel on Esc), which also meant the three navigator tiles became `StatefulWidget`s.
+
+**Lasso-select ink (INK-7).** A new Draw-tab **lasso** tool: draw a freeform loop; on release, every stroke whose points are ≥60% inside the polygon (ray-cast point-in-polygon) is spliced out of its source blocks and re-homed into one new selected ink block, so the existing move/delete/copy machinery works on a freeform ink selection regardless of original block grouping. Emptied source blocks are dropped; undo snapshots the true pre-lasso state.
+
+**Full open-export suite (OPEN-6/7).** New `export/open_export.dart`: **materialize the whole notebook to a folder** (section/page hierarchy as nested folders, each page carried by a fidelity `page.json` mirror + convenience `page.md` + `page.canvas` + `page.inkml` when it has ink + content-addressed `assets/`, plus a `manifest.json`); single-page **JSON Canvas** (`.canvas`, Obsidian-compatible) and **InkML** exporters, wired into the export menu. Freeform layout flattens to reading order for Markdown; JSON keeps exact coordinates (File Format Spec §8).
+
+**Markdown / Obsidian import (OPEN-9).** New `export/md_import.dart`: pick a folder, its tree maps to a section with files→pages and nested folders→folder-pages/subpages (depth clamped 0–2); YAML front matter and a duplicate leading H1 are stripped; body lands as one live-Markdown block so `[[wiki-links]]`, tables, lists render immediately. Wired into the notebook menu.
+
+**The Rust core is real and toolchain-verified (`rust/onote_core`).** Rather than blind-write the whole Loro CRDT stack untested, the first slice is the piece the sync design needs most and can be proven now: a deterministic, conflict-free **page-mirror merge** (block-level last-writer-wins over the snapshot-exchange model, canonical output, forward-compatible field round-trip) plus an FNV-1a **content hash** for cheap change-detection, exposed to Flutter through an opt-in `flutter_rust_bridge` `api` module. It builds and **`cargo test` passes 13/13** (newer-wins, union, idempotence, commutativity, unknown-field survival, hash vectors) with only `serde`/`serde_json` on the default path — so a contributor verifies their toolchain with one command. The Dart app is untouched at runtime: `MirrorEngine` stays the `DocumentEngine`, so shipping never blocks on the bridge being wired (guide + steps in `rust/onote_core/README.md`; the Loro-backed engine replaces `merge` behind the same API later, ADR-0002).
+
+**Consistency pass.** Balanced-bracket tokenizer over every edited/new Dart file (clean); a cross-file compile-correctness review caught one real blocker before it shipped — the auto-width statics were placed on the private `_TextBlockViewState` where the canvas layer couldn't reach them, now relocated to the `TextBlockView` widget class. `cargo test` green.
+
+**Still open for Phase 2:** live embeds/transclusion (EMBED-2…8), cross-device sync itself (SYNC-1/2/3 — needs the Loro engine behind `merge` and a sync transport), tablet/pen hardening, find-and-replace across a notebook, and the minor canvas polish (minimap, alignment guides).
+
+## K. Iteration 12 — Rust core linked into the app (dart:ffi)
+
+Stakeholder asked whether the Rust core was actually used (it wasn't — the app ran 100% on the Dart `MirrorEngine`) and to integrate it. Done, via **`dart:ffi` with a graceful fallback** rather than flutter_rust_bridge: FRB needs a codegen step that can't run in the build sandbox (so the Dart glue would be hand-written blind), whereas a small C-ABI shim is fully authored *and* compile-tested here.
+
+- **Rust:** new `src/ffi.rs` exposes `onote_core_version` / `onote_core_merge` / `onote_core_page_hash` / `onote_core_string_free` as `extern "C"` (CString ownership handed to the caller, freed back through the shim). No new deps. `cargo test` now **16/16**, and `cargo build --release` produces the real cdylib.
+- **Dart:** `core/onote_ffi.dart` loads the library from several candidate locations (next to the exe, the crate's release dir, bare name), verifies a call round-trips before trusting it, and marshals strings via `package:ffi`. `OnoteCore.instance` is null when the library is absent, so **linking Rust cannot break the app** — with it present the app uses it; without it, behaviour is byte-identical to the Dart-only build.
+- **Live use:** startup runs a merge self-test to set the engine label; every save hashes the current page's mirror through Rust (a real Dart→Rust→Dart round-trip over live content — the change-detection primitive sync will use). Both surface in the status bar as a green `Rust core vX · <hash>` chip (grey `Dart engine` on the pure-Dart path).
+- **Build wiring:** the desktop platform folders aren't in this repo copy, so integration ships as `rust/onote_core/INTEGRATION.md` — a zero-CMake "build the DLL, drop it next to the exe, see the green chip" quick path (verifiable immediately) plus an optional `windows/CMakeLists.txt` POST_BUILD snippet to compile+bundle it automatically. Prereq noted: `cargo` on PATH (the "unrecognised" terminal issue).
+
+The FFI `merge` is linked and tested but still off the user-facing path — it activates when the sync flow is built. Next: a `RustEngine` implementing `DocumentEngine`, then Loro behind `merge` (ADR-0002) and a sync transport.
+
 ## F. Process note
 
 Iteration 2's two shipped bugs (F-6-class API drift, the startup-path crash) both stemmed from unverifiable-in-sandbox platform behavior. Mitigation now in place: every UI interaction path in iteration 3 was re-derived from event-dispatch order rather than assumed (F-3 was exactly an ordering assumption), and version-sensitive APIs are confined to two files (`ink_painter.dart`, `export/pdf_export.dart`) with fallbacks noted in the README.

@@ -52,7 +52,7 @@ Every block shares this envelope; `content` is per-type (§5–§7):
 
 **Unknown-field rule:** readers MUST preserve fields they don't understand (round-trip unknown keys); writers MUST NOT emit fields with semantics conflicting with this spec. This is the forward-compatibility contract.
 
-**Page-level properties:** `background` (`"blank" | "ruled" | "grid" | "dotted"`), `gridSize` (px, default 20), `pageWidth` (logical px, default 900 — the presented page-surface width per CANVAS-1 v0.3; the surface's height and right edge grow with content), `defaultPlacement`, `tags`, `titleBlockId` (optional).
+**Page-level properties:** `background` (`"blank" | "ruled" | "grid" | "dotted"`), `gridSize` (px, default 24), `pageWidth` (logical px, default 1100 — the page-surface width per CANVAS-1 v0.4: at normal zoom the page presents *seamlessly*, filling the window as one continuous surface; zoomed out it presents as a bounded sheet whose height/right edge grow with content), `defaultPlacement` (default **snapped** — snap-to-grid is on by default, with the alignment grid visible only while a block is being dragged), `tags`, `titleBlockId` (optional).
 
 ## 4. Block type registry (v1)
 

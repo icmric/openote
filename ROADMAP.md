@@ -16,7 +16,7 @@ The guiding sequence: **de-risk the hardest technical unknowns first, ship a gen
 - [x] **Framework decision:** Flutter/Dart UI + Rust core — [ADR-0001](docs/adr/ADR-0001-application-framework.md) *(provisional, revisit triggers documented)*
 - [x] Provisional ADRs: CRDT ([0002](docs/adr/ADR-0002-crdt-library.md) — Loro), storage container ([0003](docs/adr/ADR-0003-storage-container.md) — SQLite `.onote`), licensing proposal ([0005](docs/adr/ADR-0005-licensing.md) — needs stakeholder ratification)
 - [ ] **Editor-engine bake-off** ([ADR-0004](docs/adr/ADR-0004-editor-engine.md)): 1–2-week spikes on super_editor and appflowy_editor — "math inline widget + live Markdown + read-only canvas box" — then decide
-- [ ] **Validation spikes (not decision gates):** first-party canvas core (pan/zoom/cull); Saber-style ink pipeline feel-check on a tablet; Loro-via-FRB round-trip + note-shaped CRDT benchmark
+- [ ] **Validation spikes (not decision gates):** first-party canvas core (pan/zoom/cull) ✅ *(shipped in `app/`)*; Saber-style ink pipeline feel-check on a tablet; Loro-via-FRB round-trip + note-shaped CRDT benchmark — *Rust core crate `rust/onote_core` now exists and its build/test toolchain is verified (13 passing tests); the FRB round-trip and Loro benchmark are the remaining pieces of this spike.*
 - [ ] Ratify the license ([ADR-0005](docs/adr/ADR-0005-licensing.md)) and apply it; publish the format spec as the repo's public contract
 
 **Exit criteria:** editor engine chosen with spike evidence; license ratified; canvas/ink/CRDT spikes green; a repo ready for application code.
@@ -47,14 +47,15 @@ The guiding sequence: **de-risk the hardest technical unknowns first, ship a gen
 
 **Goal:** notes move between a user's own devices reliably, and the app gains the everyday polish that makes it a daily driver.
 
-- [ ] **Cross-device sync** with **conflict-free CRDT merge** *(SYNC-1, 2)* — the direct answer to OneNote's #1 complaint
+- [ ] **Cross-device sync** with **conflict-free CRDT merge** *(SYNC-1, 2)* — the direct answer to OneNote's #1 complaint. *Seeded (iteration 11):* the Rust core (`rust/onote_core`) now implements and unit-tests a deterministic page-mirror merge + content hash — the merge semantics of sync, buildable and toolchain-verified today. Remaining: wire `flutter_rust_bridge`, replace `MirrorEngine` with the Rust-backed engine, and move from snapshot-exchange to the Loro CRDT (ADR-0002) for full delete/offline-edit convergence.
 - [ ] **Bring-your-own sync target** (WebDAV/Nextcloud, S3-compatible, synced folder) *(SYNC-3)*
 - [ ] **Tablet experience** hardened: pen toolbar, gestures, latency tuning across iPad/Android/Surface *(PLAT-2)*
-- [ ] **Full open export** (HTML, MathML, InkML, JSON Canvas; lossless "materialize as a folder of open files") *(OPEN-6, 7)*
-- [ ] **Import** from Markdown / Obsidian / JSON Canvas *(OPEN-9)*
+- [x] **Full open export** — lossless **"materialize as a folder of open files"** (per-page `page.json` mirror + `page.md` + JSON Canvas + InkML + content-addressed assets + manifest), plus single-page **JSON Canvas** and **InkML** exporters *(OPEN-6, 7)* — iteration 11. *(HTML/MathML export still to add.)*
+- [x] **Import** from Markdown / Obsidian (folder → section, files → pages, nested folders → subpages; front-matter stripped; wiki-links preserved) *(OPEN-9)* — iteration 11. *(JSON Canvas import still to add.)*
 - [ ] **Live embeds / transclusion** *(EMBED-2…8)*: render a block, range, or frame of another page inside this one — read-only, live-updating, cycle-safe, with snapshot fallback (built on the MVP's stable block IDs)
-- [ ] **Tables** *(MEDIA-3)*, **lasso-select ink** *(INK-7)*, **backlinks** *(TEXT-8)*, **page templates** (all platforms) *(ORG-9)*, **recycle bin** *(ORG-7)*
-- [ ] **Version history** browse/restore *(SYNC-8)*; **find-and-replace** across notebook *(TEXT-7)*
+- [x] **Tables** *(MEDIA-3)*, **backlinks** *(TEXT-8, incoming + outgoing panel)*, **recycle bin** *(ORG-7)* — iteration 8
+- [x] **lasso-select ink** *(INK-7)* — iteration 11 (loop-to-gather strokes into one selection); **page templates** *(ORG-9)* — iteration 10; **version history** *(SYNC-8)* — iteration 10
+- [ ] **find-and-replace** across notebook *(TEXT-7)* — on-page find shipped; notebook-wide replace still to add
 - [ ] Page backgrounds, minimap, alignment guides, auto-sort *(CANVAS-10–11, ORG-8)*
 
 **Exit criteria:** a user works across two of their own devices offline and online with no data loss and no conflict dialogs.
@@ -77,8 +78,11 @@ The guiding sequence: **de-risk the hardest technical unknowns first, ship a gen
 
 ---
 
-## Beyond
+## Beyond — "everything app" vision (stakeholder-flagged, future)
 
+- **Math evaluation / CAS.** The editor stores canonical LaTeX; a compute layer (e.g. a Rust CAS crate, or an embedded engine) could evaluate expressions — from basic arithmetic up to matrix multiplication and symbolic algebra. Feasible incrementally: start with numeric evaluation of simple expressions, grow toward CAS. Was a v1 non-goal; re-opened as a future differentiator.
+- **Point-and-click math UI.** A structure palette that builds matrices/fractions/integrals visually (OneNote-style) so users needn't learn LaTeX, layered over the existing linear-input engine.
+- **Sandboxed code execution.** Run code blocks in a sandbox (WASM runtimes like Wasmtime, or language-specific sandboxes) so scripts execute in-app. Lofty; a security-sensitive, later-stage goal.
 - Plugin/extension API (the documented format is the first extension surface)
 - Community importers/exporters and format tooling around the published spec
 - Advanced handwriting features; richer shapes/diagramming

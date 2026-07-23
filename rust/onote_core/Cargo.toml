@@ -1,0 +1,31 @@
+[package]
+name = "onote_core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Openote core: the CRDT-ready page-document model, deterministic mirror merge, and content hashing. The seam where the Rust/Loro sync engine grows in (ADR-0002), exposed to Flutter via flutter_rust_bridge."
+license = "AGPL-3.0-or-later" # provisional, tracks ADR-0005 (pending ratification)
+repository = "https://github.com/openote/openote"
+publish = false
+
+# cdylib/staticlib let Flutter link the compiled core; `lib` keeps `cargo test`
+# and downstream Rust use working. The default build (no features) needs none of
+# the bridge machinery, so `cargo test` verifies your toolchain on its own.
+[lib]
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[features]
+default = []
+# Enable only when generating/serving the Flutter bindings (see README).
+bridge = ["dep:flutter_rust_bridge"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+flutter_rust_bridge = { version = "2", optional = true }
+
+[profile.release]
+# Smaller, faster shared library for the shipped app.
+lto = true
+opt-level = "z"
+codegen-units = 1

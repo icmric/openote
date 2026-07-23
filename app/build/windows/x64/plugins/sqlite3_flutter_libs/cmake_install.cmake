@@ -1,4 +1,4 @@
-# Install script for directory: C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/.plugin_symlinks/sqlite3_flutter_libs/windows
+# Install script for directory: C:/src/openote/app/windows/flutter/ephemeral/.plugin_symlinks/sqlite3_flutter_libs/windows
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

@@ -57,6 +57,7 @@ class Repository {
   Future<void> _loadWorkspace() async {
     if (!_workspaceFile.existsSync()) return;
     final j = jsonDecode(await _workspaceFile.readAsString()) as Map<String, dynamic>;
+    _settings = (j['settings'] as Map?)?.cast<String, dynamic>() ?? {};
     for (final n in (j['notebooks'] as List? ?? const [])) {
       final m = (n as Map).cast<String, dynamic>();
       final file = p.join(workspaceDir.path, m['file'] as String);
@@ -75,11 +76,19 @@ class Repository {
         for (final n in notebooks)
           {'id': n.id, 'file': p.basename(n.file), 'title': n.title}
       ],
-      'settings': {},
+      'settings': _settings,
     }));
   }
 
   String? _workspaceId;
+
+  /// Workspace settings (spec §7): session state, custom colours, templates.
+  Map<String, dynamic> _settings = {};
+  dynamic getSetting(String key) => _settings[key];
+  void setSetting(String key, dynamic value) {
+    _settings[key] = value;
+    _saveWorkspace(); // fire-and-forget; small file
+  }
 
   Database _db(String notebookId) {
     final nb = notebooks.firstWhere((n) => n.id == notebookId);
@@ -155,9 +164,121 @@ class Repository {
     return n;
   }
 
+  List<String> _descendants(Database db, String id) {
+    final out = <String>[id];
+    final queue = [id];
+    while (queue.isNotEmpty) {
+      final cur = queue.removeLast();
+      for (final r in db.select('SELECT id FROM nodes WHERE parent_id=?', [cur])) {
+        final cid = r['id'] as String;
+        out.add(cid);
+        queue.add(cid);
+      }
+    }
+    return out;
+  }
+
+  /// Soft-delete a node and everything under it (ORG-7 recycle bin).
   void softDeleteNode(String notebookId, String nodeId) {
-    _db(notebookId)
-        .execute('UPDATE nodes SET deleted_at=? WHERE id=?', [nowMs(), nodeId]);
+    final db = _db(notebookId);
+    final ts = nowMs();
+    for (final id in _descendants(db, nodeId)) {
+      db.execute(
+          'UPDATE nodes SET deleted_at=? WHERE id=? AND deleted_at IS NULL',
+          [ts, id]);
+    }
+  }
+
+  /// Restore a node, its descendants, and its ancestors (so it reattaches).
+  void restoreNode(String notebookId, String nodeId) {
+    final db = _db(notebookId);
+    for (final id in _descendants(db, nodeId)) {
+      db.execute('UPDATE nodes SET deleted_at=NULL WHERE id=?', [id]);
+    }
+    var parent = db
+        .select('SELECT parent_id FROM nodes WHERE id=?', [nodeId])
+        .firstOrNull?['parent_id'] as String?;
+    while (parent != null) {
+      db.execute('UPDATE nodes SET deleted_at=NULL WHERE id=?', [parent]);
+      parent = db
+          .select('SELECT parent_id FROM nodes WHERE id=?', [parent])
+          .firstOrNull?['parent_id'] as String?;
+    }
+  }
+
+  /// Permanently delete a node and its subtree (FK cascade clears page data).
+  void purgeNode(String notebookId, String nodeId) {
+    _db(notebookId).execute('DELETE FROM nodes WHERE id=?', [nodeId]);
+  }
+
+  List<({String id, String kind, String title, int deletedAt})> loadDeletedNodes(
+      String notebookId) {
+    final rows = _db(notebookId).select(
+        'SELECT id,kind,title,deleted_at FROM nodes '
+        'WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC');
+    return [
+      for (final r in rows)
+        (
+          id: r['id'] as String,
+          kind: r['kind'] as String,
+          title: r['title'] as String,
+          deletedAt: r['deleted_at'] as int,
+        )
+    ];
+  }
+
+  // ── Version history (SYNC-8, page_versions table) ─────────────────────
+
+  /// Snapshot the page's current mirror into page_versions if the newest
+  /// version is older than [minGap] (or none exists). Called before saves.
+  void maybeSnapshotVersion(String notebookId, String pageId,
+      {Duration minGap = const Duration(minutes: 10)}) {
+    final db = _db(notebookId);
+    final cur = db
+        .select('SELECT json FROM page_mirror WHERE page_id=?', [pageId])
+        .firstOrNull?['json'] as String?;
+    if (cur == null) return;
+    final newest = db
+        .select(
+            'SELECT MAX(version_at) AS m FROM page_versions WHERE page_id=?',
+            [pageId])
+        .first['m'] as int?;
+    final now = nowMs();
+    if (newest != null && now - newest < minGap.inMilliseconds) return;
+    db.execute(
+        'INSERT OR REPLACE INTO page_versions(page_id,version_at,snapshot,label) '
+        'VALUES(?,?,?,NULL)',
+        [pageId, now, Uint8List.fromList(utf8.encode(cur))]);
+    // Retention: keep the newest 30 versions per page.
+    db.execute(
+        'DELETE FROM page_versions WHERE page_id=? AND version_at NOT IN '
+        '(SELECT version_at FROM page_versions WHERE page_id=? '
+        'ORDER BY version_at DESC LIMIT 30)',
+        [pageId, pageId]);
+  }
+
+  List<int> listVersions(String notebookId, String pageId) => [
+        for (final r in _db(notebookId).select(
+            'SELECT version_at FROM page_versions WHERE page_id=? '
+            'ORDER BY version_at DESC',
+            [pageId]))
+          r['version_at'] as int
+      ];
+
+  String? versionJson(String notebookId, String pageId, int at) {
+    final row = _db(notebookId).select(
+        'SELECT snapshot FROM page_versions WHERE page_id=? AND version_at=?',
+        [pageId, at]).firstOrNull;
+    return row == null ? null : utf8.decode(row['snapshot'] as Uint8List);
+  }
+
+  /// Distinct pages that link to [pageId] (backlinks, TEXT-8).
+  List<String> backlinkPageIds(String notebookId, String pageId) {
+    final rows = _db(notebookId).select(
+        'SELECT DISTINCT src_page_id FROM refs '
+        'WHERE dst_page_id=? AND src_page_id<>?',
+        [pageId, pageId]);
+    return [for (final r in rows) r['src_page_id'] as String];
   }
 
   // ── Page content (mirror-write mode, spec §4) ──────────────────────────
@@ -205,6 +326,34 @@ class Repository {
           db.execute(
               'INSERT OR IGNORE INTO blob_refs(page_id,hash) VALUES(?,?)',
               [pageId, hash.replaceFirst('sha256:', '')]);
+        }
+      }
+      // Maintain the refs index (links & embeds) for backlinks (TEXT-8).
+      db.execute('DELETE FROM refs WHERE src_page_id=?', [pageId]);
+      final linkRe = RegExp(r'\[\[[^\]|]+(?:\|([^\]]+))?\]\]');
+      for (final b in blocks) {
+        if (b.type == BlockType.text) {
+          final txt = b.content['text'] as String? ?? '';
+          var idx = 0;
+          for (final m in linkRe.allMatches(txt)) {
+            final dst = m.group(1);
+            if (dst == null) continue;
+            db.execute(
+                'INSERT OR IGNORE INTO refs'
+                '(src_page_id,src_block_id,kind,dst_page_id,dst_notebook,dst_target) '
+                'VALUES(?,?,?,?,?,?)',
+                [pageId, '${b.id}#${idx++}', 'link', dst, null, null]);
+          }
+        } else if (b.type == BlockType.embed) {
+          final ref = (b.content['ref'] as Map?)?.cast<String, dynamic>();
+          final dst = ref?['pageId'] as String?;
+          if (dst != null) {
+            db.execute(
+                'INSERT OR IGNORE INTO refs'
+                '(src_page_id,src_block_id,kind,dst_page_id,dst_notebook,dst_target) '
+                'VALUES(?,?,?,?,?,?)',
+                [pageId, b.id, 'embed', dst, null, null]);
+          }
         }
       }
       db.execute('COMMIT');

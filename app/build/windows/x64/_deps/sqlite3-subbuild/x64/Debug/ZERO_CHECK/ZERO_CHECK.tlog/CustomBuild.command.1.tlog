@@ -1,6 +1,6 @@
-^C:\SRC\OPENOTE-MVP\OPENOTE\APP\BUILD\WINDOWS\X64\_DEPS\SQLITE3-SUBBUILD\CMAKEFILES\23A9734674FC62DD4B19D18C0218A9BC\GENERATE.STAMP.RULE
+^C:\SRC\OPENOTE\APP\BUILD\WINDOWS\X64\_DEPS\SQLITE3-SUBBUILD\CMAKEFILES\461D964971E9D2C0FC1F01254CEE24A8\GENERATE.STAMP.RULE
 setlocal
-"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote-mvp/openote/app/build/windows/x64/_deps/sqlite3-subbuild -BC:/src/openote-mvp/openote/app/build/windows/x64/_deps/sqlite3-subbuild --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/src/openote-mvp/openote/app/build/windows/x64/_deps/sqlite3-subbuild/sqlite3-populate.sln
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote/app/build/windows/x64/_deps/sqlite3-subbuild -BC:/src/openote/app/build/windows/x64/_deps/sqlite3-subbuild --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/src/openote/app/build/windows/x64/_deps/sqlite3-subbuild/sqlite3-populate.sln
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone

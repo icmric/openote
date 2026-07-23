@@ -5,10 +5,12 @@ import '../editor/code_block_view.dart';
 import '../editor/file_block_view.dart';
 import '../editor/image_block_view.dart';
 import '../editor/math_block_view.dart';
+import '../editor/table_block_view.dart';
 import '../editor/text_block_view.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import '../ui/context_menus.dart';
 import 'canvas_controller.dart';
 
 /// Selection chrome + move/resize for one block; dispatches content by type.
@@ -44,7 +46,8 @@ class _BlockViewState extends State<BlockView> {
   bool get _editableType =>
       b.type == BlockType.text ||
       b.type == BlockType.code ||
-      b.type == BlockType.math;
+      b.type == BlockType.math ||
+      b.type == BlockType.table;
 
   void _tap() {
     final shift = HardwareKeyboard.instance.isShiftPressed;
@@ -59,6 +62,7 @@ class _BlockViewState extends State<BlockView> {
 
   void _dragStart(DragStartDetails d) {
     if (!selected) app.select(b.id);
+    app.setDragging(true);
   }
 
   void _drag(DragUpdateDetails d) {
@@ -74,6 +78,7 @@ class _BlockViewState extends State<BlockView> {
   void _dragEnd(DragEndDetails d) {
     _dragUndoPushed = false;
     app.settleSelected();
+    app.setDragging(false);
   }
 
   String _a11yLabel() {
@@ -95,6 +100,8 @@ class _BlockViewState extends State<BlockView> {
       app.pushUndo();
       _resizeUndoPushed = true;
     }
+    // Manual resize locks the width (text boxes stop auto-growing).
+    if (b.type == BlockType.text) b.content['autoWidth'] = false;
     b.w = (b.w + d.delta.dx / widget.controller.scale).clamp(80.0, 4000.0);
     app.updateBlock(b);
   }
@@ -104,11 +111,26 @@ class _BlockViewState extends State<BlockView> {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = Theme.of(context).colorScheme.primary;
 
+    // Auto-width text boxes are measured HERE (parent build) so the box grows
+    // in the same frame the text changes — no wrapping-before-resize lag. We
+    // only measure the box being *edited* (the sole time width must track
+    // content live); other blocks reuse their stored width, so panning/zooming
+    // never re-measures every text box. The measured width is written back to
+    // the model so persistence, export, and hit-testing agree with the screen.
+    double displayW = b.w;
+    if (b.type == BlockType.text &&
+        editing &&
+        b.content['autoWidth'] != false) {
+      displayW = TextBlockView.autoWidth(b, dark: dark);
+      b.w = displayW;
+    }
+
     final content = switch (b.type) {
       BlockType.text => TextBlockView(block: b, app: app),
       BlockType.math => MathBlockView(block: b, app: app),
       BlockType.image => ImageBlockView(block: b, app: app),
       BlockType.code => CodeBlockView(block: b, app: app),
+      BlockType.table => TableBlockView(block: b, app: app),
       BlockType.file => FileBlockView(block: b, app: app),
       _ => Padding(
           padding: const EdgeInsets.all(8),
@@ -147,6 +169,9 @@ class _BlockViewState extends State<BlockView> {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: editing ? null : _tap,
+            onSecondaryTapUp: editing
+                ? null
+                : (d) => showBlockMenu(context, app, b, d.globalPosition),
             onPanStart: editing ? null : _dragStart,
             onPanUpdate: editing ? null : _drag,
             onPanEnd: editing ? null : _dragEnd,
@@ -156,7 +181,7 @@ class _BlockViewState extends State<BlockView> {
                 _MeasureSize(
                   onChange: (size) => app.renderSizes[b.id] = size,
                   child: Container(
-                    width: b.w,
+                    width: displayW,
                     height: b.h,
                     constraints: const BoxConstraints(minHeight: 36),
                     decoration: BoxDecoration(
@@ -180,7 +205,9 @@ class _BlockViewState extends State<BlockView> {
                     child: labelled,
                   ),
                 ),
-                if (primary && !editing) ...[
+                // Resize handle — available whenever the block is primary,
+                // including while editing a text box (so it's resizable).
+                if (primary) ...[
                   Positioned(
                     right: -6,
                     top: 0,
@@ -195,7 +222,7 @@ class _BlockViewState extends State<BlockView> {
                             width: 10,
                             height: 28,
                             decoration: BoxDecoration(
-                              color: primaryColor,
+                              color: primaryColor.withValues(alpha: .85),
                               borderRadius: BorderRadius.circular(5),
                             ),
                           ),
@@ -203,6 +230,9 @@ class _BlockViewState extends State<BlockView> {
                       ),
                     ),
                   ),
+                ],
+                // Duplicate/delete affordances only when selected, not typing.
+                if (primary && !editing) ...[
                   Positioned(
                     top: -16,
                     right: -8,

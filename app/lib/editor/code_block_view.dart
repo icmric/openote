@@ -38,6 +38,7 @@ class _CodeBlockViewState extends State<CodeBlockView> {
   void _handleExitTransition() {
     if (_wasEditing && !editing) {
       _undoPushed = false;
+      widget.app.clearActiveEditor(widget.block.id);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if ((widget.block.content['source'] as String? ?? '').trim().isEmpty) {
@@ -104,7 +105,12 @@ class _CodeBlockViewState extends State<CodeBlockView> {
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
             child: editing
-                ? TextField(
+                ? Builder(builder: (context) {
+                    widget.app
+                        .setActiveEditor(_controller, widget.block, 'source');
+                    return Focus(
+                      onKeyEvent: _onKey,
+                      child: TextField(
                     controller: _controller,
                     focusNode: _focus..requestFocus(),
                     maxLines: null,
@@ -122,7 +128,9 @@ class _CodeBlockViewState extends State<CodeBlockView> {
                       widget.block.updatedAt = nowMs();
                       widget.app.markDirty();
                     },
-                  )
+                  ),
+                    );
+                  })
                 : Text.rich(
                     TextSpan(
                       style: mono,
@@ -135,6 +143,23 @@ class _CodeBlockViewState extends State<CodeBlockView> {
         ],
       ),
     );
+  }
+
+  /// Tab inserts two spaces at the caret instead of moving focus (Tab isn't
+  /// consumed by EditableText, so it bubbles here first).
+  KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    if (e is KeyDownEvent && e.logicalKey == LogicalKeyboardKey.tab) {
+      final sel = _controller.selection;
+      if (!sel.isValid) return KeyEventResult.ignored;
+      final at = sel.start;
+      _controller.text = _controller.text.replaceRange(sel.start, sel.end, '  ');
+      _controller.selection = TextSelection.collapsed(offset: at + 2);
+      widget.block.content['source'] = _controller.text;
+      widget.block.updatedAt = nowMs();
+      widget.app.markDirty();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   Future<void> _pickLanguage() async {

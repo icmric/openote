@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" ToolsVersion="16.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <PreferredToolArchitecture>x64</PreferredToolArchitecture>
   </PropertyGroup>
@@ -18,9 +18,9 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{00ED5711-7F11-31C3-A74D-ED206BD66E1D}</ProjectGuid>
-    <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
+    <ProjectGuid>{5367E4BD-B384-32BB-B261-881E14E4390C}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0.22621.0</WindowsTargetPlatformVersion>
     <Platform>x64</Platform>
     <ProjectName>flutter_assemble</ProjectName>
     <VCProjectUpgraderObjectName>NoUpgrade</VCProjectUpgraderObjectName>
@@ -29,17 +29,17 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Utility</ConfigurationType>
     <CharacterSet>MultiByte</CharacterSet>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Profile|x64'" Label="Configuration">
     <ConfigurationType>Utility</ConfigurationType>
     <CharacterSet>MultiByte</CharacterSet>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Utility</ConfigurationType>
     <CharacterSet>MultiByte</CharacterSet>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -85,10 +85,10 @@
     </Midl>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CustomBuild Include="C:\src\openote-mvp\openote\app\build\windows\x64\CMakeFiles\f9637869bbbe518bd70386883269c32a\flutter_windows.dll.rule">
-      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Generating C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_windows.dll, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_export.h, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_windows.h, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_messenger.h, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_plugin_registrar.h, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_texture_registrar.h, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/core_implementations.cc, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/standard_codec.cc, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/plugin_registrar.cc, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/flutter_engine.cc, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/flutter_view_controller.cc, _phony_</Message>
+    <CustomBuild Include="C:\src\openote\app\build\windows\x64\CMakeFiles\0bfd578ab742cc7b0f48fb55f8eaa9b0\flutter_windows.dll.rule">
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Generating C:/src/openote/app/windows/flutter/ephemeral/flutter_windows.dll, C:/src/openote/app/windows/flutter/ephemeral/flutter_export.h, C:/src/openote/app/windows/flutter/ephemeral/flutter_windows.h, C:/src/openote/app/windows/flutter/ephemeral/flutter_messenger.h, C:/src/openote/app/windows/flutter/ephemeral/flutter_plugin_registrar.h, C:/src/openote/app/windows/flutter/ephemeral/flutter_texture_registrar.h, C:/src/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/core_implementations.cc, C:/src/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/standard_codec.cc, C:/src/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/plugin_registrar.cc, C:/src/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/flutter_engine.cc, C:/src/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/flutter_view_controller.cc, _phony_</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
-"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E env FLUTTER_ROOT=C:\Users\ericm\develop\flutter PROJECT_DIR=C:\src\openote-mvp\openote\app FLUTTER_ROOT=C:\Users\ericm\develop\flutter FLUTTER_EPHEMERAL_DIR=C:\src\openote-mvp\openote\app\windows\flutter\ephemeral PROJECT_DIR=C:\src\openote-mvp\openote\app FLUTTER_TARGET=C:\src\openote-mvp\openote\app\lib\main.dart DART_DEFINES=RkxVVFRFUl9WRVJTSU9OPTMuMzUuNw==,RkxVVFRFUl9DSEFOTkVMPXN0YWJsZQ==,RkxVVFRFUl9HSVRfVVJMPWh0dHBzOi8vZ2l0aHViLmNvbS9mbHV0dGVyL2ZsdXR0ZXIuZ2l0,RkxVVFRFUl9GUkFNRVdPUktfUkVWSVNJT049YWRjOTAxMDYyNQ==,RkxVVFRFUl9FTkdJTkVfUkVWSVNJT049MDM1MzE2NTY1YQ==,RkxVVFRFUl9EQVJUX1ZFUlNJT049My45LjI= DART_OBFUSCATION=false TRACK_WIDGET_CREATION=true TREE_SHAKE_ICONS=false PACKAGE_CONFIG=C:\src\openote-mvp\openote\app\.dart_tool\package_config.json C:/Users/ericm/develop/flutter/packages/flutter_tools/bin/tool_backend.bat windows-x64 Debug
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E env FLUTTER_ROOT=C:\src\flutter PROJECT_DIR=C:\src\openote\app FLUTTER_ROOT=C:\src\flutter FLUTTER_EPHEMERAL_DIR=C:\src\openote\app\windows\flutter\ephemeral PROJECT_DIR=C:\src\openote\app FLUTTER_TARGET=C:\src\openote\app\lib\main.dart DART_DEFINES=RkxVVFRFUl9WRVJTSU9OPTMuMzUuNw==,RkxVVFRFUl9DSEFOTkVMPXN0YWJsZQ==,RkxVVFRFUl9HSVRfVVJMPWh0dHBzOi8vZ2l0aHViLmNvbS9mbHV0dGVyL2ZsdXR0ZXIuZ2l0,RkxVVFRFUl9GUkFNRVdPUktfUkVWSVNJT049YWRjOTAxMDYyNQ==,RkxVVFRFUl9FTkdJTkVfUkVWSVNJT049MDM1MzE2NTY1YQ==,RkxVVFRFUl9EQVJUX1ZFUlNJT049My45LjI= DART_OBFUSCATION=false TRACK_WIDGET_CREATION=true TREE_SHAKE_ICONS=false PACKAGE_CONFIG=C:\src\openote\app\.dart_tool\package_config.json C:/src/flutter/packages/flutter_tools/bin/tool_backend.bat windows-x64 Debug
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -97,12 +97,12 @@ exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(AdditionalInputs)</AdditionalInputs>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_windows.dll;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_export.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_windows.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_messenger.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_plugin_registrar.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_texture_registrar.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\core_implementations.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\standard_codec.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\plugin_registrar.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_engine.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_view_controller.cc;C:\src\openote-mvp\openote\app\build\windows\x64\flutter\_phony_</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\src\openote\app\windows\flutter\ephemeral\flutter_windows.dll;C:\src\openote\app\windows\flutter\ephemeral\flutter_export.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_windows.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_messenger.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_plugin_registrar.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_texture_registrar.h;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\core_implementations.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\standard_codec.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\plugin_registrar.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_engine.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_view_controller.cc;C:\src\openote\app\build\windows\x64\flutter\_phony_</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
       <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</VerifyInputsAndOutputsExist>
-      <Message Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">Generating C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_windows.dll, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_export.h, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_windows.h, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_messenger.h, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_plugin_registrar.h, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_texture_registrar.h, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/core_implementations.cc, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/standard_codec.cc, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/plugin_registrar.cc, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/flutter_engine.cc, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/flutter_view_controller.cc, _phony_</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">Generating C:/src/openote/app/windows/flutter/ephemeral/flutter_windows.dll, C:/src/openote/app/windows/flutter/ephemeral/flutter_export.h, C:/src/openote/app/windows/flutter/ephemeral/flutter_windows.h, C:/src/openote/app/windows/flutter/ephemeral/flutter_messenger.h, C:/src/openote/app/windows/flutter/ephemeral/flutter_plugin_registrar.h, C:/src/openote/app/windows/flutter/ephemeral/flutter_texture_registrar.h, C:/src/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/core_implementations.cc, C:/src/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/standard_codec.cc, C:/src/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/plugin_registrar.cc, C:/src/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/flutter_engine.cc, C:/src/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/flutter_view_controller.cc, _phony_</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">setlocal
-"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E env FLUTTER_ROOT=C:\Users\ericm\develop\flutter PROJECT_DIR=C:\src\openote-mvp\openote\app FLUTTER_ROOT=C:\Users\ericm\develop\flutter FLUTTER_EPHEMERAL_DIR=C:\src\openote-mvp\openote\app\windows\flutter\ephemeral PROJECT_DIR=C:\src\openote-mvp\openote\app FLUTTER_TARGET=C:\src\openote-mvp\openote\app\lib\main.dart DART_DEFINES=RkxVVFRFUl9WRVJTSU9OPTMuMzUuNw==,RkxVVFRFUl9DSEFOTkVMPXN0YWJsZQ==,RkxVVFRFUl9HSVRfVVJMPWh0dHBzOi8vZ2l0aHViLmNvbS9mbHV0dGVyL2ZsdXR0ZXIuZ2l0,RkxVVFRFUl9GUkFNRVdPUktfUkVWSVNJT049YWRjOTAxMDYyNQ==,RkxVVFRFUl9FTkdJTkVfUkVWSVNJT049MDM1MzE2NTY1YQ==,RkxVVFRFUl9EQVJUX1ZFUlNJT049My45LjI= DART_OBFUSCATION=false TRACK_WIDGET_CREATION=true TREE_SHAKE_ICONS=false PACKAGE_CONFIG=C:\src\openote-mvp\openote\app\.dart_tool\package_config.json C:/Users/ericm/develop/flutter/packages/flutter_tools/bin/tool_backend.bat windows-x64 Profile
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E env FLUTTER_ROOT=C:\src\flutter PROJECT_DIR=C:\src\openote\app FLUTTER_ROOT=C:\src\flutter FLUTTER_EPHEMERAL_DIR=C:\src\openote\app\windows\flutter\ephemeral PROJECT_DIR=C:\src\openote\app FLUTTER_TARGET=C:\src\openote\app\lib\main.dart DART_DEFINES=RkxVVFRFUl9WRVJTSU9OPTMuMzUuNw==,RkxVVFRFUl9DSEFOTkVMPXN0YWJsZQ==,RkxVVFRFUl9HSVRfVVJMPWh0dHBzOi8vZ2l0aHViLmNvbS9mbHV0dGVyL2ZsdXR0ZXIuZ2l0,RkxVVFRFUl9GUkFNRVdPUktfUkVWSVNJT049YWRjOTAxMDYyNQ==,RkxVVFRFUl9FTkdJTkVfUkVWSVNJT049MDM1MzE2NTY1YQ==,RkxVVFRFUl9EQVJUX1ZFUlNJT049My45LjI= DART_OBFUSCATION=false TRACK_WIDGET_CREATION=true TREE_SHAKE_ICONS=false PACKAGE_CONFIG=C:\src\openote\app\.dart_tool\package_config.json C:/src/flutter/packages/flutter_tools/bin/tool_backend.bat windows-x64 Profile
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -111,12 +111,12 @@ exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">%(AdditionalInputs)</AdditionalInputs>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_windows.dll;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_export.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_windows.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_messenger.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_plugin_registrar.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_texture_registrar.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\core_implementations.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\standard_codec.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\plugin_registrar.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_engine.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_view_controller.cc;C:\src\openote-mvp\openote\app\build\windows\x64\flutter\_phony_</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">C:\src\openote\app\windows\flutter\ephemeral\flutter_windows.dll;C:\src\openote\app\windows\flutter\ephemeral\flutter_export.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_windows.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_messenger.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_plugin_registrar.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_texture_registrar.h;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\core_implementations.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\standard_codec.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\plugin_registrar.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_engine.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_view_controller.cc;C:\src\openote\app\build\windows\x64\flutter\_phony_</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">false</LinkObjects>
       <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">false</VerifyInputsAndOutputsExist>
-      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Generating C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_windows.dll, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_export.h, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_windows.h, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_messenger.h, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_plugin_registrar.h, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/flutter_texture_registrar.h, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/core_implementations.cc, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/standard_codec.cc, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/plugin_registrar.cc, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/flutter_engine.cc, C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/flutter_view_controller.cc, _phony_</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Generating C:/src/openote/app/windows/flutter/ephemeral/flutter_windows.dll, C:/src/openote/app/windows/flutter/ephemeral/flutter_export.h, C:/src/openote/app/windows/flutter/ephemeral/flutter_windows.h, C:/src/openote/app/windows/flutter/ephemeral/flutter_messenger.h, C:/src/openote/app/windows/flutter/ephemeral/flutter_plugin_registrar.h, C:/src/openote/app/windows/flutter/ephemeral/flutter_texture_registrar.h, C:/src/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/core_implementations.cc, C:/src/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/standard_codec.cc, C:/src/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/plugin_registrar.cc, C:/src/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/flutter_engine.cc, C:/src/openote/app/windows/flutter/ephemeral/cpp_client_wrapper/flutter_view_controller.cc, _phony_</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
-"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E env FLUTTER_ROOT=C:\Users\ericm\develop\flutter PROJECT_DIR=C:\src\openote-mvp\openote\app FLUTTER_ROOT=C:\Users\ericm\develop\flutter FLUTTER_EPHEMERAL_DIR=C:\src\openote-mvp\openote\app\windows\flutter\ephemeral PROJECT_DIR=C:\src\openote-mvp\openote\app FLUTTER_TARGET=C:\src\openote-mvp\openote\app\lib\main.dart DART_DEFINES=RkxVVFRFUl9WRVJTSU9OPTMuMzUuNw==,RkxVVFRFUl9DSEFOTkVMPXN0YWJsZQ==,RkxVVFRFUl9HSVRfVVJMPWh0dHBzOi8vZ2l0aHViLmNvbS9mbHV0dGVyL2ZsdXR0ZXIuZ2l0,RkxVVFRFUl9GUkFNRVdPUktfUkVWSVNJT049YWRjOTAxMDYyNQ==,RkxVVFRFUl9FTkdJTkVfUkVWSVNJT049MDM1MzE2NTY1YQ==,RkxVVFRFUl9EQVJUX1ZFUlNJT049My45LjI= DART_OBFUSCATION=false TRACK_WIDGET_CREATION=true TREE_SHAKE_ICONS=false PACKAGE_CONFIG=C:\src\openote-mvp\openote\app\.dart_tool\package_config.json C:/Users/ericm/develop/flutter/packages/flutter_tools/bin/tool_backend.bat windows-x64 Release
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E env FLUTTER_ROOT=C:\src\flutter PROJECT_DIR=C:\src\openote\app FLUTTER_ROOT=C:\src\flutter FLUTTER_EPHEMERAL_DIR=C:\src\openote\app\windows\flutter\ephemeral PROJECT_DIR=C:\src\openote\app FLUTTER_TARGET=C:\src\openote\app\lib\main.dart DART_DEFINES=RkxVVFRFUl9WRVJTSU9OPTMuMzUuNw==,RkxVVFRFUl9DSEFOTkVMPXN0YWJsZQ==,RkxVVFRFUl9HSVRfVVJMPWh0dHBzOi8vZ2l0aHViLmNvbS9mbHV0dGVyL2ZsdXR0ZXIuZ2l0,RkxVVFRFUl9GUkFNRVdPUktfUkVWSVNJT049YWRjOTAxMDYyNQ==,RkxVVFRFUl9FTkdJTkVfUkVWSVNJT049MDM1MzE2NTY1YQ==,RkxVVFRFUl9EQVJUX1ZFUlNJT049My45LjI= DART_OBFUSCATION=false TRACK_WIDGET_CREATION=true TREE_SHAKE_ICONS=false PACKAGE_CONFIG=C:\src\openote\app\.dart_tool\package_config.json C:/src/flutter/packages/flutter_tools/bin/tool_backend.bat windows-x64 Release
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -125,13 +125,13 @@ exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(AdditionalInputs)</AdditionalInputs>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_windows.dll;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_export.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_windows.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_messenger.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_plugin_registrar.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_texture_registrar.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\core_implementations.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\standard_codec.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\plugin_registrar.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_engine.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_view_controller.cc;C:\src\openote-mvp\openote\app\build\windows\x64\flutter\_phony_</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\src\openote\app\windows\flutter\ephemeral\flutter_windows.dll;C:\src\openote\app\windows\flutter\ephemeral\flutter_export.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_windows.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_messenger.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_plugin_registrar.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_texture_registrar.h;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\core_implementations.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\standard_codec.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\plugin_registrar.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_engine.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_view_controller.cc;C:\src\openote\app\build\windows\x64\flutter\_phony_</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
       <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</VerifyInputsAndOutputsExist>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <CustomBuild Include="C:\src\openote-mvp\openote\app\build\windows\x64\CMakeFiles\6a0433c3f4e0aa79876649096e09dd8f\flutter_assemble.rule">
+    <CustomBuild Include="C:\src\openote\app\build\windows\x64\CMakeFiles\fc9796a3546d081b9c3eb2ebb1a940e6\flutter_assemble.rule">
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"></Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
 :cmEnd
@@ -140,8 +140,8 @@ endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
 exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_windows.dll;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_export.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_windows.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_messenger.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_plugin_registrar.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_texture_registrar.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\core_implementations.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\standard_codec.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\plugin_registrar.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_engine.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_view_controller.cc;%(AdditionalInputs)</AdditionalInputs>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\src\openote-mvp\openote\app\build\windows\x64\flutter\CMakeFiles\flutter_assemble</Outputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\src\openote\app\windows\flutter\ephemeral\flutter_windows.dll;C:\src\openote\app\windows\flutter\ephemeral\flutter_export.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_windows.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_messenger.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_plugin_registrar.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_texture_registrar.h;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\core_implementations.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\standard_codec.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\plugin_registrar.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_engine.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_view_controller.cc;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\src\openote\app\build\windows\x64\flutter\CMakeFiles\flutter_assemble</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
       <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</VerifyInputsAndOutputsExist>
       <Message Condition="'$(Configuration)|$(Platform)'=='Profile|x64'"></Message>
@@ -152,8 +152,8 @@ endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
 exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_windows.dll;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_export.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_windows.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_messenger.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_plugin_registrar.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_texture_registrar.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\core_implementations.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\standard_codec.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\plugin_registrar.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_engine.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_view_controller.cc;%(AdditionalInputs)</AdditionalInputs>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">C:\src\openote-mvp\openote\app\build\windows\x64\flutter\CMakeFiles\flutter_assemble</Outputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">C:\src\openote\app\windows\flutter\ephemeral\flutter_windows.dll;C:\src\openote\app\windows\flutter\ephemeral\flutter_export.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_windows.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_messenger.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_plugin_registrar.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_texture_registrar.h;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\core_implementations.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\standard_codec.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\plugin_registrar.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_engine.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_view_controller.cc;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">C:\src\openote\app\build\windows\x64\flutter\CMakeFiles\flutter_assemble</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">false</LinkObjects>
       <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">false</VerifyInputsAndOutputsExist>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'"></Message>
@@ -164,18 +164,18 @@ endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
 exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_windows.dll;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_export.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_windows.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_messenger.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_plugin_registrar.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\flutter_texture_registrar.h;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\core_implementations.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\standard_codec.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\plugin_registrar.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_engine.cc;C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_view_controller.cc;%(AdditionalInputs)</AdditionalInputs>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\src\openote-mvp\openote\app\build\windows\x64\flutter\CMakeFiles\flutter_assemble</Outputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\src\openote\app\windows\flutter\ephemeral\flutter_windows.dll;C:\src\openote\app\windows\flutter\ephemeral\flutter_export.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_windows.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_messenger.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_plugin_registrar.h;C:\src\openote\app\windows\flutter\ephemeral\flutter_texture_registrar.h;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\core_implementations.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\standard_codec.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\plugin_registrar.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_engine.cc;C:\src\openote\app\windows\flutter\ephemeral\cpp_client_wrapper\flutter_view_controller.cc;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\src\openote\app\build\windows\x64\flutter\CMakeFiles\flutter_assemble</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
       <VerifyInputsAndOutputsExist Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</VerifyInputsAndOutputsExist>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <CustomBuild Include="C:\src\openote-mvp\openote\app\windows\flutter\CMakeLists.txt">
-      <StdOutEncoding>UTF-8</StdOutEncoding>
-      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Building Custom Rule C:/src/openote-mvp/openote/app/windows/flutter/CMakeLists.txt</Message>
+    <CustomBuild Include="C:\src\openote\app\windows\flutter\CMakeLists.txt">
+      <UseUtf8Encoding>Always</UseUtf8Encoding>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Building Custom Rule C:/src/openote/app/windows/flutter/CMakeLists.txt</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
-"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote-mvp/openote/app/windows -BC:/src/openote-mvp/openote/app/build/windows/x64 --check-stamp-file C:/src/openote-mvp/openote/app/build/windows/x64/flutter/CMakeFiles/generate.stamp
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote/app/windows -BC:/src/openote/app/build/windows/x64 --check-stamp-file C:/src/openote/app/build/windows/x64/flutter/CMakeFiles/generate.stamp
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -183,12 +183,12 @@ endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
 exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\generated_config.cmake;%(AdditionalInputs)</AdditionalInputs>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\src\openote-mvp\openote\app\build\windows\x64\flutter\CMakeFiles\generate.stamp</Outputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\src\openote\app\windows\flutter\ephemeral\generated_config.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\src\openote\app\build\windows\x64\flutter\CMakeFiles\generate.stamp</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
-      <Message Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">Building Custom Rule C:/src/openote-mvp/openote/app/windows/flutter/CMakeLists.txt</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">Building Custom Rule C:/src/openote/app/windows/flutter/CMakeLists.txt</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">setlocal
-"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote-mvp/openote/app/windows -BC:/src/openote-mvp/openote/app/build/windows/x64 --check-stamp-file C:/src/openote-mvp/openote/app/build/windows/x64/flutter/CMakeFiles/generate.stamp
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote/app/windows -BC:/src/openote/app/build/windows/x64 --check-stamp-file C:/src/openote/app/build/windows/x64/flutter/CMakeFiles/generate.stamp
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -196,12 +196,12 @@ endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
 exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\generated_config.cmake;%(AdditionalInputs)</AdditionalInputs>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">C:\src\openote-mvp\openote\app\build\windows\x64\flutter\CMakeFiles\generate.stamp</Outputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">C:\src\openote\app\windows\flutter\ephemeral\generated_config.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">C:\src\openote\app\build\windows\x64\flutter\CMakeFiles\generate.stamp</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Profile|x64'">false</LinkObjects>
-      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Custom Rule C:/src/openote-mvp/openote/app/windows/flutter/CMakeLists.txt</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Custom Rule C:/src/openote/app/windows/flutter/CMakeLists.txt</Message>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
-"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote-mvp/openote/app/windows -BC:/src/openote-mvp/openote/app/build/windows/x64 --check-stamp-file C:/src/openote-mvp/openote/app/build/windows/x64/flutter/CMakeFiles/generate.stamp
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/src/openote/app/windows -BC:/src/openote/app/build/windows/x64 --check-stamp-file C:/src/openote/app/build/windows/x64/flutter/CMakeFiles/generate.stamp
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -209,18 +209,18 @@ endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
 exit /b %1
 :cmDone
 if %errorlevel% neq 0 goto :VCEnd</Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\src\openote-mvp\openote\app\windows\flutter\ephemeral\generated_config.cmake;%(AdditionalInputs)</AdditionalInputs>
-      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\src\openote-mvp\openote\app\build\windows\x64\flutter\CMakeFiles\generate.stamp</Outputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\src\openote\app\windows\flutter\ephemeral\generated_config.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\src\openote\app\build\windows\x64\flutter\CMakeFiles\generate.stamp</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <None Include="C:\src\openote-mvp\openote\app\build\windows\x64\flutter\CMakeFiles\flutter_assemble">
+    <None Include="C:\src\openote\app\build\windows\x64\flutter\CMakeFiles\flutter_assemble">
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="C:\src\openote-mvp\openote\app\build\windows\x64\ZERO_CHECK.vcxproj">
-      <Project>{735390B5-F1BA-3EC9-B26F-373BB369723C}</Project>
+    <ProjectReference Include="C:\src\openote\app\build\windows\x64\ZERO_CHECK.vcxproj">
+      <Project>{C7A69CB5-CFEF-33DD-8092-A0605C08E5D6}</Project>
       <Name>ZERO_CHECK</Name>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>

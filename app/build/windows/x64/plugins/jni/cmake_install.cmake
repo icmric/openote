@@ -1,4 +1,4 @@
-# Install script for directory: C:/src/openote-mvp/openote/app/windows/flutter/ephemeral/.plugin_symlinks/jni/windows
+# Install script for directory: C:/src/openote/app/windows/flutter/ephemeral/.plugin_symlinks/jni/windows
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -34,6 +34,6 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("C:/src/openote-mvp/openote/app/build/windows/x64/plugins/jni/shared/cmake_install.cmake")
+  include("C:/src/openote/app/build/windows/x64/plugins/jni/shared/cmake_install.cmake")
 endif()
 

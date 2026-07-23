@@ -242,13 +242,13 @@ Baseline patterns; a component library/tokens file is a next-pass deliverable.
 
 **Inputs** — 1px `paper-300`/`night-300` border, `radius-sm`, focus → `ink-500` border + ring. Labels above, hint/error below. Error state uses danger color **plus** an icon and message.
 
-**Toolbar** — low-profile, contextual, groups separated by thin dividers. Overflow into a "more" menu rather than wrapping. On the canvas, a **floating selection toolbar** appears near a selected block (format text, recolor ink, etc.).
+**Command bar** *(revised per stakeholder direction, Phase 2)* — a **compact tabbed command bar** (Home · Insert · Draw · View): OneNote's few-clicks accessibility in Openote's calm language. A slim tab row (~32px) over one command row (~44px) of icon buttons in divided groups; never more than two rows, never wrapping (overflow → "more" menu). Tabs organize breadth; the row stays quiet. Right-click **context menus** on blocks and canvas carry the same commands to the pointer — most actions reachable in ≤2 clicks. *(Supersedes v0.1's "contextual toolbar only" stance: the stakeholder explicitly values OneNote's everything-close-at-hand model; we keep the calm, drop the clutter.)*
 
 **Navigator (notebooks/sections/pages)** — a tree with clear affordances for the hierarchy: notebooks as top items, section groups collapsible, sections as colored tabs, pages/subpages indented. Drag-to-reorder with a clear drop indicator. Selected item uses `ink-100`/`ink-900` tint, not a heavy bar.
 
 **Tabs** — sections render as OneNote-style colored tabs; the color is user-assignable from the content-ink palette.
 
-**Menus & context menus** — `elevation-1`, `radius-md`, generous hit targets (≥32px rows), keyboard-navigable, with shortcut hints right-aligned.
+**Menus & context menus** — `elevation-1`, `radius-md`, generous hit targets (≥32px rows), keyboard-navigable, with shortcut hints right-aligned. Full behavioural standards in §7a.
 
 **Dialogs/modals** — `elevation-2`, `radius-xl`, focus-trapped, escapable, with a clear primary action. Reserve for genuinely modal decisions; prefer inline/non-blocking UI (the "interpret, don't interrupt" principle).
 
@@ -261,6 +261,42 @@ Baseline patterns; a component library/tokens file is a next-pass deliverable.
 **Live embeds (transclusion boxes)** — an embed must read as *a window onto another page*, not native content, without shouting: a 1px `ink-200`/`night-300` border with a subtle `ink-50`/`night-100` tint, `radius-lg`, and a compact **source badge** (page icon + page title, `caption` size) pinned to the top edge; the badge and empty areas click through to the source, while links inside the embedded content keep their own behavior. States: **live** (badge normal), **syncing** (badge with subtle progress affordance, snapshot content shown), **source deleted** (content grayed, badge in `danger` tone, actions: remove / detach as copy), **circular** (placeholder chip, never a recursive render). Embedded content is visually read-only — no hover editing affordances inside.
 
 ---
+
+## 7a. Interaction & component behaviour standards *(added at stakeholder request, Phase 2 — normative)*
+
+These standardise what every menu, button, and click does, so the UI stays consistent as it grows. Any new surface MUST follow these unless a spec'd exception exists.
+
+### 7a.1 Menus (dropdown & context)
+- **Anatomy:** rows are 36px tall; a 16px leading icon; 13px label; right-aligned shortcut hint in `caption` size/`graphite-400` where a shortcut exists; `PopupMenuDivider`/thin divider between logical groups; max ~9 items per group before a submenu or dialog is preferred.
+- **Context menus** open at the pointer, never centered. Every context-menu action must also be reachable from the command bar or a dialog (menus are accelerators, not sole homes).
+- **Dismissal:** Esc, click-away, or action. Menus never nest more than one level.
+- **Destructive items** (Delete, Remove permanently) sit last, coloured `danger`, separated by a divider.
+
+### 7a.2 Buttons & clicks
+- **Single click** = primary action (select an object; *editable blocks: enter editing*; navigator: open page). **Drag** = move. **Right-click** = context menu. **Double-click** is never the *only* path to anything.
+- **Toggle buttons** (snap, panels, tools) show selected state via `primary` tint + `primary.withValues(.14)` fill — never colour alone; the tooltip states the current state and what a click does ("Snap to grid: ON …").
+- **Split buttons** (e.g. text colour): the main area applies the *current/last* value; the attached arrow (or long-press) opens the full picker. The button displays the current value (colour swatch underline, font name).
+- **Icon-only buttons** always carry a tooltip; tooltips always include the shortcut in the form "Label  (Ctrl+X)".
+- **Disabled ≠ hidden:** commands that could apply but currently don't (formatting with no editor focused) render disabled with a nearby one-line hint, so users learn *how* to enable them.
+
+### 7a.3 Dialogs & pickers
+- Dialogs are for **choices too rich for a menu** (colour wheel, font list, templates, recycle bin, version history). `radius-xl`, max-height 60% of window, content scrolls — never the chrome.
+- **Pickers over ~10 options are searchable** (font picker). Lists render each option in its own value where meaningful (fonts in their face, colours as swatches).
+- Enter = confirm/primary, Esc = cancel, focus starts in the search field where present.
+- **Colour picker standard:** preset palette grid (theme colours + standard hues) → recent/custom row → expandable custom area with hue slider + saturation/value field + RGBA sliders + hex entry. "Custom" colours persist per workspace.
+
+### 7a.4 Shortcuts
+- Shortcuts are **accelerators only** — never the sole route to a function (the colour-flick Ctrl+Shift+C accelerates the picker's last-used value; the picker is the primary path).
+- Bare-letter shortcuts exist only when no text field is focused; formatting accelerators (Ctrl+B/I, Ctrl+Shift+C) work *while* typing; shortcuts never shadow text input.
+- The status bar surfaces the core set; every shortcut also appears in its button's tooltip.
+
+### 7a.5 State persistence (feel)
+- The app **remembers where you were**: last notebook + page on launch; per-page scroll position and zoom when flicking between pages. Restoring is instant (no animation). Panels (links, find) and theme persist per session.
+- Every stateful control reflects persisted state on first paint — no flash of defaults.
+
+### 7a.6 Feedback & latency
+- Every action gives feedback within 100ms (state change, snackbar, or visible result). Long operations (>300ms: exports) show a snackbar on completion with the target path.
+- **Performance budgets (PLAT-4 restated for UI):** page switch < 100ms; notebook switch < 250ms; keystroke-to-paint < 16ms on typical pages. No per-frame JSON decoding or allocation storms on hot paths (decoded content is cached and invalidated by `updatedAt`).
 
 ## 8. Canvas interaction guidelines
 

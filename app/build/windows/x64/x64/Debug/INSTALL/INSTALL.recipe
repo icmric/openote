@@ -2,28 +2,31 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
-      <FullPath>C:\src\openote-mvp\openote\app\build\windows\x64\x64\Debug\ZERO_CHECK</FullPath>
+      <FullPath>C:\src\openote\app\build\windows\x64\x64\Debug\ZERO_CHECK</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\src\openote-mvp\openote\app\build\windows\x64\flutter\x64\Debug\flutter_assemble</FullPath>
+      <FullPath>C:\src\openote\app\build\windows\x64\flutter\x64\Debug\flutter_assemble</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\src\openote-mvp\openote\app\build\windows\x64\plugins\file_selector_windows\Debug\file_selector_windows_plugin.dll</FullPath>
+      <FullPath>C:\src\openote\app\build\windows\x64\plugins\file_selector_windows\Debug\file_selector_windows_plugin.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\src\openote-mvp\openote\app\build\windows\x64\plugins\sqlite3_flutter_libs\Debug\sqlite3.dll</FullPath>
+      <FullPath>C:\src\openote\app\build\windows\x64\plugins\jni\shared\Debug\dartjni.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\src\openote-mvp\openote\app\build\windows\x64\plugins\sqlite3_flutter_libs\Debug\sqlite3_flutter_libs_plugin.dll</FullPath>
+      <FullPath>C:\src\openote\app\build\windows\x64\plugins\sqlite3_flutter_libs\Debug\sqlite3.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\src\openote-mvp\openote\app\build\windows\x64\runner\Debug\openote.exe</FullPath>
+      <FullPath>C:\src\openote\app\build\windows\x64\plugins\sqlite3_flutter_libs\Debug\sqlite3_flutter_libs_plugin.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\src\openote-mvp\openote\app\build\windows\x64\x64\Debug\ALL_BUILD</FullPath>
+      <FullPath>C:\src\openote\app\build\windows\x64\runner\Debug\openote.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
-      <FullPath>C:\src\openote-mvp\openote\app\build\windows\x64\x64\Debug\INSTALL</FullPath>
+      <FullPath>C:\src\openote\app\build\windows\x64\x64\Debug\ALL_BUILD</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\src\openote\app\build\windows\x64\x64\Debug\INSTALL</FullPath>
     </ProjectOutput>
   </ProjectOutputs>
   <ContentFiles />

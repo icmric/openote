@@ -1,13 +1,13 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="16.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <CustomBuild Include="C:\src\openote-mvp\openote\app\build\windows\x64\_deps\sqlite3-subbuild\CMakeFiles\23a9734674fc62dd4b19d18c0218a9bc\generate.stamp.rule">
+    <CustomBuild Include="C:\src\openote\app\build\windows\x64\_deps\sqlite3-subbuild\CMakeFiles\461d964971e9d2c0fc1f01254cee24a8\generate.stamp.rule">
       <Filter>CMake Rules</Filter>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="CMake Rules">
-      <UniqueIdentifier>{5FC7E386-640D-3A0E-BD06-7437126E9F9A}</UniqueIdentifier>
+      <UniqueIdentifier>{3A04E005-0A84-3C00-A4BC-ABB3E5CCC4CD}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

@@ -59,5 +59,9 @@ class InkPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant InkPainter old) =>
-      old.strokes != strokes || old.wet != wet;
+      old.wet != wet ||
+      old.strokes.length != strokes.length ||
+      (strokes.isNotEmpty &&
+          (!identical(old.strokes.first, strokes.first) ||
+              !identical(old.strokes.last, strokes.last)));
 }

@@ -52,6 +52,21 @@ Future<String?> exportPageMarkdown(AppState app) async {
           assets[hash] = name;
           buf.writeln('![image]($name)\n');
         }
+      case BlockType.table:
+        final cells = b.content['cells'];
+        if (cells is List && cells.isNotEmpty) {
+          final rows = [
+            for (final row in cells)
+              [for (final c in (row as List)) (c?.toString() ?? '').replaceAll('|', r'\|')]
+          ];
+          final cols = rows[0].length;
+          buf.writeln('| ${rows[0].join(' | ')} |');
+          buf.writeln('|${List.filled(cols, ' --- ').join('|')}|');
+          for (final r in rows.skip(1)) {
+            buf.writeln('| ${r.join(' | ')} |');
+          }
+          buf.writeln();
+        }
       case BlockType.ink:
         inkCount += (b.content['strokes'] as List?)?.length ?? 0;
       default:

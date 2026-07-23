@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import '../ui/context_menus.dart';
 import 'block_view.dart';
 import 'canvas_controller.dart';
 import 'ink_painter.dart';
@@ -46,18 +47,45 @@ class _PageCanvasState extends State<PageCanvas> {
   double? _pinchBaseDist;
   double _pzLastScale = 1.0;
 
+  // Lasso-select (INK-7): the freeform loop being drawn, in page space.
+  List<Offset>? _lasso;
+
   AppState get app => widget.state;
   CanvasController get controller => app.canvas;
 
   bool get _inkTool =>
       app.tool == Tool.pen || app.tool == Tool.highlighter || app.tool == Tool.eraser;
 
+  bool get _lassoTool => app.tool == Tool.lasso;
+
+  /// Decoded-stroke cache keyed by block id + updatedAt: strokes are decoded
+  /// once per edit, not on every frame (§7a.6 — no hot-path JSON decoding).
+  final Map<String, List<Stroke>> _strokeCache = {};
+
+  List<Stroke> _strokesOf(Block b) {
+    if (_strokeCache.length > 128) _strokeCache.clear();
+    return _strokeCache.putIfAbsent(
+      '${b.id}#${b.updatedAt}',
+      () => [
+        for (final sj in b.content['strokes'] as List)
+          Stroke.fromJson((sj as Map).cast<String, dynamic>()),
+      ],
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       controller.pageSize = app.pageSize();
-      controller.centerPage();
+      // Restore this page's remembered view (§7a.5), else the default.
+      final mem = app.pageId == null ? null : app.viewFor(app.pageId!);
+      if (mem != null) {
+        controller.jumpTo(mem[0], Offset(mem[1], mem[2]));
+        controller.clampToPage();
+      } else {
+        controller.centerPage();
+      }
     });
   }
 
@@ -220,6 +248,104 @@ class _PageCanvasState extends State<PageCanvas> {
     }
   }
 
+  // ── Lasso-select ink (INK-7) ────────────────────────────────────────────
+
+  void _lassoDown(PointerDownEvent e) {
+    app.claimedPointers.remove(e.pointer);
+    setState(() => _lasso = [
+          _clampToPagePoint(controller.screenToPage(e.localPosition))
+        ]);
+  }
+
+  void _lassoMove(PointerMoveEvent e) {
+    if (_lasso == null) return;
+    setState(() => _lasso!
+        .add(_clampToPagePoint(controller.screenToPage(e.localPosition))));
+  }
+
+  void _lassoUp(PointerUpEvent e) {
+    final poly = _lasso;
+    setState(() => _lasso = null);
+    if (poly == null || poly.length < 3) return;
+    _gatherLassoedStrokes(poly);
+  }
+
+  /// Gather every stroke whose points mostly fall inside the drawn loop into a
+  /// single new ink block, then select it — so the existing move/delete/copy
+  /// machinery works on a freeform ink selection regardless of which blocks the
+  /// strokes originally lived in (Ink Spec §2: strokes are immutable and carry
+  /// page-absolute coordinates, so re-homing them is just a splice).
+  void _gatherLassoedStrokes(List<Offset> poly) {
+    // 1) Detect matches WITHOUT mutating, so the undo snapshot below captures
+    //    the true pre-lasso state.
+    final gathered = <Map<String, dynamic>>[];
+    final keepByBlock = <String, List<dynamic>>{};
+    for (final b in app.blocks.where((b) => b.type == BlockType.ink)) {
+      final keep = <dynamic>[];
+      var blockChanged = false;
+      for (final sj in (b.content['strokes'] as List)) {
+        final s = Stroke.fromJson((sj as Map).cast<String, dynamic>());
+        if (_strokeInsidePoly(s, poly)) {
+          gathered.add(sj.cast<String, dynamic>());
+          blockChanged = true;
+        } else {
+          keep.add(sj);
+        }
+      }
+      if (blockChanged) keepByBlock[b.id] = keep;
+    }
+    if (gathered.isEmpty) return;
+
+    // 2) Snapshot, then apply: splice matched strokes out of their blocks,
+    //    drop now-empty blocks, and re-home the gathered strokes into one new
+    //    selected ink block.
+    app.pushUndo();
+    for (final entry in keepByBlock.entries) {
+      final b = app.blocks.where((x) => x.id == entry.key).firstOrNull;
+      if (b == null) continue;
+      if (entry.value.isEmpty) {
+        app.removeBlock(b.id, recordUndo: false);
+      } else {
+        b.content['strokes'] = entry.value;
+        _refitInkBounds(b);
+        b.updatedAt = nowMs();
+      }
+    }
+    final grouped = app.addBlock(
+        Block(type: BlockType.ink, x: 0, y: 0, content: {'strokes': gathered}),
+        recordUndo: false);
+    _refitInkBounds(grouped);
+    app.updateBlock(grouped);
+    app.select(grouped.id);
+    // Switch back to Select so the gathered ink can be dragged/deleted at once.
+    app.setTool(Tool.select);
+  }
+
+  /// A stroke counts as lassoed when the majority of its sample points lie
+  /// inside the loop — robust to a stroke poking slightly outside the boundary.
+  bool _strokeInsidePoly(Stroke s, List<Offset> poly) {
+    if (s.x.isEmpty) return false;
+    var inside = 0;
+    for (var i = 0; i < s.x.length; i++) {
+      if (_pointInPoly(Offset(s.x[i], s.y[i]), poly)) inside++;
+    }
+    return inside / s.x.length >= 0.6;
+  }
+
+  /// Ray-casting point-in-polygon test.
+  bool _pointInPoly(Offset pt, List<Offset> poly) {
+    var inside = false;
+    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      final a = poly[i], b = poly[j];
+      if (((a.dy > pt.dy) != (b.dy > pt.dy)) &&
+          (pt.dx <
+              (b.dx - a.dx) * (pt.dy - a.dy) / (b.dy - a.dy) + a.dx)) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
   // ── Touch pan/pinch (shared: pen-mode palm rejection & navigation) ──────
 
   void _touchDown(PointerDownEvent e) {
@@ -277,6 +403,14 @@ class _PageCanvasState extends State<PageCanvas> {
       _mode = _DragMode.pan;
       return;
     }
+    // Right-click on empty canvas → context menu (blocks claim theirs first).
+    if (e.kind == PointerDeviceKind.mouse &&
+        (e.buttons & kSecondaryMouseButton) != 0) {
+      _mode = _DragMode.none;
+      showCanvasMenu(
+          context, app, e.position, controller.screenToPage(e.localPosition));
+      return;
+    }
     if (e.kind == PointerDeviceKind.touch) {
       _touches[e.pointer] = e.localPosition;
       if (_touches.length == 2) {
@@ -296,6 +430,7 @@ class _PageCanvasState extends State<PageCanvas> {
       }
       _mode = _DragMode.moveSelection;
       _moveUndoPushed = false;
+      app.setDragging(true);
       return;
     }
     _mode = _DragMode.pending;
@@ -352,12 +487,14 @@ class _PageCanvasState extends State<PageCanvas> {
     switch (mode) {
       case _DragMode.pending:
         final pagePt = controller.screenToPage(e.localPosition);
-        if (app.tool == Tool.text && _insidePage(pagePt)) {
+        if (app.tool == Tool.text) {
           _createTextAt(pagePt); // Text tool: always create
         } else if (app.selectedIds.isNotEmpty || app.editingBlockId != null) {
           app.select(null); // first click clears; next click creates
-        } else if (_insidePage(pagePt)) {
-          _createTextAt(pagePt); // CANVAS-3: click-anywhere-to-type
+        } else {
+          // Click-anywhere-to-type (CANVAS-3). The seamless backdrop is part
+          // of the page, so this also works out in the margin when zoomed out.
+          _createTextAt(pagePt);
         }
       case _DragMode.marquee:
         final rect = Rect.fromPoints(_marqueeStartPage, _marqueeEndPage);
@@ -369,15 +506,11 @@ class _PageCanvasState extends State<PageCanvas> {
         setState(() {});
       case _DragMode.moveSelection:
         app.settleSelected();
+        app.setDragging(false);
         _moveUndoPushed = false;
       default:
         break;
     }
-  }
-
-  bool _insidePage(Offset p) {
-    final ps = controller.pageSize ?? Size.zero;
-    return p.dx >= 0 && p.dy >= 0 && p.dx <= ps.width && p.dy <= ps.height;
   }
 
   void _createTextAt(Offset pagePt) {
@@ -400,8 +533,12 @@ class _PageCanvasState extends State<PageCanvas> {
     if (e is! PointerScrollEvent) return;
     final ctrl = HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isMetaPressed;
+    final shift = HardwareKeyboard.instance.isShiftPressed;
     if (ctrl) {
       controller.zoomAt(e.localPosition, e.scrollDelta.dy > 0 ? 1 / 1.1 : 1.1);
+    } else if (shift) {
+      // Shift+wheel → horizontal scroll (a mouse's vertical wheel drives X).
+      controller.panBy(Offset(-e.scrollDelta.dy - e.scrollDelta.dx, 0));
     } else {
       controller.panBy(-e.scrollDelta);
     }
@@ -413,18 +550,16 @@ class _PageCanvasState extends State<PageCanvas> {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    // Effective on-screen page size: content-driven, but at least filling the
-    // viewport in normal zoom so the page reads like a page (no backdrop);
-    // zoom out (<0.85) and it stops chasing so the page bounds become visible.
+    // Page size is content-driven (this bounds scrolling — constrained
+    // horizontal at normal zoom). The backdrop is drawn the same colour as the
+    // page (seamless — no "page floating on canvas"), and clicks anywhere in
+    // the viewport create content, so zooming out lets you place a box out in
+    // the margin; if you don't, the page reconstrains to content next frame.
     final ext = app.contentExtent();
-    var pw = math.max(app.pageProps.pageWidth, ext.right + AppState.pageGrowMargin);
-    var ph = math.max(AppState.defaultPageHeight, ext.bottom + AppState.pageGrowMargin);
-    if (controller.scale >= 0.85 && controller.viewport != Size.zero) {
-      final rv = controller.screenToPage(
-          Offset(controller.viewport.width, controller.viewport.height));
-      pw = math.max(pw, rv.dx);
-      ph = math.max(ph, rv.dy);
-    }
+    final pw =
+        math.max(app.pageProps.pageWidth, ext.right + AppState.pageGrowMargin);
+    final ph = math.max(
+        AppState.defaultPageHeight, ext.bottom + AppState.pageGrowMargin);
     final pageSize = Size(pw, ph);
     controller.pageSize = pageSize;
 
@@ -438,9 +573,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final inkBlocks = app.blocks.where((b) => b.type == BlockType.ink);
     final visibleStrokes = [
       for (final b in inkBlocks)
-        if (visible.overlaps(_blockRect(b)))
-          for (final sj in b.content['strokes'] as List)
-            Stroke.fromJson((sj as Map).cast<String, dynamic>()),
+        if (visible.overlaps(_blockRect(b))) ..._strokesOf(b),
     ];
     final selectedInkRects = [
       for (final b in inkBlocks)
@@ -464,7 +597,6 @@ class _PageCanvasState extends State<PageCanvas> {
                       pageSize: pageSize,
                       background: app.pageProps.background,
                       gridSize: app.gridSize,
-                      snapOverlay: app.snapToGrid,
                       dark: dark,
                     ),
                   ),
@@ -480,9 +612,11 @@ class _PageCanvasState extends State<PageCanvas> {
                           left: 0,
                           top: 0,
                           child: IgnorePointer(
-                            child: CustomPaint(
-                              size: Size.zero,
-                              painter: InkPainter(visibleStrokes, wet: _wet),
+                            child: RepaintBoundary(
+                              child: CustomPaint(
+                                size: Size.zero,
+                                painter: InkPainter(visibleStrokes, wet: _wet),
+                              ),
                             ),
                           ),
                         ),
@@ -500,11 +634,15 @@ class _PageCanvasState extends State<PageCanvas> {
                             ),
                           ),
                         ),
-                        for (final b in app.blocks.where((b) =>
-                            b.type != BlockType.ink &&
-                            (visible.overlaps(_blockRect(b)) ||
-                                app.selectedIds.contains(b.id) ||
-                                app.editingBlockId == b.id)))
+                        // Painted in z order (review fix: z was stored but
+                        // insertion order used to win).
+                        for (final b in ([
+                          ...app.blocks.where((b) =>
+                              b.type != BlockType.ink &&
+                              (visible.overlaps(_blockRect(b)) ||
+                                  app.selectedIds.contains(b.id) ||
+                                  app.editingBlockId == b.id))
+                        ]..sort((a, b) => a.z.compareTo(b.z))))
                           BlockView(
                             key: ValueKey('${b.id}#${app.docRevision}'),
                             block: b,
@@ -515,6 +653,19 @@ class _PageCanvasState extends State<PageCanvas> {
                     ),
                   ),
                 ),
+                // Alignment grid — only visible while dragging a block
+                if (app.draggingBlock && app.snapToGrid)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _DragGridPainter(
+                          controller: controller,
+                          gridSize: app.gridSize,
+                          dark: dark,
+                        ),
+                      ),
+                    ),
+                  ),
                 // Marquee + selected-ink outlines (screen-space overlay)
                 Positioned.fill(
                   child: IgnorePointer(
@@ -525,6 +676,7 @@ class _PageCanvasState extends State<PageCanvas> {
                             ? Rect.fromPoints(_marqueeStartPage, _marqueeEndPage)
                             : null,
                         inkSelections: selectedInkRects,
+                        lasso: _lasso,
                         color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
@@ -537,7 +689,17 @@ class _PageCanvasState extends State<PageCanvas> {
       );
     });
 
-    if (_inkTool) {
+    if (_lassoTool) {
+      // Lasso: draw a freeform loop; on release, the enclosed strokes are
+      // gathered into one selection.
+      canvas = Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: _lassoDown,
+        onPointerMove: _lassoMove,
+        onPointerUp: _lassoUp,
+        child: canvas,
+      );
+    } else if (_inkTool) {
       // Palm rejection (INK-4): the pen (stylus) and mouse draw; fingers
       // (touch) pan/pinch instead of drawing — so a resting palm never marks
       // the page. Matches OneNote's default "draw with pen, navigate with
@@ -593,6 +755,7 @@ class _PageCanvasState extends State<PageCanvas> {
           Tool.text => SystemMouseCursors.text,
           Tool.pen || Tool.highlighter => SystemMouseCursors.precise,
           Tool.eraser => SystemMouseCursors.cell,
+          Tool.lasso => SystemMouseCursors.precise,
           _ => MouseCursor.defer,
         },
         child: canvas,
@@ -601,90 +764,107 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 }
 
-/// Backdrop + page surface + page background pattern (clipped to the page).
+/// The page surface. At normal zoom the page fills the whole viewport so it
+/// reads as one continuous page (no "page floating on a desk"). Only when
+/// zoomed out (<85%) does it draw as a bounded sheet on a backdrop, revealing
+/// that it's a page you can treat as a canvas.
 class _PagePainter extends CustomPainter {
   _PagePainter({
     required this.controller,
     required this.pageSize,
     required this.background,
     required this.gridSize,
-    required this.snapOverlay,
     required this.dark,
   });
   final CanvasController controller;
   final Size pageSize;
   final String background;
   final double gridSize;
-  final bool snapOverlay;
   final bool dark;
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Backdrop
-    canvas.drawRect(Offset.zero & size,
-        Paint()..color = dark ? OnoteColors.night50 : OnoteColors.paper100);
+    final pageColor = dark ? OnoteColors.night0 : OnoteColors.paper0;
+    // Seamless: the whole viewport is the page colour — one consistent
+    // surface at every zoom (the backdrop and page are the same thing).
+    canvas.drawRect(Offset.zero & size, Paint()..color = pageColor);
 
-    // Page surface (screen-space rect)
-    final tl = controller.pageToScreen(Offset.zero);
-    final br = controller.pageToScreen(Offset(pageSize.width, pageSize.height));
-    final page = Rect.fromPoints(tl, br);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(page.shift(const Offset(0, 2)), const Radius.circular(2)),
-      Paint()
-        ..color = Colors.black.withValues(alpha: dark ? .5 : .10)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-    );
-    canvas.drawRect(
-        page, Paint()..color = dark ? OnoteColors.night0 : OnoteColors.paper0);
-    canvas.drawRect(
-        page,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1
-          ..color = dark ? OnoteColors.night300 : OnoteColors.paper300);
-
-    // Background pattern, clipped to the page
-    final mode = snapOverlay && background == 'blank' ? 'grid' : background;
-    if (mode == 'blank') return;
+    // Background pattern (blank = nothing). Drawn across the visible area but
+    // starting below the title band and aligned to the content top, so the
+    // lines don't run over the title and match the writing spacing.
+    if (background == 'blank') return;
     final step = gridSize * controller.scale;
     if (step < 6) return;
-    canvas.save();
-    canvas.clipRect(page);
+    final originY = controller.pageToScreen(
+        const Offset(0, AppState.contentTop)).dy;
+    final right = size.width, bottom = size.height;
     final paint = Paint()
       ..color = dark ? OnoteColors.night200 : OnoteColors.paper200
       ..strokeWidth = 1;
-    switch (mode) {
+    switch (background) {
       case 'grid':
-        for (var x = page.left; x <= page.right; x += step) {
-          canvas.drawLine(Offset(x, page.top), Offset(x, page.bottom), paint);
+        final ox = controller.offset.dx % step;
+        for (var x = ox; x <= right; x += step) {
+          canvas.drawLine(Offset(x, originY), Offset(x, bottom), paint);
         }
-        for (var y = page.top; y <= page.bottom; y += step) {
-          canvas.drawLine(Offset(page.left, y), Offset(page.right, y), paint);
+        for (var y = originY; y <= bottom; y += step) {
+          canvas.drawLine(Offset(0, y), Offset(right, y), paint);
         }
       case 'ruled':
-        final ruled = step * 1.4;
-        for (var y = page.top + ruled; y <= page.bottom; y += ruled) {
-          canvas.drawLine(Offset(page.left, y), Offset(page.right, y), paint);
+        for (var y = originY; y <= bottom; y += step) {
+          canvas.drawLine(Offset(0, y), Offset(right, y), paint);
         }
       case 'dotted':
         final dot = Paint()..color = paint.color;
-        for (var x = page.left; x <= page.right; x += step) {
-          for (var y = page.top; y <= page.bottom; y += step) {
+        final ox = controller.offset.dx % step;
+        for (var x = ox; x <= right; x += step) {
+          for (var y = originY; y <= bottom; y += step) {
             canvas.drawCircle(Offset(x, y), 1.2, dot);
           }
         }
     }
-    canvas.restore();
   }
 
   @override
   bool shouldRepaint(covariant _PagePainter old) =>
       old.background != background ||
-      old.snapOverlay != snapOverlay ||
       old.dark != dark ||
       old.pageSize != pageSize ||
       old.controller.scale != controller.scale ||
       old.controller.offset != controller.offset;
+}
+
+/// Faint alignment grid shown only while a block is being dragged.
+class _DragGridPainter extends CustomPainter {
+  _DragGridPainter(
+      {required this.controller, required this.gridSize, required this.dark});
+  final CanvasController controller;
+  final double gridSize;
+  final bool dark;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final step = gridSize * controller.scale;
+    if (step < 6) return;
+    final paint = Paint()
+      ..color = (dark ? OnoteColors.night200 : OnoteColors.paper200)
+          .withValues(alpha: .7)
+      ..strokeWidth = 1;
+    final ox = controller.offset.dx % step;
+    final oy = controller.offset.dy % step;
+    for (var x = ox; x < size.width; x += step) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (var y = oy; y < size.height; y += step) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DragGridPainter old) =>
+      old.controller.scale != controller.scale ||
+      old.controller.offset != controller.offset ||
+      old.dark != dark;
 }
 
 /// Marquee rectangle + dashed outlines for selected ink blocks.
@@ -693,15 +873,36 @@ class _OverlayPainter extends CustomPainter {
     required this.controller,
     required this.marquee,
     required this.inkSelections,
+    required this.lasso,
     required this.color,
   });
   final CanvasController controller;
   final Rect? marquee;
   final List<Rect> inkSelections;
+  final List<Offset>? lasso;
   final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final lassoPts = lasso;
+    if (lassoPts != null && lassoPts.length > 1) {
+      final path = Path()
+        ..moveTo(
+            controller.pageToScreen(lassoPts.first).dx,
+            controller.pageToScreen(lassoPts.first).dy);
+      for (final pt in lassoPts.skip(1)) {
+        final sp = controller.pageToScreen(pt);
+        path.lineTo(sp.dx, sp.dy);
+      }
+      path.close();
+      canvas.drawPath(path, Paint()..color = color.withValues(alpha: .08));
+      canvas.drawPath(
+          path,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5
+            ..color = color.withValues(alpha: .7));
+    }
     if (marquee != null) {
       final r = Rect.fromPoints(controller.pageToScreen(marquee!.topLeft),
           controller.pageToScreen(marquee!.bottomRight));
@@ -747,6 +948,8 @@ class _OverlayPainter extends CustomPainter {
   bool shouldRepaint(covariant _OverlayPainter old) =>
       old.marquee != marquee ||
       old.inkSelections.length != inkSelections.length ||
+      old.lasso != lasso ||
+      (lasso?.length ?? 0) != (old.lasso?.length ?? 0) ||
       old.controller.offset != controller.offset ||
       old.controller.scale != controller.scale;
 }
