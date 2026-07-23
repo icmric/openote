@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Openote — Brand &amp; Style Guide</title>
+<!--FONTS-->
+<style>
+  :root{
+    --ink-50:#EEF0FF; --ink-100:#DFE2FF; --ink-200:#C2C7FB; --ink-300:#9AA0F5;
+    --ink-400:#7B7FEE; --ink-500:#5B5BE6; --ink-600:#4A45D6; --ink-700:#3D38B4;
+    --ink-800:#302B8C; --ink-900:#20205C;
+    --brass-100:#FBEFD3; --brass-300:#F4CE7C; --brass-400:#EBB24A; --brass-500:#D9971F; --brass-700:#9A6A12;
+    --paper-0:#FFFFFF; --paper-50:#FAF9F7; --paper-100:#F2F1ED; --paper-200:#E7E5DF; --paper-300:#D6D3CA;
+    --graphite-400:#9A968C; --graphite-500:#6E6B63; --graphite-700:#403D38; --graphite-900:#211F1B;
+    --night-0:#17161C; --night-50:#1E1D24; --night-100:#26252E; --night-200:#33313C; --night-300:#45424F;
+    --moon-0:#F6F4FA; --moon-100:#E6E3EC; --moon-300:#B8B4C2; --moon-400:#8E8A99;
+    --success:#2E8B57; --warning:#C67A12; --danger:#C63838; --info:#2F6FB3;
+  }
+  @page{ size:A4; margin:16mm 15mm; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:'Inter',system-ui,'Segoe UI',Roboto,Arial,sans-serif;
+        color:var(--graphite-700); font-size:10pt; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  h1,h2,h3,h4{ color:var(--graphite-900); line-height:1.18; font-weight:600; margin:0 0 .35em; }
+  h2{ font-size:16pt; color:var(--ink-800); margin-top:1.1em; letter-spacing:-.01em;
+      padding-bottom:5px; border-bottom:2px solid var(--paper-200); }
+  h3{ font-size:11.5pt; color:var(--ink-700); margin-top:1em; }
+  p{ margin:0 0 .6em; } code{ font-family:'JetBrains Mono',monospace; font-size:.82em; background:var(--paper-100);
+     padding:.06em .34em; border-radius:4px; color:var(--ink-700); }
+  .mono{ font-family:'JetBrains Mono',monospace; }
+  .kicker{ text-transform:uppercase; letter-spacing:.14em; font-size:8.5pt; font-weight:600; color:var(--brass-700); }
+  .section{ page-break-inside:avoid; } .pagebreak{ page-break-before:always; }
+
+  /* cover */
+  .cover{ height:265mm; display:flex; flex-direction:column; justify-content:space-between; page-break-after:always; position:relative; overflow:hidden;}
+  .cover .band{ position:absolute; inset:0; background:linear-gradient(160deg,var(--ink-700),var(--ink-900) 70%); z-index:-2;}
+  .cover .glow{ position:absolute; width:120mm; height:120mm; border-radius:50%; right:-30mm; bottom:-20mm;
+               background:radial-gradient(circle,rgba(235,178,74,.35),transparent 60%); z-index:-1;}
+  .cover .stroke{ position:absolute; left:-10mm; top:120mm; width:150mm; height:40mm; z-index:-1; opacity:.5;}
+  .cover *{ color:#fff; }
+  .cover-top{ padding:6mm 4mm 0; display:flex; align-items:center; gap:12px;}
+  .logo{ width:48px; height:48px; border-radius:13px; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.25);
+         position:relative; }
+  .logo::before{ content:""; position:absolute; inset:13px; border:3px solid #fff; border-radius:50%;
+                 border-right-color:transparent; transform:rotate(-42deg);}
+  .logo::after{ content:""; position:absolute; width:8px; height:8px; border-radius:50%; background:var(--brass-400); right:11px; top:11px;}
+  .cover-top .wm{ font-size:22pt; font-weight:700; letter-spacing:-.02em; }
+  .cover-mid{ padding:0 4mm; margin-top:auto; }
+  .cover-mid .eyebrow{ letter-spacing:.16em; text-transform:uppercase; font-size:9pt; color:var(--brass-300); font-weight:600; margin-bottom:12px;}
+  .cover-mid h1{ color:#fff; font-size:38pt; letter-spacing:-.025em; line-height:1.05; margin:0 0 14px;}
+  .cover-mid p{ color:rgba(255,255,255,.8); font-size:13pt; max-width:14cm; }
+  .cover-foot{ padding:0 4mm 6mm; display:flex; justify-content:space-between; font-size:9.5pt; color:rgba(255,255,255,.65);}
+
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .grid3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;}
+  .card{ border:1px solid var(--paper-200); border-radius:12px; padding:13px 15px; page-break-inside:avoid; background:var(--paper-50);}
+  .callout{ border-left:4px solid var(--ink-500); background:var(--ink-50); padding:11px 15px; border-radius:0 10px 10px 0; margin:.8em 0; page-break-inside:avoid;}
+  .callout .k{ font-weight:600; color:var(--ink-800);}
+
+  /* swatches */
+  .ramp{ display:flex; border-radius:10px; overflow:hidden; border:1px solid var(--paper-200); margin:.35em 0 .3em;}
+  .chip{ flex:1; height:64px; display:flex; flex-direction:column; justify-content:flex-end; padding:6px; }
+  .chip .n{ font-family:'JetBrains Mono',monospace; font-size:7pt; font-weight:600; }
+  .chip .hex{ font-family:'JetBrains Mono',monospace; font-size:6pt; opacity:.75; }
+  .chip.d{ color:rgba(255,255,255,.92);} .chip.l{ color:rgba(0,0,0,.62);}
+  .big-swatch{ height:96px; border-radius:12px; display:flex; align-items:flex-end; padding:10px 12px; color:#fff;
+               font-weight:600; font-size:10pt; position:relative; }
+  .big-swatch .hex{ position:absolute; top:10px; right:12px; font-family:'JetBrains Mono',monospace; font-size:8pt; font-weight:400; opacity:.85;}
+
+  table{ border-collapse:collapse; width:100%; font-size:9pt; margin:.4em 0; page-break-inside:avoid;}
+  th,td{ text-align:left; padding:6px 9px; border-bottom:1px solid var(--paper-200); vertical-align:top;}
+  th{ color:var(--graphite-900); font-weight:600; border-bottom:1.5px solid var(--paper-300); background:var(--paper-50);}
+  .dot{ display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:middle; margin-right:6px; border:1px solid rgba(0,0,0,.08);}
+
+  /* type specimens */
+  .specimen{ border:1px solid var(--paper-200); border-radius:12px; padding:14px 16px; margin:.5em 0; page-break-inside:avoid;}
+  .type-row{ display:flex; align-items:baseline; gap:14px; padding:5px 0; border-bottom:1px dotted var(--paper-300);}
+  .type-row:last-child{ border:none;}
+  .type-row .meta{ flex:0 0 92px; font-family:'JetBrains Mono',monospace; font-size:7.5pt; color:var(--graphite-400);}
+  .display{ font-size:30pt; font-weight:600; letter-spacing:-.02em; color:var(--graphite-900); line-height:1;}
+  .h1s{ font-size:22pt; font-weight:600; color:var(--graphite-900);}
+  .h2s{ font-size:17pt; font-weight:600; color:var(--ink-800);}
+  .bodys{ font-size:13pt; } .labels{ font-size:11pt; font-weight:500;} .caps{ font-size:10pt; color:var(--graphite-500);}
+  .serif{ font-family:'Source Serif 4',Georgia,serif; }
+
+  /* components */
+  .btn{ display:inline-flex; align-items:center; gap:6px; font-size:9.5pt; font-weight:500; padding:8px 14px; border-radius:8px; border:1px solid transparent;}
+  .btn.primary{ background:var(--ink-500); color:#fff;} .btn.secondary{ background:#fff; color:var(--graphite-700); border-color:var(--paper-300);}
+  .btn.ghost{ background:transparent; color:var(--ink-600);} .btn.danger{ background:var(--danger); color:#fff;}
+  .pillrow{ display:flex; gap:6px; flex-wrap:wrap; }
+  .tagchip{ display:inline-flex; align-items:center; gap:5px; font-size:8pt; font-weight:600; padding:3px 10px; border-radius:999px; background:var(--ink-100); color:var(--ink-700);}
+  .tagchip.b{ background:var(--brass-100); color:var(--brass-700);} .tagchip.g{ background:#DDF0E6; color:var(--success);}
+  .tagchip.r{ background:#F7DEDE; color:var(--danger);}
+  .darkcard{ background:var(--night-0); border-radius:12px; padding:14px 16px; }
+  .darkcard *{ color:var(--moon-100);} .darkcard h4{ color:var(--moon-0);}
+  .darkcard .sub{ color:var(--moon-300);}
+  .penrow{ display:flex; gap:9px; align-items:center; margin-top:6px;}
+  .pen{ width:26px; height:26px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px var(--paper-300);}
+  .principle{ display:flex; gap:10px; padding:6px 0;}
+  .principle .n{ font-family:'JetBrains Mono',monospace; font-weight:700; color:var(--brass-500); flex:0 0 22px;}
+  .docmeta{ font-size:8pt; color:var(--graphite-400); border-top:1px solid var(--paper-200); padding-top:6px; margin-top:14px;}
+  ul.tight{ margin:.3em 0; padding-left:1.15em;} ul.tight li{ margin:.18em 0;}
+</style>
+</head>
+<body>
+
+<!-- COVER -->
+<section class="cover">
+  <div class="band"></div><div class="glow"></div>
+  <svg class="stroke" viewBox="0 0 600 160" preserveAspectRatio="none"><path d="M10,120 C120,20 240,140 360,70 C440,25 520,90 590,40" fill="none" stroke="#EBB24A" stroke-width="10" stroke-linecap="round"/></svg>
+  <div class="cover-top"><div class="logo"></div><div class="wm">Openote</div></div>
+  <div class="cover-mid">
+    <div class="eyebrow">Brand &amp; Style Guide · v0.1</div>
+    <h1>Ink on an<br>open page.</h1>
+    <p>The design system that makes Openote look, feel, and speak as one product — calm, precise, quietly excellent.</p>
+  </div>
+  <div class="cover-foot"><div>Draft v0.1 · 22 July 2026</div><div>Colour · Type · Components · Voice</div></div>
+</section>
+
+<!-- PHILOSOPHY -->
+<section class="section">
+  <div class="kicker">Design philosophy</div>
+  <h2>Five principles</h2>
+  <p>Openote is a tool for thinking. The interface should feel like good stationery: never loud, never in the way. Five principles govern every decision.</p>
+  <div class="principle"><div class="n">1</div><div><strong>The page is the hero.</strong> Everything that isn't the user's content is chrome, and chrome recedes.</div></div>
+  <div class="principle"><div class="n">2</div><div><strong>Calm over clutter.</strong> The opposite of OneNote's ribbon. Progressive disclosure; white space is a feature.</div></div>
+  <div class="principle"><div class="n">3</div><div><strong>Interpret, don't interrupt.</strong> Formatting appears where you make it — no modal preview panes.</div></div>
+  <div class="principle"><div class="n">4</div><div><strong>Native in spirit, consistent in soul.</strong> Honor each platform while keeping one Openote character.</div></div>
+  <div class="principle"><div class="n">5</div><div><strong>Accessible by default.</strong> Contrast, keyboard paths, reduced motion and legible type are requirements, not settings.</div></div>
+
+  <div class="grid2" style="margin-top:12px;">
+    <div class="card"><div class="kicker">The idea</div><h3 style="margin-top:3px;">Ink, on an open page</h3><p style="margin:0;">The brand concept is <strong>ink</strong> — the fountain-pen line, the mathematician's margin note, the hand-drawn diagram — set on an <strong>open page</strong>. It ties together handwriting, math, and the freeform canvas, and the one thing that defines Openote: openness. Two motifs recur — the <strong>ink stroke</strong> and the <strong>open corner</strong>.</p></div>
+    <div class="card"><div class="kicker">Personality</div><h3 style="margin-top:3px;">The unpretentious craftsperson</h3><p style="margin:0;">Competent, calm, a little opinionated about openness, generous with control. Not a hype startup, not a corporate suite — a well-made open-source tool by people who care, expressed with quiet confidence.</p><p style="margin:.5em 0 0;font-size:9pt;color:var(--graphite-500)"><em>Tagline:</em> "Your notes. Your format. Every platform."</p></div>
+  </div>
+</section>
+
+<!-- COLOR -->
+<section class="section pagebreak">
+  <div class="kicker">Colour</div>
+  <h2>A palette of ink &amp; brass on paper</h2>
+  <p>Built around two brand hues — <strong>Ink</strong> (deep indigo, primary) and <strong>Brass</strong> (warm amber, accent) — on warm-neutral "paper" grays. Chosen to be distinct from OneNote's magenta-purple while staying in the considered, ink-on-paper world. Every pairing is designed to meet <strong>WCAG 2.1 AA</strong>.</p>
+
+  <div class="grid2">
+    <div class="big-swatch" style="background:var(--ink-500);"><span class="hex">#5B5BE6</span>Ink 500 — primary</div>
+    <div class="big-swatch" style="background:var(--brass-400); color:#4a3510;"><span class="hex" style="color:#6b4d13">#EBB24A</span>Brass 400 — accent</div>
+  </div>
+
+  <h3>Ink — the primary ramp</h3>
+  <div class="ramp">
+    <div class="chip l" style="background:#EEF0FF"><span class="n">50</span></div>
+    <div class="chip l" style="background:#DFE2FF"><span class="n">100</span></div>
+    <div class="chip l" style="background:#C2C7FB"><span class="n">200</span></div>
+    <div class="chip l" style="background:#9AA0F5"><span class="n">300</span></div>
+    <div class="chip d" style="background:#7B7FEE"><span class="n">400</span></div>
+    <div class="chip d" style="background:#5B5BE6"><span class="n">500</span><span class="hex">primary</span></div>
+    <div class="chip d" style="background:#4A45D6"><span class="n">600</span></div>
+    <div class="chip d" style="background:#3D38B4"><span class="n">700</span></div>
+    <div class="chip d" style="background:#302B8C"><span class="n">800</span></div>
+    <div class="chip d" style="background:#20205C"><span class="n">900</span></div>
+  </div>
+
+  <h3>Brass — the accent (used sparingly)</h3>
+  <div class="ramp">
+    <div class="chip l" style="background:#FBEFD3"><span class="n">100</span></div>
+    <div class="chip l" style="background:#F4CE7C"><span class="n">300</span></div>
+    <div class="chip l" style="background:#EBB24A"><span class="n">400</span></div>
+    <div class="chip d" style="background:#D9971F"><span class="n">500</span></div>
+    <div class="chip d" style="background:#9A6A12"><span class="n">700</span><span class="hex">text on light</span></div>
+  </div>
+  <p style="font-size:8.5pt;color:var(--graphite-500);margin-top:2px;">Amber rarely meets 4.5:1 on white — use Brass 700 for accent <em>text</em>; reserve Brass 400 for fills, indicators and iconography.</p>
+
+  <div class="grid2" style="margin-top:8px;">
+    <div>
+      <h3>Paper &amp; Graphite (light)</h3>
+      <div class="ramp">
+        <div class="chip l" style="background:#FFFFFF;border-right:1px solid #eee"><span class="n">0</span></div>
+        <div class="chip l" style="background:#FAF9F7"><span class="n">50</span></div>
+        <div class="chip l" style="background:#F2F1ED"><span class="n">100</span></div>
+        <div class="chip l" style="background:#E7E5DF"><span class="n">200</span></div>
+        <div class="chip l" style="background:#D6D3CA"><span class="n">300</span></div>
+        <div class="chip d" style="background:#6E6B63"><span class="n">g500</span></div>
+        <div class="chip d" style="background:#403D38"><span class="n">g700</span></div>
+        <div class="chip d" style="background:#211F1B"><span class="n">g900</span></div>
+      </div>
+    </div>
+    <div>
+      <h3>Night ink (dark theme)</h3>
+      <div class="ramp">
+        <div class="chip d" style="background:#17161C"><span class="n">0</span></div>
+        <div class="chip d" style="background:#1E1D24"><span class="n">50</span></div>
+        <div class="chip d" style="background:#26252E"><span class="n">100</span></div>
+        <div class="chip d" style="background:#33313C"><span class="n">200</span></div>
+        <div class="chip d" style="background:#45424F"><span class="n">300</span></div>
+        <div class="chip d" style="background:#8E8A99"><span class="n">m400</span></div>
+        <div class="chip l" style="background:#B8B4C2"><span class="n">m300</span></div>
+        <div class="chip l" style="background:#E6E3EC"><span class="n">m100</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Semantic &amp; content ink</h3>
+  <table>
+    <thead><tr><th>Role</th><th>Light</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><span class="dot" style="background:#2E8B57"></span>Success</td><td class="mono">#2E8B57</td><td>saved, synced, confirmations</td></tr>
+      <tr><td><span class="dot" style="background:#C67A12"></span>Warning</td><td class="mono">#C67A12</td><td>reversible caution</td></tr>
+      <tr><td><span class="dot" style="background:#C63838"></span>Danger</td><td class="mono">#C63838</td><td>destructive actions, errors</td></tr>
+      <tr><td><span class="dot" style="background:#2F6FB3"></span>Info</td><td class="mono">#2F6FB3</td><td>neutral information, tips</td></tr>
+    </tbody>
+  </table>
+  <p style="margin:.4em 0 3px;font-size:9pt;"><strong>Default pen colours</strong> offered to users — legible on paper and night surfaces, colourblind-considerate:</p>
+  <div class="penrow">
+    <div class="pen" style="background:#211F1B"></div><div class="pen" style="background:#2F6FB3"></div>
+    <div class="pen" style="background:#C63838"></div><div class="pen" style="background:#2E8B57"></div>
+    <div class="pen" style="background:#6A4BC0"></div><div class="pen" style="background:#D9971F"></div>
+    <div class="pen" style="background:#F7E27A"></div><div class="pen" style="background:#B6E39A"></div>
+    <div class="pen" style="background:#F3B0C6"></div><div class="pen" style="background:#A8CCF0"></div>
+    <span style="font-size:8pt;color:var(--graphite-400)">pens &amp; highlighter tints</span>
+  </div>
+  <div class="callout"><span class="k">Rule.</span> Never rely on colour alone — pair every semantic colour with an icon and/or text.</div>
+</section>
+
+<!-- TYPE -->
+<section class="section pagebreak">
+  <div class="kicker">Typography</div>
+  <h2>Legible, open-licensed, quiet</h2>
+  <div class="specimen">
+    <div class="type-row"><div class="meta">display / 600</div><div class="display">Openote</div></div>
+    <div class="type-row"><div class="meta">h1 / 600</div><div class="h1s">Think on an open page</div></div>
+    <div class="type-row"><div class="meta">h2 / 600</div><div class="h2s">Your notes, your format</div></div>
+    <div class="type-row"><div class="meta">body-lg / 400</div><div class="bodys">The editor default — comfortable for reading and writing notes at length.</div></div>
+    <div class="type-row"><div class="meta">label / 500</div><div class="labels">Create notebook</div></div>
+    <div class="type-row"><div class="meta">caption / 400</div><div class="caps">Last edited 2 minutes ago · synced</div></div>
+    <div class="type-row"><div class="meta">mono / 400</div><div class="mono" style="font-size:11pt">sum_(n=1)^∞ 1/n² = π²/6</div></div>
+    <div class="type-row"><div class="meta">serif / opt.</div><div class="serif" style="font-size:12.5pt">A reading-serif option for those who prefer a book-like note.</div></div>
+  </div>
+  <div class="grid3">
+    <div class="card"><h4>Inter</h4><p style="margin:0;font-size:9pt;">UI &amp; body. Neutral, legible at small sizes. Open (OFL).</p></div>
+    <div class="card"><h4>JetBrains Mono</h4><p style="margin:0;font-size:9pt;">Code. Distinguishable 0/O, 1/l/I. Open.</p></div>
+    <div class="card"><h4>Source Serif · KaTeX/STIX</h4><p style="margin:0;font-size:9pt;">Reading-serif option; proper math glyph coverage.</p></div>
+  </div>
+  <p style="margin-top:8px;"><strong>Rules.</strong> One to two weights per view (400 + 600). Editor line length targets 60–80 characters in linear mode (the freeform canvas is exempt). Never justify body text; avoid all-caps except tiny tracked labels.</p>
+</section>
+
+<!-- COMPONENTS -->
+<section class="section">
+  <div class="kicker">Components</div>
+  <h2>Quiet, consistent, considered</h2>
+  <div class="grid2">
+    <div class="card">
+      <h4>Buttons</h4>
+      <div class="pillrow" style="margin:6px 0;">
+        <span class="btn primary">Primary</span><span class="btn secondary">Secondary</span>
+        <span class="btn ghost">Ghost</span><span class="btn danger">Danger</span>
+      </div>
+      <p style="margin:0;font-size:9pt;">One primary action per view. Visible focus ring (Ink 400, 2px, 2px offset). Clear hover / pressed / disabled states.</p>
+    </div>
+    <div class="card">
+      <h4>Tags &amp; chips</h4>
+      <div class="pillrow" style="margin:6px 0;">
+        <span class="tagchip">▢ To-do</span><span class="tagchip b">★ Important</span>
+        <span class="tagchip g">✓ Done</span><span class="tagchip r">? Question</span>
+      </div>
+      <p style="margin:0;font-size:9pt;">The built-in tag library uses distinct icons, not just colour. Rounded-full, subtle fill.</p>
+    </div>
+  </div>
+  <div class="grid2" style="margin-top:12px;">
+    <div class="card" style="background:var(--paper-100);">
+      <h4>Elevation &amp; shape</h4>
+      <p style="margin:0;font-size:9pt;">Borders and subtle tints over heavy shadows — flat and paper-like. Radii: <code>sm 4</code> · <code>md 8</code> · <code>lg 12</code> · <code>xl 16</code> · <code>full</code>. Canvas text boxes use <code>lg</code> with a near-invisible border until hovered.</p>
+    </div>
+    <div class="darkcard">
+      <h4>Night ink</h4>
+      <p class="sub" style="margin:0;font-size:9pt;">Not pure black — a deep warm charcoal so ink and brass glow without harshness. Interactive uses <span style="color:var(--ink-400)">Ink 400</span>; accent uses <span style="color:var(--brass-400)">Brass 400</span>.</p>
+      <div class="pillrow" style="margin-top:8px;"><span class="btn primary" style="background:var(--ink-400)">Primary</span><span class="btn" style="background:var(--night-100);color:var(--moon-100);border:1px solid var(--night-300)">Secondary</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- CANVAS + A11Y + VOICE -->
+<section class="section">
+  <div class="grid2">
+    <div>
+      <div class="kicker">Canvas interaction</div>
+      <h3 style="margin-top:2px;">The canvas is the product</h3>
+      <ul class="tight" style="font-size:9.2pt;">
+        <li><strong>Tools:</strong> select/move, text (click empty space to create), pen · highlighter · eraser, lasso (later)</li>
+        <li><strong>Pan:</strong> space-drag / two-finger / scrollbars both axes. <strong>Zoom:</strong> Ctrl-scroll / pinch, centred on cursor</li>
+        <li><strong>Placement:</strong> one-tap Free ↔ Snap-to-grid; hold a modifier to invert for one action; alignment guides in Ink 400</li>
+        <li><strong>Parity:</strong> every core action works with mouse, trackpad, touch <em>and</em> pen</li>
+      </ul>
+    </div>
+    <div>
+      <div class="kicker">Accessibility</div>
+      <h3 style="margin-top:2px;">AA by default</h3>
+      <ul class="tight" style="font-size:9.2pt;">
+        <li>All text &amp; UI meet WCAG 2.1 AA; meaning never encoded in colour alone</li>
+        <li>Every action keyboard-reachable; visible focus ring everywhere; no traps</li>
+        <li>Canvas blocks expose type + content to assistive tech (a first-class engineering task)</li>
+        <li>Respect OS text-scaling &amp; "reduce motion"; touch targets ≥ 44px</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout brass" style="border-left-color:var(--brass-400);background:var(--brass-100);margin-top:12px;">
+    <span class="k" style="color:var(--brass-700)">Voice &amp; tone.</span> Clear, warm, unpretentious — and precise about openness. Errors explain what happened and what to do next, calmly: <em>"Couldn't reach your sync server — your notes are safe on this device. Retry?"</em> We describe competitors accurately: OneNote's format isn't "completely closed," it's "documented but impractical to use elsewhere." Accuracy is part of the brand.
+  </div>
+
+  <div class="grid2" style="margin-top:10px;">
+    <div class="card" style="background:#EDF6F0;border-color:#BFE3CE;">
+      <h4 style="color:var(--success)">Do</h4>
+      <p style="margin:0;font-size:9pt;">Let the canvas breathe · one Ink primary per view · pair colour with icon/text · animate with purpose · write plainly · meet AA · keep tools contextual.</p>
+    </div>
+    <div class="card" style="background:#FaF0F0;border-color:#EAC7C7;">
+      <h4 style="color:var(--danger)">Don't</h4>
+      <p style="margin:0;font-size:9pt;">Rebuild the cluttered ribbon · make Brass dominant · rely on colour alone · add gratuitous shadows · use modals where inline undo works · overstate claims.</p>
+    </div>
+  </div>
+
+  <div class="docmeta">
+    <strong>Openote — Brand &amp; Style Guide.</strong> Draft v0.1 · 22 July 2026 · Planning phase. Colours, type and spacing here are a coherent, accessible starting system — validate every contrast pairing in implementation. The principles are the fixed points. Companion to the full design system in <span class="mono">docs/05-style-guide.md</span>.
+  </div>
+</section>
+
+</body>
+</html>

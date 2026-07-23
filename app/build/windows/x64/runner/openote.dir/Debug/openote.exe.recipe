@@ -1,0 +1,26 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <ProjectOutputs>
+    <ProjectOutput>
+      <FullPath>C:\src\openote-mvp\openote\app\build\windows\x64\x64\Debug\ZERO_CHECK</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\src\openote-mvp\openote\app\build\windows\x64\flutter\x64\Debug\flutter_assemble</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\src\openote-mvp\openote\app\build\windows\x64\plugins\file_selector_windows\Debug\file_selector_windows_plugin.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\src\openote-mvp\openote\app\build\windows\x64\plugins\sqlite3_flutter_libs\Debug\sqlite3.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\src\openote-mvp\openote\app\build\windows\x64\plugins\sqlite3_flutter_libs\Debug\sqlite3_flutter_libs_plugin.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\src\openote-mvp\openote\app\build\windows\x64\runner\Debug\openote.exe</FullPath>
+    </ProjectOutput>
+  </ProjectOutputs>
+  <ContentFiles />
+  <SatelliteDlls />
+  <NonRecipeFileRefs />
+</Project>

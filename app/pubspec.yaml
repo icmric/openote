@@ -1,0 +1,34 @@
+name: openote
+description: An open-source, natively cross-platform alternative to Microsoft OneNote.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Storage — the .onote container (File Format Spec 10)
+  sqlite3: ^2.4.0
+  sqlite3_flutter_libs: ^0.5.24 # bundles SQLite (incl. FTS5) on all desktop/mobile targets
+  path_provider: ^2.1.0
+  path: ^1.9.0
+  # Identity (Data Model Spec §2 — UUIDv7)
+  uuid: ^4.4.0
+  # Ink (Ink Data Spec 13 — perfect-freehand outlines)
+  perfect_freehand: ^2.3.0
+  # Math (Math Input Spec 12 — native KaTeX-subset rendering)
+  flutter_math_fork: ^0.7.2
+  # Image insertion & save dialogs
+  file_selector: ^1.0.3
+  # PDF export (pure Dart)
+  pdf: ^3.10.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

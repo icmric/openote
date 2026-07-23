@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Openote — Product &amp; Design Overview</title>
+<!--FONTS-->
+<style>
+  :root{
+    --ink-50:#EEF0FF; --ink-100:#DFE2FF; --ink-200:#C2C7FB; --ink-300:#9AA0F5;
+    --ink-400:#7B7FEE; --ink-500:#5B5BE6; --ink-600:#4A45D6; --ink-700:#3D38B4;
+    --ink-800:#302B8C; --ink-900:#20205C;
+    --brass-100:#FBEFD3; --brass-300:#F4CE7C; --brass-400:#EBB24A; --brass-500:#D9971F; --brass-700:#9A6A12;
+    --paper-0:#FFFFFF; --paper-50:#FAF9F7; --paper-100:#F2F1ED; --paper-200:#E7E5DF; --paper-300:#D6D3CA;
+    --graphite-400:#9A968C; --graphite-500:#6E6B63; --graphite-700:#403D38; --graphite-900:#211F1B;
+    --success:#2E8B57; --warning:#C67A12; --danger:#C63838; --info:#2F6FB3;
+  }
+  @page{ size:A4; margin:18mm 16mm 16mm 16mm; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    font-family:'Inter',system-ui,'Segoe UI',Roboto,Arial,sans-serif;
+    color:var(--graphite-700); font-size:10.2pt; line-height:1.55;
+    -webkit-font-smoothing:antialiased; background:var(--paper-0);
+  }
+  h1,h2,h3,h4{ color:var(--graphite-900); line-height:1.2; font-weight:600; margin:0 0 .4em; }
+  h2{ font-size:17pt; color:var(--ink-800); margin-top:1.4em; letter-spacing:-.01em; }
+  h3{ font-size:12.5pt; color:var(--ink-700); margin-top:1.2em; }
+  h4{ font-size:10.5pt; color:var(--graphite-900); margin-top:1em; }
+  p{ margin:0 0 .7em; }
+  a{ color:var(--ink-600); text-decoration:none; }
+  strong{ color:var(--graphite-900); font-weight:600; }
+  em{ color:var(--graphite-700); }
+  .mono{ font-family:'JetBrains Mono',ui-monospace,monospace; font-size:.9em; }
+  code{ font-family:'JetBrains Mono',ui-monospace,monospace; font-size:.85em; background:var(--paper-100);
+        padding:.08em .35em; border-radius:4px; color:var(--ink-700); }
+  .section{ page-break-inside:avoid; }
+  .pagebreak{ page-break-before:always; }
+  .lead{ font-size:11.5pt; color:var(--graphite-500); line-height:1.6; }
+
+  /* Cover */
+  .cover{ height:261mm; display:flex; flex-direction:column; justify-content:space-between;
+          page-break-after:always; position:relative; }
+  .cover-top{ display:flex; align-items:center; gap:14px; }
+  .logo{ width:52px; height:52px; border-radius:14px; background:linear-gradient(135deg,var(--ink-600),var(--ink-800));
+         position:relative; box-shadow:0 8px 24px rgba(32,32,92,.28); flex:0 0 auto; }
+  .logo::before{ content:""; position:absolute; inset:14px; border:3.5px solid #fff; border-radius:50%;
+                 border-right-color:transparent; transform:rotate(-42deg); }
+  .logo::after{ content:""; position:absolute; width:9px; height:9px; border-radius:50%;
+                background:var(--brass-400); right:11px; top:12px; box-shadow:0 0 0 2px rgba(255,255,255,.9); }
+  .wordmark{ font-size:26pt; font-weight:700; color:var(--graphite-900); letter-spacing:-.02em; }
+  .cover-mid{ margin-top:auto; }
+  .eyebrow{ text-transform:uppercase; letter-spacing:.16em; font-size:9pt; font-weight:600;
+            color:var(--brass-700); margin-bottom:14px; }
+  .cover h1{ font-size:40pt; letter-spacing:-.025em; line-height:1.04; margin-bottom:18px; color:var(--graphite-900); }
+  .cover h1 .accent{ color:var(--ink-600); }
+  .cover .sub{ font-size:14pt; color:var(--graphite-500); max-width:15cm; line-height:1.5; }
+  .cover-rule{ height:5px; width:120px; background:linear-gradient(90deg,var(--ink-500),var(--brass-400)); border-radius:3px; margin:26px 0; }
+  .cover-foot{ display:flex; justify-content:space-between; align-items:flex-end; font-size:9.5pt; color:var(--graphite-400); }
+  .cover-foot .tag{ font-size:10.5pt; color:var(--ink-700); font-weight:600; }
+  .cover-bg{ position:absolute; right:-40mm; top:40mm; width:150mm; height:150mm; border-radius:50%;
+             background:radial-gradient(circle at 30% 30%,var(--ink-50),transparent 62%); z-index:-1; opacity:.9;}
+
+  /* Utility blocks */
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .grid3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+  .card{ border:1px solid var(--paper-200); border-radius:12px; padding:14px 16px; background:var(--paper-50); page-break-inside:avoid; }
+  .card h4{ margin-top:0; color:var(--ink-700); display:flex; align-items:center; gap:8px; }
+  .card .em{ font-size:15pt; }
+  .pill{ display:inline-block; font-size:8pt; font-weight:600; text-transform:uppercase; letter-spacing:.06em;
+         padding:2px 8px; border-radius:999px; background:var(--ink-100); color:var(--ink-700); }
+  .pill.brass{ background:var(--brass-100); color:var(--brass-700); }
+  .pill.green{ background:#DDF0E6; color:var(--success); }
+
+  table{ border-collapse:collapse; width:100%; font-size:9pt; margin:.5em 0; page-break-inside:avoid; }
+  th,td{ text-align:left; padding:7px 9px; border-bottom:1px solid var(--paper-200); vertical-align:top; }
+  th{ color:var(--graphite-900); font-weight:600; border-bottom:1.5px solid var(--paper-300); background:var(--paper-50); }
+  td.c,th.c{ text-align:center; }
+  .yes{ color:var(--success); font-weight:600; }
+  .no{ color:var(--danger); font-weight:600; }
+  .partial{ color:var(--warning); font-weight:600; }
+  tr.hl td{ background:var(--ink-50); }
+
+  .callout{ border-left:4px solid var(--ink-500); background:var(--ink-50); padding:12px 16px; border-radius:0 10px 10px 0;
+            margin:1em 0; page-break-inside:avoid; }
+  .callout.brass{ border-left-color:var(--brass-400); background:var(--brass-100); }
+  .callout .k{ font-weight:600; color:var(--ink-800); }
+
+  .principle{ display:flex; gap:12px; padding:9px 0; border-bottom:1px dotted var(--paper-300); page-break-inside:avoid; }
+  .principle:last-child{ border-bottom:none; }
+  .principle .n{ font-family:'JetBrains Mono',monospace; font-weight:700; color:var(--brass-500); font-size:11pt; flex:0 0 26px; }
+  .principle .t strong{ color:var(--graphite-900); }
+
+  .phase{ border:1px solid var(--paper-200); border-radius:12px; padding:12px 14px; page-break-inside:avoid; margin-bottom:10px; }
+  .phase .head{ display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+  .phase .ph{ font-family:'JetBrains Mono',monospace; font-size:8.5pt; font-weight:700; color:#fff; background:var(--ink-600);
+              padding:2px 9px; border-radius:999px; }
+  .phase.p1 .ph{ background:var(--ink-500);} .phase.p2 .ph{ background:var(--ink-700);} .phase.p3 .ph{ background:var(--brass-500);}
+  .phase h4{ margin:0; }
+  .phase ul{ margin:.3em 0 0; padding-left:1.1em; }
+  .phase li{ margin:.15em 0; }
+
+  .swatchrow{ display:flex; gap:0; border-radius:10px; overflow:hidden; margin:.4em 0 1em; border:1px solid var(--paper-200); }
+  .sw{ flex:1; height:52px; display:flex; align-items:flex-end; padding:5px 6px; font-size:6.8pt; font-family:'JetBrains Mono',monospace; }
+  .sw.dark{ color:rgba(255,255,255,.85);} .sw.light{ color:rgba(0,0,0,.6);}
+
+  .footer{ position:running(footer); }
+  .docmeta{ font-size:8pt; color:var(--graphite-400); border-top:1px solid var(--paper-200); padding-top:6px; margin-top:8px; }
+  ul.tight{ margin:.3em 0; padding-left:1.15em;} ul.tight li{ margin:.2em 0;}
+  .kicker{ text-transform:uppercase; letter-spacing:.14em; font-size:8.5pt; font-weight:600; color:var(--brass-700); margin-bottom:2px;}
+  .two-col{ column-count:2; column-gap:20px; }
+  .quote{ font-size:12.5pt; line-height:1.5; color:var(--ink-800); font-weight:500; border:none; margin:.6em 0;
+          padding:14px 18px; background:linear-gradient(120deg,var(--ink-50),var(--paper-50)); border-radius:12px; }
+</style>
+</head>
+<body>
+
+<!-- ===================== COVER ===================== -->
+<section class="cover">
+  <div class="cover-bg"></div>
+  <div class="cover-top">
+    <div class="logo"></div>
+    <div class="wordmark">Openote</div>
+  </div>
+  <div class="cover-mid">
+    <div class="eyebrow">Product &amp; Design Overview · Planning Phase</div>
+    <h1>OneNote's experience.<br><span class="accent">Obsidian's openness.</span><br>Every platform.</h1>
+    <div class="cover-rule"></div>
+    <p class="sub">An open-source, natively cross-platform notebook — freeform canvas, handwriting and math — that never locks your notes inside a proprietary format or a single vendor's cloud.</p>
+  </div>
+  <div class="cover-foot">
+    <div>
+      <div class="tag">Your notes. Your format. Every platform.</div>
+      <div style="margin-top:6px;">Draft v0.2 &nbsp;·&nbsp; 22 July 2026</div>
+    </div>
+    <div style="text-align:right;">Prepared for the Openote project<br>Windows · macOS · Linux · tablets</div>
+  </div>
+</section>
+
+<!-- ===================== THE PROBLEM ===================== -->
+<section class="section">
+  <div class="kicker">Why this exists</div>
+  <h2>The best freeform notebook is also the most locked-in</h2>
+  <p class="lead">Microsoft OneNote is, for a large class of users, the best freeform note-taking tool ever made. Its infinite canvas, notebook hierarchy, handwriting, and math entry remain genuinely unmatched. And yet it carries structural problems Microsoft has shown no interest in fixing — because they are not bugs, they are the business model.</p>
+
+  <div class="grid2" style="margin-top:14px;">
+    <div class="card">
+      <h4>🔒 Your notes are trapped</h4>
+      <p style="margin:0;">The <code>.one</code>/<code>.onepkg</code> format is a binary revision store that, in practice, only OneNote can read. On the free tier you can't even keep a purely local copy — your data lives on OneDrive by default. Getting notes <em>out</em>, cleanly and with ink intact, ranges from painful to impossible.</p>
+    </div>
+    <div class="card">
+      <h4>🐧 Tethered to one ecosystem</h4>
+      <p style="margin:0;">No native Linux client at all. Feature parity is uneven even across supported platforms — page templates, find-and-replace, password protection and local notebooks each go missing somewhere.</p>
+    </div>
+    <div class="card">
+      <h4>💳 Core features paywalled</h4>
+      <p style="margin:0;">Solving and step-by-step math require an Enterprise or Education subscription. Local notebooks need a paid Office license. AI features need a Copilot license.</p>
+    </div>
+    <div class="card">
+      <h4>🚫 Requests never arrive</h4>
+      <p style="margin:0;">Native Markdown, an open format, backlinks, syntax-highlighted code, a Linux client — perennial, well-documented requests Microsoft has repeatedly declined.</p>
+    </div>
+  </div>
+
+  <div class="callout brass" style="margin-top:16px;">
+    <span class="k">The gap in one sentence.</span> There are excellent open note apps, excellent open canvases, and excellent open ink apps — but <strong>no open, cross-platform app combines all four of: a freeform infinite canvas, first-class pen and math, a real notebook hierarchy, and an open, durable file format.</strong> That intersection is exactly where OneNote lives, and exactly where it's most vulnerable.
+  </div>
+</section>
+
+<!-- ===================== VISION ===================== -->
+<section class="section pagebreak">
+  <div class="kicker">The vision</div>
+  <h2>A notebook you never want to leave — and always could</h2>
+  <div class="quote">"Your handwritten notes, diagrams and equations are yours — readable a decade from now, editable on any device and any OS, in a format anyone is free to build on. Openote earns its place not by locking you in, but by being good enough that you never want to leave."</div>
+
+  <h3>Six principles that decide every trade-off</h3>
+  <div class="principle"><div class="n">01</div><div class="t"><strong>Your data is yours.</strong> The file format is open, documented and versioned from day one. Openness is a constraint we design under, not a feature we add later.</div></div>
+  <div class="principle"><div class="n">02</div><div class="t"><strong>Local-first, cloud-optional.</strong> Fully functional offline, on one device, with no account. Sync is something you turn <em>on</em>, not something you must escape.</div></div>
+  <div class="principle"><div class="n">03</div><div class="t"><strong>The canvas is sacred.</strong> Click anywhere, place anything, drag it where it belongs. Panning, zooming and low-latency ink are first-class performance requirements.</div></div>
+  <div class="principle"><div class="n">04</div><div class="t"><strong>Interpret, don't interrupt.</strong> Markdown renders in place as you write it; math builds up from linear input as you type. No mode-switching for everyday writing.</div></div>
+  <div class="principle"><div class="n">05</div><div class="t"><strong>Native feel on every platform.</strong> Cross-platform, but not lowest-common-denominator. The pen must feel like a pen; shortcuts must feel native.</div></div>
+  <div class="principle"><div class="n">06</div><div class="t"><strong>Open by construction.</strong> An open-source license, a publicly specified format, and an architecture others can extend.</div></div>
+</section>
+
+<!-- ===================== POSITIONING ===================== -->
+<section class="section">
+  <div class="kicker">Positioning</div>
+  <h2>Where Openote stands</h2>
+  <p>Our two nearest rivals each concede half the field. OneNote owns the experience but not the openness. The FOSS Markdown crowd owns the openness but not the canvas-and-ink experience. AFFiNE comes closest architecturally but has no real handwriting and an open-<em>core</em> (not fully open) server. <strong>Nobody is standing where we intend to stand.</strong></p>
+  <table>
+    <thead><tr><th>Capability</th><th class="c">Openote</th><th class="c">OneNote</th><th class="c">Obsidian</th><th class="c">AFFiNE</th><th class="c">Joplin</th></tr></thead>
+    <tbody>
+      <tr class="hl"><td>Freeform infinite canvas</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c partial">plugin</td><td class="c yes">✓</td><td class="c no">✗</td></tr>
+      <tr><td>Notebook / section / page hierarchy</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c partial">folders</td><td class="c partial">workspace</td><td class="c yes">✓</td></tr>
+      <tr class="hl"><td>First-class pen / handwriting</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c no">✗</td><td class="c no">✗</td><td class="c no">✗</td></tr>
+      <tr><td>Math entry &amp; rendering</td><td class="c yes">✓</td><td class="c partial">paywalled solve</td><td class="c partial">LaTeX</td><td class="c partial">LaTeX</td><td class="c partial">LaTeX</td></tr>
+      <tr><td>Inline-rendered Markdown</td><td class="c yes">✓</td><td class="c no">✗</td><td class="c yes">✓</td><td class="c partial">blocks</td><td class="c yes">✓</td></tr>
+      <tr class="hl"><td>Open, documented format</td><td class="c yes">✓</td><td class="c partial">impractical</td><td class="c yes">✓</td><td class="c partial">open-core</td><td class="c yes">✓</td></tr>
+      <tr><td>Local-first, cloud-optional</td><td class="c yes">✓</td><td class="c no">✗</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+      <tr class="hl"><td>Native Linux client</td><td class="c yes">✓</td><td class="c no">✗</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+      <tr><td>Fully open-source app</td><td class="c yes">✓</td><td class="c no">✗</td><td class="c partial">freeware</td><td class="c partial">open-core</td><td class="c yes">✓</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size:8.5pt;color:var(--graphite-400);margin-top:4px;">✓ first-class · <span class="partial">amber</span> partial/caveated · ✗ none. Our position, in one line: <strong style="color:var(--ink-700)">OneNote's experience, Obsidian's openness, on every platform.</strong></p>
+</section>
+
+<!-- ===================== WHAT WE'RE BUILDING ===================== -->
+<section class="section pagebreak">
+  <div class="kicker">What we're building</div>
+  <h2>Six product pillars</h2>
+  <div class="grid2">
+    <div class="card"><h4><span class="em">🎨</span> Freeform Canvas</h4><p style="margin:0;">An unbounded, pannable/zoomable page. Click anywhere to drop a text box; drag it anywhere. Free-form <em>or</em> snap-to-grid placement to keep pages tidy.</p></div>
+    <div class="card"><h4><span class="em">🗂️</span> Structured Notebooks</h4><p style="margin:0;">The hierarchy you know — notebooks, section groups, sections, pages, subpages — with a navigator that scales to thousands of pages.</p></div>
+    <div class="card"><h4><span class="em">✍️</span> Expressive Content</h4><p style="margin:0;">Rich text with inline-rendered Markdown, beautiful math entry, responsive pen &amp; ink, <strong>live page embeds</strong> (render part of another page inside this one, always current), images, tables, and syntax-highlighted code.</p></div>
+    <div class="card"><h4><span class="em">📦</span> Open &amp; Local</h4><p style="margin:0;">An open, documented, versioned file format. Local-first, no size limits, crash-safe, inspectable. Clean import/export — including a OneNote importer.</p></div>
+    <div class="card"><h4><span class="em">☁️</span> Sync &amp; Collaboration</h4><p style="margin:0;">Optional, conflict-free cross-device sync (bring your own backend), with real-time collaboration on the same foundation later.</p></div>
+    <div class="card"><h4><span class="em">🖥️</span> Platform &amp; Craft</h4><p style="margin:0;">Desktop-first — Windows, macOS, <strong>Linux</strong> — with tablets close behind. Performance, accessibility and polish as requirements.</p></div>
+  </div>
+
+  <h3 style="margin-top:1.3em;">The math &amp; ink that set OneNote apart — matched with open tech</h3>
+  <div class="grid2">
+    <div class="card" style="background:var(--ink-50);border-color:var(--ink-200);">
+      <h4 style="color:var(--ink-800)">➗ Type it, watch it build</h4>
+      <p style="margin:0;">A OneNote-style linear syntax where <code>\sum</code>, <code>/</code>, <code>^</code>, <code>_</code>, <code>\int</code> autoformat into summations with limits, fractions, integrals and matrices — interpreted as you type. Stored as canonical LaTeX, exportable to MathML, always re-editable. <em>Solving stays a non-goal — we make equations beautiful to write, not to solve.</em></p>
+    </div>
+    <div class="card" style="background:var(--brass-100);border-color:var(--brass-300);">
+      <h4 style="color:var(--brass-700)">🖊️ Ink that feels like ink</h4>
+      <p style="margin:0;">Pressure-sensitive, responsive strokes you can write and draw anywhere, with palm rejection. Stored losslessly as open stroke data (InkML-interchangeable), independent of any recognition. Handwriting-to-text and ink-to-math come later — and per our priorities, we never trade startup speed or consistency for the last few milliseconds of pen latency.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== MVP ===================== -->
+<section class="section">
+  <div class="kicker">The plan</div>
+  <h2>An MVP that is unmistakably Openote</h2>
+  <p>The MVP is the smallest build that is genuinely useful to a switcher on day one: <strong>desktop-first, single-device, local-only, no sync.</strong> The success test says it best —</p>
+  <div class="callout">
+    <span class="k">MVP success test.</span> A OneNote user installs Openote on <strong>Linux</strong>, recreates a typical page — mixed typed text, a hand-drawn diagram, and a summation equation, freely arranged — saves it as an open file on their own disk, and reopens it cleanly. <em>Nothing about that flow required a Microsoft account, a subscription, or a supported-OS list that excludes them.</em>
+  </div>
+  <div class="grid2" style="margin-top:10px;">
+    <div>
+      <h4 style="color:var(--success)">In the MVP</h4>
+      <ul class="tight">
+        <li>Freeform canvas: pan/zoom both axes, click-to-create text, drag/resize, free + snap-to-grid</li>
+        <li>Notebook / section / page / subpage hierarchy + navigator</li>
+        <li>Rich text with inline-rendered Markdown &amp; reveal-on-edit</li>
+        <li>Math blocks: linear-builds-to-2D, LaTeX storage, complex notation</li>
+        <li>Ink: pen / highlighter / eraser, pressure, palm rejection, lossless</li>
+        <li>Images, file attach, syntax-highlighted code</li>
+        <li>The open format v1 + Markdown/PDF export; light/dark themes</li>
+      </ul>
+    </div>
+    <div>
+      <h4 style="color:var(--graphite-500)">Deferred past MVP</h4>
+      <ul class="tight" style="color:var(--graphite-500)">
+        <li>Sync &amp; real-time collaboration</li>
+        <li>Live page embeds (the stable block IDs they need <em>are</em> in the MVP format)</li>
+        <li>OneNote (<code>.one</code>) import</li>
+        <li>Ink recognition (ink-to-text / ink-to-math)</li>
+        <li>Backlinks &amp; graph view</li>
+        <li>Tables, OCR, audio notes, web clipper</li>
+        <li>Page templates, phone &amp; web builds</li>
+        <li>Math solving</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Roadmap at a glance</h3>
+  <div class="phase p1"><div class="head"><span class="ph">PHASE 0</span><h4>Foundations — specs &amp; validation spikes <span class="pill brass">we are here</span></h4></div>
+    <ul class="tight"><li>Stack decided (Flutter + Rust, Loro, SQLite) · deep specs written · remaining: editor-engine bake-off, canvas/ink/CRDT validation spikes, license ratification</li></ul></div>
+  <div class="phase p1"><div class="head"><span class="ph">PHASE 1</span><h4>MVP — the single-device notebook</h4></div>
+    <ul class="tight"><li>The full canvas + notebooks + text/Markdown + math + ink + the open format, on Windows/macOS/Linux</li></ul></div>
+  <div class="phase p2"><div class="head"><span class="ph">PHASE 2</span><h4>Own your notes everywhere — sync, embeds &amp; polish</h4></div>
+    <ul class="tight"><li>Conflict-free CRDT sync · bring-your-own backend · <strong>live page embeds</strong> · hardened tablet/pen · full open export · backlinks, tables, templates</li></ul></div>
+  <div class="phase p3"><div class="head"><span class="ph">PHASE 3</span><h4>The switch &amp; the network</h4></div>
+    <ul class="tight"><li>OneNote importer · optional ink recognition · real-time collaboration · sharing &amp; permissions · phone &amp; web</li></ul></div>
+</section>
+
+<!-- ===================== DESIGN DIRECTION ===================== -->
+<section class="section pagebreak">
+  <div class="kicker">Design direction</div>
+  <h2>Ink on an open page</h2>
+  <p class="lead">The interface should feel like good stationery: calm, precise, quietly excellent — never loud, never in the way. The page is the hero; chrome recedes. The brand concept is <strong>ink</strong> — the fountain-pen line, the mathematician's margin note — set on an <strong>open page</strong>.</p>
+
+  <h3>Palette</h3>
+  <p style="margin-bottom:4px;font-size:9.5pt;"><strong style="color:var(--ink-700)">Ink</strong> — the primary. A deep indigo, distinct from OneNote's magenta-purple, evoking considered ink on paper.</p>
+  <div class="swatchrow">
+    <div class="sw light" style="background:#EEF0FF">50</div><div class="sw light" style="background:#DFE2FF">100</div>
+    <div class="sw light" style="background:#C2C7FB">200</div><div class="sw light" style="background:#9AA0F5">300</div>
+    <div class="sw dark" style="background:#7B7FEE">400</div><div class="sw dark" style="background:#5B5BE6">500</div>
+    <div class="sw dark" style="background:#4A45D6">600</div><div class="sw dark" style="background:#3D38B4">700</div>
+    <div class="sw dark" style="background:#302B8C">800</div><div class="sw dark" style="background:#20205C">900</div>
+  </div>
+  <p style="margin-bottom:4px;font-size:9.5pt;"><strong style="color:var(--brass-700)">Brass</strong> — the accent, used sparingly. A warm amber evoking a pen nib.</p>
+  <div class="swatchrow">
+    <div class="sw light" style="background:#FBEFD3">100</div><div class="sw light" style="background:#F4CE7C">300</div>
+    <div class="sw light" style="background:#EBB24A">400</div><div class="sw dark" style="background:#D9971F">500</div>
+    <div class="sw dark" style="background:#9A6A12">700</div>
+    <div class="sw light" style="background:#FAF9F7;flex:2;color:var(--graphite-400)">Paper &amp; Graphite neutrals — warm, not clinical</div>
+  </div>
+
+  <div class="grid2" style="margin-top:10px;">
+    <div class="card">
+      <h4>Typography</h4>
+      <p style="margin:0 0 6px;"><strong style="font-size:12pt;">Inter</strong> for UI &amp; body — neutral, legible, open-licensed.</p>
+      <p style="margin:0 0 6px;font-family:'Source Serif 4',serif;font-size:11pt;">Source Serif for the optional reading mode.</p>
+      <p style="margin:0;" class="mono">JetBrains Mono for code · KaTeX / STIX Two for math.</p>
+    </div>
+    <div class="card">
+      <h4>Principles in practice</h4>
+      <p style="margin:0;">Borders and subtle tints over heavy shadows. One primary action per view. Contextual toolbars, never a fixed ribbon. Motion clarifies, never decorates. WCAG 2.1 AA by default — color never carries meaning alone.</p>
+    </div>
+  </div>
+  <div class="callout" style="margin-top:12px;">
+    <span class="k">Voice.</span> Clear, warm, unpretentious — and precise about openness. We don't call OneNote's format "completely closed"; it's "documented but impractical to use elsewhere." Accuracy is part of the brand.
+  </div>
+</section>
+
+<!-- ===================== THE HARD PART / TECH ===================== -->
+<section class="section">
+  <div class="kicker">The decision</div>
+  <h2>The stack is chosen — with evidence and revisit triggers</h2>
+  <p>Openote's requirements pulled in opposite directions: <strong>content richness</strong> (rich text, math, collaboration) favored web rendering; <strong>canvas control</strong> favored native. The stakeholder's priority order — <strong>startup speed, cross-platform consistency, and feature richness above pen latency</strong> — resolved it: Electron fails startup (1.5–3&nbsp;s cold starts, 100–200&nbsp;MB bundles), Tauri fails consistency (three webview engines, fragile WebKitGTK on Linux), and with near-native ink latency demoted to a non-goal, Qt's pen advantage stopped mattering.</p>
+
+  <div class="grid3" style="margin-top:6px;">
+    <div class="card"><span class="pill green">Decided</span><h4 style="margin-top:6px;">Flutter + Rust core</h4><p style="margin:0;font-size:9pt;">Flutter/Dart UI (sub-second AOT startup, one renderer everywhere, first-class Linux, team velocity) with a Rust core for CRDT &amp; sync. ADR-0001.</p></div>
+    <div class="card"><span class="pill green">Decided</span><h4 style="margin-top:6px;">Loro CRDT · SQLite `.onote`</h4><p style="margin:0;font-size:9pt;">Loro's movable-tree CRDT behind our own Rust API (ADR-0002); a crash-safe SQLite container with an in-file JSON mirror + lossless open-folder export (ADR-0003).</p></div>
+    <div class="card"><span class="pill">Open</span><h4 style="margin-top:6px;">Editor bake-off</h4><p style="margin:0;font-size:9pt;">super_editor vs appflowy_editor — two 1–2-week spikes (math chips, live Markdown, canvas boxes) decide it. ADR-0004.</p></div>
+  </div>
+
+  <div class="callout brass" style="margin-top:12px;">
+    <span class="k">Build-ready specs.</span> The technical layer is now written to code from: the <strong>File Format Specification</strong> (SQLite schema, CRDT encoding, the "mirror" that keeps the container open, export mapping), the <strong>Data Model Specification</strong> (every block's fields, identity rules, the live-embed reference model), the <strong>Math Input Specification</strong> (the linear build-as-you-type grammar), and the <strong>Ink Data Specification</strong> (stroke encoding, InkML interchange) — plus five ADRs, each with explicit revisit triggers.
+  </div>
+</section>
+
+<!-- ===================== CLOSE ===================== -->
+<section class="section">
+  <div class="kicker">In one paragraph</div>
+  <h2>The whole strategy</h2>
+  <p class="lead">OneNote is beloved for four things nobody else combines — a freeform canvas, real ink, a notebook hierarchy, and beautiful math entry — and resented for four things Microsoft won't fix: a locked format, a mandatory cloud, uneven cross-platform parity (no Linux), and subscription gates on core features. <strong style="color:var(--ink-700)">Openote's entire strategy is to match the first four with open technology and eliminate the second four by construction.</strong> The importer that frees trapped notebooks, the open documented format, the Linux client, and local-first sync that doesn't corrupt are, together, a reason to switch that no existing product offers.</p>
+
+  <div class="docmeta">
+    <strong>Openote — Product &amp; Design Overview.</strong> Draft v0.2 · 22 July 2026 · Planning phase. Companion to the full documentation set: Product Vision · OneNote Teardown &amp; Gap Analysis · Product Requirements · Technology &amp; Framework Evaluation · Architecture Overview · Style Guide &amp; Design System · File Format, Data Model, Math Input &amp; Ink Data Specifications · ADRs 0001–0005. Openote is not affiliated with or endorsed by Microsoft; "OneNote" and "Microsoft" are trademarks of Microsoft Corporation, referenced for comparison and interoperability only.
+  </div>
+</section>
+
+</body>
+</html>
