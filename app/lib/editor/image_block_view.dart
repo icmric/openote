@@ -49,6 +49,9 @@ class _ImageBlockViewState extends State<ImageBlockView> {
         if (!mounted) return;
         widget.block.content['naturalW'] = img.width.toDouble();
         widget.block.content['naturalH'] = img.height.toDouble();
+        // Persist it (once) so proportional resize, export and hit-testing all
+        // agree without re-decoding on every load.
+        widget.app.markDirty();
         setState(() {});
       });
     }

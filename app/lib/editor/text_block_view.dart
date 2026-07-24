@@ -9,9 +9,11 @@ import 'live_markdown_controller.dart';
 /// Text block. While editing, a [LiveMarkdownController] styles Markdown in
 /// real time (markers collapse as constructs complete, reveal when the caret
 /// re-enters). When not editing, [MarkdownView] renders the full block
-/// (headings, lists, checkboxes, inline math, wiki-links). Storage stays a
-/// Markdown string in content['text'] (Data Model Spec §5.2), so the future
-/// ADR-0004 engine can drop in without migrating notebooks.
+/// (headings, lists, checkboxes, inline math, wiki-links). Storage is an interim
+/// Markdown string in content['text'], NOT the spec's structured `{nodes:[…]}`
+/// model (Data Model Spec §5.1). It's forward-compatible via the unknown-field
+/// round-trip, but the ADR-0004 structured editor will need a one-time
+/// Markdown→nodes conversion — not a zero-touch drop-in.
 class TextBlockView extends StatefulWidget {
   const TextBlockView({super.key, required this.block, required this.app});
   final Block block;

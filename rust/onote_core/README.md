@@ -17,7 +17,9 @@ dependency, not a runtime one.
 | --- | --- |
 | `mirror` | The page **mirror** model (the open glass-box JSON from File Format Spec §4) and a deterministic, conflict-free `merge` of two page snapshots — the seed of cross-device sync (SYNC-1/2). |
 | `ids` | A dependency-free FNV-1a content hash for cheap "did this page change?" sync gating. |
-| `api` | The thin surface `flutter_rust_bridge` turns into Dart bindings. |
+| `onenote` | A reverse-engineered MS-ONESTORE/MS-ONE reader that imports a `.one` section's title, text, and images (OPEN-8). |
+| `ffi` | The C-ABI shim the app links today via `dart:ffi` (see `app/lib/core/onote_ffi.dart`). |
+| `api` | The thin surface `flutter_rust_bridge` turns into Dart bindings (opt-in, for a future FRB integration). |
 
 `merge` is intentionally CRDT-*shaped* — commutative, associative, and
 idempotent over the snapshot-exchange model — so the Loro-backed engine
@@ -35,9 +37,10 @@ cd rust/onote_core
 cargo test
 ```
 
-You should see `13 passed`. That exercises the merge semantics
-(newer-wins, union, idempotence, commutativity, forward-compatible field
-round-trip) and the content hash against known FNV-1a vectors.
+You should see `20 passed`. That exercises the merge semantics
+(newer-wins, union, idempotence, order-independent commutativity + tie-break,
+forward-compatible field round-trip), the content hash against known FNV-1a
+vectors and field-order independence, the FFI round-trip, and the `.one` parser.
 
 ## Wiring the Flutter bindings (opt-in)
 

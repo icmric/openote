@@ -21,6 +21,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 /// One block, reduced to what merge needs plus a verbatim tail of every other
@@ -73,10 +74,42 @@ impl PageMirror {
         serde_json::to_string(self).expect("PageMirror serializes")
     }
 
-    /// The newest `updatedAt` across this page's blocks (0 if empty). Used to
-    /// decide which replica's page-level props are newer.
+    /// The newest `updatedAt` across this page's blocks (0 if empty).
     fn max_updated_at(&self) -> i64 {
         self.blocks.iter().map(|b| b.updated_at).max().unwrap_or(0)
+    }
+
+    /// Freshness used to pick the winning page-level props. Prefers an explicit
+    /// page-level `updatedAt` when present, so a props-only edit (e.g. changing
+    /// the background with no block touched) can win; otherwise falls back to
+    /// the newest block edit as a proxy. (The Dart writer does not emit
+    /// `page.updatedAt` yet — until it does, props-only edits still rely on the
+    /// block proxy; the field is honoured here so wiring it later needs no core
+    /// change. See review finding M6.)
+    fn props_time(&self) -> i64 {
+        let explicit = self
+            .page
+            .get("updatedAt")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+        explicit.max(self.max_updated_at())
+    }
+}
+
+/// Is `candidate` the winning version of a block that also exists as
+/// `incumbent`? Newer `updatedAt` wins; on a tie we compare the blocks'
+/// canonical serialization — a **side-independent** rule, so two replicas that
+/// call `merge(self, other)` in opposite orders still converge to byte-identical
+/// output (the old "local always wins" tie-break diverged on equal timestamps —
+/// review finding M5).
+fn candidate_wins(candidate: &Block, incumbent: &Block) -> bool {
+    match candidate.updated_at.cmp(&incumbent.updated_at) {
+        Ordering::Greater => true,
+        Ordering::Less => false,
+        Ordering::Equal => {
+            serde_json::to_string(candidate).unwrap_or_default()
+                > serde_json::to_string(incumbent).unwrap_or_default()
+        }
     }
 }
 
@@ -103,9 +136,7 @@ pub fn merge(local: &PageMirror, remote: &PageMirror) -> PageMirror {
     let mut by_id: BTreeMap<&str, &Block> = BTreeMap::new();
     for b in local.blocks.iter().chain(remote.blocks.iter()) {
         match by_id.get(b.id.as_str()) {
-            // Keep the incumbent when it is at least as new (local iterated
-            // first, so equal timestamps keep local — the stable choice).
-            Some(existing) if existing.updated_at >= b.updated_at => {}
+            Some(existing) if !candidate_wins(b, existing) => {}
             _ => {
                 by_id.insert(b.id.as_str(), b);
             }
@@ -115,7 +146,17 @@ pub fn merge(local: &PageMirror, remote: &PageMirror) -> PageMirror {
     let mut blocks: Vec<Block> = by_id.into_values().cloned().collect();
     blocks.sort_by(|a, b| a.z().cmp(&b.z()).then_with(|| a.id.cmp(&b.id)));
 
-    let remote_newer = remote.max_updated_at() > local.max_updated_at();
+    // Page props: whichever side is newer overall; on an exact tie keep the
+    // side whose props serialize larger, so the choice is order-independent too.
+    let remote_newer = match remote.props_time().cmp(&local.props_time()) {
+        Ordering::Greater => true,
+        Ordering::Less => false,
+        Ordering::Equal => {
+            // Deterministic, side-independent: compare the canonical text form.
+            let (l, r) = (local.page.to_string(), remote.page.to_string());
+            r > l
+        }
+    };
     let page = if remote_newer {
         remote.page.clone()
     } else {
@@ -199,15 +240,54 @@ mod tests {
             {"id": "b", "type": "text", "z": 1, "updatedAt": 2},
         ]));
         // Order-independent for the winning block versions (a→remote, b→local).
-        let lr = PageMirror::parse(&merge_json(&local, &remote).unwrap()).unwrap();
-        let rl = PageMirror::parse(&merge_json(&remote, &local).unwrap()).unwrap();
-        let win = |m: &PageMirror, id: &str| {
-            m.blocks.iter().find(|b| b.id == id).unwrap().updated_at
+        let lr = merge_json(&local, &remote).unwrap();
+        let rl = merge_json(&remote, &local).unwrap();
+        let win = |json: &str, id: &str| {
+            PageMirror::parse(json)
+                .unwrap()
+                .blocks
+                .iter()
+                .find(|b| b.id == id)
+                .unwrap()
+                .updated_at
         };
         assert_eq!(win(&lr, "a"), 8);
-        assert_eq!(win(&rl, "a"), 8);
         assert_eq!(win(&lr, "b"), 9);
-        assert_eq!(win(&rl, "b"), 9);
+        // Byte-identical regardless of argument order (symmetric tie-break).
+        assert_eq!(lr, rl, "merge output is order-independent");
+    }
+
+    #[test]
+    fn equal_timestamp_tie_break_is_symmetric() {
+        // Same id, same updatedAt, different content: both merge orders must
+        // pick the SAME survivor, else two peers never converge.
+        let local = mirror(json!([
+            {"id": "a", "type": "text", "z": 0, "updatedAt": 5, "content": {"t": "L"}},
+        ]));
+        let remote = mirror(json!([
+            {"id": "a", "type": "text", "z": 0, "updatedAt": 5, "content": {"t": "R"}},
+        ]));
+        assert_eq!(
+            merge_json(&local, &remote).unwrap(),
+            merge_json(&remote, &local).unwrap(),
+            "tie-break must not depend on which side is local"
+        );
+    }
+
+    #[test]
+    fn hash_is_independent_of_field_order() {
+        // Two mirrors identical except for the ORDER of fields within a block
+        // must hash the same (canonical serialization sorts keys). Guards the
+        // serde_json default-map (BTreeMap) determinism assumption — review M4.
+        let a = r#"{"schema":"onote-page/1","pageId":"p","page":{},
+                    "blocks":[{"id":"x","type":"text","updatedAt":1,"x":1,"y":2}]}"#;
+        let b = r#"{"schema":"onote-page/1","pageId":"p","page":{},
+                    "blocks":[{"y":2,"x":1,"updatedAt":1,"type":"text","id":"x"}]}"#;
+        assert_eq!(
+            crate::ids::page_content_hash(a).unwrap(),
+            crate::ids::page_content_hash(b).unwrap(),
+            "field order within a block must not change the hash"
+        );
     }
 
     #[test]

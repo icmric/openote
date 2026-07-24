@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../model/models.dart';
 import '../state/app_state.dart';
+import 'md_common.dart';
 
 /// Page → Markdown export (OPEN-7 partial, MVP cut).
 ///
@@ -16,7 +17,7 @@ Future<String?> exportPageMarkdown(AppState app) async {
   if (app.pageId == null) return null;
   final page = app.nodes.firstWhere((n) => n.id == app.pageId);
   final location = await getSaveLocation(
-    suggestedName: '${_safe(page.title)}.md',
+    suggestedName: '${safeFilename(page.title, fallback: 'page')}.md',
     acceptedTypeGroups: const [
       XTypeGroup(label: 'Markdown', extensions: ['md'])
     ],
@@ -35,7 +36,7 @@ Future<String?> exportPageMarkdown(AppState app) async {
   for (final b in ordered) {
     switch (b.type) {
       case BlockType.text:
-        buf.writeln((b.content['text'] as String? ?? '').trimRight());
+        buf.writeln(markdownInline(b.content['text'] as String? ?? '').trimRight());
         buf.writeln();
       case BlockType.math:
         final latex = b.content['latex'] as String? ?? '';
@@ -53,18 +54,9 @@ Future<String?> exportPageMarkdown(AppState app) async {
           buf.writeln('![image]($name)\n');
         }
       case BlockType.table:
-        final cells = b.content['cells'];
-        if (cells is List && cells.isNotEmpty) {
-          final rows = [
-            for (final row in cells)
-              [for (final c in (row as List)) (c?.toString() ?? '').replaceAll('|', r'\|')]
-          ];
-          final cols = rows[0].length;
-          buf.writeln('| ${rows[0].join(' | ')} |');
-          buf.writeln('|${List.filled(cols, ' --- ').join('|')}|');
-          for (final r in rows.skip(1)) {
-            buf.writeln('| ${r.join(' | ')} |');
-          }
+        final table = tableToMarkdown(b.content['cells']);
+        if (table.isNotEmpty) {
+          buf.writeln(table);
           buf.writeln();
         }
       case BlockType.ink:
@@ -92,9 +84,4 @@ Future<String?> exportPageMarkdown(AppState app) async {
     }
   }
   return outPath;
-}
-
-String _safe(String s) {
-  final cleaned = s.replaceAll(RegExp(r'[^\w\- ]'), '').trim();
-  return cleaned.isEmpty ? 'page' : cleaned;
 }

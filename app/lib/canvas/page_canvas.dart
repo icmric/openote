@@ -573,7 +573,12 @@ class _PageCanvasState extends State<PageCanvas> {
     final inkBlocks = app.blocks.where((b) => b.type == BlockType.ink);
     final visibleStrokes = [
       for (final b in inkBlocks)
-        if (visible.overlaps(_blockRect(b))) ..._strokesOf(b),
+        // Never cull the selected/editing block (CANVAS-9), so a selected ink
+        // block off-screen still paints its strokes under its selection rect.
+        if (app.selectedIds.contains(b.id) ||
+            app.editingBlockId == b.id ||
+            visible.overlaps(_blockRect(b)))
+          ..._strokesOf(b),
     ];
     final selectedInkRects = [
       for (final b in inkBlocks)
@@ -601,11 +606,21 @@ class _PageCanvasState extends State<PageCanvas> {
                     ),
                   ),
                 ),
-                // Page space
-                Positioned.fill(
+                // Page space. `Positioned(left/top only)` gives loose
+                // constraints so the inner Stack can be sized to the FULL page
+                // (not the viewport). This is essential for hit-testing: a Stack
+                // sized to the viewport refuses pointer events on children below
+                // the fold, so clicks on a tall text box's lower half used to
+                // fall through and create a new box (the reported bug).
+                Positioned(
+                  left: 0,
+                  top: 0,
                   child: Transform(
                     transform: controller.matrix,
-                    child: Stack(
+                    child: SizedBox(
+                      width: pageSize.width,
+                      height: pageSize.height,
+                      child: Stack(
                       clipBehavior: Clip.none,
                       children: [
                         Positioned(
@@ -650,6 +665,7 @@ class _PageCanvasState extends State<PageCanvas> {
                             controller: controller,
                           ),
                       ],
+                    ),
                     ),
                   ),
                 ),

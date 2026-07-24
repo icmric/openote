@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 /// First-party pan/zoom (Tech Eval §7.3: own transform, no InteractiveViewer).
-/// Maps between screen space and page space; unbounded in both axes.
+/// Maps between screen space and page space. The model is unbounded, but
+/// panning is clamped to the page origin (`clampToPage`) so the page can't be
+/// lost off-screen (CANVAS-1 v0.3).
 class CanvasController extends ChangeNotifier {
   double scale = 1.0;
   Offset offset = Offset.zero; // page-space origin's screen position

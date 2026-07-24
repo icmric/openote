@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../export/md_import.dart';
+import '../export/onenote_import.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -259,6 +260,11 @@ class _NotebookHeader extends StatelessWidget {
             onPressed: () => _importMarkdown(context),
             child: const Text('Import Markdown folder…'),
           ),
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.upload_file_outlined, size: 16),
+            onPressed: () => _importOneNote(context),
+            child: const Text('Import OneNote (.one)…'),
+          ),
         ],
       ),
     );
@@ -271,6 +277,24 @@ class _NotebookHeader extends StatelessWidget {
           content: Text(count == 0
               ? 'No Markdown files found in that folder.'
               : 'Imported $count page${count == 1 ? '' : 's'}.')));
+    }
+  }
+
+  Future<void> _importOneNote(BuildContext context) async {
+    try {
+      final count = await importOneNoteFile(app);
+      if (count != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(count == 0
+                ? 'Couldn\'t read any content from that .one file.'
+                : 'Imported $count page${count == 1 ? '' : 's'} from OneNote.')));
+      }
+    } on OneNoteUnavailable {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'OneNote import needs the Rust core — build onote_core.dll (see rust/onote_core/INTEGRATION.md).')));
+      }
     }
   }
 

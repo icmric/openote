@@ -18,22 +18,28 @@ import 'package:path/path.dart' as p;
 typedef _VersionNative = Pointer<Utf8> Function();
 typedef _MergeNative = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef _HashNative = Pointer<Utf8> Function(Pointer<Utf8>);
+typedef _ImportOneNative = Pointer<Utf8> Function(Pointer<Uint8>, IntPtr);
+typedef _ImportOne = Pointer<Utf8> Function(Pointer<Uint8>, int);
 typedef _FreeNative = Void Function(Pointer<Utf8>);
 typedef _Free = void Function(Pointer<Utf8>);
 
 class OnoteCore {
-  OnoteCore._(this._lib)
+  // The library handle isn't retained: once opened, the OS keeps it mapped for
+  // the process lifetime, so the looked-up function pointers stay valid.
+  OnoteCore._(DynamicLibrary lib)
       : _version =
-            _lib.lookupFunction<_VersionNative, _VersionNative>('onote_core_version'),
+            lib.lookupFunction<_VersionNative, _VersionNative>('onote_core_version'),
         _merge =
-            _lib.lookupFunction<_MergeNative, _MergeNative>('onote_core_merge'),
-        _hash = _lib.lookupFunction<_HashNative, _HashNative>('onote_core_page_hash'),
-        _free = _lib.lookupFunction<_FreeNative, _Free>('onote_core_string_free');
+            lib.lookupFunction<_MergeNative, _MergeNative>('onote_core_merge'),
+        _hash = lib.lookupFunction<_HashNative, _HashNative>('onote_core_page_hash'),
+        _importOne =
+            lib.lookupFunction<_ImportOneNative, _ImportOne>('onote_core_import_one'),
+        _free = lib.lookupFunction<_FreeNative, _Free>('onote_core_string_free');
 
-  final DynamicLibrary _lib;
   final _VersionNative _version;
   final _MergeNative _merge;
   final _HashNative _hash;
+  final _ImportOne _importOne;
   final _Free _free;
 
   static bool _tried = false;
@@ -116,6 +122,18 @@ class OnoteCore {
       return _takeString(_hash(mp));
     } finally {
       malloc.free(mp);
+    }
+  }
+
+  /// Import a OneNote `.one` section file. Returns the parser's JSON string
+  /// (`{ok, error?, pages:[...]}`); see the Rust `onenote` module.
+  String importOne(List<int> bytes) {
+    final ptr = malloc.allocate<Uint8>(bytes.length);
+    try {
+      ptr.asTypedList(bytes.length).setAll(0, bytes);
+      return _takeString(_importOne(ptr, bytes.length));
+    } finally {
+      malloc.free(ptr);
     }
   }
 

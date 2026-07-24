@@ -47,22 +47,31 @@ class _MathBlockViewState extends State<MathBlockView> {
             '');
   }
 
-  /// Commit on state transition — immune to focus/deselect ordering.
+  /// Write the linear source + canonical LaTeX straight to the model on every
+  /// keystroke — same as the text/code editors. Committing live (rather than
+  /// only on the editing→not transition) means a page/notebook switch, which
+  /// tears the widget down *before* any `editing==false` build runs, can no
+  /// longer drop the edit (the old F-3-class hazard, this time on math).
+  void _commit(String v) {
+    final src = v.trim();
+    widget.block.content['linearSource'] = v;
+    widget.block.content['latex'] = src.isEmpty ? '' : linearToLatex(src);
+    widget.block.content['display'] = true;
+    widget.block.updatedAt = nowMs();
+    widget.app.markDirty();
+  }
+
+  /// On exit, only clean up an equation the user left empty. The content is
+  /// already committed live by [_commit], and we deliberately DON'T re-run
+  /// `linearToLatex` here — re-entering a LaTeX-authored equation and leaving
+  /// it untouched must not rewrite its canonical storage.
   void _handleExitTransition() {
     if (_wasEditing && !editing) {
       _undoPushed = false;
-      final src = _controller.text.trim();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        if (src.isEmpty &&
-            (widget.block.content['latex'] as String? ?? '').isEmpty) {
+        if ((widget.block.content['latex'] as String? ?? '').trim().isEmpty) {
           widget.app.removeBlock(widget.block.id, recordUndo: false);
-        } else if (src.isNotEmpty &&
-            src != (widget.block.content['linearSource'] ?? '')) {
-          widget.block.content['linearSource'] = src;
-          widget.block.content['latex'] = linearToLatex(src);
-          widget.block.content['display'] = true;
-          widget.app.updateBlock(widget.block);
         }
       });
     }
@@ -117,11 +126,12 @@ class _MathBlockViewState extends State<MathBlockView> {
                 border: InputBorder.none,
                 hintText: r'Linear math… e.g. \sum_(n=1)^oo 1/n^2',
               ),
-              onChanged: (_) {
+              onChanged: (v) {
                 if (!_undoPushed) {
                   widget.app.pushUndo();
                   _undoPushed = true;
                 }
+                _commit(v);
                 setState(() {});
               },
             ),

@@ -33,6 +33,7 @@ pub mod api;
 pub mod ffi;
 pub mod ids;
 pub mod mirror;
+pub mod onenote;
 
 /// The crate version, surfaced to the app so a build can report which core it
 /// linked. Also the simplest possible end-to-end bridge smoke test.

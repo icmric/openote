@@ -66,7 +66,7 @@ The guiding sequence: **de-risk the hardest technical unknowns first, ship a gen
 
 **Goal:** make leaving OneNote painless, make ink smarter, and let people work together.
 
-- [ ] **OneNote importer** (`.one`/`.onepkg`) preserving structure, text, images, and — as far as feasible — ink and tags *(OPEN-8)* — the headline migration wedge
+- [~] **OneNote importer** (`.one`/`.onepkg`) preserving structure, text, images, and — as far as feasible — ink and tags *(OPEN-8)* — the headline migration wedge. **Fidelity pass shipped:** the reverse-engineered MS-ONESTORE/MS-ONE parser now imports a `.one` section's title; outline text with **bold/italic/strikethrough, font family and colour** (run styling resolved via the 0x1E12/0x1E13 arrays); bulleted/indented lists; **equations** (Cambria-Math runs, Office linear-math Unicode → LaTeX, rendered `$$…$$`); and **images at their real page positions and display sizes**. Remaining: `.onepkg` (LZX-CAB), multi-page segmentation (a section's pages currently merge into one), and **ink** (needs a sample file to identify its object types — user to provide).
 - [ ] **Ink recognition (optional):** ink-to-text, ink-to-shape, ink-to-math via on-device (ML Kit) or commercial (MyScript) engines *(INK-8, 9, 10; MATH-7)*
 - [ ] **Real-time collaboration:** live multi-user editing, presence/cursors on the shared CRDT channel *(SYNC-6)*
 - [ ] **Sharing & permissions** (notebook and section/page granularity) *(SYNC-7)*

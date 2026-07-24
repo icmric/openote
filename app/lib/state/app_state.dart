@@ -17,10 +17,17 @@ enum Tool { select, text, pen, highlighter, eraser, lasso }
 /// App-wide state. Deliberately simple (ChangeNotifier) for the MVP; the
 /// domain layer beneath it is what carries forward.
 class AppState extends ChangeNotifier {
-  AppState(this.repo) : engine = MirrorEngine(repo);
+  AppState(this.repo) : engine = _selectEngine(repo);
 
   final Repository repo;
   final DocumentEngine engine;
+
+  /// Use the Rust core when its native library is linked, else the pure-Dart
+  /// engine. Chosen once at construction — the app depends only on the seam.
+  static DocumentEngine _selectEngine(Repository repo) {
+    final core = OnoteCore.instance;
+    return core != null ? RustEngine(repo, core) : MirrorEngine(repo);
+  }
 
   /// Shared so toolbar/shortcuts can drive zoom (style guide §8.2).
   final canvas = CanvasController();
@@ -58,7 +65,6 @@ class AppState extends ChangeNotifier {
   // Canvas settings
   Tool tool = Tool.select;
   bool snapToGrid = true; // on by default; the grid only shows while dragging
-  double gridSize = 24;
   int penColor = 0;
   double penSize = 2.5;
 
@@ -92,6 +98,7 @@ class AppState extends ChangeNotifier {
   ThemeMode themeMode = ThemeMode.system;
   void setThemeMode(ThemeMode m) {
     themeMode = m;
+    repo.setSetting('themeMode', m.name); // persist (§7a.5)
     notifyListeners();
   }
 
@@ -438,48 +445,18 @@ class AppState extends ChangeNotifier {
 
   // ── Document engine (Rust core, optional) ─────────────────────────────
 
-  /// Human-readable label for the active compute engine, shown in the status
-  /// bar. "Rust core vX" when the native library loaded and passed its
-  /// self-test; "Dart engine" otherwise.
-  String engineLabel = 'Dart engine';
+  /// Human-readable label for the active engine, shown in the status bar
+  /// ("Rust core vX" or "Dart engine").
+  String get engineLabel => engine.label;
 
-  /// Content hash of the current page, computed by the Rust core on save when
-  /// available (a live Dart→Rust→Dart round-trip over real page data). Null
-  /// when the core isn't linked.
-  String? pageContentHash;
-
-  /// Load the Rust core (if present) and verify it end-to-end with a tiny merge
-  /// before trusting it. Any failure silently keeps the pure-Dart path.
-  void _detectEngine() {
-    final core = OnoteCore.instance;
-    if (core == null) {
-      engineLabel = 'Dart engine';
-      return;
-    }
-    try {
-      final v = core.version();
-      const a = '{"blocks":[{"id":"x","type":"text","updatedAt":1}]}';
-      const b = '{"blocks":[{"id":"x","type":"text","updatedAt":2}]}';
-      final merged = core.mergeMirrors(a, b);
-      engineLabel = (v.isNotEmpty && merged.contains('"updatedAt":2'))
-          ? 'Rust core v$v'
-          : 'Dart engine';
-    } catch (_) {
-      engineLabel = 'Dart engine';
-    }
-  }
-
-  /// Build the current page's mirror JSON (matches repository.writePage).
-  String _currentPageMirror() => jsonEncode({
-        'schema': 'onote-page/1',
-        'pageId': pageId,
-        'page': pageProps.toJson(),
-        'blocks': [for (final b in blocks) b.toJson()],
-      });
+  /// Content hash of the most recently saved page (Rust core only); drives the
+  /// status-bar chip. Null on the pure-Dart engine.
+  String? get pageContentHash => engine.lastSavedHash;
 
   Future<void> init() async {
-    _detectEngine();
-    // Session restore (§7a.5): custom colours, per-page views, last location.
+    // Session restore (§7a.5): theme, custom colours, per-page views, last loc.
+    final tm = repo.getSetting('themeMode') as String?;
+    if (tm != null) themeMode = ThemeMode.values.asNameMap()[tm] ?? themeMode;
     final cc = repo.getSetting('customColors');
     if (cc is List) customColors.addAll(cc.cast<String>());
     final vm = repo.getSetting('viewMemory');
@@ -917,9 +894,9 @@ class AppState extends ChangeNotifier {
     n
       ..parentId = target.parentId
       ..level = (target.level + 1).clamp(0, 2)
-      // Sorts after the target; the time suffix keeps repeated drops unique
-      // (review fix: two drops on the same target used to collide).
-      ..position = '${target.position}m${nowMs() % 100000}';
+      // Sorts after the target (target.position is a prefix) and before its
+      // next sibling; the full-millisecond suffix keeps repeated drops unique.
+      ..position = '${target.position}m${nowMs().toString().padLeft(15, '0')}';
     repo.upsertNode(notebookId!, n);
     nodes = repo.loadNodes(notebookId!);
     notifyListeners();
@@ -945,8 +922,14 @@ class AppState extends ChangeNotifier {
   String? sectionOf(String? page) =>
       nodes.where((n) => n.id == page).firstOrNull?.parentId;
 
-  String _nextPosition() =>
-      'a${(nowMs() % 100000000).toString().padLeft(9, '0')}';
+  // Append-ordered position key. Time-based (siblings sort by creation), padded
+  // to a fixed width so lexicographic == numeric order. NOT the CRDT
+  // fractional-index of Data Model Spec §1 — that lands with the Loro engine;
+  // until then reorder is swap-based ([moveNode]) and insert-after-target uses a
+  // suffix ([makeSubpageOf]), neither of which needs true between-key insertion.
+  // (The old `% 1e8` truncation wrapped every ~28h, letting new nodes sort
+  // before old ones — fixed by keeping the full millisecond value.)
+  String _nextPosition() => 'a${nowMs().toString().padLeft(15, '0')}';
 
   // ── Undo / redo (page-scoped snapshots) ────────────────────────────────
 
@@ -990,6 +973,9 @@ class AppState extends ChangeNotifier {
 
   // ── Selection & block ops ──────────────────────────────────────────────
 
+  // Snap step comes from the page's own grid (Data Model Spec §3), so a page's
+  // stored gridSize actually drives placement instead of being dead state.
+  double get gridSize => pageProps.gridSize;
   double snap(double v) => snapToGrid ? (v / gridSize).round() * gridSize : v;
 
   Block addBlock(Block b, {bool recordUndo = true}) {
@@ -1055,7 +1041,18 @@ class AppState extends ChangeNotifier {
         (sj as Map)['id'] = newId();
       }
     }
-    addBlock(fresh, recordUndo: false);
+    addBlock(fresh, recordUndo: false); // snaps + clamps fresh.x/y to final pos
+    if (fresh.type == BlockType.ink) {
+      // Translate strokes to the block's FINAL (snapped/clamped) position so the
+      // duplicate's ink renders under its new rect, not on top of the original.
+      final dx = fresh.x - src.x, dy = fresh.y - src.y;
+      for (final sj in (fresh.content['strokes'] as List)) {
+        final m = (sj as Map);
+        m['x'] = [for (final v in (m['x'] as List)) (v as num) + dx];
+        m['y'] = [for (final v in (m['y'] as List)) (v as num) + dy];
+      }
+      fresh.updatedAt = nowMs(); // refresh the canvas stroke cache key
+    }
     select(fresh.id);
   }
 
@@ -1100,6 +1097,9 @@ class AppState extends ChangeNotifier {
           m['x'] = [for (final v in (m['x'] as List)) (v as num) + dx];
           m['y'] = [for (final v in (m['y'] as List)) (v as num) + dy];
         }
+        // The canvas caches decoded strokes by `id#updatedAt`; bump it so the
+        // painted ink follows the block instead of lagging until a reload.
+        b.updatedAt = nowMs();
       }
     }
     markDirty();
@@ -1212,14 +1212,10 @@ class AppState extends ChangeNotifier {
     _saveDebounce?.cancel();
     if (!_dirty || pageId == null || notebookId == null) return;
     _dirty = false;
-    // Snapshot the pre-save state into version history (throttled, SYNC-8).
-    repo.maybeSnapshotVersion(notebookId!, pageId!);
+    // The engine owns persistence: version snapshot (throttled, SYNC-8) + the
+    // mirror write, plus content-hash change-detection on the Rust engine (a
+    // save whose hash is unchanged is skipped). See RustEngine/MirrorEngine.
     await engine.savePage(notebookId!, pageId!, blocks, pageProps);
-    // When the Rust core is linked, hash the saved page through it — a real
-    // Dart→Rust→Dart round-trip over live content (the seed of sync's
-    // change-detection). No-op on the pure-Dart build.
-    final core = OnoteCore.instance;
-    pageContentHash = core == null ? null : core.pageHash(_currentPageMirror());
     // Keep session state fresh so closing the app never loses your place.
     _rememberView();
     _persistSession();

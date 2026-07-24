@@ -43,10 +43,21 @@ class _TableBlockViewState extends State<TableBlockView> {
   List<List<String>> get _cells {
     final raw = widget.block.content['cells'];
     if (raw is List && raw.isNotEmpty) {
-      return [
+      final grid = [
         for (final row in raw)
           [for (final c in (row as List)) c?.toString() ?? '']
       ];
+      // Normalize to a rectangle. Flutter's Table and our per-cell controllers
+      // require a uniform column count; an imported or hand-edited table can be
+      // jagged, and a short row would otherwise crash cellWidget with a
+      // RangeError. Pad short rows to the widest one.
+      final cols = grid.fold(0, (m, r) => r.length > m ? r.length : m);
+      for (final r in grid) {
+        while (r.length < cols) {
+          r.add('');
+        }
+      }
+      return grid;
     }
     return [
       ['', ''],

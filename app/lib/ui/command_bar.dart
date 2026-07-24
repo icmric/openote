@@ -148,16 +148,21 @@ class _CommandBarState extends State<CommandBar> {
             ),
           ),
           // ── Command row ──
+          // Horizontally scrollable so a narrow window scrolls the controls
+          // instead of throwing a RenderFlex overflow (style guide §7).
           Container(
             height: 44,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             alignment: Alignment.centerLeft,
-            child: switch (_tab) {
-              0 => _homeRow(context),
-              1 => _insertRow(context),
-              2 => _drawRow(context),
-              _ => _viewRow(context),
-            },
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: switch (_tab) {
+                0 => _homeRow(context),
+                1 => _insertRow(context),
+                2 => _drawRow(context),
+                _ => _viewRow(context),
+              },
+            ),
           ),
         ],
       ),
@@ -192,7 +197,7 @@ class _CommandBarState extends State<CommandBar> {
           visualDensity: VisualDensity.compact,
           onPressed: canFormat ? fn : null,
         );
-    final lcv = int.parse(app.lastColor, radix: 16);
+    final lcv = int.tryParse(app.lastColor, radix: 16) ?? 0;
     final curColor = app.lastColor.length == 8
         ? Color(((lcv & 0xFF) << 24) | (lcv >> 8))
         : Color(0xFF000000 | lcv);

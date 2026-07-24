@@ -45,7 +45,7 @@ class NotebookRef {
 // ── Page properties (Data Model Spec §3 page-level; CANVAS-11) ───────────
 
 class PageProps {
-  PageProps({this.background = 'blank', this.gridSize = 20, this.pageWidth = 1100});
+  PageProps({this.background = 'blank', this.gridSize = 24, this.pageWidth = 1100});
   String background; // blank | grid | dotted | ruled
   double gridSize;
   double pageWidth; // presented page-surface width (CANVAS-1 v0.3)
@@ -54,7 +54,7 @@ class PageProps {
       {'background': background, 'gridSize': gridSize, 'pageWidth': pageWidth};
   factory PageProps.fromJson(Map<String, dynamic>? j) => PageProps(
         background: j?['background'] as String? ?? 'blank',
-        gridSize: (j?['gridSize'] as num?)?.toDouble() ?? 20,
+        gridSize: (j?['gridSize'] as num?)?.toDouble() ?? 24,
         pageWidth: (j?['pageWidth'] as num?)?.toDouble() ?? 1100,
       );
 }

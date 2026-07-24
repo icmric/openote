@@ -148,6 +148,37 @@ Stakeholder asked whether the Rust core was actually used (it wasn't — the app
 
 The FFI `merge` is linked and tested but still off the user-facing path — it activates when the sync flow is built. Next: a `RustEngine` implementing `DocumentEngine`, then Loro behind `merge` (ADR-0002) and a sync transport.
 
+**RustEngine (same iteration).** `DocumentEngine` gained a real Rust-backed implementation, selected automatically when the core is linked (else `MirrorEngine`). It routes all persistence through Rust: every page is content-hashed, and a save whose hash matches the last persisted state is **skipped entirely** (no mirror write, no version-history snapshot) — killing the redundant writes that a debounced autosave fires when nothing actually changed, while deletions still persist (removing a block changes the hash). Deliberately, `merge` is *not* on the local save path: a single-device save is authoritative, and add-wins merge against the stored copy would resurrect just-deleted blocks. Version-snapshot + write moved out of `AppState.flushSave` into the engine, centralising persistence behind the seam.
+
+## L. Iteration 13 — OneNote `.one` import (reverse-engineered)
+
+Stakeholder supplied a real `.one` section (Office-365 OneNote, Win 11) and a `.onepkg`. The `.one`/MS-ONESTORE format is barely documented in practice, so the parser was reverse-engineered empirically in Rust against the actual bytes (`rust/onote_core/src/onenote.rs`):
+
+- **Container** — validated the ONESTORE header (`guidFileType` = .one section; `cbExpectedFileLength` matched the file exactly), then walked from `fcrFileNodeListRoot` through `FileNodeListFragment`s (header/footer magics, `nextFragment` chains, `BaseType==2` sub-list refs) collecting `BaseType==1` object declarations and their `FileNodeChunkReference` blob refs.
+- **Objects** — parsed each `ObjectSpaceObjectPropSet` (OID/OSID/context streams → `PropertySet` → `PropertyID` type/size walk). Property IDs were identified empirically by decoding and matching to the notebook: **`0x001C22`** = `RichEditTextUnicode` (body text), **`0x001CF3`** = page title, **`0x001DD7`** = image name. The JCID histogram matched known MS-ONE node types (rich-text, image ×5, outline), confirming the walk.
+- **Content out** — for the sample: title "Lecture", 3 text blocks (real networking-lecture content), and 4 inline PNGs (recovered by signature→IEND scan; dimensions read from IHDR), all validated (321×254 etc.). A specially-encoded run (an embedded **math equation**) is filtered by a readability check rather than imported as garbage.
+- **Wiring** — new FFI `onote_core_import_one(ptr,len)→JSON`; Dart `OnoteCore.importOne`; `export/onenote_import.dart` turns the JSON into a section → page(s) with text blocks + content-addressed image blobs, stacked in reading order; menu item "Import OneNote (.one)…". 18/18 crate tests pass.
+
+**Scope & limits (v1):** brings **text + images** across from `.one` files. Not yet: `.onepkg` (an LZX-compressed CAB — needs a pure-Rust LZX decompressor), exact canvas layout/positions, multi-page-per-section segmentation, math equations, and ink. Requires the linked Rust core (the binary parse can't be done in pure Dart).
+
+### L.2 — Full text + hierarchy (iteration 14)
+
+The v1 extraction only recovered a handful of runs and misdecoded some. Testing against a PDF export of the same page showed the whole outline was missing. Two root causes, found and fixed against the real bytes:
+
+- **Wrong text property + encoding.** The body outline text is property **`0x003498`** stored **UTF-8** (not the UTF-16 `0x001C22` v1 keyed on — that one only holds diagram-label text). Confirmed by searching the raw file: "Internet", "Packet Switches" exist as ASCII, not UTF-16.
+- **No reading order / hierarchy.** Objects are stored in dependency order, not document order. Fixed by reconstructing the object graph: each object declaration's own CompactID indexes a map; property **`0x001C20`** and the OID stream give ordered child references; a DFS from each Outline/Title node (Page → Outline → OutlineElement → RichText → runs) yields text in true reading order, and nesting under paragraph nodes reproduces the **indent levels**. Outlines are deduped across revisions (first-line key, longest wins) and ordered by vertical offset (`0x001C02`).
+
+Result on the sample: the page's ~90-line hierarchical outline imports **line-for-line and indent-for-indent identical to the OneNote PDF**, plus the original title/date-time block ("Tuesday, 29 July 2025 · 8:05 AM") and all 4 images. Emitted as indented Markdown bullets (one text block per outline); Dart lays notes down the left and images in a right-hand column. Math runs are still skipped; per-run bold and exact pixel positions remain future polish.
+
+### L.3 — Fidelity pass + a canvas hit-test bug (iteration 15)
+
+Testing against the PDF surfaced several issues, all fixed:
+
+- **Canvas bug (not import-specific): tall boxes ignored clicks below a point.** The page-space `Stack` was sized to the viewport (`Positioned.fill`), and Flutter won't hit-test children positioned beyond a render box's own size — so clicks on the lower half of a long text box fell through and spawned a new box. Fixed by giving that layer loose constraints (`Positioned(left:0, top:0)`) and sizing the Stack to the **full page** (`SizedBox(pageSize)`), so every block is hit-testable at any length.
+- **Everything imported as a bulleted list.** OneNote marks list items with a `NumberListNode` child (167 of 235 paragraphs here; the other 68 are headings) and stores the bullet in prop `0x001C1A` (a literal "-"). The importer now bullets only real list items and leaves headings flush-left, with the original bullet, indented by depth for the renderer.
+- **Title/date duplicated.** The title/date lines were also glued onto the end of the main outline; they're now collected from the Title node and filtered out of content outlines. The original created date is parsed from that text and set as the page's `createdAt`, so the in-page date band shows the original date, not today's.
+- **Layout + overlap.** Images are correlated to their objects by natural pixel size and placed at their real page coordinates (units calibrated at ≈60 px/unit); imported text boxes are pinned to a fixed width (`autoWidth:false`) so a long line never grows the box over an adjacent image. Also revealed: the images' vertical offsets (13 cm, 48 cm, 62 cm) show the section spans **multiple OneNote pages** merged into one Openote page — proper page-splitting, per-run bold, and math remain the next steps.
+
 ## F. Process note
 
 Iteration 2's two shipped bugs (F-6-class API drift, the startup-path crash) both stemmed from unverifiable-in-sandbox platform behavior. Mitigation now in place: every UI interaction path in iteration 3 was re-derived from event-dispatch order rather than assumed (F-3 was exactly an ordering assumption), and version-sensitive APIs are confined to two files (`ink_painter.dart`, `export/pdf_export.dart`) with fallbacks noted in the README.

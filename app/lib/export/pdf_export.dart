@@ -8,6 +8,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../state/app_state.dart';
+import 'md_common.dart';
 
 /// Page → PDF export (OPEN-7 MVP cut): fit the view to the page content,
 /// rasterize the canvas at 2×, and emit a single-page PDF sized to match.
@@ -35,10 +36,12 @@ Future<String?> exportPagePdf(AppState app) async {
     c.jumpTo(oldScale, oldOffset); // always restore the user's view
   }
   final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+  final imgW = image.width, imgH = image.height;
+  image.dispose(); // release the GPU-backed capture; bytes are copied out
   if (byteData == null) return null;
 
   final location = await getSaveLocation(
-    suggestedName: '${_safe(page.title)}.pdf',
+    suggestedName: '${safeFilename(page.title, fallback: 'page')}.pdf',
     acceptedTypeGroups: const [
       XTypeGroup(label: 'PDF', extensions: ['pdf'])
     ],
@@ -48,7 +51,7 @@ Future<String?> exportPagePdf(AppState app) async {
   final doc = pw.Document(title: page.title, creator: 'Openote');
   final mem = pw.MemoryImage(byteData.buffer.asUint8List());
   // Points at 0.5 px/pt keeps the page dimensioned like the 2× capture.
-  final format = PdfPageFormat(image.width / 2, image.height / 2);
+  final format = PdfPageFormat(imgW / 2, imgH / 2);
   doc.addPage(pw.Page(
     pageFormat: format,
     margin: pw.EdgeInsets.zero,
@@ -56,9 +59,4 @@ Future<String?> exportPagePdf(AppState app) async {
   ));
   await File(location.path).writeAsBytes(await doc.save());
   return location.path;
-}
-
-String _safe(String s) {
-  final cleaned = s.replaceAll(RegExp(r'[^\w\- ]'), '').trim();
-  return cleaned.isEmpty ? 'page' : cleaned;
 }

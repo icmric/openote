@@ -16,34 +16,30 @@ Database openOnote(String path, {required String notebookId, required String tit
   db.execute('PRAGMA foreign_keys=ON;');
 
   final appId = db.select('PRAGMA application_id;').first.columnAt(0) as int;
-  if (appId == 0) {
-    _createSchema(db, notebookId: notebookId, title: title);
-  } else if (appId != onoteApplicationId) {
+  final freshFile = appId == 0;
+  if (!freshFile && appId != onoteApplicationId) {
     db.dispose();
     throw StateError('Not an Openote notebook: $path');
-  } else {
+  }
+  if (!freshFile) {
     final ver = db.select('PRAGMA user_version;').first.columnAt(0) as int;
     if (ver > onoteFormatMajor) {
       db.dispose();
       throw StateError('Notebook format v$ver is newer than this app supports.');
     }
   }
-  // Idempotent migrations for optional tables (run on every open so
-  // notebooks created by earlier builds gain them too).
-  db.execute('''
-    CREATE TABLE IF NOT EXISTS page_versions (
-      page_id TEXT NOT NULL,
-      version_at INTEGER NOT NULL,
-      snapshot BLOB NOT NULL,
-      label TEXT,
-      PRIMARY KEY (page_id, version_at));
-  ''');
+  // Every table/index is created idempotently on EVERY open, so a notebook made
+  // by an earlier build that predates a table (e.g. refs, fts_pages,
+  // page_versions) gains it here rather than throwing on first write.
+  _ensureSchema(db);
+  if (freshFile) {
+    _seedNotebook(db, notebookId: notebookId, title: title);
+  }
   return db;
 }
 
-void _createSchema(Database db, {required String notebookId, required String title}) {
-  db.execute('PRAGMA application_id = $onoteApplicationId;');
-  db.execute('PRAGMA user_version = $onoteFormatMajor;');
+/// Idempotent DDL — safe to run on every open (all `IF NOT EXISTS`).
+void _ensureSchema(Database db) {
   db.execute('''
     CREATE TABLE IF NOT EXISTS notebook_meta (
       key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -82,13 +78,24 @@ void _createSchema(Database db, {required String notebookId, required String tit
       dst_page_id TEXT NOT NULL, dst_notebook TEXT, dst_target TEXT,
       PRIMARY KEY (src_page_id, src_block_id, kind));
     CREATE INDEX IF NOT EXISTS idx_refs_dst ON refs(dst_page_id);
+    CREATE TABLE IF NOT EXISTS page_versions (
+      page_id TEXT NOT NULL,
+      version_at INTEGER NOT NULL,
+      snapshot BLOB NOT NULL,
+      label TEXT,
+      PRIMARY KEY (page_id, version_at));
   ''');
   // FTS5 is present in sqlite3_flutter_libs bundles; degrade gracefully if not.
   try {
     db.execute(
         "CREATE VIRTUAL TABLE IF NOT EXISTS fts_pages USING fts5(title, body, content='', tokenize='unicode61 remove_diacritics 2');");
   } catch (_) {/* search degrades; never blocks notebooks */}
+}
 
+/// First-create-only: stamp the format identity and seed notebook metadata.
+void _seedNotebook(Database db, {required String notebookId, required String title}) {
+  db.execute('PRAGMA application_id = $onoteApplicationId;');
+  db.execute('PRAGMA user_version = $onoteFormatMajor;');
   final now = DateTime.now().millisecondsSinceEpoch;
   final meta = <String, Object?>{
     'format': {'major': onoteFormatMajor, 'minor': 0},
