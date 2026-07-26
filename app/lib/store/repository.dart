@@ -17,6 +17,9 @@ class Repository {
   final Directory workspaceDir;
   final Map<String, Database> _open = {}; // notebookId -> db
   final List<NotebookRef> notebooks = [];
+  // Soft-deleted notebooks (ORG-7). Their .onote file stays on disk so a
+  // restore is lossless; purge removes the file for good.
+  final List<NotebookRef> trashedNotebooks = [];
 
   static Future<Repository> open() async {
     final dir = await _resolveWorkspaceDir();
@@ -25,6 +28,16 @@ class Repository {
     if (repo.notebooks.isEmpty) {
       await repo.createNotebook('My Notebook');
     }
+    return repo;
+  }
+
+  /// Open a workspace at an explicit directory, bypassing platform folder
+  /// resolution. For tests/tools that need an isolated, path_provider-free
+  /// workspace. Does NOT seed a default notebook.
+  static Future<Repository> openAt(Directory dir) async {
+    await dir.create(recursive: true);
+    final repo = Repository._(dir);
+    await repo._loadWorkspace();
     return repo;
   }
 
@@ -66,6 +79,17 @@ class Repository {
             id: m['id'] as String, file: file, title: m['title'] as String? ?? 'Notebook'));
       }
     }
+    for (final n in (j['trashed'] as List? ?? const [])) {
+      final m = (n as Map).cast<String, dynamic>();
+      final file = p.join(workspaceDir.path, m['file'] as String);
+      if (File(file).existsSync()) {
+        trashedNotebooks.add(NotebookRef(
+            id: m['id'] as String,
+            file: file,
+            title: m['title'] as String? ?? 'Notebook',
+            deletedAt: (m['deletedAt'] as num?)?.toInt() ?? nowMs()));
+      }
+    }
   }
 
   Future<void> _saveWorkspace() async {
@@ -75,6 +99,15 @@ class Repository {
       'notebooks': [
         for (final n in notebooks)
           {'id': n.id, 'file': p.basename(n.file), 'title': n.title}
+      ],
+      'trashed': [
+        for (final n in trashedNotebooks)
+          {
+            'id': n.id,
+            'file': p.basename(n.file),
+            'title': n.title,
+            'deletedAt': n.deletedAt,
+          }
       ],
       'settings': _settings,
     }));
@@ -117,6 +150,75 @@ class Repository {
         TreeNode(kind: NodeKind.page, parentId: section.id, title: 'Untitled page'));
     await _saveWorkspace();
     return ref;
+  }
+
+  Future<void> renameNotebook(String id, String title) async {
+    final ref = notebooks.firstWhere((n) => n.id == id);
+    ref.title = title;
+    await _saveWorkspace();
+  }
+
+  /// Move a notebook to the recycle bin (ORG-7). Closes its db handle but keeps
+  /// the .onote file, so [restoreNotebook] brings it back untouched.
+  Future<void> trashNotebook(String id) async {
+    final i = notebooks.indexWhere((n) => n.id == id);
+    if (i < 0) return;
+    final ref = notebooks.removeAt(i);
+    ref.deletedAt = nowMs();
+    trashedNotebooks.add(ref);
+    _open.remove(id)?.dispose();
+    await _saveWorkspace();
+  }
+
+  Future<void> restoreNotebook(String id) async {
+    final i = trashedNotebooks.indexWhere((n) => n.id == id);
+    if (i < 0) return;
+    final ref = trashedNotebooks.removeAt(i);
+    ref.deletedAt = null;
+    notebooks.add(ref);
+    await _saveWorkspace();
+  }
+
+  /// Permanently delete a trashed notebook, including its .onote file.
+  Future<void> purgeNotebook(String id) async {
+    final i = trashedNotebooks.indexWhere((n) => n.id == id);
+    if (i < 0) return;
+    final ref = trashedNotebooks.removeAt(i);
+    _open.remove(id)?.dispose();
+    try {
+      final f = File(ref.file);
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {/* best-effort; the workspace entry is already gone */}
+    await _saveWorkspace();
+  }
+
+  // ── Recycle-bin retention (ORG-7): auto-purge after N days ──────────────
+
+  /// Deleted notebooks and nodes are permanently removed this long after they
+  /// were trashed, so the recycle bin doesn't grow without bound.
+  static const int recycleRetentionDays = 30;
+
+  int _retentionCutoff() =>
+      nowMs() - const Duration(days: recycleRetentionDays).inMilliseconds;
+
+  /// Purge trashed notebooks past their retention window. Returns how many.
+  Future<int> purgeExpiredNotebooks() async {
+    final cutoff = _retentionCutoff();
+    final expired = trashedNotebooks
+        .where((n) => (n.deletedAt ?? 0) < cutoff)
+        .map((n) => n.id)
+        .toList();
+    for (final id in expired) {
+      await purgeNotebook(id);
+    }
+    return expired.length;
+  }
+
+  /// Purge soft-deleted nodes in [notebookId] past their retention window.
+  void purgeExpiredNodes(String notebookId) {
+    _db(notebookId).execute(
+        'DELETE FROM nodes WHERE deleted_at IS NOT NULL AND deleted_at < ?',
+        [_retentionCutoff()]);
   }
 
   // ── Tree nodes ─────────────────────────────────────────────────────────
@@ -318,14 +420,24 @@ class Repository {
           'INSERT INTO page_docs(page_id,snapshot,snapshot_v,updated_at) VALUES(?,?,0,?) '
           'ON CONFLICT(page_id) DO UPDATE SET updated_at=excluded.updated_at',
           [pageId, Uint8List(0), nowMs()]);
-      // Maintain blob_refs projection for image blocks.
+      // Maintain blob_refs projection: image/file blocks plus in-flow images
+      // referenced from text markdown (`![alt](sha256:<hash>)`, Data Model §5.1).
       db.execute('DELETE FROM blob_refs WHERE page_id=?', [pageId]);
+      final inlineImgRe = RegExp(r'!\[[^\]]*\]\(sha256:([0-9a-fA-F]{64})\)');
       for (final b in blocks) {
         final hash = b.content['blob'];
         if (hash is String) {
           db.execute(
               'INSERT OR IGNORE INTO blob_refs(page_id,hash) VALUES(?,?)',
               [pageId, hash.replaceFirst('sha256:', '')]);
+        }
+        final text = b.content['text'];
+        if (text is String && text.contains('](sha256:')) {
+          for (final m in inlineImgRe.allMatches(text)) {
+            db.execute(
+                'INSERT OR IGNORE INTO blob_refs(page_id,hash) VALUES(?,?)',
+                [pageId, m.group(1)!.toLowerCase()]);
+          }
         }
       }
       // Maintain the refs index (links & embeds) for backlinks (TEXT-8).

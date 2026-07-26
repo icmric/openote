@@ -81,6 +81,24 @@ pub unsafe extern "C" fn onote_core_import_one(ptr: *const u8, len: usize) -> *m
     into_c(crate::onenote::import_one_json(bytes))
 }
 
+/// Import a OneNote `.onepkg` notebook package (a cabinet of `.one` sections).
+/// Takes the raw file bytes and returns a JSON string:
+/// `{ok, error?, sections:[{name, group?, section:{ok, pages:[…]}}]}`.
+/// Caller frees the result.
+///
+/// # Safety
+/// `ptr` must point to `len` readable bytes (or be null with len 0). The
+/// returned pointer must be freed with [`onote_core_string_free`].
+#[no_mangle]
+pub unsafe extern "C" fn onote_core_import_onepkg(ptr: *const u8, len: usize) -> *mut c_char {
+    let bytes: &[u8] = if ptr.is_null() || len == 0 {
+        &[]
+    } else {
+        std::slice::from_raw_parts(ptr, len)
+    };
+    into_c(crate::onepkg::import_onepkg_json(bytes))
+}
+
 /// Free a string previously returned by any `onote_core_*` function.
 ///
 /// # Safety

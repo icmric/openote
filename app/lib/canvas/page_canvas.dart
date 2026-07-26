@@ -78,13 +78,17 @@ class _PageCanvasState extends State<PageCanvas> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       controller.pageSize = app.pageSize();
-      // Restore this page's remembered view (§7a.5), else the default.
+      // Restore this page's remembered view if the user actually adjusted it
+      // (§7a.5); otherwise fit the page width so content placed off to the
+      // right — e.g. imported images at their OneNote offsets — is visible on
+      // open instead of sitting off-screen. A stored default view (100%,
+      // top-left) counts as "unadjusted" and gets the fit.
       final mem = app.pageId == null ? null : app.viewFor(app.pageId!);
-      if (mem != null) {
+      if (mem != null && !(mem[0] == 1.0 && mem[1] == 0.0 && mem[2] == 0.0)) {
         controller.jumpTo(mem[0], Offset(mem[1], mem[2]));
         controller.clampToPage();
       } else {
-        controller.centerPage();
+        controller.fitWidth(app.contentExtent().right);
       }
     });
   }
@@ -563,33 +567,37 @@ class _PageCanvasState extends State<PageCanvas> {
     final pageSize = Size(pw, ph);
     controller.pageSize = pageSize;
 
-    // Visible page-space rect (padded) for culling (CANVAS-9).
-    final visible = Rect.fromPoints(
-      controller.screenToPage(Offset.zero),
-      controller.screenToPage(
-          Offset(controller.viewport.width, controller.viewport.height)),
-    ).inflate(200);
-
-    final inkBlocks = app.blocks.where((b) => b.type == BlockType.ink);
-    final visibleStrokes = [
-      for (final b in inkBlocks)
-        // Never cull the selected/editing block (CANVAS-9), so a selected ink
-        // block off-screen still paints its strokes under its selection rect.
-        if (app.selectedIds.contains(b.id) ||
-            app.editingBlockId == b.id ||
-            visible.overlaps(_blockRect(b)))
-          ..._strokesOf(b),
-    ];
-    final selectedInkRects = [
-      for (final b in inkBlocks)
-        if (app.selectedIds.contains(b.id)) _blockRect(b),
-    ];
-
     Widget canvas = LayoutBuilder(builder: (context, constraints) {
       controller.viewport = Size(constraints.maxWidth, constraints.maxHeight);
       return AnimatedBuilder(
         animation: controller,
-        builder: (context, _) => RepaintBoundary(
+        builder: (context, _) {
+        // Visible page-space rect (padded) for culling (CANVAS-9). Computed
+        // INSIDE the AnimatedBuilder: the transform changes without a full
+        // rebuild (viewport assignment above, per-page view restore, pans), and
+        // a culling list captured outside would go stale — the "page is blank
+        // until I scroll" bug, where the first frame culled everything against
+        // an uninitialised viewport and nothing invalidated the list.
+        final visible = Rect.fromPoints(
+          controller.screenToPage(Offset.zero),
+          controller.screenToPage(
+              Offset(controller.viewport.width, controller.viewport.height)),
+        ).inflate(200);
+        final inkBlocks = app.blocks.where((b) => b.type == BlockType.ink);
+        final visibleStrokes = [
+          for (final b in inkBlocks)
+            // Never cull the selected/editing block (CANVAS-9), so a selected
+            // ink block off-screen still paints under its selection rect.
+            if (app.selectedIds.contains(b.id) ||
+                app.editingBlockId == b.id ||
+                visible.overlaps(_blockRect(b)))
+              ..._strokesOf(b),
+        ];
+        final selectedInkRects = [
+          for (final b in inkBlocks)
+            if (app.selectedIds.contains(b.id)) _blockRect(b),
+        ];
+        return RepaintBoundary(
           key: app.canvasKey,
           child: ClipRect(
             child: Stack(
@@ -630,7 +638,13 @@ class _PageCanvasState extends State<PageCanvas> {
                             child: RepaintBoundary(
                               child: CustomPaint(
                                 size: Size.zero,
-                                painter: InkPainter(visibleStrokes, wet: _wet),
+                                painter: InkPainter(visibleStrokes,
+                                    wet: _wet,
+                                    // Theme default for "auto" strokes: dark
+                                    // ink on light pages, light ink on dark.
+                                    autoColor: dark
+                                        ? OnoteColors.moon100
+                                        : OnoteColors.graphite900),
                               ),
                             ),
                           ),
@@ -701,7 +715,8 @@ class _PageCanvasState extends State<PageCanvas> {
               ],
             ),
           ),
-        ),
+        );
+        },
       );
     });
 

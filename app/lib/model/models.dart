@@ -36,10 +36,12 @@ class TreeNode {
 }
 
 class NotebookRef {
-  NotebookRef({required this.id, required this.file, required this.title});
+  NotebookRef(
+      {required this.id, required this.file, required this.title, this.deletedAt});
   final String id;
   final String file; // absolute path to the .onote
   String title;
+  int? deletedAt; // set while the notebook sits in the recycle bin (ORG-7)
 }
 
 // ── Page properties (Data Model Spec §3 page-level; CANVAS-11) ───────────
@@ -85,13 +87,12 @@ class Block {
     this.frameId,
     Map<String, dynamic>? content,
     List<String>? absorbedIds,
-    Map<String, dynamic>? access,
+    this.access,
     Map<String, dynamic>? unknownFields,
     int? createdAt,
   })  : id = id ?? newId(),
         content = content ?? {},
         absorbedIds = absorbedIds ?? [],
-        access = access,
         unknownFields = unknownFields ?? {},
         createdAt = createdAt ?? nowMs(),
         updatedAt = createdAt ?? nowMs();

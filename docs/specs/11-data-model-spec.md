@@ -96,6 +96,8 @@ Inline spans: `{ "t": "run", "text": "…", "marks": ["bold","italic","underline
 ### 5.2 Markdown mapping (normative for export/import)
 CommonMark + GFM (tables, task lists, strikethrough) plus documented extensions: `==highlight==`, `[[wiki-links]]` (exported as `[title](onote://notebook/page#block)` in strict-Markdown mode), inline math `$…$`, block math `$$…$$`, inline images `![alt](assets/<hash>.<ext>)`. Everything in §5.1 has a defined Markdown projection; `color` degrades to plain text with a documented HTML-span option. The editor renders Markdown syntax **in place as typed** (TEXT-2/4); the *stored* form is always the structured model above — Markdown is a projection, not the storage.
 
+> **In-container image references (interim dialect).** While text storage is the interim Markdown string, an in-flow image (§5.1's `{"t":"image"}` atomic inline) is written `![alt](sha256:<hash>)` — the `src` is the blob-store content address, resolved by the renderer at paint time and rewritten to `assets/<hash>.<ext>` on open-folder export. An image on its own line renders block-level within the text flow (the OneNote "image as a list item" case, which the `.one` importer produces); readers that don't resolve `sha256:` URIs degrade to the literal Markdown. The structured-model migration maps these 1:1 onto `{"t":"image","blob":…}` inlines.
+
 ### 5.3 Anchors for embeds
 A `range` embed target uses `(startBlockId, endBlockId)` at block granularity in v1. Sub-block (line-level) anchoring is deliberately deferred: inside a CRDT text block, stable positions require anchoring to CRDT item IDs, which is planned as `range.startOffset/endOffset` opaque anchor tokens in a minor revision (kept out of v1 for simplicity; the field names are reserved).
 

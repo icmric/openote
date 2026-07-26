@@ -30,9 +30,15 @@ class TextBlockView extends StatefulWidget {
 
   /// The base text style for a block. Static so the canvas layer can measure
   /// auto-width with the *exact* style the field will render with.
+  ///
+  /// `fontSize` (px) and `lineHeight` (multiplier) are optional per-block
+  /// overrides — the OneNote importer sets them so imported boxes render at
+  /// OneNote's metrics and absolutely-positioned neighbours line up (a box
+  /// rendered shorter than the source leaves a phantom gap above the sibling
+  /// below it).
   static TextStyle baseStyle(Block b, {required bool dark}) => TextStyle(
-        fontSize: 15,
-        height: 1.5,
+        fontSize: (b.content['fontSize'] as num?)?.toDouble() ?? 15,
+        height: (b.content['lineHeight'] as num?)?.toDouble() ?? 1.5,
         fontFamily: _fontFamilyOf(b.content['font'] as String?),
         color: dark ? OnoteColors.moon100 : OnoteColors.graphite700,
       );
@@ -148,6 +154,13 @@ class _TextBlockViewState extends State<TextBlockView> {
         text: text,
         baseStyle: style,
         onWikiLink: (label, id) => widget.app.openWikiLink(label, id),
+        // In-flow images (Data Model §5.1): resolve sha256: refs from the
+        // notebook's content-addressed blob store.
+        imageResolver: (src) {
+          final nb = widget.app.notebookId;
+          if (nb == null || !src.startsWith('sha256:')) return null;
+          return widget.app.repo.getBlob(nb, src);
+        },
         onToggleCheckbox: (newText) {
           widget.app.pushUndo();
           widget.block.content['text'] = newText;

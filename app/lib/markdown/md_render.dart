@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 
@@ -9,7 +11,10 @@ import '../theme/onote_theme.dart';
 /// true as-you-type span-level rendering; this module keeps the same dialect
 /// (Data Model Spec §5.2 subset): #/##/### headings, - bullets, 1. numbered,
 /// - [ ]/- [x] checkboxes, > quotes, ``` fences, **bold**, *italic*,
-/// `code`, ~~strike~~, ==highlight==.
+/// `code`, ~~strike~~, ==highlight==, and in-flow images
+/// `![alt](sha256:<hash>)` resolved from the notebook blob store (Data Model
+/// §5.1: a text block is a container of mixed content — images flow WITH the
+/// text, OneNote-style, rather than floating over it).
 class MarkdownView extends StatelessWidget {
   const MarkdownView({
     super.key,
@@ -17,6 +22,7 @@ class MarkdownView extends StatelessWidget {
     required this.baseStyle,
     this.onToggleCheckbox,
     this.onWikiLink,
+    this.imageResolver,
   });
 
   final String text;
@@ -27,6 +33,15 @@ class MarkdownView extends StatelessWidget {
 
   /// Called when a `[[Page|id]]` link is tapped (EMBED-1).
   final void Function(String label, String? id)? onWikiLink;
+
+  /// Resolves an image src (e.g. `sha256:<hash>`) to bytes, typically from the
+  /// notebook's content-addressed blob store. Null → image lines render as
+  /// their literal Markdown.
+  final Uint8List? Function(String src)? imageResolver;
+
+  /// Decoded-bytes cache so scrolling doesn't re-query SQLite per frame; the
+  /// blob store is content-addressed, so entries can never go stale.
+  static final Map<String, Uint8List?> _imgCache = {};
 
   @override
   Widget build(BuildContext context) {
@@ -167,6 +182,32 @@ class MarkdownView extends StatelessWidget {
       );
     }
 
+    // In-flow image on its own line: ![alt](src) or ![alt](src =WxH) — src is
+    // a blob reference (sha256:<hash>); the optional ` =WxH` suffix is the
+    // display size in page px (kept from import so a resized image renders at
+    // its resized dimensions, not natural pixels). Without a size, natural
+    // size capped to the box width.
+    final img = RegExp(r'^(\s*)!\[([^\]]*)\]\(([^)\s]+)(?:\s+=(\d+)x(\d+))?\)\s*$')
+        .firstMatch(line);
+    if (img != null && imageResolver != null) {
+      final src = img.group(3)!;
+      final bytes = _imgCache.putIfAbsent(src, () => imageResolver!(src));
+      if (bytes != null) {
+        final w = double.tryParse(img.group(4) ?? '');
+        final h = double.tryParse(img.group(5) ?? '');
+        return Padding(
+          padding: EdgeInsets.only(
+              left: img.group(1)!.length * 6.0, top: 4, bottom: 4),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: Image.memory(bytes,
+                width: w, height: h, fit: BoxFit.contain, gaplessPlayback: true),
+          ),
+        );
+      }
+      // Unresolvable blob → fall through to the literal-text rendering below.
+    }
+
     // Quote
     final quote = RegExp(r'^>\s?(.*)$').firstMatch(line);
     if (quote != null) {
@@ -182,18 +223,22 @@ class MarkdownView extends StatelessWidget {
       );
     }
 
-    // Display math on its own line: $$latex$$ (TEXT-1a / MATH-1 inline)
+    // Display math on its own line: $$latex$$ (TEXT-1a / MATH-1 inline).
+    // scaleDown keeps a wide equation within the box instead of overflowing.
     final dm = RegExp(r'^\s*\$\$(.+)\$\$\s*$').firstMatch(line);
     if (dm != null) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Center(
-          child: Math.tex(
-            dm.group(1)!,
-            textStyle: baseStyle.copyWith(fontSize: 18),
-            onErrorFallback: (e) => Text(dm.group(1)!,
-                style: const TextStyle(
-                    fontFamily: 'monospace', color: OnoteColors.graphite400)),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Math.tex(
+              dm.group(1)!,
+              textStyle: baseStyle.copyWith(fontSize: 18),
+              onErrorFallback: (e) => Text(dm.group(1)!,
+                  style: const TextStyle(
+                      fontFamily: 'monospace', color: OnoteColors.graphite400)),
+            ),
           ),
         ),
       );

@@ -4,14 +4,21 @@ import 'package:perfect_freehand/perfect_freehand.dart';
 import '../model/models.dart';
 
 Color colorFromHex(String hex) =>
-    Color(0xFF000000 | int.parse(hex.replaceFirst('#', ''), radix: 16));
+    Color(0xFF000000 | (int.tryParse(hex.replaceFirst('#', ''), radix: 16) ?? 0));
 
 /// Renders strokes as pressure-responsive variable-width outlines
 /// (Ink Data Spec §4 — the perfect-freehand pipeline).
+///
+/// A stroke whose brush colour is `"auto"` (no explicit colour chosen — e.g.
+/// OneNote-imported ink with the default pen) renders in [autoColor], the
+/// theme's default ink: dark on a light page, light on a dark page — the same
+/// contract as default text colour. Explicitly-coloured strokes always keep
+/// their colour.
 class InkPainter extends CustomPainter {
-  InkPainter(this.strokes, {this.wet});
+  InkPainter(this.strokes, {this.wet, this.autoColor = const Color(0xFF211F1B)});
   final List<Stroke> strokes;
   final Stroke? wet; // in-progress stroke, drawn last
+  final Color autoColor;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -47,8 +54,9 @@ class InkPainter extends CustomPainter {
       path.lineTo(pt.dx, pt.dy);
     }
     path.close();
+    final base = s.colorHex == 'auto' ? autoColor : colorFromHex(s.colorHex);
     final paint = Paint()
-      ..color = colorFromHex(s.colorHex).withValues(alpha: s.opacity)
+      ..color = base.withValues(alpha: s.opacity)
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
     if (s.tool == 'highlighter') {
@@ -60,6 +68,7 @@ class InkPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant InkPainter old) =>
       old.wet != wet ||
+      old.autoColor != autoColor ||
       old.strokes.length != strokes.length ||
       (strokes.isNotEmpty &&
           (!identical(old.strokes.first, strokes.first) ||

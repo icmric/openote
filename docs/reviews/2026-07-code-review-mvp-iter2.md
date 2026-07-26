@@ -179,6 +179,115 @@ Testing against the PDF surfaced several issues, all fixed:
 - **Title/date duplicated.** The title/date lines were also glued onto the end of the main outline; they're now collected from the Title node and filtered out of content outlines. The original created date is parsed from that text and set as the page's `createdAt`, so the in-page date band shows the original date, not today's.
 - **Layout + overlap.** Images are correlated to their objects by natural pixel size and placed at their real page coordinates (units calibrated at ≈60 px/unit); imported text boxes are pinned to a fixed width (`autoWidth:false`) so a long line never grows the box over an adjacent image. Also revealed: the images' vertical offsets (13 cm, 48 cm, 62 cm) show the section spans **multiple OneNote pages** merged into one Openote page — proper page-splitting, per-run bold, and math remain the next steps.
 
+### L.4 — Object spaces, unified boxes, in-flow images, ink (iterations 16–17)
+
+Testing against two real files (a lecture section + a second page with pen annotations) drove four structural fixes and one new subsystem:
+
+- **Object spaces & revisions (the merge bug).** CompactID OIDs are only unique per ONESTORE object space, and objects repeat across appended revisions. The parser now tags every object with its space (FileNode id 0x008 crosses a boundary), resolves OIDs per space, and takes each OID's **highest-file-offset occurrence** as current — the old first-wins rule read a stale page root that dropped two boxes and two images. Each content space imports as its own page; the page root's 0x1C20 children are the page's boxes, each with real offsets (0x1C14/15) and width (0x1C1B). OneNote coordinates are used verbatim (their origin includes the title area ≈ our page origin).
+- **In-flow images / unified boxes (Data Model §5.1 made real).** `MarkdownView` now renders `![alt](sha256:<hash>)` lines as images resolved from the blob store (cached; `blob_refs` maintained from text refs), so a text box is a true mixed-content container. The importer keeps an image-as-list-item **inside its box's markdown** instead of splitting the box or floating the image — OneNote's container behaviour, and the fix for the "mystery gap" (flow-height estimates are gone; the real renderer lays it out). Spec §5.2 documents the dialect.
+- **Equations** import as their own math boxes beside the text (matching OneNote's separate equation object).
+- **Trackpad panning.** Block drag/resize gestures exclude `PointerDeviceKind.trackpad`, so two-finger scrolls over a block pan the canvas (trackpad click-drags arrive as mouse events and still move blocks).
+- **Ink import (OPEN-8).** Decoded OneNote's ink model empirically + via the open-source `onenote.rs` parser's property tables: InkContainer (0x00060014, scaling 0x1C46/47) → InkDataNode (0x0002003B) → InkStrokeNode (0x00020047) with the packed path in 0x340B — an MS-ISF multi-byte stream (7-bit varints, LSB sign, length-prefixed) of **per-dimension delta blocks** (absolute first value, cumulative sum). Dimension GUIDs from the stroke-properties node (0x0012004D-sibling 0x00120048) select X/Y/pressure; pressure normalises by its limits into Openote's `p[]`; pen size (HIMETRIC → px at 120 dpi), colour (COLORREF) and alpha map onto the stroke brush. Default unit calibrated at 1270/half-inch. A page's strokes land as one ink block with page-absolute coordinates (Ink Spec §3). Verified on a 184-stroke page: bounds within the page, smooth paths, sensible pressure.
+
+### L.5 — Layout fidelity, visible ink, `.onepkg` notebooks (iteration 18)
+
+Stakeholder testing of L.4 surfaced three issues, all root-caused:
+
+- **The "mystery gaps."** Two causes, both height-estimation: (1) imported boxes rendered at Openote's default 15px/1.5 text metrics while their absolutely-positioned siblings sat at OneNote-height positions — boxes now import with `fontSize`/`lineHeight` content overrides (dominant run size in pt → px at the page's 120 dpi, line spacing 1.32) so heights track the source; (2) in-flow images rendered at natural pixel size instead of OneNote's display size — the dialect gained an optional ` =WxH` suffix (`![alt](sha256:… =266x232)`), emitted by the importer and honoured by `MarkdownView`.
+- **"Invisible" ink.** The strokes were stored and rendered — as sub-pixel hairlines. A 0.25 mm OneNote pen mapped to 1.18 px, then the painter's pressure thinning (×0.3–0.6) cut it below a pixel. OneNote draws pens ~2× nominal tip width; the importer now applies that factor with a 1.8 px floor. (Diagnosis included a headless data-path check, `app/tool/check_ink.dart`, which verified 184 strokes/7301 points survive the exact JSON round-trip into `Stroke.fromJson`.)
+- **Highlight** (0x1C0D, previously misread as a second colour property) now imports as `==highlight==`.
+
+**`.onepkg` whole-notebook import shipped.** A `.onepkg` is a Microsoft Cabinet (LZX-compressed) of `.one` section files; the pure-Rust `cab` crate provides extraction (`rust/onote_core/src/onepkg.rs`, 256 MB/section zip-bomb cap, panic-guarded FFI `onote_core_import_onepkg`). The Dart importer creates a **new notebook** named after the package, one section per `.one` (package folders → section groups), reusing the same per-page import path as single-section import, and removes the seeded starter section once real content lands. Menu: notebook menu ▸ "Import OneNote notebook (.onepkg)…".
+
+Known gaps (tracked in ROADMAP): per-run font size, OneNote tags/checkboxes, hyperlink URLs (the dialect renders no standard links yet), and in-flow images rendering as images *while editing* (Phase 3, with the structured editor).
+
+### L.6 — Notebook-import correctness + canvas fixes (iteration 19)
+
+Stakeholder testing of the first whole-notebook import surfaced seven issues:
+
+- **Only the first group's sections had content** — `firstPageId ??= _importPagesIntoSection(…)`: `??=` short-circuits its right-hand side once non-null, so the import call itself was skipped for every section after the first. (Lesson: never put a side-effecting call on the RHS of `??=`.)
+- **Ink rendered grey / wrong for the theme.** Imported strokes now carry `"auto"` colour when OneNote stored none; `InkPainter` resolves `auto` from the theme (dark ink on light pages, light on dark) — the same contract as default text colour, which was already theme-correct. Explicit pen colours always pass through.
+- **Page order + subpage levels.** `0x1DFF` is the page's 1-based **subpage level** (not a page number, as previously assumed); display order lives in the directory-space section node's ordered page-oid array (JCID `0x00060008`, property `0x3442`) — a user can reorder pages without rewriting object spaces, so file order alone is wrong. Content spaces pair with page nodes by creation ordinal, then sort by the display array; levels flow into `TreeNode.level` (ORG-6). Empty content spaces still consume their ordinal (skipping shifted every later page's title by one).
+- **No feedback during long imports.** The Rust parse (LZX + binary + base64) now runs in an isolate via `compute`, with a non-dismissible busy dialog; the UI thread never freezes.
+- **"Blank page until scroll."** The CANVAS-9 culling rect was computed in `build()` but the transform changes without a rebuild (viewport assignment, per-page view restore) — first paint culled everything against a stale viewport and nothing invalidated the list. Culling now computes inside the transform's `AnimatedBuilder`, so it always matches the frame being painted.
+- **Math pixel overflow.** Wide imported equations overflowed their block; `Math.tex` is now wrapped in `FittedBox(scaleDown)` in the math block (view + editor preview) and the markdown `$$…$$` renderer.
+- Residual layout gap: imported line-height nudged 1.32 → 1.35.
+
+### L.7 — The gosid correlation (iteration 20): pages finally match their content
+
+Testing against the stakeholder's real 41 MB notebook (195 pages, 12 sections, 3 groups, ~68k ink strokes) exposed that L.6's "pair content spaces with page metadata by creation ordinal" heuristic was simply wrong — titles/levels attached to the wrong content, order didn't survive, and unmatched pages went missing. The definitive linkage, now implemented, is OneNote's own:
+
+- The section node's page list holds **parallel arrays**: `0x3442` (page-metadata OIDs: title, subpage level) and **`0x1D63` (each page's ObjectSpaceID)**.
+- An ObjectSpaceID is a compact ID (guidIndex high 24 bits, n low 8) resolved through the space's **global-id table** (FileNode `0x024` entries, captured per space during the walk) to an ExtendedGUID.
+- That ExtendedGUID matches the **gosid** in each space's ObjectSpaceManifestListReferenceFND body (also captured during the walk) — giving an exact space→(title, level, display order) map. Requires consuming the propset's **OSID stream** (types 0x0A/0x0B), previously skipped.
+- Pages listed in the section but yielding no parseable content now import as empty titled pages (visible) instead of vanishing; unmatched content spaces fall back to their on-page title text.
+
+Also in this iteration: ink strokes with a channel count that doesn't match the shared dimension table (pen without pressure sharing a 3-dim properties node) now fall back to a divisor-based channel guess instead of being silently dropped (the "missing ink" report); math blocks self-size to the rendered equation (a stored width scaled complex equations illegibly small — `displayW = null` + measured write-back); the notebook-import busy dialog narrates per-section progress during the write phase.
+
+### L.8 — Page order/hierarchy rebuilt + ink giant-scribble fixed (iteration 21)
+
+Cross-checked the importer against the stakeholder's real notebook opened read-only in OneNote-web, page-for-page. Four fixes:
+
+- **Section→page structure was modelled wrong.** L.7 assumed one section node with parallel page arrays; MS-ONE actually nests **SectionNode (JCID 0x00060007) → ElementChildNodes (0x1C20) → PageSeriesNodes (0x00060008)**, each with parallel **0x1D63 (page object-spaces)** and **0x3442 (PageMetadata)**. A section has *many* series; the old code read a single series, so order was wrong and only that series' pages got correct subpage levels. Now the series are walked in section order, pages concatenated — verified identical to the web notebook (e.g. Discrete Maths: Symbols, then Week 1/2/3… each a top-level page with its lecture subpages; Programming 1: six flat pages in exact order).
+- **Subpage level was off by one.** `PageLevel` (0x1DFF) is 1-based (1 = top-level); Openote's indent is 0-based, so subtract 1. (The browser shows top-level pages flush-left; mine were indented once.)
+- **Ink "giant scribbles."** ~25% of strokes on some pages spanned the whole page. Root cause: strokes sharing a StrokeProperties node with an **empty dimension table** were decoded as 2-channel when they're 3-channel (X,Y,Pressure) — reading 3ch data as 2ch bleeds the X block into Y and the cumulative sum runs away. Fix: infer the channel count by **compactness** (the correct split keeps X/Y bounded; the wrong one is ~10× larger), apply it even when a valid table yields an absurd span, and drop any stroke still spanning > ~3200px (scale-aware). Verified: runaways across the 68,605-stroke notebook went from thousands to zero page-crossers, dropping only 10 genuinely-undecodable strokes (0.015%).
+- **Tiny equations** now expand their box: math blocks size to the rendered equation (`displayW = null` + measured write-back) instead of scaling a complex equation illegibly small inside a fixed 320px box.
+
+Progress feedback for `.onepkg` import now narrates per-section, and the parse runs in an isolate (no UI freeze).
+
+### L.8 — Verifying the notebook correlation + the stale-DLL trap (iteration 21)
+
+The stakeholder reported a full-notebook import as "super messy": wrong page order, subpages only in the first group then flat, bodies as titles, missing pages. Investigation:
+
+- **The parser was already correct.** Cross-checking the authoritative open-source `onenote.rs` parser confirmed the structure (SectionNode 0x00060007 → `ElementChildNodes` → PageSeriesNodes 0x00060008; each PageSeries has parallel `ChildGraphSpaceElementNodes`/0x1D63 page-space OSIDs ‖ `MetaDataObjectsAboveGraphSpace`/0x3442 metadata OIDs; PageMetadata carries `CachedTitleString`/0x1CF3 + `PageLevel`/0x1DFF). A new `dump_sections` diagnostic showed titles, levels, order and content fingerprints all lining up for the real 41 MB notebook — Programming 1 matched the live OneNote page-for-page, Discrete's 55 pages nested Week→subpages correctly, and a scan across all 12 sections found **zero orphans and zero flattening**.
+- **The bug was a stale DLL.** Inspecting the user's actual imported `.onote` (SQLite) showed the *old* ordinal-pairing output (44 flat pages), while the current source produced 55 correct ones. `sha256` of the deployed `onote_core.dll` didn't match a fresh `cargo build --release` — the app had been loading a pre-fix binary. This had recurred several times.
+- **Root-cause fixes:** (1) `OnoteCore._tryLoad` now loads the **newest** candidate library by mtime, so a `cargo build` is picked up without a manual copy (no-op in a shipped build with one library); (2) a real **end-to-end test** (`test/onenote_import_e2e_test.dart`) drives the native DLL + the actual import/persistence into a temp SQLite and asserts the reconstructed tree — Programming 1 exact match, Discrete nesting, and no orphaned subpages in any section. The onepkg-apply logic was extracted to `buildNotebookFromPackage` and `Repository.openAt` added so the pipeline is testable headlessly.
+
+Remaining (unchanged): the residual imported-layout gap (Phase 3), tables/attachments (unparsed), in-flow images editing as images (Phase 3).
+
+### L.9 — Per-revision resolution & aspect image matching (iteration 22)
+
+Verifying a fresh 1:1 `.onepkg` (48 MB, 324 pages) against the live OneNote web notebook — Programming 1 matched page-for-page, and "Intro to Information Systems" nested **three levels** exactly (Module → Lecture week → sub-note) — surfaced two real content bugs on the way, both now fixed and covered by the end-to-end test:
+
+- **Lost text on heavily-revised pages (the big one).** OneNote's global-id table (guidIndex→GUID) is declared **per revision**, so the same CompactID names different objects in different revisions. The parser resolved references globally, mixing revisions — a page edited many times (e.g. every section's "Misc") resolved to a title-only stub and imported with **zero text boxes**. Fixed by giving every object its revision's table, canonicalising each reference to its ExGuid (revision-resolved GUID + n) via the referencing object's revision, and keying the object graph by ExGuid (`Resolver` in [onenote.rs]). The page's content root is now the PageNode declaration that actually has `0x1C20` children (not merely the latest, which can be a stub). Result on the sample: text recovered across the notebook (boxes 858→985), and cross-revision **duplicate ink de-duplicated** (strokes 73.8k→64.6k, one copy per stroke). The walk now tracks GlobalIdTable Start/Entry/Entry2/Entry3 (0x021/0x024/0x025/0x026) to build per-revision tables with inheritance.
+- **Images piling onto page 1.** The natural-size→pixel factor isn't constant (paste ≈ 60 px/unit, insert ≈ 96), so absolute-size PNG matching failed and unclaimed PNGs dumped onto each section's first page (a "Misc" page showed 24 images). Matching now keys on **aspect ratio** (scale-invariant) gated by a plausible pixel-factor (40–130), with the old exact-size match as a fallback. Result: that Misc page went 24→4 images and the section's other pages regained theirs; totals unchanged (no image lost); the previously-correct pages (Lecture) stayed correct.
+
+New diagnostics: `dump_sections` (section→page correlation + content fingerprints), `dump_revisions` (per-space revision/ExGuid resolution), and `--json`/`--sections`/`--revs` modes on the `dump_one` example. The e2e test (`test/onenote_import_e2e_test.dart`) now also asserts the revised-page text recovery and 3-level nesting.
+
+Still not addressed (documented follow-ups): exact image *positioning* and dedup need the structural `PictureContainer` (0x1C3F) → file-data-store link rather than PNG-signature scanning; tables and file attachments remain unparsed; the residual imported-layout gap (Phase 3).
+
 ## F. Process note
 
 Iteration 2's two shipped bugs (F-6-class API drift, the startup-path crash) both stemmed from unverifiable-in-sandbox platform behavior. Mitigation now in place: every UI interaction path in iteration 3 was re-derived from event-dispatch order rather than assumed (F-3 was exactly an ordering assumption), and version-sensitive APIs are confined to two files (`ink_painter.dart`, `export/pdf_export.dart`) with fallbacks noted in the README.
+
+## M. Navigator rework (two-layout prototype)
+
+The single-pane tree navigator worked but lacked focus (every section could expand at once into one long, hard-to-scan list) and had no notebook management at all — no rename, no delete (the reported "can't delete a notebook" gap: the notebook dropdown only *switched*). Rather than copy OneNote's three-column "double fold-out" (48px rail + sections column + pages column ≈ 480px of chrome — the space cost the stakeholder disliked), we take its *clarity* — see one section's pages at a time — and keep a single ~250px pane. Both candidate presentations ship behind a live toggle so the stakeholder can decide:
+
+- **Stacked** (`NavLayout.stacked`, default): two zones — a sections list above, the **active** section's pages below — split by a drag-to-resize divider (ratio persisted as `navSplit`). OneNote's focus without the second column.
+- **Focused tree** (`NavLayout.tree`): the familiar single tree, but opening a section makes it the active one and expands its pages inline while the others collapse (accordion). Smallest change, most space-frugal.
+
+Both share one concept — the **active section** (`AppState.activeSectionId`) — kept in sync with the open page (`selectPage`) and set by tapping a section (`activateSection`; a second tap collapses in tree mode). Toggle lives next to a new search/quick-jump box; the layout choice persists as `navLayout`.
+
+Notebook management is now first-class. The notebook menu (and a right-click on the header) offers rename, delete, new, imports, and the recycle bin. **Delete → confirm dialog → recycle bin** (the chosen safety model): `Repository.trashNotebook` moves the notebook to a persisted `trashed` list in `workspace.json` and closes its handle but **keeps the `.onote` file**, so `restoreNotebook` is lossless; `purgeNotebook` removes the file for good (extra confirm). Deleting the current notebook switches to another first; the only notebook can't be deleted. The recycle bin dialog now lists trashed notebooks alongside deleted sections/pages, and the delete snackbar offers Undo.
+
+Coverage: `test/notebook_lifecycle_test.dart` exercises trash → restore → rename → purge (file removed) plus workspace-reopen persistence and the last-notebook guard. Analyzer clean on all changed files; existing unit + import e2e tests unaffected.
+
+Stakeholder picked **stacked** ("absolutely the way to go"). Follow-up cleanup: drop the `tree` branch + the layout toggle. Possible extras: notebook duplicate (copy the `.onote` + blobs), remembering the last page per section, and horizontal pane resize.
+
+### M.1 — Notebook context menus + recycle-bin retention
+
+Second pass on the notebook UX:
+
+- **Right-click acts in place.** `_NotebookHeader` is now stateful and owns the `MenuController`; a right-click on the header *or* on any notebook row in the dropdown (`Listener` on `kSecondaryMouseButton`) closes the dropdown and pops that notebook's actions at the pointer — rename/delete/open — acting on **that** notebook without switching to it first (`showNotebookMenu` already took a `NotebookRef`; `deleteNotebook` only switches when deleting the current one). The earlier fragile trailing "more" `IconButton` inside `MenuItemButton` was dropped for this.
+- **30-day retention.** Trashed notebooks and nodes are auto-purged after `Repository.recycleRetentionDays` (30). Swept at startup (`AppState.init`) and whenever the recycle bin opens (`purgeExpiredNotebooks` / `purgeExpiredNodes`); the bin shows a per-item "Deletes in N days" countdown and a header note. Covered by a retention test (backdated trash is purged, fresh is kept).
+
+### M.2 — "Images don't load" was images off-screen, not broken
+
+Reported: imported images (standalone and in-text) don't appear, though ink on the same pages does. A deep end-to-end trace against the real 324-page notebook found **nothing broken**: all 254 image blocks persist with valid, decodable PNG blobs (`blobOk=254`), and images *do* render — proven three ways: an isolated `ImageBlockView` render test (3/3, `naturalW` set), live instrumentation in the running app (`branch=image`, valid provider, no exceptions), and a window screenshot showing the graph diagrams once zoomed out. All 91 in-text image refs are on their own line, so `md_render`'s image regex matches them too.
+
+Root cause: the importer places images at their **faithful OneNote offsets**, which for many pages is to the *right* of the text (x ≈ 980–1200+) or well below it (≈80% of images sit below the first screenful). At 100% zoom on a normal window they're simply off-screen — the text/ink on the left is visible, so the images read as "not loaded."
+
+Fix (chosen: "fit page on open"): `CanvasController.fitWidth(contentWidth)` scales a page down so its full content width fits the viewport, anchored top-left — only ever zooming *out* (never past 100%), so narrow pages keep natural size while wide imported pages reveal their right-hand images immediately. `PageCanvas.initState` applies it unless the page has a genuinely user-adjusted saved view (a stored default of 100%/top-left counts as unadjusted and gets the fit). Verified in the live app: the previously-blank right side now shows the diagrams on open. Regression: `test/canvas_view_test.dart`.
+
+Noted-not-fixed: imported math still renders run-together (missing inter-token spaces), a separate LaTeX-spacing issue.

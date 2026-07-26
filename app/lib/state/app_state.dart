@@ -2,8 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart'; // ThemeMode + widgets
+import 'package:flutter/material.dart'; // ThemeMode + widgets (re-exports foundation)
 
 import '../canvas/canvas_controller.dart';
 import '../core/engine.dart';
@@ -13,6 +12,11 @@ import '../model/models.dart';
 import '../store/repository.dart';
 
 enum Tool { select, text, pen, highlighter, eraser, lasso }
+
+/// Navigator presentation (§ORG rework): a single focused tree (sections
+/// accordion-expand one at a time) or two stacked zones (sections above, the
+/// active section's pages below, with a resizable divider).
+enum NavLayout { tree, stacked }
 
 /// App-wide state. Deliberately simple (ChangeNotifier) for the MVP; the
 /// domain layer beneath it is what carries forward.
@@ -40,6 +44,51 @@ class AppState extends ChangeNotifier {
   List<TreeNode> nodes = [];
   String? pageId;
   final Set<String> collapsedGroups = {};
+
+  // Navigator rework: the "focused" section drives both layouts — in tree mode
+  // it's the one section expanded to show its pages; in stacked mode it's the
+  // section whose pages fill the lower zone.
+  NavLayout navLayout = NavLayout.stacked;
+  String? activeSectionId;
+  double navSplit = 0.38; // stacked-mode sections/pages height ratio (0..1)
+
+  TreeNode? get activeSection => node(activeSectionId);
+
+  void setNavLayout(NavLayout l) {
+    if (navLayout == l) return;
+    navLayout = l;
+    repo.setSetting('navLayout', l.name);
+    notifyListeners();
+  }
+
+  void setNavSplit(double v) {
+    navSplit = v.clamp(0.15, 0.7);
+    repo.setSetting('navSplit', navSplit);
+    notifyListeners();
+  }
+
+  /// Focus a section. In tree mode a second tap on the active section collapses
+  /// it (allowCollapse); stacked mode always keeps one section open. When the
+  /// current page isn't inside the section, jump to its first page.
+  void activateSection(String id, {bool allowCollapse = false}) {
+    if (allowCollapse && activeSectionId == id) {
+      activeSectionId = null;
+      notifyListeners();
+      return;
+    }
+    activeSectionId = id;
+    final cur = node(pageId);
+    if (cur == null || cur.parentId != id) {
+      final first = nodes
+          .where((n) => n.kind == NodeKind.page && n.parentId == id)
+          .firstOrNull;
+      if (first != null) {
+        selectPage(first.id); // sets activeSectionId + notifies
+        return;
+      }
+    }
+    notifyListeners();
+  }
 
   // Page content
   List<Block> blocks = [];
@@ -457,6 +506,10 @@ class AppState extends ChangeNotifier {
     // Session restore (§7a.5): theme, custom colours, per-page views, last loc.
     final tm = repo.getSetting('themeMode') as String?;
     if (tm != null) themeMode = ThemeMode.values.asNameMap()[tm] ?? themeMode;
+    final nl = repo.getSetting('navLayout') as String?;
+    if (nl != null) navLayout = NavLayout.values.asNameMap()[nl] ?? navLayout;
+    final ns = repo.getSetting('navSplit');
+    if (ns is num) navSplit = ns.toDouble().clamp(0.15, 0.7);
     final cc = repo.getSetting('customColors');
     if (cc is List) customColors.addAll(cc.cast<String>());
     final vm = repo.getSetting('viewMemory');
@@ -472,6 +525,9 @@ class AppState extends ChangeNotifier {
     notebookId = repo.notebooks.any((n) => n.id == lastNb)
         ? lastNb!
         : repo.notebooks.first.id;
+    // Clear out anything that has outlived the recycle-bin retention window.
+    await repo.purgeExpiredNotebooks();
+    repo.purgeExpiredNodes(notebookId!);
     nodes = repo.loadNodes(notebookId!);
     final lastPage = repo.getSetting('lastPage') as String?;
     final target = nodes.any((n) => n.id == lastPage && n.kind == NodeKind.page)
@@ -501,6 +557,9 @@ class AppState extends ChangeNotifier {
 
   Future<void> _loadNotebook() async {
     nodes = repo.loadNodes(notebookId!);
+    // Reset the focused section for the new notebook (selectPage refines it).
+    activeSectionId =
+        nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
     final firstPage = nodes.where((n) => n.kind == NodeKind.page).firstOrNull;
     await selectPage(firstPage?.id);
   }
@@ -516,6 +575,49 @@ class AppState extends ChangeNotifier {
     await flushSave();
     final ref = await repo.createNotebook(title);
     await selectNotebook(ref.id);
+  }
+
+  Future<void> renameNotebook(String id, String title) async {
+    await repo.renameNotebook(id, title);
+    notifyListeners();
+  }
+
+  /// Soft-delete a notebook to the recycle bin. Refuses the last one (there's
+  /// always somewhere to be). Returns false if it couldn't (only notebook).
+  Future<bool> deleteNotebook(String id) async {
+    if (repo.notebooks.length <= 1) return false;
+    await flushSave();
+    final wasCurrent = id == notebookId;
+    await repo.trashNotebook(id);
+    if (wasCurrent) {
+      notebookId = repo.notebooks.first.id;
+      await _loadNotebook();
+    }
+    notifyListeners();
+    return true;
+  }
+
+  List<NotebookRef> get trashedNotebooks => repo.trashedNotebooks;
+
+  /// How long trashed items live before auto-deletion (recycle-bin retention).
+  int get recycleRetentionDays => Repository.recycleRetentionDays;
+
+  /// Sweep expired recycle-bin entries (notebooks + the current notebook's
+  /// nodes). Runs at startup and whenever the recycle bin is opened.
+  Future<void> purgeExpiredTrash() async {
+    await repo.purgeExpiredNotebooks();
+    if (notebookId != null) repo.purgeExpiredNodes(notebookId!);
+    notifyListeners();
+  }
+
+  Future<void> restoreNotebook(String id) async {
+    await repo.restoreNotebook(id);
+    notifyListeners();
+  }
+
+  Future<void> purgeNotebook(String id) async {
+    await repo.purgeNotebook(id);
+    notifyListeners();
   }
 
   Future<void> selectPage(String? id) async {
@@ -535,6 +637,9 @@ class AppState extends ChangeNotifier {
       final data = await engine.loadPage(notebookId!, id);
       blocks = data.blocks;
       pageProps = data.props;
+      // Keep the navigator's focused section in sync with the open page.
+      activeSectionId = nodes.where((n) => n.id == id).firstOrNull?.parentId ??
+          activeSectionId;
     }
     docRevision++;
     _persistSession();
@@ -790,7 +895,8 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  TreeNode? node(String id) => nodes.where((n) => n.id == id).firstOrNull;
+  TreeNode? node(String? id) =>
+      id == null ? null : nodes.where((n) => n.id == id).firstOrNull;
 
   // ── Recycle bin (ORG-7) ────────────────────────────────────────────────
 

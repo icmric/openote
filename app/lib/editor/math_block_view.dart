@@ -168,14 +168,18 @@ class _MathBlockViewState extends State<MathBlockView> {
             ),
             if (preview.isNotEmpty) ...[
               const Divider(height: 14),
-              Math.tex(
-                preview,
-                textStyle: TextStyle(fontSize: 20, color: textColor),
-                onErrorFallback: (e) => Text(
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Math.tex(
                   preview,
-                  style: const TextStyle(
-                      fontFamily: 'monospace',
-                      color: OnoteColors.graphite400),
+                  textStyle: TextStyle(fontSize: 20, color: textColor),
+                  onErrorFallback: (e) => Text(
+                    preview,
+                    style: const TextStyle(
+                        fontFamily: 'monospace',
+                        color: OnoteColors.graphite400),
+                  ),
                 ),
               ),
             ],
@@ -203,12 +207,18 @@ class _MathBlockViewState extends State<MathBlockView> {
     }
     return Padding(
       padding: const EdgeInsets.all(12),
-      child: Math.tex(
-        latex,
-        textStyle: TextStyle(fontSize: 22, color: textColor),
-        onErrorFallback: (e) => Text(latex,
-            style: const TextStyle(
-                fontFamily: 'monospace', color: OnoteColors.graphite400)),
+      // scaleDown: a wide equation shrinks to the block's width instead of
+      // overflowing (the imported-equation "pixel overflow" error).
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Math.tex(
+          latex,
+          textStyle: TextStyle(fontSize: 22, color: textColor),
+          onErrorFallback: (e) => Text(latex,
+              style: const TextStyle(
+                  fontFamily: 'monospace', color: OnoteColors.graphite400)),
+        ),
       ),
     );
   }

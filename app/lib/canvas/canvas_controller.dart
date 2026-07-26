@@ -84,6 +84,27 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Fit [contentWidth] page-px to the viewport width, anchored top-left. Only
+  /// zooms OUT (never past 100%), so a narrow page keeps its natural size while
+  /// a wide imported page reveals its full width — including images placed to
+  /// the right of the text at their original OneNote offsets, which otherwise
+  /// sit off-screen at 100%. Vertical position stays at the top (scroll down
+  /// for the rest), so text stays readable rather than shrinking to fit height.
+  void fitWidth(double contentWidth) {
+    if (viewport == Size.zero || contentWidth <= 0) {
+      centerPage();
+      return;
+    }
+    const pad = 24.0;
+    final needed = contentWidth + pad;
+    scale = needed <= viewport.width
+        ? 1.0
+        : (viewport.width / needed).clamp(minScale, 1.0);
+    offset = Offset.zero;
+    clampToPage();
+    notifyListeners();
+  }
+
   /// Center a page-space point in the viewport (find, navigation).
   void centerOn(Offset pagePoint) {
     offset = Offset(viewport.width / 2, viewport.height / 2) - pagePoint * scale;
