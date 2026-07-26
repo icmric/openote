@@ -11,6 +11,40 @@ fn main() {
     let mode = args.next();
     let bytes = std::fs::read(&path).expect("read file");
 
+    if mode.as_deref() == Some("--timing") {
+        // Phase timing for .onepkg: cabinet extraction vs per-section parse.
+        use std::io::Read;
+        let t0 = std::time::Instant::now();
+        let mut cab = cab::Cabinet::new(std::io::Cursor::new(&bytes[..])).unwrap();
+        let names: Vec<String> = cab
+            .folder_entries()
+            .flat_map(|f| f.file_entries().map(|fe| fe.name().to_string()))
+            .collect();
+        let mut payloads = Vec::new();
+        for name in names {
+            if !name.to_ascii_lowercase().ends_with(".one") {
+                continue;
+            }
+            let mut data = Vec::new();
+            cab.read_file(&name).unwrap().read_to_end(&mut data).unwrap();
+            payloads.push((name, data));
+        }
+        let t_extract = t0.elapsed();
+        let t1 = std::time::Instant::now();
+        for (name, data) in &payloads {
+            let s0 = std::time::Instant::now();
+            let json = import_one_json(data);
+            println!(
+                "  {:>10.2?}  {:>9} bytes  ok={}  {}",
+                s0.elapsed(),
+                data.len(),
+                json.contains("\"ok\":true"),
+                name
+            );
+        }
+        println!("extract={t_extract:?} parse_total={:?}", t1.elapsed());
+        return;
+    }
     if mode.as_deref() == Some("--pkg") {
         let json = onote_core::onepkg::import_onepkg_json(&bytes);
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();

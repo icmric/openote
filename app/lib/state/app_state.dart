@@ -13,11 +13,6 @@ import '../store/repository.dart';
 
 enum Tool { select, text, pen, highlighter, eraser, lasso }
 
-/// Navigator presentation (§ORG rework): a single focused tree (sections
-/// accordion-expand one at a time) or two stacked zones (sections above, the
-/// active section's pages below, with a resizable divider).
-enum NavLayout { tree, stacked }
-
 /// App-wide state. Deliberately simple (ChangeNotifier) for the MVP; the
 /// domain layer beneath it is what carries forward.
 class AppState extends ChangeNotifier {
@@ -45,21 +40,11 @@ class AppState extends ChangeNotifier {
   String? pageId;
   final Set<String> collapsedGroups = {};
 
-  // Navigator rework: the "focused" section drives both layouts — in tree mode
-  // it's the one section expanded to show its pages; in stacked mode it's the
-  // section whose pages fill the lower zone.
-  NavLayout navLayout = NavLayout.stacked;
+  // Navigator (stacked): the focused section, whose pages fill the lower zone.
   String? activeSectionId;
-  double navSplit = 0.38; // stacked-mode sections/pages height ratio (0..1)
+  double navSplit = 0.38; // sections/pages height ratio (0..1)
 
   TreeNode? get activeSection => node(activeSectionId);
-
-  void setNavLayout(NavLayout l) {
-    if (navLayout == l) return;
-    navLayout = l;
-    repo.setSetting('navLayout', l.name);
-    notifyListeners();
-  }
 
   void setNavSplit(double v) {
     navSplit = v.clamp(0.15, 0.7);
@@ -67,15 +52,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Focus a section. In tree mode a second tap on the active section collapses
-  /// it (allowCollapse); stacked mode always keeps one section open. When the
-  /// current page isn't inside the section, jump to its first page.
-  void activateSection(String id, {bool allowCollapse = false}) {
-    if (allowCollapse && activeSectionId == id) {
-      activeSectionId = null;
-      notifyListeners();
-      return;
-    }
+  /// Focus a section (the pages zone shows its pages). When the current page
+  /// isn't inside the section, jump to its first page.
+  void activateSection(String id) {
     activeSectionId = id;
     final cur = node(pageId);
     if (cur == null || cur.parentId != id) {
@@ -506,8 +485,6 @@ class AppState extends ChangeNotifier {
     // Session restore (§7a.5): theme, custom colours, per-page views, last loc.
     final tm = repo.getSetting('themeMode') as String?;
     if (tm != null) themeMode = ThemeMode.values.asNameMap()[tm] ?? themeMode;
-    final nl = repo.getSetting('navLayout') as String?;
-    if (nl != null) navLayout = NavLayout.values.asNameMap()[nl] ?? navLayout;
     final ns = repo.getSetting('navSplit');
     if (ns is num) navSplit = ns.toDouble().clamp(0.15, 0.7);
     final cc = repo.getSetting('customColors');

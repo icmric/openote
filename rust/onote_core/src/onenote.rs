@@ -1455,7 +1455,93 @@ fn office_math_to_latex(s: &str) -> String {
     }
     // Strip any leftover structure/invisible chars, collapse runs of spaces.
     let cleaned: String = t.chars().filter(|c| !is_math_control(*c)).collect();
-    cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
+    let joined = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    latexify_prose(&joined)
+}
+
+/// Wrap prose words (≥2 consecutive letters) in `\text{…}`, grouping runs of
+/// words so their spaces survive LaTeX math mode. OneNote math zones freely mix
+/// sentences with symbols ("A path is a sequence of edges e1, …, en ∈ E such
+/// that …"); rendered as raw math the words mash together ("Apathisasequence…")
+/// because math mode ignores spaces. Single letters stay math-italic variables;
+/// existing `\commands` pass through untouched.
+fn latexify_prose(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\\' {
+            // A LaTeX command (e.g. \frac): copy the backslash + name verbatim.
+            out.push(c);
+            i += 1;
+            while i < chars.len() && chars[i].is_ascii_alphabetic() {
+                out.push(chars[i]);
+                i += 1;
+            }
+            continue;
+        }
+        if c.is_alphabetic() {
+            let start = i;
+            while i < chars.len() && chars[i].is_alphabetic() {
+                i += 1;
+            }
+            if i - start < 2 {
+                out.push(chars[start]); // single letter → math variable
+                continue;
+            }
+            // Prose group: this word plus any following space-separated words.
+            let mut group: String = chars[start..i].iter().collect();
+            loop {
+                let sp = i;
+                while i < chars.len() && chars[i] == ' ' {
+                    i += 1;
+                }
+                let w = i;
+                while i < chars.len() && chars[i].is_alphabetic() {
+                    i += 1;
+                }
+                // A single letter ("a", "I") counts as prose when the word
+                // after it is prose too ("is a sequence"); otherwise it's a
+                // math variable ("edges e1", "for all i ∈") and ends the group.
+                let prose = i - w >= 2
+                    || (i - w == 1 && {
+                        let mut j = i;
+                        while j < chars.len() && chars[j] == ' ' {
+                            j += 1;
+                        }
+                        let ws = j;
+                        while j < chars.len() && chars[j].is_alphabetic() {
+                            j += 1;
+                        }
+                        j > ws && j - ws >= 2
+                    });
+                if prose && i > w {
+                    group.push(' ');
+                    group.push_str(&chars[w..i].iter().collect::<String>());
+                } else {
+                    i = w; // put back the non-word (variable/symbol/space run)
+                    // Keep the boundary spaces readable: math mode would eat
+                    // them, so fold one into the \text group on each side.
+                    if out.ends_with(' ') {
+                        out.pop();
+                        group.insert(0, ' ');
+                    }
+                    out.push_str("\\text{");
+                    out.push_str(&group);
+                    if w > sp {
+                        out.push(' '); // trailing space inside \text
+                    }
+                    out.push('}');
+                    break;
+                }
+            }
+            continue;
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
 }
 
 /// A colour word for the Markdown projection, or None for black/auto/unset.
@@ -2645,5 +2731,22 @@ mod tests {
         // Function application (U+2061) and math letters, no fraction.
         let s = "\u{1D453}\u{2061}(\u{1D465})"; // f(x)
         assert_eq!(office_math_to_latex(s), "f(x)");
+    }
+
+    #[test]
+    fn prose_in_math_keeps_spaces() {
+        // Sentences inside a math zone must not mash together: prose words wrap
+        // in \text{} (keeping their spaces); single-letter variables stay math.
+        assert_eq!(
+            latexify_prose("A path is a sequence of edges e1, e2"),
+            r"A\text{ path is a sequence of edges }e1, e2"
+        );
+        // \commands survive untouched; surrounding words still wrap.
+        assert_eq!(
+            latexify_prose(r"probability is \frac{1}{2} exactly"),
+            r"\text{probability is }\frac{1}{2}\text{ exactly}"
+        );
+        // Pure math stays pure.
+        assert_eq!(latexify_prose("x + y = z"), "x + y = z");
     }
 }

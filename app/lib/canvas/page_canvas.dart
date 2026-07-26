@@ -33,6 +33,11 @@ enum _DragMode { none, pending, marquee, moveSelection, pan }
 
 class _PageCanvasState extends State<PageCanvas> {
   Stroke? _wet;
+
+  /// Bumped per wet-ink point so ONLY the ink layer repaints (the painter
+  /// listens via `repaint:`). A setState per pointer move rebuilt every
+  /// visible block at stylus rate — the "inking feels sluggish" report.
+  final ValueNotifier<int> _wetTick = ValueNotifier(0);
   bool _eraseUndoPushed = false;
   bool _moveUndoPushed = false;
 
@@ -71,6 +76,12 @@ class _PageCanvasState extends State<PageCanvas> {
           Stroke.fromJson((sj as Map).cast<String, dynamic>()),
       ],
     );
+  }
+
+  @override
+  void dispose() {
+    _wetTick.dispose();
+    super.dispose();
   }
 
   @override
@@ -126,8 +137,10 @@ class _PageCanvasState extends State<PageCanvas> {
       return;
     }
     if (_wet == null) return;
-    setState(() =>
-        _addPoint(e, _clampToPagePoint(controller.screenToPage(e.localPosition))));
+    // Repaint-only: grow the stroke and nudge the ink painter. No setState —
+    // rebuilding every visible block per point made inking sluggish.
+    _addPoint(e, _clampToPagePoint(controller.screenToPage(e.localPosition)));
+    _wetTick.value++;
   }
 
   Offset _clampToPagePoint(Offset p) =>
@@ -640,6 +653,8 @@ class _PageCanvasState extends State<PageCanvas> {
                                 size: Size.zero,
                                 painter: InkPainter(visibleStrokes,
                                     wet: _wet,
+                                    // Per-point repaint without widget rebuild.
+                                    repaint: _wetTick,
                                     // Theme default for "auto" strokes: dark
                                     // ink on light pages, light ink on dark.
                                     autoColor: dark

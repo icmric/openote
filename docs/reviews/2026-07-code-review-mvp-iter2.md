@@ -291,3 +291,27 @@ Root cause: the importer places images at their **faithful OneNote offsets**, wh
 Fix (chosen: "fit page on open"): `CanvasController.fitWidth(contentWidth)` scales a page down so its full content width fits the viewport, anchored top-left — only ever zooming *out* (never past 100%), so narrow pages keep natural size while wide imported pages reveal their right-hand images immediately. `PageCanvas.initState` applies it unless the page has a genuinely user-adjusted saved view (a stored default of 100%/top-left counts as unadjusted and gets the fit). Verified in the live app: the previously-blank right side now shows the diagrams on open. Regression: `test/canvas_view_test.dart`.
 
 Noted-not-fixed: imported math still renders run-together (missing inter-token spaces), a separate LaTeX-spacing issue.
+
+### M.3 — Math prose spacing + stacked-only navigator
+
+- **Run-together math fixed at the source.** OneNote math zones freely mix prose with symbols; the importer converted whole paragraphs to LaTeX, and math mode swallows spaces ("Apathisasequence…"). `latexify_prose` (in `office_math_to_latex`) now wraps prose words (≥2 letters, grouping runs incl. single-letter prose words like "a") in `\text{…}` with boundary spaces folded inside, while single-letter variables and `\commands` stay math. Verified on the real Lecture.one: `\frac{L (\text{bits})}{R (\text{bits}/\text{sec})}`. Unit-tested (`prose_in_math_keeps_spaces`). Applies to **new imports** — already-imported pages keep their stored latex (re-import to pick it up).
+- **Tree layout removed.** The stakeholder confirmed stacked; the `NavLayout` enum, toggle, accordion branch and section chevrons are gone. `activateSection` lost `allowCollapse`.
+
+## N. Performance pass (startup / import / in-page)
+
+Measured on the real 48MB, 324-page `.onepkg` (release DLL, debug Flutter):
+
+**Import: ~53s → ~14s end-to-end.** Segment timings before: parse 41.6s | JSON decode 1.3s | blob store 1.8s | page writes 8.9s. The parse breakdown (new `--timing` mode on `dump_one`) showed cabinet **extraction** at 34.6s vs actual parsing 3.9s — the `cab` crate's `read_file` re-decompresses the LZX folder prefix for every file, and a OneNote package is ONE 85.7MB folder holding all 27 sections → quadratic (~1.2GB of LZX work). Fixes:
+- **Vendored `cab` 0.6 with a 2-method patch** (`vendor/cab`, `[patch.crates-io]`): `FileEntry::uncompressed_offset()` + `Cabinet::read_folder_data(index, limit)` — decompress each folder ONCE, slice sections out at their offsets (extent-capped zip-bomb guard preserved).
+- **Parallel section parsing**: `.one` payloads parse independently → `std::thread::scope` fan-out across cores, per-section `catch_unwind` (a damaged section is now skipped instead of failing the whole package).
+- **`opt-level = 3`** (was `"z"`, size-optimized — measurably slowed LZX + parsing; DLL 648KB, fine).
+- Result: parse 41.6s → **4.4s**. Page writes: `PRAGMA synchronous=NORMAL` (WAL-recommended durability; import ran ~700 fsync'd commits), `writePage` converted to savepoints + `Repository.runInTransaction` batches each section into one commit. Remaining ~8s of build time is real work (mirror JSON encoding of ink-heavy pages) — a deeper mirror-format change, deliberately not attempted.
+
+**Startup.** `Repository.open()` + `AppState.init()` (SQLite opens, node load, restored-page JSON decode) ran BEFORE `runApp` — the window stayed invisible until everything loaded. `OpenoteBoot` now paints a splash immediately and swaps the app in when ready (startup errors still render in-window). Note: debug builds JIT — `flutter build windows --release` is the representative startup.
+
+**In-page sluggishness.** Two structural fixes:
+- `MarkdownView` (stateless, re-parsed every text block's Markdown on EVERY app notify — drag frames, ink commits, typing) is now stateful with a parse cache keyed on (text, style, theme); unchanged content returns the identical subtree, which short-circuits Flutter's rebuild. Also fixed the never-retry `_imgCache` (a null resolve was cached forever) — misses now retry.
+- **Wet ink no longer rebuilds the canvas per point.** `_inkMove` did `setState` at stylus rate (rebuilding every visible block per point); the stroke now grows in place and nudges a `ValueNotifier` wired to `InkPainter(repaint:)` — repaint-only, zero widget rebuilds until stroke commit.
+- The root `MaterialApp` also rebuilt on every notify (its `ListenableBuilder` watched the whole AppState); it now caches and rebuilds only when `themeMode` changes — content updates ride `AppShell`'s own listener.
+
+Fidelity re-verified after all of the above: full Dart suite (23) + Rust suite (26) green, including the e2e import of the real notebook (order/nesting/orphans/text recovery). The e2e's wall time dropped 48s → 15s, confirming the import speedup in-pipeline.

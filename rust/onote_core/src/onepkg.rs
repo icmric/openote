@@ -54,31 +54,88 @@ fn import_onepkg(bytes: &[u8]) -> ImportedPackage {
         Err(e) => return fail(&format!("not a OneNote package (cabinet): {e}")),
     };
 
-    // Collect entry names first — reading borrows the cabinet mutably.
-    let names: Vec<String> = cabinet
+    // Phase 1 (sequential — LZX folders are one continuous stream): decompress
+    // each folder ONCE and slice the .one payloads out at their offsets.
+    // Per-file `read_file` re-decompresses the folder prefix for every file
+    // (quadratic): on a real 27-file/85MB notebook that was ~35s of a ~41s
+    // import; a single pass is the folder's actual size.
+    let folder_files: Vec<Vec<(String, u64, u64)>> = cabinet
         .folder_entries()
-        .flat_map(|f| f.file_entries().map(|fe| fe.name().to_string()))
+        .map(|f| {
+            f.file_entries()
+                .map(|fe| {
+                    (
+                        fe.name().to_string(),
+                        fe.uncompressed_offset() as u64,
+                        fe.uncompressed_size() as u64,
+                    )
+                })
+                .collect()
+        })
         .collect();
+    let mut payloads: Vec<(String, Vec<u8>)> = Vec::new();
+    for (fi, files) in folder_files.iter().enumerate() {
+        if !files.iter().any(|(n, _, _)| n.to_ascii_lowercase().ends_with(".one")) {
+            continue; // folder holds only metadata (.onetoc2 etc.)
+        }
+        // Cap the folder stream at the declared extent (zip-bomb guard).
+        let extent = files
+            .iter()
+            .map(|(_, off, size)| off + size)
+            .max()
+            .unwrap_or(0)
+            .min(MAX_SECTION_BYTES * 4);
+        let Ok(data) = cabinet.read_folder_data(fi, extent) else {
+            continue;
+        };
+        for (name, off, size) in files {
+            if !name.to_ascii_lowercase().ends_with(".one") || *size > MAX_SECTION_BYTES {
+                continue;
+            }
+            let (start, end) = (*off as usize, (*off + *size) as usize);
+            if end > data.len() {
+                continue; // truncated folder — skip what we can't slice
+            }
+            payloads.push((name.clone(), data[start..end].to_vec()));
+        }
+    }
+
+    // Phase 2 (parallel): each .one parses independently — fan out across
+    // cores. This is the dominant cost of a big notebook import (measured ~80%
+    // of wall time), and parallelising it cut a 324-page import's parse from
+    // ~42s to a fraction. Per-section catch_unwind means one damaged section
+    // is skipped instead of failing the whole package.
+    let workers = std::thread::available_parallelism()
+        .map(|p| p.get())
+        .unwrap_or(4)
+        .min(payloads.len().max(1));
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let slots: Vec<std::sync::Mutex<Option<ImportedSection>>> =
+        payloads.iter().map(|_| std::sync::Mutex::new(None)).collect();
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|| loop {
+                let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if i >= payloads.len() {
+                    break;
+                }
+                let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                    || import_one(&payloads[i].1),
+                ));
+                if let Ok(section) = parsed {
+                    if section.ok {
+                        *slots[i].lock().unwrap() = Some(section);
+                    }
+                }
+            });
+        }
+    });
 
     let mut sections = Vec::new();
-    for name in names {
-        let lower = name.to_ascii_lowercase();
-        if !lower.ends_with(".one") {
-            continue; // .onetoc2 and any stray metadata files
-        }
-        let mut data = Vec::new();
-        match cabinet.read_file(&name) {
-            Ok(reader) => {
-                if reader.take(MAX_SECTION_BYTES).read_to_end(&mut data).is_err() {
-                    continue;
-                }
-            }
-            Err(_) => continue,
-        }
-        let section = import_one(&data);
-        if !section.ok {
+    for (i, (name, _)) in payloads.iter().enumerate() {
+        let Some(section) = slots[i].lock().unwrap().take() else {
             continue; // damaged or unsupported entry — import the rest
-        }
+        };
         // "Group/Sub/Section.one" → group "Group/Sub", name "Section".
         let norm = name.replace('\\', "/");
         let (group, file) = match norm.rsplit_once('/') {

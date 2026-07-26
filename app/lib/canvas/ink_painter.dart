@@ -15,9 +15,10 @@ Color colorFromHex(String hex) =>
 /// contract as default text colour. Explicitly-coloured strokes always keep
 /// their colour.
 class InkPainter extends CustomPainter {
-  InkPainter(this.strokes, {this.wet, this.autoColor = const Color(0xFF211F1B)});
+  InkPainter(this.strokes,
+      {this.wet, this.autoColor = const Color(0xFF211F1B), super.repaint});
   final List<Stroke> strokes;
-  final Stroke? wet; // in-progress stroke, drawn last
+  final Stroke? wet; // in-progress stroke, drawn last (mutated between repaints)
   final Color autoColor;
 
   @override

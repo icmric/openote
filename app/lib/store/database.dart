@@ -13,6 +13,10 @@ const onoteFormatMajor = 1;
 Database openOnote(String path, {required String notebookId, required String title}) {
   final db = sqlite3.open(path);
   db.execute('PRAGMA journal_mode=WAL;');
+  // WAL's recommended durability level: commits don't each fsync (a power cut
+  // can lose the last few commits but never corrupts). Import measured ~700
+  // small transactions; FULL fsync'd every one.
+  db.execute('PRAGMA synchronous=NORMAL;');
   db.execute('PRAGMA foreign_keys=ON;');
 
   final appId = db.select('PRAGMA application_id;').first.columnAt(0) as int;

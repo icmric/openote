@@ -242,7 +242,14 @@ Future<int> buildNotebookFromPackage(
 }
 
 /// Import parsed pages into [sectionId]. Returns the first created page id.
+/// The whole section runs in ONE transaction — per-page commits measurably
+/// dominated large imports.
 String? _importPagesIntoSection(AppState app, String nbId, String sectionId,
+        List<dynamic> pages, String Function() next) =>
+    app.repo.runInTransaction(
+        nbId, () => _importPagesLocked(app, nbId, sectionId, pages, next));
+
+String? _importPagesLocked(AppState app, String nbId, String sectionId,
     List<dynamic> pages, String Function() next) {
   String? firstPageId;
   for (final raw in pages) {

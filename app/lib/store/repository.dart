@@ -399,6 +399,22 @@ class Repository {
     );
   }
 
+  /// Run [fn] in ONE transaction on [notebookId]'s database. [writePage] uses
+  /// savepoints so it nests; imports batch hundreds of page writes into a
+  /// single commit instead of paying per-page transaction overhead.
+  T runInTransaction<T>(String notebookId, T Function() fn) {
+    final db = _db(notebookId);
+    db.execute('BEGIN IMMEDIATE');
+    try {
+      final r = fn();
+      db.execute('COMMIT');
+      return r;
+    } catch (_) {
+      db.execute('ROLLBACK');
+      rethrow;
+    }
+  }
+
   void writePage(
       String notebookId, String pageId, List<Block> blocks, PageProps props) {
     final db = _db(notebookId);
@@ -408,7 +424,9 @@ class Repository {
       'page': props.toJson(),
       'blocks': [for (final b in blocks) b.toJson()],
     });
-    db.execute('BEGIN');
+    // SAVEPOINT (not BEGIN) so this works standalone AND inside
+    // [runInTransaction] — BEGIN can't nest.
+    db.execute('SAVEPOINT write_page');
     try {
       db.execute(
           'INSERT INTO page_mirror(page_id,json,mirror_rev,updated_at) VALUES(?,?,1,?) '
@@ -468,9 +486,10 @@ class Repository {
           }
         }
       }
-      db.execute('COMMIT');
+      db.execute('RELEASE write_page');
     } catch (_) {
-      db.execute('ROLLBACK');
+      db.execute('ROLLBACK TO write_page');
+      db.execute('RELEASE write_page');
       rethrow;
     }
   }

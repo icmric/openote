@@ -82,11 +82,7 @@ class _SidebarState extends State<Sidebar> {
           _searchRow(context),
           const Divider(height: 1),
           Expanded(
-            child: searching
-                ? _searchResults(context)
-                : app.navLayout == NavLayout.stacked
-                    ? _stackedBody(context)
-                    : _treeBody(context),
+            child: searching ? _searchResults(context) : _stackedBody(context),
           ),
           const Divider(height: 1),
           _footer(context),
@@ -99,7 +95,6 @@ class _SidebarState extends State<Sidebar> {
 
   Widget _searchRow(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final stacked = app.navLayout == NavLayout.stacked;
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 2, 4, 6),
       child: Row(
@@ -140,20 +135,6 @@ class _SidebarState extends State<Sidebar> {
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 2),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: Icon(
-                stacked
-                    ? Icons.view_agenda_outlined
-                    : Icons.account_tree_outlined,
-                size: 17),
-            tooltip: stacked
-                ? 'Navigator: stacked — switch to tree'
-                : 'Navigator: tree — switch to stacked',
-            onPressed: () => app.setNavLayout(
-                stacked ? NavLayout.tree : NavLayout.stacked),
           ),
         ],
       ),
@@ -208,12 +189,7 @@ class _SidebarState extends State<Sidebar> {
     );
   }
 
-  // ── Layout: focused tree (accordion) ──────────────────────────────────
-
-  Widget _treeBody(BuildContext context) =>
-      _sectionsColumn(context, inlinePages: true);
-
-  // ── Layout: stacked zones (sections above, active pages below) ─────────
+  // ── Stacked zones (sections above, active section's pages below) ───────
 
   Widget _stackedBody(BuildContext context) {
     final sections =
@@ -234,9 +210,7 @@ class _SidebarState extends State<Sidebar> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SizedBox(
-                height: secH,
-                child: _sectionsColumn(context, inlinePages: false)),
+            SizedBox(height: secH, child: _sectionsColumn(context)),
             _dividerHandle(context, h),
             Expanded(child: _pagesZone(context, active)),
           ],
@@ -335,11 +309,10 @@ class _SidebarState extends State<Sidebar> {
     );
   }
 
-  // ── Shared section list (groups → sections; pages inline in tree mode) ─
+  // ── Section list (groups → sections) ──────────────────────────────────
 
-  Widget _sectionsColumn(BuildContext context, {required bool inlinePages}) {
+  Widget _sectionsColumn(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final layout = inlinePages ? NavLayout.tree : NavLayout.stacked;
     final groups = app.nodes
         .where((n) => n.kind == NodeKind.sectionGroup && n.parentId == null)
         .toList();
@@ -356,14 +329,11 @@ class _SidebarState extends State<Sidebar> {
       );
     }
 
-    List<Widget> block(TreeNode s) {
-      final active = app.activeSectionId == s.id;
-      return [
-        _SectionHeader(
-            app: app, section: s, dark: dark, active: active, layout: layout),
-        if (inlinePages && active) ..._pageEntriesFor(app, s),
-      ];
-    }
+    Widget row(TreeNode s) => _SectionHeader(
+        app: app,
+        section: s,
+        dark: dark,
+        active: app.activeSectionId == s.id);
 
     return ListView(
       padding: const EdgeInsets.only(bottom: 8),
@@ -373,9 +343,9 @@ class _SidebarState extends State<Sidebar> {
           if (!app.collapsedGroups.contains(g.id))
             for (final s in app.nodes.where(
                 (n) => n.kind == NodeKind.section && n.parentId == g.id))
-              ...block(s),
+              row(s),
         ],
-        for (final s in looseSections) ...block(s),
+        for (final s in looseSections) row(s),
       ],
     );
   }
@@ -796,13 +766,11 @@ class _SectionHeader extends StatefulWidget {
     required this.section,
     required this.dark,
     required this.active,
-    required this.layout,
   });
   final AppState app;
   final TreeNode section;
   final bool dark;
   final bool active;
-  final NavLayout layout;
 
   @override
   State<_SectionHeader> createState() => _SectionHeaderState();
@@ -840,7 +808,6 @@ class _SectionHeaderState extends State<_SectionHeader> {
   Widget _header(BuildContext context, {bool pageTarget = false}) {
     final color = _sectionColor(section.color, dark);
     final scheme = Theme.of(context).colorScheme;
-    final tree = widget.layout == NavLayout.tree;
     final active = widget.active;
     final emphasised = pageTarget || active;
     final labelStyle = TextStyle(
@@ -854,9 +821,7 @@ class _SectionHeaderState extends State<_SectionHeader> {
                 ? OnoteColors.moon300
                 : OnoteColors.graphite500);
     return InkWell(
-      onTap: _renaming
-          ? null
-          : () => app.activateSection(section.id, allowCollapse: tree),
+      onTap: _renaming ? null : () => app.activateSection(section.id),
       onTapDown: (d) => _downPos = d.globalPosition,
       onDoubleTap: () => setState(() => _renaming = true),
       onSecondaryTapUp: (d) => showNodeMenu(context, app, section,
@@ -877,13 +842,6 @@ class _SectionHeaderState extends State<_SectionHeader> {
         padding: const EdgeInsets.fromLTRB(6, 12, 4, 4),
         child: Row(
           children: [
-            SizedBox(
-              width: 15,
-              child: tree
-                  ? Icon(active ? Icons.expand_more : Icons.chevron_right,
-                      size: 15, color: OnoteColors.graphite400)
-                  : null,
-            ),
             const SizedBox(width: 4),
             Container(
               width: 3.5,

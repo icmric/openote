@@ -15,7 +15,7 @@ import '../theme/onote_theme.dart';
 /// `![alt](sha256:<hash>)` resolved from the notebook blob store (Data Model
 /// §5.1: a text block is a container of mixed content — images flow WITH the
 /// text, OneNote-style, rather than floating over it).
-class MarkdownView extends StatelessWidget {
+class MarkdownView extends StatefulWidget {
   const MarkdownView({
     super.key,
     required this.text,
@@ -39,13 +39,50 @@ class MarkdownView extends StatelessWidget {
   /// their literal Markdown.
   final Uint8List? Function(String src)? imageResolver;
 
+  @override
+  State<MarkdownView> createState() => _MarkdownViewState();
+}
+
+/// Stateful ONLY for the parse cache: a page canvas rebuilds every visible
+/// block on each app notify (drag frames, ink commits, typing elsewhere), and
+/// re-parsing every text block's Markdown per frame made busy imported pages
+/// sluggish. The built subtree is cached and returned identical while
+/// (text, style, theme) are unchanged — identical child widgets short-circuit
+/// Flutter's rebuild of the whole subtree.
+class _MarkdownViewState extends State<MarkdownView> {
   /// Decoded-bytes cache so scrolling doesn't re-query SQLite per frame; the
-  /// blob store is content-addressed, so entries can never go stale.
-  static final Map<String, Uint8List?> _imgCache = {};
+  /// blob store is content-addressed, so entries can never go stale. Only
+  /// successful reads are cached — a miss (e.g. blob not yet written) retries.
+  static final Map<String, Uint8List> _imgCache = {};
+
+  Widget? _built;
+  String? _builtText;
+  TextStyle? _builtStyle;
+  bool? _builtDark;
+
+  String get text => widget.text;
+  TextStyle get baseStyle => widget.baseStyle;
+  void Function(String newText)? get onToggleCheckbox => widget.onToggleCheckbox;
+  void Function(String label, String? id)? get onWikiLink => widget.onWikiLink;
 
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
+    if (_built != null &&
+        _builtText == text &&
+        _builtStyle == baseStyle &&
+        _builtDark == dark) {
+      return _built!;
+    }
+    final built = _buildFresh(context, dark);
+    _built = built;
+    _builtText = text;
+    _builtStyle = baseStyle;
+    _builtDark = dark;
+    return built;
+  }
+
+  Widget _buildFresh(BuildContext context, bool dark) {
     final lines = text.split('\n');
     final children = <Widget>[];
     var inFence = false;
@@ -189,9 +226,13 @@ class MarkdownView extends StatelessWidget {
     // size capped to the box width.
     final img = RegExp(r'^(\s*)!\[([^\]]*)\]\(([^)\s]+)(?:\s+=(\d+)x(\d+))?\)\s*$')
         .firstMatch(line);
-    if (img != null && imageResolver != null) {
+    if (img != null && widget.imageResolver != null) {
       final src = img.group(3)!;
-      final bytes = _imgCache.putIfAbsent(src, () => imageResolver!(src));
+      var bytes = _imgCache[src];
+      if (bytes == null) {
+        bytes = widget.imageResolver!(src);
+        if (bytes != null) _imgCache[src] = bytes; // never cache a miss
+      }
       if (bytes != null) {
         final w = double.tryParse(img.group(4) ?? '');
         final h = double.tryParse(img.group(5) ?? '');
@@ -300,7 +341,7 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
           m.group(15)!,
           textStyle: base,
           onErrorFallback: (e) => Text(m.group(15)!,
-              style: TextStyle(
+              style: const TextStyle(
                   fontFamily: 'monospace', color: OnoteColors.graphite400)),
         ),
       ));
