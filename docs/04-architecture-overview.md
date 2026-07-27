@@ -118,7 +118,7 @@ The hardest UI subsystem (see Tech Evaluation §2.2). Design intent:
 - **One model, two surfaces.** Text is stored as a structured rich-text model that is **losslessly Markdown-compatible** for the common subset (headings, emphasis, lists, code, links, checkboxes, tables). The toolbar and Markdown syntax are two editing paths into the same model.
 - **Interpret-as-you-type.** Markdown tokens render **in place** as typed (`# `→heading, `**b**`→bold). When the caret enters a formatted span, the underlying markers reveal for editing, then re-render on exit (the "live preview" pattern). This satisfies TEXT-2/TEXT-4 and the stakeholder's "render it in the same place it's written" requirement.
 - **Storage form:** a portable inline model (Markdown-serializable + a small set of typed extensions for things Markdown can't express — e.g. text color, highlight, tags). Extensions are documented so the format stays open and any Markdown reader gets a faithful degraded view.
-- **Rendering:** a Flutter editor engine — **super_editor or appflowy_editor, decided by the [ADR-0004](adr/ADR-0004-editor-engine.md) bake-off** — mounted live on the focused container only, with read-only/rasterized renderings for every other box on the canvas. The *model* is engine-independent — this is precisely why the editor decision doesn't touch the format.
+- **Rendering:** the editor engine sits behind the **`OnoteTextEditor` seam** ([ADR-0004](adr/ADR-0004-editor-engine.md), Accepted — we keep the engine we own rather than adopting super_editor or appflowy_editor). It is mounted live on the focused container only, with read-only renderings for every other box on the canvas; one session exists at a time, created on focus and disposed on blur. The *model* is engine-independent — this is precisely why the editor decision doesn't touch the format, and why swapping the engine is a single call.
 
 ---
 
@@ -237,7 +237,7 @@ The follow-up documents this overview previewed now exist and are the build-read
 2. **[Data Model Specification](specs/11-data-model-spec.md)** (§3, §4a) — concrete block structures, identity rules, and the embed reference model.
 3. **[Math Input & Storage Specification](specs/12-math-input-spec.md)** (§6) — the linear-input grammar and LaTeX/MathML canonicalization.
 4. **[Ink Data Model Specification](specs/13-ink-data-spec.md)** (§7) — stroke encoding, brushes, and InkML interchange.
-5. **[Architecture Decision Records](adr/README.md)** — framework (0001), CRDT (0002), storage container (0003), editor engine (0004, open pending bake-off), licensing (0005, proposed).
+5. **[Architecture Decision Records](adr/README.md)** — framework (0001), CRDT (0002), storage container (0003), editor engine (0004, accepted — the engine we own, behind a seam), licensing (0005, proposed), sync transport + text model (0006, proposed).
 
 Still to come in a later pass: the **Sync Protocol Specification** (§8) — update exchange, transports, and the E2E/blind-relay design — deliberately deferred until the CRDT integration is validated in code.
 

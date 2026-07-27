@@ -31,6 +31,7 @@ The stakeholder then clarified the priority order: **(1) startup speed, (2) cros
 
 ## Revisit triggers
 
-1. The [ADR-0004](ADR-0004-editor-engine.md) bake-off fails on **both** engines against its acceptance criteria (would reopen posture B / hybrid).
+1. ~~The [ADR-0004](ADR-0004-editor-engine.md) bake-off fails on **both** engines against its acceptance criteria (would reopen posture B / hybrid).~~
+   > **Moot as of 2026-07-27.** The bake-off was never run: ADR-0004 was resolved by keeping the engine we already own, behind a swappable seam, so there is no "both engines failed" state to reach. This trigger existed to catch *Flutter has no viable rich-text story*; that concern is answered by a shipping editor rather than by a third-party one. Recorded rather than deleted, per the ADR convention.
 2. The ink feel-check spike is judged unacceptable by the stakeholder on target hardware (would reopen the native-overlay question — not the framework).
 3. Flutter desktop loses first-party support or Linux regression-breaks for two consecutive stable releases.

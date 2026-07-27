@@ -95,7 +95,7 @@ New in iteration 2: **inline-rendered Markdown** in text blocks (headings, bold/
 **Since shipped** (this list is kept honest deliberately): inline-rendered Markdown, the **native Rust core linked over `dart:ffi`** (`lib/core/onote_ffi.dart` → `RustEngine`, with graceful fallback to the Dart `MirrorEngine` when the DLL is absent), **OneNote `.one`/`.onepkg` import**, Markdown/PDF/open-folder export, tables, backlinks, page templates, version history, recycle bin with 30-day retention, and the stacked navigator.
 
 **Still not implemented (tracked in the [roadmap](../ROADMAP.md)):**
-- **The structured rich-text engine** — awaiting the [ADR-0004](../docs/adr/ADR-0004-editor-engine.md) bake-off. Text blocks still use a `TextField` + rendered-Markdown seam (`TextBlockView`/`MarkdownView`): source is revealed while editing, rendered when not. This is now the **critical path** — in-flow-images-editable-as-images and per-run styling both depend on it.
+- **The structured rich-text model** — [ADR-0004](../docs/adr/ADR-0004-editor-engine.md) is **decided** (keep the engine we own, behind the `OnoteTextEditor` seam), but storage is still an interim Markdown string rather than the Data Model §5.1 `{nodes:[…]}` model. That migration is now driven by sync ([ADR-0006](../docs/adr/ADR-0006-sync-transport-and-text-model.md)), not by the editor: an opaque string makes the smallest representable edit "the whole block is now this", which cannot merge. It remains the **critical path** — in-flow-images-editable-as-images and per-run styling both depend on it.
 - **Sync** (SYNC-1/2) — the Rust core implements and tests the merge semantics, but Loro and the transport are not wired.
 - **Live embeds/transclusion** (EMBED-2…8), notebook-wide find-and-replace, tags, and external URL links.
 
@@ -117,6 +117,35 @@ flutter pub get
 flutter test
 flutter run -d windows   # or -d linux / -d macos
 ```
+
+### The Rust core, and the build trap that goes with it
+
+The app loads `onote_core` over `dart:ffi` at runtime, so the built library has to
+sit next to the executable. On Windows, `sync-core.bat` in the repo root does the
+whole thing:
+
+```bash
+sync-core.bat
+```
+
+It builds Rust, **then** builds Flutter, **then** copies the DLL — in that order,
+because `flutter build` recreates the runner directory and would delete a library
+copied before it. `sync-core.bat rust` skips the Flutter build when you have only
+touched Rust.
+
+Two things are worth knowing, because both have produced "my fix didn't work"
+false alarms:
+
+- **`openote.exe`'s timestamp tells you nothing about Dart.** It is only the
+  runner shell and is not relinked for a Dart-only change. The artifact that
+  actually carries your Dart code is
+  `build/windows/x64/runner/Debug/data/flutter_assets/kernel_blob.bin` (debug) or
+  `data/app.so` (release). An earlier version of the build script rebuilt only the
+  Rust half, so a batch of Dart-side fixes appeared to do nothing at all.
+- **Importer changes only affect *new* imports.** Anything the parser writes into
+  a notebook — table column widths, flow positions, recovered content — is baked
+  in at import time, so an already-imported notebook keeps the old values however
+  new the binary is. Renderer changes (fonts, metrics) apply on restart.
 
 Linux desktop needs the usual toolchain (`clang`, `cmake`, `ninja-build`, `libgtk-3-dev`); `flutter doctor` will tell you what's missing.
 
@@ -156,7 +185,10 @@ lib/
 │   ├── block_view.dart        # selection chrome, move/resize, type dispatch
 │   └── ink_painter.dart       # perfect-freehand outline painting
 ├── editor/
-│   ├── text_block_view.dart   # interim text editing (swaps for bake-off winner)
+│   ├── onote_text_editor.dart # ADR-0004 engine seam (swap point)
+│   ├── live_markdown_engine.dart # the engine we ship, behind that seam
+│   ├── unicode_input.dart     # Alt+X code-point conversion
+│   ├── text_block_view.dart   # host for a text container (not an editor)
 │   ├── math_block_view.dart   # linear entry ↔ rendered 2-D math
 │   └── image_block_view.dart
 └── ui/

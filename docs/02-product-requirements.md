@@ -260,7 +260,8 @@ Most of v0.1's open questions are now **provisionally decided** and recorded as 
 | Framework | **Decided (provisional):** Flutter/Dart UI + Rust core | [ADR-0001](adr/ADR-0001-application-framework.md) |
 | CRDT library | **Decided (provisional):** Loro via Rust FFI (`yrs` as documented fallback) | [ADR-0002](adr/ADR-0002-crdt-library.md) |
 | Storage container | **Decided (provisional):** SQLite-based `.onote` package + lossless open-folder export | [ADR-0003](adr/ADR-0003-storage-container.md), [File Format Spec](specs/10-file-format-spec.md) |
-| Rich-text editor engine | **Open — two-way bake-off** (super_editor dev-line vs. appflowy_editor), decided by a 1–2-week spike each | [ADR-0004](adr/ADR-0004-editor-engine.md) |
+| Rich-text editor engine | **Decided — keep the engine we own**, behind the `OnoteTextEditor` seam; the two-way bake-off was not run | [ADR-0004](adr/ADR-0004-editor-engine.md) |
+| Sync storage layout | **Proposed** — append-only per-device op log in a `.onotebook` directory; SQLite demoted to a local cache | [ADR-0006](adr/ADR-0006-sync-transport-and-text-model.md) |
 | Math canonical form | **Decided:** LaTeX canonical, MathML export, UnicodeMath-style input mode | [Math Input Spec](specs/12-math-input-spec.md) |
 | License | **Proposed, needs stakeholder ratification:** app AGPL-3.0; format spec CC0/MIT; reference libraries Apache-2.0 | [ADR-0005](adr/ADR-0005-licensing.md) |
 | Ink recognition vendor | Open (deferred by design — P3) | [Ink Data Spec](specs/13-ink-data-spec.md) |

@@ -74,6 +74,9 @@ Unknown `type`: render a placeholder preserving the envelope + content verbatim 
 ## 5. Text model
 
 ### 5.1 Structure
+
+> **Implementation status (2026-07-27).** The app does **not** store this model yet — a text block's content is an interim Markdown string in `content['text']`. That is now the highest-value gap in the spec-vs-code reconciliation, and the reason is [ADR-0006](../adr/ADR-0006-sync-transport-and-text-model.md): an opaque string makes the smallest representable edit *"the whole block is now this"*, so two people editing different sentences of one paragraph cannot both win, and no sync layer can fix that afterwards. Per-character convergence needs the sequence identity this section defines. The migration has exactly one landing site — `OnoteTextEditor.serialize`/`deserialize`/`textStorageKey` ([ADR-0004](../adr/ADR-0004-editor-engine.md)) — so nothing above the editor seam changes.
+
 `text` block content is a list of **paragraph-level nodes**, each with inline content:
 
 ```jsonc

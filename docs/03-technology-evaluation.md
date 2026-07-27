@@ -172,7 +172,10 @@ With the framework decided, the evaluation moves down a level. Findings from a d
 ### 7.1 Startup & consistency evidence (the new top priorities)
 Published desktop comparisons: hello-world memory ~38 MB (Flutter) vs ~100 MB (Electron), heavy-scene ~170 MB vs ~2.2 GB; binaries 5–8× smaller (23–41 MB vs 184–259 MB); Flutter AOT cold starts typically well under 1 s vs 1.5–3 s for nontrivial Electron apps. And Flutter's single bundled renderer (Skia today on Windows/Linux; Impeller default on mobile, opt-in on desktop) means pixel-identical output on every OS — the structural consistency win. Watch-items: desktop multi-window is only now landing behind a flag (don't architect v1 around it) and desktop IME/CJK remains the area to test earliest (PLAT-6).
 
-### 7.2 Rich text — a two-way bake-off, not an open field
+### 7.2 Rich text — a two-way bake-off that we ended up not running
+
+> **Outcome (2026-07-27):** neither engine was adopted. [ADR-0004](adr/ADR-0004-editor-engine.md) is **Accepted: keep the engine we own**, behind an `OnoteTextEditor` seam. The comparison below still stands on its facts and is kept as the record of what was weighed — but it framed the choice as two-way, which assumed there was no third option. By the time the criteria were written there was one: the incumbent already met the spike's criteria 1–2 in shipped code. The deciding factor was a shape mismatch rather than capability — **both candidates own their own document layout**, and Openote's text containers are absolutely-positioned canvas boxes whose geometry must match the OneNote importer to fractions of a millimetre. An engine that owns layout is a liability at that seam.
+
 The v0.1 "weak spot" assessment stands but has narrowed to two serious engines, each with real production evidence:
 
 | | **super_editor** (0.3.0-dev line) | **appflowy_editor** (v6.x) |
@@ -184,7 +187,7 @@ The v0.1 "weak spot" assessment stands but has narrowed to two serious engines, 
 | Production proof | Superlist + client apps — **on dev releases** | AppFlowy itself (60k★ product) |
 | Risk profile | API churn on the perpetual dev line | Roadmap tracks AppFlowy's needs, not ours |
 
-**Decision path:** a 1–2 week spike on each — "math inline widget + live Markdown + read-only instance in a canvas box" — decides it. Recorded as [ADR-0004](adr/ADR-0004-editor-engine.md) (status: open pending bake-off). Multi-instance strategy regardless of winner: **read-only/rasterized renderings for every box, one live editor mounted on the focused box** — the proven canvas-app pattern.
+**Decision path as proposed:** a 1–2 week spike on each — "math inline widget + live Markdown + read-only instance in a canvas box". The five acceptance criteria remain the right bar for the text engine and [ADR-0004](adr/ADR-0004-editor-engine.md) scores the incumbent against them (criteria 1–2 met; 3–5 explicitly *not* claimed). Multi-instance strategy, which held regardless of engine and is now shipped: **read-only/rasterized renderings for every box, one live editor mounted on the focused box** — the proven canvas-app pattern.
 
 ### 7.3 The rest of the stack (low-controversy picks)
 
@@ -201,7 +204,7 @@ The v0.1 "weak spot" assessment stands but has narrowed to two serious engines, 
 | Canvas | **First-party** (own transform matrix, viewport culling, `RepaintBoundary` per block, raster caching) — community packages are stalled 0.0.x reference material, not dependencies | Build-it-ourselves, ~2–4 weeks for the core |
 
 ### 7.4 Honest top risks
-1. **The editor bake-off** (§7.2) — the one genuinely open technical decision left.
+1. ~~**The editor bake-off** (§7.2)~~ — **closed** ([ADR-0004](adr/ADR-0004-editor-engine.md)). The live risk it leaves behind is the **structured-`nodes` migration**: storage is still an interim Markdown string, which cannot represent a sub-block edit and therefore cannot merge — see [ADR-0006](adr/ADR-0006-sync-transport-and-text-model.md).
 2. **The CRDT FFI surface is ours to build and maintain** — small (≈20 functions) but permanent.
 3. **Desktop IME/CJK** and the not-yet-stable multi-window story — schedule items, not blockers.
 
@@ -220,8 +223,8 @@ These decisions matter regardless of posture and are detailed in the [Architectu
 
 ## 9. Summary
 
-The framework choice was always "**which end of the content-vs-ink tension do we optimize for.**" The stakeholder's clarified priorities — startup speed, consistency, and feature richness above pen latency — answered it: **Flutter/Dart UI with a Rust core** ([ADR-0001](adr/ADR-0001-application-framework.md)). Flutter wins the newly-top-ranked axes outright (sub-second AOT startup, one renderer everywhere, first-class Linux), carries the team's existing velocity, and its historical weak spot — rich text — has narrowed to a two-way bake-off between production-proven engines (§7.2). The remaining open decisions are deliberately small: the editor engine (ADR-0004, decided by two short spikes) and license ratification (ADR-0005). Everything else is specified and ready to build against: see the [File Format Spec](specs/10-file-format-spec.md), [Data Model Spec](specs/11-data-model-spec.md), [Math Input Spec](specs/12-math-input-spec.md), and [Ink Data Spec](specs/13-ink-data-spec.md).
+The framework choice was always "**which end of the content-vs-ink tension do we optimize for.**" The stakeholder's clarified priorities — startup speed, consistency, and feature richness above pen latency — answered it: **Flutter/Dart UI with a Rust core** ([ADR-0001](adr/ADR-0001-application-framework.md)). Flutter wins the newly-top-ranked axes outright (sub-second AOT startup, one renderer everywhere, first-class Linux), carries the team's existing velocity, and its historical weak spot — rich text — has narrowed to a two-way bake-off between production-proven engines (§7.2). The editor engine is since decided (ADR-0004 — keep the engine we own, behind a swappable seam), leaving **license ratification (ADR-0005) as the only open Phase 0 gate**, plus the newly-raised sync storage layout (ADR-0006, proposed). Everything else is specified and ready to build against: see the [File Format Spec](specs/10-file-format-spec.md), [Data Model Spec](specs/11-data-model-spec.md), [Math Input Spec](specs/12-math-input-spec.md), and [Ink Data Spec](specs/13-ink-data-spec.md).
 
 ---
 
-*Comparative claims derive from mid-2026 research. "Provisional" in ADR-0001 means: revisit triggers are documented (e.g., the editor bake-off failing on both engines), but absent a trigger, this is the decision the specs and code build on.*
+*Comparative claims derive from mid-2026 research. "Provisional" in ADR-0001 means: revisit triggers are documented, but absent a trigger, this is the decision the specs and code build on. ADR-0001's trigger 1 (the editor bake-off failing on both engines) is moot — the bake-off was not run and ADR-0004 resolved without it.*

@@ -2,7 +2,7 @@
 
 This is the design and specification documentation for **Openote**, an open-source, natively cross-platform alternative to Microsoft OneNote.
 
-> **Status (2026-07-26):** the project is well past planning. A working Flutter + Rust application lives in [`app/`](../app/README.md) and [`rust/onote_core/`](../rust/onote_core/README.md) — ~11k lines of Dart and ~3.6k of Rust, 82 Dart + 26 Rust tests green. Most of the Phase 1 MVP and much of Phase 2 is implemented, and the Phase 3 headline feature (the reverse-engineered **OneNote `.one`/`.onepkg` importer**) works on real notebooks. These documents are therefore **living specs describing intent**, not a pre-code plan: where a document and the code disagree, the disagreement is a bug in one of them — see the [reviews](#reviews) for the current reconciliation.
+> **Status (2026-07-27):** the project is well past planning. A working Flutter + Rust application lives in [`app/`](../app/README.md) and [`rust/onote_core/`](../rust/onote_core/README.md) — ~11k lines of Dart and ~3.6k of Rust, 82 Dart + 26 Rust tests green. Most of the Phase 1 MVP and much of Phase 2 is implemented, and the Phase 3 headline feature (the reverse-engineered **OneNote `.one`/`.onepkg` importer**) works on real notebooks. These documents are therefore **living specs describing intent**, not a pre-code plan: where a document and the code disagree, the disagreement is a bug in one of them — see the [reviews](#reviews) for the current reconciliation.
 
 ## Reading order
 
@@ -43,7 +43,7 @@ The OneNote-style linear input grammar (build-as-you-type: fractions, scripts, n
 Stroke capture and storage (parallel arrays with pressure/tilt/time), rendering via the perfect-freehand pipeline, tools, InkML interchange, and recognition hooks.
 
 ### [Architecture Decision Records](adr/README.md)
-Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/ADR-0002-crdt-library.md)) · storage container ([0003](adr/ADR-0003-storage-container.md)) · editor-engine bake-off ([0004](adr/ADR-0004-editor-engine.md)) · licensing proposal ([0005](adr/ADR-0005-licensing.md)). Each records context, rationale, consequences, and revisit triggers.
+Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/ADR-0002-crdt-library.md)) · storage container ([0003](adr/ADR-0003-storage-container.md)) · editor engine ([0004](adr/ADR-0004-editor-engine.md) — keep the engine we own, behind a seam) · licensing proposal ([0005](adr/ADR-0005-licensing.md)) · sync transport + text model ([0006](adr/ADR-0006-sync-transport-and-text-model.md), proposed). Each records context, rationale, consequences, and revisit triggers.
 
 ## Reviews
 

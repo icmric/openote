@@ -1,12 +1,53 @@
 # Openote Roadmap
 
 > **Status:** v0.2 · **Implementation phase** · Last updated 2026-07-27
-> **2026-07-27 fix pass:** the imported-page **layout misalignment is fixed** — root-caused to four renderer constants (line pitch, box inset, indent per level, bullet gutter), each measured against OneNote's own PDF export; the parser's coordinates were already accurate to 0.017 mm. Also landed: flush-on-exit and honest save-failure reporting, atomic `workspace.json`, importer hardening (finite floats, zip-bomb budget, partial-folder recovery, panic guards), partial-import reporting, title-dedup no longer eating body text, ink tilt round-trip, backlinks for bare `[[Page]]`, the notebook manager (+ duplicate), underline, external links, font size, open-attachment, ink-outline caching, and 25 → 53 tests. Later that day: OneNote **table import**, the OUTLINE_GROUP content-loss fix, imported-image anchoring, and the **ADR-0004 editor decision** (§M). See [§K of the exit review](docs/reviews/2026-07-code-review-phase1-exit.md).
+> **2026-07-27 fix pass:** the imported-page **layout misalignment is fixed** — root-caused to four renderer constants (line pitch, box inset, indent per level, bullet gutter), each measured against OneNote's own PDF export; the parser's coordinates were already accurate to 0.017 mm. Also landed: flush-on-exit and honest save-failure reporting, atomic `workspace.json`, importer hardening (finite floats, zip-bomb budget, partial-folder recovery, panic guards), partial-import reporting, title-dedup no longer eating body text, ink tilt round-trip, backlinks for bare `[[Page]]`, the notebook manager (+ duplicate), underline, external links, font size, open-attachment, ink-outline caching, and 25 → 82 tests. Later the same day: OneNote **table import** including OneNote's own per-column widths, the **`OUTLINE_GROUP` content-loss fix** (+16 % content boxes), flow re-stacking with real text measurement, imported-image anchoring, the **ADR-0004 editor decision**, a **Unicode font-fallback chain + Alt+X**, and **[ADR-0006](docs/adr/ADR-0006-sync-transport-and-text-model.md)** proposing the sync storage layout. See §K–§O of the [exit review](docs/reviews/2026-07-code-review-phase1-exit.md).
 >
 > **Accuracy note:** the checkboxes below were reconciled against the code on 2026-07-27 by a full requirement-by-requirement audit of all 102 PRD requirement IDs (see the [Phase 1 exit review](docs/reviews/2026-07-code-review-phase1-exit.md)). Headline: **25 fully done · 47 partial · 6 missing · 24 deferred by design.** A `[~]` box below means "the headline behaviour works, but named sub-requirements don't" — the review names each one. Several previously-`[x]` items were downgraded; several unclaimed ones were credited.
 > This roadmap is intentionally **milestone-based, not date-based** — it's a solo/community open-source effort in its earliest days, and sequencing matters more than calendar promises. Priorities trace to the [PRD](docs/02-product-requirements.md).
 
 The guiding sequence: **de-risk the hardest technical unknowns first, ship a genuinely useful single-device MVP, then earn the harder features (sync, import, recognition, collaboration) on a proven foundation.**
+
+---
+
+## At a glance — done · started · next
+
+A cross-cutting summary of *state*, where the phase sections below are organised
+by *scope*. Anything marked started has code or a decision in the tree already.
+
+### Decided and shipped
+- **The MVP app** — canvas, ink, math, images, attachments, tables, code, export, themes, autosave. Phase 1 is substantially built; the `[~]` items below name what each one is still missing.
+- **The OneNote importer** — structure, text, styling, lists, images, equations, ink, `.onepkg` whole-notebook import, and now **tables with real column widths**. Verified page-for-page against a real 324-page notebook.
+- **Imported-page layout** — root-caused to four renderer constants, each measured against OneNote's own PDF export.
+- **[ADR-0004](docs/adr/ADR-0004-editor-engine.md)** — keep the engine we own, behind the `OnoteTextEditor` seam. The bake-off was not run.
+- **Notebook management** — one surface, not two menus; recycle bin with 30-day expiry; duplicate; import feedback.
+- **Durability** — flush-on-exit, honest save-failure reporting, atomic `workspace.json` with `.bak` recovery, importer hardening.
+- **Unicode legibility** — font-fallback chain verified against the shipped fonts' cmaps; **Alt+X** code-point conversion.
+
+### Started — decided or built, but not finished
+- **Sync ([ADR-0006](docs/adr/ADR-0006-sync-transport-and-text-model.md), Proposed)** — the storage layout is designed and the reasoning is written down; **no sync code exists**, and three stakeholder questions are open before step 1. *This is the next large piece of work.*
+- **The structured `{nodes:[…]}` text model** (Data Model §5.1) — the seam it lands behind exists; the model itself does not. Now driven by sync rather than by the editor.
+- **CRDT** — the Rust core implements and tests a deterministic merge, but it is **not a CRDT** (add-wins, no delete propagation) and is never called on the save path. Loro is unwired.
+- **Image import geometry** — width/height verified to 0.03 mm; **`y` has never been independently validated** because the check was circular. Needs one OneNote PDF export to close.
+- **Layering cleanup** — `AppState`/`sidebar.dart` splits, the `export/` write path, and the `onenote.rs` module split are identified but not done.
+
+### Next, in rough priority order
+1. **Ratify the licence ([ADR-0005](docs/adr/ADR-0005-licensing.md)) and add a `LICENSE` file** — the only remaining Phase 0 gate, and it blocks outside contribution. A decision, not code.
+2. **Answer ADR-0006's three open questions**, then start the op log.
+3. **Tags (TEXT-5)** — the one large missing user-facing subsystem.
+4. **The atom-like inline-math caret (TEXT-1b)** — ADR-0004 criterion 3, explicitly not met.
+5. **A CJK/IME pass on Linux + Windows** — ADR-0004 criterion 5, never done.
+6. Canvas parity: group/ungroup + alignment guides (CANVAS-7), height/corner resize + ink scaling (CANVAS-4), drag-to-reorder (ORG-2), image paste/drag-drop (MEDIA-1).
+7. Bundle Inter + JetBrains Mono — the durable fix for the font variance the fallback chain currently papers over.
+8. **CI** — none exists; every check is run by hand today.
+
+### Known defects, carried openly
+- The markdown emitter sometimes encodes fewer indent levels than the source, leaving a residual horizontal offset on those rows.
+- Symbol/Wingdings PUA characters are drawn by those fonts rather than mapped to real Unicode.
+- A finger cannot draw at all (INK-1/4) — ink is unreachable on touch-only tablets.
+- `rust/onote_core/onenote-ref` is a **broken submodule** (a gitlink with no `.gitmodules`) carrying MPL-2.0 code. It warns on every checkout and needs resolving before the licence is applied.
+- The two root PDFs (`Openote-Brand-and-Style-Guide.pdf`, `Openote-Product-and-Design-Overview.pdf`) are **stale** and have no source in the repo; they predate the navigator rework and the current style guide.
+- ~0.02 % of ink strokes are undecodable and dropped **silently**.
 
 ---
 
@@ -81,8 +122,12 @@ The guiding sequence: **de-risk the hardest technical unknowns first, ship a gen
 
 - [~] **OneNote importer** (`.one`/`.onepkg`) preserving structure, text, images, and — as far as feasible — ink and tags *(OPEN-8)* — the headline migration wedge. **Shipped:** the reverse-engineered MS-ONESTORE/MS-ONE parser imports pages (one per object space, current revision resolved per object) with their **separate text boxes at true positions/widths, rendered at OneNote's font size/metrics** so siblings line up; styled text (**bold/italic/strikethrough, highlight, font, colour** via the 0x1E12/0x1E13 run arrays); bulleted/indented lists; **in-flow images kept inside their text box at display size** (the `![alt](sha256:… =WxH)` dialect, Data Model §5.2) plus floating images at offset-chain positions; **equations** (Office linear-math → LaTeX) as math blocks; **ink** — MS-ISF multi-byte delta paths with pressure, calibrated pen width, colour/alpha — as page-absolute stroke blocks; and **`.onepkg` whole-notebook import** (pure-Rust LZX-CAB extraction) creating a **new notebook** with one section per packaged `.one` (folders → section groups). Pages import in **correct tab order with subpage hierarchy** (SectionNode→PageSeries→PageMetadata, level 0x1DFF) and **ink decodes cleanly** (channel-count inferred by compactness — no more page-crossing scribbles), verified page-for-page against a real 195-page notebook, and later **page-for-page against a real 324-page / 48 MB `.onepkg`** including three levels of subpage nesting.
   **Performance (2026-07-27):** whole-notebook import went **~53 s → ~14 s** — single-pass LZX folder extraction (a vendored two-method `cab` patch; upstream re-decompresses the folder prefix per file, which is quadratic over a one-folder package), **parallel per-section parsing**, `opt-level = 3`, and batched SQLite transactions.
-  **Fidelity fixed since:** prose inside math zones no longer runs together (`\text{}` wrapping); imported images are visible on open (pages now fit-to-width, since images sit at their true OneNote offsets — often right of the text).
-  **Remaining:** per-run font size (one font per box today); **tags/checkboxes**; hyperlink URLs; the markdown emitter sometimes encodes fewer indent levels than the source (leaving a residual horizontal offset on those rows); non-PNG images (JPEG/EMF) are never recovered; exact image *positioning* still uses aspect-ratio matching rather than the structural `PictureContainer` (0x1C3F) link; **file attachments** unparsed; ~0.02 % of ink strokes undecodable (dropped **silently** — no warning surfaced to the user).
+  **Fidelity fixed since:** prose inside math zones no longer runs together — classification is now **per run**, so a sentence containing a symbol is no longer promoted to a whole display equation, and **no path drops a run**; imported images are visible on open (pages now fit-to-width, since images sit at their true OneNote offsets — often right of the text); **`OUTLINE_GROUP` (0x00060019) is now treated as a container**, which alone took one section from 54,713 → 60,643 characters and the full notebook from 985 → 1133 content boxes with pages, images and ink unchanged; **tables** (`TABLE`/`TABLE_ROW`/`TABLE_CELL`, 0x00060022–24) import with **OneNote's own per-column widths (0x1D66)** — cells get the full Markdown dialect, ragged grids are rectangularised, and tables the outline walk never reaches are recovered rather than lost; and boxes from one container now share a **flow id** so the app **re-stacks them using real `TextPainter` measurement**, since the parser can only count *source* lines at a fixed pitch and so undercounted every wrapping paragraph.
+  **Remaining:** per-run font size (one font per box today); **tags/checkboxes**; hyperlink URLs; the markdown emitter sometimes encodes fewer indent levels than the source (leaving a residual horizontal offset on those rows); non-PNG images (JPEG/EMF) are never recovered; exact image *positioning* still uses aspect-ratio matching rather than the structural `PictureContainer` (0x1C3F) link; **file attachments** unparsed; **Symbol/Wingdings PUA characters** (`U+F000+n`) are not mapped to real Unicode — currently mitigated by letting those fonts draw them, because Symbol's `0xAC` is `←` while a user typing `¬` means `U+00AC` and the two are indistinguishable after the fact; ~0.02 % of ink strokes undecodable (dropped **silently** — no warning surfaced to the user).
+
+  **Open measurement:** imported image **`y` has never been *independently* validated** — the page offset used to check it was itself derived from an image, so the check was circular. Width and height are confirmed to 0.03 mm and the four in-flow images in the sample carry no position of their own, so this is narrow; closing it needs a fresh OneNote PDF export of a page where the offset is visible.
+
+  > **Import-time vs render-time.** Parser fixes only affect **new** imports: column widths, flow re-stacking and the `OUTLINE_GROUP` recovery are written into the notebook at import, so an existing notebook must be re-imported to gain them. Renderer fixes (font fallback, the healed line-height) apply on restart.
 
   **Tables now import** — `TABLE`/`TABLE_ROW`/`TABLE_CELL` (0x00060022–24) are parsed, cells get the full Markdown dialect (inline maths, bold, lists), ragged grids are rectangularised, and tables the outline walk never reaches are recovered rather than lost. *Measured: 8 tables in one section, from 0.*
 - [ ] **In-flow images edit as images** *(stakeholder, TEXT-1a)*: while a text box is being edited, an inline `![alt](sha256:… =WxH)` reference should still render as the image (not raw markdown) and be resizable in place — arrives with the structured rich-text editor, whose `{"t":"image"}` inline atom this dialect maps onto 1:1.

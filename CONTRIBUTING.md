@@ -4,7 +4,7 @@ Thank you for your interest in Openote — an open-source, cross-platform altern
 
 > **Current phase: implementation.** There is a working desktop app — Flutter/Dart in [`app/`](app/README.md) plus a native Rust core in [`rust/onote_core/`](rust/onote_core/README.md). Start with [`app/README.md`](app/README.md) to build and run it, and read [`INTEGRATION.md`](rust/onote_core/INTEGRATION.md) (including its **stale-DLL warning**) before touching the core. Design critique on [`docs/`](docs/README.md) is still very welcome.
 >
-> **Before submitting code:** `flutter analyze` must be clean of errors and warnings, `flutter test` (23 tests) and `cargo test` (26 tests) must pass, and `cargo clippy --all-targets` must be clean. Match the surrounding comment density — this codebase explains *why*, not *what*.
+> **Before submitting code:** `flutter analyze` must be clean of errors and warnings, `flutter test` (82 tests) and `cargo test` (26 tests) must pass, and `cargo clippy --all-targets` must be clean. Match the surrounding comment density — this codebase explains *why*, not *what*.
 >
 > ⚠ **Licensing is not yet ratified** and the repository has **no `LICENSE` file** ([ADR-0005](docs/adr/ADR-0005-licensing.md) is still a proposal). Until that lands, external contributions cannot be cleanly accepted — resolving it is the top project-hygiene priority.
 
@@ -24,7 +24,7 @@ Thank you for your interest in Openote — an open-source, cross-platform altern
 - **Flutter, Qt, or the other candidate frameworks** — especially real ink/text experience
 - **Accessibility** on custom-drawn canvases
 
-**3. Review the decisions.** The major technical decisions are recorded as [Architecture Decision Records](docs/adr/README.md) — framework (Flutter + Rust core), CRDT (Loro), storage container (SQLite `.onote`), editor engine (open bake-off), and licensing (proposed). Each documents its revisit triggers; reasoned challenges backed by evidence are welcome.
+**3. Review the decisions.** The major technical decisions are recorded as [Architecture Decision Records](docs/adr/README.md) — framework (Flutter + Rust core), CRDT (Loro), storage container (SQLite `.onote`), editor engine (keep the engine we own, behind a swappable seam), licensing (proposed), and the sync storage layout (proposed). Each documents its revisit triggers; reasoned challenges backed by evidence are welcome.
 
 **4. Prototype a spike.** The remaining open work is spike-shaped: the editor-engine bake-off ([ADR-0004](docs/adr/ADR-0004-editor-engine.md)), the first-party canvas core, the Saber-style ink pipeline feel-check, and the Loro-via-FFI round-trip benchmark. If you want to build one, say so in an issue — spike evidence settles arguments here.
 
