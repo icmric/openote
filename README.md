@@ -69,10 +69,10 @@ Start here → **[docs/README.md](docs/README.md)** (the index). In reading orde
 
 ## Project status & roadmap at a glance
 
-- **Now:** planning & design documentation (this repo). The stack is provisionally decided — **Flutter/Dart UI + Rust core, Loro CRDT, SQLite `.onote` container** ([ADRs](docs/adr/README.md)) — and the technical specs are written.
-- **Next:** the editor-engine bake-off ([ADR-0004](docs/adr/ADR-0004-editor-engine.md)) and validation spikes (canvas core, ink feel, CRDT round-trip), then license ratification and first application code.
-- **MVP:** desktop, single-device, local-only — freeform canvas, notebooks, rich text + inline Markdown, math, ink, images, code, and the open format. See the [MVP definition](docs/02-product-requirements.md#9-mvp-definition-the-core-essentials-cut).
-- **Later:** sync, OneNote import, ink recognition, backlinks, collaboration. See the [Roadmap](ROADMAP.md).
+- **Now (2026-07):** a **working desktop app** — freeform canvas, notebook/section/page navigator, live-Markdown text, math blocks, pressure ink, images, tables, code, the open `.onote` format with Markdown/PDF/folder export, and a **native Rust core** linked over `dart:ffi`. Stack decided: **Flutter/Dart UI + Rust core, SQLite `.onote` container** ([ADRs](docs/adr/README.md)); Loro CRDT is specified but not yet wired.
+- **Already landed from later phases:** the **OneNote `.one`/`.onepkg` importer** (reverse-engineered MS-ONESTORE — text boxes at true positions, styling, images, equations, ink, whole-notebook packages), plus tables, backlinks, templates, version history, recycle bin, and lossless open-folder export.
+- **Next:** the editor-engine bake-off ([ADR-0004](docs/adr/ADR-0004-editor-engine.md)) — now the critical path, since structured rich text gates several stakeholder asks — **license ratification** ([ADR-0005](docs/adr/ADR-0005-licensing.md), still unratified and the repo has no `LICENSE` file yet), and cross-device **sync** on the CRDT core.
+- **MVP definition:** desktop, single-device, local-only. See the [MVP definition](docs/02-product-requirements.md#9-mvp-definition-the-core-essentials-cut) and the [Roadmap](ROADMAP.md) for exactly what is and isn't done.
 
 ## License
 

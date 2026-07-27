@@ -1,19 +1,27 @@
 import 'package:flutter/material.dart';
 
-import '../markdown/md_render.dart';
+import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
-import 'live_markdown_controller.dart';
+import 'onote_text_editor.dart';
 
-/// Text block. While editing, a [LiveMarkdownController] styles Markdown in
-/// real time (markers collapse as constructs complete, reveal when the caret
-/// re-enters). When not editing, [MarkdownView] renders the full block
-/// (headings, lists, checkboxes, inline math, wiki-links). Storage is an interim
-/// Markdown string in content['text'], NOT the spec's structured `{nodes:[…]}`
-/// model (Data Model Spec §5.1). It's forward-compatible via the unknown-field
-/// round-trip, but the ADR-0004 structured editor will need a one-time
-/// Markdown→nodes conversion — not a zero-touch drop-in.
+/// Text block — the **host** for a text container, not an editor.
+///
+/// Everything text-engine-specific lives behind [OnoteEditors.active]
+/// (ADR-0004): this class owns only the things that are the app's business and
+/// would be identical under any engine — which block is being edited, the
+/// undo checkpoint, focus/exit lifecycle, and the resolved type metrics.
+///
+/// The read-only/live split is the ADR-0004 multi-instance pattern: one session
+/// exists at a time, created on entry and disposed on exit, so a 20-container
+/// page pays for one editor and nineteen cheap renders.
+///
+/// Storage is an interim Markdown string in `content['text']`, NOT the spec's
+/// structured `{nodes:[…]}` model (Data Model Spec §5.1). It's
+/// forward-compatible via the unknown-field round-trip; the conversion, when it
+/// happens, belongs in [OnoteTextEditor.serialize]/[OnoteTextEditor.deserialize]
+/// rather than here.
 class TextBlockView extends StatefulWidget {
   const TextBlockView({super.key, required this.block, required this.app});
   final Block block;
@@ -38,10 +46,53 @@ class TextBlockView extends StatefulWidget {
   /// below it).
   static TextStyle baseStyle(Block b, {required bool dark}) => TextStyle(
         fontSize: (b.content['fontSize'] as num?)?.toDouble() ?? 15,
-        height: (b.content['lineHeight'] as num?)?.toDouble() ?? 1.5,
+        height: _lineHeightOf(b),
         fontFamily: _fontFamilyOf(b.content['font'] as String?),
+        // Imported boxes name their own family (Calibri, Consolas, …), which
+        // bypasses the theme's fallback list — and a maths note is full of
+        // characters an ordinary text font has no glyph for. Without this those
+        // characters render as blank boxes.
+        fontFamilyFallback: onoteFontFallback,
         color: dark ? OnoteColors.moon100 : OnoteColors.graphite700,
       );
+
+  /// The line-height multiplier for a block, healing the legacy import value.
+  ///
+  /// Imported boxes store their pitch at import time, so notebooks brought
+  /// across before the metric was measured carry the old `1.35` — 10.6% too
+  /// tall, which is exactly the misalignment we fixed. Rather than make people
+  /// re-import, treat that specific legacy value as "OneNote default pitch" and
+  /// render it correctly. Any *other* stored value is honoured verbatim, so a
+  /// deliberate choice is never overridden.
+  static double _lineHeightOf(Block b) {
+    final stored = (b.content['lineHeight'] as num?)?.toDouble();
+    if (stored == null) return 1.5; // hand-authored default
+    if ((stored - _legacyImportLineHeight).abs() < 0.001) {
+      return oneNoteLineHeight;
+    }
+    return stored;
+  }
+
+  static const _legacyImportLineHeight = 1.35;
+
+  /// Inner padding for this box.
+  ///
+  /// Hand-authored boxes get a comfortable inset. **Imported** boxes get none:
+  /// OneNote's stored offset is exactly where its first line starts, so an inset
+  /// shifts every line down and right of the source — measured as a constant
+  /// −8 u vertical / +10 u horizontal error against OneNote's own PDF. New
+  /// imports set `inset: 0`; older ones are recognised by carrying an explicit
+  /// `fontSize`, which only the importer writes per box.
+  static EdgeInsets insetFor(Block b) {
+    final explicit = (b.content['inset'] as num?)?.toDouble();
+    if (explicit != null) {
+      return EdgeInsets.all(explicit);
+    }
+    final imported = b.content['fontSize'] != null;
+    return imported
+        ? EdgeInsets.zero
+        : const EdgeInsets.symmetric(horizontal: 10, vertical: 8);
+  }
 
   /// The width a text box should render at. For auto-width boxes this is the
   /// intrinsic longest-line width (+ chrome + slack), clamped. Measured in the
@@ -53,13 +104,10 @@ class TextBlockView extends StatefulWidget {
   static double autoWidth(Block b, {required bool dark}) {
     if (b.type != BlockType.text || b.content['autoWidth'] == false) return b.w;
     const chrome = 26.0, slack = 18.0;
-    final text = b.content['text'] as String? ?? '';
-    final tp = TextPainter(
-      text: TextSpan(text: text.isEmpty ? ' ' : text, style: baseStyle(b, dark: dark)),
-      textDirection: TextDirection.ltr,
-      maxLines: null,
-    )..layout(maxWidth: double.infinity); // width = intrinsic longest line
-    return (tp.width + chrome + slack).clamp(minAutoW, maxAutoW).toDouble();
+    final engine = OnoteEditors.active;
+    final w = engine.measureIntrinsicWidth(
+        engine.deserialize(b.content), baseStyle(b, dark: dark));
+    return (w + chrome + slack).clamp(minAutoW, maxAutoW).toDouble();
   }
 
   @override
@@ -67,29 +115,25 @@ class TextBlockView extends StatefulWidget {
 }
 
 class _TextBlockViewState extends State<TextBlockView> {
-  late final LiveMarkdownController _controller;
-  final _focus = FocusNode();
+  /// Live only while this block is the one being edited. Nineteen unfocused
+  /// containers hold no session, no controller and no focus node.
+  OnoteEditSession? _session;
   bool _undoPushed = false;
   bool _wasEditing = false;
 
-  bool get editing => widget.app.editingBlockId == widget.block.id;
+  OnoteTextEditor get _engine => OnoteEditors.active;
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = LiveMarkdownController(
-        text: widget.block.content['text'] as String? ?? '',
-        dark: false);
-  }
+  bool get editing => widget.app.editingBlockId == widget.block.id;
 
   /// F-3 fix: exit cleanup runs on the STATE transition (editing → not).
   void _handleExitTransition() {
     if (_wasEditing && !editing) {
       _undoPushed = false;
       widget.app.clearActiveEditor(widget.block.id);
+      _closeSession();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        if ((widget.block.content['text'] as String? ?? '').trim().isEmpty) {
+        if (_engine.deserialize(widget.block.content).trim().isEmpty) {
           widget.app.removeBlock(widget.block.id, recordUndo: false);
         }
       });
@@ -97,10 +141,30 @@ class _TextBlockViewState extends State<TextBlockView> {
     _wasEditing = editing;
   }
 
+  void _closeSession() {
+    _session?.dispose();
+    _session = null;
+  }
+
+  OnoteEditSession _openSession() => _engine.openSession(
+        block: widget.block,
+        app: widget.app,
+        onChanged: (v) {
+          if (!_undoPushed) {
+            widget.app.pushUndo();
+            _undoPushed = true;
+          }
+          _engine.serialize(widget.block.content, v);
+          widget.block.updatedAt = nowMs();
+          // Width is measured in the parent build (lag-free); markDirty here
+          // triggers that rebuild so the box grows in the same frame.
+          widget.app.markDirty();
+        },
+      );
+
   @override
   void dispose() {
-    _controller.dispose();
-    _focus.dispose();
+    _closeSession();
     super.dispose();
   }
 
@@ -108,66 +172,30 @@ class _TextBlockViewState extends State<TextBlockView> {
   Widget build(BuildContext context) {
     _handleExitTransition();
     final dark = Theme.of(context).brightness == Brightness.dark;
-    _controller.dark = dark;
-    final style = TextBlockView.baseStyle(widget.block, dark: dark);
+    final surface = TextSurface(
+      block: widget.block,
+      app: widget.app,
+      baseStyle: TextBlockView.baseStyle(widget.block, dark: dark),
+      inset: TextBlockView.insetFor(widget.block),
+      dark: dark,
+      hintText: 'Type here…  (# heading, - list, - [ ] task, **bold**)',
+    );
 
     if (editing) {
-      widget.app.setActiveEditor(_controller, widget.block, 'text');
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_focus.hasFocus) _focus.requestFocus();
-      });
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        child: TextField(
-          controller: _controller,
-          focusNode: _focus,
-          maxLines: null,
-          style: style,
-          cursorColor: Theme.of(context).colorScheme.primary,
-          inputFormatters: [WrapSelectionFormatter()],
-          decoration: InputDecoration(
-            isDense: true,
-            border: InputBorder.none,
-            hintText: 'Type here…  (# heading, - list, - [ ] task, **bold**)',
-            hintStyle: TextStyle(color: OnoteColors.graphite400, fontSize: 13),
-          ),
-          onChanged: (v) {
-            if (!_undoPushed) {
-              widget.app.pushUndo();
-              _undoPushed = true;
-            }
-            widget.block.content['text'] = v;
-            widget.block.updatedAt = nowMs();
-            // Width is measured in the parent build (lag-free); markDirty here
-            // triggers that rebuild so the box grows in the same frame.
-            widget.app.markDirty();
-          },
-        ),
-      );
+      final session = _session ??= _openSession();
+      // Keep the session in step with edits that bypassed it (undo, a checkbox
+      // toggled while unfocused) — the block is the source of truth.
+      session.text = _engine.deserialize(widget.block.content);
+      // Register for command-bar formatting. An engine with its own selection
+      // model reports no controller, and the buttons then stay disabled rather
+      // than acting on a stale target.
+      final ctrl = session.commandController;
+      if (ctrl != null) {
+        widget.app.setActiveEditor(ctrl, widget.block, _engine.textStorageKey);
+      }
+      return session.build(context, surface);
     }
 
-    final text = widget.block.content['text'] as String? ?? '';
-    if (_controller.text != text) _controller.text = text;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      child: MarkdownView(
-        text: text,
-        baseStyle: style,
-        onWikiLink: (label, id) => widget.app.openWikiLink(label, id),
-        // In-flow images (Data Model §5.1): resolve sha256: refs from the
-        // notebook's content-addressed blob store.
-        imageResolver: (src) {
-          final nb = widget.app.notebookId;
-          if (nb == null || !src.startsWith('sha256:')) return null;
-          return widget.app.repo.getBlob(nb, src);
-        },
-        onToggleCheckbox: (newText) {
-          widget.app.pushUndo();
-          widget.block.content['text'] = newText;
-          _controller.text = newText;
-          widget.app.updateBlock(widget.block);
-        },
-      ),
-    );
+    return _engine.buildReadOnly(context, surface);
   }
 }

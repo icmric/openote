@@ -1,12 +1,10 @@
-import 'package:flutter/gestures.dart'; // kSecondaryMouseButton
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../export/md_import.dart';
-import '../export/onenote_import.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'notebook_manager.dart';
 
 Color _sectionColor(String? token, bool dark) => switch (token) {
       'brass-400' => OnoteColors.brass400,
@@ -18,7 +16,7 @@ Color _sectionColor(String? token, bool dark) => switch (token) {
     };
 
 /// The page rows for a section, honouring subpage collapse (a collapsed page
-/// hides everything indented beneath it). Shared by both navigator layouts.
+/// hides everything indented beneath it).
 List<Widget> _pageEntriesFor(AppState app, TreeNode section) {
   final pages = app.nodes
       .where((n) => n.kind == NodeKind.page && n.parentId == section.id)
@@ -40,9 +38,10 @@ List<Widget> _pageEntriesFor(AppState app, TreeNode section) {
   return out;
 }
 
-/// Navigator: notebook switcher → sections (colored) → pages/subpages. Two
-/// presentations share a "focused section" (§ORG rework): a single accordion
-/// tree, or two stacked zones with a resizable divider.
+/// Navigator (style guide §7b): a notebook bar, a search/jump box, then two
+/// stacked zones — sections above, the **active** section's pages below — split
+/// by a resizable divider. One section is focused at a time, which is what keeps
+/// long notebooks scannable.
 class Sidebar extends StatefulWidget {
   const Sidebar({super.key, required this.app});
   final AppState app;
@@ -466,27 +465,16 @@ class _GroupHeaderState extends State<_GroupHeader> {
   }
 }
 
-class _NotebookHeader extends StatefulWidget {
+/// The notebook bar: shows the current notebook and opens the notebook manager.
+///
+/// **One surface, not two.** This used to be a dropdown for switching plus a
+/// manager panel for everything else, which read as two different menus for one
+/// job. The manager now does both — its rows switch notebooks *and* carry the
+/// per-notebook actions — so there is a single place notebooks are dealt with,
+/// and switching still takes the same two clicks it did through the dropdown.
+class _NotebookHeader extends StatelessWidget {
   const _NotebookHeader({required this.app});
   final AppState app;
-
-  @override
-  State<_NotebookHeader> createState() => _NotebookHeaderState();
-}
-
-class _NotebookHeaderState extends State<_NotebookHeader> {
-  // Owned so a right-click inside the dropdown can close it before popping the
-  // per-notebook context menu (otherwise the two menus stack).
-  final MenuController _menuCtl = MenuController();
-
-  AppState get app => widget.app;
-
-  /// Right-clicking a notebook (header or dropdown row) opens its actions at
-  /// the pointer, acting on THAT notebook without switching to it first.
-  void _contextMenu(BuildContext context, NotebookRef ref, Offset at) {
-    if (_menuCtl.isOpen) _menuCtl.close();
-    showNotebookMenu(context, app, ref, at);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -495,13 +483,14 @@ class _NotebookHeaderState extends State<_NotebookHeader> {
         app.repo.notebooks.firstWhere((n) => n.id == app.notebookId);
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 10, 6, 4),
-      child: MenuAnchor(
-        controller: _menuCtl,
-        builder: (context, controller, _) => InkWell(
+      child: Tooltip(
+        message: 'Notebooks — switch, rename, duplicate, import',
+        waitDuration: const Duration(milliseconds: 600),
+        child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          onTap: () =>
-              controller.isOpen ? controller.close() : controller.open(),
-          onSecondaryTapUp: (d) => _contextMenu(context, current, d.globalPosition),
+          onTap: () => showNotebookManager(context, app),
+          onSecondaryTapUp: (_) =>
+              showNotebookManager(context, app, focusId: current.id),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
             child: Row(
@@ -518,246 +507,9 @@ class _NotebookHeaderState extends State<_NotebookHeader> {
             ),
           ),
         ),
-        menuChildren: [
-          for (final n in app.repo.notebooks)
-            // Left-click switches; right-click opens actions for THIS notebook.
-            Listener(
-              onPointerDown: (e) {
-                if (e.buttons == kSecondaryMouseButton) {
-                  _contextMenu(context, n, e.position);
-                }
-              },
-              child: MenuItemButton(
-                leadingIcon: Icon(
-                  n.id == app.notebookId
-                      ? Icons.radio_button_checked
-                      : Icons.radio_button_off,
-                  size: 16,
-                  color: n.id == app.notebookId ? scheme.primary : null,
-                ),
-                onPressed: () => app.selectNotebook(n.id),
-                child: Text(n.title),
-              ),
-            ),
-          const Divider(),
-          MenuItemButton(
-            leadingIcon: const Icon(Icons.edit_outlined, size: 16),
-            onPressed: () => renameNotebookDialog(context, app, current),
-            child: const Text('Rename notebook…'),
-          ),
-          MenuItemButton(
-            leadingIcon: const Icon(Icons.delete_outline, size: 16),
-            onPressed: () => confirmDeleteNotebook(context, app, current),
-            child: const Text('Delete notebook…'),
-          ),
-          const Divider(),
-          MenuItemButton(
-            leadingIcon: const Icon(Icons.add, size: 16),
-            onPressed: () => newNotebookDialog(context, app),
-            child: const Text('New notebook…'),
-          ),
-          MenuItemButton(
-            leadingIcon: const Icon(Icons.drive_folder_upload_outlined, size: 16),
-            onPressed: () => _importMarkdown(context),
-            child: const Text('Import Markdown folder…'),
-          ),
-          MenuItemButton(
-            leadingIcon: const Icon(Icons.upload_file_outlined, size: 16),
-            onPressed: () => _importOneNote(context),
-            child: const Text('Import OneNote section (.one)…'),
-          ),
-          MenuItemButton(
-            leadingIcon: const Icon(Icons.library_books_outlined, size: 16),
-            onPressed: () => _importOneNotePackage(context),
-            child: const Text('Import OneNote notebook (.onepkg)…'),
-          ),
-          const Divider(),
-          MenuItemButton(
-            leadingIcon: const Icon(Icons.restore_from_trash_outlined, size: 16),
-            onPressed: () => showRecycleBin(context, app),
-            child: const Text('Recycle bin…'),
-          ),
-        ],
       ),
     );
   }
-
-  Future<void> _importMarkdown(BuildContext context) async {
-    final count = await importMarkdownFolder(app);
-    if (count != null && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(count == 0
-              ? 'No Markdown files found in that folder.'
-              : 'Imported $count page${count == 1 ? '' : 's'}.')));
-    }
-  }
-
-  Future<void> _importOneNote(BuildContext context) async {
-    try {
-      final count = await importOneNoteFile(app, progressContext: context);
-      if (count != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(count == 0
-                ? 'Couldn\'t read any content from that .one file.'
-                : 'Imported $count page${count == 1 ? '' : 's'} from OneNote.')));
-      }
-    } on OneNoteUnavailable {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                'OneNote import needs the Rust core — build onote_core.dll (see rust/onote_core/INTEGRATION.md).')));
-      }
-    }
-  }
-
-  Future<void> _importOneNotePackage(BuildContext context) async {
-    try {
-      final count = await importOneNotePackage(app, progressContext: context);
-      if (count != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(count == 0
-                ? 'Couldn\'t read any sections from that .onepkg file.'
-                : 'Imported a notebook with $count page${count == 1 ? '' : 's'} from OneNote.')));
-      }
-    } on OneNoteUnavailable {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                'OneNote import needs the Rust core — build onote_core.dll (see rust/onote_core/INTEGRATION.md).')));
-      }
-    }
-  }
-}
-
-// ── Notebook management (rename / delete / new; right-click + dropdown) ────
-
-/// Pop-out actions for a single notebook, anchored at [position].
-Future<void> showNotebookMenu(
-    BuildContext context, AppState app, NotebookRef ref, Offset position) async {
-  final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
-  final isCurrent = ref.id == app.notebookId;
-  final action = await showMenu<String>(
-    context: context,
-    position: RelativeRect.fromLTRB(
-      position.dx,
-      position.dy,
-      overlay == null ? position.dx : overlay.size.width - position.dx,
-      position.dy,
-    ),
-    items: [
-      if (!isCurrent)
-        _nodeItem('open', Icons.open_in_new, 'Open notebook'),
-      _nodeItem('rename', Icons.edit_outlined, 'Rename notebook…'),
-      _nodeItem('delete', Icons.delete_outline, 'Delete notebook…',
-          danger: true),
-      const PopupMenuDivider(),
-      _nodeItem('new', Icons.add, 'New notebook…'),
-      _nodeItem('bin', Icons.restore_from_trash_outlined, 'Recycle bin…'),
-    ],
-  );
-  if (!context.mounted) return;
-  switch (action) {
-    case 'open':
-      await app.selectNotebook(ref.id);
-    case 'rename':
-      await renameNotebookDialog(context, app, ref);
-    case 'delete':
-      await confirmDeleteNotebook(context, app, ref);
-    case 'new':
-      await newNotebookDialog(context, app);
-    case 'bin':
-      await showRecycleBin(context, app);
-  }
-}
-
-Future<void> newNotebookDialog(BuildContext context, AppState app) async {
-  final title = await _promptText(context,
-      title: 'New notebook', hint: 'Notebook name', okLabel: 'Create');
-  if (title != null && title.trim().isNotEmpty) {
-    await app.createNotebook(title.trim());
-  }
-}
-
-Future<void> renameNotebookDialog(
-    BuildContext context, AppState app, NotebookRef ref) async {
-  final title = await _promptText(context,
-      title: 'Rename notebook',
-      hint: 'Notebook name',
-      initial: ref.title,
-      okLabel: 'Rename');
-  if (title != null && title.trim().isNotEmpty && title.trim() != ref.title) {
-    await app.renameNotebook(ref.id, title.trim());
-  }
-}
-
-/// Delete → confirm → recycle bin (restorable). Refuses the last notebook.
-Future<void> confirmDeleteNotebook(
-    BuildContext context, AppState app, NotebookRef ref) async {
-  if (app.repo.notebooks.length <= 1) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text(
-            'You can\'t delete your only notebook — create another first.')));
-    return;
-  }
-  final ok = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Delete notebook?'),
-      content: Text(
-          '“${ref.title}” will be moved to the recycle bin. You can restore it '
-          'later, or delete it permanently from there.'),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel')),
-        FilledButton(
-          style: FilledButton.styleFrom(backgroundColor: OnoteColors.danger),
-          onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Delete'),
-        ),
-      ],
-    ),
-  );
-  if (ok != true || !context.mounted) return;
-  final deleted = await app.deleteNotebook(ref.id);
-  if (!deleted || !context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-    content: Text('Moved “${ref.title}” to the recycle bin.'),
-    action: SnackBarAction(
-      label: 'Undo',
-      onPressed: () => app.restoreNotebook(ref.id),
-    ),
-  ));
-}
-
-/// Small single-field text dialog (shared by new/rename notebook).
-Future<String?> _promptText(BuildContext context,
-    {required String title,
-    required String hint,
-    String? initial,
-    required String okLabel}) {
-  final controller = TextEditingController(text: initial);
-  controller.selection =
-      TextSelection(baseOffset: 0, extentOffset: controller.text.length);
-  return showDialog<String>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(title),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        decoration: InputDecoration(hintText: hint),
-        onSubmitted: (v) => Navigator.pop(ctx, v),
-      ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-        FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: Text(okLabel)),
-      ],
-    ),
-  );
 }
 
 class _SectionHeader extends StatefulWidget {

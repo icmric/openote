@@ -63,6 +63,25 @@ const JCID_RICHTEXT: u32 = 0x0006000D;
 const JCID_RICHTEXT_RUN: u32 = 0x0006000E;
 const JCID_TITLE: u32 = 0x0006002C;
 const JCID_OUTLINE_GROUP: u32 = 0x00060019;
+// Tables (MEDIA-3 on import). Rows hang off the table and cells off the rows,
+// both through the same 0x1C20 ElementChildNodes list every container uses, so
+// the only new thing here is knowing to stop and build a grid instead of
+// flattening the cells into loose paragraphs.
+const JCID_TABLE: u32 = 0x00060022;
+const JCID_TABLE_ROW: u32 = 0x00060023;
+const JCID_TABLE_CELL: u32 = 0x00060024;
+/// Declared row count on a table node (0x1D57) — cross-checked against the
+/// number of row children we actually resolve.
+const PID_TABLE_ROWS: u32 = 0x001D57;
+/// Declared column count (0x1D58); short rows are padded to it.
+const PID_TABLE_COLS: u32 = 0x001D58;
+/// Column widths (0x1D66), in the same units as image positions and sizes.
+/// Packed into the *string* property slot as a `u8` count followed by that many
+/// little-endian `f32`s — verified against real tables: 13 bytes for 3 columns,
+/// 9 bytes for 2. Without these every column rendered at an identical guessed
+/// width, so imported tables were the wrong overall size and collided with
+/// whatever sat below them.
+const PID_TABLE_COL_WIDTHS: u32 = 0x001D66;
 const JCID_NUMBER_LIST: u32 = 0x00060012;
 const JCID_IMAGE: u32 = 0x00060011;
 
@@ -163,6 +182,27 @@ pub struct PageBox {
     /// kind=="math": the equation's LaTeX.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub latex: String,
+    /// kind=="table": row-major cells, each cell's own Markdown. Rectangular —
+    /// short rows are padded — because the app's table view requires it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub cells: Vec<Vec<String>>,
+    /// kind=="table": per-column widths in page px, from 0x1D66. One entry per
+    /// column of `cells`. Empty when OneNote didn't record them, in which case
+    /// the app falls back to equal columns.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub col_w: Vec<f32>,
+    /// Boxes that came out of one OneNote container, in document order, share a
+    /// flow id (0 = not in a flow).
+    ///
+    /// Their `y` here is only an estimate: this side counts *source* lines at a
+    /// fixed pitch, so a paragraph that wraps to three visual lines is costed as
+    /// one and everything below it rides up — which is why an imported table
+    /// landed too high and consecutive tables overlapped. The app re-stacks each
+    /// flow using real text measurement, where the font metrics actually live.
+    /// The first box of a flow keeps its parsed position; only the offsets of
+    /// those after it are recomputed.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub flow: u32,
     /// The box's dominant font family (Openote applies it box-level), if known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
@@ -214,15 +254,15 @@ pub struct ImportedSection {
 
 /// Parse a `.one` section file into structured content, returned as JSON.
 pub fn import_one_json(bytes: &[u8]) -> String {
-    let section = match std::panic::catch_unwind(|| import_one(bytes)) {
-        Ok(s) => s,
-        Err(_) => ImportedSection {
-            ok: false,
-            error: Some("failed to parse .one (unexpected structure)".into()),
-            pages: vec![],
-        },
-    };
-    serde_json::to_string(&section).unwrap_or_else(|_| "{\"ok\":false}".into())
+    // Serialization runs INSIDE the guard: a panic while serializing would
+    // otherwise unwind across the C ABI, which is undefined behaviour.
+    std::panic::catch_unwind(|| {
+        let section = import_one(bytes);
+        serde_json::to_string(&section).unwrap_or_else(|_| "{\"ok\":false}".into())
+    })
+    .unwrap_or_else(|_| {
+        "{\"ok\":false,\"error\":\"failed to parse .one (unexpected structure)\"}".into()
+    })
 }
 
 pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
@@ -325,7 +365,10 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
     let mut pngs: Vec<Png> = Vec::new();
     let mut seen_png = HashSet::new();
     for png in scan_pngs(bytes) {
-        if !seen_png.insert((png.len(), png.first().copied(), png.last().copied())) {
+        // Content hash, not (len, first byte, last byte): every PNG starts with
+        // 0x89, so that key was effectively (len, last CRC byte) and two
+        // same-length images collided ~1/256 of the time, silently dropping one.
+        if !seen_png.insert(crate::ids::content_hash(&png)) {
             continue;
         }
         let (w, h) = if png.len() >= 24 {
@@ -396,14 +439,64 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
         // with actual 0x1C20 content children and the highest file offset. The
         // literal latest revision of a page can be a title-only stub with no
         // 0x1C20 — picking it drops the whole page's text.
-        let root_i = idxs
-            .iter()
-            .copied()
-            .filter(|&i| objs[i].jcid == JCID_OUTLINE)
-            .filter(|&i| !read_propset(&r, objs[i].stp, objs[i].cb).oids(0x001C20).is_empty())
-            .max_by_key(|&i| objs[i].stp);
-        let root_ps = root_i.map(|i| read_propset(&r, objs[i].stp, objs[i].cb));
-        let root_rev = root_i.map(|i| objs[i].rev).unwrap_or(0);
+        // ALL of the page's outline containers, not just one.
+        //
+        // A OneNote page stores its content in several outlines (a page with
+        // separate text areas has one per area). We used to take a single
+        // `max_by_key(stp)` outline, which silently discarded the rest: measured
+        // on one real section, pages had up to **5** qualifying outlines while we
+        // read 1, and 11 pages had *no* qualifying outline at all and so imported
+        // completely empty despite holding text. That is the "content beyond the
+        // first couple of lines is missing" report.
+        //
+        // Taking all of them cannot duplicate anything, because `by_canon`
+        // already collapses each object's per-revision copies to its latest
+        // declaration — so this iterates distinct outlines, each at its current
+        // revision.
+        // Scan EVERY object in the space (not `by_canon`, which only holds
+        // objects with a resolvable ExGuid and so misses outlines entirely), then
+        // collapse each outline's per-revision copies to its latest declaration.
+        // Identity is the canonical ExGuid where there is one, else the object
+        // itself — an un-canonicalisable outline is still real content.
+        let mut latest_outline: HashMap<u64, usize> = HashMap::new();
+        for &i in idxs {
+            let o = &objs[i];
+            // OutlineGroup counts as a container too: a page can hang its
+            // content off a group rather than a plain outline, and scanning only
+            // for JCID_OUTLINE left those pages empty. `seen_box` below stops a
+            // group that IS reachable from an outline being emitted twice.
+            if o.jcid != JCID_OUTLINE && o.jcid != JCID_OUTLINE_GROUP {
+                continue;
+            }
+            if read_propset(&r, o.stp, o.cb).oids(0x001C20).is_empty() {
+                continue;
+            }
+            let key = match canon_of(o) {
+                Some(c) => c as u64,
+                None => (1u64 << 32) | i as u64,
+            };
+            // Choose the RICHEST declaration of this outline, not the newest.
+            //
+            // A revision's declaration can be a partial stub: on a real page the
+            // newest declaration listed 2 paragraphs while an earlier one listed
+            // the page's full content (and OneNote itself still shows all of it).
+            // Preferring "has any 0x1C20 children" over "latest" already fixed
+            // the title-only-stub case; this is the same trap one level down, so
+            // rank by child count and only fall back to file order to break ties.
+            let e = latest_outline.entry(key).or_insert(i);
+            let rank = |k: usize| {
+                (
+                    read_propset(&r, objs[k].stp, objs[k].cb).oids(0x001C20).len(),
+                    objs[k].stp,
+                )
+            };
+            if rank(i) > rank(*e) {
+                *e = i;
+            }
+        }
+        let mut root_is: Vec<usize> = latest_outline.into_values().collect();
+        // File order keeps boxes in a stable, roughly top-down sequence.
+        root_is.sort_unstable_by_key(|&i| objs[i].stp);
 
         // Title/date: the title outline; its text feeds page metadata, never a box.
         let mut date_text = String::new();
@@ -426,10 +519,21 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
         // are offsets *from the parent*). An image that is NOT a direct child
         // of the page root is **in-flow** (a list item that is an image): it is
         // referenced from a box's markdown and rides the text flow.
-        let root_children: HashSet<u32> = root_ps
-            .as_ref()
-            .map(|ps| ps.oids(0x001C20).into_iter().map(|c| res.canon(c, root_rev)).collect())
-            .unwrap_or_default();
+        // Direct children of ANY outline container count as "placed at the page
+        // root", which is what decides whether an image floats or rides a text
+        // box's flow. Restricting this to one container mis-classified images in
+        // every other container.
+        let root_children: HashSet<u32> = {
+            let mut set = HashSet::new();
+            for &ri in &root_is {
+                let ps = read_propset(&r, objs[ri].stp, objs[ri].cb);
+                let rev = objs[ri].rev;
+                for c in ps.oids(0x001C20) {
+                    set.insert(res.canon(c, rev));
+                }
+            }
+            set
+        };
         // canonical child → canonical parent (offset chain).
         let mut parent: HashMap<u32, u32> = HashMap::new();
         for (&canon, &i) in &res.by_canon {
@@ -546,6 +650,19 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
                 }
             };
             img_counter += 1;
+            if std::env::var("ONOTE_IMG_DEBUG").is_ok() {
+                eprintln!(
+                    "IMG: in_flow={} own_posy={:?} own_posx={:?} abs={:?} disp={}x{} nat={}x{}",
+                    in_flow,
+                    ps.f32(PID_IMG_POSY),
+                    ps.f32(PID_IMG_POSX),
+                    abs_offset(canon),
+                    dw.round(),
+                    dh.round(),
+                    png.w,
+                    png.h
+                );
+            }
             // In-flow placeholder carries the DISPLAY size (` =WxH`) so the
             // renderer shows the image at OneNote's size, not natural pixels —
             // otherwise a user-resized image adds phantom height to the flow.
@@ -577,12 +694,48 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
         // and its images stay one OneNote-style container.
         let mut boxes: Vec<PageBox> = Vec::new();
         let mut stack_y = CONTENT_TOP; // fallback stacking for boxes without offsets
-        let root_child_oids = root_ps.as_ref().map(|ps| ps.oids(0x001C20)).unwrap_or_default();
-        for cid in root_child_oids {
-            let ci = match res.get(cid, root_rev) {
+        let mut flow_id: u32 = 0;
+        // One pass per outline container. `seen_box` guards against the same
+        // paragraph object being reachable from two containers.
+        let mut seen_box: HashSet<u32> = HashSet::new();
+        let mut box_targets: Vec<(u32, usize)> = Vec::new();
+        for &ri in &root_is {
+            let ps = read_propset(&r, objs[ri].stp, objs[ri].cb);
+            let rev = objs[ri].rev;
+            for cid in ps.oids(0x001C20) {
+                box_targets.push((cid, rev));
+            }
+        }
+        if std::env::var("ONOTE_WALK_DEBUG").is_ok() {
+            let rt = idxs
+                .iter()
+                .filter(|&&i| matches!(objs[i].jcid, JCID_RICHTEXT | JCID_RICHTEXT_RUN))
+                .count();
+            let outlines = idxs
+                .iter()
+                .filter(|&&i| objs[i].jcid == JCID_OUTLINE)
+                .filter(|&&i| {
+                    !read_propset(&r, objs[i].stp, objs[i].cb)
+                        .oids(0x001C20)
+                        .is_empty()
+                })
+                .count();
+            eprintln!(
+                "PAGE: outline_containers={} used={} boxes_to_walk={} richtext_in_space={}",
+                outlines,
+                root_is.len(),
+                box_targets.len(),
+                rt
+            );
+        }
+        for (cid, rev) in box_targets {
+            let ci = match res.get(cid, rev) {
                 Some(i) => i,
                 None => continue,
             };
+            if !seen_box.insert(res.canon(cid, rev)) {
+                continue; // already emitted from another container
+            }
             let child = res.obj(ci);
             if child.jcid == JCID_TITLE || child.jcid == JCID_IMAGE {
                 continue; // title → metadata; floating images → handled above
@@ -599,12 +752,92 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
             let mut lines: Vec<Line> = Vec::new();
             let mut guard = HashSet::new();
             collect_tree(&r, child, &res, 0, &mut lines, &mut guard);
-            lines.retain(|l| l.image.is_some() || !title_plains.contains(&l.plain()));
+            // De-duplicate the title only where it is genuinely a duplicate:
+            // the LEADING lines of the FIRST box. JCID_TITLE children are
+            // already skipped above, so the old page-wide `retain` could only
+            // ever delete real body text — a page whose body repeats its own
+            // title as a heading (very common) silently lost that paragraph,
+            // which then shifted everything below it.
+            if boxes.is_empty() {
+                while lines
+                    .first()
+                    .is_some_and(|l| l.image.is_none() && title_plains.contains(&l.plain()))
+                {
+                    lines.remove(0);
+                }
+            }
             if lines.is_empty() {
                 continue;
             }
-            let end_y = emit_boxes(&lines, x, y, w, &mut boxes, &img_idx);
+            // One flow per container: the app re-stacks each flow's boxes using
+            // real text measurement (see `PageBox::flow`). Ids start at 1 so 0
+            // stays "not in a flow".
+            flow_id += 1;
+            let end_y = emit_boxes(&lines, x, y, w, &mut boxes, &img_idx, flow_id);
             stack_y = stack_y.max(end_y) + 24.0;
+        }
+
+        // Drop boxes whose content we already emitted. Reaching a paragraph
+        // through two container paths can yield two CompactIDs that don't
+        // canonicalise to the same id, so `seen_box` alone can't always tell —
+        // but identical rendered content is unambiguous. Only substantial boxes
+        // are compared, so two genuinely repeated short labels survive.
+        {
+            let mut seen_content: HashSet<String> = HashSet::new();
+            boxes.retain(|b| {
+                let key = format!("{}|{}|{:?}", b.markdown, b.latex, b.cells);
+                if key.chars().filter(|c| !c.is_whitespace()).count() < 20 {
+                    return true;
+                }
+                seen_content.insert(key)
+            });
+        }
+
+        // Tables that no outline reached. A table can hang off a container the
+        // outline walk never visits, in which case its whole grid — often the
+        // bulk of the page — simply vanished. Emitting the leftovers is strictly
+        // better than losing them: worst case the position is approximate,
+        // whereas the alternative is silent data loss. `by_canon` gives the
+        // latest declaration of each table, and `seen_tables` covers the ones
+        // already emitted in the flow above.
+        {
+            // Already-emitted grids, compared by content: cheaper and more
+            // robust than threading a "seen" set through the recursive walk, and
+            // a table that really is duplicated on a page is duplicated content
+            // we would not want twice anyway.
+            let emitted: Vec<Vec<Vec<String>>> = boxes
+                .iter()
+                .filter(|b| b.kind == "table")
+                .map(|b| b.cells.clone())
+                .collect();
+            let mut orphans: Vec<usize> = res
+                .by_canon
+                .values()
+                .copied()
+                .filter(|&i| objs[i].jcid == JCID_TABLE)
+                .collect();
+            orphans.sort_unstable_by_key(|&i| objs[i].stp);
+            for i in orphans {
+                let grid = parse_table(&r, &objs[i], &res, &img_idx);
+                if grid.is_empty() || emitted.contains(&grid.cells) {
+                    continue;
+                }
+                let rows = grid.cells.len() as f32;
+                boxes.push(PageBox {
+                    kind: "table".into(),
+                    x: MX,
+                    y: stack_y,
+                    w: table_width(&grid),
+                    markdown: String::new(),
+                    latex: String::new(),
+                    cells: grid.cells,
+                    col_w: grid.col_w,
+                    flow: 0,
+                    font: None,
+                    font_size_pt: None,
+                });
+                stack_y += rows * 33.0 + 44.0;
+            }
         }
 
         // ── Ink: container → data node → stroke nodes → packed paths ────────
@@ -895,6 +1128,26 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
 /// an image as a list item). Only math paragraphs split out, becoming their own
 /// math box beside the text (as in OneNote, where an equation is a distinct
 /// object). Returns the y just below the last emitted box (fallback stacking).
+/// Flow height of one line. Text is a single line-pitch, but an in-flow image
+/// occupies its whole display height: counting a 200px picture as one 22px text
+/// line under-measured the box by an order of magnitude, so every stacked box
+/// below it rode up into the image. The display size is already encoded in the
+/// placeholder (` =WxH`), which is the only place it survives to here.
+fn line_flow_h(l: &Line, img_idx: &HashMap<u32, String>) -> f32 {
+    const LINE_H: f32 = 22.0;
+    let Some(oid) = l.image else {
+        return LINE_H;
+    };
+    img_idx
+        .get(&oid)
+        .and_then(|p| p.rsplit_once(" ="))
+        .and_then(|(_, wh)| wh.trim_end_matches(')').split_once('x'))
+        .and_then(|(_, h)| h.parse::<f32>().ok())
+        .filter(|h| h.is_finite())
+        .unwrap_or(LINE_H)
+        .max(LINE_H)
+}
+
 fn emit_boxes(
     lines: &[Line],
     x: f32,
@@ -902,6 +1155,7 @@ fn emit_boxes(
     w: Option<f32>,
     out: &mut Vec<PageBox>,
     img_idx: &HashMap<u32, String>,
+    flow: u32,
 ) -> f32 {
     const LINE_H: f32 = 22.0;
     let mut cy = y;
@@ -913,6 +1167,7 @@ fn emit_boxes(
         cy: &mut f32,
         out: &mut Vec<PageBox>,
         img_idx: &HashMap<u32, String>,
+        flow: u32,
     ) {
         if seg.is_empty() {
             return;
@@ -926,16 +1181,40 @@ fn emit_boxes(
                 w,
                 markdown: md,
                 latex: String::new(),
+                cells: Vec::new(),
+                col_w: Vec::new(),
+                flow,
                 font: dominant_font(seg),
                 font_size_pt: dominant_size(seg),
             });
-            *cy += seg.len() as f32 * LINE_H + 14.0;
+            *cy += seg.iter().map(|l| line_flow_h(l, img_idx)).sum::<f32>() + 14.0;
         }
         seg.clear();
     }
     for l in lines {
+        if let Some(grid) = &l.table {
+            flush(&mut seg, x, w, &mut cy, out, img_idx, flow);
+            let rows = grid.cells.len() as f32;
+            out.push(PageBox {
+                kind: "table".into(),
+                x,
+                y: cy,
+                w: table_width(grid),
+                markdown: String::new(),
+                latex: String::new(),
+                cells: grid.cells.clone(),
+                col_w: grid.col_w.clone(),
+                flow,
+                font: None,
+                font_size_pt: None,
+            });
+            // Advance the flow by the table's own height so whatever follows
+            // keeps its spacing (one row ≈ 1.5 text lines, plus chrome).
+            cy += rows * LINE_H * 1.5 + 20.0;
+            continue;
+        }
         if let Some(latex) = &l.math {
-            flush(&mut seg, x, w, &mut cy, out, img_idx);
+            flush(&mut seg, x, w, &mut cy, out, img_idx, flow);
             out.push(PageBox {
                 kind: "math".into(),
                 x: x + 24.0,
@@ -943,6 +1222,9 @@ fn emit_boxes(
                 w: None,
                 markdown: String::new(),
                 latex: latex.clone(),
+                cells: Vec::new(),
+                col_w: Vec::new(),
+                flow,
                 font: None,
                 font_size_pt: None,
             });
@@ -951,7 +1233,7 @@ fn emit_boxes(
             seg.push(l); // text AND in-flow image lines stay in the one box
         }
     }
-    flush(&mut seg, x, w, &mut cy, out, img_idx);
+    flush(&mut seg, x, w, &mut cy, out, img_idx, flow);
     cy
 }
 
@@ -1564,8 +1846,34 @@ fn run_markdown(run: &SRun) -> String {
     // Preserve leading/trailing spaces outside the emphasis markers.
     let lead: String = s.chars().take_while(|c| *c == ' ').collect();
     let trail: String = s.chars().rev().take_while(|c| *c == ' ').collect();
+    // A math run sitting inside a prose paragraph becomes INLINE math (`$…$`,
+    // the app's TEXT-1a dialect) instead of promoting the whole paragraph to a
+    // display equation. OneNote renders these inline too — "E ∩ O = ⊘" belongs
+    // in the sentence, it is not a centred equation.
+    //
+    // If conversion yields nothing, fall back to the folded plain characters.
+    // Dropping the run would delete the user's writing, and that is never the
+    // right trade — an empty conversion is exactly what used to empty whole
+    // pages of content.
+    if run.style.is_math {
+        let latex = office_math_to_latex(s.trim_end_matches('\0'));
+        return if latex.trim().is_empty() {
+            s.chars()
+                .map(fold_math_char)
+                .filter(|c| !is_math_control(*c))
+                .collect()
+        } else {
+            format!("{lead}${latex}${trail}")
+        };
+    }
     let core = s[lead.len()..s.len() - trail.len()].to_string();
     let mut core = core;
+    if run.style.underline {
+        // `++u++` — the app's dialect (Markdown has none, and `__x__` is bold).
+        // Underline was parsed here and then silently discarded, so underlined
+        // OneNote text imported as plain text.
+        core = format!("++{core}++");
+    }
     if run.style.strike {
         core = format!("~~{core}~~");
     }
@@ -1594,6 +1902,8 @@ struct Line {
     bullet: String,
     runs: Vec<SRun>,
     math: Option<String>,
+    /// A table sitting in the outline flow, already reduced to its cell grid.
+    table: Option<TableGrid>,
     /// An image sitting in the outline flow (a list item that IS an image):
     /// the image object's OID. Rendered as its own block whose height advances
     /// the flow, so following text (and the boxes below) keep their spacing.
@@ -1608,6 +1918,133 @@ impl Line {
         }
         self.runs.iter().map(|r| r.text.as_str()).collect()
     }
+}
+
+/// Reduce a table object to a rectangular grid of per-cell Markdown.
+///
+/// The shape is uniform: table → rows → cells, each level listing its children
+/// in `0x1C20`, and a cell holds ordinary outline content. So each cell is just
+/// another `collect_tree` + `outline_markdown`, which means cell text keeps its
+/// bold/italic/colour/inline-maths exactly as body text does.
+///
+/// Rows are padded to the declared column count (`0x1D58`) because the app's
+/// table view requires a rectangle, and a ragged row would otherwise be padded
+/// silently at render time instead of here where the intent is visible.
+fn parse_table(
+    r: &Reader,
+    o: &Obj,
+    res: &Resolver,
+    img_idx: &HashMap<u32, String>,
+) -> TableGrid {
+    let ps = read_propset(r, o.stp, o.cb);
+    let declared_cols = ps.u32(PID_TABLE_COLS).unwrap_or(0) as usize;
+    let declared_rows = ps.u32(PID_TABLE_ROWS).unwrap_or(0) as usize;
+    if std::env::var("ONOTE_TABLE_DEBUG").is_ok() {
+        eprintln!("TABLE rows={declared_rows} cols={declared_cols}");
+        for (pid, v) in &ps.props {
+            eprintln!(
+                "  pid=0x{:06X} {}",
+                pid,
+                match v {
+                    PVal::Bool(b) => format!("bool {b}"),
+                    PVal::U32(n) => format!("u32 {n} (f32 {})", f32::from_bits(*n)),
+                    PVal::U64(n) => format!("u64 {n}"),
+                    PVal::Str(b) => format!("str[{}] {:?}", b.len(), decode_utf16(b)),
+                    PVal::Oids(v) => format!("oids[{}]", v.len()),
+                    PVal::Osids(v) => format!("osids[{}]", v.len()),
+                    PVal::Other => "other".into(),
+                }
+            );
+        }
+    }
+    let mut grid: Vec<Vec<String>> = Vec::new();
+    for rid in ps.oids(0x001C20) {
+        let Some(ri) = res.get(rid, o.rev) else { continue };
+        let row = res.obj(ri);
+        if row.jcid != JCID_TABLE_ROW {
+            continue;
+        }
+        let row_ps = read_propset(r, row.stp, row.cb);
+        let mut cells: Vec<String> = Vec::new();
+        for cid in row_ps.oids(0x001C20) {
+            let Some(ci) = res.get(cid, row.rev) else { continue };
+            let cell = res.obj(ci);
+            if cell.jcid != JCID_TABLE_CELL {
+                continue;
+            }
+            let mut lines: Vec<Line> = Vec::new();
+            let mut guard = HashSet::new();
+            collect_tree(r, cell, res, 0, &mut lines, &mut guard);
+            let refs: Vec<&Line> = lines.iter().collect();
+            cells.push(outline_markdown(&refs, img_idx).trim().to_string());
+        }
+        if !cells.is_empty() {
+            grid.push(cells);
+        }
+    }
+    if grid.is_empty() {
+        return TableGrid::default();
+    }
+    // Rectangularise: widest actual row, but never narrower than declared.
+    let cols = grid.iter().map(|r| r.len()).max().unwrap_or(0).max(declared_cols);
+    for row in &mut grid {
+        while row.len() < cols {
+            row.push(String::new());
+        }
+    }
+    debug_assert!(declared_rows == 0 || grid.len() <= declared_rows.max(grid.len()));
+    // Column widths: `u8` count, then that many little-endian f32s. Trust the
+    // array only if its own count agrees with the byte length *and* covers the
+    // columns we found — a partial or mismatched array would stretch the wrong
+    // columns, which looks worse than uniform ones.
+    let col_w = ps
+        .bytes(PID_TABLE_COL_WIDTHS)
+        .and_then(|b| {
+            let n = *b.first()? as usize;
+            if n == 0 || b.len() < 1 + n * 4 {
+                return None;
+            }
+            let w: Vec<f32> = (0..n)
+                .map(|i| {
+                    let o = 1 + i * 4;
+                    f32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]) * UNIT_PX
+                })
+                .collect();
+            // Every width must be a sane, finite, positive size.
+            if w.iter().any(|v| !v.is_finite() || *v <= 1.0 || *v > 4000.0) || w.len() < cols {
+                return None;
+            }
+            Some(w)
+        })
+        .unwrap_or_default();
+    TableGrid { cells: grid, col_w }
+}
+
+/// A parsed table: rectangular cell grid plus the column widths OneNote
+/// recorded for it. The two travel together because a grid whose widths came
+/// from a different table would be worse than no widths at all.
+#[derive(Clone, Default)]
+struct TableGrid {
+    cells: Vec<Vec<String>>,
+    /// Page px, one per column of `cells`. Empty when unrecorded.
+    col_w: Vec<f32>,
+}
+
+impl TableGrid {
+    fn is_empty(&self) -> bool {
+        self.cells.is_empty()
+    }
+}
+
+fn is_zero(v: &u32) -> bool {
+    *v == 0
+}
+
+/// A table's total width, when OneNote recorded its columns. `None` leaves the
+/// app to size the table from its content.
+fn table_width(g: &TableGrid) -> Option<f32> {
+    let total: f32 = g.col_w.iter().sum();
+    (total > 1.0).then_some(total)
 }
 
 /// Depth-first walk of an object subtree in reading order. A paragraph node
@@ -1655,26 +2092,43 @@ fn collect_inner(
         let runs = styled_runs(r, o, res);
         let plain: String = runs.iter().map(|s| s.text.as_str()).collect();
         if !plain.trim().is_empty() {
-            if runs.iter().any(|s| s.style.is_math) {
-                // Math paragraph: the run text is Office linear-math Unicode.
-                let latex = office_math_to_latex(plain.trim_end_matches('\0'));
-                if !latex.trim().is_empty() {
-                    out.push(Line {
-                        depth,
-                        is_list: ctx,
-                        bullet: bullet.clone(),
-                        runs: Vec::new(),
-                        math: Some(latex),
-                        image: None,
-                    });
-                }
+            // Classify PER RUN, not per paragraph. A paragraph is a display
+            // equation only when every run that carries text is a math run;
+            // a sentence that merely contains a symbol ("… E ∩ O = ⊘") is prose
+            // with inline math, and [run_markdown] emits `$…$` for those runs.
+            //
+            // The old test was `runs.iter().any(is_math)`, which promoted any
+            // sentence containing one symbol to a whole display equation — and
+            // if the conversion then came back empty the line was DROPPED,
+            // silently deleting page content (the "Subsets and Empty Sets" page
+            // kept two lines and lost the rest).
+            let substantive = || runs.iter().filter(|r| !r.text.trim().is_empty());
+            let all_math = substantive().count() > 0 && substantive().all(|r| r.style.is_math);
+            let latex = if all_math {
+                office_math_to_latex(plain.trim_end_matches('\0'))
             } else {
+                String::new()
+            };
+            if all_math && !latex.trim().is_empty() {
+                out.push(Line {
+                    depth,
+                    is_list: ctx,
+                    bullet: bullet.clone(),
+                    runs: Vec::new(),
+                    math: Some(latex),
+                    table: None,
+                    image: None,
+                });
+            } else {
+                // Prose, mixed prose+math, or a display equation whose
+                // conversion failed — all keep their runs, so nothing is lost.
                 out.push(Line {
                     depth,
                     is_list: ctx,
                     bullet: bullet.clone(),
                     runs,
                     math: None,
+                    table: None,
                     image: None,
                 });
             }
@@ -1682,8 +2136,33 @@ fn collect_inner(
     }
 
     for cid in children {
+        if res.get(cid, o.rev).is_none() && std::env::var("ONOTE_WALK_DEBUG").is_ok() {
+            eprintln!(
+                "WALK: unresolved child cid={cid:#010x} under jcid={:#010x} rev={} depth={depth}",
+                o.jcid, o.rev
+            );
+        }
         if let Some(idx) = res.get(cid, o.rev) {
             let child = res.obj(idx);
+            if child.jcid == JCID_TABLE {
+                // Stop here: recursing would scatter the cells through the
+                // surrounding text as loose paragraphs, which is how table
+                // content used to arrive (or vanish, when the table hung off
+                // something the outline walk never reached).
+                let grid = parse_table(r, child, res, &HashMap::new());
+                if !grid.is_empty() {
+                    out.push(Line {
+                        depth,
+                        is_list: false,
+                        bullet: String::new(),
+                        runs: Vec::new(),
+                        math: None,
+                        table: Some(grid),
+                        image: None,
+                    });
+                }
+                continue;
+            }
             if child.jcid == JCID_IMAGE {
                 // An image in the outline flow (e.g. a list item that is an
                 // image) — record it (canonicalised) as a line so the box
@@ -1694,6 +2173,7 @@ fn collect_inner(
                     bullet: String::new(),
                     runs: Vec::new(),
                     math: None,
+                    table: None,
                     image: Some(res.canon(cid, o.rev)),
                 });
                 continue;
@@ -1776,10 +2256,26 @@ impl PropSet {
     /// A 4-byte (type 0x05) scalar reinterpreted as an f32 — positions, sizes
     /// and the like are IEEE floats stored in the same slot as ints.
     fn f32(&self, pid: u32) -> Option<f32> {
-        self.u32(pid).map(f32::from_bits)
+        // Reject non-finite values: any 4-byte property can be reinterpreted as
+        // a float, and serde_json renders NaN/±Inf as `null` — which the Dart
+        // importer reads with `(e as num).toDouble()` and dies on. A malformed
+        // file must degrade, not crash the whole import.
+        self.u32(pid)
+            .map(f32::from_bits)
+            .filter(|v| v.is_finite())
     }
     fn flag(&self, pid: u32) -> bool {
         matches!(self.get(pid), Some(PVal::Bool(true)))
+    }
+    /// Raw bytes of a string-typed property. Some properties use the string
+    /// slot for packed binary — table column widths (0x1D66) are a `u8` count
+    /// followed by one little-endian `f32` per column — so they must be read as
+    /// bytes, not decoded as UTF-16.
+    fn bytes(&self, pid: u32) -> Option<&[u8]> {
+        match self.get(pid) {
+            Some(PVal::Str(b)) => Some(b),
+            _ => None,
+        }
     }
     fn utf16(&self, pid: u32) -> Option<String> {
         match self.get(pid) {
@@ -1990,8 +2486,13 @@ fn parse_obj(r: &Reader, start: usize, len: usize) -> (Option<String>, Vec<u32>)
 }
 
 fn same_visible(a: &Style, b: &Style) -> bool {
-    a.bold == b.bold
+    // `is_math` participates so consecutive math runs MERGE (a fraction's
+    // delimiters can span runs, so the span must convert as one unit) while a
+    // math run never merges into the prose around it.
+    a.is_math == b.is_math
+        && a.bold == b.bold
         && a.italic == b.italic
+        && a.underline == b.underline
         && a.strike == b.strike
         && a.highlight == b.highlight
         && color_hex(a.color) == color_hex(b.color)
@@ -2229,8 +2730,20 @@ fn decode_utf16(b: &[u8]) -> String {
     for i in 0..pairs {
         units.push(u16::from_le_bytes([b[i * 2], b[i * 2 + 1]]));
     }
-    for ch in char::decode_utf16(units) {
-        s.push(ch.unwrap_or('\u{fffd}'));
+    for ch in char::decode_utf16(units.iter().copied()) {
+        match ch {
+            Ok(c) => s.push(c),
+            Err(e) => {
+                if std::env::var("ONOTE_CHAR_DEBUG").is_ok() {
+                    eprintln!(
+                        "CHAR: unpaired unit 0x{:04X} in units {:04X?}",
+                        e.unpaired_surrogate(),
+                        units
+                    );
+                }
+                s.push('\u{fffd}');
+            }
+        }
     }
     s
 }

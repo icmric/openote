@@ -63,19 +63,27 @@ class _PageCanvasState extends State<PageCanvas> {
 
   bool get _lassoTool => app.tool == Tool.lasso;
 
-  /// Decoded-stroke cache keyed by block id + updatedAt: strokes are decoded
-  /// once per edit, not on every frame (§7a.6 — no hot-path JSON decoding).
-  final Map<String, List<Stroke>> _strokeCache = {};
+  /// Decoded strokes per ink block, tagged with the `updatedAt` they were
+  /// decoded at: strokes are decoded once per edit, not on every frame
+  /// (§7a.6 — no hot-path JSON decoding).
+  ///
+  /// Keyed by **block id alone**, with the revision stored alongside, so a block
+  /// that changes replaces its own entry. The previous key was
+  /// `'$id#$updatedAt'` with a `length > 128 → clear()` guard, which meant a
+  /// continuous erase gesture (every pointer sample bumps `updatedAt`) piled up
+  /// 128 dead entries and then wiped the cache for *every* block on the page,
+  /// forcing a full re-decode mid-gesture.
+  final Map<String, ({int rev, List<Stroke> strokes})> _strokeCache = {};
 
   List<Stroke> _strokesOf(Block b) {
-    if (_strokeCache.length > 128) _strokeCache.clear();
-    return _strokeCache.putIfAbsent(
-      '${b.id}#${b.updatedAt}',
-      () => [
-        for (final sj in b.content['strokes'] as List)
-          Stroke.fromJson((sj as Map).cast<String, dynamic>()),
-      ],
-    );
+    final hit = _strokeCache[b.id];
+    if (hit != null && hit.rev == b.updatedAt) return hit.strokes;
+    final decoded = [
+      for (final sj in b.content['strokes'] as List)
+        Stroke.fromJson((sj as Map).cast<String, dynamic>()),
+    ];
+    _strokeCache[b.id] = (rev: b.updatedAt, strokes: decoded);
+    return decoded;
   }
 
   @override
@@ -190,15 +198,28 @@ class _PageCanvasState extends State<PageCanvas> {
       _eraseUndoPushed = true;
     }
     final radius = 12.0 / controller.scale;
+    final r2 = radius * radius;
     var changed = false;
     for (final b in app.blocks.where((b) => b.type == BlockType.ink)) {
+      // Cheap reject: the eraser can only affect a block whose rect it touches.
+      // This runs per pointer sample, so skipping distant blocks before looking
+      // at any stroke is what keeps erasing cheap on an ink-heavy page.
+      if (!_blockRect(b).inflate(radius).contains(pt)) continue;
       final strokes = (b.content['strokes'] as List);
+      // Reuse the decoded strokes rather than re-parsing JSON per sample.
+      final decoded = _strokesOf(b);
       final out = <Map<String, dynamic>>[];
       var blockChanged = false;
-      for (final sj in strokes) {
-        final s = Stroke.fromJson((sj as Map).cast<String, dynamic>());
-        final keep = List<bool>.generate(s.x.length,
-            (i) => (Offset(s.x[i], s.y[i]) - pt).distance >= radius);
+      for (var si = 0; si < strokes.length; si++) {
+        final sj = strokes[si] as Map;
+        final s = si < decoded.length
+            ? decoded[si]
+            : Stroke.fromJson(sj.cast<String, dynamic>());
+        // Squared distance — avoids a sqrt per point per sample.
+        final keep = List<bool>.generate(s.x.length, (i) {
+          final dx = s.x[i] - pt.dx, dy = s.y[i] - pt.dy;
+          return dx * dx + dy * dy >= r2;
+        });
         if (!keep.contains(false)) {
           out.add(sj.cast<String, dynamic>());
           continue;
@@ -224,6 +245,10 @@ class _PageCanvasState extends State<PageCanvas> {
               x: s.x.sublist(i, j),
               y: s.y.sublist(i, j),
               p: s.p.isEmpty ? [] : s.p.sublist(i, j),
+              // Carry per-point channels through the split, or erasing would
+              // quietly strip tilt from the surviving runs.
+              tx: s.tx.isEmpty ? [] : s.tx.sublist(i, j),
+              ty: s.ty.isEmpty ? [] : s.ty.sublist(i, j),
               t: s.t.sublist(i, j),
               strokeStart: s.strokeStart,
             ).toJson());

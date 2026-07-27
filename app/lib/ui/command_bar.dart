@@ -217,6 +217,8 @@ class _CommandBarState extends State<CommandBar> {
       const _Div(),
       fmt(Icons.format_bold, 'Bold  (Ctrl+B)', () => app.wrapSelection('**')),
       fmt(Icons.format_italic, 'Italic  (Ctrl+I)', () => app.wrapSelection('*')),
+      fmt(Icons.format_underlined, 'Underline  (Ctrl+U)',
+          () => app.wrapSelection('++')),
       fmt(Icons.strikethrough_s, 'Strikethrough', () => app.wrapSelection('~~')),
       fmt(Icons.code, 'Inline code', () => app.wrapSelection('`')),
       fmt(Icons.border_color, 'Highlight', () => app.wrapSelection('==')),
@@ -279,6 +281,9 @@ class _CommandBarState extends State<CommandBar> {
               }
             : null,
       ),
+      // Font size (TEXT-1). Points, because that's how people think about type
+      // and how OneNote/Word present it; stored as 120-dpi px.
+      _FontSizeField(app: app, enabled: canFormat),
       if (!canFormat) ...[
         const SizedBox(width: 10),
         Text('Click into a text box to format',
@@ -645,4 +650,70 @@ class _Div extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 8),
         color: Theme.of(context).dividerColor,
       );
+}
+
+/// Font-size control for the text block being edited (TEXT-1).
+///
+/// A dropdown of the sizes people actually use, plus the current value shown
+/// even when it came from an import — OneNote pages carry per-box sizes, and
+/// before this there was no way to see or change them.
+class _FontSizeField extends StatelessWidget {
+  const _FontSizeField({required this.app, required this.enabled});
+  final AppState app;
+  final bool enabled;
+
+  static const _sizes = <double>[8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48];
+
+  @override
+  Widget build(BuildContext context) {
+    // Stored px → pt for display; null means "the theme default".
+    final px = app.activeBlockFontSize;
+    final pt = px == null ? null : px * 72.0 / 120.0;
+    final label = pt == null ? '–' : (pt % 1 == 0 ? pt.toStringAsFixed(0) : pt.toStringAsFixed(1));
+    return Tooltip(
+      message: enabled
+          ? 'Text size (points)'
+          : 'Click into a text box to change its size',
+      child: MenuAnchor(
+        builder: (context, controller, _) => InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: enabled
+              ? () => controller.isOpen ? controller.close() : controller.open()
+              : null,
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 44),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                  color: enabled
+                      ? Theme.of(context).colorScheme.outline
+                      : Colors.transparent),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: enabled ? null : OnoteColors.graphite400)),
+              Icon(Icons.arrow_drop_down,
+                  size: 16,
+                  color: enabled ? null : OnoteColors.graphite400),
+            ]),
+          ),
+        ),
+        menuChildren: [
+          MenuItemButton(
+            onPressed: () => app.setActiveBlockFontSize(null),
+            child: const Text('Default'),
+          ),
+          for (final s in _sizes)
+            MenuItemButton(
+              onPressed: () => app.setActiveBlockFontSize(s),
+              child: Text('${s.toStringAsFixed(0)} pt'),
+            ),
+        ],
+      ),
+    );
+  }
 }

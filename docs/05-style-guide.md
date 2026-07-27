@@ -1,6 +1,7 @@
 # Openote — Style Guide & Design System
 
-> **Document status:** Draft v0.1 · Planning phase · Last updated 2026-07-22
+> **Document status:** Draft v0.3 · **Implementation phase** · Last updated 2026-07-26
+> **Reality check:** colour tokens (§3) are implemented verbatim in `app/lib/theme/onote_theme.dart`; §7a and §7b are normative and implemented; **typography (§4.1) is NOT yet met** — no fonts are bundled, see the status note there. Tags/chips (§7) are specified but unimplemented.
 > **Purpose:** The single source of truth for how Openote looks, feels, and speaks — brand, color, type, spacing, components, canvas interaction, motion, accessibility, and voice. Written so a designer or developer can build a consistent, professional product from it.
 > **Related:** [Product Vision](00-product-vision.md) · [PRD](02-product-requirements.md)
 
@@ -151,6 +152,8 @@ A default set of pen colors offered to users — chosen to be legible on paper *
 
 All chosen faces are **open-licensed** — consistent with the project's ethos and avoiding redistribution friction.
 
+> **Implementation status (2026-07-26): not yet met.** No fonts are bundled — `pubspec.yaml` has no `fonts:` section and `onoteTheme` sets `fontFamily: null`, so the app renders in each platform's **system UI font** (Segoe UI on Windows). Code/mono styles request the generic family `'monospace'`; math glyphs come from `flutter_math_fork`'s bundled KaTeX fonts (so the Math row above *is* satisfied). Consequences: type looks different per OS — the opposite of the "consistent in soul" principle — and the type scale below is only approximately realised. **To close:** add Inter + JetBrains Mono (both OFL/Apache, ~1–2 MB subset) to `pubspec.yaml` and set `fontFamily` in the theme; offer Source Serif as the reading-serif option. Tracked as a Phase 1 polish item (PLAT-1).
+
 ### 4.2 Type scale (UI)
 
 A modular scale (~1.20 ratio), in px at base 14 for dense desktop UI; the editor uses a comfier base 16.
@@ -256,7 +259,7 @@ Baseline patterns; a component library/tokens file is a next-pass deliverable.
 
 **Empty states** — warm, brief, instructive; a light brand illustration (an open page / ink stroke) + one-line guidance + a primary action ("Create your first notebook").
 
-**Tags/chips** — `radius-full`, subtle fill, small; the built-in tag library (to-do, important, question…) uses distinct icons, not just color.
+**Tags/chips** — `radius-full`, subtle fill, small; the built-in tag library (to-do, important, question…) uses distinct icons, not just color. *(**Not implemented** as of 2026-07-27 — no tag model, tag UI, or tag query exists anywhere in the app (**TEXT-5**, and the tag half of ORG-5 / TEXT-1a). OneNote's tag library is a signature feature and a known switcher expectation; the closest shipped equivalent is Markdown checkboxes (`- [ ]`, TEXT-6). The OneNote importer also can't carry tags across, so tagged source notebooks lose that structure on import.)*
 
 **Live embeds (transclusion boxes)** — an embed must read as *a window onto another page*, not native content, without shouting: a 1px `ink-200`/`night-300` border with a subtle `ink-50`/`night-100` tint, `radius-lg`, and a compact **source badge** (page icon + page title, `caption` size) pinned to the top edge; the badge and empty areas click through to the source, while links inside the embedded content keep their own behavior. States: **live** (badge normal), **syncing** (badge with subtle progress affordance, snapshot content shown), **source deleted** (content grayed, badge in `danger` tone, actions: remove / detach as copy), **circular** (placeholder chip, never a recursive render). Embedded content is visually read-only — no hover editing affordances inside.
 
@@ -297,6 +300,26 @@ These standardise what every menu, button, and click does, so the UI stays consi
 ### 7a.6 Feedback & latency
 - Every action gives feedback within 100ms (state change, snackbar, or visible result). Long operations (>300ms: exports) show a snackbar on completion with the target path.
 - **Performance budgets (PLAT-4 restated for UI):** page switch < 100ms; notebook switch < 250ms; keystroke-to-paint < 16ms on typical pages. No per-frame JSON decoding or allocation storms on hot paths (decoded content is cached and invalidated by `updatedAt`).
+
+## 7b. The navigator *(added 2026-07-26 after the navigator rework — normative)*
+
+The navigator is how users move through notebooks, and it was reworked from a single expand-everything tree to a **stacked two-zone pane** after a stakeholder UX review. That decision is now the standard; the alternative accordion-tree prototype was removed.
+
+**Why stacked, not OneNote's layout.** OneNote web uses a "double fold-out" — a ~48px notebook rail plus a sections column plus a pages column, ≈480px of chrome before content. That buys clarity (you always see exactly one section's pages) at a real horizontal cost. Openote takes the clarity and drops the cost by **stacking the two columns vertically inside one ~250px pane**.
+
+**Anatomy (top to bottom).**
+1. **Notebook bar** — current notebook name + chevron; opens the notebook menu (switch · rename · delete · new · imports · recycle bin). Right-click the bar *or any notebook row in the menu* for that notebook's actions **without switching to it first**.
+2. **Search / quick-jump** — filters sections and pages by title; a result opens the page (or focuses the section) and clears the query.
+3. **Sections zone** — section groups → sections, each with its colour bar. Clicking a section makes it **active**; it does not dump its pages into the list.
+4. **Resize divider** — drag to trade height between the zones; the ratio persists per workspace (`navSplit`).
+5. **Pages zone** — the **active section's** pages and subpages only, indented by level. This is where users spend their time, so it gets the remaining height.
+6. **Footer** — new section · new page · new section group · recycle bin.
+
+**Rules.**
+- **One active section** at a time (`AppState.activeSectionId`); it stays in sync with the open page, so navigating by any route (search, page link, backlink) keeps the navigator honest.
+- **Direct manipulation first:** double-click renames inline (never a dialog); drag reparents (page→section, page→page = subpage, section→group); right-click opens the node menu. Every node kind — group, section, page, **and notebook** — must expose the same interaction vocabulary.
+- **Destructive actions are recoverable:** delete soft-deletes to the recycle bin with an Undo affordance; a notebook delete additionally confirms, keeps its `.onote` file on disk, and can be restored losslessly. The bin auto-purges after **30 days** and shows each item's remaining lifetime.
+- The last notebook cannot be deleted (there is always somewhere to be).
 
 ## 8. Canvas interaction guidelines
 

@@ -65,7 +65,19 @@ class _TableBlockViewState extends State<TableBlockView> {
     ];
   }
 
-  void _write(List<List<String>> cells) {
+  /// True once this editing session has pushed an undo snapshot, so a burst of
+  /// cell edits collapses into ONE undo step (matching the text/code/math
+  /// editors) instead of none. Reset when editing ends.
+  bool _undoPushed = false;
+
+  void _write(List<List<String>> cells, {bool structural = false}) {
+    // Regression: table writes used to call `markDirty()` without `pushUndo()`,
+    // so Ctrl+Z jumped past every table edit to whatever preceded the table.
+    // Structural changes (add/remove row or column) always get their own step.
+    if (structural || !_undoPushed) {
+      widget.app.pushUndo();
+      _undoPushed = true;
+    }
     widget.block.content['cells'] = cells;
     widget.block.updatedAt = nowMs();
     widget.app.markDirty();
@@ -185,7 +197,12 @@ class _TableBlockViewState extends State<TableBlockView> {
     final border = dark ? OnoteColors.night300 : OnoteColors.paper300;
     final headerFill = dark ? OnoteColors.night100 : OnoteColors.paper100;
 
-    if (editing) _ensure(cells);
+    if (editing) {
+      _ensure(cells);
+    } else if (_undoPushed) {
+      // Editing ended: the next session starts a new undo step.
+      _undoPushed = false;
+    }
 
     Widget cellWidget(int r, int c) {
       final style = TextStyle(
@@ -247,8 +264,19 @@ class _TableBlockViewState extends State<TableBlockView> {
       );
     }
 
+    // Imported tables carry OneNote's own per-column widths; honour them
+    // exactly. A flex share each (the default) made every column equal, so an
+    // imported table was the wrong shape and ran into its neighbours.
+    final stored = widget.block.content['colWidths'];
+    final colWidths = <int, TableColumnWidth>{
+      if (stored is List && stored.length == cols)
+        for (var c = 0; c < cols; c++)
+          if ((stored[c] as num?) != null && (stored[c] as num) > 1)
+            c: FixedColumnWidth((stored[c] as num).toDouble()),
+    };
     final table = Table(
       border: TableBorder.all(color: border, width: 1),
+      columnWidths: colWidths.isEmpty ? null : colWidths,
       defaultColumnWidth: const FlexColumnWidth(),
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
       children: [
@@ -274,22 +302,22 @@ class _TableBlockViewState extends State<TableBlockView> {
           padding: const EdgeInsets.only(top: 4),
           child: Row(children: [
             ctlBtn(Icons.add, 'Add row', () {
-              _write(_cells..add(List.filled(cols, '', growable: true)));
+              _write(_cells..add(List.filled(cols, '', growable: true)), structural: true);
               setState(() {});
             }),
             ctlBtn(Icons.remove, 'Remove row', () {
               if (rows <= 1) return;
-              _write(_cells..removeLast());
+              _write(_cells..removeLast(), structural: true);
               setState(() {});
             }),
             const SizedBox(width: 8),
             ctlBtn(Icons.view_column_outlined, 'Add column', () {
-              _write([for (final row in _cells) row..add('')]);
+              _write([for (final row in _cells) row..add('')], structural: true);
               setState(() {});
             }),
             ctlBtn(Icons.view_column, 'Remove column', () {
               if (cols <= 1) return;
-              _write([for (final row in _cells) row..removeLast()]);
+              _write([for (final row in _cells) row..removeLast()], structural: true);
               setState(() {});
             }),
           ]),

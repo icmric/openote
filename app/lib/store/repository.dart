@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -67,9 +68,53 @@ class Repository {
 
   File get _workspaceFile => File(p.join(workspaceDir.path, 'workspace.json'));
 
+  /// True when the registry was unreadable and a backup had to be used (or
+  /// nothing could be recovered) — the UI warns rather than silently pretending
+  /// the workspace is empty.
+  String? workspaceRecoveryNote;
+
   Future<void> _loadWorkspace() async {
-    if (!_workspaceFile.existsSync()) return;
-    final j = jsonDecode(await _workspaceFile.readAsString()) as Map<String, dynamic>;
+    // Try the live registry, then the `.bak` written before the last replace.
+    // A registry we can't parse must never look like "you have no notebooks".
+    Map<String, dynamic>? j;
+    for (final candidate in [_workspaceFile, File('${_workspaceFile.path}.bak')]) {
+      if (!candidate.existsSync()) continue;
+      try {
+        final decoded = jsonDecode(await candidate.readAsString());
+        if (decoded is Map<String, dynamic>) {
+          j = decoded;
+          if (candidate != _workspaceFile) {
+            workspaceRecoveryNote =
+                'workspace.json was unreadable; recovered from the backup.';
+          }
+          break;
+        }
+      } catch (_) {
+        // Try the next candidate.
+      }
+    }
+    if (j == null) {
+      // Last resort: adopt any .onote files sitting in the workspace folder, so
+      // a lost registry never hides real notebooks.
+      final orphans = workspaceDir
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.toLowerCase().endsWith('.onote'))
+          .toList();
+      if (orphans.isNotEmpty) {
+        for (final f in orphans) {
+          notebooks.add(NotebookRef(
+              id: newId(),
+              file: f.path,
+              title: p.basenameWithoutExtension(f.path)));
+        }
+        workspaceRecoveryNote =
+            'workspace.json was missing or unreadable; recovered '
+            '${orphans.length} notebook${orphans.length == 1 ? '' : 's'} from disk.';
+        await _saveNow();
+      }
+      return;
+    }
     _settings = (j['settings'] as Map?)?.cast<String, dynamic>() ?? {};
     for (final n in (j['notebooks'] as List? ?? const [])) {
       final m = (n as Map).cast<String, dynamic>();
@@ -92,8 +137,49 @@ class Repository {
     }
   }
 
+  // Workspace-registry write serialisation. `workspace.json` lists every
+  // notebook, and it used to be written with a bare (truncate-then-write)
+  // `writeAsString`, fire-and-forget, up to three times per page switch. Any
+  // crash inside that window truncated the file and the app then loaded ZERO
+  // notebooks. Writes are now atomic (tmp + rename), chained so they can never
+  // interleave, and coalesced so routine session state doesn't hammer the disk.
+  Future<void> _writeChain = Future<void>.value();
+  Timer? _writeDebounce;
+  bool _writePending = false;
+
+  /// Queue an atomic workspace write. Coalesces bursts; returns immediately.
+  void _scheduleSaveWorkspace() {
+    _writePending = true;
+    _writeDebounce?.cancel();
+    _writeDebounce = Timer(const Duration(milliseconds: 400), () {
+      _writeChain = _writeChain.then((_) => _saveWorkspace());
+    });
+  }
+
+  /// Write any pending workspace state now and wait for it (called on shutdown).
+  Future<void> flushWorkspace() async {
+    _writeDebounce?.cancel();
+    if (_writePending) {
+      _writeChain = _writeChain.then((_) => _saveWorkspace());
+    }
+    await _writeChain;
+  }
+
+  /// Chain a write and wait for it — for structural changes (notebook created,
+  /// renamed, trashed, purged) that must be durable before we report success.
+  /// Goes through the same chain as the debounced writes so the two can never
+  /// interleave on the file.
+  Future<void> _saveNow() {
+    _writeDebounce?.cancel();
+    _writePending = true;
+    _writeChain = _writeChain.then((_) => _saveWorkspace());
+    return _writeChain;
+  }
+
   Future<void> _saveWorkspace() async {
-    await _workspaceFile.writeAsString(const JsonEncoder.withIndent('  ').convert({
+    if (_disposed) return; // the workspace may no longer exist
+    _writePending = false;
+    await _writeAtomic(const JsonEncoder.withIndent('  ').convert({
       'format': {'major': 1, 'minor': 0},
       'workspace_id': _workspaceId ??= newId(),
       'notebooks': [
@@ -113,6 +199,36 @@ class Repository {
     }));
   }
 
+  /// Atomic replace: write a temp file, flush it to disk, keep the previous
+  /// version as `.bak`, then rename over the original. `rename` within a
+  /// directory is atomic on NTFS, APFS and ext4, so a crash leaves either the
+  /// old file or the new one — never a truncated one.
+  Future<void> _writeAtomic(String contents) async {
+    final target = _workspaceFile;
+    final tmp = File('${target.path}.tmp');
+    try {
+      final handle = await tmp.open(mode: FileMode.writeOnly);
+      try {
+        await handle.writeString(contents);
+        await handle.flush();
+      } finally {
+        await handle.close();
+      }
+      if (target.existsSync()) {
+        try {
+          await target.copy('${target.path}.bak');
+        } catch (_) {/* a missing backup must never block the real write */}
+      }
+      await tmp.rename(target.path);
+    } catch (_) {
+      // Leave the existing (valid) file alone rather than half-replacing it.
+      try {
+        if (tmp.existsSync()) await tmp.delete();
+      } catch (_) {/* best effort */}
+      rethrow;
+    }
+  }
+
   String? _workspaceId;
 
   /// Workspace settings (spec §7): session state, custom colours, templates.
@@ -120,7 +236,8 @@ class Repository {
   dynamic getSetting(String key) => _settings[key];
   void setSetting(String key, dynamic value) {
     _settings[key] = value;
-    _saveWorkspace(); // fire-and-forget; small file
+    // Session state (view memory, last page) changes constantly — coalesce.
+    _scheduleSaveWorkspace();
   }
 
   Database _db(String notebookId) {
@@ -133,6 +250,21 @@ class Repository {
 
   Future<NotebookRef> createNotebook(String title) async {
     final id = newId();
+    final file = _freeNotebookPath(title);
+    final ref = NotebookRef(id: id, file: file, title: title);
+    notebooks.add(ref);
+    _open[id] = openOnote(file, notebookId: id, title: title);
+    // Seed a first section + page so the notebook is immediately usable.
+    final section = upsertNode(id, TreeNode(kind: NodeKind.section, title: 'Section 1'));
+    upsertNode(id,
+        TreeNode(kind: NodeKind.page, parentId: section.id, title: 'Untitled page'));
+    await _saveNow();
+    return ref;
+  }
+
+  /// A unique `<base>.onote` path in the workspace (suffixing `-2`, `-3`, … as
+  /// needed). Shared by create and duplicate so both name files the same way.
+  String _freeNotebookPath(String title) {
     var base = title.replaceAll(RegExp(r'[^\w\- ]'), '').trim();
     if (base.isEmpty) base = 'Notebook';
     var file = p.join(workspaceDir.path, '$base.onote');
@@ -141,21 +273,57 @@ class Repository {
       file = p.join(workspaceDir.path, '$base-$i.onote');
       i++;
     }
-    final ref = NotebookRef(id: id, file: file, title: title);
+    return file;
+  }
+
+  /// Copy a notebook, contents and all. A `.onote` is a self-contained SQLite
+  /// file, so a byte copy duplicates pages, blobs, versions and history exactly
+  /// — no walking the tree, nothing missed. The copy gets a fresh workspace id;
+  /// its internal `notebook_id` metadata is rewritten so the two don't collide
+  /// once sync lands.
+  Future<NotebookRef> duplicateNotebook(String id, {String? title}) async {
+    final src = notebooks.firstWhere((n) => n.id == id);
+    final newTitle = title ?? '${src.title} copy';
+    // Settle any pending writes to the source before copying its bytes.
+    final open = _open[id];
+    if (open != null) open.execute('PRAGMA wal_checkpoint(TRUNCATE)');
+    final dstPath = _freeNotebookPath(newTitle);
+    await File(src.file).copy(dstPath);
+    final newId0 = newId();
+    final ref = NotebookRef(id: newId0, file: dstPath, title: newTitle);
     notebooks.add(ref);
-    _open[id] = openOnote(file, notebookId: id, title: title);
-    // Seed a first section + page so the notebook is immediately usable.
-    final section = upsertNode(id, TreeNode(kind: NodeKind.section, title: 'Section 1'));
-    upsertNode(id,
-        TreeNode(kind: NodeKind.page, parentId: section.id, title: 'Untitled page'));
-    await _saveWorkspace();
+    final db = openOnote(dstPath, notebookId: newId0, title: newTitle);
+    db.execute(
+        "INSERT INTO notebook_meta(key,value) VALUES('notebook_id',?) "
+        'ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+        [jsonEncode(newId0)]);
+    db.execute(
+        "INSERT INTO notebook_meta(key,value) VALUES('title',?) "
+        'ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+        [jsonEncode(newTitle)]);
+    _open[newId0] = db;
+    await _saveNow();
     return ref;
+  }
+
+  /// Page/section counts for the notebook manager, without opening the notebook
+  /// in the UI. Cheap: two indexed COUNTs.
+  ({int sections, int pages}) notebookCounts(String id) {
+    try {
+      final db = _db(id);
+      int count(String kind) => db.select(
+          'SELECT COUNT(*) AS c FROM nodes WHERE kind=? AND deleted_at IS NULL',
+          [kind]).first['c'] as int;
+      return (sections: count('section'), pages: count('page'));
+    } catch (_) {
+      return (sections: 0, pages: 0); // unreadable file — manager shows dashes
+    }
   }
 
   Future<void> renameNotebook(String id, String title) async {
     final ref = notebooks.firstWhere((n) => n.id == id);
     ref.title = title;
-    await _saveWorkspace();
+    await _saveNow();
   }
 
   /// Move a notebook to the recycle bin (ORG-7). Closes its db handle but keeps
@@ -167,7 +335,7 @@ class Repository {
     ref.deletedAt = nowMs();
     trashedNotebooks.add(ref);
     _open.remove(id)?.dispose();
-    await _saveWorkspace();
+    await _saveNow();
   }
 
   Future<void> restoreNotebook(String id) async {
@@ -176,7 +344,7 @@ class Repository {
     final ref = trashedNotebooks.removeAt(i);
     ref.deletedAt = null;
     notebooks.add(ref);
-    await _saveWorkspace();
+    await _saveNow();
   }
 
   /// Permanently delete a trashed notebook, including its .onote file.
@@ -189,7 +357,7 @@ class Repository {
       final f = File(ref.file);
       if (f.existsSync()) f.deleteSync();
     } catch (_) {/* best-effort; the workspace entry is already gone */}
-    await _saveWorkspace();
+    await _saveNow();
   }
 
   // ── Recycle-bin retention (ORG-7): auto-purge after N days ──────────────
@@ -415,6 +583,13 @@ class Repository {
     }
   }
 
+  // Compiled once, not per save. `_inlineImgRe` tolerates the optional
+  // ` =WxH` display-size suffix the OneNote importer writes — without it,
+  // in-flow imported images never got a `blob_refs` row.
+  static final _inlineImgRe =
+      RegExp(r'!\[[^\]]*\]\(sha256:([0-9a-fA-F]{64})(?:\s+=\d+x\d+)?\)');
+  static final _linkRe = RegExp(r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]');
+
   void writePage(
       String notebookId, String pageId, List<Block> blocks, PageProps props) {
     final db = _db(notebookId);
@@ -441,7 +616,6 @@ class Repository {
       // Maintain blob_refs projection: image/file blocks plus in-flow images
       // referenced from text markdown (`![alt](sha256:<hash>)`, Data Model §5.1).
       db.execute('DELETE FROM blob_refs WHERE page_id=?', [pageId]);
-      final inlineImgRe = RegExp(r'!\[[^\]]*\]\(sha256:([0-9a-fA-F]{64})\)');
       for (final b in blocks) {
         final hash = b.content['blob'];
         if (hash is String) {
@@ -451,7 +625,7 @@ class Repository {
         }
         final text = b.content['text'];
         if (text is String && text.contains('](sha256:')) {
-          for (final m in inlineImgRe.allMatches(text)) {
+          for (final m in _inlineImgRe.allMatches(text)) {
             db.execute(
                 'INSERT OR IGNORE INTO blob_refs(page_id,hash) VALUES(?,?)',
                 [pageId, m.group(1)!.toLowerCase()]);
@@ -460,14 +634,25 @@ class Repository {
       }
       // Maintain the refs index (links & embeds) for backlinks (TEXT-8).
       db.execute('DELETE FROM refs WHERE src_page_id=?', [pageId]);
-      final linkRe = RegExp(r'\[\[[^\]|]+(?:\|([^\]]+))?\]\]');
       for (final b in blocks) {
         if (b.type == BlockType.text) {
           final txt = b.content['text'] as String? ?? '';
           var idx = 0;
-          for (final m in linkRe.allMatches(txt)) {
-            final dst = m.group(1);
-            if (dst == null) continue;
+          for (final m in _linkRe.allMatches(txt)) {
+            // `[[Title|id]]` carries the target id; a bare `[[Title]]` — the
+            // form the PRD documents — must be resolved by title, or it
+            // produces no backlink at all even though clicking it navigates.
+            var dst = m.group(2);
+            if (dst == null) {
+              final label = m.group(1)!.trim().toLowerCase();
+              dst = db
+                  .select(
+                      "SELECT id FROM nodes WHERE kind='page' "
+                      'AND deleted_at IS NULL AND lower(trim(title))=? LIMIT 1',
+                      [label])
+                  .firstOrNull?['id'] as String?;
+            }
+            if (dst == null) continue; // unresolvable target — nothing to index
             db.execute(
                 'INSERT OR IGNORE INTO refs'
                 '(src_page_id,src_block_id,kind,dst_page_id,dst_notebook,dst_target) '
@@ -511,10 +696,19 @@ class Repository {
   }
 
   void dispose() {
+    // Stop the debounced registry writer first: a pending write firing after
+    // the workspace has gone away throws an unhandled PathNotFoundException
+    // (and in a test, after the temp directory is deleted).
+    _writeDebounce?.cancel();
+    _writePending = false;
+    _disposed = true;
     for (final db in _open.values) {
       db.dispose();
     }
+    _open.clear();
   }
+
+  bool _disposed = false;
 }
 
 // Minimal SHA-256 via SQLite would need an extension; use Dart's built-in

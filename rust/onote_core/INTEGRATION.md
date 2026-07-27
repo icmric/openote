@@ -46,7 +46,29 @@ end-to-end round-trip, not a version string.
 If the chip stays grey (`Dart engine`), the DLL wasn't found next to the exe —
 double-check the folder, or use step 2 to have the build place it for you.
 
-## 2. Automatic build (optional, permanent) — edit `app\windows\CMakeLists.txt`
+> ### ⚠ The stale-DLL trap — read this before debugging any import problem
+>
+> **The app does NOT rebuild the Rust core.** `flutter run` / `flutter build windows`
+> only compiles Dart; the DLL next to the exe is whatever you last copied there.
+> After **any** change to this crate you must `cargo build --release` **and**
+> re-copy (step 1), or you will be testing old native code.
+>
+> This has bitten us repeatedly, and the symptoms look exactly like parser bugs —
+> wrong page order, missing content, "the fix didn't work". Always verify:
+>
+> ```powershell
+> # hashes MUST match, or you are running a stale core
+> Get-FileHash target\release\onote_core.dll
+> Get-FileHash ..\..\app\build\windows\x64\runner\Debug\onote_core.dll
+> ```
+>
+> Mitigations in place: `OnoteCore._tryLoad` (Dart) prefers the **newest** candidate
+> DLL by mtime, so a fresh `cargo build` is often picked up without the copy; and
+> the status-bar chip shows the loaded core's version. Neither is a substitute for
+> the hash check. **Wiring step 2 below permanently is the real fix — it is
+> currently NOT wired in `app/windows/CMakeLists.txt`.**
+
+## 2. Automatic build (recommended, permanent) — edit `app\windows\CMakeLists.txt`
 
 To have `flutter run` / `flutter build windows` compile the crate and copy the
 DLL for you, add this near the **end** of `app/windows/CMakeLists.txt` (after

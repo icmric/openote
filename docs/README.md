@@ -1,6 +1,8 @@
 # Openote Documentation
 
-This is the planning and design documentation for **Openote**, an open-source, natively cross-platform alternative to Microsoft OneNote. The project is in the **planning & design phase** — these documents define what we're building and why, before any application code is written.
+This is the design and specification documentation for **Openote**, an open-source, natively cross-platform alternative to Microsoft OneNote.
+
+> **Status (2026-07-26):** the project is well past planning. A working Flutter + Rust application lives in [`app/`](../app/README.md) and [`rust/onote_core/`](../rust/onote_core/README.md) — ~11k lines of Dart and ~3.6k of Rust, 82 Dart + 26 Rust tests green. Most of the Phase 1 MVP and much of Phase 2 is implemented, and the Phase 3 headline feature (the reverse-engineered **OneNote `.one`/`.onepkg` importer**) works on real notebooks. These documents are therefore **living specs describing intent**, not a pre-code plan: where a document and the code disagree, the disagreement is a bug in one of them — see the [reviews](#reviews) for the current reconciliation.
 
 ## Reading order
 
@@ -45,7 +47,8 @@ Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/AD
 
 ## Reviews
 
-- [2026-07 — MVP iteration-2 code review](reviews/2026-07-code-review-mvp-iter2.md): full audit of `app/` against the PRD/specs; findings F-1…F-7 (bugs), G-1…G-9 (gaps closed in iteration 3), D-1…D-9 (tracked deferrals). Also ratified the CANVAS-1 v0.3 page-surface refinement.
+- **[2026-07-27 — Phase 1 exit readiness review](reviews/2026-07-code-review-phase1-exit.md) ← current.** Whole-tree audit (Dart + Rust + vendored code + docs) against all 102 PRD requirements. Carries the authoritative **requirement scoreboard** (25 done · 47 partial · 6 missing · 24 deferred), the prioritised findings list, the test-coverage gaps, a OneNote feature comparison, and the recommended order of work. **Read this one first** — the roadmap and PRD were corrected against it.
+- [2026-07-22 — MVP iteration-2 code review](reviews/2026-07-code-review-mvp-iter2.md): began as an audit of `app/` (findings F-1…F-7 bugs, G-1…G-9 gaps, D-1…D-9 deferrals; ratified the CANVAS-1 v0.3 page-surface refinement) and has since become the project's **append-only iteration log** — sections A–N covering iterations 3–22, including the OneNote-importer reverse-engineering notes (§L) and the performance pass (§N). Valuable as history; superseded as an assessment.
 
 ## Supporting documents
 

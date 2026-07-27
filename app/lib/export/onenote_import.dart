@@ -69,6 +69,173 @@ Future<T> _withBusyDialog<T>(BuildContext? context,
 /// [OneNoteUnavailable] when the Rust core isn't linked.
 class OneNoteUnavailable implements Exception {}
 
+/// OneNote's line pitch, as a multiple of font size.
+///
+/// **Measured, then explained.** OneNote's own PDF export gives the baseline of
+/// every rendered line, so the pitch is readable directly. Fitting a grid to all
+/// the line steps on two unrelated pages, in Openote page units (1/120 inch),
+/// divided by the em we render at (18.3333 u for 11 pt):
+///
+/// | sample                        | steps | pitch      | ÷ em     |
+/// |-------------------------------|-------|------------|----------|
+/// | `Lecture.pdf`                 | 66    | 22.38299 u | 1.220890 |
+/// | `Lecture p2 Web and HTTP.pdf` | 55    | 22.37745 u | 1.220588 |
+///
+/// Both land on **(1950 + 550) / 2048 = 1.2207031** — Calibri's `usWinAscent +
+/// usWinDescent` over its `unitsPerEm`. So this is not a fudge factor: OneNote
+/// lays lines out at the font's own default spacing, and that is the number.
+///
+/// This previously read `1.35`, making every imported line ~10.6% taller than
+/// OneNote's. Fitting the *rendered* output against OneNote row by row gave
+/// `dy = -2.3693 * row - 7.998 u` (R² = 0.99999993 over 213 rows, max residual
+/// 0.030 u ≈ 0.006 mm) — i.e. exactly two causes and nothing else: this line
+/// pitch (24.75 − 22.3805 = −2.3695 u per row) and the text block's 8 u top
+/// padding (see [importedTextPadding]). A 62-line box therefore drifted ~150 u,
+/// sliding its text past the images, ink and neighbouring boxes that sit at their
+/// own absolute positions — the reported "text doesn't align with the other
+/// elements". A separate check confirmed the parser's box origins, image
+/// positions and ink transform are all accurate to better than 0.05 mm, so
+/// nothing else was ever misplaced: the text was growing past it.
+const double oneNoteLineHeight = 1.2207031;
+
+/// Padding inside an imported text box.
+///
+/// Zero, deliberately. A OneNote box's stored origin *is* where its first line
+/// starts, so any inset shifts every line in the box down and right of the
+/// source. The measured intercepts were exactly our decoration padding: −8 u
+/// vertically and +10 u horizontally. Hand-authored boxes keep their comfortable
+/// inset; only imported ones are pinned to the origin.
+const EdgeInsets importedTextPadding = EdgeInsets.zero;
+
+/// Vertical gap the parser leaves after each item in a container's flow. These
+/// mirror the parser's own constants so re-stacking changes *heights*, not
+/// spacing — OneNote's real inter-paragraph spacing isn't recorded in a form
+/// we've decoded, so this stays an agreed convention rather than a measurement.
+const double _flowGapAfterText = 14.0;
+const double _flowGapAfterTable = 20.0;
+
+/// Height of one table row, over and above its tallest cell's text: the cell's
+/// vertical content padding (6 top + 6 bottom, from `TableBlockView`) plus its
+/// share of the 1px borders.
+const double _tableRowChrome = 13.0;
+
+/// Re-stack each container's flow using real text measurement.
+///
+/// The parser assigns every box in a container a `y`, but it can only count
+/// *source* lines at a fixed 22px pitch. A paragraph that wraps to three visual
+/// lines is therefore costed as one, so everything below it rides up — which is
+/// why an imported table sat too high and consecutive tables overlapped. Font
+/// metrics only exist here, in the renderer's process, so this is where the
+/// correction belongs.
+///
+/// The **first** box of a flow keeps its parsed position: that one is OneNote's
+/// own recorded offset and is already right. Only the boxes after it move.
+/// Boxes with `flow == 0` (floating images, orphaned tables) are untouched.
+///
+/// Mutates `y` in the box maps in place. Exposed for testing.
+void restackFlows(List<dynamic> boxes) {
+  final byFlow = <int, List<Map<String, dynamic>>>{};
+  for (final raw in boxes) {
+    if (raw is! Map) continue;
+    final b = raw.cast<String, dynamic>();
+    final flow = (b['flow'] as num?)?.toInt() ?? 0;
+    if (flow == 0) continue;
+    byFlow.putIfAbsent(flow, () => []).add(b);
+  }
+  for (final group in byFlow.values) {
+    if (group.length < 2) continue; // nothing below the anchor to correct
+    var cy = (group.first['y'] as num?)?.toDouble() ?? 0;
+    for (final b in group) {
+      b['y'] = cy;
+      cy += _measuredFlowHeight(b);
+    }
+  }
+}
+
+/// The vertical space one flow item occupies, including the gap after it.
+double _measuredFlowHeight(Map<String, dynamic> b) {
+  switch (b['kind'] as String?) {
+    case 'table':
+      final rows = (b['cells'] as List?) ?? const [];
+      if (rows.isEmpty) return _flowGapAfterTable;
+      final rawW = (b['col_w'] as List?) ?? const [];
+      var total = 0.0;
+      for (final rowRaw in rows) {
+        final row = (rowRaw as List?) ?? const [];
+        var tallest = 0.0;
+        for (var c = 0; c < row.length; c++) {
+          // Unknown column widths → measure unconstrained; the row height is
+          // then a floor rather than an estimate, which errs towards spacing
+          // things apart instead of overlapping them.
+          final w = c < rawW.length ? (rawW[c] as num).toDouble() : double.infinity;
+          final h = _textHeight(row[c]?.toString() ?? '', width: w, fontSizePx: 15);
+          if (h > tallest) tallest = h;
+        }
+        total += tallest + _tableRowChrome;
+      }
+      return total + _flowGapAfterTable;
+    case 'math':
+      // flutter_math can't be measured without laying it out; keep the
+      // parser's allowance rather than pretend to a number we don't have.
+      return 48.0;
+    default:
+      final md = b['markdown'] as String? ?? '';
+      if (md.trim().isEmpty) return 0;
+      final sizePt = (b['font_size_pt'] as num?)?.toDouble();
+      final fontSizePx = (sizePt != null && sizePt > 4) ? sizePt * 120.0 / 72.0 : 15.0;
+      final w = (b['w'] as num?)?.toDouble();
+      // An in-flow image occupies its declared display height, not a text
+      // line — measuring the placeholder as text would undercount a 200px
+      // picture by an order of magnitude. Pull those lines out, add their real
+      // heights, and measure what's left as text.
+      var imagesH = 0.0;
+      final textLines = <String>[];
+      for (final line in md.split('\n')) {
+        final m = _flowImageLine.firstMatch(line);
+        if (m != null) {
+          imagesH += double.tryParse(m.group(1)!) ?? 0;
+        } else {
+          textLines.add(line);
+        }
+      }
+      return _textHeight(textLines.join('\n'),
+              width: (w != null && w > 1) ? w : double.infinity,
+              fontSizePx: fontSizePx,
+              family: b['font'] as String?) +
+          imagesH +
+          _flowGapAfterText;
+  }
+}
+
+/// A flow line that is nothing but an image placeholder, capturing its declared
+/// display height: `![alt](onote-img://3 =264x198)`.
+final _flowImageLine =
+    RegExp(r'^\s*!\[[^\]]*\]\([^)\s]+\s+=\d+x(\d+)\)\s*$');
+
+/// Lay [text] out exactly as the canvas will and return its height.
+double _textHeight(String text, {
+  required double width,
+  required double fontSizePx,
+  String? family,
+}) {
+  if (text.isEmpty) return 0;
+  final tp = TextPainter(
+    text: TextSpan(
+      text: text,
+      style: TextStyle(
+        fontSize: fontSizePx,
+        height: oneNoteLineHeight,
+        fontFamily: (family == null || family.isEmpty) ? null : family,
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+    maxLines: null,
+  )..layout(maxWidth: width);
+  final h = tp.height;
+  tp.dispose();
+  return h;
+}
+
 /// Import a single `.one` section into the CURRENT notebook as a new section.
 /// Pass [progressContext] to show a busy dialog while parsing.
 Future<int?> importOneNoteFile(AppState app,
@@ -143,6 +310,8 @@ Future<int?> importOneNotePackage(AppState app,
   final Uint8List bytes = await file.readAsBytes();
   // One dialog spans both phases: the native parse (single isolate call) and
   // the per-section database writes, which narrate progress as they go.
+  lastSkippedSections = const [];
+  lastImportError = null;
   final progress = ValueNotifier(
       'Reading notebook… this can take a while for large notebooks.');
   return _withBusyDialog(progressContext, progress, () async {
@@ -150,10 +319,23 @@ Future<int?> importOneNotePackage(AppState app,
     try {
       final json = await compute(_parseOnepkgInIsolate, bytes);
       result = jsonDecode(json) as Map<String, dynamic>;
-    } catch (_) {
+    } on FormatException {
+      // The parser answered, but not with JSON — treat as unreadable input.
+      return 0;
+    } catch (e) {
+      // A crashed isolate, an OOM, or a native fault is NOT "unsupported file";
+      // collapsing them all into 0 told the user their notebook was unreadable
+      // when in fact we broke.
+      lastImportError = '$e';
       return 0;
     }
-    if (result['ok'] != true) return 0;
+    if (result['ok'] != true) {
+      lastImportError = result['error'] as String?;
+      return 0;
+    }
+    // Sections the parser could not read. These used to vanish silently.
+    lastSkippedSections =
+        ((result['failed'] as List?) ?? const []).cast<String>().toList();
     final sections = (result['sections'] as List?) ?? const [];
     if (sections.isEmpty) return 0;
 
@@ -171,6 +353,14 @@ Future<int?> importOneNotePackage(AppState app,
     return imported;
   });
 }
+
+/// Sections the last import could not read, by name. Empty on a clean import.
+/// Surfaced by the caller so a partial import announces itself rather than
+/// quietly delivering fewer sections than the notebook contains.
+List<String> lastSkippedSections = const [];
+
+/// Why the last import returned 0, when the reason wasn't "nothing usable".
+String? lastImportError;
 
 /// Last page created by [buildNotebookFromPackage] (so callers can navigate to
 /// it). Set as a side effect to keep the return value a simple count.
@@ -308,6 +498,8 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
       ));
     }
 
+    restackFlows(boxes);
+
     // Each OneNote box becomes its own block at the coordinates the parser
     // recovered: text boxes keep their original width (autoWidth off) so a
     // long line never grows the box sideways; equations become math blocks.
@@ -315,6 +507,38 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
       final b = (bRaw as Map).cast<String, dynamic>();
       final x = (b['x'] as num?)?.toDouble() ?? AppState.pageLeftMargin;
       final y = (b['y'] as num?)?.toDouble() ?? AppState.contentTop;
+      if (b['kind'] == 'table') {
+        // MEDIA-3 on import: the parser hands over a rectangular grid of
+        // per-cell Markdown, which is exactly what TableBlockView stores.
+        final rows = (b['cells'] as List?) ?? const [];
+        final cells = [
+          for (final row in rows)
+            [for (final c in (row as List)) c?.toString() ?? '']
+        ];
+        if (cells.isEmpty || cells.first.isEmpty) continue;
+        // OneNote records a width per column (0x1D66). Without them every
+        // column got an equal share of a guessed total, so imported tables were
+        // visibly the wrong shape and overflowed into their neighbours. Keep
+        // them only if there is one per column, so a partial array can't stretch
+        // the wrong columns.
+        final rawW = (b['col_w'] as List?) ?? const [];
+        final colWidths = rawW.length == cells.first.length
+            ? [for (final v in rawW) (v as num).toDouble()]
+            : const <double>[];
+        final content = <String, dynamic>{'cells': cells};
+        if (colWidths.isNotEmpty) content['colWidths'] = colWidths;
+        blocks.add(Block(
+          type: BlockType.table,
+          x: x,
+          y: y,
+          w: (b['w'] as num?)?.toDouble() ??
+              (colWidths.isNotEmpty
+                  ? colWidths.reduce((a, c) => a + c)
+                  : (140.0 * cells.first.length).clamp(240.0, 900.0)),
+          content: content,
+        ));
+        continue;
+      }
       if (b['kind'] == 'math') {
         final latex = (b['latex'] as String? ?? '').trim();
         if (latex.isEmpty) continue;
@@ -342,14 +566,18 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
       final content = <String, dynamic>{'text': text, 'autoWidth': false};
       final font = b['font'] as String?;
       if (font != null && font.isNotEmpty) content['font'] = font;
-      // Render at OneNote's text metrics (pt → px in the page's 120 dpi
-      // space; OneNote's line spacing ≈ 1.32) so box heights track the
-      // source and absolutely-positioned neighbours don't drift apart.
+      // Render at OneNote's text metrics (pt → px in the page's 120 dpi space)
+      // so box heights track the source and absolutely-positioned neighbours
+      // don't drift apart.
       final sizePt = (b['font_size_pt'] as num?)?.toDouble();
       if (sizePt != null && sizePt > 4) {
         content['fontSize'] = sizePt * 120.0 / 72.0;
-        content['lineHeight'] = 1.35; // calibrated against real pages
+        content['lineHeight'] = oneNoteLineHeight;
       }
+      // Pin the text to the box origin: OneNote's stored offset IS the first
+      // line's position, so our comfortable inset would shift every line in the
+      // box down-and-right of the source (see [importedTextPadding]).
+      content['inset'] = 0;
       blocks.add(Block(
         type: BlockType.text,
         x: x,

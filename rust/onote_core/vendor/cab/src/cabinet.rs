@@ -185,7 +185,12 @@ impl<R: Read + Seek> Cabinet<R> {
     ) -> io::Result<Vec<u8>> {
         let reader = self.read_folder(index)?;
         let mut out = Vec::new();
-        reader.take(limit).read_to_end(&mut out)?;
+        // Keep whatever decompressed successfully. A folder is one continuous
+        // LZX stream, so a single bad/corrupt data block used to abort the read
+        // and lose EVERY file in the folder — which, for a .onepkg, is the whole
+        // notebook. The caller slices per-file and skips entries that fall
+        // beyond the recovered prefix. (Openote patch.)
+        let _ = reader.take(limit).read_to_end(&mut out);
         Ok(out)
     }
 

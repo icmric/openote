@@ -8,6 +8,7 @@ import '../canvas/canvas_controller.dart';
 import '../core/engine.dart';
 import '../core/ids.dart';
 import '../core/onote_ffi.dart';
+import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
 import '../store/repository.dart';
 
@@ -36,7 +37,25 @@ class AppState extends ChangeNotifier {
 
   // Workspace / navigation
   String? notebookId;
-  List<TreeNode> nodes = [];
+
+  List<TreeNode> _nodes = [];
+
+  /// The current notebook's tree, ordered by position.
+  List<TreeNode> get nodes => _nodes;
+  set nodes(List<TreeNode> v) {
+    _nodes = v;
+    nodesRevision++;
+  }
+
+  /// Bumped whenever the tree changes shape *or* a node's rendered fields
+  /// change. The navigator memoises its widget subtree on this, so typing in a
+  /// page no longer rebuilds every section and page tile (§7a.6).
+  int nodesRevision = 0;
+
+  /// Call after mutating a [TreeNode] in place (rename, indent) — those don't
+  /// replace the list, so the setter above wouldn't notice.
+  void bumpNodes() => nodesRevision++;
+
   String? pageId;
   final Set<String> collapsedGroups = {};
 
@@ -104,15 +123,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Collapse state (OneNote-style hierarchy folding).
-  final Set<String> collapsedSections = {};
+  // Collapse state (OneNote-style hierarchy folding). Sections no longer
+  // collapse — the stacked navigator shows one section's pages at a time, so
+  // the old per-section collapse set had no readers once the tree layout went.
   final Set<String> collapsedPages = {};
-  void toggleSectionCollapsed(String id) {
-    collapsedSections.contains(id)
-        ? collapsedSections.remove(id)
-        : collapsedSections.add(id);
-    notifyListeners();
-  }
 
   void togglePageCollapsed(String id) {
     collapsedPages.contains(id)
@@ -296,6 +310,36 @@ class AppState extends ChangeNotifier {
       b.content.remove('font');
     } else {
       b.content['font'] = font;
+    }
+    updateBlock(b);
+  }
+
+  /// The font size of the text block being edited, in logical px, or null when
+  /// it uses the default. Imported OneNote boxes carry an explicit size.
+  double? get activeBlockFontSize {
+    final id = editingBlockId;
+    if (id == null) return null;
+    final b = blocks.where((x) => x.id == id).firstOrNull;
+    if (b == null || b.type != BlockType.text) return null;
+    return (b.content['fontSize'] as num?)?.toDouble();
+  }
+
+  /// Set (or clear, with null) the font size of the text block being edited
+  /// (TEXT-1). Sizes are offered in points and stored in the page's 120-dpi px.
+  void setActiveBlockFontSize(double? pt) {
+    final id = editingBlockId;
+    if (id == null) return;
+    final b = blocks.where((x) => x.id == id).firstOrNull;
+    if (b == null || b.type != BlockType.text) return;
+    pushUndo();
+    if (pt == null) {
+      b.content.remove('fontSize');
+      b.content.remove('lineHeight');
+    } else {
+      b.content['fontSize'] = pt * 120.0 / 72.0;
+      // Keep OneNote's pitch so a resized box still lines up with its
+      // neighbours (see `oneNoteLineHeight`).
+      b.content['lineHeight'] = oneNoteLineHeight;
     }
     updateBlock(b);
   }
@@ -558,6 +602,17 @@ class AppState extends ChangeNotifier {
     await repo.renameNotebook(id, title);
     notifyListeners();
   }
+
+  /// Duplicate a notebook (contents included) without switching to it.
+  Future<NotebookRef> duplicateNotebook(String id) async {
+    await flushSave(); // the copy is a byte copy — settle pending writes first
+    final ref = await repo.duplicateNotebook(id);
+    notifyListeners();
+    return ref;
+  }
+
+  ({int sections, int pages}) notebookCounts(String id) =>
+      repo.notebookCounts(id);
 
   /// Soft-delete a notebook to the recycle bin. Refuses the last one (there's
   /// always somewhere to be). Returns false if it couldn't (only notebook).
@@ -829,24 +884,28 @@ class AppState extends ChangeNotifier {
   }
 
   void renameNode(String id, String title) {
-    final n = nodes.firstWhere((n) => n.id == id);
+    final n = node(id);
+    if (n == null) return; // deleted while a menu was open
     n.title = title;
     repo.upsertNode(notebookId!, n);
+    bumpNodes();
     notifyListeners();
   }
 
   /// Subpage indent (ORG-6): level 0..2.
   void indentPage(String id, int delta) {
-    final n = nodes.firstWhere((n) => n.id == id);
-    if (n.kind != NodeKind.page) return;
+    final n = node(id);
+    if (n == null || n.kind != NodeKind.page) return;
     n.level = (n.level + delta).clamp(0, 2);
     repo.upsertNode(notebookId!, n);
+    bumpNodes();
     notifyListeners();
   }
 
   /// Reorder among siblings (ORG-2, menu-driven for MVP).
   void moveNode(String id, int delta) {
-    final n = nodes.firstWhere((n) => n.id == id);
+    final n = node(id);
+    if (n == null) return;
     final siblings = nodes
         .where((s) => s.kind == n.kind && s.parentId == n.parentId)
         .toList();
@@ -864,8 +923,8 @@ class AppState extends ChangeNotifier {
   }
 
   void moveSectionToGroup(String sectionId, String? groupId) {
-    final n = nodes.firstWhere((n) => n.id == sectionId);
-    if (n.kind != NodeKind.section) return;
+    final n = node(sectionId);
+    if (n == null || n.kind != NodeKind.section) return;
     n.parentId = groupId;
     repo.upsertNode(notebookId!, n);
     nodes = repo.loadNodes(notebookId!);
@@ -899,25 +958,47 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // The links panel is rebuilt on every notify while it's open, and both of
+  // these are expensive: one is a synchronous SQLite query on the UI thread, the
+  // other scans every text block. Cache them against (page, docRevision,
+  // nodesRevision) so a keystroke doesn't re-run either.
+  ({String key, List<TreeNode> back, List<TreeNode> out})? _linkCache;
+  static final _outgoingLinkRe = RegExp(r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]');
+
+  void _ensureLinks() {
+    final key = '$pageId#$docRevision#$nodesRevision#${_dirty ? 1 : 0}';
+    if (_linkCache?.key == key) return;
+    final back = pageId == null
+        ? <TreeNode>[]
+        : repo
+            .backlinkPageIds(notebookId!, pageId!)
+            .map(node)
+            .whereType<TreeNode>()
+            .toList();
+    // Outgoing: `[[Title|id]]` resolves by id, a bare `[[Title]]` by title —
+    // the panel used to ignore the bare form entirely.
+    final out = <String, TreeNode>{};
+    for (final b in blocks.where((b) => b.type == BlockType.text)) {
+      for (final m
+          in _outgoingLinkRe.allMatches(b.content['text'] as String? ?? '')) {
+        final target = m.group(2) != null
+            ? node(m.group(2))
+            : pageByTitle(m.group(1)!);
+        if (target != null) out[target.id] = target;
+      }
+    }
+    _linkCache = (key: key, back: back, out: out.values.toList());
+  }
+
   List<TreeNode> backlinksForCurrent() {
-    if (pageId == null) return [];
-    return repo
-        .backlinkPageIds(notebookId!, pageId!)
-        .map(node)
-        .whereType<TreeNode>()
-        .toList();
+    _ensureLinks();
+    return _linkCache!.back;
   }
 
   /// Outgoing wiki-links found in the current page's text blocks.
   List<TreeNode> outgoingLinksForCurrent() {
-    final ids = <String>{};
-    final re = RegExp(r'\[\[[^\]|]+\|([^\]]+)\]\]');
-    for (final b in blocks.where((b) => b.type == BlockType.text)) {
-      for (final m in re.allMatches(b.content['text'] as String? ?? '')) {
-        ids.add(m.group(1)!);
-      }
-    }
-    return ids.map(node).whereType<TreeNode>().toList();
+    _ensureLinks();
+    return _linkCache!.out;
   }
 
   List<TreeNode> get pages =>
@@ -1291,23 +1372,55 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The last save failure, or null when the last save succeeded. Surfaced in
+  /// the status bar — a silent failed save used to read as "Saved".
+  Object? saveError;
+
   Future<void> flushSave() async {
     _saveDebounce?.cancel();
     if (!_dirty || pageId == null || notebookId == null) return;
-    _dirty = false;
-    // The engine owns persistence: version snapshot (throttled, SYNC-8) + the
-    // mirror write, plus content-hash change-detection on the Rust engine (a
-    // save whose hash is unchanged is skipped). See RustEngine/MirrorEngine.
-    await engine.savePage(notebookId!, pageId!, blocks, pageProps);
+    // Keep `_dirty` TRUE until the write actually lands: clearing it first meant
+    // a throwing save (disk full, DB locked) left the page marked clean and the
+    // status bar claiming "Saved" while the change was never persisted.
+    final id = pageId!, nb = notebookId!;
+    try {
+      // The engine owns persistence: version snapshot (throttled, SYNC-8) + the
+      // mirror write, plus content-hash change-detection on the Rust engine (a
+      // save whose hash is unchanged is skipped). See RustEngine/MirrorEngine.
+      await engine.savePage(nb, id, blocks, pageProps);
+      _dirty = false;
+      saveError = null;
+    } catch (e) {
+      // Stay dirty so the next edit (or exit flush) retries, and tell the user.
+      saveError = e;
+      notifyListeners();
+      return;
+    }
     // Keep session state fresh so closing the app never loses your place.
     _rememberView();
     _persistSession();
     notifyListeners();
   }
 
+  /// Persist everything before the process goes away (window close, logout).
+  /// Awaited by the app's [AppLifecycleListener]; without it, up to one debounce
+  /// interval of edits was silently lost on every close.
+  Future<void> shutdown() async {
+    _saveDebounce?.cancel();
+    try {
+      await flushSave();
+    } catch (_) {
+      // Never block exit on a save failure — flushSave already recorded it.
+    }
+    _rememberView();
+    _persistSession();
+    await repo.flushWorkspace(); // settle the debounced registry write
+  }
+
   @override
   void dispose() {
     _saveDebounce?.cancel();
+    canvas.dispose();
     repo.dispose();
     super.dispose();
   }

@@ -8,13 +8,22 @@
 //! **section group**, preserved via the `group` field.
 
 use serde::Serialize;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 use crate::onenote::{import_one, ImportedSection};
 
 /// Cap per-file decompressed size (a hostile cabinet can otherwise expand
 /// without bound — the classic zip-bomb).
 const MAX_SECTION_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Cap the TOTAL decompressed bytes we hold at once.
+///
+/// Single-pass folder extraction (the import speed-up) keeps every section's
+/// bytes in memory simultaneously because the parse phase runs in parallel over
+/// them, so the per-section cap above is no longer the whole story: a cabinet
+/// declaring 65k sections could still exhaust memory one legal section at a
+/// time. Collection stops at this budget and the skipped sections are reported.
+const MAX_TOTAL_BYTES: u64 = 512 * 1024 * 1024;
 
 #[derive(Serialize)]
 pub struct PackageSection {
@@ -33,19 +42,37 @@ pub struct ImportedPackage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     pub sections: Vec<PackageSection>,
+    /// Sections present in the package that could NOT be read, by name.
+    ///
+    /// These used to vanish: the result still said `ok: true` and the user
+    /// simply received fewer sections than their notebook contained, with
+    /// nothing said. The importer surfaces this so a partial import announces
+    /// itself.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub failed: Vec<String>,
 }
 
 fn fail(msg: &str) -> ImportedPackage {
-    ImportedPackage { ok: false, error: Some(msg.into()), sections: vec![] }
+    ImportedPackage {
+        ok: false,
+        error: Some(msg.into()),
+        sections: vec![],
+        failed: vec![],
+    }
 }
 
 /// Parse a `.onepkg` notebook package into structured content, as JSON.
 pub fn import_onepkg_json(bytes: &[u8]) -> String {
-    let pkg = match std::panic::catch_unwind(|| import_onepkg(bytes)) {
-        Ok(p) => p,
-        Err(_) => fail("failed to parse .onepkg (unexpected structure)"),
-    };
-    serde_json::to_string(&pkg).unwrap_or_else(|_| "{\"ok\":false}".into())
+    // Serialization runs INSIDE the guard — a panic there would otherwise
+    // unwind across the C ABI (undefined behaviour).
+    std::panic::catch_unwind(|| {
+        let pkg = import_onepkg(bytes);
+        serde_json::to_string(&pkg).unwrap_or_else(|_| "{\"ok\":false}".into())
+    })
+    .unwrap_or_else(|_| {
+        "{\"ok\":false,\"error\":\"failed to parse .onepkg (unexpected structure)\"}"
+            .into()
+    })
 }
 
 fn import_onepkg(bytes: &[u8]) -> ImportedPackage {
@@ -74,28 +101,52 @@ fn import_onepkg(bytes: &[u8]) -> ImportedPackage {
         })
         .collect();
     let mut payloads: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut failed: Vec<String> = Vec::new();
+    let mut budget = MAX_TOTAL_BYTES;
     for (fi, files) in folder_files.iter().enumerate() {
         if !files.iter().any(|(n, _, _)| n.to_ascii_lowercase().ends_with(".one")) {
             continue; // folder holds only metadata (.onetoc2 etc.)
         }
-        // Cap the folder stream at the declared extent (zip-bomb guard).
+        // Cap the folder stream at the declared extent, and never beyond one
+        // section's worth of slack. Both `uncompressed_offset` and
+        // `uncompressed_size` come from attacker-controlled headers, so the cap
+        // has to be ours, not theirs.
         let extent = files
             .iter()
-            .map(|(_, off, size)| off + size)
+            .map(|(_, off, size)| off.saturating_add(*size))
             .max()
             .unwrap_or(0)
-            .min(MAX_SECTION_BYTES * 4);
-        let Ok(data) = cabinet.read_folder_data(fi, extent) else {
-            continue;
-        };
-        for (name, off, size) in files {
-            if !name.to_ascii_lowercase().ends_with(".one") || *size > MAX_SECTION_BYTES {
+            .min(MAX_SECTION_BYTES);
+        let data = match cabinet.read_folder_data(fi, extent) {
+            Ok(d) => d,
+            Err(_) => {
+                // The patched reader hands back what it managed to decompress,
+                // so an error here means nothing usable at all.
+                failed.extend(
+                    files
+                        .iter()
+                        .filter(|(n, _, _)| n.to_ascii_lowercase().ends_with(".one"))
+                        .map(|(n, _, _)| n.clone()),
+                );
                 continue;
             }
-            let (start, end) = (*off as usize, (*off + *size) as usize);
-            if end > data.len() {
-                continue; // truncated folder — skip what we can't slice
+        };
+        for (name, off, size) in files {
+            if !name.to_ascii_lowercase().ends_with(".one") {
+                continue;
             }
+            if *size > MAX_SECTION_BYTES || *size > budget {
+                failed.push(name.clone()); // too big, or the budget is spent
+                continue;
+            }
+            let (start, end) = (*off as usize, off.saturating_add(*size) as usize);
+            if end > data.len() {
+                // A truncated (or dishonestly-declared) folder: only part of
+                // this section is present. Say so instead of dropping it.
+                failed.push(name.clone());
+                continue;
+            }
+            budget -= *size;
             payloads.push((name.clone(), data[start..end].to_vec()));
         }
     }
@@ -134,7 +185,10 @@ fn import_onepkg(bytes: &[u8]) -> ImportedPackage {
     let mut sections = Vec::new();
     for (i, (name, _)) in payloads.iter().enumerate() {
         let Some(section) = slots[i].lock().unwrap().take() else {
-            continue; // damaged or unsupported entry — import the rest
+            // Damaged or unsupported entry — import the rest, but RECORD it so
+            // the user is told their notebook came across incomplete.
+            failed.push(name.clone());
+            continue;
         };
         // "Group/Sub/Section.one" → group "Group/Sub", name "Section".
         let norm = name.replace('\\', "/");
@@ -153,7 +207,16 @@ fn import_onepkg(bytes: &[u8]) -> ImportedPackage {
     if sections.is_empty() {
         return fail("package contained no readable .one sections");
     }
-    ImportedPackage { ok: true, error: None, sections }
+    // Report by section name (the stem), matching what the user sees in the app.
+    let failed = failed
+        .iter()
+        .map(|n| {
+            let norm = n.replace('\\', "/");
+            let file = norm.rsplit('/').next().unwrap_or(&norm).to_string();
+            file.strip_suffix(".one").unwrap_or(&file).to_string()
+        })
+        .collect();
+    ImportedPackage { ok: true, error: None, sections, failed }
 }
 
 #[cfg(test)]

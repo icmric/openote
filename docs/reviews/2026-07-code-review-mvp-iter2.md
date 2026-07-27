@@ -1,4 +1,8 @@
-# Code Review — MVP iteration 2 vs. specifications
+# Code Review — MVP iteration 2 vs. specifications *(now the iteration log)*
+
+> ⚠ **This document outgrew its title.** It began as the iteration-2 audit and has since accumulated one section per iteration (A–N, covering iterations 3–22, out of alphabetical order — `F` sits between `L` and `M`). Treat it as the project's **iteration log / engineering history**, not a current assessment: the reverse-engineering notes in §L and the performance analysis in §N are the most reusable parts.
+>
+> **For the current state of the project, read the [Phase 1 exit readiness review](2026-07-code-review-phase1-exit.md) (2026-07-27)** — a whole-tree audit whose scoreboard supersedes the status claims below. Several items marked ✅ here are only partially complete against their full requirement text.
 
 > **Date:** 2026-07-22 · **Scope:** everything under `app/` (20 source files, 2 test files) audited against the [PRD](../02-product-requirements.md) (MVP cut, §9), the [File Format Spec](../specs/10-file-format-spec.md), [Data Model Spec](../specs/11-data-model-spec.md), [Math Input Spec](../specs/12-math-input-spec.md), [Ink Data Spec](../specs/13-ink-data-spec.md), and the [Style Guide](../05-style-guide.md).
 > **Verdict:** the format/storage layer conforms well; the interaction layer had **two Must-level spec violations** (F-1, F-2), one **data-loss bug** (F-3), and a cluster of Must-level gaps (multi-select, culling, section groups, find, area-erase). Iteration 3 fixes everything marked ✅; items marked ⏳ are tracked with rationale.

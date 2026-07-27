@@ -1,3 +1,5 @@
+import 'dart:ui' show AppExitResponse;
+
 import 'package:flutter/material.dart';
 
 import 'state/app_state.dart';
@@ -26,6 +28,7 @@ class OpenoteBoot extends StatefulWidget {
 class _OpenoteBootState extends State<OpenoteBoot> {
   AppState? _app;
   (Object, StackTrace)? _error;
+  AppLifecycleListener? _lifecycle;
 
   @override
   void initState() {
@@ -38,10 +41,26 @@ class _OpenoteBootState extends State<OpenoteBoot> {
       final repo = await Repository.open();
       final app = AppState(repo);
       await app.init();
+      // Persist before the process goes away. Autosave is debounced, so without
+      // this the last edits before a window close were silently lost — and the
+      // SQLite handles never got a clean close (no WAL checkpoint).
+      _lifecycle = AppLifecycleListener(
+        onExitRequested: () async {
+          await app.shutdown();
+          return AppExitResponse.exit;
+        },
+      );
       if (mounted) setState(() => _app = app);
     } catch (e, st) {
       if (mounted) setState(() => _error = (e, st));
     }
+  }
+
+  @override
+  void dispose() {
+    _lifecycle?.dispose();
+    _app?.dispose();
+    super.dispose();
   }
 
   @override

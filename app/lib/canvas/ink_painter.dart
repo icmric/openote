@@ -21,16 +21,52 @@ class InkPainter extends CustomPainter {
   final Stroke? wet; // in-progress stroke, drawn last (mutated between repaints)
   final Color autoColor;
 
+  /// Tessellated outlines, attached to the **Stroke object itself**.
+  ///
+  /// Solving a stroke's variable-width outline (`getStroke`) is the expensive
+  /// part of drawing ink, and it used to run for every visible stroke on every
+  /// repaint. Because wet ink repaints once per stylus sample (100+/s), a page
+  /// carrying a few hundred imported strokes re-solved all of them per sample —
+  /// the dominant cost of inking on imported pages.
+  ///
+  /// Keyed by object identity rather than `Stroke.id` on purpose: stroke
+  /// coordinates are page-absolute and are **mutated in place** when an ink
+  /// block is dragged, so an id-keyed cache would hand back stale geometry.
+  /// The canvas re-decodes strokes into fresh objects whenever a block's
+  /// `updatedAt` changes, which invalidates these entries automatically. An
+  /// [Expando] also holds its keys weakly, so nothing needs evicting.
+  static final Expando<Path> _outlines = Expando<Path>('inkOutline');
+
   @override
   void paint(Canvas canvas, Size size) {
     for (final s in strokes) {
-      _paintStroke(canvas, s);
+      _paintStroke(canvas, s, cache: true);
     }
-    if (wet != null) _paintStroke(canvas, wet!);
+    // The wet stroke grows every sample — never cache it.
+    if (wet != null) _paintStroke(canvas, wet!, cache: false);
   }
 
-  void _paintStroke(Canvas canvas, Stroke s) {
+  void _paintStroke(Canvas canvas, Stroke s, {required bool cache}) {
     if (s.x.isEmpty) return;
+    Path? path = cache ? _outlines[s] : null;
+    if (path == null) {
+      path = _outlinePath(s);
+      if (path == null) return;
+      if (cache) _outlines[s] = path;
+    }
+    final base = s.colorHex == 'auto' ? autoColor : colorFromHex(s.colorHex);
+    final paint = Paint()
+      ..color = base.withValues(alpha: s.opacity)
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+    if (s.tool == 'highlighter') {
+      paint.blendMode = BlendMode.multiply;
+    }
+    canvas.drawPath(path, paint);
+  }
+
+  /// Solve one stroke's variable-width outline into a fillable path.
+  Path? _outlinePath(Stroke s) {
     final hasPressure = s.p.isNotEmpty;
     final points = [
       for (var i = 0; i < s.x.length; i++)
@@ -46,7 +82,7 @@ class InkPainter extends CustomPainter {
         simulatePressure: !hasPressure,
       ),
     );
-    if (outline.isEmpty) return;
+    if (outline.isEmpty) return null;
     // Use dx/dy: getStroke's outline points are Offsets in some
     // perfect_freehand versions and PointVectors (an Offset subclass) in
     // others — dx/dy is the API that exists in both.
@@ -54,16 +90,7 @@ class InkPainter extends CustomPainter {
     for (final pt in outline.skip(1)) {
       path.lineTo(pt.dx, pt.dy);
     }
-    path.close();
-    final base = s.colorHex == 'auto' ? autoColor : colorFromHex(s.colorHex);
-    final paint = Paint()
-      ..color = base.withValues(alpha: s.opacity)
-      ..style = PaintingStyle.fill
-      ..isAntiAlias = true;
-    if (s.tool == 'highlighter') {
-      paint.blendMode = BlendMode.multiply;
-    }
-    canvas.drawPath(path, paint);
+    return path..close();
   }
 
   @override

@@ -1,0 +1,111 @@
+// Re-stacking a container's flow with real text measurement.
+//
+// The parser can only cost *source* lines at a fixed 22px pitch, so a paragraph
+// that wraps to three visual lines is charged for one and everything below it
+// rides up — which is why an imported table sat too high and consecutive items
+// collided. Font metrics only exist in the renderer's process, so the correction
+// happens here.
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:openote/export/onenote_import.dart';
+
+void main() {
+  Map<String, dynamic> text(int flow, double y, String md, {double? w}) => {
+        'kind': 'text',
+        'flow': flow,
+        'x': 60.0,
+        'y': y,
+        'markdown': md,
+        'font_size_pt': 11.0,
+        if (w != null) 'w': w,
+      };
+
+  Map<String, dynamic> table(int flow, double y) => {
+        'kind': 'table',
+        'flow': flow,
+        'x': 60.0,
+        'y': y,
+        'col_w': [61.9, 61.9],
+        'cells': [
+          ['P', 'Q'],
+          ['1', '0'],
+        ],
+      };
+
+  test('the anchor keeps its parsed position; only what follows moves', () {
+    final boxes = <dynamic>[
+      text(1, 136.0, 'one line'),
+      table(1, 200.0),
+    ];
+    restackFlows(boxes);
+    expect(boxes[0]['y'], 136.0,
+        reason: "the first box is OneNote's own offset and is already correct");
+    expect(boxes[1]['y'], greaterThan(136.0));
+  });
+
+  test('a wrapping paragraph pushes the table down, not up', () {
+    // The same text in a narrow box wraps further, so the table must sit lower.
+    const long =
+        'This is a long paragraph that will certainly wrap several times when '
+        'it is laid out inside a narrow container, and every wrapped line has '
+        'to be paid for in the flow below it.';
+    final narrow = <dynamic>[text(1, 100.0, long, w: 200), table(1, 0.0)];
+    final wide = <dynamic>[text(2, 100.0, long, w: 900), table(2, 0.0)];
+    restackFlows(narrow);
+    restackFlows(wide);
+    expect(narrow[1]['y'], greaterThan(wide[1]['y']),
+        reason: 'wrapping is exactly what the parser could not see');
+    // And the parser's flat estimate — one source line at 22px + 14 gap — is
+    // far below the truth for the narrow case.
+    expect(narrow[1]['y'], greaterThan(100.0 + 36.0));
+  });
+
+  test('an in-flow image is costed at its display height, not a text line', () {
+    final withImage = <dynamic>[
+      text(1, 100.0, 'intro\n![image](onote-img://0 =264x198)\nafter'),
+      table(1, 0.0),
+    ];
+    final withoutImage = <dynamic>[
+      text(2, 100.0, 'intro\nafter'),
+      table(2, 0.0),
+    ];
+    restackFlows(withImage);
+    restackFlows(withoutImage);
+    final delta = (withImage[1]['y'] as double) - (withoutImage[1]['y'] as double);
+    expect(delta, closeTo(198.0, 1.0),
+        reason: 'a 198px picture must cost 198px, not one 22px line');
+  });
+
+  test('boxes outside a flow are left exactly where they were', () {
+    final boxes = <dynamic>[
+      {'kind': 'table', 'flow': 0, 'x': 60.0, 'y': 500.0, 'cells': <dynamic>[]},
+      {'kind': 'image', 'x': 700.0, 'y': 120.0},
+    ];
+    restackFlows(boxes);
+    expect(boxes[0]['y'], 500.0);
+    expect(boxes[1]['y'], 120.0);
+  });
+
+  test('a single-box flow is untouched — there is nothing below to correct', () {
+    // This is the common case for imported tables: each sits in its own
+    // container with its own recorded offset.
+    final boxes = <dynamic>[table(3, 270.2)];
+    restackFlows(boxes);
+    expect(boxes[0]['y'], 270.2);
+  });
+
+  test('separate flows do not interfere', () {
+    final boxes = <dynamic>[
+      text(1, 100.0, 'a'),
+      text(2, 900.0, 'b'),
+      table(1, 0.0),
+      table(2, 0.0),
+    ];
+    restackFlows(boxes);
+    expect(boxes[0]['y'], 100.0);
+    expect(boxes[1]['y'], 900.0);
+    expect(boxes[2]['y'], greaterThan(100.0));
+    expect(boxes[2]['y'], lessThan(900.0));
+    expect(boxes[3]['y'], greaterThan(900.0));
+  });
+}

@@ -19,9 +19,12 @@ class LiveMarkdownController extends TextEditingController {
   LiveMarkdownController({super.text, required this.dark});
   bool dark;
 
-  // Inline: **b** __b__ *i* _i_ `c` ~~s~~ ==h== {{#hex text}}
+  // Inline: **b** __b__ *i* _i_ `c` ~~s~~ ==h== ++u++ {{#hex text}}
+  // `++u++` is appended LAST so the group numbers the dispatch below relies on
+  // are unchanged.
   static final _inlineRe = RegExp(
-      r'(\*\*(.+?)\*\*)|(__(.+?)__)|(\*(.+?)\*)|(_(.+?)_)|(`(.+?)`)|(~~(.+?)~~)|(==(.+?)==)|(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})');
+      r'(\*\*(.+?)\*\*)|(__(.+?)__)|(\*(.+?)\*)|(_(.+?)_)|(`(.+?)`)|(~~(.+?)~~)|(==(.+?)==)|(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})'
+      r'|(\+\+(.+?)\+\+)');
   static final _headingRe = RegExp(r'^(#{1,6})( +)');
   static final _prefixRe = RegExp(r'^(\s*)(- \[[ xX]\] |[-*] |\d+\. |> )');
 
@@ -147,6 +150,8 @@ class LiveMarkdownController extends TextEditingController {
             backgroundColor: dark
                 ? OnoteColors.brass700.withValues(alpha: .45)
                 : const Color(0xFFF7E27A));
+      } else if (m.group(18) != null) {
+        inner = cBase.copyWith(decoration: TextDecoration.underline);
       } else {
         // {{#RRGGBB[AA] text}} — asymmetric markers ('{{#'+hex+' ' … '}}')
         final hex = m.group(16)!;

@@ -47,17 +47,38 @@ class NotebookRef {
 // ── Page properties (Data Model Spec §3 page-level; CANVAS-11) ───────────
 
 class PageProps {
-  PageProps({this.background = 'blank', this.gridSize = 24, this.pageWidth = 1100});
+  PageProps({
+    this.background = 'blank',
+    this.gridSize = 24,
+    this.pageWidth = 1100,
+    Map<String, dynamic>? unknownFields,
+  }) : unknownFields = unknownFields ?? {};
   String background; // blank | grid | dotted | ruled
   double gridSize;
   double pageWidth; // presented page-surface width (CANVAS-1 v0.3)
 
-  Map<String, dynamic> toJson() =>
-      {'background': background, 'gridSize': gridSize, 'pageWidth': pageWidth};
+  /// Page-level properties written by a newer Openote (or another tool) that
+  /// this build doesn't understand. Preserved verbatim so a round-trip through
+  /// an older version never silently drops them (Data Model Spec §8 invariant 6
+  /// — the same contract [Block.unknownFields] honours).
+  final Map<String, dynamic> unknownFields;
+
+  static const _known = {'background', 'gridSize', 'pageWidth'};
+
+  Map<String, dynamic> toJson() => {
+        'background': background,
+        'gridSize': gridSize,
+        'pageWidth': pageWidth,
+        ...unknownFields,
+      };
   factory PageProps.fromJson(Map<String, dynamic>? j) => PageProps(
         background: j?['background'] as String? ?? 'blank',
         gridSize: (j?['gridSize'] as num?)?.toDouble() ?? 24,
         pageWidth: (j?['pageWidth'] as num?)?.toDouble() ?? 1100,
+        unknownFields: {
+          for (final e in (j ?? const {}).entries)
+            if (!_known.contains(e.key)) e.key: e.value,
+        },
       );
 }
 
@@ -83,6 +104,7 @@ class Block {
     this.w = 320,
     this.h,
     this.z = 0,
+    this.rotation = 0,
     this.placement = 'free',
     this.frameId,
     Map<String, dynamic>? content,
@@ -103,6 +125,13 @@ class Block {
   double w;
   double? h; // null = auto-height
   int z;
+
+  /// Degrees clockwise. **Round-tripped but not yet applied when rendering** —
+  /// no UI creates a rotated block. It is a real envelope field rather than an
+  /// unknown-field passenger because the spec defines it; previously `toJson`
+  /// hard-coded `0` while `_known` claimed the key, so any non-zero rotation in
+  /// a file was destroyed on the first load→save cycle.
+  double rotation;
   String placement; // 'free' | 'snapped'
   String? frameId;
   Map<String, dynamic> content;
@@ -121,7 +150,7 @@ class Block {
         'id': id,
         'type': type.name,
         'x': x, 'y': y, 'w': w, 'h': h,
-        'rotation': 0,
+        'rotation': rotation,
         'z': z,
         'placement': placement,
         'frameId': frameId,
@@ -141,6 +170,7 @@ class Block {
         w: (j['w'] as num?)?.toDouble() ?? 320,
         h: (j['h'] as num?)?.toDouble(),
         z: (j['z'] as num?)?.toInt() ?? 0,
+        rotation: (j['rotation'] as num?)?.toDouble() ?? 0,
         placement: j['placement'] as String? ?? 'free',
         frameId: j['frameId'] as String?,
         content: (j['content'] as Map?)?.cast<String, dynamic>() ?? {},
@@ -166,12 +196,16 @@ class Stroke {
     List<double>? x,
     List<double>? y,
     List<double>? p,
+    List<double>? tx,
+    List<double>? ty,
     List<int>? t,
     int? strokeStart,
   })  : id = id ?? newId(),
         x = x ?? [],
         y = y ?? [],
         p = p ?? [],
+        tx = tx ?? [],
+        ty = ty ?? [],
         t = t ?? [],
         strokeStart = strokeStart ?? nowMs();
 
@@ -181,13 +215,20 @@ class Stroke {
   final double size;
   final double opacity;
   final List<double> x, y, p;
+
+  /// Pen tilt (Ink Data Spec §2). Empty when the device didn't report it — which
+  /// is every device Flutter currently exposes tilt-free, so we don't *capture*
+  /// it yet. We do **round-trip** whatever a file contains: these were previously
+  /// written as `const []` and never read back, so tilt recorded by another tool
+  /// was destroyed by simply opening and saving the page.
+  final List<double> tx, ty;
   final List<int> t;
   final int strokeStart;
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'brush': {'tool': tool, 'color': colorHex, 'size': size, 'opacity': opacity},
-        'x': x, 'y': y, 'p': p, 'tx': const [], 'ty': const [],
+        'x': x, 'y': y, 'p': p, 'tx': tx, 'ty': ty,
         't': t, 'strokeStart': strokeStart,
       };
 
@@ -202,6 +243,8 @@ class Stroke {
       x: (j['x'] as List).map((e) => (e as num).toDouble()).toList(),
       y: (j['y'] as List).map((e) => (e as num).toDouble()).toList(),
       p: ((j['p'] as List?) ?? const []).map((e) => (e as num).toDouble()).toList(),
+      tx: ((j['tx'] as List?) ?? const []).map((e) => (e as num).toDouble()).toList(),
+      ty: ((j['ty'] as List?) ?? const []).map((e) => (e as num).toDouble()).toList(),
       t: ((j['t'] as List?) ?? const []).map((e) => (e as num).toInt()).toList(),
       strokeStart: (j['strokeStart'] as num?)?.toInt(),
     );
