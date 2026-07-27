@@ -2,7 +2,10 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
+import '../core/platform_open.dart';
+import '../export/md_common.dart' show safeFilename;
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -44,6 +47,12 @@ class FileBlockView extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           IconButton(
+            icon: const Icon(Icons.open_in_new, size: 16),
+            visualDensity: VisualDensity.compact,
+            tooltip: 'Open with the default app',
+            onPressed: () => _openWithDefaultApp(context),
+          ),
+          IconButton(
             icon: const Icon(Icons.download_outlined, size: 16),
             visualDensity: VisualDensity.compact,
             tooltip: 'Save a copy…',
@@ -53,6 +62,38 @@ class FileBlockView extends StatelessWidget {
       ),
     );
   }
+
+  /// MEDIA-2: open the attachment in whatever application owns its type.
+  ///
+  /// The bytes live in the notebook's blob store, so there's no path to hand the
+  /// OS — materialise a copy in the temp directory under the original filename
+  /// (so the extension drives the file association) and open that.
+  Future<void> _openWithDefaultApp(BuildContext context) async {
+    final hash = block.content['blob'] as String?;
+    if (hash == null) return;
+    final bytes = app.repo.getBlob(app.notebookId!, hash);
+    if (bytes == null) {
+      if (context.mounted) _toast(context, 'That attachment is missing.');
+      return;
+    }
+    final name = (block.content['name'] as String?)?.trim();
+    final safe = safeFilename(name == null || name.isEmpty ? 'attachment' : name);
+    try {
+      final dir = await Directory.systemTemp.createTemp('onote_open_');
+      final f = File(p.join(dir.path, safe));
+      await f.writeAsBytes(bytes);
+      final ok = await PlatformOpen.file(f.path);
+      if (!ok && context.mounted) {
+        _toast(context,
+            'No app is registered for that file type — use “Save a copy…”.');
+      }
+    } catch (e) {
+      if (context.mounted) _toast(context, "Couldn't open that attachment: $e");
+    }
+  }
+
+  void _toast(BuildContext context, String msg) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
   Future<void> _saveCopy(BuildContext context) async {
     final hash = block.content['blob'] as String?;

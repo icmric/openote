@@ -6,9 +6,10 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'code_highlight.dart';
 
-/// Code block (CODE-1 interim): monospace, language label, copy button,
-/// preserved formatting. Syntax highlighting arrives with the re_highlight
-/// integration pass — tracked, not forgotten. content: { language, source }.
+/// Code block (CODE-1): monospace, language label, copy button, preserved
+/// formatting, and dependency-free syntax highlighting (see `code_highlight`;
+/// swappable for `re_highlight` later without touching this view).
+/// content: { language, source }.
 class CodeBlockView extends StatefulWidget {
   const CodeBlockView({super.key, required this.block, required this.app});
   final Block block;

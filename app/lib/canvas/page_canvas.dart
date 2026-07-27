@@ -33,6 +33,11 @@ enum _DragMode { none, pending, marquee, moveSelection, pan }
 
 class _PageCanvasState extends State<PageCanvas> {
   Stroke? _wet;
+
+  /// Bumped per wet-ink point so ONLY the ink layer repaints (the painter
+  /// listens via `repaint:`). A setState per pointer move rebuilt every
+  /// visible block at stylus rate — the "inking feels sluggish" report.
+  final ValueNotifier<int> _wetTick = ValueNotifier(0);
   bool _eraseUndoPushed = false;
   bool _moveUndoPushed = false;
 
@@ -58,19 +63,33 @@ class _PageCanvasState extends State<PageCanvas> {
 
   bool get _lassoTool => app.tool == Tool.lasso;
 
-  /// Decoded-stroke cache keyed by block id + updatedAt: strokes are decoded
-  /// once per edit, not on every frame (§7a.6 — no hot-path JSON decoding).
-  final Map<String, List<Stroke>> _strokeCache = {};
+  /// Decoded strokes per ink block, tagged with the `updatedAt` they were
+  /// decoded at: strokes are decoded once per edit, not on every frame
+  /// (§7a.6 — no hot-path JSON decoding).
+  ///
+  /// Keyed by **block id alone**, with the revision stored alongside, so a block
+  /// that changes replaces its own entry. The previous key was
+  /// `'$id#$updatedAt'` with a `length > 128 → clear()` guard, which meant a
+  /// continuous erase gesture (every pointer sample bumps `updatedAt`) piled up
+  /// 128 dead entries and then wiped the cache for *every* block on the page,
+  /// forcing a full re-decode mid-gesture.
+  final Map<String, ({int rev, List<Stroke> strokes})> _strokeCache = {};
 
   List<Stroke> _strokesOf(Block b) {
-    if (_strokeCache.length > 128) _strokeCache.clear();
-    return _strokeCache.putIfAbsent(
-      '${b.id}#${b.updatedAt}',
-      () => [
-        for (final sj in b.content['strokes'] as List)
-          Stroke.fromJson((sj as Map).cast<String, dynamic>()),
-      ],
-    );
+    final hit = _strokeCache[b.id];
+    if (hit != null && hit.rev == b.updatedAt) return hit.strokes;
+    final decoded = [
+      for (final sj in b.content['strokes'] as List)
+        Stroke.fromJson((sj as Map).cast<String, dynamic>()),
+    ];
+    _strokeCache[b.id] = (rev: b.updatedAt, strokes: decoded);
+    return decoded;
+  }
+
+  @override
+  void dispose() {
+    _wetTick.dispose();
+    super.dispose();
   }
 
   @override
@@ -78,13 +97,17 @@ class _PageCanvasState extends State<PageCanvas> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       controller.pageSize = app.pageSize();
-      // Restore this page's remembered view (§7a.5), else the default.
+      // Restore this page's remembered view if the user actually adjusted it
+      // (§7a.5); otherwise fit the page width so content placed off to the
+      // right — e.g. imported images at their OneNote offsets — is visible on
+      // open instead of sitting off-screen. A stored default view (100%,
+      // top-left) counts as "unadjusted" and gets the fit.
       final mem = app.pageId == null ? null : app.viewFor(app.pageId!);
-      if (mem != null) {
+      if (mem != null && !(mem[0] == 1.0 && mem[1] == 0.0 && mem[2] == 0.0)) {
         controller.jumpTo(mem[0], Offset(mem[1], mem[2]));
         controller.clampToPage();
       } else {
-        controller.centerPage();
+        controller.fitWidth(app.contentExtent().right);
       }
     });
   }
@@ -122,8 +145,10 @@ class _PageCanvasState extends State<PageCanvas> {
       return;
     }
     if (_wet == null) return;
-    setState(() =>
-        _addPoint(e, _clampToPagePoint(controller.screenToPage(e.localPosition))));
+    // Repaint-only: grow the stroke and nudge the ink painter. No setState —
+    // rebuilding every visible block per point made inking sluggish.
+    _addPoint(e, _clampToPagePoint(controller.screenToPage(e.localPosition)));
+    _wetTick.value++;
   }
 
   Offset _clampToPagePoint(Offset p) =>
@@ -173,15 +198,28 @@ class _PageCanvasState extends State<PageCanvas> {
       _eraseUndoPushed = true;
     }
     final radius = 12.0 / controller.scale;
+    final r2 = radius * radius;
     var changed = false;
     for (final b in app.blocks.where((b) => b.type == BlockType.ink)) {
+      // Cheap reject: the eraser can only affect a block whose rect it touches.
+      // This runs per pointer sample, so skipping distant blocks before looking
+      // at any stroke is what keeps erasing cheap on an ink-heavy page.
+      if (!_blockRect(b).inflate(radius).contains(pt)) continue;
       final strokes = (b.content['strokes'] as List);
+      // Reuse the decoded strokes rather than re-parsing JSON per sample.
+      final decoded = _strokesOf(b);
       final out = <Map<String, dynamic>>[];
       var blockChanged = false;
-      for (final sj in strokes) {
-        final s = Stroke.fromJson((sj as Map).cast<String, dynamic>());
-        final keep = List<bool>.generate(s.x.length,
-            (i) => (Offset(s.x[i], s.y[i]) - pt).distance >= radius);
+      for (var si = 0; si < strokes.length; si++) {
+        final sj = strokes[si] as Map;
+        final s = si < decoded.length
+            ? decoded[si]
+            : Stroke.fromJson(sj.cast<String, dynamic>());
+        // Squared distance — avoids a sqrt per point per sample.
+        final keep = List<bool>.generate(s.x.length, (i) {
+          final dx = s.x[i] - pt.dx, dy = s.y[i] - pt.dy;
+          return dx * dx + dy * dy >= r2;
+        });
         if (!keep.contains(false)) {
           out.add(sj.cast<String, dynamic>());
           continue;
@@ -207,6 +245,10 @@ class _PageCanvasState extends State<PageCanvas> {
               x: s.x.sublist(i, j),
               y: s.y.sublist(i, j),
               p: s.p.isEmpty ? [] : s.p.sublist(i, j),
+              // Carry per-point channels through the split, or erasing would
+              // quietly strip tilt from the surviving runs.
+              tx: s.tx.isEmpty ? [] : s.tx.sublist(i, j),
+              ty: s.ty.isEmpty ? [] : s.ty.sublist(i, j),
               t: s.t.sublist(i, j),
               strokeStart: s.strokeStart,
             ).toJson());
@@ -563,28 +605,37 @@ class _PageCanvasState extends State<PageCanvas> {
     final pageSize = Size(pw, ph);
     controller.pageSize = pageSize;
 
-    // Visible page-space rect (padded) for culling (CANVAS-9).
-    final visible = Rect.fromPoints(
-      controller.screenToPage(Offset.zero),
-      controller.screenToPage(
-          Offset(controller.viewport.width, controller.viewport.height)),
-    ).inflate(200);
-
-    final inkBlocks = app.blocks.where((b) => b.type == BlockType.ink);
-    final visibleStrokes = [
-      for (final b in inkBlocks)
-        if (visible.overlaps(_blockRect(b))) ..._strokesOf(b),
-    ];
-    final selectedInkRects = [
-      for (final b in inkBlocks)
-        if (app.selectedIds.contains(b.id)) _blockRect(b),
-    ];
-
     Widget canvas = LayoutBuilder(builder: (context, constraints) {
       controller.viewport = Size(constraints.maxWidth, constraints.maxHeight);
       return AnimatedBuilder(
         animation: controller,
-        builder: (context, _) => RepaintBoundary(
+        builder: (context, _) {
+        // Visible page-space rect (padded) for culling (CANVAS-9). Computed
+        // INSIDE the AnimatedBuilder: the transform changes without a full
+        // rebuild (viewport assignment above, per-page view restore, pans), and
+        // a culling list captured outside would go stale — the "page is blank
+        // until I scroll" bug, where the first frame culled everything against
+        // an uninitialised viewport and nothing invalidated the list.
+        final visible = Rect.fromPoints(
+          controller.screenToPage(Offset.zero),
+          controller.screenToPage(
+              Offset(controller.viewport.width, controller.viewport.height)),
+        ).inflate(200);
+        final inkBlocks = app.blocks.where((b) => b.type == BlockType.ink);
+        final visibleStrokes = [
+          for (final b in inkBlocks)
+            // Never cull the selected/editing block (CANVAS-9), so a selected
+            // ink block off-screen still paints under its selection rect.
+            if (app.selectedIds.contains(b.id) ||
+                app.editingBlockId == b.id ||
+                visible.overlaps(_blockRect(b)))
+              ..._strokesOf(b),
+        ];
+        final selectedInkRects = [
+          for (final b in inkBlocks)
+            if (app.selectedIds.contains(b.id)) _blockRect(b),
+        ];
+        return RepaintBoundary(
           key: app.canvasKey,
           child: ClipRect(
             child: Stack(
@@ -601,11 +652,21 @@ class _PageCanvasState extends State<PageCanvas> {
                     ),
                   ),
                 ),
-                // Page space
-                Positioned.fill(
+                // Page space. `Positioned(left/top only)` gives loose
+                // constraints so the inner Stack can be sized to the FULL page
+                // (not the viewport). This is essential for hit-testing: a Stack
+                // sized to the viewport refuses pointer events on children below
+                // the fold, so clicks on a tall text box's lower half used to
+                // fall through and create a new box (the reported bug).
+                Positioned(
+                  left: 0,
+                  top: 0,
                   child: Transform(
                     transform: controller.matrix,
-                    child: Stack(
+                    child: SizedBox(
+                      width: pageSize.width,
+                      height: pageSize.height,
+                      child: Stack(
                       clipBehavior: Clip.none,
                       children: [
                         Positioned(
@@ -615,7 +676,15 @@ class _PageCanvasState extends State<PageCanvas> {
                             child: RepaintBoundary(
                               child: CustomPaint(
                                 size: Size.zero,
-                                painter: InkPainter(visibleStrokes, wet: _wet),
+                                painter: InkPainter(visibleStrokes,
+                                    wet: _wet,
+                                    // Per-point repaint without widget rebuild.
+                                    repaint: _wetTick,
+                                    // Theme default for "auto" strokes: dark
+                                    // ink on light pages, light ink on dark.
+                                    autoColor: dark
+                                        ? OnoteColors.moon100
+                                        : OnoteColors.graphite900),
                               ),
                             ),
                           ),
@@ -651,6 +720,7 @@ class _PageCanvasState extends State<PageCanvas> {
                           ),
                       ],
                     ),
+                    ),
                   ),
                 ),
                 // Alignment grid — only visible while dragging a block
@@ -685,7 +755,8 @@ class _PageCanvasState extends State<PageCanvas> {
               ],
             ),
           ),
-        ),
+        );
+        },
       );
     });
 

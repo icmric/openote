@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -117,12 +118,20 @@ class _BlockViewState extends State<BlockView> {
     // content live); other blocks reuse their stored width, so panning/zooming
     // never re-measures every text box. The measured width is written back to
     // the model so persistence, export, and hit-testing agree with the screen.
-    double displayW = b.w;
+    double? displayW = b.w;
     if (b.type == BlockType.text &&
         editing &&
         b.content['autoWidth'] != false) {
       displayW = TextBlockView.autoWidth(b, dark: dark);
       b.w = displayW;
+    }
+    // Math sizes itself: equations are tall/wide in ways a stored width can't
+    // anticipate, and clamping them into the box scaled them illegibly small.
+    // A null width lets the container wrap the rendered equation; the measured
+    // size flows back through _MeasureSize below so w/h (hit-testing, marquee,
+    // culling, export) track what's actually on screen.
+    if (b.type == BlockType.math && !editing) {
+      displayW = null;
     }
 
     final content = switch (b.type) {
@@ -168,6 +177,17 @@ class _BlockViewState extends State<BlockView> {
               : MouseCursor.defer,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
+            // Trackpad two-finger scrolls arrive as PointerPanZoom events,
+            // which drag recognizers would otherwise claim — hovering a block
+            // and scrolling must pan the CANVAS, never move the block. A
+            // physical trackpad click-drag reports as a mouse pointer, so
+            // deliberate drags still work with the trackpad excluded here.
+            supportedDevices: const {
+              PointerDeviceKind.mouse,
+              PointerDeviceKind.touch,
+              PointerDeviceKind.stylus,
+              PointerDeviceKind.invertedStylus,
+            },
             onTap: editing ? null : _tap,
             onSecondaryTapUp: editing
                 ? null
@@ -179,7 +199,16 @@ class _BlockViewState extends State<BlockView> {
               clipBehavior: Clip.none,
               children: [
                 _MeasureSize(
-                  onChange: (size) => app.renderSizes[b.id] = size,
+                  onChange: (size) {
+                    app.renderSizes[b.id] = size;
+                    // Keep the model width in sync for self-sizing math blocks
+                    // (see displayW above) so hit-testing/export match the
+                    // screen. Silent sync — no notify, no updatedAt churn.
+                    if (b.type == BlockType.math &&
+                        (size.width - b.w).abs() > 2) {
+                      b.w = size.width;
+                    }
+                  },
                   child: Container(
                     width: displayW,
                     height: b.h,
@@ -215,6 +244,13 @@ class _BlockViewState extends State<BlockView> {
                     child: MouseRegion(
                       cursor: SystemMouseCursors.resizeLeftRight,
                       child: GestureDetector(
+                        // Same trackpad exclusion as the block drag above.
+                        supportedDevices: const {
+                          PointerDeviceKind.mouse,
+                          PointerDeviceKind.touch,
+                          PointerDeviceKind.stylus,
+                          PointerDeviceKind.invertedStylus,
+                        },
                         onPanUpdate: _resize,
                         onPanEnd: (_) => _resizeUndoPushed = false,
                         child: Center(

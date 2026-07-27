@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart'; // ThemeMode + widgets
+import 'package:flutter/material.dart'; // ThemeMode + widgets (re-exports foundation)
 
 import '../canvas/canvas_controller.dart';
 import '../core/engine.dart';
 import '../core/ids.dart';
 import '../core/onote_ffi.dart';
+import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
 import '../store/repository.dart';
 
@@ -17,10 +17,17 @@ enum Tool { select, text, pen, highlighter, eraser, lasso }
 /// App-wide state. Deliberately simple (ChangeNotifier) for the MVP; the
 /// domain layer beneath it is what carries forward.
 class AppState extends ChangeNotifier {
-  AppState(this.repo) : engine = MirrorEngine(repo);
+  AppState(this.repo) : engine = _selectEngine(repo);
 
   final Repository repo;
   final DocumentEngine engine;
+
+  /// Use the Rust core when its native library is linked, else the pure-Dart
+  /// engine. Chosen once at construction — the app depends only on the seam.
+  static DocumentEngine _selectEngine(Repository repo) {
+    final core = OnoteCore.instance;
+    return core != null ? RustEngine(repo, core) : MirrorEngine(repo);
+  }
 
   /// Shared so toolbar/shortcuts can drive zoom (style guide §8.2).
   final canvas = CanvasController();
@@ -30,9 +37,56 @@ class AppState extends ChangeNotifier {
 
   // Workspace / navigation
   String? notebookId;
-  List<TreeNode> nodes = [];
+
+  List<TreeNode> _nodes = [];
+
+  /// The current notebook's tree, ordered by position.
+  List<TreeNode> get nodes => _nodes;
+  set nodes(List<TreeNode> v) {
+    _nodes = v;
+    nodesRevision++;
+  }
+
+  /// Bumped whenever the tree changes shape *or* a node's rendered fields
+  /// change. The navigator memoises its widget subtree on this, so typing in a
+  /// page no longer rebuilds every section and page tile (§7a.6).
+  int nodesRevision = 0;
+
+  /// Call after mutating a [TreeNode] in place (rename, indent) — those don't
+  /// replace the list, so the setter above wouldn't notice.
+  void bumpNodes() => nodesRevision++;
+
   String? pageId;
   final Set<String> collapsedGroups = {};
+
+  // Navigator (stacked): the focused section, whose pages fill the lower zone.
+  String? activeSectionId;
+  double navSplit = 0.38; // sections/pages height ratio (0..1)
+
+  TreeNode? get activeSection => node(activeSectionId);
+
+  void setNavSplit(double v) {
+    navSplit = v.clamp(0.15, 0.7);
+    repo.setSetting('navSplit', navSplit);
+    notifyListeners();
+  }
+
+  /// Focus a section (the pages zone shows its pages). When the current page
+  /// isn't inside the section, jump to its first page.
+  void activateSection(String id) {
+    activeSectionId = id;
+    final cur = node(pageId);
+    if (cur == null || cur.parentId != id) {
+      final first = nodes
+          .where((n) => n.kind == NodeKind.page && n.parentId == id)
+          .firstOrNull;
+      if (first != null) {
+        selectPage(first.id); // sets activeSectionId + notifies
+        return;
+      }
+    }
+    notifyListeners();
+  }
 
   // Page content
   List<Block> blocks = [];
@@ -58,7 +112,6 @@ class AppState extends ChangeNotifier {
   // Canvas settings
   Tool tool = Tool.select;
   bool snapToGrid = true; // on by default; the grid only shows while dragging
-  double gridSize = 24;
   int penColor = 0;
   double penSize = 2.5;
 
@@ -70,15 +123,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Collapse state (OneNote-style hierarchy folding).
-  final Set<String> collapsedSections = {};
+  // Collapse state (OneNote-style hierarchy folding). Sections no longer
+  // collapse — the stacked navigator shows one section's pages at a time, so
+  // the old per-section collapse set had no readers once the tree layout went.
   final Set<String> collapsedPages = {};
-  void toggleSectionCollapsed(String id) {
-    collapsedSections.contains(id)
-        ? collapsedSections.remove(id)
-        : collapsedSections.add(id);
-    notifyListeners();
-  }
 
   void togglePageCollapsed(String id) {
     collapsedPages.contains(id)
@@ -92,6 +140,7 @@ class AppState extends ChangeNotifier {
   ThemeMode themeMode = ThemeMode.system;
   void setThemeMode(ThemeMode m) {
     themeMode = m;
+    repo.setSetting('themeMode', m.name); // persist (§7a.5)
     notifyListeners();
   }
 
@@ -261,6 +310,36 @@ class AppState extends ChangeNotifier {
       b.content.remove('font');
     } else {
       b.content['font'] = font;
+    }
+    updateBlock(b);
+  }
+
+  /// The font size of the text block being edited, in logical px, or null when
+  /// it uses the default. Imported OneNote boxes carry an explicit size.
+  double? get activeBlockFontSize {
+    final id = editingBlockId;
+    if (id == null) return null;
+    final b = blocks.where((x) => x.id == id).firstOrNull;
+    if (b == null || b.type != BlockType.text) return null;
+    return (b.content['fontSize'] as num?)?.toDouble();
+  }
+
+  /// Set (or clear, with null) the font size of the text block being edited
+  /// (TEXT-1). Sizes are offered in points and stored in the page's 120-dpi px.
+  void setActiveBlockFontSize(double? pt) {
+    final id = editingBlockId;
+    if (id == null) return;
+    final b = blocks.where((x) => x.id == id).firstOrNull;
+    if (b == null || b.type != BlockType.text) return;
+    pushUndo();
+    if (pt == null) {
+      b.content.remove('fontSize');
+      b.content.remove('lineHeight');
+    } else {
+      b.content['fontSize'] = pt * 120.0 / 72.0;
+      // Keep OneNote's pitch so a resized box still lines up with its
+      // neighbours (see `oneNoteLineHeight`).
+      b.content['lineHeight'] = oneNoteLineHeight;
     }
     updateBlock(b);
   }
@@ -438,48 +517,20 @@ class AppState extends ChangeNotifier {
 
   // ── Document engine (Rust core, optional) ─────────────────────────────
 
-  /// Human-readable label for the active compute engine, shown in the status
-  /// bar. "Rust core vX" when the native library loaded and passed its
-  /// self-test; "Dart engine" otherwise.
-  String engineLabel = 'Dart engine';
+  /// Human-readable label for the active engine, shown in the status bar
+  /// ("Rust core vX" or "Dart engine").
+  String get engineLabel => engine.label;
 
-  /// Content hash of the current page, computed by the Rust core on save when
-  /// available (a live Dart→Rust→Dart round-trip over real page data). Null
-  /// when the core isn't linked.
-  String? pageContentHash;
-
-  /// Load the Rust core (if present) and verify it end-to-end with a tiny merge
-  /// before trusting it. Any failure silently keeps the pure-Dart path.
-  void _detectEngine() {
-    final core = OnoteCore.instance;
-    if (core == null) {
-      engineLabel = 'Dart engine';
-      return;
-    }
-    try {
-      final v = core.version();
-      const a = '{"blocks":[{"id":"x","type":"text","updatedAt":1}]}';
-      const b = '{"blocks":[{"id":"x","type":"text","updatedAt":2}]}';
-      final merged = core.mergeMirrors(a, b);
-      engineLabel = (v.isNotEmpty && merged.contains('"updatedAt":2'))
-          ? 'Rust core v$v'
-          : 'Dart engine';
-    } catch (_) {
-      engineLabel = 'Dart engine';
-    }
-  }
-
-  /// Build the current page's mirror JSON (matches repository.writePage).
-  String _currentPageMirror() => jsonEncode({
-        'schema': 'onote-page/1',
-        'pageId': pageId,
-        'page': pageProps.toJson(),
-        'blocks': [for (final b in blocks) b.toJson()],
-      });
+  /// Content hash of the most recently saved page (Rust core only); drives the
+  /// status-bar chip. Null on the pure-Dart engine.
+  String? get pageContentHash => engine.lastSavedHash;
 
   Future<void> init() async {
-    _detectEngine();
-    // Session restore (§7a.5): custom colours, per-page views, last location.
+    // Session restore (§7a.5): theme, custom colours, per-page views, last loc.
+    final tm = repo.getSetting('themeMode') as String?;
+    if (tm != null) themeMode = ThemeMode.values.asNameMap()[tm] ?? themeMode;
+    final ns = repo.getSetting('navSplit');
+    if (ns is num) navSplit = ns.toDouble().clamp(0.15, 0.7);
     final cc = repo.getSetting('customColors');
     if (cc is List) customColors.addAll(cc.cast<String>());
     final vm = repo.getSetting('viewMemory');
@@ -495,6 +546,9 @@ class AppState extends ChangeNotifier {
     notebookId = repo.notebooks.any((n) => n.id == lastNb)
         ? lastNb!
         : repo.notebooks.first.id;
+    // Clear out anything that has outlived the recycle-bin retention window.
+    await repo.purgeExpiredNotebooks();
+    repo.purgeExpiredNodes(notebookId!);
     nodes = repo.loadNodes(notebookId!);
     final lastPage = repo.getSetting('lastPage') as String?;
     final target = nodes.any((n) => n.id == lastPage && n.kind == NodeKind.page)
@@ -524,6 +578,9 @@ class AppState extends ChangeNotifier {
 
   Future<void> _loadNotebook() async {
     nodes = repo.loadNodes(notebookId!);
+    // Reset the focused section for the new notebook (selectPage refines it).
+    activeSectionId =
+        nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
     final firstPage = nodes.where((n) => n.kind == NodeKind.page).firstOrNull;
     await selectPage(firstPage?.id);
   }
@@ -539,6 +596,60 @@ class AppState extends ChangeNotifier {
     await flushSave();
     final ref = await repo.createNotebook(title);
     await selectNotebook(ref.id);
+  }
+
+  Future<void> renameNotebook(String id, String title) async {
+    await repo.renameNotebook(id, title);
+    notifyListeners();
+  }
+
+  /// Duplicate a notebook (contents included) without switching to it.
+  Future<NotebookRef> duplicateNotebook(String id) async {
+    await flushSave(); // the copy is a byte copy — settle pending writes first
+    final ref = await repo.duplicateNotebook(id);
+    notifyListeners();
+    return ref;
+  }
+
+  ({int sections, int pages}) notebookCounts(String id) =>
+      repo.notebookCounts(id);
+
+  /// Soft-delete a notebook to the recycle bin. Refuses the last one (there's
+  /// always somewhere to be). Returns false if it couldn't (only notebook).
+  Future<bool> deleteNotebook(String id) async {
+    if (repo.notebooks.length <= 1) return false;
+    await flushSave();
+    final wasCurrent = id == notebookId;
+    await repo.trashNotebook(id);
+    if (wasCurrent) {
+      notebookId = repo.notebooks.first.id;
+      await _loadNotebook();
+    }
+    notifyListeners();
+    return true;
+  }
+
+  List<NotebookRef> get trashedNotebooks => repo.trashedNotebooks;
+
+  /// How long trashed items live before auto-deletion (recycle-bin retention).
+  int get recycleRetentionDays => Repository.recycleRetentionDays;
+
+  /// Sweep expired recycle-bin entries (notebooks + the current notebook's
+  /// nodes). Runs at startup and whenever the recycle bin is opened.
+  Future<void> purgeExpiredTrash() async {
+    await repo.purgeExpiredNotebooks();
+    if (notebookId != null) repo.purgeExpiredNodes(notebookId!);
+    notifyListeners();
+  }
+
+  Future<void> restoreNotebook(String id) async {
+    await repo.restoreNotebook(id);
+    notifyListeners();
+  }
+
+  Future<void> purgeNotebook(String id) async {
+    await repo.purgeNotebook(id);
+    notifyListeners();
   }
 
   Future<void> selectPage(String? id) async {
@@ -558,6 +669,9 @@ class AppState extends ChangeNotifier {
       final data = await engine.loadPage(notebookId!, id);
       blocks = data.blocks;
       pageProps = data.props;
+      // Keep the navigator's focused section in sync with the open page.
+      activeSectionId = nodes.where((n) => n.id == id).firstOrNull?.parentId ??
+          activeSectionId;
     }
     docRevision++;
     _persistSession();
@@ -770,24 +884,28 @@ class AppState extends ChangeNotifier {
   }
 
   void renameNode(String id, String title) {
-    final n = nodes.firstWhere((n) => n.id == id);
+    final n = node(id);
+    if (n == null) return; // deleted while a menu was open
     n.title = title;
     repo.upsertNode(notebookId!, n);
+    bumpNodes();
     notifyListeners();
   }
 
   /// Subpage indent (ORG-6): level 0..2.
   void indentPage(String id, int delta) {
-    final n = nodes.firstWhere((n) => n.id == id);
-    if (n.kind != NodeKind.page) return;
+    final n = node(id);
+    if (n == null || n.kind != NodeKind.page) return;
     n.level = (n.level + delta).clamp(0, 2);
     repo.upsertNode(notebookId!, n);
+    bumpNodes();
     notifyListeners();
   }
 
   /// Reorder among siblings (ORG-2, menu-driven for MVP).
   void moveNode(String id, int delta) {
-    final n = nodes.firstWhere((n) => n.id == id);
+    final n = node(id);
+    if (n == null) return;
     final siblings = nodes
         .where((s) => s.kind == n.kind && s.parentId == n.parentId)
         .toList();
@@ -805,15 +923,16 @@ class AppState extends ChangeNotifier {
   }
 
   void moveSectionToGroup(String sectionId, String? groupId) {
-    final n = nodes.firstWhere((n) => n.id == sectionId);
-    if (n.kind != NodeKind.section) return;
+    final n = node(sectionId);
+    if (n == null || n.kind != NodeKind.section) return;
     n.parentId = groupId;
     repo.upsertNode(notebookId!, n);
     nodes = repo.loadNodes(notebookId!);
     notifyListeners();
   }
 
-  TreeNode? node(String id) => nodes.where((n) => n.id == id).firstOrNull;
+  TreeNode? node(String? id) =>
+      id == null ? null : nodes.where((n) => n.id == id).firstOrNull;
 
   // ── Recycle bin (ORG-7) ────────────────────────────────────────────────
 
@@ -839,25 +958,47 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // The links panel is rebuilt on every notify while it's open, and both of
+  // these are expensive: one is a synchronous SQLite query on the UI thread, the
+  // other scans every text block. Cache them against (page, docRevision,
+  // nodesRevision) so a keystroke doesn't re-run either.
+  ({String key, List<TreeNode> back, List<TreeNode> out})? _linkCache;
+  static final _outgoingLinkRe = RegExp(r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]');
+
+  void _ensureLinks() {
+    final key = '$pageId#$docRevision#$nodesRevision#${_dirty ? 1 : 0}';
+    if (_linkCache?.key == key) return;
+    final back = pageId == null
+        ? <TreeNode>[]
+        : repo
+            .backlinkPageIds(notebookId!, pageId!)
+            .map(node)
+            .whereType<TreeNode>()
+            .toList();
+    // Outgoing: `[[Title|id]]` resolves by id, a bare `[[Title]]` by title —
+    // the panel used to ignore the bare form entirely.
+    final out = <String, TreeNode>{};
+    for (final b in blocks.where((b) => b.type == BlockType.text)) {
+      for (final m
+          in _outgoingLinkRe.allMatches(b.content['text'] as String? ?? '')) {
+        final target = m.group(2) != null
+            ? node(m.group(2))
+            : pageByTitle(m.group(1)!);
+        if (target != null) out[target.id] = target;
+      }
+    }
+    _linkCache = (key: key, back: back, out: out.values.toList());
+  }
+
   List<TreeNode> backlinksForCurrent() {
-    if (pageId == null) return [];
-    return repo
-        .backlinkPageIds(notebookId!, pageId!)
-        .map(node)
-        .whereType<TreeNode>()
-        .toList();
+    _ensureLinks();
+    return _linkCache!.back;
   }
 
   /// Outgoing wiki-links found in the current page's text blocks.
   List<TreeNode> outgoingLinksForCurrent() {
-    final ids = <String>{};
-    final re = RegExp(r'\[\[[^\]|]+\|([^\]]+)\]\]');
-    for (final b in blocks.where((b) => b.type == BlockType.text)) {
-      for (final m in re.allMatches(b.content['text'] as String? ?? '')) {
-        ids.add(m.group(1)!);
-      }
-    }
-    return ids.map(node).whereType<TreeNode>().toList();
+    _ensureLinks();
+    return _linkCache!.out;
   }
 
   List<TreeNode> get pages =>
@@ -917,9 +1058,9 @@ class AppState extends ChangeNotifier {
     n
       ..parentId = target.parentId
       ..level = (target.level + 1).clamp(0, 2)
-      // Sorts after the target; the time suffix keeps repeated drops unique
-      // (review fix: two drops on the same target used to collide).
-      ..position = '${target.position}m${nowMs() % 100000}';
+      // Sorts after the target (target.position is a prefix) and before its
+      // next sibling; the full-millisecond suffix keeps repeated drops unique.
+      ..position = '${target.position}m${nowMs().toString().padLeft(15, '0')}';
     repo.upsertNode(notebookId!, n);
     nodes = repo.loadNodes(notebookId!);
     notifyListeners();
@@ -945,8 +1086,14 @@ class AppState extends ChangeNotifier {
   String? sectionOf(String? page) =>
       nodes.where((n) => n.id == page).firstOrNull?.parentId;
 
-  String _nextPosition() =>
-      'a${(nowMs() % 100000000).toString().padLeft(9, '0')}';
+  // Append-ordered position key. Time-based (siblings sort by creation), padded
+  // to a fixed width so lexicographic == numeric order. NOT the CRDT
+  // fractional-index of Data Model Spec §1 — that lands with the Loro engine;
+  // until then reorder is swap-based ([moveNode]) and insert-after-target uses a
+  // suffix ([makeSubpageOf]), neither of which needs true between-key insertion.
+  // (The old `% 1e8` truncation wrapped every ~28h, letting new nodes sort
+  // before old ones — fixed by keeping the full millisecond value.)
+  String _nextPosition() => 'a${nowMs().toString().padLeft(15, '0')}';
 
   // ── Undo / redo (page-scoped snapshots) ────────────────────────────────
 
@@ -990,6 +1137,9 @@ class AppState extends ChangeNotifier {
 
   // ── Selection & block ops ──────────────────────────────────────────────
 
+  // Snap step comes from the page's own grid (Data Model Spec §3), so a page's
+  // stored gridSize actually drives placement instead of being dead state.
+  double get gridSize => pageProps.gridSize;
   double snap(double v) => snapToGrid ? (v / gridSize).round() * gridSize : v;
 
   Block addBlock(Block b, {bool recordUndo = true}) {
@@ -1055,7 +1205,18 @@ class AppState extends ChangeNotifier {
         (sj as Map)['id'] = newId();
       }
     }
-    addBlock(fresh, recordUndo: false);
+    addBlock(fresh, recordUndo: false); // snaps + clamps fresh.x/y to final pos
+    if (fresh.type == BlockType.ink) {
+      // Translate strokes to the block's FINAL (snapped/clamped) position so the
+      // duplicate's ink renders under its new rect, not on top of the original.
+      final dx = fresh.x - src.x, dy = fresh.y - src.y;
+      for (final sj in (fresh.content['strokes'] as List)) {
+        final m = (sj as Map);
+        m['x'] = [for (final v in (m['x'] as List)) (v as num) + dx];
+        m['y'] = [for (final v in (m['y'] as List)) (v as num) + dy];
+      }
+      fresh.updatedAt = nowMs(); // refresh the canvas stroke cache key
+    }
     select(fresh.id);
   }
 
@@ -1100,6 +1261,9 @@ class AppState extends ChangeNotifier {
           m['x'] = [for (final v in (m['x'] as List)) (v as num) + dx];
           m['y'] = [for (final v in (m['y'] as List)) (v as num) + dy];
         }
+        // The canvas caches decoded strokes by `id#updatedAt`; bump it so the
+        // painted ink follows the block instead of lagging until a reload.
+        b.updatedAt = nowMs();
       }
     }
     markDirty();
@@ -1208,27 +1372,55 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The last save failure, or null when the last save succeeded. Surfaced in
+  /// the status bar — a silent failed save used to read as "Saved".
+  Object? saveError;
+
   Future<void> flushSave() async {
     _saveDebounce?.cancel();
     if (!_dirty || pageId == null || notebookId == null) return;
-    _dirty = false;
-    // Snapshot the pre-save state into version history (throttled, SYNC-8).
-    repo.maybeSnapshotVersion(notebookId!, pageId!);
-    await engine.savePage(notebookId!, pageId!, blocks, pageProps);
-    // When the Rust core is linked, hash the saved page through it — a real
-    // Dart→Rust→Dart round-trip over live content (the seed of sync's
-    // change-detection). No-op on the pure-Dart build.
-    final core = OnoteCore.instance;
-    pageContentHash = core == null ? null : core.pageHash(_currentPageMirror());
+    // Keep `_dirty` TRUE until the write actually lands: clearing it first meant
+    // a throwing save (disk full, DB locked) left the page marked clean and the
+    // status bar claiming "Saved" while the change was never persisted.
+    final id = pageId!, nb = notebookId!;
+    try {
+      // The engine owns persistence: version snapshot (throttled, SYNC-8) + the
+      // mirror write, plus content-hash change-detection on the Rust engine (a
+      // save whose hash is unchanged is skipped). See RustEngine/MirrorEngine.
+      await engine.savePage(nb, id, blocks, pageProps);
+      _dirty = false;
+      saveError = null;
+    } catch (e) {
+      // Stay dirty so the next edit (or exit flush) retries, and tell the user.
+      saveError = e;
+      notifyListeners();
+      return;
+    }
     // Keep session state fresh so closing the app never loses your place.
     _rememberView();
     _persistSession();
     notifyListeners();
   }
 
+  /// Persist everything before the process goes away (window close, logout).
+  /// Awaited by the app's [AppLifecycleListener]; without it, up to one debounce
+  /// interval of edits was silently lost on every close.
+  Future<void> shutdown() async {
+    _saveDebounce?.cancel();
+    try {
+      await flushSave();
+    } catch (_) {
+      // Never block exit on a save failure — flushSave already recorded it.
+    }
+    _rememberView();
+    _persistSession();
+    await repo.flushWorkspace(); // settle the debounced registry write
+  }
+
   @override
   void dispose() {
     _saveDebounce?.cancel();
+    canvas.dispose();
     repo.dispose();
     super.dispose();
   }

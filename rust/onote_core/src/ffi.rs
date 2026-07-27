@@ -37,7 +37,13 @@ pub unsafe extern "C" fn onote_core_merge(
 ) -> *mut c_char {
     let local = from_c(local);
     let remote = from_c(remote);
-    let merged = crate::mirror::merge_json(&local, &remote).unwrap_or(local);
+    // A panic unwinding across an `extern "C"` boundary is UB. Catch it here
+    // (as `import_one` already does) so any unexpected panic degrades to the
+    // local doc unchanged instead of tearing down the host app.
+    let merged = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::mirror::merge_json(&local, &remote).unwrap_or_else(|_| local.clone())
+    }))
+    .unwrap_or_else(|_| local.clone());
     into_c(merged)
 }
 
@@ -50,7 +56,47 @@ pub unsafe extern "C" fn onote_core_merge(
 #[no_mangle]
 pub unsafe extern "C" fn onote_core_page_hash(mirror: *const c_char) -> *mut c_char {
     let mirror = from_c(mirror);
-    into_c(crate::ids::page_content_hash(&mirror).unwrap_or_default())
+    // Panic-guarded so a hash failure can't unwind across the C boundary (UB).
+    let hash = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::ids::page_content_hash(&mirror).unwrap_or_default()
+    }))
+    .unwrap_or_default();
+    into_c(hash)
+}
+
+/// Import a OneNote `.one` section file. Takes the raw file bytes and returns
+/// a JSON string: `{ok, error?, pages:[{title, texts:[...],
+/// images:[{name, data_base64}]}]}`. Caller frees the result.
+///
+/// # Safety
+/// `ptr` must point to `len` readable bytes (or be null with len 0). The
+/// returned pointer must be freed with [`onote_core_string_free`].
+#[no_mangle]
+pub unsafe extern "C" fn onote_core_import_one(ptr: *const u8, len: usize) -> *mut c_char {
+    let bytes: &[u8] = if ptr.is_null() || len == 0 {
+        &[]
+    } else {
+        std::slice::from_raw_parts(ptr, len)
+    };
+    into_c(crate::onenote::import_one_json(bytes))
+}
+
+/// Import a OneNote `.onepkg` notebook package (a cabinet of `.one` sections).
+/// Takes the raw file bytes and returns a JSON string:
+/// `{ok, error?, sections:[{name, group?, section:{ok, pages:[…]}}]}`.
+/// Caller frees the result.
+///
+/// # Safety
+/// `ptr` must point to `len` readable bytes (or be null with len 0). The
+/// returned pointer must be freed with [`onote_core_string_free`].
+#[no_mangle]
+pub unsafe extern "C" fn onote_core_import_onepkg(ptr: *const u8, len: usize) -> *mut c_char {
+    let bytes: &[u8] = if ptr.is_null() || len == 0 {
+        &[]
+    } else {
+        std::slice::from_raw_parts(ptr, len)
+    };
+    into_c(crate::onepkg::import_onepkg_json(bytes))
 }
 
 /// Free a string previously returned by any `onote_core_*` function.

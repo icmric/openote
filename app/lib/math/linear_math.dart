@@ -66,6 +66,11 @@ String linearToLatex(String input) {
     '→': r'\to', 'π': r'\pi', '∈': r'\in', '∂': r'\partial', '∇': r'\nabla',
   };
   uni.forEach((k, v) => s = s.replaceAll(k, '$v '));
+  // The trailing space keeps `\infty x` from becoming `\inftyx`, but it also
+  // detaches a following script/fraction (`\pi ^2/6` wouldn't bind `\pi^2` as a
+  // numerator). Re-attach a control word to an immediately-following `^`/`_` so
+  // `π^2/6` → `\pi^2/6` → `\frac{\pi^2}{6}` (Math Input Spec §7 seed).
+  s = s.replaceAllMapped(RegExp(r'(\\[a-zA-Z]+) +([\^_])'), (m) => '${m[1]}${m[2]}');
 
   // 8) Fractions: (a)/(b), {a}/{b}, mixed, and simple x/y — innermost first.
   var prev = '';

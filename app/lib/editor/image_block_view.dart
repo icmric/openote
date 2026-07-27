@@ -49,6 +49,9 @@ class _ImageBlockViewState extends State<ImageBlockView> {
         if (!mounted) return;
         widget.block.content['naturalW'] = img.width.toDouble();
         widget.block.content['naturalH'] = img.height.toDouble();
+        // Persist it (once) so proportional resize, export and hit-testing all
+        // agree without re-decoding on every load.
+        widget.app.markDirty();
         setState(() {});
       });
     }
@@ -70,27 +73,55 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     final nw = (widget.block.content['naturalW'] as num?)?.toDouble();
     final nh = (widget.block.content['naturalH'] as num?)?.toDouble();
     final aspect = (nw != null && nh != null && nh > 0) ? nw / nh : null;
+    final boxH = widget.block.h;
     return ClipRRect(
       borderRadius: BorderRadius.circular(11),
-      child: aspect != null
-          // Known aspect: AspectRatio sizes height from the block width, so
-          // resizing the width scales the image proportionally.
-          ? AspectRatio(
-              aspectRatio: aspect,
-              child: Image(
+      // Anchor top-left, always.
+      //
+      // This is why imported images sat **too high**. `BlockView` gives the block
+      // a container of exactly `w × h` — OneNote's own display rectangle — and an
+      // `AspectRatio` child derives its height from the width instead. When the
+      // stored rectangle's aspect doesn't quite match the PNG's, the child ends
+      // up a different height from the container, and a `Container` with one
+      // child **centres** it: the image shifted up by half the difference, which
+      // is exactly the "layout is right, just offset vertically" symptom. It was
+      // also `BoxFit.cover`, so the mismatch was cropped rather than visible.
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: boxH != null
+            // Imported (or explicitly sized): honour OneNote's rectangle exactly
+            // and fit inside it — never crop, never shift.
+            ? Image(
                 image: _provider!,
-                fit: BoxFit.cover,
+                width: widget.block.w,
+                height: boxH,
+                fit: BoxFit.contain,
+                alignment: Alignment.topLeft,
                 gaplessPlayback: true,
                 filterQuality: FilterQuality.medium,
-              ),
-            )
-          : Image(
-              image: _provider!,
-              width: widget.block.w,
-              fit: BoxFit.fitWidth,
-              gaplessPlayback: true, // no blank frame on rebuild → no flicker
-              filterQuality: FilterQuality.medium,
-            ),
+              )
+            : aspect != null
+                // Auto-height: derive the height from the width so a width
+                // resize scales the image proportionally.
+                ? AspectRatio(
+                    aspectRatio: aspect,
+                    child: Image(
+                      image: _provider!,
+                      fit: BoxFit.contain,
+                      alignment: Alignment.topLeft,
+                      gaplessPlayback: true,
+                      filterQuality: FilterQuality.medium,
+                    ),
+                  )
+                : Image(
+                    image: _provider!,
+                    width: widget.block.w,
+                    fit: BoxFit.fitWidth,
+                    alignment: Alignment.topLeft,
+                    gaplessPlayback: true, // no blank frame on rebuild
+                    filterQuality: FilterQuality.medium,
+                  ),
+      ),
     );
   }
 }

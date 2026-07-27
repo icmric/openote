@@ -6,14 +6,18 @@ import 'package:path/path.dart' as p;
 
 import '../model/models.dart';
 import '../state/app_state.dart';
+import 'md_common.dart';
 
 /// Open-format exporters (OPEN-5/6/7): the "glass box" promise made real.
 ///
 /// * [materializeNotebook] writes the whole notebook as a plain folder tree of
-///   open files — one folder per section/page, each page carried by a
-///   fidelity `page.json` (the mirror), a convenience `page.md`, a JSON Canvas
-///   `page.canvas`, an `page.inkml` when the page has ink, and an `assets/`
-///   folder of content-addressed blobs. Nothing here needs Openote to read.
+///   open files (File Format Spec §8): a top-level `notebook.json` structure
+///   tree, one folder per page under `pages/` (nested to mirror the section
+///   hierarchy), each page carried by a fidelity `page.json` (the mirror), a
+///   convenience `page.md`, a JSON Canvas `canvas.json`, a `page.inkml` when the
+///   page has ink, and a single top-level `assets/` of content-addressed blobs
+///   (shared across pages, so an image used twice is stored once). Nothing here
+///   needs Openote to read.
 /// * [exportPageJsonCanvas] exports the current page as a single
 ///   [JSON Canvas](https://jsoncanvas.org) file (Obsidian-compatible).
 /// * [exportPageInkML] exports the current page's ink as W3C InkML.
@@ -35,20 +39,24 @@ Future<String?> materializeNotebook(AppState app) async {
   if (dir == null) return null;
 
   final nb = app.repo.notebooks.firstWhere((n) => n.id == app.notebookId);
-  final root = _uniqueDir(dir, _safe(nb.title));
+  final root = _uniqueDir(dir, safeFilename(nb.title));
   await Directory(root).create(recursive: true);
+  final assetsDir = p.join(root, 'assets');
 
   final byId = {for (final n in app.nodes) n.id: n};
   final manifestPages = <Map<String, dynamic>>[];
   final usedDirs = <String>{};
+  // hash → "hash.ext"; collected across ALL pages then written once (dedup).
+  final sharedAssets = <String, String>{};
 
   for (final node in app.nodes.where((n) => n.kind == NodeKind.page)) {
-    // Folder path = sanitized titles of every ancestor + this page, so the
-    // section/group/subpage hierarchy is mirrored as nested folders.
+    // Page folder = sanitized titles of every ancestor + this page (+ an id
+    // suffix to guarantee uniqueness), so the section/group/subpage hierarchy
+    // is mirrored as nested folders under pages/.
     final segments = <String>[];
     TreeNode? cur = node;
     while (cur != null) {
-      segments.insert(0, _safe(cur.title));
+      segments.insert(0, safeFilename(cur.title));
       cur = cur.parentId == null ? null : byId[cur.parentId];
     }
     var rel = p.joinAll(segments);
@@ -62,8 +70,12 @@ Future<String?> materializeNotebook(AppState app) async {
     usedDirs.add(candidate.toLowerCase());
     rel = candidate;
 
-    final pageDir = p.join(root, rel);
+    final pageDir = p.join(root, 'pages', rel);
     await Directory(pageDir).create(recursive: true);
+    // Relative path from this page's folder back to the shared assets/ dir,
+    // in POSIX form so the Markdown/canvas links are portable.
+    final assetPrefix =
+        p.relative(assetsDir, from: pageDir).replaceAll('\\', '/');
 
     final data = app.repo.readPage(app.notebookId!, node.id);
     final blocks = data.blocks;
@@ -74,12 +86,14 @@ Future<String?> materializeNotebook(AppState app) async {
             _mirrorMap(node.id, data.props, blocks)));
 
     // 2) Convenience Markdown + collected image assets.
-    final md = _pageMarkdown(node.title, blocks);
+    final md = _pageMarkdown(node.title, blocks, assetPrefix);
     await File(p.join(pageDir, 'page.md')).writeAsString(md.text);
+    sharedAssets.addAll(md.assets);
 
     // 3) JSON Canvas.
-    await File(p.join(pageDir, 'page.canvas')).writeAsString(
-        const JsonEncoder.withIndent('  ').convert(_jsonCanvas(blocks)));
+    await File(p.join(pageDir, 'canvas.json')).writeAsString(
+        const JsonEncoder.withIndent('  ').convert(
+            _jsonCanvas(blocks, assetPrefix)));
 
     // 4) InkML when there's ink.
     final inkml = _inkML(blocks);
@@ -87,31 +101,50 @@ Future<String?> materializeNotebook(AppState app) async {
       await File(p.join(pageDir, 'page.inkml')).writeAsString(inkml);
     }
 
-    // 5) Assets referenced by Markdown / canvas.
-    if (md.assets.isNotEmpty) {
-      final assetDir = Directory(p.join(pageDir, 'assets'));
-      await assetDir.create(recursive: true);
-      for (final e in md.assets.entries) {
-        final bytes = app.repo.getBlob(app.notebookId!, e.key);
-        if (bytes != null) {
-          await File(p.join(pageDir, e.value)).writeAsBytes(bytes);
-        }
-      }
-    }
-
     manifestPages.add({
       'id': node.id,
       'title': node.title,
-      'path': rel.replaceAll('\\', '/'),
+      'path': 'pages/${rel.replaceAll('\\', '/')}',
       'level': node.level,
     });
   }
 
-  await File(p.join(root, 'manifest.json')).writeAsString(
+  // Write the shared, content-addressed asset store once.
+  if (sharedAssets.isNotEmpty) {
+    await Directory(assetsDir).create(recursive: true);
+    for (final e in sharedAssets.entries) {
+      final bytes = app.repo.getBlob(app.notebookId!, e.key);
+      if (bytes != null) {
+        await File(p.join(assetsDir, e.value)).writeAsBytes(bytes);
+      }
+    }
+  }
+
+  // notebook.json: the full structure tree (groups/sections/pages, order,
+  // colours, timestamps) — the spec's §8 top-level structure file.
+  await File(p.join(root, 'notebook.json')).writeAsString(
       const JsonEncoder.withIndent('  ').convert({
     'format': 'openote-materialized/1',
     'notebook': {'id': nb.id, 'title': nb.title},
     'exportedAt': DateTime.now().toIso8601String(),
+    'nodes': [
+      for (final n in app.nodes)
+        {
+          'id': n.id,
+          'kind': switch (n.kind) {
+            NodeKind.sectionGroup => 'section_group',
+            NodeKind.section => 'section',
+            NodeKind.page => 'page',
+          },
+          'parentId': n.parentId,
+          'title': n.title,
+          'position': n.position,
+          if (n.color != null) 'color': n.color,
+          'level': n.level,
+          'createdAt': n.createdAt,
+          'updatedAt': n.updatedAt,
+        }
+    ],
     'pages': manifestPages,
   }));
 
@@ -125,14 +158,14 @@ Future<String?> exportPageJsonCanvas(AppState app) async {
   await app.flushSave();
   final page = app.nodes.firstWhere((n) => n.id == app.pageId);
   final location = await getSaveLocation(
-    suggestedName: '${_safe(page.title)}.canvas',
+    suggestedName: '${safeFilename(page.title)}.canvas',
     acceptedTypeGroups: const [
       XTypeGroup(label: 'JSON Canvas', extensions: ['canvas'])
     ],
   );
   if (location == null) return null;
   await File(location.path).writeAsString(
-      const JsonEncoder.withIndent('  ').convert(_jsonCanvas(app.blocks)));
+      const JsonEncoder.withIndent('  ').convert(_jsonCanvas(app.blocks, 'assets')));
   return location.path;
 }
 
@@ -144,7 +177,7 @@ Future<String?> exportPageInkML(AppState app) async {
   final inkml = _inkML(app.blocks);
   final page = app.nodes.firstWhere((n) => n.id == app.pageId);
   final location = await getSaveLocation(
-    suggestedName: '${_safe(page.title)}.inkml',
+    suggestedName: '${safeFilename(page.title)}.inkml',
     acceptedTypeGroups: const [
       XTypeGroup(label: 'InkML', extensions: ['inkml', 'xml'])
     ],
@@ -172,7 +205,11 @@ class _Markdown {
   final Map<String, String> assets; // hash -> relative asset path
 }
 
-_Markdown _pageMarkdown(String title, List<Block> blocks) {
+/// Build the page's Markdown projection. [assetPrefix] is the POSIX-relative
+/// path from the page folder to the shared `assets/` dir; image links use it.
+/// The returned `assets` map (hash → "hash.ext") is collected by the caller and
+/// written once into the shared store.
+_Markdown _pageMarkdown(String title, List<Block> blocks, String assetPrefix) {
   final ordered = [...blocks]..sort((a, b) {
       final dy = a.y.compareTo(b.y);
       return dy != 0 ? dy : a.x.compareTo(b.x);
@@ -183,7 +220,7 @@ _Markdown _pageMarkdown(String title, List<Block> blocks) {
   for (final b in ordered) {
     switch (b.type) {
       case BlockType.text:
-        buf.writeln((b.content['text'] as String? ?? '').trimRight());
+        buf.writeln(markdownInline(b.content['text'] as String? ?? '').trimRight());
         buf.writeln();
       case BlockType.math:
         final latex = b.content['latex'] as String? ?? '';
@@ -197,26 +234,13 @@ _Markdown _pageMarkdown(String title, List<Block> blocks) {
         if (hash.isNotEmpty) {
           final mime = b.content['mime'] as String? ?? 'image/png';
           final ext = mime.split('/').last.replaceFirst('jpeg', 'jpg');
-          final name = 'assets/$hash.$ext';
-          assets[hash] = name;
-          buf.writeln('![image]($name)\n');
+          assets[hash] = '$hash.$ext';
+          buf.writeln('![image]($assetPrefix/$hash.$ext)\n');
         }
       case BlockType.table:
-        final cells = b.content['cells'];
-        if (cells is List && cells.isNotEmpty) {
-          final rows = [
-            for (final row in cells)
-              [
-                for (final c in (row as List))
-                  (c?.toString() ?? '').replaceAll('|', r'\|')
-              ]
-          ];
-          final cols = rows[0].length;
-          buf.writeln('| ${rows[0].join(' | ')} |');
-          buf.writeln('|${List.filled(cols, ' --- ').join('|')}|');
-          for (final r in rows.skip(1)) {
-            buf.writeln('| ${r.join(' | ')} |');
-          }
+        final table = tableToMarkdown(b.content['cells']);
+        if (table.isNotEmpty) {
+          buf.writeln(table);
           buf.writeln();
         }
       case BlockType.ink:
@@ -233,7 +257,8 @@ _Markdown _pageMarkdown(String title, List<Block> blocks) {
 }
 
 /// Map blocks to a JSON Canvas document (https://jsoncanvas.org/spec/1.0/).
-Map<String, dynamic> _jsonCanvas(List<Block> blocks) {
+/// [assetPrefix] is the POSIX-relative path from the output file to `assets/`.
+Map<String, dynamic> _jsonCanvas(List<Block> blocks, String assetPrefix) {
   final nodes = <Map<String, dynamic>>[];
   for (final b in blocks) {
     final x = b.x.round();
@@ -268,7 +293,7 @@ Map<String, dynamic> _jsonCanvas(List<Block> blocks) {
         nodes.add({
           'id': b.id,
           'type': 'text',
-          'text': _tableToMarkdown(b.content['cells']),
+          'text': tableToMarkdown(b.content['cells']),
           'x': x, 'y': y, 'width': w, 'height': h,
         });
       case BlockType.image:
@@ -279,7 +304,7 @@ Map<String, dynamic> _jsonCanvas(List<Block> blocks) {
         nodes.add({
           'id': b.id,
           'type': 'file',
-          'file': 'assets/$hash.$ext',
+          'file': '$assetPrefix/$hash.$ext',
           'x': x, 'y': y, 'width': w, 'height': h,
         });
       default:
@@ -287,25 +312,6 @@ Map<String, dynamic> _jsonCanvas(List<Block> blocks) {
     }
   }
   return {'nodes': nodes, 'edges': <Map<String, dynamic>>[]};
-}
-
-String _tableToMarkdown(dynamic cells) {
-  if (cells is! List || cells.isEmpty) return '';
-  final rows = [
-    for (final row in cells)
-      [
-        for (final c in (row as List))
-          (c?.toString() ?? '').replaceAll('|', r'\|')
-      ]
-  ];
-  final cols = rows[0].length;
-  final buf = StringBuffer()
-    ..writeln('| ${rows[0].join(' | ')} |')
-    ..writeln('|${List.filled(cols, ' --- ').join('|')}|');
-  for (final r in rows.skip(1)) {
-    buf.writeln('| ${r.join(' | ')} |');
-  }
-  return buf.toString().trimRight();
 }
 
 /// Build a W3C InkML document from every ink stroke on the page, or null if
@@ -328,6 +334,7 @@ String? _inkML(List<Block> blocks) {
     ..writeln('        <channel name="X" type="decimal"/>')
     ..writeln('        <channel name="Y" type="decimal"/>')
     ..writeln('        <channel name="F" type="decimal" min="0" max="1"/>')
+    ..writeln('        <channel name="T" type="integer" units="ms"/>')
     ..writeln('      </traceFormat>')
     ..writeln('    </inkSource>');
   // One brush per distinct (tool,color,size,opacity).
@@ -353,7 +360,8 @@ String? _inkML(List<Block> blocks) {
     final pts = <String>[];
     for (var i = 0; i < s.x.length; i++) {
       final pr = i < s.p.length ? s.p[i] : 1.0;
-      pts.add('${_num(s.x[i])} ${_num(s.y[i])} ${_num(pr)}');
+      final t = i < s.t.length ? s.t[i] : 0;
+      pts.add('${_num(s.x[i])} ${_num(s.y[i])} ${_num(pr)} $t');
     }
     buf.writeln('  <trace brushRef="#$brushRef">${pts.join(', ')}</trace>');
   }
@@ -384,9 +392,4 @@ String _uniqueDir(String parent, String name) {
     i++;
   }
   return candidate;
-}
-
-String _safe(String s) {
-  final cleaned = s.replaceAll(RegExp(r'[^\w\- ]'), '').trim();
-  return cleaned.isEmpty ? 'untitled' : cleaned;
 }

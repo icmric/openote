@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../export/md_import.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'notebook_manager.dart';
 
 Color _sectionColor(String? token, bool dark) => switch (token) {
       'brass-400' => OnoteColors.brass400,
@@ -15,14 +15,302 @@ Color _sectionColor(String? token, bool dark) => switch (token) {
       _ => dark ? OnoteColors.ink400 : OnoteColors.ink500,
     };
 
-/// Navigator: notebook switcher → sections (colored) → pages/subpages
-/// (ORG-1..6 MVP cut).
-class Sidebar extends StatelessWidget {
+/// The page rows for a section, honouring subpage collapse (a collapsed page
+/// hides everything indented beneath it).
+List<Widget> _pageEntriesFor(AppState app, TreeNode section) {
+  final pages = app.nodes
+      .where((n) => n.kind == NodeKind.page && n.parentId == section.id)
+      .toList(); // already ordered by position
+  final out = <Widget>[];
+  int? hideDeeperThan;
+  for (var i = 0; i < pages.length; i++) {
+    final p = pages[i];
+    if (hideDeeperThan != null) {
+      if (p.level > hideDeeperThan) continue;
+      hideDeeperThan = null;
+    }
+    final hasKids = i + 1 < pages.length && pages[i + 1].level > p.level;
+    final collapsed = app.collapsedPages.contains(p.id);
+    out.add(_PageTile(
+        app: app, page: p, hasChildren: hasKids, collapsed: collapsed));
+    if (hasKids && collapsed) hideDeeperThan = p.level;
+  }
+  return out;
+}
+
+/// Navigator (style guide §7b): a notebook bar, a search/jump box, then two
+/// stacked zones — sections above, the **active** section's pages below — split
+/// by a resizable divider. One section is focused at a time, which is what keeps
+/// long notebooks scannable.
+class Sidebar extends StatefulWidget {
   const Sidebar({super.key, required this.app});
   final AppState app;
 
   @override
+  State<Sidebar> createState() => _SidebarState();
+}
+
+class _SidebarState extends State<Sidebar> {
+  final _searchCtl = TextEditingController();
+  String _query = '';
+
+  AppState get app => widget.app;
+
+  @override
+  void dispose() {
+    _searchCtl.dispose();
+    super.dispose();
+  }
+
+  void _clearSearch() {
+    _searchCtl.clear();
+    setState(() => _query = '');
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final searching = _query.trim().isNotEmpty;
+    return Container(
+      width: 250,
+      color: dark ? OnoteColors.night100 : OnoteColors.paper100,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _NotebookHeader(app: app),
+          _searchRow(context),
+          const Divider(height: 1),
+          Expanded(
+            child: searching ? _searchResults(context) : _stackedBody(context),
+          ),
+          const Divider(height: 1),
+          _footer(context),
+        ],
+      ),
+    );
+  }
+
+  // ── Search / quick-jump ───────────────────────────────────────────────
+
+  Widget _searchRow(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 2, 4, 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: SizedBox(
+              height: 32,
+              child: TextField(
+                controller: _searchCtl,
+                onChanged: (v) => setState(() => _query = v),
+                style: const TextStyle(fontSize: 13),
+                decoration: InputDecoration(
+                  isDense: true,
+                  filled: true,
+                  hintText: 'Search or jump to…',
+                  hintStyle: const TextStyle(fontSize: 13),
+                  prefixIcon: const Icon(Icons.search, size: 16),
+                  prefixIconConstraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : InkWell(
+                          onTap: _clearSearch,
+                          child: const Icon(Icons.close, size: 15),
+                        ),
+                  suffixIconConstraints:
+                      const BoxConstraints(minWidth: 30, minHeight: 30),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: scheme.outline),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: scheme.outline.withValues(alpha: .6)),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _searchResults(BuildContext context) {
+    final q = _query.trim().toLowerCase();
+    final results = app.nodes
+        .where((n) =>
+            (n.kind == NodeKind.page || n.kind == NodeKind.section) &&
+            n.title.toLowerCase().contains(q))
+        .toList();
+    if (results.isEmpty) {
+      return Center(
+        child: Text('No matches for “${_query.trim()}”',
+            style: const TextStyle(fontSize: 12, color: OnoteColors.graphite400)),
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      children: [
+        for (final n in results)
+          ListTile(
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            leading: Icon(
+                n.kind == NodeKind.section
+                    ? Icons.folder_outlined
+                    : n.level == 0
+                        ? Icons.description_outlined
+                        : Icons.subdirectory_arrow_right,
+                size: 16),
+            title: Text(n.title,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13)),
+            subtitle: n.kind == NodeKind.page
+                ? Text(app.node(n.parentId)?.title ?? '',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11))
+                : null,
+            onTap: () {
+              if (n.kind == NodeKind.page) {
+                app.selectPage(n.id);
+              } else {
+                app.activateSection(n.id);
+              }
+              _clearSearch();
+            },
+          ),
+      ],
+    );
+  }
+
+  // ── Stacked zones (sections above, active section's pages below) ───────
+
+  Widget _stackedBody(BuildContext context) {
+    final sections =
+        app.nodes.where((n) => n.kind == NodeKind.section).toList();
+    if (sections.isEmpty) {
+      return _EmptyHint(
+        icon: Icons.folder_outlined,
+        text: 'No sections yet.\nCreate one to get started.',
+        actionLabel: 'New section',
+        onAction: app.addSection,
+      );
+    }
+    final active = app.activeSection ?? sections.first;
+    return LayoutBuilder(
+      builder: (ctx, constraints) {
+        final h = constraints.maxHeight;
+        final secH = (h * app.navSplit).clamp(72.0, h - 120.0);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(height: secH, child: _sectionsColumn(context)),
+            _dividerHandle(context, h),
+            Expanded(child: _pagesZone(context, active)),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _dividerHandle(BuildContext context, double h) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeRow,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onVerticalDragUpdate: (d) {
+          app.navSplit = (app.navSplit + d.delta.dy / h).clamp(0.15, 0.7);
+          app.refresh();
+        },
+        onVerticalDragEnd: (_) => app.setNavSplit(app.navSplit),
+        child: Container(
+          height: 11,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(color: Theme.of(context).dividerColor),
+              bottom: BorderSide(color: Theme.of(context).dividerColor),
+            ),
+          ),
+          child: Container(
+            width: 26,
+            height: 3,
+            decoration: BoxDecoration(
+              color: dark ? OnoteColors.night300 : OnoteColors.paper300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pagesZone(BuildContext context, TreeNode section) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final color = _sectionColor(section.color, dark);
+    final pages = _pageEntriesFor(app, section);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 4, 2),
+          child: Row(
+            children: [
+              Container(
+                width: 3.5,
+                height: 14,
+                decoration: BoxDecoration(
+                    color: color, borderRadius: BorderRadius.circular(2)),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  section.title.toUpperCase(),
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: .6,
+                    color: dark
+                        ? OnoteColors.moon300
+                        : OnoteColors.graphite500,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add, size: 15),
+                visualDensity: VisualDensity.compact,
+                tooltip: 'New page in ${section.title}',
+                onPressed: () => app.addPage(sectionId: section.id),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: pages.isEmpty
+              ? const Center(
+                  child: Text('No pages yet',
+                      style: TextStyle(
+                          fontSize: 12, color: OnoteColors.graphite400)),
+                )
+              : ListView(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  children: pages,
+                ),
+        ),
+      ],
+    );
+  }
+
+  // ── Section list (groups → sections) ──────────────────────────────────
+
+  Widget _sectionsColumn(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final groups = app.nodes
         .where((n) => n.kind == NodeKind.sectionGroup && n.parentId == null)
@@ -31,95 +319,69 @@ class Sidebar extends StatelessWidget {
         .where((n) => n.kind == NodeKind.section && n.parentId == null)
         .toList();
 
-    List<Widget> sectionEntries(TreeNode s) {
-      final entries = <Widget>[_SectionHeader(app: app, section: s, dark: dark)];
-      if (app.collapsedSections.contains(s.id)) return entries;
-      final pages = app.nodes
-          .where((n) => n.kind == NodeKind.page && n.parentId == s.id)
-          .toList(); // already ordered by position
-      int? hideDeeperThan;
-      for (var i = 0; i < pages.length; i++) {
-        final p = pages[i];
-        if (hideDeeperThan != null) {
-          if (p.level > hideDeeperThan) continue;
-          hideDeeperThan = null;
-        }
-        final hasKids = i + 1 < pages.length && pages[i + 1].level > p.level;
-        final collapsed = app.collapsedPages.contains(p.id);
-        entries.add(_PageTile(
-            app: app, page: p, hasChildren: hasKids, collapsed: collapsed));
-        if (hasKids && collapsed) hideDeeperThan = p.level;
-      }
-      return entries;
+    if (groups.isEmpty && looseSections.isEmpty) {
+      return _EmptyHint(
+        icon: Icons.folder_outlined,
+        text: 'No sections yet.\nCreate one to get started.',
+        actionLabel: 'New section',
+        onAction: app.addSection,
+      );
     }
 
-    return Container(
-      width: 250,
-      color: dark ? OnoteColors.night100 : OnoteColors.paper100,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _NotebookHeader(app: app),
-          const Divider(height: 1),
-          Expanded(
-            child: (groups.isEmpty && looseSections.isEmpty)
-                ? _EmptyHint(
-                    icon: Icons.folder_outlined,
-                    text: 'No sections yet.\nCreate one to get started.',
-                    actionLabel: 'New section',
-                    onAction: app.addSection,
-                  )
-                : ListView(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    children: [
-                      // Section groups (ORG-1; single level in MVP)
-                      for (final g in groups) ...[
-                        _GroupHeader(app: app, group: g),
-                        if (!app.collapsedGroups.contains(g.id))
-                          for (final s in app.nodes.where((n) =>
-                              n.kind == NodeKind.section && n.parentId == g.id))
-                            ...sectionEntries(s),
-                      ],
-                      for (final s in looseSections) ...sectionEntries(s),
-                    ],
-                  ),
-          ),
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.all(6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextButton.icon(
-                    icon: const Icon(Icons.create_new_folder_outlined, size: 16),
-                    label: const Text('Section', style: TextStyle(fontSize: 12)),
-                    onPressed: app.addSection,
-                  ),
-                ),
-                Expanded(
-                  child: TextButton.icon(
-                    icon: const Icon(Icons.note_add_outlined, size: 16),
-                    label: const Text('Page', style: TextStyle(fontSize: 12)),
-                    onPressed: () => app.addPage(),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.topic_outlined, size: 16),
-                  tooltip: 'New section group',
-                  onPressed: app.addSectionGroup,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 16),
-                  tooltip: 'Recycle bin',
-                  onPressed: () => showRecycleBin(context, app),
-                ),
-              ],
-            ),
-          ),
+    Widget row(TreeNode s) => _SectionHeader(
+        app: app,
+        section: s,
+        dark: dark,
+        active: app.activeSectionId == s.id);
+
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 8),
+      children: [
+        for (final g in groups) ...[
+          _GroupHeader(app: app, group: g),
+          if (!app.collapsedGroups.contains(g.id))
+            for (final s in app.nodes.where(
+                (n) => n.kind == NodeKind.section && n.parentId == g.id))
+              row(s),
         ],
-      ),
+        for (final s in looseSections) row(s),
+      ],
     );
   }
+
+  // ── Footer toolbar ────────────────────────────────────────────────────
+
+  Widget _footer(BuildContext context) => Padding(
+        padding: const EdgeInsets.all(6),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextButton.icon(
+                icon: const Icon(Icons.create_new_folder_outlined, size: 16),
+                label: const Text('Section', style: TextStyle(fontSize: 12)),
+                onPressed: app.addSection,
+              ),
+            ),
+            Expanded(
+              child: TextButton.icon(
+                icon: const Icon(Icons.note_add_outlined, size: 16),
+                label: const Text('Page', style: TextStyle(fontSize: 12)),
+                onPressed: () => app.addPage(),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.topic_outlined, size: 16),
+              tooltip: 'New section group',
+              onPressed: app.addSectionGroup,
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 16),
+              tooltip: 'Recycle bin',
+              onPressed: () => showRecycleBin(context, app),
+            ),
+          ],
+        ),
+      );
 }
 
 class _GroupHeader extends StatefulWidget {
@@ -175,7 +437,7 @@ class _GroupHeaderState extends State<_GroupHeader> {
                 Icon(collapsed ? Icons.chevron_right : Icons.expand_more,
                     size: 16, color: OnoteColors.graphite400),
                 const SizedBox(width: 4),
-                Icon(Icons.topic_outlined,
+                const Icon(Icons.topic_outlined,
                     size: 15, color: OnoteColors.graphite500),
                 const SizedBox(width: 6),
                 Expanded(
@@ -203,6 +465,13 @@ class _GroupHeaderState extends State<_GroupHeader> {
   }
 }
 
+/// The notebook bar: shows the current notebook and opens the notebook manager.
+///
+/// **One surface, not two.** This used to be a dropdown for switching plus a
+/// manager panel for everything else, which read as two different menus for one
+/// job. The manager now does both — its rows switch notebooks *and* carry the
+/// per-notebook actions — so there is a single place notebooks are dealt with,
+/// and switching still takes the same two clicks it did through the dropdown.
 class _NotebookHeader extends StatelessWidget {
   const _NotebookHeader({required this.app});
   final AppState app;
@@ -213,12 +482,15 @@ class _NotebookHeader extends StatelessWidget {
     final current =
         app.repo.notebooks.firstWhere((n) => n.id == app.notebookId);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 10, 6, 8),
-      child: MenuAnchor(
-        builder: (context, controller, _) => InkWell(
+      padding: const EdgeInsets.fromLTRB(10, 10, 6, 4),
+      child: Tooltip(
+        message: 'Notebooks — switch, rename, duplicate, import',
+        waitDuration: const Duration(milliseconds: 600),
+        child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          onTap: () =>
-              controller.isOpen ? controller.close() : controller.open(),
+          onTap: () => showNotebookManager(context, app),
+          onSecondaryTapUp: (_) =>
+              showNotebookManager(context, app, focusId: current.id),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
             child: Row(
@@ -235,78 +507,22 @@ class _NotebookHeader extends StatelessWidget {
             ),
           ),
         ),
-        menuChildren: [
-          for (final n in app.repo.notebooks)
-            MenuItemButton(
-              leadingIcon: Icon(
-                n.id == app.notebookId
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_off,
-                size: 16,
-                color: n.id == app.notebookId ? scheme.primary : null,
-              ),
-              onPressed: () => app.selectNotebook(n.id),
-              child: Text(n.title),
-            ),
-          const Divider(),
-          MenuItemButton(
-            leadingIcon: const Icon(Icons.add, size: 16),
-            onPressed: () => _newNotebook(context),
-            child: const Text('New notebook…'),
-          ),
-          MenuItemButton(
-            leadingIcon: const Icon(Icons.drive_folder_upload_outlined, size: 16),
-            onPressed: () => _importMarkdown(context),
-            child: const Text('Import Markdown folder…'),
-          ),
-        ],
       ),
     );
-  }
-
-  Future<void> _importMarkdown(BuildContext context) async {
-    final count = await importMarkdownFolder(app);
-    if (count != null && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(count == 0
-              ? 'No Markdown files found in that folder.'
-              : 'Imported $count page${count == 1 ? '' : 's'}.')));
-    }
-  }
-
-  Future<void> _newNotebook(BuildContext context) async {
-    final controller = TextEditingController();
-    final title = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New notebook'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Notebook name'),
-          onSubmitted: (v) => Navigator.pop(ctx, v),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, controller.text),
-              child: const Text('Create')),
-        ],
-      ),
-    );
-    if (title != null && title.trim().isNotEmpty) {
-      await app.createNotebook(title.trim());
-    }
   }
 }
 
 class _SectionHeader extends StatefulWidget {
-  const _SectionHeader(
-      {required this.app, required this.section, required this.dark});
+  const _SectionHeader({
+    required this.app,
+    required this.section,
+    required this.dark,
+    required this.active,
+  });
   final AppState app;
   final TreeNode section;
   final bool dark;
+  final bool active;
 
   @override
   State<_SectionHeader> createState() => _SectionHeaderState();
@@ -324,8 +540,7 @@ class _SectionHeaderState extends State<_SectionHeader> {
   Widget build(BuildContext context) {
     // Drop a page ONTO a section header → move it into that section (ORG-2).
     return DragTarget<String>(
-      onWillAcceptWithDetails: (d) =>
-          app.node(d.data)?.kind == NodeKind.page,
+      onWillAcceptWithDetails: (d) => app.node(d.data)?.kind == NodeKind.page,
       onAcceptWithDetails: (d) => app.movePageToSection(d.data, section.id),
       builder: (ctx, cand, rej) {
         final header = _header(context, pageTarget: cand.isNotEmpty);
@@ -345,19 +560,20 @@ class _SectionHeaderState extends State<_SectionHeader> {
   Widget _header(BuildContext context, {bool pageTarget = false}) {
     final color = _sectionColor(section.color, dark);
     final scheme = Theme.of(context).colorScheme;
-    final collapsed = app.collapsedSections.contains(section.id);
+    final active = widget.active;
+    final emphasised = pageTarget || active;
     final labelStyle = TextStyle(
         fontSize: 11,
         fontWeight: FontWeight.w700,
         letterSpacing: .6,
         fontStyle: pageTarget ? FontStyle.italic : FontStyle.normal,
-        color: pageTarget
+        color: emphasised
             ? scheme.primary
             : dark
                 ? OnoteColors.moon300
                 : OnoteColors.graphite500);
     return InkWell(
-      onTap: _renaming ? null : () => app.toggleSectionCollapsed(section.id),
+      onTap: _renaming ? null : () => app.activateSection(section.id),
       onTapDown: (d) => _downPos = d.globalPosition,
       onDoubleTap: () => setState(() => _renaming = true),
       onSecondaryTapUp: (d) => showNodeMenu(context, app, section,
@@ -370,12 +586,14 @@ class _SectionHeaderState extends State<_SectionHeader> {
                 border: Border.all(color: scheme.primary, width: 1.5),
                 borderRadius: BorderRadius.circular(6),
                 color: scheme.primary.withValues(alpha: .06))
-            : null,
+            : active
+                ? BoxDecoration(
+                    color: scheme.primary.withValues(alpha: .09),
+                    borderRadius: BorderRadius.circular(6))
+                : null,
         padding: const EdgeInsets.fromLTRB(6, 12, 4, 4),
         child: Row(
           children: [
-            Icon(collapsed ? Icons.chevron_right : Icons.expand_more,
-                size: 15, color: OnoteColors.graphite400),
             const SizedBox(width: 4),
             Container(
               width: 3.5,
@@ -417,26 +635,92 @@ class _SectionHeaderState extends State<_SectionHeader> {
   }
 }
 
-/// Recycle bin (ORG-7): restore or permanently delete soft-deleted items.
+/// How long until a trashed item (deleted at [deletedAt]) is auto-purged.
+String _retentionSubtitle(int deletedAt, int retentionDays) {
+  final expireMs =
+      deletedAt + Duration(days: retentionDays).inMilliseconds;
+  final remaining = expireMs - DateTime.now().millisecondsSinceEpoch;
+  final days = (remaining / const Duration(days: 1).inMilliseconds).ceil();
+  if (days <= 0) return 'Deletes soon';
+  return 'Deletes in $days day${days == 1 ? '' : 's'}';
+}
+
+/// Recycle bin (ORG-7): restore or permanently delete soft-deleted notebooks
+/// and, within the current notebook, sections/pages/groups. Items are
+/// auto-purged after the retention window (swept on open).
 Future<void> showRecycleBin(BuildContext context, AppState app) async {
+  await app.purgeExpiredTrash();
+  if (!context.mounted) return;
+  final retention = app.recycleRetentionDays;
   await showDialog<void>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setLocal) {
+        final notebooks = app.trashedNotebooks;
         final items = app.deletedNodes();
         return AlertDialog(
           title: const Text('Recycle bin'),
           content: SizedBox(
-            width: 380,
-            child: items.isEmpty
+            width: 400,
+            child: (notebooks.isEmpty && items.isEmpty)
                 ? const Padding(
                     padding: EdgeInsets.symmetric(vertical: 16),
                     child: Text('Nothing deleted.'))
                 : ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 380),
+                    constraints: const BoxConstraints(maxHeight: 400),
                     child: ListView(
                       shrinkWrap: true,
                       children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
+                          child: Text(
+                              'Items here are permanently deleted after $retention days.',
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  color: OnoteColors.graphite400)),
+                        ),
+                        if (notebooks.isNotEmpty) ...[
+                          const _BinSectionLabel('Notebooks'),
+                          for (final nb in notebooks)
+                            ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.menu_book_outlined,
+                                  size: 16),
+                              title: Text(nb.title,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 13)),
+                              subtitle: Text(
+                                  _retentionSubtitle(
+                                      nb.deletedAt ?? 0, retention),
+                                  style: const TextStyle(fontSize: 11)),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  TextButton(
+                                    onPressed: () async {
+                                      await app.restoreNotebook(nb.id);
+                                      setLocal(() {});
+                                    },
+                                    child: const Text('Restore'),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_forever,
+                                        size: 16, color: OnoteColors.danger),
+                                    tooltip: 'Delete permanently',
+                                    onPressed: () async {
+                                      final ok =
+                                          await _confirmPurgeNotebook(ctx, nb);
+                                      if (ok) {
+                                        await app.purgeNotebook(nb.id);
+                                        setLocal(() {});
+                                      }
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          if (items.isNotEmpty) const _BinSectionLabel('Items'),
+                        ],
                         for (final it in items)
                           ListTile(
                             dense: true,
@@ -450,6 +734,9 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
                             title: Text(it.title,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontSize: 13)),
+                            subtitle: Text(
+                                _retentionSubtitle(it.deletedAt, retention),
+                                style: const TextStyle(fontSize: 11)),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -484,6 +771,44 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
       },
     ),
   );
+}
+
+Future<bool> _confirmPurgeNotebook(BuildContext context, NotebookRef nb) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Delete permanently?'),
+      content: Text(
+          '“${nb.title}” and all its pages will be removed for good. This can\'t '
+          'be undone.'),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel')),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: OnoteColors.danger),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Delete forever'),
+        ),
+      ],
+    ),
+  );
+  return ok == true;
+}
+
+class _BinSectionLabel extends StatelessWidget {
+  const _BinSectionLabel(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 8, 4, 2),
+        child: Text(text.toUpperCase(),
+            style: const TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: .6,
+                color: OnoteColors.graphite400)),
+      );
 }
 
 /// Inline rename field (§7a: rename is a direct-manipulation action, no
@@ -665,10 +990,10 @@ class _PageTileState extends State<_PageTile> {
         onTap: _renaming ? null : () => app.selectPage(page.id),
         onTapDown: (d) => _downPos = d.globalPosition,
         onDoubleTap: () => setState(() => _renaming = true),
-        onSecondaryTapUp: (d) =>
-            showNodeMenu(context, app, page, canIndent: true, position: d.globalPosition),
-        onLongPress: () =>
-            showNodeMenu(context, app, page, canIndent: true, position: _downPos),
+        onSecondaryTapUp: (d) => showNodeMenu(context, app, page,
+            canIndent: true, position: d.globalPosition),
+        onLongPress: () => showNodeMenu(context, app, page,
+            canIndent: true, position: _downPos),
         child: Container(
           decoration: subpageTarget
               ? BoxDecoration(
@@ -750,8 +1075,8 @@ class _EmptyHint extends StatelessWidget {
           const SizedBox(height: 8),
           Text(text,
               textAlign: TextAlign.center,
-              style:
-                  TextStyle(fontSize: 12, color: OnoteColors.graphite400)),
+              style: const TextStyle(
+                  fontSize: 12, color: OnoteColors.graphite400)),
           const SizedBox(height: 10),
           FilledButton.tonal(onPressed: onAction, child: Text(actionLabel)),
         ],
@@ -799,8 +1124,9 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         const PopupMenuDivider(),
         _nodeItem('togroup', Icons.drive_file_move_outline, 'Move to group…'),
       ],
-      if (canIndent && (node.level < 2 || node.level > 0))
-        const PopupMenuDivider(),
+      // A page can always indent (make subpage) or outdent (promote) at some
+      // level in 0..2, so the separator is shown whenever those items are.
+      if (canIndent) const PopupMenuDivider(),
       if (canIndent && node.level < 2)
         _nodeItem('indent', Icons.subdirectory_arrow_right, 'Make subpage'),
       if (canIndent && node.level > 0)

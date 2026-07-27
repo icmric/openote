@@ -96,6 +96,10 @@ class _AppShellState extends State<AppShell> {
           app.wrapSelection('*');
           return true;
         }
+        if (k == LogicalKeyboardKey.keyU) {
+          app.wrapSelection('++'); // underline (TEXT-1)
+          return true;
+        }
         // Ctrl+Shift+C — flick the selection to the last colour and back.
         if (shift && k == LogicalKeyboardKey.keyC) {
           app.toggleTextColor();
@@ -174,6 +178,43 @@ class _AppShellState extends State<AppShell> {
     return true;
   }
 
+  /// Memoised navigator. The whole shell sits under one `ListenableBuilder`, so
+  /// *every* notify — each keystroke (`markDirty`), each drag frame — used to
+  /// rebuild the navigator too: three `nodes.where(...)` scans plus a nested
+  /// per-group scan, and a fresh `_PageTile` (`DragTarget` + `Draggable` +
+  /// `InkWell`) for every visible page. Returning the identical widget when
+  /// nothing the navigator displays has changed lets Flutter skip that subtree
+  /// entirely (§7a.6 keystroke-to-paint budget).
+  Widget? _navCache;
+  List<Object?>? _navKey;
+
+  Widget _navigator() {
+    final key = <Object?>[
+      app.nodesRevision,
+      app.pageId,
+      app.activeSectionId,
+      app.navSplit,
+      app.notebookId,
+      app.collapsedPages.length,
+      app.collapsedGroups.length,
+      app.repo.notebooks.length,
+    ];
+    final cached = _navCache;
+    if (cached != null && _navKey != null && _listEq(_navKey!, key)) {
+      return cached;
+    }
+    _navKey = key;
+    return _navCache = Sidebar(app: app);
+  }
+
+  static bool _listEq(List<Object?> a, List<Object?> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -183,7 +224,7 @@ class _AppShellState extends State<AppShell> {
         return Scaffold(
           body: Row(
             children: [
-              Sidebar(app: app),
+              _navigator(),
               const VerticalDivider(width: 1),
               Expanded(
                 child: Column(
@@ -414,6 +455,8 @@ class _StatusBar extends StatelessWidget {
     final saved = !app.hasUnsavedChanges;
     final rust = app.engineLabel.startsWith('Rust');
     final hash = app.pageContentHash;
+    // A failed save must never read as "Saved" — it stays dirty and says so.
+    final failed = app.saveError != null;
     return Container(
       height: 24,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -423,12 +466,42 @@ class _StatusBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(saved ? Icons.check_circle_outline : Icons.sync,
-              size: 12,
-              color: saved ? OnoteColors.success : OnoteColors.graphite400),
-          const SizedBox(width: 5),
-          Text(saved ? 'Saved on this device' : 'Saving…',
-              style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+          Tooltip(
+            message: failed
+                ? "Openote couldn't save this page:\n${app.saveError}\n\n"
+                    'Your changes are still in memory and will be retried on the '
+                    'next edit. Check free disk space and that the notebook file '
+                    'is not open elsewhere.'
+                : saved
+                    ? 'This page is saved to your local .onote file.'
+                    : 'Saving…',
+            child: Row(children: [
+              Icon(
+                  failed
+                      ? Icons.error_outline
+                      : saved
+                          ? Icons.check_circle_outline
+                          : Icons.sync,
+                  size: 12,
+                  color: failed
+                      ? OnoteColors.danger
+                      : saved
+                          ? OnoteColors.success
+                          : OnoteColors.graphite400),
+              const SizedBox(width: 5),
+              Text(
+                  failed
+                      ? "Couldn't save — changes kept in memory"
+                      : saved
+                          ? 'Saved on this device'
+                          : 'Saving…',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: failed
+                          ? OnoteColors.danger
+                          : OnoteColors.graphite400)),
+            ]),
+          ),
           const SizedBox(width: 12),
           // Active compute engine (§ADR-0002): green chip when the Rust core
           // is linked, with the live page content-hash it computed on save.

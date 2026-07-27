@@ -20,12 +20,30 @@ class _PageTitleViewState extends State<PageTitleView> {
   final _controller = TextEditingController();
   final _focus = FocusNode();
   bool _editing = false;
+  // The page this title is bound to while editing. Captured at edit start so a
+  // commit during teardown targets the right page even if app.pageId has
+  // already advanced to the next page (the widget is keyed by page id).
+  String? _editingPageId;
 
   TreeNode? get _page => widget.app.node(widget.app.pageId ?? '');
 
+  /// Write the in-flight title back to the page it belongs to.
+  void _commitTo(String pageId) {
+    if (widget.app.node(pageId) == null) return; // page gone — nothing to rename
+    final t = _controller.text.trim();
+    widget.app.renameNode(pageId, t.isEmpty ? 'Untitled page' : t);
+  }
+
   @override
   void dispose() {
-    if (_editing) widget.app.titleEditing = false; // clear without notify
+    // Commit any in-flight title before teardown. Navigation that isn't a
+    // pointer-blur (wiki-link tap, find jump) disposes this widget mid-edit;
+    // without this the typed title would be lost — the same "commit on
+    // transition, not focus" lesson as the F-3 body-text fix.
+    if (_editing && _editingPageId != null) {
+      _commitTo(_editingPageId!);
+      widget.app.titleEditing = false; // clear without notify (disposing)
+    }
     _controller.dispose();
     _focus.dispose();
     super.dispose();
@@ -34,6 +52,7 @@ class _PageTitleViewState extends State<PageTitleView> {
   void _startEdit() {
     final page = _page;
     if (page == null) return;
+    _editingPageId = page.id;
     _controller.text = page.title == 'Untitled page' ? '' : page.title;
     widget.app.setTitleEditing(true);
     setState(() => _editing = true);
@@ -45,11 +64,8 @@ class _PageTitleViewState extends State<PageTitleView> {
   }
 
   void _commit() {
-    final page = _page;
-    if (page != null) {
-      final t = _controller.text.trim();
-      widget.app.renameNode(page.id, t.isEmpty ? 'Untitled page' : t);
-    }
+    _commitTo(_editingPageId ?? _page?.id ?? '');
+    _editingPageId = null;
     widget.app.setTitleEditing(false);
     setState(() => _editing = false);
   }

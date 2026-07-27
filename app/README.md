@@ -1,8 +1,10 @@
 # Openote — MVP application
 
-The walking-skeleton MVP of Openote: a runnable, **pure-Dart** slice of the full architecture. It creates real `.onote` files per the [File Format Spec](../docs/specs/10-file-format-spec.md), operating in the spec's documented **mirror-write mode** (§4) until the Rust core lands — so nothing about your notebooks changes when it does.
+The Openote desktop application: Flutter/Dart UI plus a **native Rust core** (`rust/onote_core`) linked over `dart:ffi`. It creates real `.onote` files per the [File Format Spec](../docs/specs/10-file-format-spec.md), operating in the spec's documented **mirror-write mode** (§4). The Rust core is optional at runtime — without its library the app falls back to the pure-Dart engine and behaves identically, minus OneNote import.
 
-## What works in this cut (iteration 10)
+> **Building with the Rust core:** the Flutter build does **not** compile it for you. See [`rust/onote_core/INTEGRATION.md`](../rust/onote_core/INTEGRATION.md) — and heed the **stale-DLL warning** there before debugging any import behaviour.
+
+## What works in this cut
 
 - **App icon, reliably:** copy `build/app_icon.ico` → `windows/runner/resources/app_icon.ico`, `flutter clean`, rebuild (see note below).
 - **Auto-width fixed** — boxes now widen *before* text reaches the edge (no clipping), still locking on manual resize.
@@ -90,7 +92,12 @@ New in iteration 2: **inline-rendered Markdown** in text blocks (headings, bold/
 - **Images:** insert from file; stored content-addressed in the notebook's blob table.
 - **Light/dark theme** from the style-guide tokens, following the OS.
 
-**Not yet (by design, tracked in the roadmap):** the rich-text engine (awaiting the [ADR-0004](../docs/adr/ADR-0004-editor-engine.md) bake-off — text blocks currently use plain multiline editing behind the `TextBlockView` seam), inline Markdown rendering, CRDT/Rust core (stubbed behind `lib/core/engine.dart`), sync, embeds, export.
+**Since shipped** (this list is kept honest deliberately): inline-rendered Markdown, the **native Rust core linked over `dart:ffi`** (`lib/core/onote_ffi.dart` → `RustEngine`, with graceful fallback to the Dart `MirrorEngine` when the DLL is absent), **OneNote `.one`/`.onepkg` import**, Markdown/PDF/open-folder export, tables, backlinks, page templates, version history, recycle bin with 30-day retention, and the stacked navigator.
+
+**Still not implemented (tracked in the [roadmap](../ROADMAP.md)):**
+- **The structured rich-text engine** — awaiting the [ADR-0004](../docs/adr/ADR-0004-editor-engine.md) bake-off. Text blocks still use a `TextField` + rendered-Markdown seam (`TextBlockView`/`MarkdownView`): source is revealed while editing, rendered when not. This is now the **critical path** — in-flow-images-editable-as-images and per-run styling both depend on it.
+- **Sync** (SYNC-1/2) — the Rust core implements and tests the merge semantics, but Loro and the transport are not wired.
+- **Live embeds/transclusion** (EMBED-2…8), notebook-wide find-and-replace, tags, and external URL links.
 
 ## Running it
 
@@ -119,9 +126,14 @@ Linux desktop needs the usual toolchain (`clang`, `cmake`, `ninja-build`, `libgt
 - **Where's my data?** `~/Documents/Openote/*.onote` — open one with any SQLite browser and look at `page_mirror` to see the open format doing its job. If Documents isn't usable (e.g. OneDrive folder redirection on Windows), Openote falls back to the per-user app-data directory (on Windows: `%APPDATA%\org.openote\openote\Openote`, shown in the window title of a future build; check both if in doubt).
 - **App starts but no window / crash at startup:** fixed builds show an in-window error report instead; paste its contents into an issue.
 
-## Where the Rust core will slot in
+## How the Rust core slots in
 
-`lib/core/engine.dart` defines the `DocumentEngine` interface (open/apply/snapshot/subscribe). Today `MirrorEngine` implements it in pure Dart (direct mirror writes + `dirty_mirror` flag per spec §4). The Loro-backed `onote-core` crate (via `flutter_rust_bridge`) will be a second implementation behind the same interface — [ADR-0002](../docs/adr/ADR-0002-crdt-library.md). Until then, **you don't need Rust installed to develop or run the app.**
+`lib/core/engine.dart` defines the `DocumentEngine` seam. **Two** implementations exist and are chosen once at startup by `AppState._selectEngine`:
+
+- `MirrorEngine` — pure Dart, always available (direct mirror writes + `dirty_mirror` per spec §4).
+- `RustEngine` — used whenever the native library loads (`lib/core/onote_ffi.dart`). Page saves are content-hashed in Rust and a save whose hash is unchanged is skipped entirely. The status bar shows which engine is live.
+
+The core also powers **OneNote import**, which has no Dart fallback — that menu reports the core is required if the library is missing. The Loro CRDT ([ADR-0002](../docs/adr/ADR-0002-crdt-library.md)) will replace the snapshot merge behind this same seam. **You don't need Rust installed to develop or run the app** — only to work on import or the core itself.
 
 ## Code map
 

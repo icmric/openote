@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 /// First-party pan/zoom (Tech Eval §7.3: own transform, no InteractiveViewer).
-/// Maps between screen space and page space; unbounded in both axes.
+/// Maps between screen space and page space. The model is unbounded, but
+/// panning is clamped to the page origin (`clampToPage`) so the page can't be
+/// lost off-screen (CANVAS-1 v0.3).
 class CanvasController extends ChangeNotifier {
   double scale = 1.0;
   Offset offset = Offset.zero; // page-space origin's screen position
@@ -77,6 +79,27 @@ class CanvasController extends ChangeNotifier {
   /// later reveals the page bounds — "a page that can become a canvas."
   void centerPage() {
     scale = 1.0;
+    offset = Offset.zero;
+    clampToPage();
+    notifyListeners();
+  }
+
+  /// Fit [contentWidth] page-px to the viewport width, anchored top-left. Only
+  /// zooms OUT (never past 100%), so a narrow page keeps its natural size while
+  /// a wide imported page reveals its full width — including images placed to
+  /// the right of the text at their original OneNote offsets, which otherwise
+  /// sit off-screen at 100%. Vertical position stays at the top (scroll down
+  /// for the rest), so text stays readable rather than shrinking to fit height.
+  void fitWidth(double contentWidth) {
+    if (viewport == Size.zero || contentWidth <= 0) {
+      centerPage();
+      return;
+    }
+    const pad = 24.0;
+    final needed = contentWidth + pad;
+    scale = needed <= viewport.width
+        ? 1.0
+        : (viewport.width / needed).clamp(minScale, 1.0);
     offset = Offset.zero;
     clampToPage();
     notifyListeners();

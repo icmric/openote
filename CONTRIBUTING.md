@@ -2,7 +2,11 @@
 
 Thank you for your interest in Openote — an open-source, cross-platform alternative to Microsoft OneNote, built so that no one is ever locked into their notes again.
 
-> **Current phase: planning & design.** There is **no application code yet**. Right now the most valuable contributions are *ideas, critique, and expertise* on the design documents in [`docs/`](docs/README.md). This guide will grow as the codebase begins.
+> **Current phase: implementation.** There is a working desktop app — Flutter/Dart in [`app/`](app/README.md) plus a native Rust core in [`rust/onote_core/`](rust/onote_core/README.md). Start with [`app/README.md`](app/README.md) to build and run it, and read [`INTEGRATION.md`](rust/onote_core/INTEGRATION.md) (including its **stale-DLL warning**) before touching the core. Design critique on [`docs/`](docs/README.md) is still very welcome.
+>
+> **Before submitting code:** `flutter analyze` must be clean of errors and warnings, `flutter test` (23 tests) and `cargo test` (26 tests) must pass, and `cargo clippy --all-targets` must be clean. Match the surrounding comment density — this codebase explains *why*, not *what*.
+>
+> ⚠ **Licensing is not yet ratified** and the repository has **no `LICENSE` file** ([ADR-0005](docs/adr/ADR-0005-licensing.md) is still a proposal). Until that lands, external contributions cannot be cleanly accepted — resolving it is the top project-hygiene priority.
 
 ## Ways to help right now
 

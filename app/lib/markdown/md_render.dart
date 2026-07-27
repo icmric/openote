@@ -1,6 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 
+import '../core/platform_open.dart';
 import '../theme/onote_theme.dart';
 
 /// Interim inline-Markdown rendering (TEXT-2/4 at block granularity):
@@ -9,14 +12,69 @@ import '../theme/onote_theme.dart';
 /// true as-you-type span-level rendering; this module keeps the same dialect
 /// (Data Model Spec §5.2 subset): #/##/### headings, - bullets, 1. numbered,
 /// - [ ]/- [x] checkboxes, > quotes, ``` fences, **bold**, *italic*,
-/// `code`, ~~strike~~, ==highlight==.
-class MarkdownView extends StatelessWidget {
+/// `code`, ~~strike~~, ==highlight==, and in-flow images
+/// `![alt](sha256:<hash>)` resolved from the notebook blob store (Data Model
+/// §5.1: a text block is a container of mixed content — images flow WITH the
+/// text, OneNote-style, rather than floating over it).
+// Line patterns, compiled ONCE. These used to be constructed inside
+// `_renderLine`, i.e. eight `RegExp`s per line — ~4000 allocations to parse a
+// 500-line imported text block, re-paid on every edit of that block.
+final _reHeading = RegExp(r'^(#{1,3})\s+(.*)$');
+final _reCheckbox = RegExp(r'^(\s*)- \[( |x|X)\]\s?(.*)$');
+final _reCheckMark = RegExp(r'\[(x|X)\]');
+final _reBullet = RegExp(r'^(\s*)-\s+(.*)$');
+final _reNumbered = RegExp(r'^(\s*)(\d+)\.\s+(.*)$');
+final _reImage =
+    RegExp(r'^(\s*)!\[([^\]]*)\]\(([^)\s]+)(?:\s+=(\d+)x(\d+))?\)\s*$');
+final _reQuote = RegExp(r'^>\s?(.*)$');
+final _reDisplayMath = RegExp(r'^\s*\$\$(.+)\$\$\s*$');
+final _reDivider = RegExp(r'^\s*(-{3,}|\*{3,})\s*$');
+// The 12-branch inline alternation, also compiled once per process rather than
+// once per rendered line.
+final _reInline = RegExp(
+    r'(\[\[([^\]|]+)(?:\|([^\]]+))?\]\])|(\*\*(.+?)\*\*)|(\*(.+?)\*)|(`(.+?)`)|(~~(.+?)~~)|(==(.+?)==)|(\$([^$\n]+?)\$)|(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})'
+    // Groups 19-21: an external link `[label](url)`. Kept AFTER the wiki-link
+    // branch so `[[Page]]` still wins, and appended at the end of the
+    // alternation so the existing group numbers above are untouched.
+    r'|(\[([^\]\[]+)\]\((https?://[^)\s]+|mailto:[^)\s]+)\))'
+    // Group 22-23: `++underline++`. Markdown has no underline and `__x__` means
+    // bold, so the dialect borrows the `==highlight==` shape (Data Model §5.2).
+    r'|(\+\+(.+?)\+\+)');
+
+/// Indent per nesting level, as a multiple of the text's font size.
+///
+/// **Measured from OneNote's own PDF export** — the left edge of each nesting
+/// level, divided by the font size, on two unrelated pages:
+///
+/// | sample                   | font size | indent step | ratio |
+/// |--------------------------|-----------|-------------|-------|
+/// | `Lecture.pdf`            | 8.400 pt  | 20.60 pt    | 2.452 |
+/// | `Lecture p2 …pdf`        | 10.728 pt | 26.20 pt    | 2.442 |
+///
+/// Two things follow. First, the indent is **proportional to font size**, not a
+/// fixed pixel step — which is also just correct typography. Second, ours was a
+/// flat `6px` per leading space (12px per level, since the importer emits two
+/// spaces per level), i.e. barely a quarter of OneNote's ~45px for 11pt text, so
+/// nested bullets sat far left of where the source had them.
+const double kIndentPerLevel = 2.45;
+
+/// Width of the list-marker gutter. The bullet/number hangs here so the body
+/// text starts on the indent itself (OneNote does the same).
+const double kBulletGutter = 22.0;
+
+/// Leading spaces → indent in logical pixels. The importer (and Markdown
+/// convention) use two spaces per nesting level.
+double indentPx(int leadingSpaces, double? fontSize) =>
+    (leadingSpaces / 2.0) * kIndentPerLevel * (fontSize ?? 14.0);
+
+class MarkdownView extends StatefulWidget {
   const MarkdownView({
     super.key,
     required this.text,
     required this.baseStyle,
     this.onToggleCheckbox,
     this.onWikiLink,
+    this.imageResolver,
   });
 
   final String text;
@@ -28,9 +86,55 @@ class MarkdownView extends StatelessWidget {
   /// Called when a `[[Page|id]]` link is tapped (EMBED-1).
   final void Function(String label, String? id)? onWikiLink;
 
+  /// Resolves an image src (e.g. `sha256:<hash>`) to bytes, typically from the
+  /// notebook's content-addressed blob store. Null → image lines render as
+  /// their literal Markdown.
+  final Uint8List? Function(String src)? imageResolver;
+
+  @override
+  State<MarkdownView> createState() => _MarkdownViewState();
+}
+
+/// Stateful ONLY for the parse cache: a page canvas rebuilds every visible
+/// block on each app notify (drag frames, ink commits, typing elsewhere), and
+/// re-parsing every text block's Markdown per frame made busy imported pages
+/// sluggish. The built subtree is cached and returned identical while
+/// (text, style, theme) are unchanged — identical child widgets short-circuit
+/// Flutter's rebuild of the whole subtree.
+class _MarkdownViewState extends State<MarkdownView> {
+  /// Decoded-bytes cache so scrolling doesn't re-query SQLite per frame; the
+  /// blob store is content-addressed, so entries can never go stale. Only
+  /// successful reads are cached — a miss (e.g. blob not yet written) retries.
+  static final Map<String, Uint8List> _imgCache = {};
+
+  Widget? _built;
+  String? _builtText;
+  TextStyle? _builtStyle;
+  bool? _builtDark;
+
+  String get text => widget.text;
+  TextStyle get baseStyle => widget.baseStyle;
+  void Function(String newText)? get onToggleCheckbox => widget.onToggleCheckbox;
+  void Function(String label, String? id)? get onWikiLink => widget.onWikiLink;
+
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
+    if (_built != null &&
+        _builtText == text &&
+        _builtStyle == baseStyle &&
+        _builtDark == dark) {
+      return _built!;
+    }
+    final built = _buildFresh(context, dark);
+    _built = built;
+    _builtText = text;
+    _builtStyle = baseStyle;
+    _builtDark = dark;
+    return built;
+  }
+
+  Widget _buildFresh(BuildContext context, bool dark) {
     final lines = text.split('\n');
     final children = <Widget>[];
     var inFence = false;
@@ -80,7 +184,7 @@ class MarkdownView extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     // Headings
-    final h = RegExp(r'^(#{1,3})\s+(.*)$').firstMatch(line);
+    final h = _reHeading.firstMatch(line);
     if (h != null) {
       final level = h.group(1)!.length;
       final sizes = [22.0, 18.5, 16.0];
@@ -98,11 +202,12 @@ class MarkdownView extends StatelessWidget {
     }
 
     // Checkbox
-    final cb = RegExp(r'^(\s*)- \[( |x|X)\]\s?(.*)$').firstMatch(line);
+    final cb = _reCheckbox.firstMatch(line);
     if (cb != null) {
       final checked = cb.group(2)!.toLowerCase() == 'x';
       return Padding(
-        padding: EdgeInsets.only(left: cb.group(1)!.length * 6.0),
+        padding: EdgeInsets.only(
+            left: indentPx(cb.group(1)!.length, baseStyle.fontSize)),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -112,7 +217,7 @@ class MarkdownView extends StatelessWidget {
                   : () {
                       final lines = text.split('\n');
                       lines[index] = checked
-                          ? lines[index].replaceFirst(RegExp(r'\[(x|X)\]'), '[ ]')
+                          ? lines[index].replaceFirst(_reCheckMark, '[ ]')
                           : lines[index].replaceFirst('[ ]', '[x]');
                       onToggleCheckbox!(lines.join('\n'));
                     },
@@ -143,19 +248,26 @@ class MarkdownView extends StatelessWidget {
     }
 
     // Bullet / numbered
-    final bullet = RegExp(r'^(\s*)-\s+(.*)$').firstMatch(line);
-    final numbered = RegExp(r'^(\s*)(\d+)\.\s+(.*)$').firstMatch(line);
+    final bullet = _reBullet.firstMatch(line);
+    final numbered = _reNumbered.firstMatch(line);
     if (bullet != null || numbered != null) {
-      final indent = (bullet ?? numbered)!.group(1)!.length * 6.0;
+      final indent =
+          indentPx((bullet ?? numbered)!.group(1)!.length, baseStyle.fontSize);
       final marker = bullet != null ? '•' : '${numbered!.group(2)}.';
       final body = bullet != null ? bullet.group(2)! : numbered!.group(3)!;
       return Padding(
-        padding: EdgeInsets.only(left: indent),
+        // The marker HANGS in the left gutter, so the body text lands exactly on
+        // the indent — the way OneNote (and print typography) sets lists. The
+        // marker used to occupy inline width, pushing every bulleted line 22px
+        // right of its indent; measured against OneNote's PDF that was a
+        // constant +22u error on bullet rows.
+        padding: EdgeInsets.only(
+            left: (indent - kBulletGutter).clamp(0.0, double.infinity)),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(
-                width: 22,
+                width: kBulletGutter,
                 child: Text(marker,
                     style: baseStyle.copyWith(color: OnoteColors.graphite500))),
             Expanded(
@@ -167,8 +279,59 @@ class MarkdownView extends StatelessWidget {
       );
     }
 
+    // In-flow image on its own line: ![alt](src) or ![alt](src =WxH) — src is
+    // a blob reference (sha256:<hash>); the optional ` =WxH` suffix is the
+    // display size in page px (kept from import so a resized image renders at
+    // its resized dimensions, not natural pixels). Without a size, natural
+    // size capped to the box width.
+    final img = _reImage.firstMatch(line);
+    if (img != null && widget.imageResolver != null) {
+      final src = img.group(3)!;
+      var bytes = _imgCache[src];
+      if (bytes == null) {
+        bytes = widget.imageResolver!(src);
+        if (bytes != null) _imgCache[src] = bytes; // never cache a miss
+      }
+      if (bytes != null) {
+        final w = double.tryParse(img.group(4) ?? '');
+        final h = double.tryParse(img.group(5) ?? '');
+        // An explicit ` =WxH` only ever comes from import, where the size IS
+        // OneNote's display rectangle and the flow above it is positioned to
+        // match. Treat it as authoritative:
+        //
+        //  * no `maxWidth` clamp — clamping a >640px image scaled it down but
+        //    left `height: h`, so `BoxFit.contain` letterboxed it: drawn small
+        //    and centred in a taller slot, shifting the picture off its line.
+        //  * no vertical padding — 4px top+bottom is phantom leading OneNote
+        //    doesn't have, so every image sat low and everything after it in
+        //    the same box inherited the drift.
+        //  * top-left anchored, so any residual aspect mismatch shows as a gap
+        //    at the bottom rather than moving the image.
+        final sized = w != null || h != null;
+        final image = Image.memory(bytes,
+            width: w,
+            height: h,
+            fit: BoxFit.contain,
+            alignment: Alignment.topLeft,
+            gaplessPlayback: true);
+        return Padding(
+          padding: EdgeInsets.only(
+              left: indentPx(img.group(1)!.length, baseStyle.fontSize),
+              top: sized ? 0 : 4,
+              bottom: sized ? 0 : 4),
+          child: sized
+              ? Align(alignment: Alignment.topLeft, child: image)
+              : ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 640),
+                  child: image,
+                ),
+        );
+      }
+      // Unresolvable blob → fall through to the literal-text rendering below.
+    }
+
     // Quote
-    final quote = RegExp(r'^>\s?(.*)$').firstMatch(line);
+    final quote = _reQuote.firstMatch(line);
     if (quote != null) {
       return Container(
         margin: const EdgeInsets.symmetric(vertical: 2),
@@ -182,25 +345,29 @@ class MarkdownView extends StatelessWidget {
       );
     }
 
-    // Display math on its own line: $$latex$$ (TEXT-1a / MATH-1 inline)
-    final dm = RegExp(r'^\s*\$\$(.+)\$\$\s*$').firstMatch(line);
+    // Display math on its own line: $$latex$$ (TEXT-1a / MATH-1 inline).
+    // scaleDown keeps a wide equation within the box instead of overflowing.
+    final dm = _reDisplayMath.firstMatch(line);
     if (dm != null) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Center(
-          child: Math.tex(
-            dm.group(1)!,
-            textStyle: baseStyle.copyWith(fontSize: 18),
-            onErrorFallback: (e) => Text(dm.group(1)!,
-                style: const TextStyle(
-                    fontFamily: 'monospace', color: OnoteColors.graphite400)),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Math.tex(
+              dm.group(1)!,
+              textStyle: baseStyle.copyWith(fontSize: 18),
+              onErrorFallback: (e) => Text(dm.group(1)!,
+                  style: const TextStyle(
+                      fontFamily: 'monospace', color: OnoteColors.graphite400)),
+            ),
           ),
         ),
       );
     }
 
     // Divider
-    if (RegExp(r'^\s*(-{3,}|\*{3,})\s*$').hasMatch(line)) {
+    if (_reDivider.hasMatch(line)) {
       return const Divider(height: 12);
     }
 
@@ -213,12 +380,12 @@ class MarkdownView extends StatelessWidget {
 }
 
 /// Inline span parsing: **bold**, *italic*, `code`, ~~strike~~, ==highlight==,
-/// inline math $…$ (TEXT-1a), and [[Page|id]] wiki-links (EMBED-1).
+/// ++underline++, inline math $…$ (TEXT-1a), [[Page|id]] wiki-links (EMBED-1)
+/// and external `[label](https://…)` links (TEXT-1).
 List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
     [void Function(String label, String? id)? onWikiLink]) {
   final spans = <InlineSpan>[];
-  final pattern = RegExp(
-      r'(\[\[([^\]|]+)(?:\|([^\]]+))?\]\])|(\*\*(.+?)\*\*)|(\*(.+?)\*)|(`(.+?)`)|(~~(.+?)~~)|(==(.+?)==)|(\$([^$\n]+?)\$)|(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})');
+  final pattern = _reInline;
   var last = 0;
   for (final m in pattern.allMatches(text)) {
     if (m.start > last) {
@@ -255,10 +422,25 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
           m.group(15)!,
           textStyle: base,
           onErrorFallback: (e) => Text(m.group(15)!,
-              style: TextStyle(
+              style: const TextStyle(
                   fontFamily: 'monospace', color: OnoteColors.graphite400)),
         ),
       ));
+    } else if (m.group(19) != null) {
+      // External link [label](url) — opened with the OS default browser.
+      final label = m.group(20)!;
+      final url = m.group(21)!;
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: _ExternalLink(
+            label: label,
+            url: url,
+            color: dark ? OnoteColors.ink300 : OnoteColors.ink600),
+      ));
+    } else if (m.group(22) != null) {
+      spans.add(TextSpan(
+          text: m.group(23),
+          style: const TextStyle(decoration: TextDecoration.underline)));
     } else if (m.group(4) != null) {
       spans.add(TextSpan(
           text: m.group(5), style: const TextStyle(fontWeight: FontWeight.w600)));
@@ -296,6 +478,48 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
 }
 
 /// A clickable page link chip rendered inline (EMBED-1).
+/// An external `[label](https://…)` link. Hands the URL to the OS default
+/// browser; the scheme allow-list lives in [PlatformOpen] because note content
+/// is untrusted.
+class _ExternalLink extends StatelessWidget {
+  const _ExternalLink(
+      {required this.label, required this.url, required this.color});
+  final String label;
+  final String url;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: url,
+      waitDuration: const Duration(milliseconds: 400),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: () async {
+            final ok = await PlatformOpen.url(url);
+            if (!ok && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("Couldn't open $url")));
+            }
+          },
+          child: Text.rich(TextSpan(children: [
+            TextSpan(
+                text: label,
+                style: TextStyle(
+                    color: color,
+                    decoration: TextDecoration.underline,
+                    decorationColor: color)),
+            TextSpan(
+                text: ' ↗',
+                style: TextStyle(color: color, fontSize: 11)),
+          ])),
+        ),
+      ),
+    );
+  }
+}
+
 class _WikiLink extends StatelessWidget {
   const _WikiLink({required this.label, required this.onTap, required this.color});
   final String label;

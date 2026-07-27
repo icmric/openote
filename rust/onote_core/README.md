@@ -17,7 +17,20 @@ dependency, not a runtime one.
 | --- | --- |
 | `mirror` | The page **mirror** model (the open glass-box JSON from File Format Spec §4) and a deterministic, conflict-free `merge` of two page snapshots — the seed of cross-device sync (SYNC-1/2). |
 | `ids` | A dependency-free FNV-1a content hash for cheap "did this page change?" sync gating. |
-| `api` | The thin surface `flutter_rust_bridge` turns into Dart bindings. |
+| `onenote` | A reverse-engineered MS-ONESTORE/MS-ONE reader (OPEN-8): pages in tab order with subpage levels, **separate text boxes at true positions** with styling, lists, in-flow + floating images, Office-linear-math → LaTeX equations, and MS-ISF ink with pressure. Also the `dump_*` diagnostics used to reverse-engineer the format. |
+| `onepkg` | Whole-notebook `.onepkg` import: LZX cabinet extraction (single-pass per folder) + **parallel per-section parsing** across cores. |
+| `ffi` | The C-ABI shim the app links today via `dart:ffi` (see `app/lib/core/onote_ffi.dart`). Every entry point catches panics so nothing unwinds across the ABI. |
+| `api` | The thin surface `flutter_rust_bridge` turns into Dart bindings (opt-in, for a future FRB integration). |
+
+### Vendored dependency: `vendor/cab`
+
+`vendor/cab` is a **copy of the MIT-licensed [`cab`](https://crates.io/crates/cab) 0.6.0 crate with a two-method patch**, wired in via `[patch.crates-io]` in `Cargo.toml`. It adds `FileEntry::uncompressed_offset()` and `Cabinet::read_folder_data()`.
+
+**Why:** a `.onepkg` is a single LZX cabinet *folder* holding every section, and upstream's `read_file()` restarts decompression from the folder start for each file — quadratic. On a real 27-section / 85 MB notebook that was ~35 s of a ~41 s import. Decompressing each folder once and slicing sections out at their offsets removed almost all of it.
+
+Both added methods are marked with `(Openote patch)` comments, and upstream's `LICENSE` is retained in the vendor directory. If you bump `cab`, re-apply the patch (or upstream it) rather than dropping the `[patch.crates-io]` entry — the import will silently get much slower.
+
+**Release profile note:** `opt-level = 3` (not `"z"`) — size-optimising measurably slowed LZX decompression and parsing. `panic = "unwind"` is **required**: the FFI layer's `catch_unwind` guards depend on it.
 
 `merge` is intentionally CRDT-*shaped* — commutative, associative, and
 idempotent over the snapshot-exchange model — so the Loro-backed engine
@@ -35,9 +48,27 @@ cd rust/onote_core
 cargo test
 ```
 
-You should see `13 passed`. That exercises the merge semantics
-(newer-wins, union, idempotence, commutativity, forward-compatible field
-round-trip) and the content hash against known FNV-1a vectors.
+You should see **`26 passed`**. That exercises the merge semantics
+(newer-wins, union, idempotence, order-independent commutativity + tie-break,
+forward-compatible field round-trip), the content hash against known FNV-1a
+vectors and field-order independence, the FFI round-trip, and the `.one` parser
+(varint/multi-byte stream decoding, math-alphanumeric folding, Office-math →
+LaTeX including prose spacing, and cabinet rejection of non-cabinet input).
+
+### Diagnostics (reverse-engineering aids)
+
+The `dump_one` example is the tool the parser was built with — invaluable when a
+real notebook imports wrongly:
+
+```bash
+cargo run --release --example dump_one -- <file.one>              # object/property structure
+cargo run --release --example dump_one -- <file.one> --import     # importer JSON, per page
+cargo run --release --example dump_one -- <file.one> --sections   # section→page correlation
+cargo run --release --example dump_one -- <file.one> --revs       # per-revision ExGuid resolution
+cargo run --release --example dump_one -- <file.one> --ink        # per-stroke ink diagnostics
+cargo run --release --example dump_one -- <pkg.onepkg> --pkg      # whole-package page tree
+cargo run --release --example dump_one -- <pkg.onepkg> --timing   # extract vs parse timing
+```
 
 ## Wiring the Flutter bindings (opt-in)
 
