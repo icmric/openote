@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    # release/** so a release branch gets CI's full three-OS verification on
+    # every push, without needing a PR to exist yet.
+    branches: [master, 'release/**']
   pull_request:
   workflow_dispatch:
 

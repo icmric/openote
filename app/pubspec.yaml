@@ -1,7 +1,9 @@
 name: openote
 description: An open-source, natively cross-platform alternative to Microsoft OneNote.
 publish_to: "none"
-version: 0.1.0+1
+# Single source of truth for the app version; release.yml derives artifact
+# names from the git tag and asserts it matches this field.
+version: 0.2.0+2
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
