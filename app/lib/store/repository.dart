@@ -608,11 +608,11 @@ class Repository {
           'ON CONFLICT(page_id) DO UPDATE SET json=excluded.json, '
           'mirror_rev=mirror_rev+1, updated_at=excluded.updated_at',
           [pageId, json, nowMs()]);
-      // Placeholder CRDT row keeps the schema honest until onote-core lands.
-      db.execute(
-          'INSERT INTO page_docs(page_id,snapshot,snapshot_v,updated_at) VALUES(?,?,0,?) '
-          'ON CONFLICT(page_id) DO UPDATE SET updated_at=excluded.updated_at',
-          [pageId, Uint8List(0), nowMs()]);
+      // (No CRDT placeholder row. This used to write a zero-byte blob into
+      // `page_docs` on every single save to "keep the schema honest" for a
+      // CRDT layer that never arrived — and that ADR-0006 has now replaced with
+      // a file-based op log outside the container entirely. It was pure write
+      // amplification: an INSERT-or-UPDATE per save carrying no information.)
       // Maintain blob_refs projection: image/file blocks plus in-flow images
       // referenced from text markdown (`![alt](sha256:<hash>)`, Data Model §5.1).
       db.execute('DELETE FROM blob_refs WHERE page_id=?', [pageId]);
@@ -694,6 +694,21 @@ class Repository {
         'SELECT bytes FROM blobs WHERE hash=?', [hash.replaceFirst('sha256:', '')]);
     return rows.isEmpty ? null : rows.first['bytes'] as Uint8List;
   }
+
+  /// Every blob hash with its mime and size, but **not** its bytes.
+  ///
+  /// Deliberately metadata-only: the caller (the op-log backfill) streams blobs
+  /// one at a time via [getBlob], because loading a whole notebook's images into
+  /// memory at once would be hundreds of megabytes on a real imported notebook.
+  List<({String hash, String mime, int size})> blobIndex(String notebookId) => [
+        for (final r in _db(notebookId)
+            .select('SELECT hash,mime,size FROM blobs ORDER BY hash'))
+          (
+            hash: r['hash'] as String,
+            mime: r['mime'] as String? ?? 'application/octet-stream',
+            size: (r['size'] as num?)?.toInt() ?? 0,
+          )
+      ];
 
   void dispose() {
     // Stop the debounced registry writer first: a pending write firing after

@@ -1,9 +1,20 @@
 # Openote File Format Specification (`.onote`)
 
-> **Document status:** Draft v0.1 (format version `1`) · Last updated 2026-07-22
-> **Audience:** Openote implementers and third-party tool authors. This document is written to be publishable as the standalone, permissively-licensed public specification of the format ([ADR-0005](../adr/ADR-0005-licensing.md) proposes CC0/MIT for this spec).
-> **Related:** [Architecture §5](../04-architecture-overview.md) · [Data Model Spec](11-data-model-spec.md) · [ADR-0002 (CRDT)](../adr/ADR-0002-crdt-library.md) · [ADR-0003 (container)](../adr/ADR-0003-storage-container.md)
+> **Document status:** Draft v0.2 (format version `1`) · Last updated 2026-07-27
+> **Licence:** **CC0-1.0** ([`LICENSE`](LICENSE)) — ratified in [ADR-0005](../adr/ADR-0005-licensing.md). Implement it freely; no attribution required.
+> **Audience:** Openote implementers and third-party tool authors. This document is publishable as the standalone public specification of the format.
+> **Related:** [Architecture §5](../04-architecture-overview.md) · [Data Model Spec](11-data-model-spec.md) · [ADR-0003 (container)](../adr/ADR-0003-storage-container.md) · **[ADR-0006 (sync layout)](../adr/ADR-0006-sync-transport-and-text-model.md)**
 > **Normativity:** the key words MUST, SHOULD, MAY are used in the RFC 2119 sense. Anything marked *(informative)* is guidance, not a conformance requirement.
+
+> ### ⚠ v0.2 correction: there is no CRDT layer in the container
+>
+> v0.1 of this spec specified a CRDT layer (`page_docs`, `page_updates`) as the notebook's source of truth, with `page_mirror` as an open JSON *projection* of it — the "glass box". **That layer was never implemented, and it is no longer the plan.**
+>
+> - **What is actually stored:** `page_mirror` holds page content and is **authoritative**. It is the only copy. `page_docs` was created and written a zero-byte placeholder on every save; `page_updates` and `fts_pages` were created and never touched at all. As of 2026-07-27 none of the three is created or written.
+> - **Why the plan changed:** [ADR-0006](../adr/ADR-0006-sync-transport-and-text-model.md) found that consumer file-sync services (Drive, OneDrive, rsync) replicate *whole files* and resolve conflicts by making a second copy — so a single large SQLite file that every edit rewrites is close to the worst possible sync unit. The operation log therefore moves **out of the container and into files**, inside a `.onotebook` directory, where one-writer-per-file makes conflicts structurally impossible.
+> - **Where this is heading:** the container becomes a **local, never-synced, rebuildable cache** of that log (§9). The openness guarantee moves with it: the log and its documented materialisation become the durable open artifact, rather than a JSON mirror kept inside a binary container.
+>
+> §5 is retained below, marked superseded, because implementations of v0.1 may exist and readers deserve to know what those bytes were meant to be.
 
 ---
 
@@ -12,7 +23,7 @@
 **Goals** (traceable to PRD OPEN-1…12):
 1. **Openness in practice, not just on paper.** Every byte is either a well-known open format (SQLite, JSON, Markdown, LaTeX, PNG/JPEG/…) or a structure fully described in this document. A competent developer MUST be able to write a read-only implementation from this spec alone, without reading Openote's source.
 2. **Crash-safety and partial recoverability.** A power cut mid-write MUST NOT corrupt the notebook. Damage to one page MUST NOT take down the rest.
-3. **Local-first & sync-ready.** The same structures serve single-device use and CRDT-based multi-device merge.
+3. **Local-first, and honest about sync.** These structures serve single-device use well. They are *not* the multi-device merge unit — that lives outside the container by design ([ADR-0006](../adr/ADR-0006-sync-transport-and-text-model.md), §11), because a format that every edit rewrites wholesale cannot be merged by the file-sync services people actually use.
 4. **No artificial limits** on notebook, section, page, or attachment size.
 5. **Longevity.** All layers chosen for archival credibility (SQLite is a Library-of-Congress-recommended storage format; JSON/Markdown/LaTeX are ubiquitous).
 
@@ -56,25 +67,16 @@ CREATE TABLE nodes (
 );
 CREATE INDEX idx_nodes_parent ON nodes(parent_id, position);
 
--- ── Page content: one CRDT document per page ──────────────────────
-CREATE TABLE page_docs (
-  page_id     TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
-  snapshot    BLOB NOT NULL,       -- CRDT snapshot (Loro export; §5)
-  snapshot_v  INTEGER NOT NULL,    -- CRDT-encoding version tag (§5.4)
-  updated_at  INTEGER NOT NULL
-);
-CREATE TABLE page_updates (        -- incremental CRDT updates since snapshot
-  id        INTEGER PRIMARY KEY AUTOINCREMENT,
-  page_id   TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-  update_v  INTEGER NOT NULL,
-  bytes     BLOB NOT NULL,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX idx_updates_page ON page_updates(page_id, id);
-
--- ── Open-format mirror (the "glass box"; §4) ──────────────────────
--- A per-page JSON projection of the block tree, regenerated on save.
--- Third-party READERS should start here: no CRDT knowledge required.
+-- ── Page content (§4) ─────────────────────────────────────────────
+-- AUTHORITATIVE. One row per page holding the complete block tree as
+-- JSON (Data Model Spec §8). This is the only copy of a page's content
+-- in the container; it is not a projection of anything.
+--
+-- The name is historical: v0.1 of this spec placed a CRDT layer
+-- (`page_docs`, `page_updates`) underneath and called this its open
+-- "mirror". That layer was never implemented and has been superseded
+-- (see the v0.2 correction at the top, and §5). The table keeps its
+-- name so that every notebook ever written stays readable.
 CREATE TABLE page_mirror (
   page_id    TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
   json       TEXT NOT NULL,        -- Page JSON, schema in Data Model Spec §8
@@ -108,11 +110,18 @@ CREATE TABLE refs (
 );
 CREATE INDEX idx_refs_dst ON refs(dst_page_id);
 
--- ── Full-text search (FTS5; rebuildable cache) ────────────────────
-CREATE VIRTUAL TABLE fts_pages USING fts5(
-  title, body,                      -- extracted plain text per page
-  content='', tokenize='unicode61 remove_diacritics 2'
-);
+-- ── Full-text search (FTS5; OPTIONAL, rebuildable cache) ──────────
+-- NOT created by default as of v0.2: Openote created this table on every
+-- open and never wrote a row to it, which advertised a search index that
+-- held nothing. A writer implementing notebook-wide search SHOULD create
+-- and populate it, and MUST declare "fts_pages" in notebook_meta.features
+-- so readers can tell a populated index from an absent one.
+--
+-- CREATE VIRTUAL TABLE fts_pages USING fts5(
+--   title, body,                    -- extracted plain text per page
+--   content='', tokenize='unicode61 remove_diacritics 2'
+-- );
+--
 -- Implementations targeting CJK substring search SHOULD add a parallel
 -- trigram-tokenized table. FTS content is derivable; corruption here is
 -- repaired by rebuild, never data loss.
@@ -128,26 +137,33 @@ CREATE TABLE page_versions (
 ```
 
 ### 3.1 `notebook_meta` required keys
-`format` (`{"major":1,"minor":0}`) · `notebook_id` (UUIDv7) · `title` · `created_at` · `app` (creator app + version string, informative) · `features` (JSON array of optional-capability strings a writer used, e.g. `["page_versions","trigram_fts"]`; readers MUST ignore unknown feature names but MUST NOT destroy data belonging to features they don't implement).
+`format` (`{"major":1,"minor":0}`) · `notebook_id` (UUIDv7) · `title` · `created_at` · `app` (creator app + version string, informative) · `features` (JSON array of optional-capability strings a writer used, e.g. `["page_versions","fts_pages"]`; readers MUST ignore unknown feature names but MUST NOT destroy data belonging to features they don't implement) · `content` (where page content authoritatively lives; `"page_mirror"` for this version — a reader that does not recognise the value MUST NOT write).
+
+*(Informative)* v0.1 also specified `dirty_mirror`, a flag a third-party writer set to ask Openote to reconcile its JSON edits back into the CRDT. With no CRDT there is nothing to reconcile, so it is no longer written; readers should ignore it if present.
 
 ### 3.2 Layer classification *(informative but important)*
 | Layer | Tables | On corruption |
 |---|---|---|
-| **Source of truth** | `page_docs`, `page_updates`, structure CRDT (in `notebook_meta`/§5.2), `blobs`, `blob_refs` | data loss possible — protected by WAL + backups |
-| **Projection** (rebuildable from truth) | `nodes`, `page_mirror`, `refs`, `fts_pages` | rebuild, no loss |
+| **Source of truth** | `page_mirror`, `nodes`, `blobs`, `blob_refs` | data loss possible — protected by WAL + backups |
+| **Projection** (rebuildable from truth) | `refs`, `fts_pages` (if present) | rebuild, no loss |
 | **Optional** | `page_versions` | feature degrades |
 
-This layering is what delivers OPEN-11 (partial recoverability): a reader that understands *only* SQLite + JSON can recover all content from `page_mirror` + `blobs` even if every CRDT byte were unreadable.
+This delivers OPEN-11 (partial recoverability) more directly than v0.1 did: a reader that understands *only* SQLite + JSON has everything, because there is no second, opaque representation to be the "real" one. Damage is also naturally page-scoped — one unparseable `page_mirror.json` costs that page, not the notebook.
 
-## 4. The open-format mirror (the "glass box")
+*(Informative)* Note the honest trade this makes. A whole page's JSON is rewritten on every save, so the smallest representable edit is "the page is now this". That is affordable for a single device — and it is precisely why it cannot be the sync unit. See §11.
 
-The CRDT bytes are efficient but opaque; the **mirror** is the openness guarantee *inside* the container:
+## 4. Page content and the openness guarantee
 
-- On every page save, the writer MUST regenerate `page_mirror.json` — the complete block tree of the page in the **Page JSON schema** (Data Model Spec §8): positions, text as Markdown-with-extensions, math as LaTeX, ink as stroke arrays, embeds as refs + snapshot pointers.
-- The mirror MUST be byte-for-byte derivable from the CRDT state (it is a pure projection; no information exists only in the mirror).
-- Third-party tools SHOULD read the mirror and MUST NOT need to parse CRDT bytes for read-only access. Third-party *writers* have two conformant options: (a) full fidelity — apply CRDT updates via a Loro-compatible library; (b) **mirror-write mode** — modify `page_mirror` and set `notebook_meta.dirty_mirror=true`; Openote reconciles the mirror into the CRDT on next open (documented, lossy-for-concurrent-edits, but it keeps the format writable with nothing but SQLite + JSON).
+`page_mirror` holds one row per page: the complete block tree in the **Page JSON schema** (Data Model Spec §8) — positions, text as Markdown-with-extensions, math as LaTeX, ink as stroke arrays, embeds as refs + snapshot pointers.
 
-## 5. CRDT encoding
+- A writer MUST regenerate the row on every page save, and MUST write it inside the same transaction as the `refs` and `blob_refs` projections it implies, so a reader never sees content and index disagree.
+- `mirror_rev` MUST increase monotonically per page on each write. Readers MAY use it to detect change; they MUST NOT assume it counts edits.
+- **Third-party writers need nothing but SQLite and JSON.** There is no second representation to keep in step, no CRDT library to link, and no reconciliation flag to set. This is a straightforward improvement on v0.1, which asked third-party writers either to link a Loro-compatible library or to accept a documented lossy "mirror-write mode".
+- A reader MUST preserve fields it does not understand when rewriting a block (Data Model Spec forward-compatibility rule). This is the mechanism by which a third-party tool can safely edit a notebook written by a newer Openote.
+
+## 5. CRDT encoding — ⚠ SUPERSEDED, never implemented
+
+> **This section describes v0.1's intended design and is retained for the historical record only.** No Openote release ever wrote these structures: `page_docs` received a zero-byte placeholder and `page_updates` was never written. [ADR-0006](../adr/ADR-0006-sync-transport-and-text-model.md) moved the operation log out of the container entirely — see §11. A reader encountering a v0.1 notebook will find these tables present, empty of meaning, and safe to ignore.
 
 ### 5.1 Engine
 Format v1 uses **Loro** ([ADR-0002](../adr/ADR-0002-crdt-library.md)); `snapshot` and `page_updates.bytes` contain Loro's documented export formats (`snapshot_v`/`update_v` carry Loro's own encoding version).
@@ -210,9 +226,33 @@ Research/
 
 A minimal third-party **reader**: open SQLite → check `application_id`/`user_version` → read `nodes` for the tree → read `page_mirror.json` per page → resolve `blobs` by hash. No CRDT, no Rust, no Openote code.
 
-A minimal third-party **writer**: mirror-write mode (§4) + `dirty_mirror` flag.
+A minimal third-party **writer**: write `page_mirror.json` and the `nodes` row, in one transaction, preserving any fields you don't understand (§4). Nothing else is required — no flag to set, no second representation to keep in step.
 
-A full peer: implements §5 (Loro encodings) and the reconciliation rules in the Data Model Spec.
+## 11. Where this format is going *(informative)*
+
+Stated plainly, because a spec that hides its own direction is not open in any useful sense.
+
+This container is an excellent **single-device** format and a poor **sync unit**. Both facts have the same cause: it is one large binary that every edit rewrites. Consumer file-sync services (Google Drive, OneDrive, Dropbox, rsync/WebDAV) replicate whole files and resolve conflicts by making a second copy, so two devices editing *different pages* of one notebook produce two whole-file versions whose edits are, by then, indistinguishable. Nothing downstream can merge them. WAL compounds it: `-wal`/`-shm` are only meaningful paired with the database at the same instant.
+
+[ADR-0006](../adr/ADR-0006-sync-transport-and-text-model.md) therefore moves the durable unit **out of SQLite and into files**:
+
+```
+MyNotebook.onotebook/
+  manifest.json     ← notebook id, format version, device registry
+  ops/<device>.oplog  ← append-only. ONE writer, ever.
+  blobs/<sha256>    ← content-addressed, immutable
+  cache.onote       ← THIS container, demoted: local-only, never synced,
+                      rebuildable from the logs at any time
+```
+
+The load-bearing property is **one writer per file**, which makes the conflicting-versions case structurally impossible rather than resolved-after-the-fact. Merging becomes reading: concatenate the logs, order the operations, apply.
+
+Two consequences matter to third-party implementers:
+
+1. **The openness guarantee moves to the log.** The op log and its documented materialisation become the artifact you read to recover a notebook without Openote. This container stops being a compatibility surface at all, because it can always be regenerated. That is a *stronger* openness position than v0.1's, not a weaker one — the open representation stops being a copy kept alongside an opaque one, and becomes the thing itself.
+2. **Sync granularity is per notebook**, with the manifest deliberately shaped so a section subset can be described later without a format migration (decided 2026-07-27).
+
+Until that lands, `.onote` as specified above is the format, and notebooks written today remain readable: the migration path is "rebuild the cache from a log seeded by the existing container", which loses nothing.
 
 ---
 
