@@ -5,6 +5,7 @@ import 'package:flutter_math_fork/flutter_math.dart';
 
 import '../core/platform_open.dart';
 import '../theme/onote_theme.dart';
+import 'md_table.dart';
 
 /// Interim inline-Markdown rendering (TEXT-2/4 at block granularity):
 /// a text block RENDERS its Markdown when not being edited and reveals the
@@ -169,6 +170,15 @@ class _MarkdownViewState extends State<MarkdownView> {
         fenceBuf.add(line);
         continue;
       }
+      // GFM pipe table. Checked before the per-line path because a table is a
+      // multi-line construct — rendering its rows one at a time is exactly what
+      // produced the raw-pipes output this replaces.
+      final table = parsePipeTable(lines, i);
+      if (table != null) {
+        children.add(_renderTable(context, table.table, dark));
+        i += table.consumed - 1; // the loop's own i++ consumes the last line
+        continue;
+      }
       children.add(_renderLine(context, line, i, dark));
     }
     if (inFence) flushFence();
@@ -177,6 +187,56 @@ class _MarkdownViewState extends State<MarkdownView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: children.isEmpty ? [Text(' ', style: baseStyle)] : children,
+    );
+  }
+
+  Widget _renderTable(BuildContext context, MdTable t, bool dark) {
+    final border = dark ? OnoteColors.night100 : OnoteColors.paper100;
+    final scheme = Theme.of(context).colorScheme;
+
+    TextAlign textAlign(int col) => switch (t.align[col]) {
+          MdAlign.center => TextAlign.center,
+          MdAlign.right => TextAlign.right,
+          MdAlign.left => TextAlign.left,
+        };
+
+    TableRow row(List<String> cells, {required bool header}) => TableRow(
+          decoration: header
+              ? BoxDecoration(color: scheme.surfaceContainerHighest)
+              : null,
+          children: [
+            for (var c = 0; c < t.columns; c++)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Text(
+                  c < cells.length ? cells[c] : '',
+                  textAlign: textAlign(c),
+                  style: header
+                      ? baseStyle.copyWith(fontWeight: FontWeight.w600)
+                      : baseStyle,
+                ),
+              ),
+          ],
+        );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      // Horizontally scrollable: a wide pasted table must not force the whole
+      // page to scroll sideways.
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 240),
+          child: Table(
+            defaultColumnWidth: const IntrinsicColumnWidth(),
+            border: TableBorder.all(color: border, width: 1),
+            children: [
+              row(t.header, header: true),
+              for (final r in t.rows) row(r, header: false),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

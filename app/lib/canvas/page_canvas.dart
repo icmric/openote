@@ -10,6 +10,7 @@ import '../theme/onote_theme.dart';
 import '../ui/context_menus.dart';
 import 'block_view.dart';
 import 'canvas_controller.dart';
+import 'ink_ops.dart';
 import 'ink_painter.dart';
 import 'page_title_view.dart';
 
@@ -60,6 +61,51 @@ class _PageCanvasState extends State<PageCanvas> {
 
   bool get _inkTool =>
       app.tool == Tool.pen || app.tool == Tool.highlighter || app.tool == Tool.eraser;
+
+  /// When a stylus was last seen, so palm rejection can be *conditional*
+  /// (INK-4) instead of absolute.
+  ///
+  /// The previous rule sent every touch to pan unconditionally, which does
+  /// implement palm rejection — and also means **a finger can never draw**, so
+  /// on a touch-only tablet ink was simply unreachable, contradicting INK-1.
+  /// The distinction the old rule missed is that a resting palm is only a
+  /// hazard when a pen is in use; with no pen present, a finger is the only
+  /// input the user has.
+  DateTime? _lastStylus;
+
+  /// A palm rests *while* writing, so the window only has to outlive the gap
+  /// between strokes, not a pause for thought.
+  static const _stylusGrace = Duration(seconds: 2);
+
+  bool get _stylusActive {
+    final t = _lastStylus;
+    return t != null && DateTime.now().difference(t) < _stylusGrace;
+  }
+
+  /// Whether this touch should draw rather than pan.
+  ///
+  /// Single finger only: a second finger always means pan/zoom, which is what
+  /// every drawing app does and what makes the canvas navigable while a drawing
+  /// tool is selected.
+  bool _touchDraws() => touchShouldDraw(
+        mode: app.touchDrawing,
+        activeTouches: _touches.length,
+        stylusActive: _stylusActive,
+      );
+
+  void _noteStylus(PointerEvent e) {
+    if (e.kind == PointerDeviceKind.stylus ||
+        e.kind == PointerDeviceKind.invertedStylus) {
+      _lastStylus = DateTime.now();
+    }
+  }
+
+  /// Abandon the stroke in progress without committing it — used when a second
+  /// finger lands, turning what looked like a draw into a pinch. Without this
+  /// the first finger of every two-finger gesture would leave a stray mark.
+  void _cancelWetStroke() {
+    if (_wet != null) setState(() => _wet = null);
+  }
 
   bool get _lassoTool => app.tool == Tool.lasso;
 
@@ -771,23 +817,41 @@ class _PageCanvasState extends State<PageCanvas> {
         child: canvas,
       );
     } else if (_inkTool) {
-      // Palm rejection (INK-4): the pen (stylus) and mouse draw; fingers
-      // (touch) pan/pinch instead of drawing — so a resting palm never marks
-      // the page. Matches OneNote's default "draw with pen, navigate with
-      // touch" behaviour.
+      // Palm rejection (INK-4), stylus-CONDITIONAL. Pen and mouse always draw.
+      // A finger draws too — unless a stylus is in use, in which case touch
+      // reverts to pan/pinch so a resting palm never marks the page (OneNote's
+      // "draw with pen, navigate with touch"). A second finger always pans,
+      // whatever the setting, so the canvas stays navigable while a drawing
+      // tool is selected. See `app.touchDrawing` for the user override.
       canvas = Listener(
         behavior: HitTestBehavior.opaque,
         onPointerDown: (e) {
-          if (e.kind == PointerDeviceKind.touch) {
-            _touchDown(e);
-          } else {
+          _noteStylus(e);
+          if (e.kind != PointerDeviceKind.touch) {
             _inkDown(e);
+            return;
+          }
+          _touches[e.pointer] = e.localPosition;
+          if (_touches.length > 1) {
+            // The first finger may already be mid-stroke; a pinch is not a
+            // drawing, so drop it rather than leaving a stray mark.
+            _cancelWetStroke();
+            _touchDown(e);
+            return;
+          }
+          if (_touchDraws()) {
+            _touches.remove(e.pointer); // it's a drawing pointer, not a gesture
+            _inkDown(e);
+          } else {
+            _touches.remove(e.pointer); // _touchDown re-adds and sets up pinch
+            _touchDown(e);
           }
         },
         onPointerMove: (e) {
+          _noteStylus(e);
           if (_touches.containsKey(e.pointer)) {
             _touchMove(e);
-          } else if (e.kind != PointerDeviceKind.touch) {
+          } else {
             _inkMove(e);
           }
         },
@@ -797,6 +861,10 @@ class _PageCanvasState extends State<PageCanvas> {
           } else {
             _inkUp(e);
           }
+        },
+        onPointerCancel: (e) {
+          _touches.remove(e.pointer);
+          _cancelWetStroke();
         },
         child: canvas,
       );
