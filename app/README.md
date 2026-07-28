@@ -177,11 +177,19 @@ lib/
 ├── store/
 │   ├── database.dart          # .onote SQLite: DDL per File Format Spec §3
 │   └── repository.dart        # workspace/notebook/page CRUD, mirror read-write, blobs
-├── state/app_state.dart       # app-wide state: selection, tool, page, debounced saves
+├── state/app_state.dart       # app-wide state + the storage facade (the one
+│                              #   funnel every persistent mutation passes through)
+├── sync/                      # ADR-0006 operation log — runs in SHADOW mode:
+│   ├── op.dart                #   the envelope + deterministic total order
+│   ├── op_log.dart            #   Foo.onotebook/ops/<device>.oplog, append-only
+│   ├── device_identity.dart   #   per-install id + fork-on-conflict
+│   ├── materializer.dart      #   replay → state (delete-wins)
+│   └── sync_recorder.dart     #   diffs a page save into block-level ops
 ├── math/linear_math.dart      # linear-input → LaTeX (Math Input Spec §3 subset)
 ├── canvas/
 │   ├── canvas_controller.dart # pan/zoom matrix, screen↔page mapping, snap
 │   ├── page_canvas.dart       # gestures, grid, ink capture, block layout
+│   ├── ink_ops.dart           # pure ink logic (touch-vs-pen routing), testable
 │   ├── block_view.dart        # selection chrome, move/resize, type dispatch
 │   └── ink_painter.dart       # perfect-freehand outline painting
 ├── editor/

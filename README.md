@@ -71,12 +71,18 @@ Start here → **[docs/README.md](docs/README.md)** (the index). In reading orde
 
 - **Now (2026-07):** a **working desktop app** — freeform canvas, notebook/section/page navigator, live-Markdown text, math blocks, pressure ink, images, tables, code, the open `.onote` format with Markdown/PDF/folder export, and a **native Rust core** linked over `dart:ffi`. Stack decided: **Flutter/Dart UI + Rust core, SQLite `.onote` container** ([ADRs](docs/adr/README.md)); Loro CRDT is specified but not yet wired.
 - **Already landed from later phases:** the **OneNote `.one`/`.onepkg` importer** (reverse-engineered MS-ONESTORE — text boxes at true positions, styling, images, equations, ink, whole-notebook packages), plus tables, backlinks, templates, version history, recycle bin, and lossless open-folder export.
-- **Next:** the editor-engine bake-off ([ADR-0004](docs/adr/ADR-0004-editor-engine.md)) — now the critical path, since structured rich text gates several stakeholder asks — **license ratification** ([ADR-0005](docs/adr/ADR-0005-licensing.md), still unratified and the repo has no `LICENSE` file yet), and cross-device **sync** on the CRDT core.
+- **Next:** cross-device **sync**. The storage layout is decided ([ADR-0006](docs/adr/ADR-0006-sync-transport-and-text-model.md)) — a `.onotebook` directory of append-only per-device op logs, because consumer file-sync services replicate whole files and would otherwise resolve two devices' edits into `notebook (1).onote`. That work also drives the structured text model. The editor-engine question is settled ([ADR-0004](docs/adr/ADR-0004-editor-engine.md): keep the engine we own, behind a seam) and the **licence is ratified** ([ADR-0005](docs/adr/ADR-0005-licensing.md)).
 - **MVP definition:** desktop, single-device, local-only. See the [MVP definition](docs/02-product-requirements.md#9-mvp-definition-the-core-essentials-cut) and the [Roadmap](ROADMAP.md) for exactly what is and isn't done.
 
 ## License
 
-Proposed (pending ratification, [ADR-0005](docs/adr/ADR-0005-licensing.md)): **AGPL-3.0** for the application, **Apache-2.0** for the reference libraries, and **CC0/MIT** for the file-format specification — so the app resists closed forks while the format invites the widest possible ecosystem. Openness is a core requirement, not an afterthought.
+Ratified ([ADR-0005](docs/adr/ADR-0005-licensing.md), 2026-07-27) — three tiers, mapped in full in [LICENSING.md](LICENSING.md):
+
+- **[AGPL-3.0-or-later](LICENSE)** — the application. Fork it, self-host it, modify it; improvements stay open, including for hosted forks.
+- **[Apache-2.0](rust/onote_core/LICENSE)** — `onote_core`, the `.onote` reader/writer, hashing and importers. **Build anything you like on it, including closed commercial software.**
+- **[CC0-1.0](docs/specs/LICENSE)** — the file-format specification. Implement it freely, no attribution required.
+
+The asymmetry is the point: the app resists closed forks, while reading and writing your notes is legally frictionless for everyone. Openness is a constraint we design under, not an afterthought. Contributions are inbound = outbound with a [DCO](https://developercertificate.org/) sign-off (`git commit -s`) and no CLA.
 
 ## Contributing
 
