@@ -64,34 +64,46 @@ double-check the folder, or use step 2 to have the build place it for you.
 >
 > Mitigations in place: `OnoteCore._tryLoad` (Dart) prefers the **newest** candidate
 > DLL by mtime, so a fresh `cargo build` is often picked up without the copy; and
-> the status-bar chip shows the loaded core's version. Neither is a substitute for
-> the hash check. **Wiring step 2 below permanently is the real fix — it is
-> currently NOT wired in `app/windows/CMakeLists.txt`.**
+> the status-bar chip shows the loaded core's version.
+>
+> **As of 2026-07-27 this trap is CLOSED on Windows and Linux** — see §2. The
+> warning above is retained for anyone building macOS by hand, and as history.
 
-## 2. Automatic build (recommended, permanent) — edit `app\windows\CMakeLists.txt`
+## 2. Automatic build — **WIRED** on Windows and Linux (2026-07-27)
 
-To have `flutter run` / `flutter build windows` compile the crate and copy the
-DLL for you, add this near the **end** of `app/windows/CMakeLists.txt` (after
-the `add_executable(${BINARY_NAME} ...)` / runner target is defined):
+`app/windows/CMakeLists.txt` and `app/linux/CMakeLists.txt` build the crate on
+every `flutter build` / `flutter run` and bundle the library next to the
+executable. Verified end-to-end: after `flutter build windows --release`, the
+bundled `onote_core.dll`'s hash equals `target/release/onote_core.dll`'s.
 
-```cmake
-# --- onote-core (Rust) : build the crate and place the DLL next to the exe ---
-set(ONOTE_CORE_MANIFEST "${CMAKE_SOURCE_DIR}/../../rust/onote_core/Cargo.toml")
-set(ONOTE_CORE_DLL      "${CMAKE_SOURCE_DIR}/../../rust/onote_core/target/release/onote_core.dll")
-add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
-  COMMAND cargo build --release --manifest-path "${ONOTE_CORE_MANIFEST}"
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ONOTE_CORE_DLL}" "$<TARGET_FILE_DIR:${BINARY_NAME}>"
-  COMMENT "Building and bundling onote-core (Rust)"
-  VERBATIM)
-```
+Three properties of the wiring worth knowing:
 
-Requirements: `cargo` must be on PATH for the process that runs the Flutter
-build (step 0). For a packaged/installer build, ensure `onote_core.dll` ships
-in the same folder as `openote.exe` (the `copy_if_different` above puts it in
-the runner output dir that Flutter bundles).
+- **It is an `install(FILES … OPTIONAL)` rule declared LAST, not a POST_BUILD
+  copy.** The snippet this section used to recommend
+  (`add_custom_command(TARGET … POST_BUILD)`) is broken by design on Linux: the
+  install sequence *starts* by `REMOVE_RECURSE`-ing the whole bundle directory,
+  so a post-build copy is wiped before the user ever runs the app. Install
+  rules execute in declaration order; last-declared lands after Flutter's own
+  bundle steps.
+- **No cargo → warning, not failure.** Contributors without Rust still get a
+  working app on the pure-Dart engine (minus OneNote import). CMake warns at
+  configure time and at build time; `OPTIONAL` lets the install proceed.
+- **Cargo present but the crate broken → the app build fails.** Deliberate:
+  failing loudly beats silently running a stale core, which is exactly the bug
+  class this document exists to warn about.
 
-macOS/Linux use the same idea with `libonote_core.dylib` / `libonote_core.so`;
-the Dart loader already knows those names.
+**macOS is manual for now** (`app/macos` is Xcode, not CMake): `cargo build
+--release`, copy `target/release/libonote_core.dylib` into
+`openote.app/Contents/MacOS/`, then **re-sign ad-hoc**
+(`codesign --force --deep --sign - <app>`) — inserting a dylib breaks the
+bundle's signature seal and the app is killed on launch without it. The release
+workflow does exactly this, universal via `lipo`. Proper wiring later: a Run
+Script phase on the Runner target after Flutter's own, "based on dependency
+analysis" unchecked.
+
+`sync-core.bat` remains useful only as the fast path for Rust-only iteration
+(`sync-core.bat rust`); its build-then-copy choreography is otherwise
+superseded by the CMake wiring.
 
 ## What the app uses it for today
 

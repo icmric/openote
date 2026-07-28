@@ -1,0 +1,274 @@
+name: Release
+
+# Tag-triggered release builds (v0.2.0 → tag v0.2.0). Cut tags only from a
+# green master: this workflow does not re-run tests (CI gates every push); it
+# builds, packages, and DRAFTS the release for human review — nothing goes
+# public without a person pressing publish.
+#
+# The explicit `cargo build` steps are kept even though the CMake hook now
+# builds the core during `flutter build` on Windows/Linux: release artifacts
+# must not depend on the hook alone, and macOS has no hook (Xcode project).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Single source of truth: the git tag. Fails fast when app/pubspec.yaml
+  # disagrees so the two can never drift silently — bump pubspec, commit, then
+  # tag. (pubspec is 'M.m.p+build'; only M.m.p is compared.)
+  version:
+    name: derive version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PUBSPEC="$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' app/pubspec.yaml)"
+          if [ "$VERSION" != "$PUBSPEC" ]; then
+            echo "::error::tag v${VERSION} does not match app/pubspec.yaml version ${PUBSPEC} — bump pubspec, commit, re-tag"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+  windows:
+    name: windows x64
+    needs: version
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/onote_core
+
+      - name: Build Rust core
+        working-directory: rust/onote_core
+        run: cargo build --release
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build app
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter build windows --release --build-name=$env:VERSION
+
+      # The FFI loader (app/lib/core/onote_ffi.dart) looks next to the exe
+      # first — the DLL must sit beside openote.exe in the zip. The CMake hook
+      # already bundles it; the explicit copy is belt-and-braces.
+      - name: Package zip (DLL next to the exe)
+        shell: pwsh
+        run: |
+          $stage = "openote-$env:VERSION-windows-x64"
+          Copy-Item -Recurse app/build/windows/x64/runner/Release $stage
+          Copy-Item rust/onote_core/target/release/onote_core.dll $stage/ -Force
+          Compress-Archive -Path $stage -DestinationPath "$stage.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: openote-*.zip
+          if-no-files-found: error
+
+  linux:
+    name: linux x64
+    needs: version
+    # Pinned older than CI's ubuntu-latest on purpose: the AppImage inherits
+    # the build host's glibc floor, so an older base runs on more distros.
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux desktop toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/onote_core
+
+      - name: Build Rust core
+        working-directory: rust/onote_core
+        run: cargo build --release
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build app
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter build linux --release --build-name="$VERSION"
+
+      # Loader contract: libonote_core.so next to the 'openote' binary. The
+      # CMake hook installs it; this is belt-and-braces.
+      - name: Stage native library into the bundle
+        run: cp rust/onote_core/target/release/libonote_core.so app/build/linux/x64/release/bundle/
+
+      # Fallback artifact: always produced, works everywhere tar does.
+      - name: Package tar.gz
+        run: |
+          cp -r app/build/linux/x64/release/bundle "openote-${VERSION}-linux-x64"
+          tar czf "openote-${VERSION}-linux-x64.tar.gz" "openote-${VERSION}-linux-x64"
+
+      # AppImage needs: (1) an AppRun entrypoint, (2) exactly one .desktop at
+      # AppDir root, (3) a root-level icon whose basename matches Icon=. No
+      # .desktop exists in the repo, so both are generated here.
+      - name: Package AppImage
+        run: |
+          mkdir -p AppDir/usr/bin
+          cp -r app/build/linux/x64/release/bundle/. AppDir/usr/bin/
+          cat > AppDir/AppRun <<'EOF'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/bin/openote" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+          cat > AppDir/openote.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Openote
+          Comment=Open-source, natively cross-platform alternative to OneNote
+          Exec=openote
+          Icon=openote
+          Categories=Office;
+          Terminal=false
+          EOF
+          cp app/assets/icon/openote_icon.png AppDir/openote.png
+          cp app/assets/icon/openote_icon.png AppDir/.DirIcon
+          curl -fsSL -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          # --appimage-extract-and-run: GitHub runners lack FUSE2, so run the
+          # tool unpacked instead of mounting it.
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir \
+            "openote-${VERSION}-linux-x86_64.AppImage"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: |
+            openote-*.tar.gz
+            openote-*.AppImage
+          if-no-files-found: error
+
+  macos:
+    name: macos universal
+    needs: version
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/onote_core
+
+      # Flutter's macOS release build is universal by default; the dylib must
+      # match or Intel Macs silently lose the Rust core through a Rosetta
+      # arch mismatch.
+      - name: Build Rust core (universal)
+        working-directory: rust/onote_core
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+          lipo -create -output libonote_core.dylib \
+            target/aarch64-apple-darwin/release/libonote_core.dylib \
+            target/x86_64-apple-darwin/release/libonote_core.dylib
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build app
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter build macos --release --build-name="$VERSION"
+
+      # Loader contract: dylib next to the exe = Contents/MacOS/. Inserting it
+      # breaks Flutter's ad-hoc signature seal, so re-sign ad-hoc or the app
+      # is killed on launch.
+      - name: Bundle dylib and re-sign (ad-hoc)
+        run: |
+          APP=app/build/macos/Build/Products/Release/openote.app
+          cp rust/onote_core/libonote_core.dylib "$APP/Contents/MacOS/"
+          codesign --force --deep --sign - "$APP"
+
+      - name: Package dmg (unsigned)
+        run: |
+          APP=app/build/macos/Build/Products/Release/openote.app
+          mkdir dmg-staging
+          cp -R "$APP" dmg-staging/
+          ln -s /Applications dmg-staging/Applications
+          hdiutil create -volname "Openote" -srcfolder dmg-staging -ov \
+            -format UDZO "openote-${VERSION}-macos-universal.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          path: openote-*.dmg
+          if-no-files-found: error
+
+  release:
+    name: draft release
+    needs: [version, windows, linux, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the draft release + upload assets
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Openote ${{ needs.version.outputs.version }}
+          generate_release_notes: true
+          files: dist/*
+          body: |
+            <!-- Draft: review, edit, then publish. -->
+
+            ## Downloads
+            - **Windows**: `openote-*-windows-x64.zip` — unzip anywhere, run `openote.exe`.
+            - **Linux**: `openote-*-linux-x86_64.AppImage` — `chmod +x`, run. Or the `.tar.gz` if AppImage doesn't suit.
+            - **macOS**: `openote-*-macos-universal.dmg` — drag Openote to Applications.
+
+            ### macOS: "openote is damaged and can't be opened"
+            These builds are not signed or notarized (that needs an Apple
+            Developer account we don't have yet), so Gatekeeper quarantines the
+            download. After copying to Applications, clear the flag once:
+
+                xattr -cr /Applications/openote.app
+
+            Your notes never leave your machine either way — see the project's
+            local-first principles.

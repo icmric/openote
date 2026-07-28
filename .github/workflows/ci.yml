@@ -39,6 +39,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
 
+      # The CMake hook now builds the Rust core during `flutter build` when
+      # cargo is present (it is, on all GitHub runners) — cache it or every
+      # app build pays a cold lto/codegen-units=1 compile.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/onote_core
+
       - uses: subosito/flutter-action@v2
         with:
           channel: stable

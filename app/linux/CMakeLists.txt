@@ -75,6 +75,39 @@ set_target_properties(${BINARY_NAME}
 include(flutter/generated_plugins.cmake)
 
 
+# === onote_core (Rust): build the native core with the app ==================
+# Ends the stale-library trap (rust/onote_core/INTEGRATION.md): every
+# `flutter build linux` / `flutter run` rebuilds the crate, and the install
+# rule at the END of this file bundles the .so next to the executable.
+set(ONOTE_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../rust/onote_core")
+set(ONOTE_CORE_LIB "${ONOTE_CORE_DIR}/target/release/libonote_core.so")
+
+find_program(CARGO_EXECUTABLE cargo
+  HINTS "$ENV{HOME}/.cargo/bin")
+if(CARGO_EXECUTABLE)
+  # Custom targets always run; cargo is incremental, so an unchanged crate
+  # costs well under a second. A crate compile error fails the app build —
+  # deliberate: failing loudly beats shipping a stale core.
+  add_custom_target(onote_core ALL
+    COMMAND "${CARGO_EXECUTABLE}" build --release
+            --manifest-path "${ONOTE_CORE_DIR}/Cargo.toml"
+    BYPRODUCTS "${ONOTE_CORE_LIB}"
+    COMMENT "Building onote_core (Rust, release)"
+    VERBATIM)
+else()
+  # GUARD: contributors without Rust still get a working (Dart-engine) app.
+  message(WARNING
+    "cargo not found — skipping the Rust core (libonote_core.so). The app "
+    "will run on the pure-Dart engine, minus OneNote import. Install Rust "
+    "from https://rustup.rs, reopen your terminal, and rebuild.")
+  add_custom_target(onote_core ALL
+    COMMAND ${CMAKE_COMMAND} -E echo
+      "WARNING: cargo not on PATH — onote_core (Rust) NOT built; the app uses the Dart engine."
+    COMMENT "onote_core skipped (cargo not found)"
+    VERBATIM)
+endif()
+
+
 # === Installation ===
 # By default, "installing" just makes a relocatable bundle in the build
 # directory.
@@ -126,3 +159,13 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# Bundle the Rust core next to the executable (bundle ROOT, not lib/): the
+# Dart loader's first candidate is <exe dir>/libonote_core.so, and dlopen by
+# bare name from the engine .so is not guaranteed to search bundle/lib.
+# Declared LAST on purpose: the install sequence above STARTS by
+# REMOVE_RECURSE-ing the whole bundle directory, so any earlier copy —
+# including the POST_BUILD variant INTEGRATION.md used to sketch — would be
+# wiped. OPTIONAL covers the no-cargo build (see the guard above).
+install(FILES "${ONOTE_CORE_LIB}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime OPTIONAL)

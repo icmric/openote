@@ -58,6 +58,39 @@ add_subdirectory("runner")
 include(flutter/generated_plugins.cmake)
 
 
+# === onote_core (Rust): build the native core with the app ==================
+# Ends the stale-DLL trap (rust/onote_core/INTEGRATION.md): every
+# `flutter build windows` / `flutter run` rebuilds the crate, and the install
+# rule at the END of this file bundles the DLL next to openote.exe.
+set(ONOTE_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../rust/onote_core")
+set(ONOTE_CORE_LIB "${ONOTE_CORE_DIR}/target/release/onote_core.dll")
+
+find_program(CARGO_EXECUTABLE cargo
+  HINTS "$ENV{USERPROFILE}/.cargo/bin" "$ENV{HOME}/.cargo/bin")
+if(CARGO_EXECUTABLE)
+  # Custom targets always run; cargo is incremental, so an unchanged crate
+  # costs well under a second. A crate compile error fails the app build —
+  # deliberate: failing loudly beats shipping a stale core.
+  add_custom_target(onote_core ALL
+    COMMAND "${CARGO_EXECUTABLE}" build --release
+            --manifest-path "${ONOTE_CORE_DIR}/Cargo.toml"
+    BYPRODUCTS "${ONOTE_CORE_LIB}"
+    COMMENT "Building onote_core (Rust, release)"
+    VERBATIM)
+else()
+  # GUARD: contributors without Rust still get a working (Dart-engine) app.
+  message(WARNING
+    "cargo not found — skipping the Rust core (onote_core.dll). The app "
+    "will run on the pure-Dart engine, minus OneNote import. Install Rust "
+    "from https://rustup.rs, reopen your terminal, and rebuild.")
+  add_custom_target(onote_core ALL
+    COMMAND ${CMAKE_COMMAND} -E echo
+      "WARNING: cargo not on PATH — onote_core (Rust) NOT built; the app uses the Dart engine."
+    COMMENT "onote_core skipped (cargo not found)"
+    VERBATIM)
+endif()
+
+
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can
 # run in place. This is done instead of making a separate bundle (as on Linux)
@@ -106,3 +139,12 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
+
+# Bundle the Rust core next to openote.exe. Declared LAST on purpose: install
+# rules run in declaration order, so this executes after Flutter's own bundle
+# steps above (which refresh the runner directory on every build — the
+# ordering sync-core.bat had to enforce by hand). On Windows
+# INSTALL_BUNDLE_LIB_DIR is the exe directory itself. OPTIONAL lets a
+# cargo-less build (see the guard above) install cleanly without the DLL.
+install(FILES "${ONOTE_CORE_LIB}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime OPTIONAL)
