@@ -9,7 +9,27 @@ import 'package:sqlite3/open.dart';
 /// re-implement the search (and silently skip when it failed, so a clean
 /// checkout appeared to pass while exercising almost nothing). Call this in
 /// `setUpAll` and gate the test body on the return value.
+///
+/// **Under CI this never returns false** — it throws instead. A skip is the
+/// right behaviour on a developer's machine that hasn't built the desktop
+/// runner yet, but in CI it would mean the storage, persistence and import
+/// suites quietly pass without executing, which is precisely the false
+/// confidence CI exists to prevent. The workflow builds the app before running
+/// tests so the bundled library is present; if that ever stops being true, this
+/// fails loudly instead of going green.
 bool initSqliteForTests() {
+  final found = _findSqlite();
+  if (!found && Platform.environment['CI'] == 'true') {
+    throw StateError(
+        'SQLite native library not found under CI. The desktop build must run '
+        'before `flutter test` so the bundled library exists — otherwise every '
+        'test that touches a .onote silently skips. Searched the build output '
+        'paths and the system library.');
+  }
+  return found;
+}
+
+bool _findSqlite() {
   for (final rel in const [
     'build/windows/x64/runner/Debug/sqlite3.dll',
     'build/windows/x64/runner/Release/sqlite3.dll',
