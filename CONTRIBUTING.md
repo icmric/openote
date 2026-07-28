@@ -6,7 +6,7 @@ Thank you for your interest in Openote — an open-source, cross-platform altern
 >
 > **Before submitting code:** `flutter analyze` must be clean of errors and warnings, `flutter test` (82 tests) and `cargo test` (26 tests) must pass, and `cargo clippy --all-targets` must be clean. Match the surrounding comment density — this codebase explains *why*, not *what*.
 >
-> ⚠ **Licensing is not yet ratified** and the repository has **no `LICENSE` file** ([ADR-0005](docs/adr/ADR-0005-licensing.md) is still a proposal). Until that lands, external contributions cannot be cleanly accepted — resolving it is the top project-hygiene priority.
+> **Licensing is ratified** ([ADR-0005](docs/adr/ADR-0005-licensing.md), 2026-07-27): **AGPL-3.0-or-later** for the app, **Apache-2.0** for `onote_core`, **CC0-1.0** for the format specs. Contributions are accepted under the licence of the directory they touch. See [LICENSING.md](LICENSING.md) — and note the invariant that **`onote_core` must never gain a copyleft dependency**.
 
 ## Ways to help right now
 
@@ -52,7 +52,13 @@ Every contribution is weighed against the project's [design principles](docs/00-
 
 ## Licensing of contributions
 
-The proposed licensing model ([ADR-0005](docs/adr/ADR-0005-licensing.md), pending ratification): AGPL-3.0 application, Apache-2.0 reference libraries, CC0/MIT format specification. By contributing, you agree your contributions will be licensed under the project's chosen license. Contributors will be credited.
+**Inbound = outbound**, with a [Developer Certificate of Origin](https://developercertificate.org/) sign-off rather than a CLA. Sign your commits:
+
+```bash
+git commit -s -m "your message"
+```
+
+That adds a `Signed-off-by:` line certifying you have the right to submit the work under the project's licence — AGPL-3.0-or-later for the app, Apache-2.0 for `onote_core`, CC0-1.0 for `docs/specs/` ([ADR-0005](docs/adr/ADR-0005-licensing.md), [LICENSING.md](LICENSING.md)). There is deliberately no CLA: it would buy the project an option to relicense that we are not preserving. Contributors will be credited.
 
 ---
 
