@@ -203,6 +203,125 @@ void main() {
     });
   });
 
+  group('replay — ink.strokes (per-stroke ops)', () {
+    Map<String, dynamic> stroke(String id, double x0) => {
+          'id': id,
+          'tool': 'pen',
+          'x': [x0, x0 + 1],
+          'y': [0.0, 1.0],
+        };
+
+    Op inkBlock(String dev, int seq, int lc, List<Map<String, dynamic>> ss) =>
+        _op(dev, seq, lc, OpKind.blockSet, {
+          'pageId': 'p',
+          'block': {
+            'id': 'ib',
+            'type': 'ink',
+            'x': 0,
+            'y': 0,
+            'content': {'strokes': ss}
+          }
+        });
+
+    test('positional inserts reproduce a mid-list split exactly', () {
+      // The eraser replaces one stroke with two fragments AT ITS POSITION.
+      // Order is verified verbatim by the shadow check, so an append-only
+      // replay would fail on every erase.
+      final m = Materializer()
+        ..applyAll([
+          inkBlock('a', 1, 1, [stroke('s1', 0), stroke('s2', 10), stroke('s3', 20)]),
+          _op('a', 2, 2, OpKind.inkStrokes, {
+            'pageId': 'p',
+            'blockId': 'ib',
+            'del': ['s2'],
+            'put': [
+              {'i': 1, 's': stroke('s2a', 10)},
+              {'i': 2, 's': stroke('s2b', 15)},
+            ],
+          }),
+        ]);
+      final strokes =
+          ((m.pages['p']!.blocks['ib']!['content'] as Map)['strokes'] as List);
+      expect([for (final s in strokes) (s as Map)['id']],
+          ['s1', 's2a', 's2b', 's3']);
+    });
+
+    test('a put upserts: a changed stroke moves to its recorded index', () {
+      final m = Materializer()
+        ..applyAll([
+          inkBlock('a', 1, 1, [stroke('s1', 0), stroke('s2', 10)]),
+          _op('a', 2, 2, OpKind.inkStrokes, {
+            'pageId': 'p',
+            'blockId': 'ib',
+            'del': const [],
+            'put': [
+              {'i': 0, 's': stroke('s2', 99)},
+            ],
+          }),
+        ]);
+      final strokes =
+          ((m.pages['p']!.blocks['ib']!['content'] as Map)['strokes'] as List);
+      expect([for (final s in strokes) (s as Map)['id']], ['s2', 's1']);
+      expect(((strokes[0] as Map)['x'] as List).first, 99);
+    });
+
+    test('an ink op for a removed block is dropped, not resurrected', () {
+      // Same rule as delete-wins: replaying an edit must never recreate what a
+      // remove already took away, whatever order the devices' ops arrive in.
+      final m = Materializer()
+        ..applyAll([
+          inkBlock('a', 1, 1, [stroke('s1', 0)]),
+          _op('a', 2, 2, OpKind.blockRemove, {'pageId': 'p', 'blockId': 'ib'}),
+          _op('b', 1, 3, OpKind.inkStrokes, {
+            'pageId': 'p',
+            'blockId': 'ib',
+            'del': const [],
+            'put': [
+              {'i': 0, 's': stroke('s9', 5)}
+            ],
+          }),
+        ]);
+      expect(m.pages['p']!.blocks.containsKey('ib'), isFalse);
+    });
+
+    test('a later block.set fully clobbers earlier stroke ops', () {
+      final m = Materializer()
+        ..applyAll([
+          inkBlock('a', 1, 1, [stroke('s1', 0)]),
+          _op('a', 2, 2, OpKind.inkStrokes, {
+            'pageId': 'p',
+            'blockId': 'ib',
+            'del': const [],
+            'put': [
+              {'i': 1, 's': stroke('s2', 10)}
+            ],
+          }),
+          inkBlock('a', 3, 3, [stroke('s7', 70)]),
+        ]);
+      final strokes =
+          ((m.pages['p']!.blocks['ib']!['content'] as Map)['strokes'] as List);
+      expect([for (final s in strokes) (s as Map)['id']], ['s7']);
+    });
+
+    test('rect and updatedAt ride along', () {
+      final m = Materializer()
+        ..applyAll([
+          inkBlock('a', 1, 1, [stroke('s1', 0)]),
+          _op('a', 2, 2, OpKind.inkStrokes, {
+            'pageId': 'p',
+            'blockId': 'ib',
+            'del': const [],
+            'put': const [],
+            'rect': {'x': 5, 'y': 6, 'w': 100, 'h': 40},
+            'updatedAt': 12345,
+          }),
+        ]);
+      final b = m.pages['p']!.blocks['ib']!;
+      expect([b['x'], b['y'], b['w'], b['h']], [5, 6, 100, 40]);
+      expect(b['updatedAt'], 12345);
+    });
+  });
+
   group('log store', () {
     late Directory tmp;
     setUp(() => tmp = Directory.systemTemp.createTempSync('onote_oplog'));

@@ -243,6 +243,11 @@ pub struct ImportedPage {
     pub ink: Vec<ImportedStroke>,
     /// Subpage indent level, 0-based (0 = top-level page, 1..2 = subpage).
     pub level: u32,
+    /// Ink strokes that could not be decoded and were dropped (~0.02 % on the
+    /// reference notebook). Counted so the app can SAY so — a silent drop reads
+    /// as "my notes imported fine" when they did not quite.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub dropped_strokes: u32,
 }
 
 #[derive(Serialize, Default)]
@@ -842,6 +847,7 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
 
         // ── Ink: container → data node → stroke nodes → packed paths ────────
         let mut ink: Vec<ImportedStroke> = Vec::new();
+        let mut dropped_strokes: u32 = 0;
         let mut seen_ink = HashSet::new();
         for &i in idxs {
             let o = &objs[i];
@@ -980,7 +986,8 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
                         } else if s2.is_finite() {
                             2
                         } else {
-                            continue; // no usable channel split
+                            dropped_strokes += 1; // no usable channel split
+                            continue;
                         };
                         idx_x = 0;
                         idx_y = 1;
@@ -990,6 +997,7 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
                     // undecodable — drop it rather than paint a page-crossing
                     // scribble (a handful per notebook; better lost than wrong).
                     if span_of(ndims, idx_x, idx_y) > SANE_MAX {
+                        dropped_strokes += 1;
                         continue;
                     }
                     let per = path.len() / ndims;
@@ -1078,7 +1086,7 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
             .unwrap_or_else(|| "Imported page".into());
         let level = meta.map(|m| m.1).unwrap_or(0);
         let ord = meta.map(|m| m.2).unwrap_or(usize::MAX);
-        pages.push((ord, ImportedPage { title, date_text, boxes, images, ink, level }));
+        pages.push((ord, ImportedPage { title, date_text, boxes, images, ink, level, dropped_strokes }));
     }
 
     // Sort by the section's display order; unmatched pages keep file order at
@@ -1160,6 +1168,17 @@ fn emit_boxes(
     const LINE_H: f32 = 22.0;
     let mut cy = y;
     let mut seg: Vec<&Line> = Vec::new();
+    // Depth base for the WHOLE outline, not per segment: flushing at every
+    // math/table line used to re-normalise each segment against its own
+    // minimum, so a segment consisting only of deep lines was pulled back to
+    // the left margin — indent lost exactly where the page mixed prose with
+    // equations.
+    let base_depth = lines
+        .iter()
+        .filter(|l| l.math.is_none() && l.table.is_none())
+        .map(|l| l.depth)
+        .min()
+        .unwrap_or(0);
     fn flush(
         seg: &mut Vec<&Line>,
         x: f32,
@@ -1168,11 +1187,12 @@ fn emit_boxes(
         out: &mut Vec<PageBox>,
         img_idx: &HashMap<u32, String>,
         flow: u32,
+        base_depth: usize,
     ) {
         if seg.is_empty() {
             return;
         }
-        let md = outline_markdown(seg, img_idx);
+        let md = outline_markdown(seg, img_idx, Some(base_depth));
         if !md.trim().is_empty() {
             out.push(PageBox {
                 kind: "text".into(),
@@ -1193,7 +1213,7 @@ fn emit_boxes(
     }
     for l in lines {
         if let Some(grid) = &l.table {
-            flush(&mut seg, x, w, &mut cy, out, img_idx, flow);
+            flush(&mut seg, x, w, &mut cy, out, img_idx, flow, base_depth);
             let rows = grid.cells.len() as f32;
             out.push(PageBox {
                 kind: "table".into(),
@@ -1214,7 +1234,7 @@ fn emit_boxes(
             continue;
         }
         if let Some(latex) = &l.math {
-            flush(&mut seg, x, w, &mut cy, out, img_idx, flow);
+            flush(&mut seg, x, w, &mut cy, out, img_idx, flow, base_depth);
             out.push(PageBox {
                 kind: "math".into(),
                 x: x + 24.0,
@@ -1233,7 +1253,7 @@ fn emit_boxes(
             seg.push(l); // text AND in-flow image lines stay in the one box
         }
     }
-    flush(&mut seg, x, w, &mut cy, out, img_idx, flow);
+    flush(&mut seg, x, w, &mut cy, out, img_idx, flow, base_depth);
     cy
 }
 
@@ -1645,7 +1665,9 @@ fn styled_runs(r: &Reader, o: &Obj, res: &Resolver) -> Vec<SRun> {
         for &f in &fmt {
             st = merge_style(&st, &resolve_style(r, res, f, o.rev));
         }
-        return vec![SRun { text, style: st }];
+        let mut runs = vec![SRun { text, style: st }];
+        translate_symbol_pua(&mut runs);
+        return runs;
     }
 
     // Multi-run: boundaries [0, b0, b1, …, len] split the char stream.
@@ -1666,7 +1688,110 @@ fn styled_runs(r: &Reader, o: &Obj, res: &Resolver) -> Vec<SRun> {
     if runs.is_empty() {
         runs.push(SRun { text, style: base });
     }
+    translate_symbol_pua(&mut runs);
     runs
+}
+
+/// Adobe Symbol encoding, byte → Unicode. `None` for glyphs with no clean
+/// Unicode identity (bracket/radical extender pieces).
+///
+/// Office stores a character typed in a symbol font as `U+F000 + byte`. That
+/// PUA code point is meaningless alone — but the run records its FONT, and
+/// when the font is `Symbol` the byte maps deterministically through this
+/// table. (The review's worry that `0xAC` is ambiguous — Symbol's `←` vs a
+/// user's `¬` — only applies without the font: keyed on it, `F0AC` in a
+/// Symbol run IS the left arrow, and `¬` in Symbol is byte 0xD8.)
+fn symbol_pua_char(b: u8) -> Option<char> {
+    Some(match b {
+        // ASCII-coincident slots, with Symbol's own deviations.
+        0x20 => ' ', 0x21 => '!', 0x22 => '\u{2200}', 0x23 => '#',
+        0x24 => '\u{2203}', 0x25 => '%', 0x26 => '&', 0x27 => '\u{220B}',
+        0x28 => '(', 0x29 => ')', 0x2A => '\u{2217}', 0x2B => '+',
+        0x2C => ',', 0x2D => '\u{2212}', 0x2E => '.', 0x2F => '/',
+        0x30..=0x39 => b as char, // digits
+        0x3A => ':', 0x3B => ';', 0x3C => '<', 0x3D => '=', 0x3E => '>',
+        0x3F => '?', 0x40 => '\u{2245}',
+        // Greek capitals.
+        0x41 => 'Α', 0x42 => 'Β', 0x43 => 'Χ', 0x44 => 'Δ', 0x45 => 'Ε',
+        0x46 => 'Φ', 0x47 => 'Γ', 0x48 => 'Η', 0x49 => 'Ι', 0x4A => 'ϑ',
+        0x4B => 'Κ', 0x4C => 'Λ', 0x4D => 'Μ', 0x4E => 'Ν', 0x4F => 'Ο',
+        0x50 => 'Π', 0x51 => 'Θ', 0x52 => 'Ρ', 0x53 => 'Σ', 0x54 => 'Τ',
+        0x55 => 'Υ', 0x56 => 'ς', 0x57 => 'Ω', 0x58 => 'Ξ', 0x59 => 'Ψ',
+        0x5A => 'Ζ',
+        0x5B => '[', 0x5C => '\u{2234}', 0x5D => ']', 0x5E => '\u{22A5}',
+        0x5F => '_',
+        // Greek lowercase.
+        0x61 => 'α', 0x62 => 'β', 0x63 => 'χ', 0x64 => 'δ', 0x65 => 'ε',
+        0x66 => 'φ', 0x67 => 'γ', 0x68 => 'η', 0x69 => 'ι', 0x6A => 'ϕ',
+        0x6B => 'κ', 0x6C => 'λ', 0x6D => 'μ', 0x6E => 'ν', 0x6F => 'ο',
+        0x70 => 'π', 0x71 => 'θ', 0x72 => 'ρ', 0x73 => 'σ', 0x74 => 'τ',
+        0x75 => 'υ', 0x76 => 'ϖ', 0x77 => 'ω', 0x78 => 'ξ', 0x79 => 'ψ',
+        0x7A => 'ζ',
+        0x7B => '{', 0x7C => '|', 0x7D => '}', 0x7E => '\u{223C}',
+        // Symbols proper.
+        0xA1 => 'ϒ', 0xA2 => '\u{2032}', 0xA3 => '\u{2264}',
+        0xA4 => '\u{2044}', 0xA5 => '\u{221E}', 0xA6 => 'ƒ',
+        0xA7 => '\u{2663}', 0xA8 => '\u{2666}', 0xA9 => '\u{2665}',
+        0xAA => '\u{2660}', 0xAB => '\u{2194}', 0xAC => '\u{2190}',
+        0xAD => '\u{2191}', 0xAE => '\u{2192}', 0xAF => '\u{2193}',
+        0xB0 => '°', 0xB1 => '±', 0xB2 => '\u{2033}', 0xB3 => '\u{2265}',
+        0xB4 => '×', 0xB5 => '\u{221D}', 0xB6 => '\u{2202}', 0xB7 => '•',
+        0xB8 => '÷', 0xB9 => '\u{2260}', 0xBA => '\u{2261}',
+        0xBB => '\u{2248}', 0xBC => '\u{2026}', 0xBF => '\u{21B5}',
+        0xC0 => '\u{2135}', 0xC1 => '\u{2111}', 0xC2 => '\u{211C}',
+        0xC3 => '\u{2118}', 0xC4 => '\u{2297}', 0xC5 => '\u{2295}',
+        0xC6 => '\u{2205}', 0xC7 => '\u{2229}', 0xC8 => '\u{222A}',
+        0xC9 => '\u{2283}', 0xCA => '\u{2287}', 0xCB => '\u{2284}',
+        0xCC => '\u{2282}', 0xCD => '\u{2286}', 0xCE => '\u{2208}',
+        0xCF => '\u{2209}',
+        0xD0 => '\u{2220}', 0xD1 => '\u{2207}', 0xD2 => '®', 0xD3 => '©',
+        0xD4 => '\u{2122}', 0xD5 => '\u{220F}', 0xD6 => '\u{221A}',
+        0xD7 => '\u{22C5}', 0xD8 => '¬', 0xD9 => '\u{2227}',
+        0xDA => '\u{2228}', 0xDB => '\u{21D4}', 0xDC => '\u{21D0}',
+        0xDD => '\u{21D1}', 0xDE => '\u{21D2}', 0xDF => '\u{21D3}',
+        0xE0 => '\u{25CA}', 0xE1 => '\u{27E8}', 0xE2 => '®', 0xE3 => '©',
+        0xE4 => '\u{2122}', 0xE5 => '\u{2211}', 0xF1 => '\u{27E9}',
+        0xF2 => '\u{222B}',
+        // Everything else (bracket pieces, radical extenders, 0x60, 0xA0,
+        // 0xBD/0xBE, 0xE6…) has no standalone Unicode identity.
+        _ => return None,
+    })
+}
+
+/// Translate Office's symbol-font PUA storage (`U+F000 + byte`) to real
+/// Unicode for runs whose font is `Symbol`. Applied only when EVERY PUA char
+/// in the run maps — a partial translation would leave a run that half-renders
+/// in the wrong alphabet. On success the run's font is cleared: the characters
+/// are ordinary Unicode now, and keeping `Symbol` would re-encode them wrongly
+/// (Symbol's cmap maps `A` to Alpha).
+fn translate_symbol_pua(runs: &mut [SRun]) {
+    for run in runs {
+        if run.style.font.as_deref() != Some("Symbol") {
+            continue;
+        }
+        if !run.text.chars().any(|c| ('\u{F020}'..='\u{F0FF}').contains(&c)) {
+            continue;
+        }
+        let mut out = String::with_capacity(run.text.len());
+        let mut ok = true;
+        for c in run.text.chars() {
+            if ('\u{F020}'..='\u{F0FF}').contains(&c) {
+                match symbol_pua_char((c as u32 - 0xF000) as u8) {
+                    Some(mapped) => out.push(mapped),
+                    None => {
+                        ok = false;
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        if ok {
+            run.text = out;
+            run.style.font = None;
+        }
+    }
 }
 
 /// Fold a Mathematical-Alphanumeric-Symbols code point back to plain ASCII
@@ -1976,7 +2101,7 @@ fn parse_table(
             let mut guard = HashSet::new();
             collect_tree(r, cell, res, 0, &mut lines, &mut guard);
             let refs: Vec<&Line> = lines.iter().collect();
-            cells.push(outline_markdown(&refs, img_idx).trim().to_string());
+            cells.push(outline_markdown(&refs, img_idx, None).trim().to_string());
         }
         if !cells.is_empty() {
             grid.push(cells);
@@ -2553,14 +2678,27 @@ fn dominant_size(lines: &[&Line]) -> Option<f32> {
 }
 
 /// Render collected lines as indented Markdown for Openote's renderer. List
-/// items keep their original bullet; non-list paragraphs stay flush-left (bold
-/// runs become `**…**` — the OneNote heading look); in-flow images render as
+/// items keep their original bullet; in-flow images render as
 /// `![image](onote-img://N)` placeholder lines (the importer rewrites N to the
 /// stored blob hash). Math never reaches here: [emit_boxes] splits equations
-/// into their own boxes first. Normalised so the shallowest line sits at the
-/// left margin; 2 spaces per indent level.
-fn outline_markdown(lines: &[&Line], img_idx: &HashMap<u32, String>) -> String {
-    let min_depth = lines.iter().map(|l| l.depth).min().unwrap_or(0);
+/// into their own boxes first. 2 spaces per indent level, emitted for EVERY
+/// line kind — non-list paragraphs used to stay flush-left, which silently
+/// discarded their OneNote indent and produced the measured `45u × levels`
+/// residual offset on exactly those rows (review §K.1's last open item).
+///
+/// [base_depth] is the depth to normalise against. `emit_boxes` splits an
+/// outline into segments at every math/table line, and each segment
+/// re-normalising against its own minimum pulled post-math indented content
+/// back to the margin — so the caller computes the base once per outline and
+/// passes it to every segment. `None` keeps per-call normalisation (table
+/// cells, where each cell is its own little document).
+fn outline_markdown(
+    lines: &[&Line],
+    img_idx: &HashMap<u32, String>,
+    base_depth: Option<usize>,
+) -> String {
+    let min_depth = base_depth
+        .unwrap_or_else(|| lines.iter().map(|l| l.depth).min().unwrap_or(0));
     let mut out = String::new();
     for l in lines {
         let level = l.depth.saturating_sub(min_depth);
@@ -2572,8 +2710,8 @@ fn outline_markdown(lines: &[&Line], img_idx: &HashMap<u32, String>) -> String {
             }
             continue;
         }
+        out.push_str(&"  ".repeat(level));
         if l.is_list {
-            out.push_str(&"  ".repeat(level));
             out.push_str(&l.bullet);
             out.push(' ');
         }
@@ -3202,6 +3340,83 @@ mod tests {
     fn rejects_non_one_input() {
         let out = import_one_json(b"not a onenote file at all, padding.......................");
         assert!(out.contains("\"ok\":false"));
+    }
+
+    fn text_line(depth: usize, text: &str, is_list: bool) -> Line {
+        Line {
+            depth,
+            is_list,
+            bullet: if is_list { "-".into() } else { String::new() },
+            runs: vec![SRun { text: text.into(), style: Style::default() }],
+            math: None,
+            table: None,
+            image: None,
+        }
+    }
+
+    /// Regression for the last known layout defect: non-list paragraphs used
+    /// to be emitted flush-left whatever their depth, losing OneNote's indent
+    /// (a measured 45u-per-lost-level horizontal offset on those rows).
+    #[test]
+    fn indented_prose_keeps_its_level() {
+        let lines = [
+            text_line(1, "top", false),
+            text_line(3, "deep paragraph", false),
+            text_line(2, "item", true),
+        ];
+        let refs: Vec<&Line> = lines.iter().collect();
+        let md = outline_markdown(&refs, &HashMap::new(), None);
+        let rows: Vec<&str> = md.lines().collect();
+        assert_eq!(rows[0], "top"); // shallowest normalises to the margin
+        assert_eq!(rows[1], "    deep paragraph"); // 2 levels = 4 spaces, NOT flush
+        assert_eq!(rows[2], "  - item");
+    }
+
+    /// Office stores a Symbol-font char as U+F000+byte; keyed on the run's
+    /// font the byte maps deterministically. `∈` is Symbol 0xCE, `¬` is 0xD8,
+    /// and the reference notebook's 17× U+F0AC are left arrows.
+    #[test]
+    fn symbol_pua_translates_when_the_font_says_symbol() {
+        let mut runs = vec![SRun {
+            text: "x \u{F0CE} A \u{F0D8}B \u{F0AC}".into(),
+            style: Style { font: Some("Symbol".into()), ..Default::default() },
+        }];
+        translate_symbol_pua(&mut runs);
+        assert_eq!(runs[0].text, "x \u{2208} A ¬B \u{2190}");
+        assert_eq!(runs[0].style.font, None, "now real Unicode, not Symbol-encoded");
+
+        // A different font must NOT translate — Wingdings 0xCE is a different
+        // glyph entirely, and guessing would corrupt content.
+        let mut wd = vec![SRun {
+            text: "\u{F0CE}".into(),
+            style: Style { font: Some("Wingdings".into()), ..Default::default() },
+        }];
+        translate_symbol_pua(&mut wd);
+        assert_eq!(wd[0].text, "\u{F0CE}");
+        assert_eq!(wd[0].style.font.as_deref(), Some("Wingdings"));
+
+        // An unmappable byte (bracket extender 0xE6) keeps the whole run
+        // untouched rather than half-translating it.
+        let mut partial = vec![SRun {
+            text: "\u{F0CE}\u{F0E6}".into(),
+            style: Style { font: Some("Symbol".into()), ..Default::default() },
+        }];
+        translate_symbol_pua(&mut partial);
+        assert_eq!(partial[0].text, "\u{F0CE}\u{F0E6}");
+    }
+
+    /// A segment made only of deep lines must not be pulled back to the
+    /// margin: the base depth comes from the whole outline, not the segment.
+    #[test]
+    fn segment_after_math_keeps_outline_base() {
+        let deep = [text_line(3, "after the equation", false)];
+        let refs: Vec<&Line> = deep.iter().collect();
+        // Per-segment normalisation (None) would emit flush-left; the outline
+        // base (Some(1)) preserves the two extra levels.
+        assert_eq!(
+            outline_markdown(&refs, &HashMap::new(), Some(1)),
+            "    after the equation"
+        );
     }
 
     #[test]

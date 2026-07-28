@@ -479,15 +479,18 @@ Future<void> importOneNotePackageWithFeedback(
           : "That notebook couldn't be imported: $err";
     } else if (skipped.isEmpty) {
       msg = 'Imported a notebook with $count page'
-          '${count == 1 ? '' : 's'} from OneNote.';
+          '${count == 1 ? '' : 's'} from OneNote.'
+          '${_strokeNote()}';
     } else {
       msg = 'Imported $count page${count == 1 ? '' : 's'}, but '
           '${skipped.length} section${skipped.length == 1 ? '' : 's'} '
           'could not be read: ${skipped.take(3).join(', ')}'
-          '${skipped.length > 3 ? '…' : ''}';
+          '${skipped.length > 3 ? '…' : ''}'
+          '${_strokeNote()}';
     }
     _snack(context, msg,
-        seconds: skipped.isEmpty && count > 0 ? 4 : 9);
+        seconds:
+            skipped.isEmpty && count > 0 && lastDroppedStrokes == 0 ? 4 : 9);
   } on OneNoteUnavailable {
     if (context.mounted) _snack(context, _coreMissing, seconds: 8);
   }
@@ -524,6 +527,15 @@ Future<void> importMarkdownWithFeedback(
 const _coreMissing =
     'OneNote import needs the Rust core — build onote_core.dll '
     '(see rust/onote_core/INTEGRATION.md).';
+
+/// One sentence when the parser dropped undecodable ink (~0.02 % of strokes on
+/// the reference notebook). The notes LOOK complete when a stroke vanishes,
+/// which is exactly why it has to be said out loud.
+String _strokeNote() => lastDroppedStrokes == 0
+    ? ''
+    : ' $lastDroppedStrokes ink stroke'
+        '${lastDroppedStrokes == 1 ? '' : 's'} could not be decoded and '
+        '${lastDroppedStrokes == 1 ? 'was' : 'were'} left out.';
 
 void _snack(BuildContext context, String msg, {int seconds = 4}) =>
     ScaffoldMessenger.of(context).showSnackBar(

@@ -227,6 +227,154 @@ void main() {
     expect(app.syncMissingBlobs(nb.id), isEmpty);
   });
 
+  test('erasing one stroke appends a small ink op, not the whole block',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp) = await freshRepo('onote_shadow_ink_');
+    addTearDown(() {
+      repo.dispose();
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    final nb = await repo.createNotebook('Ink');
+    final app = AppState(repo);
+    app.notebookId = nb.id;
+    app.reloadNodes();
+    app.pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+
+    // A dense ink block — the imported-notebook shape (one block, many
+    // strokes). 200 strokes × 50 points is ~350 KB serialized.
+    List<double> ramp(int n, double base) =>
+        [for (var i = 0; i < n; i++) base + i.toDouble()];
+    final strokes = [
+      for (var s = 0; s < 200; s++)
+        Stroke(
+          tool: 'pen',
+          colorHex: '#000000',
+          size: 2.5,
+          x: ramp(50, s * 10.0),
+          y: ramp(50, 0),
+        ).toJson()
+    ];
+    final ink = Block(type: BlockType.ink, x: 0, y: 0, content: {
+      'strokes': strokes,
+    });
+    app.blocks = [ink];
+    app.markDirty();
+    await app.flushSave();
+
+    final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+    final store = OpLogStore.forNotebook(ref.file);
+    final logFile = store.logFor(
+        store.deviceIds().single); // one device in this test
+    final sizeAfterBaseline = logFile.lengthSync();
+
+    // Erase-like edit: split stroke 10 into two fragments at its position —
+    // exactly what _eraseAt does.
+    final list = (ink.content['strokes'] as List);
+    final victim = (list[10] as Map).cast<String, dynamic>();
+    final frag1 = Stroke(
+            tool: 'pen',
+            colorHex: '#000000',
+            size: 2.5,
+            x: ((victim['x'] as List).cast<double>()).sublist(0, 20),
+            y: ((victim['y'] as List).cast<double>()).sublist(0, 20))
+        .toJson();
+    final frag2 = Stroke(
+            tool: 'pen',
+            colorHex: '#000000',
+            size: 2.5,
+            x: ((victim['x'] as List).cast<double>()).sublist(30),
+            y: ((victim['y'] as List).cast<double>()).sublist(30))
+        .toJson();
+    list
+      ..removeAt(10)
+      ..insert(10, frag1)
+      ..insert(11, frag2);
+    ink.updatedAt = nowMs() + 5;
+    app.markDirty();
+    await app.flushSave();
+
+    final appended = logFile.lengthSync() - sizeAfterBaseline;
+    final ops = store.readAll();
+    expect(ops.last.kind, OpKind.inkStrokes,
+        reason: 'an erase must not re-record the whole block');
+    // The whole block is ~350 KB; the erase touched one stroke. The appended
+    // record must be O(changed strokes), not O(block).
+    expect(appended, lessThan(20 * 1024),
+        reason: 'appended $appended bytes for a one-stroke split');
+
+    // And the rebuild still matches the container byte-for-byte — order
+    // included, which is the risky part of positional inserts.
+    expect(canonicalJson(rebuild(repo, nb.id, app.pageId!)),
+        canonicalJson({
+          'schema': 'onote-page/1',
+          'pageId': app.pageId,
+          'page': app.pageProps.toJson(),
+          'blocks': [ink.toJson()],
+        }));
+  });
+
+  test('dragging an ink block falls back to block.set (the >50% guard)',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp) = await freshRepo('onote_shadow_inkmove_');
+    addTearDown(() {
+      repo.dispose();
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    final nb = await repo.createNotebook('InkMove');
+    final app = AppState(repo);
+    app.notebookId = nb.id;
+    app.reloadNodes();
+    app.pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+
+    final ink = Block(type: BlockType.ink, x: 0, y: 0, content: {
+      'strokes': [
+        for (var s = 0; s < 4; s++)
+          Stroke(
+                  tool: 'pen',
+                  colorHex: '#000000',
+                  size: 2.5,
+                  x: [s * 10.0, s * 10.0 + 1],
+                  y: [0, 1])
+              .toJson()
+      ],
+    });
+    app.blocks = [ink];
+    app.markDirty();
+    await app.flushSave();
+
+    // A drag rewrites EVERY stroke's coordinates — a per-stroke record would
+    // be larger than the block itself.
+    for (final s in (ink.content['strokes'] as List)) {
+      final m = (s as Map).cast<String, dynamic>();
+      m['x'] = [for (final v in (m['x'] as List)) (v as num) + 100.0];
+      m['y'] = [for (final v in (m['y'] as List)) (v as num) + 100.0];
+    }
+    ink.x += 100;
+    ink.y += 100;
+    ink.updatedAt = nowMs() + 5;
+    app.markDirty();
+    await app.flushSave();
+
+    final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+    final store = OpLogStore.forNotebook(ref.file);
+    expect(store.readAll().last.kind, OpKind.blockSet);
+    expect(canonicalJson(rebuild(repo, nb.id, app.pageId!)),
+        canonicalJson({
+          'schema': 'onote-page/1',
+          'pageId': app.pageId,
+          'page': app.pageProps.toJson(),
+          'blocks': [ink.toJson()],
+        }));
+  });
+
   test('a notebook rename reaches the log', () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (repo, tmp) = await freshRepo('onote_shadow_meta_');

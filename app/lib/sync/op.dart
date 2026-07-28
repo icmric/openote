@@ -37,6 +37,22 @@ enum OpKind {
   nodePurge('node.purge'),
   blockSet('block.set'),
   blockRemove('block.remove'),
+
+  /// Per-stroke ink edit: `{'pageId', 'blockId', 'del': [strokeId…],
+  /// 'put': [{'i': index, 's': strokeJson}…], 'rect': {x,y,w,h}?, 'updatedAt'}`.
+  ///
+  /// Exists because ink blocks are HUGE — the importer puts a whole page's
+  /// strokes in one block (up to several MB serialized) — and an erase gesture
+  /// that split a handful of strokes used to append the entire block as a
+  /// `block.set`: 50–1000× write amplification, ~300–400 MB of log for one
+  /// heavy cleanup session. This op records only the changed strokes.
+  ///
+  /// `put` entries are positional inserts applied AFTER the `del` removals,
+  /// so the exact strokes-list order is reproduced — the eraser inserts split
+  /// fragments mid-list, and the rebuild-equals-container check compares the
+  /// list verbatim, so append-only semantics would fail verification on every
+  /// single erase.
+  inkStrokes('ink.strokes'),
   pageProps('page.props'),
   blobPut('blob.put'),
   notebookMeta('notebook.meta'),

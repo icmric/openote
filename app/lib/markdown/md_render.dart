@@ -30,6 +30,10 @@ final _reImage =
 final _reQuote = RegExp(r'^>\s?(.*)$');
 final _reDisplayMath = RegExp(r'^\s*\$\$(.+)\$\$\s*$');
 final _reDivider = RegExp(r'^\s*(-{3,}|\*{3,})\s*$');
+// A plain paragraph carrying the 2-spaces-per-level indent encoding. Only
+// matched after every other line form, so lists/checkboxes/images (which do
+// their own indent handling) never reach it.
+final _rePlainIndent = RegExp(r'^( +)(\S.*)$');
 // The 12-branch inline alternation, also compiled once per process rather than
 // once per rendered line.
 final _reInline = RegExp(
@@ -429,6 +433,25 @@ class _MarkdownViewState extends State<MarkdownView> {
     // Divider
     if (_reDivider.hasMatch(line)) {
       return const Divider(height: 12);
+    }
+
+    // Indented plain paragraph: leading spaces are an INDENT ENCODING
+    // (2 spaces = 1 level, same as lists), not content. Rendering them as
+    // literal spaces gave ~4px where OneNote gives 2.45×fontSize per level —
+    // the other half of the importer's lost-indent defect: the parser now
+    // emits the levels, and this is what makes them the right width.
+    final plainIndent = _rePlainIndent.firstMatch(line);
+    if (plainIndent != null) {
+      return Padding(
+        padding: EdgeInsets.only(
+            left: indentPx(plainIndent.group(1)!.length, baseStyle.fontSize)),
+        child: Text.rich(
+          TextSpan(
+              children: inlineSpans(
+                  plainIndent.group(2)!, baseStyle, dark, onWikiLink)),
+          style: baseStyle,
+        ),
+      );
     }
 
     // Paragraph (empty lines keep their height)

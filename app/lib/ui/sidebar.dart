@@ -1203,6 +1203,9 @@ Future<void> _promptSaveTemplate(BuildContext context, AppState app) async {
       ],
     ),
   );
+  // The dialog closing does not dispose its controller; this leaked one
+  // TextEditingController per save-as-template.
+  controller.dispose();
   if (name != null && name.trim().isNotEmpty) {
     app.saveCurrentAsTemplate(name.trim());
     if (context.mounted) {

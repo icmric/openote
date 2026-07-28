@@ -24,9 +24,19 @@ String _parseOnepkgInIsolate(Uint8List bytes) =>
 /// Show a busy dialog while [work] runs (import feedback for large notebooks).
 /// The dialog text tracks [message] live, so multi-phase imports can narrate
 /// progress ("Importing section 3 of 12…") as they go.
+/// Runs [work] behind a modal progress dialog. **Takes ownership of
+/// [message]** and disposes it when the work completes — both call sites
+/// hand over a notifier they never touch again, and leaving disposal to them
+/// leaked one notifier per import.
 Future<T> _withBusyDialog<T>(BuildContext? context,
     ValueNotifier<String> message, Future<T> Function() work) async {
-  if (context == null || !context.mounted) return work();
+  if (context == null || !context.mounted) {
+    try {
+      return await work();
+    } finally {
+      message.dispose();
+    }
+  }
   showDialog<void>(
     context: context,
     barrierDismissible: false,
@@ -52,6 +62,9 @@ Future<T> _withBusyDialog<T>(BuildContext? context,
     if (context.mounted) {
       Navigator.of(context, rootNavigator: true).pop();
     }
+    // Dispose only after the dialog is gone — its ValueListenableBuilder is
+    // still listening until the route pops.
+    message.dispose();
   }
 }
 
@@ -311,6 +324,7 @@ Future<int?> importOneNotePackage(AppState app,
   // One dialog spans both phases: the native parse (single isolate call) and
   // the per-section database writes, which narrate progress as they go.
   lastSkippedSections = const [];
+  lastDroppedStrokes = 0;
   lastImportError = null;
   final progress = ValueNotifier(
       'Reading notebook… this can take a while for large notebooks.');
@@ -358,6 +372,11 @@ Future<int?> importOneNotePackage(AppState app,
 /// Surfaced by the caller so a partial import announces itself rather than
 /// quietly delivering fewer sections than the notebook contains.
 List<String> lastSkippedSections = const [];
+
+/// Ink strokes the parser could not decode in the last import (~0.02 % on the
+/// reference notebook). Non-zero means the notes look complete but a handful
+/// of pen marks are missing — worth a sentence, not silence.
+int lastDroppedStrokes = 0;
 
 /// Why the last import returned 0, when the reason wasn't "nothing usable".
 String? lastImportError;
@@ -447,6 +466,9 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
     final title = (page['title'] as String?)?.trim();
     final boxes = (page['boxes'] as List?) ?? const [];
     final images = (page['images'] as List?) ?? const [];
+    // Parser-side stroke drops, accumulated for the import summary — the notes
+    // LOOK complete when a stroke vanishes, which is exactly why it gets said.
+    lastDroppedStrokes += (page['dropped_strokes'] as num?)?.toInt() ?? 0;
 
     // Recover the page's original created date from the title box's date text
     // (carried out-of-band — the title box itself is not imported as content,

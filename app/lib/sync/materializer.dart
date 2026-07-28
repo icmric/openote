@@ -111,6 +111,58 @@ class Materializer {
         pages.putIfAbsent(pid, MatPage.new).blocks[bid] =
             b.cast<String, dynamic>();
 
+      case OpKind.inkStrokes:
+        final pid = d['pageId'] as String?;
+        final bid = d['blockId'] as String?;
+        if (pid == null || bid == null) return;
+        final block = pages[pid]?.blocks[bid];
+        // Absent page or block → drop the op. Either a concurrent
+        // `block.remove` ordered earlier (and resurrecting it would break
+        // delete-wins), or an op from a device that never saw the creation.
+        if (block == null) return;
+        // Rebuild with fresh untyped maps rather than writing through `cast`
+        // views — a view is backed by the ORIGINAL map, and if that map arrived
+        // with a narrower inferred type (a decoded op, a test literal), the
+        // write-back throws a cast error at runtime.
+        final content = <String, dynamic>{
+          ...?(block['content'] as Map?)?.cast<String, dynamic>()
+        };
+        final strokes = [...((content['strokes'] as List?) ?? const [])];
+        final del = ((d['del'] as List?) ?? const []).cast<String>().toSet();
+        final puts = ((d['put'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((p) => p.cast<String, dynamic>())
+            .toList();
+        // Upsert semantics: a put replaces the stroke wherever it was, so
+        // remove both deleted ids and re-put ids first…
+        final putIds = {
+          for (final p in puts)
+            if (p['s'] is Map) (p['s'] as Map)['id']
+        };
+        strokes.removeWhere((s) =>
+            s is Map && (del.contains(s['id']) || putIds.contains(s['id'])));
+        // …then insert at the recorded positions, ascending. This reproduces
+        // the after-list exactly as long as unchanged strokes kept their
+        // relative order — which every current editor operation does, and the
+        // shadow verification would expose if one stopped doing.
+        puts.sort((a, b) =>
+            ((a['i'] as num?) ?? 0).compareTo(((b['i'] as num?) ?? 0)));
+        for (final p in puts) {
+          final i = ((p['i'] as num?)?.toInt() ?? strokes.length)
+              .clamp(0, strokes.length);
+          strokes.insert(i, p['s']);
+        }
+        content['strokes'] = strokes;
+        final updated = <String, dynamic>{...block, 'content': content};
+        final rect = (d['rect'] as Map?)?.cast<String, dynamic>();
+        if (rect != null) {
+          for (final k in const ['x', 'y', 'w', 'h']) {
+            if (rect[k] != null) updated[k] = rect[k];
+          }
+        }
+        if (d['updatedAt'] != null) updated['updatedAt'] = d['updatedAt'];
+        pages[pid]!.blocks[bid] = updated;
+
       case OpKind.blockRemove:
         final pid = d['pageId'] as String?;
         final bid = d['blockId'] as String?;

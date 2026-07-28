@@ -12,6 +12,7 @@
 /// every mutation already passes through.
 library;
 
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -76,14 +77,24 @@ class SyncRecorder {
     }
     store.announceDevice(device.id);
 
-    final state = Materializer()..applyAll(store.readAll());
+    // ONE pass over the logs. readAll + highestLamport + lastSeq each re-read
+    // every file, which tripled open time — and open time scales with log
+    // size, so on a heavily-edited notebook it was the difference between a
+    // fast open and a hitch.
+    final all = store.readAll();
+    var lamport = 0, seq = 0;
+    for (final op in all) {
+      if (op.lamport > lamport) lamport = op.lamport;
+      if (op.device == device.id && op.seq > seq) seq = op.seq;
+    }
+    final state = Materializer()..applyAll(all);
     final recorder = SyncRecorder._(
       notebookId: notebookId,
       store: store,
       device: device,
       state: state,
-      lamport: store.highestLamport(),
-      seq: store.lastSeq(device.id),
+      lamport: lamport,
+      seq: seq,
       onSeq: (s) => writeSetting(DeviceIdentity.seqKey(notebookId), s),
     );
     // Seed the title so a notebook that has never been renamed still carries
@@ -225,13 +236,30 @@ class SyncRecorder {
     final seen = <String>{};
     for (final b in blocks) {
       seen.add(b.id);
-      final json = b.toJson();
+      final live = b.toJson();
+      final canon = canonicalJson(live);
       final before = prev?.blocks[b.id];
       // Canonical compare: an unchanged block must not produce an op, or every
       // autosave would append the whole page and the log would grow without
       // bound.
-      if (before != null && canonicalJson(before) == canonicalJson(json)) {
+      if (before != null && canonicalJson(before) == canon) {
         continue;
+      }
+      // DETACHED snapshot, not `live`. Block.toJson's `content` aliases the
+      // block's live map, so storing it in the replayed state would make the
+      // state mutate in lockstep with the app — and every later diff would
+      // compare a thing to itself and see nothing. (Found by the ink tests:
+      // a block drag looked like a no-op to the recorder.)
+      final json = jsonDecode(canon) as Map<String, dynamic>;
+      // Ink gets a per-stroke diff when it pays. An imported page's ink is ONE
+      // block holding every stroke (multi-MB serialized); recording an erase
+      // gesture as a whole `block.set` was 50–1000× write amplification.
+      if (before != null && json['type'] == 'ink') {
+        final inkOp = _diffInk(pageId, before, json);
+        if (inkOp != null) {
+          ops.add(inkOp);
+          continue;
+        }
       }
       ops.add(_op(OpKind.blockSet, {'pageId': pageId, 'block': json}));
     }
@@ -241,12 +269,112 @@ class SyncRecorder {
             OpKind.blockRemove, {'pageId': pageId, 'blockId': goneId}));
       }
     }
-    final propsJson = props.toJson();
-    if (prev == null || canonicalJson(prev.props) != canonicalJson(propsJson)) {
-      ops.add(_op(OpKind.pageProps, {'pageId': pageId, 'props': propsJson}));
+    final propsCanon = canonicalJson(props.toJson());
+    if (prev == null || canonicalJson(prev.props) != propsCanon) {
+      // Detached for the same aliasing reason as blocks (unknownFields is a
+      // live map on PageProps).
+      ops.add(_op(OpKind.pageProps,
+          {'pageId': pageId, 'props': jsonDecode(propsCanon)}));
     }
     _commit(ops);
   }
+
+  /// Diff two versions of an ink block into one [OpKind.inkStrokes] op, or
+  /// null when a whole `block.set` is the better record.
+  ///
+  /// Null falls back deliberately in two cases:
+  /// - **the envelope changed beyond geometry** (anything but x/y/w/h/rotation/
+  ///   updatedAt): a colour change, a future field — the block op is the honest
+  ///   record;
+  /// - **more than half the strokes changed**: dragging an ink block rewrites
+  ///   every stroke's coordinates in place, and a per-stroke op for that would
+  ///   be BIGGER than the block. The guard uses size as a proxy for intent —
+  ///   do not "optimize" it away; erasing most of a huge block in one gesture
+  ///   correctly lands on `block.set`.
+  Op? _diffInk(String pageId, Map<String, dynamic> before,
+      Map<String, dynamic> after) {
+    final beforeStrokes =
+        ((before['content'] as Map?)?['strokes'] as List?) ?? const [];
+    final afterStrokes =
+        ((after['content'] as Map?)?['strokes'] as List?) ?? const [];
+    if (afterStrokes.isEmpty) return null; // emptied → block-level is right
+
+    // The envelope must match apart from geometry, or this op cannot carry the
+    // difference.
+    Map<String, dynamic> stripped(Map<String, dynamic> b) => {
+          for (final e in b.entries)
+            if (!const {'content', 'x', 'y', 'w', 'h', 'rotation', 'updatedAt'}
+                .contains(e.key))
+              e.key: e.value,
+          'content': {
+            for (final e in ((b['content'] as Map?) ?? const {}).entries)
+              if (e.key != 'strokes') e.key: e.value
+          },
+        };
+    if (canonicalJson(stripped(before)) != canonicalJson(stripped(after))) {
+      return null;
+    }
+
+    String? idOf(Object? s) => s is Map ? s['id'] as String? : null;
+    final beforeById = <String, String>{};
+    for (final s in beforeStrokes) {
+      final id = idOf(s);
+      if (id == null) return null; // unidentifiable stroke → whole block
+      beforeById[id] = canonicalJson(s);
+    }
+
+    final afterIds = <String>{};
+    // Positional inserts, computed against the post-delete list: walk the after
+    // list; a stroke that is unchanged keeps its place, everything else is a
+    // put at its index. Order is load-bearing — the eraser inserts split
+    // fragments mid-list and verification compares the list verbatim.
+    final puts = <Map<String, dynamic>>[];
+    var changed = 0;
+    for (var i = 0; i < afterStrokes.length; i++) {
+      final s = afterStrokes[i];
+      final id = idOf(s);
+      if (id == null) return null;
+      afterIds.add(id);
+      final prevJson = beforeById[id];
+      if (prevJson == null || prevJson != canonicalJson(s)) {
+        puts.add({'i': i, 's': s});
+        changed++;
+      }
+    }
+    final del = [
+      for (final id in beforeById.keys)
+        if (!afterIds.contains(id)) id
+    ];
+    changed += del.length;
+    if (changed == 0) {
+      // Only geometry moved: record the envelope change without the strokes.
+      return _op(OpKind.inkStrokes, {
+        'pageId': pageId,
+        'blockId': after['id'],
+        'del': const [],
+        'put': const [],
+        'rect': _rectOf(after),
+        'updatedAt': after['updatedAt'],
+      });
+    }
+    if (changed > afterStrokes.length / 2) return null;
+
+    return _op(OpKind.inkStrokes, {
+      'pageId': pageId,
+      'blockId': after['id'],
+      'del': del,
+      'put': puts,
+      'rect': _rectOf(after),
+      'updatedAt': after['updatedAt'],
+    });
+  }
+
+  static Map<String, dynamic> _rectOf(Map<String, dynamic> b) => {
+        'x': b['x'],
+        'y': b['y'],
+        'w': b['w'],
+        'h': b['h'],
+      };
 
   // ── Verification (the point of shadow mode) ──────────────────────────
 
