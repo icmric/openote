@@ -480,7 +480,7 @@ class _NotebookHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final current =
-        app.repo.notebooks.firstWhere((n) => n.id == app.notebookId);
+        app.notebooks.firstWhere((n) => n.id == app.notebookId);
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 10, 6, 4),
       child: Tooltip(

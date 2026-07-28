@@ -107,7 +107,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final notebooks = app.repo.notebooks;
+    final notebooks = app.notebooks;
     final trashed = app.trashedNotebooks;
     return AlertDialog(
       title: Row(children: [

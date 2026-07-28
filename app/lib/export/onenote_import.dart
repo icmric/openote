@@ -272,7 +272,7 @@ Future<int?> importOneNoteFile(AppState app,
 
   // A section named after the imported file.
   final sectionTitle = _titleFromName(p.basenameWithoutExtension(file.name));
-  final section = app.repo.upsertNode(
+  final section = app.importNode(
       nbId,
       TreeNode(
         kind: NodeKind.section,
@@ -284,7 +284,7 @@ Future<int?> importOneNoteFile(AppState app,
       _importPagesIntoSection(app, nbId, section.id, pages, next);
   final imported = pages.length;
 
-  app.nodes = app.repo.loadNodes(nbId);
+  app.reloadNodes(); // nbId is the open notebook here
   if (firstPageId != null) {
     await app.selectPage(firstPageId);
   } else {
@@ -341,7 +341,7 @@ Future<int?> importOneNotePackage(AppState app,
 
     // The package is a whole notebook → create a fresh one named after it.
     final nbTitle = _titleFromName(p.basenameWithoutExtension(file.name));
-    final ref = await app.repo.createNotebook(nbTitle);
+    final ref = await app.importCreateNotebook(nbTitle);
     final built = buildNotebookFromPackage(app, ref.id, sections,
         onSection: (i, name) {
       progress.value = 'Importing "$name" (${i + 1} of ${sections.length})…';
@@ -375,7 +375,7 @@ Future<int> buildNotebookFromPackage(
     {Future<void> Function(int index, String name)? onSection}) async {
   // createNotebook seeds a starter section+page; remember them so the
   // scaffolding can be removed once real content has landed.
-  final seeded = app.repo.loadNodes(nbId);
+  final seeded = app.importNodes(nbId);
   final posBase = nowMs();
   var pos = 0;
   String next() => 'a${(posBase + pos++).toString().padLeft(15, '0')}';
@@ -396,8 +396,8 @@ Future<int> buildNotebookFromPackage(
     if (group != null && group.isNotEmpty) {
       groupId = groupIds.putIfAbsent(
           group,
-          () => app.repo
-              .upsertNode(
+          () => app
+                  .importNode(
                   nbId,
                   TreeNode(
                       kind: NodeKind.sectionGroup,
@@ -405,7 +405,7 @@ Future<int> buildNotebookFromPackage(
                       position: next()))
               .id);
     }
-    final section = app.repo.upsertNode(
+    final section = app.importNode(
         nbId,
         TreeNode(
           kind: NodeKind.section,
@@ -424,7 +424,7 @@ Future<int> buildNotebookFromPackage(
   if (imported > 0) {
     // Drop the seeded starter section — the notebook has real content now.
     for (final n in seeded.where((n) => n.kind == NodeKind.section)) {
-      app.repo.purgeNode(nbId, n.id);
+      app.importPurgeNode(nbId, n.id);
     }
   }
   _firstImportedPageId = firstPageId;
@@ -436,7 +436,7 @@ Future<int> buildNotebookFromPackage(
 /// dominated large imports.
 String? _importPagesIntoSection(AppState app, String nbId, String sectionId,
         List<dynamic> pages, String Function() next) =>
-    app.repo.runInTransaction(
+    app.importBatch(
         nbId, () => _importPagesLocked(app, nbId, sectionId, pages, next));
 
 String? _importPagesLocked(AppState app, String nbId, String sectionId,
@@ -453,7 +453,7 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
     // since Openote's page title band already shows the title and date).
     final createdMs = _parseOneNoteDate(page['date_text'] as String? ?? '');
 
-    final node = app.repo.upsertNode(
+    final node = app.importNode(
         nbId,
         TreeNode(
           kind: NodeKind.page,
@@ -481,7 +481,7 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
       } catch (_) {
         continue;
       }
-      final hash = app.repo.putBlob(nbId, png, 'image/png');
+      final hash = app.importBlob(nbId, png, 'image/png');
       hashByIndex[i] = hash;
       if (img['in_flow'] == true) continue; // rides a text box's flow
       final dw = (img['disp_w'] as num?)?.toDouble() ?? 0;
@@ -647,7 +647,7 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
       }
     }
 
-    app.repo.writePage(nbId, node.id, blocks, PageProps());
+    app.importPage(nbId, node.id, blocks, PageProps());
     firstPageId ??= node.id;
   }
   return firstPageId;

@@ -392,8 +392,37 @@ class _CommandBarState extends State<CommandBar> {
         Text('Draw a loop around ink to select it — then drag or delete',
             style: TextStyle(fontSize: 11, color: OnoteColors.graphite400))
       else
-        Text('Pick the pen or highlighter to draw — fingers pan, pen draws',
+        Text('Pick the pen or highlighter to draw',
             style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+      const Spacer(),
+      // Touch drawing (INK-1). Exposed because the right answer depends on
+      // hardware we can't detect reliably: "Auto" suits a pen-and-touch
+      // convertible, "Always" a touch-only tablet, "Never" anyone who rests a
+      // hand on the glass while thinking.
+      const _Div(),
+      Tooltip(
+        message: 'Draw with your finger.\nAuto: a finger draws until you use '
+            'the pen, then touch pans so your palm can\'t mark the page.\n'
+            'Two fingers always pan and zoom.',
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.touch_app_outlined,
+              size: 16, color: OnoteColors.graphite400),
+          const SizedBox(width: 4),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<TouchDrawing>(
+              value: app.touchDrawing,
+              isDense: true,
+              style: TextStyle(fontSize: 11, color: scheme.onSurface),
+              items: [
+                for (final v in TouchDrawing.values)
+                  DropdownMenuItem(value: v, child: Text(v.label)),
+              ],
+              onChanged: (v) => v == null ? null : app.setTouchDrawing(v),
+            ),
+          ),
+        ]),
+      ),
+      const SizedBox(width: 4),
     ]);
   }
 
@@ -533,7 +562,7 @@ class _CommandBarState extends State<CommandBar> {
       'webp' => 'image/webp',
       _ => 'image/png',
     };
-    final hash = app.repo.putBlob(app.notebookId!, bytes, mime);
+    final hash = app.addBlob(bytes, mime);
     final c = _center();
     final b = app.addBlock(Block(
         type: BlockType.image,
@@ -549,7 +578,7 @@ class _CommandBarState extends State<CommandBar> {
     if (file == null) return;
     final Uint8List bytes = await file.readAsBytes();
     final hash =
-        app.repo.putBlob(app.notebookId!, bytes, 'application/octet-stream');
+        app.addBlob(bytes, 'application/octet-stream');
     final c = _center();
     final b = app.addBlock(Block(
         type: BlockType.file,

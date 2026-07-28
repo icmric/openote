@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart'; // ThemeMode + widgets (re-exports foundation)
 
@@ -11,15 +12,37 @@ import '../core/onote_ffi.dart';
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
 import '../store/repository.dart';
+import '../sync/sync_recorder.dart';
 
 enum Tool { select, text, pen, highlighter, eraser, lasso }
+
+/// Whether a finger draws when an ink tool is selected (INK-1 / INK-4).
+enum TouchDrawing {
+  /// Draw with touch, unless a stylus is in use — then touch pans so a resting
+  /// palm can't mark the page. The default: it gives pen users OneNote's palm
+  /// rejection while leaving ink reachable on a touch-only tablet.
+  auto,
+
+  /// Always draw with touch, even with a stylus present.
+  always,
+
+  /// Never draw with touch; fingers only pan and pinch. OneNote's strict
+  /// behaviour, and what Openote used to do unconditionally.
+  never;
+
+  String get label => switch (this) {
+        TouchDrawing.auto => 'Auto (pen takes over)',
+        TouchDrawing.always => 'Always',
+        TouchDrawing.never => 'Never',
+      };
+}
 
 /// App-wide state. Deliberately simple (ChangeNotifier) for the MVP; the
 /// domain layer beneath it is what carries forward.
 class AppState extends ChangeNotifier {
-  AppState(this.repo) : engine = _selectEngine(repo);
+  AppState(this._repo) : engine = _selectEngine(_repo);
 
-  final Repository repo;
+  final Repository _repo;
   final DocumentEngine engine;
 
   /// Use the Rust core when its native library is linked, else the pure-Dart
@@ -28,6 +51,181 @@ class AppState extends ChangeNotifier {
     final core = OnoteCore.instance;
     return core != null ? RustEngine(repo, core) : MirrorEngine(repo);
   }
+
+  // ── Storage facade ───────────────────────────────────────────────────
+  //
+  // `_repo` is private, and these are the only ways into it from outside this
+  // class. That is not tidiness. ADR-0006 puts an append-only operation log
+  // underneath persistence, and a log is only correct if it observes *every*
+  // mutation — the failure mode of a second write path is not a crash but a
+  // log that is quietly incomplete, which surfaces much later as a device that
+  // won't converge. One funnel now is what makes "rebuild the container from
+  // the log and compare" a usable check later.
+  //
+  // Widgets previously reached `app.repo` directly for blob reads inside
+  // `build()`, and both importers wrote through it and then hand-patched
+  // `app.nodes` — so any invariant on `nodes` was silently bypassed by import.
+
+  /// Bytes of a blob in the current notebook, or null.
+  Uint8List? blob(String hash) =>
+      notebookId == null ? null : _repo.getBlob(notebookId!, hash);
+
+  /// Store bytes in the current notebook, returning the content hash.
+  String addBlob(Uint8List bytes, String mime) =>
+      importBlob(notebookId!, bytes, mime);
+
+  /// Every notebook in the workspace (registry order).
+  List<NotebookRef> get notebooks => _repo.notebooks;
+
+  /// The open notebook's registry entry.
+  NotebookRef get currentNotebook =>
+      _repo.notebooks.firstWhere((n) => n.id == notebookId);
+
+  /// Read a page of the current notebook without making it the active page —
+  /// used by exporters, which walk every page in turn.
+  PageData readPage(String id) => _repo.readPage(notebookId!, id);
+
+  /// Re-read the tree from storage into [nodes], bumping [nodesRevision].
+  /// Replaces the `app.nodes = repo.loadNodes(id)` line that used to be copied
+  /// at every mutation site, importers included.
+  void reloadNodes() {
+    if (notebookId != null) nodes = _repo.loadNodes(notebookId!);
+  }
+
+  // ── Operation log (ADR-0006, shadow mode) ────────────────────────────
+  //
+  // Every mutation below also records an op into
+  // `<Notebook>.onotebook/ops/<device>.oplog`, beside the `.onote`. The
+  // container stays authoritative; the log is written alongside so that
+  // "rebuild from the log and compare" is a check we can run today. When the
+  // two agree consistently, the container can be demoted to a rebuildable
+  // cache and the log becomes the synced artifact — at which point none of the
+  // call sites below change.
+
+  /// One recorder per notebook touched this session. Keyed because **imports
+  /// write into a notebook that isn't the open one**, and a log that misses
+  /// imported content is exactly the kind of quiet incompleteness this whole
+  /// arrangement exists to catch.
+  final Map<String, SyncRecorder> _recorders = {};
+
+  /// Set false by tests that don't want log files written beside their fixture.
+  static bool syncLogEnabled = true;
+
+  SyncRecorder? _recorderFor(String nb) {
+    if (!syncLogEnabled) return null;
+    final existing = _recorders[nb];
+    if (existing != null) return existing;
+    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull;
+    if (ref == null) return null;
+    try {
+      final r = SyncRecorder.open(
+        notebookId: nb,
+        notebookPath: ref.file,
+        title: ref.title,
+        readSetting: _repo.getSetting,
+        writeSetting: _repo.setSetting,
+      );
+      _recorders[nb] = r;
+      // Notebooks created before the log existed hold every image in SQLite
+      // alone, so a rebuild from the log would reconstruct page structure
+      // referencing bytes it cannot supply — a log that looks complete and
+      // isn't. Backfill in the background: on a real imported notebook this is
+      // hundreds of images, and doing it inline would stall the open.
+      unawaited(r
+          .backfillBlobs(
+            index: _repo.blobIndex(nb),
+            read: (h) => _repo.getBlob(nb, h),
+          )
+          .catchError((Object e) {
+        debugPrint('[openote/sync] blob backfill for $nb stopped: $e');
+        return 0;
+      }));
+      return r;
+    } catch (e) {
+      // Shadow mode must never be able to break saving. The container is still
+      // authoritative, so a log we cannot write is a degraded check, not lost
+      // data — and failing the user's save to protect a shadow would be an
+      // absurd trade.
+      debugPrint('[openote/sync] log unavailable for $nb: $e');
+      return null;
+    }
+  }
+
+  /// Blobs the log references but whose bytes are not yet in `blobs/`.
+  ///
+  /// Empty means a rebuild from the log could reconstruct this notebook's
+  /// content in full, not merely its structure — the distinction that decides
+  /// whether the container is safe to demote to a cache.
+  Set<String> syncMissingBlobs(String nb) =>
+      _recorderFor(nb)?.missingBlobs() ?? const {};
+
+  /// Run the blob backfill to completion. Normally it runs in the background
+  /// when a notebook's log is opened; this is for tests and for a future
+  /// "prepare this notebook for sync" action.
+  Future<int> syncBackfillBlobs(String nb) async =>
+      await _recorderFor(nb)?.backfillBlobs(
+        index: _repo.blobIndex(nb),
+        read: (h) => _repo.getBlob(nb, h),
+      ) ??
+      0;
+
+  /// Upsert a node and record it. Every tree mutation funnels through here.
+  TreeNode _putNode(String nb, TreeNode n) {
+    final saved = _repo.upsertNode(nb, n);
+    _recorderFor(nb)?.node(saved);
+    return saved;
+  }
+
+  // ── Import write path ────────────────────────────────────────────────
+  //
+  // Importers write in bulk, into a notebook that may not be the open one, and
+  // outside the interactive edit path. They still go through here rather than
+  // touching the repository, for the reason above. The `import` prefix marks
+  // them as the bulk path — an interactive edit must never use them, because
+  // they deliberately skip autosave, undo and selection handling.
+
+  /// Create a node during import. Returns the stored node.
+  TreeNode importNode(String nb, TreeNode n) => _putNode(nb, n);
+
+  /// Write a page's blocks during import.
+  void importPage(String nb, String pageId, List<Block> blocks, PageProps p) {
+    _repo.writePage(nb, pageId, blocks, p);
+    _recorderFor(nb)?.page(pageId, blocks, p);
+  }
+
+  /// Store a blob during import (images pulled out of a `.one` file).
+  String importBlob(String nb, Uint8List bytes, String mime) {
+    final hash = _repo.putBlob(nb, bytes, mime);
+    // The op records only the hash, mime and size; the bytes are written to
+    // `blobs/<sha256>` — content-addressed and immutable, so they need no merge
+    // logic and can be fetched lazily (ADR-0006 §3). Putting megabytes of image
+    // into an append-only log would make it unbounded and unreadable.
+    _recorderFor(nb)?.blob(hash, mime, bytes.length, bytes);
+    return hash;
+  }
+
+  /// Hard-delete a node during import — used to clear a partially seeded
+  /// notebook before re-seeding it, never on user data.
+  void importPurgeNode(String nb, String id) {
+    _repo.purgeNode(nb, id);
+    _recorderFor(nb)?.nodePurged(id);
+  }
+
+  /// The tree of any notebook, open or not.
+  List<TreeNode> importNodes(String nb) => _repo.loadNodes(nb);
+
+  /// Run [body] as ONE transaction. Import writes hundreds of pages; without
+  /// this each would pay its own commit.
+  T importBatch<T>(String nb, T Function() body) =>
+      _repo.runInTransaction(nb, body);
+
+  /// Create the notebook an import targets. Unlike [createNotebook] this does
+  /// not switch to it or flush the current page: the importer builds the whole
+  /// notebook first and only then calls [selectNotebook], which flushes. The
+  /// asymmetry is deliberate — switching mid-import would show the user a
+  /// half-built notebook — and it is safe only because of that later switch.
+  Future<NotebookRef> importCreateNotebook(String title) =>
+      _repo.createNotebook(title);
 
   /// Shared so toolbar/shortcuts can drive zoom (style guide §8.2).
   final canvas = CanvasController();
@@ -67,7 +265,7 @@ class AppState extends ChangeNotifier {
 
   void setNavSplit(double v) {
     navSplit = v.clamp(0.15, 0.7);
-    repo.setSetting('navSplit', navSplit);
+    _repo.setSetting('navSplit', navSplit);
     notifyListeners();
   }
 
@@ -115,6 +313,18 @@ class AppState extends ChangeNotifier {
   int penColor = 0;
   double penSize = 2.5;
 
+  /// Whether a finger draws (INK-1). Until 2026-07-27 every touch was routed to
+  /// pan unconditionally, which meant ink was unreachable on a touch-only
+  /// tablet — palm rejection implemented as "fingers never draw" rather than
+  /// "fingers don't draw *while a pen is in use*".
+  TouchDrawing touchDrawing = TouchDrawing.auto;
+
+  void setTouchDrawing(TouchDrawing v) {
+    touchDrawing = v;
+    _repo.setSetting('touchDrawing', v.name);
+    notifyListeners();
+  }
+
   // True while a block is being dragged — the canvas shows a faint grid then.
   bool draggingBlock = false;
   void setDragging(bool v) {
@@ -140,7 +350,7 @@ class AppState extends ChangeNotifier {
   ThemeMode themeMode = ThemeMode.system;
   void setThemeMode(ThemeMode m) {
     themeMode = m;
-    repo.setSetting('themeMode', m.name); // persist (§7a.5)
+    _repo.setSetting('themeMode', m.name); // persist (§7a.5)
     notifyListeners();
   }
 
@@ -197,7 +407,7 @@ class AppState extends ChangeNotifier {
     customColors.remove(hex);
     customColors.insert(0, hex);
     if (customColors.length > 12) customColors.removeLast();
-    repo.setSetting('customColors', customColors);
+    _repo.setSetting('customColors', customColors);
     notifyListeners();
   }
 
@@ -527,13 +737,17 @@ class AppState extends ChangeNotifier {
 
   Future<void> init() async {
     // Session restore (§7a.5): theme, custom colours, per-page views, last loc.
-    final tm = repo.getSetting('themeMode') as String?;
+    final tm = _repo.getSetting('themeMode') as String?;
     if (tm != null) themeMode = ThemeMode.values.asNameMap()[tm] ?? themeMode;
-    final ns = repo.getSetting('navSplit');
+    final ns = _repo.getSetting('navSplit');
     if (ns is num) navSplit = ns.toDouble().clamp(0.15, 0.7);
-    final cc = repo.getSetting('customColors');
+    final td = _repo.getSetting('touchDrawing') as String?;
+    if (td != null) {
+      touchDrawing = TouchDrawing.values.asNameMap()[td] ?? touchDrawing;
+    }
+    final cc = _repo.getSetting('customColors');
     if (cc is List) customColors.addAll(cc.cast<String>());
-    final vm = repo.getSetting('viewMemory');
+    final vm = _repo.getSetting('viewMemory');
     if (vm is Map) {
       vm.forEach((k, v) {
         if (v is List && v.length == 3) {
@@ -542,15 +756,15 @@ class AppState extends ChangeNotifier {
         }
       });
     }
-    final lastNb = repo.getSetting('lastNotebook') as String?;
-    notebookId = repo.notebooks.any((n) => n.id == lastNb)
+    final lastNb = _repo.getSetting('lastNotebook') as String?;
+    notebookId = _repo.notebooks.any((n) => n.id == lastNb)
         ? lastNb!
-        : repo.notebooks.first.id;
+        : _repo.notebooks.first.id;
     // Clear out anything that has outlived the recycle-bin retention window.
-    await repo.purgeExpiredNotebooks();
-    repo.purgeExpiredNodes(notebookId!);
-    nodes = repo.loadNodes(notebookId!);
-    final lastPage = repo.getSetting('lastPage') as String?;
+    await _repo.purgeExpiredNotebooks();
+    _repo.purgeExpiredNodes(notebookId!);
+    reloadNodes();
+    final lastPage = _repo.getSetting('lastPage') as String?;
     final target = nodes.any((n) => n.id == lastPage && n.kind == NodeKind.page)
         ? lastPage
         : nodes.where((n) => n.kind == NodeKind.page).firstOrNull?.id;
@@ -571,13 +785,13 @@ class AppState extends ChangeNotifier {
   }
 
   void _persistSession() {
-    repo.setSetting('viewMemory', _viewMemory);
-    repo.setSetting('lastNotebook', notebookId);
-    repo.setSetting('lastPage', pageId);
+    _repo.setSetting('viewMemory', _viewMemory);
+    _repo.setSetting('lastNotebook', notebookId);
+    _repo.setSetting('lastPage', pageId);
   }
 
   Future<void> _loadNotebook() async {
-    nodes = repo.loadNodes(notebookId!);
+    reloadNodes();
     // Reset the focused section for the new notebook (selectPage refines it).
     activeSectionId =
         nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
@@ -594,42 +808,43 @@ class AppState extends ChangeNotifier {
 
   Future<void> createNotebook(String title) async {
     await flushSave();
-    final ref = await repo.createNotebook(title);
+    final ref = await _repo.createNotebook(title);
     await selectNotebook(ref.id);
   }
 
   Future<void> renameNotebook(String id, String title) async {
-    await repo.renameNotebook(id, title);
+    await _repo.renameNotebook(id, title);
+    _recorderFor(id)?.notebookMeta({'title': title});
     notifyListeners();
   }
 
   /// Duplicate a notebook (contents included) without switching to it.
   Future<NotebookRef> duplicateNotebook(String id) async {
     await flushSave(); // the copy is a byte copy — settle pending writes first
-    final ref = await repo.duplicateNotebook(id);
+    final ref = await _repo.duplicateNotebook(id);
     notifyListeners();
     return ref;
   }
 
   ({int sections, int pages}) notebookCounts(String id) =>
-      repo.notebookCounts(id);
+      _repo.notebookCounts(id);
 
   /// Soft-delete a notebook to the recycle bin. Refuses the last one (there's
   /// always somewhere to be). Returns false if it couldn't (only notebook).
   Future<bool> deleteNotebook(String id) async {
-    if (repo.notebooks.length <= 1) return false;
+    if (_repo.notebooks.length <= 1) return false;
     await flushSave();
     final wasCurrent = id == notebookId;
-    await repo.trashNotebook(id);
+    await _repo.trashNotebook(id);
     if (wasCurrent) {
-      notebookId = repo.notebooks.first.id;
+      notebookId = _repo.notebooks.first.id;
       await _loadNotebook();
     }
     notifyListeners();
     return true;
   }
 
-  List<NotebookRef> get trashedNotebooks => repo.trashedNotebooks;
+  List<NotebookRef> get trashedNotebooks => _repo.trashedNotebooks;
 
   /// How long trashed items live before auto-deletion (recycle-bin retention).
   int get recycleRetentionDays => Repository.recycleRetentionDays;
@@ -637,18 +852,18 @@ class AppState extends ChangeNotifier {
   /// Sweep expired recycle-bin entries (notebooks + the current notebook's
   /// nodes). Runs at startup and whenever the recycle bin is opened.
   Future<void> purgeExpiredTrash() async {
-    await repo.purgeExpiredNotebooks();
-    if (notebookId != null) repo.purgeExpiredNodes(notebookId!);
+    await _repo.purgeExpiredNotebooks();
+    if (notebookId != null) _repo.purgeExpiredNodes(notebookId!);
     notifyListeners();
   }
 
   Future<void> restoreNotebook(String id) async {
-    await repo.restoreNotebook(id);
+    await _repo.restoreNotebook(id);
     notifyListeners();
   }
 
   Future<void> purgeNotebook(String id) async {
-    await repo.purgeNotebook(id);
+    await _repo.purgeNotebook(id);
     notifyListeners();
   }
 
@@ -681,11 +896,11 @@ class AppState extends ChangeNotifier {
   // ── Version history (SYNC-8) ───────────────────────────────────────────
 
   List<int> pageVersions() =>
-      pageId == null ? [] : repo.listVersions(notebookId!, pageId!);
+      pageId == null ? [] : _repo.listVersions(notebookId!, pageId!);
 
   Future<void> restoreVersion(int at) async {
     if (pageId == null) return;
-    final json = repo.versionJson(notebookId!, pageId!, at);
+    final json = _repo.versionJson(notebookId!, pageId!, at);
     if (json == null) return;
     pushUndo();
     final j = jsonDecode(json) as Map<String, dynamic>;
@@ -702,22 +917,22 @@ class AppState extends ChangeNotifier {
   // ── Page templates (ORG-9) ─────────────────────────────────────────────
 
   List<String> templateNames() {
-    final t = repo.getSetting('templates');
+    final t = _repo.getSetting('templates');
     return t is Map ? t.keys.cast<String>().toList() : [];
   }
 
   void saveCurrentAsTemplate(String name) {
-    final t = (repo.getSetting('templates') as Map?)?.cast<String, dynamic>() ?? {};
+    final t = (_repo.getSetting('templates') as Map?)?.cast<String, dynamic>() ?? {};
     t[name] = jsonEncode({
       'page': pageProps.toJson(),
       'blocks': [for (final b in blocks) b.toJson()],
     });
-    repo.setSetting('templates', t);
+    _repo.setSetting('templates', t);
     notifyListeners();
   }
 
   void applyTemplate(String name) {
-    final t = repo.getSetting('templates');
+    final t = _repo.getSetting('templates');
     final raw = t is Map ? t[name] as String? : null;
     if (raw == null) return;
     pushUndo();
@@ -842,7 +1057,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> addSection({String? groupId}) async {
     final count = nodes.where((n) => n.kind == NodeKind.section).length;
-    final n = repo.upsertNode(
+    final n = _putNode(
         notebookId!,
         TreeNode(
             kind: NodeKind.section,
@@ -850,19 +1065,19 @@ class AppState extends ChangeNotifier {
             title: 'Section ${count + 1}',
             color: _sectionColors[count % _sectionColors.length],
             position: _nextPosition()));
-    nodes = repo.loadNodes(notebookId!);
+    reloadNodes();
     await addPage(sectionId: n.id);
   }
 
   void addSectionGroup() {
     final count = nodes.where((n) => n.kind == NodeKind.sectionGroup).length;
-    repo.upsertNode(
+    _putNode(
         notebookId!,
         TreeNode(
             kind: NodeKind.sectionGroup,
             title: 'Group ${count + 1}',
             position: _nextPosition()));
-    nodes = repo.loadNodes(notebookId!);
+    reloadNodes();
     notifyListeners();
   }
 
@@ -870,14 +1085,14 @@ class AppState extends ChangeNotifier {
     sectionId ??= sectionOf(pageId) ??
         nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
     if (sectionId == null) return;
-    final n = repo.upsertNode(
+    final n = _putNode(
         notebookId!,
         TreeNode(
             kind: NodeKind.page,
             parentId: sectionId,
             title: 'Untitled page',
             position: _nextPosition()));
-    nodes = repo.loadNodes(notebookId!);
+    reloadNodes();
     await selectPage(n.id);
     pendingTitleEdit = n.id; // cursor lands in the title (OneNote behaviour)
     notifyListeners();
@@ -887,7 +1102,7 @@ class AppState extends ChangeNotifier {
     final n = node(id);
     if (n == null) return; // deleted while a menu was open
     n.title = title;
-    repo.upsertNode(notebookId!, n);
+    _putNode(notebookId!, n);
     bumpNodes();
     notifyListeners();
   }
@@ -897,7 +1112,7 @@ class AppState extends ChangeNotifier {
     final n = node(id);
     if (n == null || n.kind != NodeKind.page) return;
     n.level = (n.level + delta).clamp(0, 2);
-    repo.upsertNode(notebookId!, n);
+    _putNode(notebookId!, n);
     bumpNodes();
     notifyListeners();
   }
@@ -916,9 +1131,9 @@ class AppState extends ChangeNotifier {
     final tmp = n.position;
     n.position = other.position;
     other.position = tmp;
-    repo.upsertNode(notebookId!, n);
-    repo.upsertNode(notebookId!, other);
-    nodes = repo.loadNodes(notebookId!);
+    _putNode(notebookId!, n);
+    _putNode(notebookId!, other);
+    reloadNodes();
     notifyListeners();
   }
 
@@ -926,8 +1141,8 @@ class AppState extends ChangeNotifier {
     final n = node(sectionId);
     if (n == null || n.kind != NodeKind.section) return;
     n.parentId = groupId;
-    repo.upsertNode(notebookId!, n);
-    nodes = repo.loadNodes(notebookId!);
+    _putNode(notebookId!, n);
+    reloadNodes();
     notifyListeners();
   }
 
@@ -937,16 +1152,21 @@ class AppState extends ChangeNotifier {
   // ── Recycle bin (ORG-7) ────────────────────────────────────────────────
 
   List<({String id, String kind, String title, int deletedAt})>
-      deletedNodes() => repo.loadDeletedNodes(notebookId!);
+      deletedNodes() => _repo.loadDeletedNodes(notebookId!);
 
   Future<void> restoreDeleted(String id) async {
-    repo.restoreNode(notebookId!, id);
-    nodes = repo.loadNodes(notebookId!);
+    _repo.restoreNode(notebookId!, id);
+    // Restore is the ONLY thing that clears a delete (ADR-0006 §6a.3). An edit
+    // must never resurrect a deleted node, or "delete wins" would silently
+    // become "whichever device wrote last wins".
+    _recorderFor(notebookId!)?.nodeRestored(id);
+    reloadNodes();
     notifyListeners();
   }
 
   void purgeDeleted(String id) {
-    repo.purgeNode(notebookId!, id);
+    _repo.purgeNode(notebookId!, id);
+    _recorderFor(notebookId!)?.nodePurged(id);
     notifyListeners();
   }
 
@@ -970,7 +1190,7 @@ class AppState extends ChangeNotifier {
     if (_linkCache?.key == key) return;
     final back = pageId == null
         ? <TreeNode>[]
-        : repo
+        : _repo
             .backlinkPageIds(notebookId!, pageId!)
             .map(node)
             .whereType<TreeNode>()
@@ -1043,8 +1263,8 @@ class AppState extends ChangeNotifier {
       ..parentId = sectionId
       ..level = 0
       ..position = _nextPosition();
-    repo.upsertNode(notebookId!, n);
-    nodes = repo.loadNodes(notebookId!);
+    _putNode(notebookId!, n);
+    reloadNodes();
     notifyListeners();
   }
 
@@ -1061,8 +1281,8 @@ class AppState extends ChangeNotifier {
       // Sorts after the target (target.position is a prefix) and before its
       // next sibling; the full-millisecond suffix keeps repeated drops unique.
       ..position = '${target.position}m${nowMs().toString().padLeft(15, '0')}';
-    repo.upsertNode(notebookId!, n);
-    nodes = repo.loadNodes(notebookId!);
+    _putNode(notebookId!, n);
+    reloadNodes();
     notifyListeners();
   }
 
@@ -1074,8 +1294,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> deleteNode(String id) async {
-    repo.softDeleteNode(notebookId!, id);
-    nodes = repo.loadNodes(notebookId!);
+    _repo.softDeleteNode(notebookId!, id);
+    _recorderFor(notebookId!)?.nodeDeleted(id);
+    reloadNodes();
     if (pageId == id || !nodes.any((n) => n.id == pageId)) {
       await selectPage(
           nodes.where((n) => n.kind == NodeKind.page).firstOrNull?.id);
@@ -1390,6 +1611,15 @@ class AppState extends ChangeNotifier {
       await engine.savePage(nb, id, blocks, pageProps);
       _dirty = false;
       saveError = null;
+      // Record AFTER the container write succeeds, so the log never claims a
+      // change the notebook doesn't have. The reverse order would be worse than
+      // useless: rebuild-from-log would then differ from the container on every
+      // failed save, and the divergence would look like a recording bug rather
+      // than the disk error it is.
+      //
+      // The recorder diffs against its replayed state, so an autosave that
+      // changed one block appends one op, not the whole page.
+      _recorderFor(nb)?.page(id, blocks, pageProps);
     } catch (e) {
       // Stay dirty so the next edit (or exit flush) retries, and tell the user.
       saveError = e;
@@ -1414,14 +1644,14 @@ class AppState extends ChangeNotifier {
     }
     _rememberView();
     _persistSession();
-    await repo.flushWorkspace(); // settle the debounced registry write
+    await _repo.flushWorkspace(); // settle the debounced registry write
   }
 
   @override
   void dispose() {
     _saveDebounce?.cancel();
     canvas.dispose();
-    repo.dispose();
+    _repo.dispose();
     super.dispose();
   }
 }

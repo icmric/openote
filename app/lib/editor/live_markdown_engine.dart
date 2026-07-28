@@ -37,7 +37,7 @@ class LiveMarkdownEngine extends OnoteTextEditor {
         imageResolver: (src) {
           final nb = app.notebookId;
           if (nb == null || !src.startsWith('sha256:')) return null;
-          return app.repo.getBlob(nb, src);
+          return app.blob(src);
         },
         onToggleCheckbox: (newText) {
           app.pushUndo();

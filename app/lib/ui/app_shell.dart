@@ -197,7 +197,7 @@ class _AppShellState extends State<AppShell> {
       app.notebookId,
       app.collapsedPages.length,
       app.collapsedGroups.length,
-      app.repo.notebooks.length,
+      app.notebooks.length,
     ];
     final cached = _navCache;
     if (cached != null && _navKey != null && _listEq(_navKey!, key)) {
@@ -330,7 +330,7 @@ class _PageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final section = app.node(page.parentId ?? '');
     final notebook =
-        app.repo.notebooks.firstWhere((n) => n.id == app.notebookId);
+        app.notebooks.firstWhere((n) => n.id == app.notebookId);
     final crumbStyle =
         TextStyle(fontSize: 11.5, color: OnoteColors.graphite400);
     return Container(
