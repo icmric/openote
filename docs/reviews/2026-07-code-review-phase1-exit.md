@@ -760,3 +760,50 @@ Sections P–R repeatedly flagged that no Rust was run locally because `cargo` w
 - **`cargo deny check licenses`: ok.** The §P.3 allow-list, written blind, held against the real dependency graph — and was then **trimmed to what the graph actually uses** (MIT, Apache-2.0, Zlib, Unlicense, Unicode-3.0). Six allowances (BSD-2/3, ISC, CC0, LLVM-exception, Unicode-DFS) were never encountered and are removed: cargo-deny warns on unmatched entries, and an allow-list padded with plausible-but-unused licences defeats its purpose as a tripwire.
 
 Still outstanding: CI itself has never executed (needs a push), and macOS/Linux remain unverified.
+
+
+## T. The v0.2 release pass (2026-07-28/29)
+
+**172 Dart + 29 Rust tests pass; analyzer clean; `cargo clippy -D warnings` clean; CI GREEN on Windows, macOS and Linux.** That last one closes the longest-standing unverified claim in the project: PLAT-1 said all three desktop OSes were first-class, and until this pass only Windows had ever built.
+
+Worked the [v0.2 release plan](../planning/v0.2-release-plan.md) tier by tier. Nine commits on `release/v0.2`.
+
+### T.1 What CI caught that local checks did not
+
+Worth recording as a method note. My local verification had two holes, and CI found both on its first real run:
+
+1. **I had been grepping `flutter analyze` output for `error|warning` lines instead of checking the exit code.** An unused import in a test file was a genuine warning; the grep missed it in one run and I read "no output" as clean. CI ran the bar as written and failed.
+2. **I ran `cargo clippy` without `-D warnings`**, which is what CI uses. A function I had grown to eight arguments tripped `too_many_arguments`.
+
+Neither was subtle. Both survived because *my* check was weaker than *the* check. Exit codes from here on.
+
+### T.2 Tier 0 — the release becomes shippable
+
+- **`release.yml`**: tag-triggered draft releases. Windows zip, Linux AppImage + tar.gz (built on ubuntu-22.04 deliberately — an AppImage inherits its build host's glibc floor), macOS universal via `lipo` + ad-hoc re-sign + unsigned `.dmg`. Unsigned is a decision, not an oversight: no Apple account, so the release body carries the `xattr -cr` workaround.
+- **The CMake hook is wired** on Windows and Linux, closing the stale-DLL trap that cost multiple sessions. It is an `install(FILES … OPTIONAL)` rule declared **last**, not the `POST_BUILD` copy this repo's own docs recommended — that variant is broken by design on Linux, where the install sequence *begins* by `REMOVE_RECURSE`-ing the bundle. Verified by hash: after one `flutter build windows`, the bundled DLL equals `target/release`'s. No cargo → warning and a working Dart-engine app; broken crate → loud failure.
+
+### T.3 Tier 1 — the last known layout defect, and a real sync bug
+
+- **Indent loss is fixed.** Two compounding causes: non-list paragraphs were emitted flush-left at *any* depth, and `emit_boxes` re-normalised each post-math segment against its own minimum, pulling indented content back to the margin. Both fixed in the emitter, with the renderer translating leading spaces into real `indentPx` padding rather than literal spaces.
+- **Symbol PUA now translates.** `U+F000+byte` maps through the Adobe Symbol table **when the run's font is Symbol** — which dissolves the ambiguity §N.3 worried about: `0xAC` is only ambiguous *without* the font; keyed on it, Symbol's `0xAC` is `←` and `¬` is `0xD8`. Other fonts and partially-unmappable runs are left untouched.
+- **Ink erasing was going to destroy the op log.** An erase gesture appended the *whole* ink block — and an imported page keeps every stroke in one block, 0.2–7 MB serialized. Measured amplification 50–1000×; a heavy cleanup session would have appended ~300–400 MB. New `ink.strokes` op records only changed strokes, with positional inserts so the eraser's mid-list splits reproduce exactly, and a >50%-changed fallback to `block.set` so a block *drag* stays one op.
+- Writing that exposed a subtler bug: **the recorder's replayed state was aliased to the live block maps** (`Block.toJson` shares the `content` reference), so diffs compared a thing to itself and a block drag looked like a no-op. Snapshots are detached at the recording boundary now.
+
+### T.4 Tier 4 — sync actually works
+
+The headline. `syncPull` folds another device's log into the container: per-foreign-device watermarks (what I have *folded in*, not what exists), Lamport clock advanced past everything seen, and the affected pages and nodes written in one transaction.
+
+**The test caught the bug that mattered**: I wrote the live nodes and forgot the deleted ones, so a remote delete was silently ignored — delete-*loses*, the exact opposite of ADR-0006 §6a.3. Four two-device tests now pin it: a remote edit lands, a remote page appears, delete wins over a concurrent local edit, and pulling twice does nothing.
+
+### T.5 Tier 2/3/5 — parity, tags, delighters
+
+Bundled Inter + JetBrains Mono (the fallback chain preserved *behind* them). Spell check — Flutter has none on desktop, and its own pipeline is unusable here regardless, because when results exist `EditableText` builds spans via `buildTextSpanWithSpellCheckSuggestions` *instead of* the controller's `buildTextSpan`, discarding all live-Markdown styling; so underlines are merged by a post-pass over our finished span tree, which re-emits the same characters and therefore cannot break the coverage invariant. Whole-stroke eraser, six built-in templates, notebook-wide brute-force search, page outline, favourites/recents, section sort (subpages move with their parent — pinned).
+
+**Tags** shipped app-side: nine kinds, gutter markers, picker, find-tags rollup, `custom` for anything unrecognised so nothing is ever dropped.
+
+### T.6 Deliberately not done
+
+- **OneNote tag import.** The property IDs are unverified against a real tagged file, and the same code path has a latent bug — property type `0x10` is mis-sized, desynchronising every property after a tag array. Guessing risks imports that work today. Needs a small `.one` with four tag kinds and a `dump_one` run.
+- **Image paste/drag-drop, drag-to-reorder, height/corner resize, alignment guides, lasso resize/recolor.** The "feels unfinished" cluster; alignment guides alone would deliver most of the perceived value.
+- **Image `y` validation** — still circular, still needs one OneNote PDF export.
+- **Nobody has used the macOS or Linux build**, and touch drawing has never met touch hardware.

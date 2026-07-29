@@ -254,6 +254,26 @@ Two consequences matter to third-party implementers:
 
 Until that lands, `.onote` as specified above is the format, and notebooks written today remain readable: the migration path is "rebuild the cache from a log seeded by the existing container", which loses nothing.
 
+## 12. Compatibility promise and changelog
+
+**From v0.2.0 onward, format v1 is frozen.** Notebooks created by any Openote release open in every later release. A future change that cannot be made compatibly bumps the format major version and migrates one-way-forward, with the migration documented here.
+
+What "frozen" binds:
+
+| Surface | Frozen | Notes |
+|---|---|---|
+| `page_mirror.json` shape (`schema`, `pageId`, `page`, `blocks`) | ✅ | The block envelope's known fields; unknown fields MUST round-trip (Data Model Spec §2). |
+| `nodes`, `blobs`, `blob_refs`, `refs`, `page_versions` columns | ✅ | Columns may be ADDED; existing ones keep their meaning. |
+| `application_id` / `user_version` | ✅ | `0x4F4E4F54` / `1`. |
+| `notebook_meta` required keys | ✅ | Readers MUST ignore unknown keys. |
+| Op-log envelope (`v`, `dev`, `seq`, `lc`, `ts`, `enc`, `op`, `d`) and the total order | ✅ | New **op kinds** are additive and do not bump `v`; a reader that meets an unknown kind MUST preserve it verbatim and MAY skip applying it. |
+| `.onotebook` directory layout (`manifest.json`, `ops/`, `blobs/`) | ✅ | |
+| `fts_pages` | ❌ optional | Not created by default; declare it in `notebook_meta.features` if populated. |
+
+### Changelog
+
+- **v0.2.0 (format v1, spec v0.2)** — first frozen release. Corrected from spec v0.1: the CRDT layer (`page_docs`, `page_updates`) is not part of the format and never was implemented; `page_mirror` is authoritative; `dirty_mirror` retired; `fts_pages` optional. Added: the `.onotebook` operation log (§11) with the `ink.strokes`, `node.*`, `block.*`, `page.props`, `blob.put` and `notebook.meta` op kinds.
+
 ---
 
-*Format version 1 is frozen only when the MVP ships; until then this spec tracks the implementation. Changes are recorded in a changelog section from the first frozen release onward.*
+*Superseded: "Format version 1 is frozen only when the MVP ships." It ships with v0.2.0, and the promise above replaces that note.*
