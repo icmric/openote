@@ -1,0 +1,18 @@
+en_us.txt is the ENABLE word list (Enhanced North American Benchmark
+LExicon), 172,823 lowercase American-English words, obtained from
+https://raw.githubusercontent.com/dolph/dictionary/master/enable1.txt
+
+The ENABLE list is in the PUBLIC DOMAIN. From the ENABLE2K readme by its
+compilers, Alan Beale and M. Cooper:
+
+  "The ENABLE master word list, WORD.LST, is herewith formally released
+  into the Public Domain. Anyone is free to use it or distribute it in
+  any manner they see fit. No fee or registration is required for its
+  use nor are 'contributions' solicited (if you feel you absolutely
+  must contribute something for your own peace of mind, the authors of
+  the ENABLE list ask that you make a donation on their behalf to your
+  favorite charity)."
+
+SCOWL (http://wordlist.aspell.net/) was considered as an alternative; the
+ENABLE list was chosen because its sizes 10-60 concatenation fell short of
+the coverage target for this app.

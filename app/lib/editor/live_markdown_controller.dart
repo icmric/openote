@@ -68,9 +68,100 @@ class LiveMarkdownController extends TextEditingController {
       }
 
       collect(root);
-      if (buf.toString() == full) return root;
+      if (buf.toString() == full) {
+        return misspellings.isEmpty ? root : _underlineMisspellings(root, lo, hi);
+      }
     } catch (_) {/* fall through */}
     return TextSpan(text: full, style: base);
+  }
+
+  /// Misspelled ranges, in raw-text offsets. Set by the editing session; see
+  /// `spell/spell_checker.dart` for why the underlines are merged here rather
+  /// than through Flutter's own spell-check pipeline.
+  List<TextRange> _misspellings = const [];
+  List<TextRange> get misspellings => _misspellings;
+  set misspellings(List<TextRange> v) {
+    if (identical(v, _misspellings)) return;
+    _misspellings = v;
+    notifyListeners();
+  }
+
+  static const _misspellingStyle = TextStyle(
+    decoration: TextDecoration.underline,
+    decorationStyle: TextDecorationStyle.wavy,
+    decorationColor: Color(0xFFD23B3B),
+  );
+
+  /// Re-split the finished span tree at misspelling boundaries and merge the
+  /// wavy underline in.
+  ///
+  /// Deliberately a post-pass over the completed tree rather than a change to
+  /// the line builder: it consumes and re-emits exactly the same characters in
+  /// the same order, so the coverage invariant checked above cannot be broken
+  /// by a boundary bug — the worst case is a wrongly-placed underline, never
+  /// corrupted text.
+  TextSpan _underlineMisspellings(TextSpan root, int caretLo, int caretHi) {
+    // A word being typed must not flash red mid-word, so the range under the
+    // caret is left alone until the caret leaves it.
+    final ranges = [
+      for (final r in _misspellings)
+        if (!(caretLo >= r.start && caretHi <= r.end)) r
+    ];
+    if (ranges.isEmpty) return root;
+
+    var offset = 0;
+    TextSpan walk(TextSpan span) {
+      final text = span.text;
+      final children = span.children;
+      if (text == null) {
+        return TextSpan(
+          style: span.style,
+          children: children?.whereType<TextSpan>().map(walk).toList(),
+        );
+      }
+      final start = offset;
+      offset += text.length;
+      // Hidden marker spans render at 0.1px — an underline there is noise.
+      final hidden = (span.style?.fontSize ?? 99) <= 1;
+      final overlapping = hidden
+          ? const <TextRange>[]
+          : [
+              for (final r in ranges)
+                if (r.start < start + text.length && r.end > start) r
+            ];
+      if (overlapping.isEmpty) {
+        return TextSpan(
+            text: text,
+            style: span.style,
+            children: children?.whereType<TextSpan>().map(walk).toList());
+      }
+      // Cut points inside this span, in order.
+      final cuts = <int>{0, text.length};
+      for (final r in overlapping) {
+        cuts.add((r.start - start).clamp(0, text.length));
+        cuts.add((r.end - start).clamp(0, text.length));
+      }
+      final points = cuts.toList()..sort();
+      final pieces = <InlineSpan>[];
+      for (var i = 0; i < points.length - 1; i++) {
+        final a = points[i], b = points[i + 1];
+        if (a == b) continue;
+        final bad = overlapping
+            .any((r) => r.start <= start + a && r.end >= start + b);
+        pieces.add(TextSpan(
+          text: text.substring(a, b),
+          style: bad
+              ? (span.style ?? const TextStyle()).merge(_misspellingStyle)
+              : span.style,
+        ));
+      }
+      return TextSpan(
+        style: span.style,
+        children: [...pieces, ...?children?.whereType<TextSpan>().map(walk)],
+      );
+    }
+
+    return walk(root);
   }
 
   bool _touches(int a, int b, int lo, int hi) =>
@@ -139,7 +230,7 @@ class LiveMarkdownController extends TextEditingController {
       } else if (m.group(9) != null) {
         openLen = closeLen = 1;
         inner = cBase.copyWith(
-            fontFamily: 'monospace',
+            fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback,
             color: dark ? OnoteColors.ink300 : OnoteColors.ink700,
             backgroundColor:
                 dark ? OnoteColors.night100 : OnoteColors.paper100);

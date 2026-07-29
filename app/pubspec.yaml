@@ -53,3 +53,28 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon/openote_icon.png
+    # Spell-check wordlist (TEXT-11). Loaded lazily on a background isolate the
+    # first time text is edited — never at startup.
+    - assets/dict/en_us.txt
+  # Bundled type (style guide §4.1): the app previously rendered in each OS's
+  # system font, so no two platforms looked alike. Inter is the UI + note face,
+  # JetBrains Mono the code face; both OFL-1.1 (texts beside the assets, rows
+  # in LICENSING.md). The onoteFontFallback chain stays BEHIND these — it is
+  # what resolves math/symbol glyphs the primary faces lack.
+  fonts:
+    - family: Inter
+      fonts:
+        - { asset: assets/fonts/inter/Inter-Regular.ttf, weight: 400 }
+        - { asset: assets/fonts/inter/Inter-Italic.ttf, weight: 400, style: italic }
+        - { asset: assets/fonts/inter/Inter-Medium.ttf, weight: 500 }
+        - { asset: assets/fonts/inter/Inter-MediumItalic.ttf, weight: 500, style: italic }
+        - { asset: assets/fonts/inter/Inter-SemiBold.ttf, weight: 600 }
+        - { asset: assets/fonts/inter/Inter-SemiBoldItalic.ttf, weight: 600, style: italic }
+        - { asset: assets/fonts/inter/Inter-Bold.ttf, weight: 700 }
+        - { asset: assets/fonts/inter/Inter-BoldItalic.ttf, weight: 700, style: italic }
+    - family: JetBrains Mono
+      fonts:
+        - { asset: assets/fonts/jetbrains-mono/JetBrainsMono-Regular.ttf, weight: 400 }
+        - { asset: assets/fonts/jetbrains-mono/JetBrainsMono-Italic.ttf, weight: 400, style: italic }
+        - { asset: assets/fonts/jetbrains-mono/JetBrainsMono-Bold.ttf, weight: 700 }
+        - { asset: assets/fonts/jetbrains-mono/JetBrainsMono-BoldItalic.ttf, weight: 700, style: italic }

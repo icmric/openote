@@ -156,7 +156,7 @@ class _MarkdownViewState extends State<MarkdownView> {
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(fenceBuf.join('\n'),
-            style: baseStyle.copyWith(fontFamily: 'monospace', fontSize: 13)),
+            style: baseStyle.copyWith(fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, fontSize: 13)),
       ));
       fenceBuf.clear();
     }
@@ -423,7 +423,7 @@ class _MarkdownViewState extends State<MarkdownView> {
               textStyle: baseStyle.copyWith(fontSize: 18),
               onErrorFallback: (e) => Text(dm.group(1)!,
                   style: const TextStyle(
-                      fontFamily: 'monospace', color: OnoteColors.graphite400)),
+                      fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, color: OnoteColors.graphite400)),
             ),
           ),
         ),
@@ -506,7 +506,7 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
           textStyle: base,
           onErrorFallback: (e) => Text(m.group(15)!,
               style: const TextStyle(
-                  fontFamily: 'monospace', color: OnoteColors.graphite400)),
+                  fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, color: OnoteColors.graphite400)),
         ),
       ));
     } else if (m.group(19) != null) {
@@ -534,7 +534,7 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
       spans.add(TextSpan(
         text: m.group(9),
         style: TextStyle(
-          fontFamily: 'monospace',
+          fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback,
           fontSize: (base.fontSize ?? 14) * 0.9,
           color: dark ? OnoteColors.ink300 : OnoteColors.ink700,
           backgroundColor: dark ? OnoteColors.night100 : OnoteColors.paper100,

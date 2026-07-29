@@ -130,7 +130,11 @@ ThemeData onoteTheme(Brightness brightness) {
     scaffoldBackgroundColor: scheme.surface,
     canvasColor: dark ? OnoteColors.night0 : OnoteColors.paper0,
     dividerColor: dark ? OnoteColors.night200 : OnoteColors.paper200,
-    fontFamily: null, // system UI font as Inter-fallback until fonts are bundled
+    // Bundled Inter (style guide §4.1) — the app finally looks the same on
+    // every OS. The fallback chain stays exactly as verified in review §O.3:
+    // it resolves the math/symbol glyphs Inter lacks, and Symbol/Wingdings
+    // must stay LAST in it (they claim U+00AC with the wrong glyph).
+    fontFamily: 'Inter',
     fontFamilyFallback: onoteFontFallback,
     visualDensity: VisualDensity.compact,
     tooltipTheme: const TooltipThemeData(waitDuration: Duration(milliseconds: 500)),

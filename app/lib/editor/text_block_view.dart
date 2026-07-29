@@ -30,9 +30,9 @@ class TextBlockView extends StatefulWidget {
   static const double minAutoW = 200, maxAutoW = 640;
 
   static String? _fontFamilyOf(String? font) => switch (font) {
-        null || '' || 'sans' => null,
+        null || '' || 'sans' => 'Inter', // the bundled default face
         'serif' => 'Georgia', // legacy token
-        'mono' => 'monospace', // legacy token
+        'mono' => 'JetBrains Mono', // legacy token
         _ => font, // any system family name (font picker)
       };
 

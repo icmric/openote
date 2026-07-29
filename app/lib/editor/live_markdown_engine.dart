@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../markdown/md_render.dart';
 import '../model/models.dart';
+import '../spell/spell_checker.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'live_markdown_controller.dart';
@@ -58,7 +61,10 @@ class LiveMarkdownEngine extends OnoteTextEditor {
         controller: LiveMarkdownController(
             text: deserialize(block.content), dark: false),
         onChanged: onChanged,
-      );
+      )
+        ..spellCheckEnabled = app.spellCheckEnabled
+        // Check once on open so existing text is marked without an edit.
+        ..scheduleInitialSpellCheck();
 
   @override
   double measureIntrinsicWidth(String text, TextStyle style) {
@@ -79,6 +85,35 @@ class _LiveMarkdownSession implements OnoteEditSession {
   final LiveMarkdownController controller;
   final ValueChanged<String> onChanged;
   final FocusNode _focus = FocusNode();
+
+  /// Debounce so a check runs between keystrokes, not on each one. Checking a
+  /// block is sub-millisecond once the dictionary is resident, but re-styling
+  /// the whole span tree mid-word makes typing feel busy.
+  Timer? _spellDebounce;
+
+  void _scheduleSpellCheck({Duration delay = const Duration(milliseconds: 300)}) {
+    if (!spellCheckEnabled) {
+      controller.misspellings = const [];
+      return;
+    }
+    _spellDebounce?.cancel();
+    _spellDebounce = Timer(delay, () async {
+      final checker = SpellChecker.loaded ?? await SpellChecker.instance();
+      // The session may have been disposed while the dictionary loaded.
+      if (_disposed) return;
+      controller.misspellings = checker.check(controller.text);
+    });
+  }
+
+  /// Check the text a session opens with, without waiting for a keystroke.
+  void scheduleInitialSpellCheck() =>
+      _scheduleSpellCheck(delay: const Duration(milliseconds: 50));
+
+  bool _disposed = false;
+
+  /// Set by the host from app state; a plain field so the session doesn't need
+  /// a reference to AppState.
+  bool spellCheckEnabled = true;
 
   @override
   TextEditingController? get commandController => controller;
@@ -121,7 +156,10 @@ class _LiveMarkdownSession implements OnoteEditSession {
             hintStyle:
                 const TextStyle(color: OnoteColors.graphite400, fontSize: 13),
           ),
-          onChanged: onChanged,
+          onChanged: (v) {
+            onChanged(v);
+            _scheduleSpellCheck();
+          },
         ),
       ),
     );
@@ -145,6 +183,8 @@ class _LiveMarkdownSession implements OnoteEditSession {
 
   @override
   void dispose() {
+    _disposed = true;
+    _spellDebounce?.cancel();
     controller.dispose();
     _focus.dispose();
   }

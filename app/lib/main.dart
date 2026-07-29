@@ -121,7 +121,7 @@ class _StartupError extends StatelessWidget {
                       'are not affected. Details below — please report this.'),
                   const SizedBox(height: 16),
                   SelectableText('$error\n\n$stack',
-                      style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                      style: const TextStyle(fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, fontSize: 12)),
                 ],
               ),
             ),

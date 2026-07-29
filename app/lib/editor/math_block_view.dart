@@ -120,7 +120,7 @@ class _MathBlockViewState extends State<MathBlockView> {
               controller: _controller,
               focusNode: _focus,
               maxLines: null,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 14),
+              style: const TextStyle(fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, fontSize: 14),
               decoration: const InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
@@ -177,7 +177,7 @@ class _MathBlockViewState extends State<MathBlockView> {
                   onErrorFallback: (e) => Text(
                     preview,
                     style: const TextStyle(
-                        fontFamily: 'monospace',
+                        fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback,
                         color: OnoteColors.graphite400),
                   ),
                 ),
@@ -217,7 +217,7 @@ class _MathBlockViewState extends State<MathBlockView> {
           textStyle: TextStyle(fontSize: 22, color: textColor),
           onErrorFallback: (e) => Text(latex,
               style: const TextStyle(
-                  fontFamily: 'monospace', color: OnoteColors.graphite400)),
+                  fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, color: OnoteColors.graphite400)),
         ),
       ),
     );

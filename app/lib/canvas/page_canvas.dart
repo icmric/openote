@@ -245,6 +245,11 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     final radius = 12.0 / controller.scale;
     final r2 = radius * radius;
+    // INK-6: 'area' rubs points out mid-stroke (splitting survivors); 'stroke'
+    // removes any stroke the eraser touches whole — OneNote's default, and the
+    // mode that makes cleaning up a scratched-out word one swipe instead of
+    // twenty.
+    final wholeStroke = app.eraserMode == EraserMode.stroke;
     var changed = false;
     for (final b in app.blocks.where((b) => b.type == BlockType.ink)) {
       // Cheap reject: the eraser can only affect a block whose rect it touches.
@@ -268,6 +273,11 @@ class _PageCanvasState extends State<PageCanvas> {
         });
         if (!keep.contains(false)) {
           out.add(sj.cast<String, dynamic>());
+          continue;
+        }
+        if (wholeStroke) {
+          // Touched at all → the whole stroke goes; no splitting.
+          blockChanged = true;
           continue;
         }
         blockChanged = true;

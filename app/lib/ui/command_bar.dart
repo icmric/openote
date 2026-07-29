@@ -385,9 +385,28 @@ class _CommandBarState extends State<CommandBar> {
             },
           ),
         ),
-      ] else if (app.tool == Tool.eraser)
-        Text('Eraser splits strokes where you rub',
-            style: TextStyle(fontSize: 11, color: OnoteColors.graphite400))
+      ] else if (app.tool == Tool.eraser) ...[
+        SegmentedButton<EraserMode>(
+          segments: [
+            for (final m in EraserMode.values)
+              ButtonSegment(
+                  value: m,
+                  label: Text(m.label, style: const TextStyle(fontSize: 11))),
+          ],
+          selected: {app.eraserMode},
+          onSelectionChanged: (s) => app.setEraserMode(s.first),
+          showSelectedIcon: false,
+          style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+        ),
+        const SizedBox(width: 8),
+        Text(
+            app.eraserMode == EraserMode.area
+                ? 'Splits strokes where you rub'
+                : 'Removes any stroke you touch',
+            style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+      ]
       else if (app.tool == Tool.lasso)
         Text('Draw a loop around ink to select it — then drag or delete',
             style: TextStyle(fontSize: 11, color: OnoteColors.graphite400))
@@ -495,6 +514,20 @@ class _CommandBarState extends State<CommandBar> {
         ],
         selected: {app.themeMode},
         onSelectionChanged: (s) => app.setThemeMode(s.first),
+      ),
+      const _Div(),
+      // Spell check (TEXT-11). English-only in this release; the toggle exists
+      // because a wordlist checker WILL flag jargon and proper nouns, and the
+      // answer to that has to be one click away.
+      Tooltip(
+        message: 'Underline misspelled words while editing (English)',
+        child: IconButton(
+          icon: const Icon(Icons.spellcheck, size: 18),
+          isSelected: app.spellCheckEnabled,
+          visualDensity: VisualDensity.compact,
+          color: app.spellCheckEnabled ? scheme.primary : null,
+          onPressed: () => app.setSpellCheck(!app.spellCheckEnabled),
+        ),
       ),
     ]);
   }

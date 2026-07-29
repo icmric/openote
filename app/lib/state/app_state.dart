@@ -12,9 +12,25 @@ import '../core/onote_ffi.dart';
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
 import '../store/repository.dart';
+import 'builtin_templates.dart';
 import '../sync/sync_recorder.dart';
 
 enum Tool { select, text, pen, highlighter, eraser, lasso }
+
+/// How the eraser removes ink (INK-6).
+enum EraserMode {
+  /// Rub points out; surviving runs split into new strokes. The precise mode.
+  area,
+
+  /// Any touched stroke is removed whole — OneNote's default, and the fast way
+  /// to delete a scribbled-out word.
+  stroke;
+
+  String get label => switch (this) {
+        EraserMode.area => 'Area',
+        EraserMode.stroke => 'Whole stroke',
+      };
+}
 
 /// Whether a finger draws when an ink tool is selected (INK-1 / INK-4).
 enum TouchDrawing {
@@ -312,6 +328,29 @@ class AppState extends ChangeNotifier {
   bool snapToGrid = true; // on by default; the grid only shows while dragging
   int penColor = 0;
   double penSize = 2.5;
+
+  /// Spell check (TEXT-11). English-only for v0.2 — the bundled wordlist is
+  /// en-US, and non-English dictionaries are a recorded follow-up rather than
+  /// a half-built option here.
+  bool spellCheckEnabled = true;
+
+  void setSpellCheck(bool v) {
+    spellCheckEnabled = v;
+    _repo.setSetting('spellCheck', v);
+    // Re-open the editing session so the change is visible immediately rather
+    // than at the next block.
+    docRevision++;
+    notifyListeners();
+  }
+
+  /// Eraser behaviour (INK-6). Session-scoped like tool/penSize — a mode, not
+  /// a preference.
+  EraserMode eraserMode = EraserMode.area;
+
+  void setEraserMode(EraserMode m) {
+    eraserMode = m;
+    notifyListeners();
+  }
 
   /// Whether a finger draws (INK-1). Until 2026-07-27 every touch was routed to
   /// pan unconditionally, which meant ink was unreachable on a touch-only
@@ -741,6 +780,8 @@ class AppState extends ChangeNotifier {
     if (tm != null) themeMode = ThemeMode.values.asNameMap()[tm] ?? themeMode;
     final ns = _repo.getSetting('navSplit');
     if (ns is num) navSplit = ns.toDouble().clamp(0.15, 0.7);
+    final sc = _repo.getSetting('spellCheck');
+    if (sc is bool) spellCheckEnabled = sc;
     final td = _repo.getSetting('touchDrawing') as String?;
     if (td != null) {
       touchDrawing = TouchDrawing.values.asNameMap()[td] ?? touchDrawing;
@@ -916,9 +957,16 @@ class AppState extends ChangeNotifier {
 
   // ── Page templates (ORG-9) ─────────────────────────────────────────────
 
+  /// Built-ins first, then the user's own. A user template that shares a
+  /// built-in's name shadows it (their content wins in [applyTemplate]), so
+  /// customising a built-in is just "save under the same name".
   List<String> templateNames() {
     final t = _repo.getSetting('templates');
-    return t is Map ? t.keys.cast<String>().toList() : [];
+    final user = t is Map ? t.keys.cast<String>().toList() : <String>[];
+    return [
+      ...builtinTemplates.keys,
+      ...user.where((n) => !builtinTemplates.containsKey(n)),
+    ];
   }
 
   void saveCurrentAsTemplate(String name) {
@@ -933,7 +981,8 @@ class AppState extends ChangeNotifier {
 
   void applyTemplate(String name) {
     final t = _repo.getSetting('templates');
-    final raw = t is Map ? t[name] as String? : null;
+    // User template first so a same-named save shadows the built-in.
+    final raw = (t is Map ? t[name] as String? : null) ?? builtinTemplates[name];
     if (raw == null) return;
     pushUndo();
     final j = jsonDecode(raw) as Map<String, dynamic>;

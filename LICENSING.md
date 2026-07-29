@@ -11,6 +11,7 @@ format must spread with zero friction.*
 | `rust/onote_core/` — the core library: `.onote` reader/writer, content hashing, mirror merge, OneNote importers | **Apache-2.0** (`rust/onote_core/LICENSE`) | Permissive, with an explicit patent grant, so *any* tool — including proprietary ones users depend on — can read and write `.onote` files. Lock-in dies fastest when reading our format is legally frictionless. |
 | `docs/specs/` — the file-format, data-model, math and ink specifications | **CC0-1.0** (`docs/specs/LICENSE`) | The spec is a public contract. Nothing should impede implementing it, including attribution requirements. |
 | `rust/onote_core/vendor/cab/` | **MIT** (upstream licence retained) | Third-party code, vendored with a documented two-method patch. Not ours to relicense. |
+| `app/assets/fonts/` | **OFL-1.1** (upstream licences retained beside the assets) | Bundled typefaces: Inter (The Inter Project Authors) and JetBrains Mono (JetBrains). The OFL permits bundling and redistribution with the licence text attached, which is why `OFL.txt` ships in each directory. |
 | Everything else (other docs, build tooling, assets) | **AGPL-3.0-or-later** | The default; anything not explicitly listed above falls here. |
 
 ## What this means in practice
