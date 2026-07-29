@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../canvas/page_canvas.dart';
 import '../model/models.dart';
+import '../model/tags.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'command_bar.dart';
@@ -241,6 +242,10 @@ class _AppShellState extends State<AppShell> {
                                 : PageCanvas(
                                     key: ValueKey(app.pageId), state: app),
                           ),
+                          if (app.showTagsPanel) ...[
+                            const VerticalDivider(width: 1),
+                            _TagsPanel(app: app),
+                          ],
                           if (app.showTocPanel && page != null) ...[
                             const VerticalDivider(width: 1),
                             _TocPanel(app: app),
@@ -360,6 +365,121 @@ class _PageHeader extends StatelessWidget {
 }
 
 /// Right-side links panel: incoming backlinks + outgoing links (TEXT-8).
+/// Find tags (TEXT-5): every tagged line in the notebook, grouped by tag.
+///
+/// This is half the value of tags in OneNote — marking a line is only useful
+/// if you can later ask "what did I mark?". Scanning page mirrors rather than
+/// maintaining an index, for the same reason as notebook-wide search: one
+/// source of truth beats an index that can silently drift.
+class _TagsPanel extends StatelessWidget {
+  const _TagsPanel({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final all = app.allTags();
+    final byKind = <TagKind, List<({String pageId, String pageTitle, NoteTag tag, String text})>>{};
+    for (final e in all) {
+      byKind.putIfAbsent(e.tag.kind, () => []).add(e);
+    }
+    return Container(
+      width: 260,
+      color: dark ? OnoteColors.night0 : OnoteColors.paper50,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
+            child: Row(children: [
+              const Icon(Icons.label_outline,
+                  size: 14, color: OnoteColors.graphite400),
+              const SizedBox(width: 6),
+              Text('TAGS',
+                  style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: .6,
+                      color: OnoteColors.graphite400)),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close, size: 15),
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Close tags',
+                onPressed: app.toggleTagsPanel,
+              ),
+            ]),
+          ),
+          if (all.isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 4, 12, 12),
+              child: Text(
+                  'No tags in this notebook yet.\nTag a line from the Home tab.',
+                  style:
+                      TextStyle(fontSize: 11.5, color: OnoteColors.graphite400)),
+            )
+          else
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.only(bottom: 8),
+                children: [
+                  for (final kind in byKind.keys)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+                          child: Row(children: [
+                            Icon(kind.icon, size: 13, color: kind.color),
+                            const SizedBox(width: 5),
+                            Text('${kind.label}  (${byKind[kind]!.length})',
+                                style: const TextStyle(
+                                    fontSize: 11, fontWeight: FontWeight.w600)),
+                          ]),
+                        ),
+                        for (final e in byKind[kind]!)
+                          InkWell(
+                            onTap: () => app.selectPage(e.pageId),
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.fromLTRB(30, 3, 12, 3),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                      e.text.isEmpty ? '(empty line)' : e.text,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          decoration:
+                                              (e.tag.checked ?? false)
+                                                  ? TextDecoration.lineThrough
+                                                  : null,
+                                          color: (e.tag.checked ?? false)
+                                              ? OnoteColors.graphite400
+                                              : null)),
+                                  Text(e.pageTitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                          fontSize: 10.5,
+                                          color: OnoteColors.graphite400)),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Page outline (TEXT-10): the current page's headings, click to jump.
 ///
 /// Deliberately derived from the Markdown rather than stored: a heading IS

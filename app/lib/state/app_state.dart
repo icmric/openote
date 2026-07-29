@@ -12,6 +12,7 @@ import '../core/onote_ffi.dart';
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
 import '../store/repository.dart';
+import '../model/tags.dart';
 import 'builtin_templates.dart';
 import '../sync/sync_recorder.dart';
 
@@ -420,6 +421,113 @@ class AppState extends ChangeNotifier {
   bool snapToGrid = true; // on by default; the grid only shows while dragging
   int penColor = 0;
   double penSize = 2.5;
+
+  // ── Tags (TEXT-5) ────────────────────────────────────────────────────
+
+  /// Apply or remove [kind] on the line the caret is in, for the block being
+  /// edited (or the selected one).
+  ///
+  /// Toggling is per (line, kind): applying the same tag to the same line
+  /// removes it, which is what a toolbar button that shows its own state has
+  /// to do.
+  void toggleTagOnSelection(TagKind kind, {int? line}) {
+    final b = blocks.where((x) => x.id == (editingBlockId ?? selectedBlockId))
+        .firstOrNull;
+    if (b == null || b.type != BlockType.text) return;
+    final idx = line ?? _caretLine(b);
+    pushUndo();
+    final tags = [...NoteTag.listFrom(b.content)];
+    final at = tags.indexWhere((t) => t.line == idx && t.kind == kind);
+    if (at >= 0) {
+      tags.removeAt(at);
+    } else {
+      tags.add(NoteTag(
+          kind: kind,
+          line: idx,
+          checked: kind == TagKind.todo ? false : null));
+    }
+    NoteTag.writeInto(b.content, tags);
+    updateBlock(b);
+    docRevision++;
+    notifyListeners();
+  }
+
+  /// Flip a to-do tag's completion.
+  void setTagChecked(String blockId, int line, bool checked) {
+    final b = blocks.where((x) => x.id == blockId).firstOrNull;
+    if (b == null) return;
+    pushUndo();
+    final tags = [
+      for (final t in NoteTag.listFrom(b.content))
+        if (t.line == line && t.kind == TagKind.todo)
+          t.copyWith(checked: checked)
+        else
+          t
+    ];
+    NoteTag.writeInto(b.content, tags);
+    updateBlock(b);
+    docRevision++;
+    notifyListeners();
+  }
+
+  /// Tags on the caret's line, so the toolbar can show which are active.
+  Set<TagKind> tagsAtCaret() {
+    final b = blocks.where((x) => x.id == (editingBlockId ?? selectedBlockId))
+        .firstOrNull;
+    if (b == null || b.type != BlockType.text) return const {};
+    final idx = _caretLine(b);
+    return {
+      for (final t in NoteTag.listFrom(b.content))
+        if (t.line == idx) t.kind
+    };
+  }
+
+  /// Which line the caret sits on, so a tag lands where the user is looking.
+  /// Falls back to line 0 when nothing is being edited (a tag applied to a
+  /// merely-selected block is a tag on its first line).
+  int _caretLine(Block b) {
+    final ctl = activeEditor?.block.id == b.id ? activeEditor?.controller : null;
+    final text = b.content['text'] as String? ?? '';
+    if (ctl == null || !ctl.selection.isValid) return 0;
+    final at = ctl.selection.baseOffset.clamp(0, text.length);
+    return '\n'.allMatches(text.substring(0, at)).length;
+  }
+
+  /// Every tagged line in the notebook, for the find-tags rollup.
+  ///
+  /// Scans page mirrors rather than a maintained index: same reasoning as
+  /// notebook-wide search — one source of truth beats an index that can drift,
+  /// until it measurably hurts.
+  List<({String pageId, String pageTitle, NoteTag tag, String text})>
+      allTags() {
+    if (notebookId == null) return const [];
+    final out = <({String pageId, String pageTitle, NoteTag tag, String text})>[];
+    for (final n in nodes.where((n) => n.kind == NodeKind.page)) {
+      // The open page's in-memory blocks are fresher than the container.
+      final blocksOf = n.id == pageId ? blocks : readPage(n.id).blocks;
+      for (final b in blocksOf) {
+        if (b.type != BlockType.text) continue;
+        final tags = NoteTag.listFrom(b.content);
+        if (tags.isEmpty) continue;
+        final lines = (b.content['text'] as String? ?? '').split('\n');
+        for (final t in tags) {
+          out.add((
+            pageId: n.id,
+            pageTitle: n.title,
+            tag: t,
+            text: t.line < lines.length ? lines[t.line].trim() : '',
+          ));
+        }
+      }
+    }
+    return out;
+  }
+
+  bool showTagsPanel = false;
+  void toggleTagsPanel() {
+    showTagsPanel = !showTagsPanel;
+    notifyListeners();
+  }
 
   // ── Favourites & recents (ORG-10) ────────────────────────────────────
   //

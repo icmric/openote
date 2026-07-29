@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../markdown/md_render.dart';
 import '../model/models.dart';
+import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -42,6 +43,10 @@ class LiveMarkdownEngine extends OnoteTextEditor {
           if (nb == null || !src.startsWith('sha256:')) return null;
           return app.blob(src);
         },
+        // Tag markers (TEXT-5) hang in the line's gutter.
+        tagsByLine: NoteTag.byLine(block.content),
+        onToggleTag: (line, checked) =>
+            app.setTagChecked(block.id, line, checked),
         onToggleCheckbox: (newText) {
           app.pushUndo();
           serialize(block.content, newText);

@@ -7,6 +7,7 @@ import '../export/markdown_export.dart';
 import '../export/open_export.dart';
 import '../export/pdf_export.dart';
 import '../model/models.dart';
+import '../model/tags.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'color_picker.dart';
@@ -85,6 +86,13 @@ class _CommandBarState extends State<CommandBar> {
                       onPressed: () => app.setTool(Tool.select),
                     ),
                   ),
+                IconButton(
+                  icon: const Icon(Icons.label_outline, size: 17),
+                  tooltip: 'Find tags',
+                  isSelected: app.showTagsPanel,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: app.toggleTagsPanel,
+                ),
                 IconButton(
                   icon: const Icon(Icons.toc, size: 17),
                   tooltip: 'Page outline',
@@ -241,6 +249,11 @@ class _CommandBarState extends State<CommandBar> {
       fmt(Icons.check_box_outlined, 'Checkbox',
           () => app.toggleLinePrefix('- [ ] ')),
       fmt(Icons.format_quote, 'Quote', () => app.toggleLinePrefix('> ')),
+      const _Div(),
+      // Tags (TEXT-5). OneNote users organise around these, so they get a
+      // first-class place on Home rather than a submenu. The button shows the
+      // caret line's active tags, which is why it reads state on every build.
+      _TagButton(app: app),
       const _Div(),
       // Text colour — split button (§7a.2): main area applies the current
       // colour; the arrow opens the full picker (palette/wheel/RGBA).
@@ -783,6 +796,65 @@ class _FontSizeField extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// The tag button on Home: applies a tag to the caret's line, and shows which
+/// tags that line already carries.
+///
+/// A menu rather than a row of buttons because the set is open-ended (nine
+/// built-ins plus, later, user-defined ones) and the toolbar is already dense.
+class _TagButton extends StatelessWidget {
+  const _TagButton({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final active = app.tagsAtCaret();
+    final enabled = app.canFormatText;
+    return MenuAnchor(
+      builder: (context, controller, _) => Tooltip(
+        message: active.isEmpty
+            ? 'Tag this line (To Do, Important, Question…)'
+            : 'Tagged: ${active.map((k) => k.label).join(', ')}',
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: enabled
+              ? () => controller.isOpen ? controller.close() : controller.open()
+              : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(
+                  active.isEmpty
+                      ? Icons.label_outline
+                      : active.first.icon,
+                  size: 17,
+                  color: !enabled
+                      ? OnoteColors.graphite400
+                      : active.isEmpty
+                          ? null
+                          : active.first.color),
+              Icon(Icons.arrow_drop_down,
+                  size: 16,
+                  color: enabled ? null : OnoteColors.graphite400),
+            ]),
+          ),
+        ),
+      ),
+      menuChildren: [
+        for (final k in TagKind.pickable)
+          MenuItemButton(
+            leadingIcon: Icon(k.icon, size: 16, color: k.color),
+            trailingIcon: active.contains(k)
+                ? Icon(Icons.check, size: 15, color: scheme.primary)
+                : null,
+            onPressed: () => app.toggleTagOnSelection(k),
+            child: Text(k.label),
+          ),
+      ],
     );
   }
 }

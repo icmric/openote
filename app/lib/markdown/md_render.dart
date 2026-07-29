@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 
 import '../core/platform_open.dart';
+import '../model/tags.dart';
 import '../theme/onote_theme.dart';
 import 'md_table.dart';
 
@@ -80,6 +81,8 @@ class MarkdownView extends StatefulWidget {
     this.onToggleCheckbox,
     this.onWikiLink,
     this.imageResolver,
+    this.tagsByLine = const {},
+    this.onToggleTag,
   });
 
   final String text;
@@ -87,6 +90,14 @@ class MarkdownView extends StatefulWidget {
 
   /// Called with the new full text when a checkbox line is toggled.
   final void Function(String newText)? onToggleCheckbox;
+
+  /// Tags on this block, by 0-based line index (TEXT-5). Rendered as markers
+  /// in the line's left gutter — OneNote's model, where a tag decorates a
+  /// paragraph rather than living in its text.
+  final Map<int, List<NoteTag>> tagsByLine;
+
+  /// Called when a to-do marker is clicked.
+  final void Function(int line, bool checked)? onToggleTag;
 
   /// Called when a `[[Page|id]]` link is tapped (EMBED-1).
   final void Function(String label, String? id)? onWikiLink;
@@ -183,7 +194,7 @@ class _MarkdownViewState extends State<MarkdownView> {
         i += table.consumed - 1; // the loop's own i++ consumes the last line
         continue;
       }
-      children.add(_renderLine(context, line, i, dark));
+      children.add(_withTagGutter(i, _renderLine(context, line, i, dark)));
     }
     if (inFence) flushFence();
 
@@ -191,6 +202,48 @@ class _MarkdownViewState extends State<MarkdownView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: children.isEmpty ? [Text(' ', style: baseStyle)] : children,
+    );
+  }
+
+  /// Prefix a rendered line with its tag markers, if it has any.
+  ///
+  /// A hanging gutter rather than inline content: the tag decorates the
+  /// paragraph, so it must not shift the text or become part of it when the
+  /// line is edited.
+  Widget _withTagGutter(int lineIndex, Widget line) {
+    final tags = widget.tagsByLine[lineIndex];
+    if (tags == null || tags.isEmpty) return line;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 2, right: 5),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            for (final t in tags)
+              if (t.kind == TagKind.todo)
+                InkWell(
+                  onTap: widget.onToggleTag == null
+                      ? null
+                      : () => widget.onToggleTag!(lineIndex, !(t.checked ?? false)),
+                  child: Icon(
+                      (t.checked ?? false)
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                      size: 15,
+                      color: t.kind.color),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.only(right: 1),
+                  child: Tooltip(
+                    message: t.displayLabel,
+                    child: Icon(t.kind.icon, size: 14, color: t.kind.color),
+                  ),
+                ),
+          ]),
+        ),
+        Flexible(child: line),
+      ],
     );
   }
 
