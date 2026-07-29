@@ -695,6 +695,55 @@ class Repository {
     return rows.isEmpty ? null : rows.first['bytes'] as Uint8List;
   }
 
+  /// Pages whose content contains [query], with a snippet around the first hit.
+  ///
+  /// Brute force over `page_mirror` by design (TEXT-7). An FTS5 index would be
+  /// faster, but it is a second thing to keep correct — it must be rebuilt on
+  /// every write, it can silently drift from the content, and the spec then has
+  /// to describe it for third-party writers. Scanning JSON is ~10 ms for a
+  /// 300-page notebook, which is well inside "instant" for a search box.
+  /// Revisit when a real notebook makes it slow, not before.
+  List<({String pageId, String snippet})> searchPageContent(
+      String notebookId, String query,
+      {int limit = 50}) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    final out = <({String pageId, String snippet})>[];
+    final rows = _db(notebookId).select('SELECT page_id, json FROM page_mirror');
+    for (final r in rows) {
+      final json = r['json'] as String;
+      // Cheap reject on the raw JSON before parsing: most pages don't match,
+      // and decoding every page's block tree to find that out is the expensive
+      // part.
+      if (!json.toLowerCase().contains(q)) continue;
+      out.add((
+        pageId: r['page_id'] as String,
+        snippet: _snippetFrom(json, q),
+      ));
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
+  /// A readable line of context around the first match, from the page's text
+  /// blocks only — a raw-JSON substring would show field names and coordinates.
+  static String _snippetFrom(String json, String lowerQuery) {
+    try {
+      final j = jsonDecode(json) as Map<String, dynamic>;
+      for (final b in (j['blocks'] as List? ?? const [])) {
+        final text = ((b as Map)['content'] as Map?)?['text'];
+        if (text is! String) continue;
+        final i = text.toLowerCase().indexOf(lowerQuery);
+        if (i < 0) continue;
+        final start = (i - 30).clamp(0, text.length);
+        final end = (i + lowerQuery.length + 40).clamp(0, text.length);
+        final s = text.substring(start, end).replaceAll('\n', ' ').trim();
+        return '${start > 0 ? '…' : ''}$s${end < text.length ? '…' : ''}';
+      }
+    } catch (_) {/* fall through to no snippet */}
+    return '';
+  }
+
   /// Every blob hash with its mime and size, but **not** its bytes.
   ///
   /// Deliberately metadata-only: the caller (the op-log backfill) streams blobs

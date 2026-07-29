@@ -86,6 +86,13 @@ class _CommandBarState extends State<CommandBar> {
                     ),
                   ),
                 IconButton(
+                  icon: const Icon(Icons.toc, size: 17),
+                  tooltip: 'Page outline',
+                  isSelected: app.showTocPanel,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: app.toggleTocPanel,
+                ),
+                IconButton(
                   icon: const Icon(Icons.account_tree_outlined, size: 17),
                   tooltip: 'Links & backlinks',
                   isSelected: app.showLinksPanel,

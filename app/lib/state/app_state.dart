@@ -101,6 +101,13 @@ class AppState extends ChangeNotifier {
   /// used by exporters, which walk every page in turn.
   PageData readPage(String id) => _repo.readPage(notebookId!, id);
 
+  /// Pages in this notebook whose *content* matches [query] (TEXT-7).
+  /// The navigator searches titles itself; this is the other half.
+  List<({String pageId, String snippet})> searchContent(String query) =>
+      notebookId == null
+          ? const []
+          : _repo.searchPageContent(notebookId!, query);
+
   /// Re-read the tree from storage into [nodes], bumping [nodesRevision].
   /// Replaces the `app.nodes = repo.loadNodes(id)` line that used to be copied
   /// at every mutation site, importers included.
@@ -328,6 +335,89 @@ class AppState extends ChangeNotifier {
   bool snapToGrid = true; // on by default; the grid only shows while dragging
   int penColor = 0;
   double penSize = 2.5;
+
+  // ── Favourites & recents (ORG-10) ────────────────────────────────────
+  //
+  // Keys are '<notebookId>:<pageId>'. Settings are WORKSPACE-scoped, so a bare
+  // page id would collide across notebooks and dangle after one is deleted.
+
+  final Set<String> _favourites = {};
+  final List<String> _recents = [];
+
+  static const _recentsCap = 20;
+
+  String _pageKey(String pageId, [String? nb]) => '${nb ?? notebookId}:$pageId';
+
+  bool isFavourite(String pageId) => _favourites.contains(_pageKey(pageId));
+
+  /// Favourite page ids in THIS notebook, in tree order.
+  List<TreeNode> favouritePages() => [
+        for (final n in nodes)
+          if (n.kind == NodeKind.page && _favourites.contains(_pageKey(n.id))) n
+      ];
+
+  void toggleFavourite(String pageId) {
+    final k = _pageKey(pageId);
+    _favourites.contains(k) ? _favourites.remove(k) : _favourites.add(k);
+    _repo.setSetting('favourites', _favourites.toList());
+    notifyListeners();
+  }
+
+  /// Recently visited pages in this notebook, most recent first.
+  List<TreeNode> recentPages({int max = 8}) {
+    final out = <TreeNode>[];
+    for (final k in _recents) {
+      final parts = k.split(':');
+      if (parts.length != 2 || parts[0] != notebookId) continue;
+      final n = node(parts[1]);
+      if (n != null) out.add(n);
+      if (out.length >= max) break;
+    }
+    return out;
+  }
+
+  void _recordRecent(String pageId) {
+    final k = _pageKey(pageId);
+    _recents.remove(k);
+    _recents.insert(0, k);
+    if (_recents.length > _recentsCap) {
+      _recents.removeRange(_recentsCap, _recents.length);
+    }
+    _repo.setSetting('recentPages', _recents);
+  }
+
+  /// Sort a section's pages by title or by last edit (ORG-8).
+  ///
+  /// Subpages move WITH their parent: a page carries the deeper-level pages
+  /// that follow it, or sorting would silently reparent every subpage in the
+  /// section to whatever landed above it.
+  void sortSection(String sectionId, {required bool byTitle}) {
+    final pages = nodes
+        .where((n) => n.kind == NodeKind.page && n.parentId == sectionId)
+        .toList();
+    if (pages.length < 2) return;
+    // Group each top-level page with its contiguous deeper-level run.
+    final groups = <List<TreeNode>>[];
+    for (final p in pages) {
+      if (p.level == 0 || groups.isEmpty) {
+        groups.add([p]);
+      } else {
+        groups.last.add(p);
+      }
+    }
+    groups.sort((a, b) => byTitle
+        ? a.first.title.toLowerCase().compareTo(b.first.title.toLowerCase())
+        : b.first.updatedAt.compareTo(a.first.updatedAt));
+    var seq = nowMs();
+    for (final g in groups) {
+      for (final n in g) {
+        n.position = 'a${(seq++).toString().padLeft(15, '0')}';
+        _putNode(notebookId!, n);
+      }
+    }
+    reloadNodes();
+    notifyListeners();
+  }
 
   /// Spell check (TEXT-11). English-only for v0.2 — the bundled wordlist is
   /// en-US, and non-English dictionaries are a recorded follow-up rather than
@@ -782,6 +872,10 @@ class AppState extends ChangeNotifier {
     if (ns is num) navSplit = ns.toDouble().clamp(0.15, 0.7);
     final sc = _repo.getSetting('spellCheck');
     if (sc is bool) spellCheckEnabled = sc;
+    final fav = _repo.getSetting('favourites');
+    if (fav is List) _favourites.addAll(fav.cast<String>());
+    final rec = _repo.getSetting('recentPages');
+    if (rec is List) _recents.addAll(rec.cast<String>());
     final td = _repo.getSetting('touchDrawing') as String?;
     if (td != null) {
       touchDrawing = TouchDrawing.values.asNameMap()[td] ?? touchDrawing;
@@ -928,6 +1022,7 @@ class AppState extends ChangeNotifier {
       // Keep the navigator's focused section in sync with the open page.
       activeSectionId = nodes.where((n) => n.id == id).firstOrNull?.parentId ??
           activeSectionId;
+      _recordRecent(id);
     }
     docRevision++;
     _persistSession();
@@ -1220,6 +1315,45 @@ class AppState extends ChangeNotifier {
   }
 
   // ── Backlinks (TEXT-8) ─────────────────────────────────────────────────
+
+  /// Page outline panel (TEXT-10).
+  bool showTocPanel = false;
+  void toggleTocPanel() {
+    showTocPanel = !showTocPanel;
+    notifyListeners();
+  }
+
+  /// Headings on the current page, in reading order, for the outline panel.
+  ///
+  /// Cached on the same key as the links panel: without it, the panel rescans
+  /// every block's Markdown on each notify — i.e. per keystroke — which is the
+  /// exact cost the memoised navigator exists to avoid.
+  ({String key, List<({String blockId, int level, String text})> items})?
+      _tocCache;
+
+  List<({String blockId, int level, String text})> pageOutline() {
+    final key = '$pageId#$docRevision';
+    final cached = _tocCache;
+    if (cached != null && cached.key == key) return cached.items;
+    final items = <({String blockId, int level, String text})>[];
+    final ordered = [...blocks.where((b) => b.type == BlockType.text)]
+      ..sort((a, b) => a.y.compareTo(b.y));
+    for (final b in ordered) {
+      final text = b.content['text'];
+      if (text is! String) continue;
+      for (final line in text.split('\n')) {
+        final m = RegExp(r'^(#{1,3})\s+(.+)$').firstMatch(line.trimLeft());
+        if (m == null) continue;
+        items.add((
+          blockId: b.id,
+          level: m.group(1)!.length,
+          text: m.group(2)!.trim(),
+        ));
+      }
+    }
+    _tocCache = (key: key, items: items);
+    return items;
+  }
 
   bool showLinksPanel = false;
   void toggleLinksPanel() {
@@ -1613,8 +1747,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _jumpToMatch() {
-    final id = findMatches[findIndex];
+  void _jumpToMatch() => jumpToBlock(findMatches[findIndex]);
+
+  /// Select a block and centre the view on it. Shared by find and the page
+  /// outline so both behave identically.
+  void jumpToBlock(String id) {
     final b = blocks.where((b) => b.id == id).firstOrNull;
     if (b == null) return;
     selectedIds
@@ -1624,6 +1761,7 @@ class AppState extends ChangeNotifier {
     editingBlockId = null;
     final h = b.h ?? renderSizes[id]?.height ?? 60;
     canvas.centerOn(Offset(b.x + b.w / 2, b.y + h / 2));
+    notifyListeners();
   }
 
   String _blockText(Block b) => switch (b.type) {

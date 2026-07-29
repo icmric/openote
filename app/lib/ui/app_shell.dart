@@ -241,6 +241,10 @@ class _AppShellState extends State<AppShell> {
                                 : PageCanvas(
                                     key: ValueKey(app.pageId), state: app),
                           ),
+                          if (app.showTocPanel && page != null) ...[
+                            const VerticalDivider(width: 1),
+                            _TocPanel(app: app),
+                          ],
                           if (app.showLinksPanel && page != null) ...[
                             const VerticalDivider(width: 1),
                             _LinksPanel(app: app),
@@ -356,6 +360,86 @@ class _PageHeader extends StatelessWidget {
 }
 
 /// Right-side links panel: incoming backlinks + outgoing links (TEXT-8).
+/// Page outline (TEXT-10): the current page's headings, click to jump.
+///
+/// Deliberately derived from the Markdown rather than stored: a heading IS
+/// `# text` in a text block, so an outline that could disagree with the page
+/// would be a second source of truth for no gain.
+class _TocPanel extends StatelessWidget {
+  const _TocPanel({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final items = app.pageOutline();
+    return Container(
+      width: 240,
+      color: dark ? OnoteColors.night0 : OnoteColors.paper50,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
+            child: Row(children: [
+              const Icon(Icons.toc, size: 14, color: OnoteColors.graphite400),
+              const SizedBox(width: 6),
+              Text('OUTLINE',
+                  style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: .6,
+                      color: OnoteColors.graphite400)),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close, size: 15),
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Close outline',
+                onPressed: app.toggleTocPanel,
+              ),
+            ]),
+          ),
+          if (items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 4, 12, 12),
+              child: Text('No headings on this page.\nStart a line with # to add one.',
+                  style:
+                      TextStyle(fontSize: 11.5, color: OnoteColors.graphite400)),
+            )
+          else
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.only(bottom: 8),
+                itemCount: items.length,
+                itemBuilder: (_, i) {
+                  final it = items[i];
+                  return InkWell(
+                    onTap: () => app.jumpToBlock(it.blockId),
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                          12.0 + (it.level - 1) * 14.0, 5, 12, 5),
+                      child: Text(
+                        it.text,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: it.level == 1 ? 13 : 12,
+                          fontWeight: it.level == 1
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LinksPanel extends StatelessWidget {
   const _LinksPanel({required this.app});
   final AppState app;
