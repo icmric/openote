@@ -174,6 +174,91 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Pull another device's changes into this notebook (ADR-0006 step 3).
+  ///
+  /// This is the moment sync exists: the transport is whatever put the other
+  /// device's `.oplog` next to ours — a synced folder, a USB stick, rsync — and
+  /// because each device only ever appends to its OWN log, there is nothing to
+  /// resolve. Merging is reading: sort the union, apply, write the result.
+  ///
+  /// Returns the number of ops folded in.
+  Future<int> syncPull(String nb) async {
+    final r = _recorderFor(nb);
+    if (r == null) return 0;
+    final pending = r.pendingForeignOps(_repo.getSetting);
+    if (pending.isEmpty) return 0;
+
+    // Flush first: a local edit still sitting in the debounce would otherwise
+    // be overwritten by the materialised page we're about to write.
+    await flushSave();
+
+    final changed = r.applyForeign(pending);
+
+    _repo.runInTransaction(nb, () {
+      for (final pageId in changed.pages) {
+        final mirror = r.materialisedPage(pageId);
+        final blocks = [
+          for (final b in (mirror['blocks'] as List? ?? const []))
+            Block.fromJson((b as Map).cast<String, dynamic>())
+        ];
+        final props =
+            PageProps.fromJson((mirror['page'] as Map?)?.cast<String, dynamic>());
+        _repo.writePage(nb, pageId, blocks, props);
+      }
+      if (changed.treeChanged) {
+        // Deletions first: a node the log says is gone must leave the
+        // container, or a remote delete would be silently ignored and
+        // "delete wins" would become "delete loses". Soft-delete, so it
+        // lands in the recycle bin exactly as a local delete would.
+        for (final id in r.materialisedDeletedIds()) {
+          _repo.softDeleteNode(nb, id);
+        }
+        for (final n in r.materialisedNodes()) {
+          _repo.upsertNode(
+              nb,
+              TreeNode(
+                id: n.id,
+                kind: NodeKind.values.firstWhere((k) => k.name == n.kind,
+                    orElse: () => NodeKind.page),
+                parentId: n.parentId,
+                title: n.title,
+                position: n.position,
+                color: n.color,
+                level: n.level,
+                createdAt: n.createdAt == 0 ? null : n.createdAt,
+              ));
+        }
+      }
+    });
+
+    // Watermark per device, only after the writes landed — a crash mid-pull
+    // must re-apply rather than skip.
+    final highest = <String, int>{};
+    for (final op in pending) {
+      if (op.seq > (highest[op.device] ?? 0)) highest[op.device] = op.seq;
+    }
+    highest.forEach((dev, seq) => r.markForeignSeen(dev, seq, _repo.setSetting));
+
+    // Re-read whatever the user is looking at.
+    reloadNodes();
+    if (pageId != null && changed.pages.contains(pageId)) {
+      final data = await engine.loadPage(nb, pageId!);
+      blocks = data.blocks;
+      pageProps = data.props;
+      docRevision++;
+    }
+    lastSyncPull = pending.length;
+    notifyListeners();
+    return pending.length;
+  }
+
+  /// Ops folded in by the last [syncPull], for the status surface.
+  int lastSyncPull = 0;
+
+  /// Devices that have written to this notebook, for the status surface.
+  int syncDeviceCount(String nb) =>
+      _recorderFor(nb)?.store.deviceIds().length ?? 0;
+
   /// Blobs the log references but whose bytes are not yet in `blobs/`.
   ///
   /// Empty means a rebuild from the log could reconstruct this notebook's

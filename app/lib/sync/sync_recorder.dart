@@ -211,6 +211,87 @@ class SyncRecorder {
     return copied;
   }
 
+  // ── Ingestion: other devices' logs ───────────────────────────────────
+
+  /// Ops from OTHER devices that this device has not applied yet.
+  ///
+  /// The watermark is per foreign device, stored locally. It is not "what
+  /// exists" but "what I have folded into my container" — those differ exactly
+  /// when another device has synced a log in, which is the whole point.
+  List<Op> pendingForeignOps(
+      Object? Function(String key) readSetting) {
+    final out = <Op>[];
+    for (final dev in store.deviceIds()) {
+      if (dev == device.id) continue;
+      final seen =
+          (readSetting(foreignSeqKey(notebookId, dev)) as num?)?.toInt() ?? 0;
+      for (final op in store.readDevice(dev)) {
+        if (op.seq > seen) out.add(op);
+      }
+    }
+    out.sort(Op.compare);
+    return out;
+  }
+
+  static String foreignSeqKey(String notebookId, String device) =>
+      'syncSeen:$notebookId:$device';
+
+  /// Fold [ops] into this device's replayed state and report what changed, so
+  /// the caller can write exactly those pages and nodes into the container.
+  ///
+  /// Returns the affected page ids and whether the node tree moved. Note the
+  /// ops are applied to the SAME state the recorder diffs against — otherwise
+  /// the next local save would re-record the remote's changes as if they were
+  /// ours, doubling every incoming edit.
+  ({Set<String> pages, bool treeChanged}) applyForeign(List<Op> ops) {
+    final pages = <String>{};
+    var treeChanged = false;
+    for (final op in ops) {
+      switch (op.kind) {
+        case OpKind.blockSet:
+        case OpKind.blockRemove:
+        case OpKind.pageProps:
+        case OpKind.inkStrokes:
+          final pid = op.map['pageId'];
+          if (pid is String) pages.add(pid);
+        case OpKind.nodeUpsert:
+        case OpKind.nodeDelete:
+        case OpKind.nodeRestore:
+        case OpKind.nodePurge:
+          treeChanged = true;
+        case OpKind.blobPut:
+        case OpKind.notebookMeta:
+        case OpKind.unknown:
+          break;
+      }
+      state.apply(op);
+      // Keep our Lamport clock ahead of everything seen, or our next op would
+      // sort before theirs and replicas would order history differently.
+      if (op.lamport > _lamport) _lamport = op.lamport;
+    }
+    return (pages: pages, treeChanged: treeChanged);
+  }
+
+  /// The materialised page after ingestion, in the container's mirror shape.
+  Map<String, dynamic> materialisedPage(String pageId) =>
+      state.pageMirror(pageId);
+
+  /// Live nodes after ingestion.
+  List<MatNode> materialisedNodes() => state.liveNodes();
+
+  /// Nodes the log says are deleted. Needed because writing only the live ones
+  /// makes a remote delete invisible — the node simply stays in the container,
+  /// which is delete-LOSES, the opposite of the decision.
+  List<String> materialisedDeletedIds() => [
+        for (final n in state.nodes.values)
+          if (n.deletedAt != null) n.id
+      ];
+
+  /// Record that [device]'s ops up to [seq] are folded in.
+  void markForeignSeen(String dev, int seq,
+          void Function(String key, Object? value) writeSetting) =>
+      writeSetting(foreignSeqKey(notebookId, dev), seq);
+
   /// Blobs referenced by ops whose bytes are not in `blobs/`. Empty means a
   /// rebuild from this log could reconstruct the notebook's content in full.
   Set<String> missingBlobs() {

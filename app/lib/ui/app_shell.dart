@@ -587,6 +587,34 @@ class _StatusBar extends StatelessWidget {
             ]),
           ),
           const SizedBox(width: 12),
+          // Sync (ADR-0006). Shown only once a second device has touched this
+          // notebook — until then there is nothing to say, and a permanent
+          // "1 device" chip would be noise.
+          if (app.notebookId != null && app.syncDeviceCount(app.notebookId!) > 1)
+            Tooltip(
+              message: 'This notebook has been edited on '
+                  '${app.syncDeviceCount(app.notebookId!)} devices.\n'
+                  'Click to pull in changes from the others.',
+              child: InkWell(
+                onTap: () async {
+                  final n = await app.syncPull(app.notebookId!);
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(n == 0
+                          ? 'Already up to date.'
+                          : 'Pulled $n change${n == 1 ? '' : 's'} from another device.')));
+                },
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.devices, size: 12,
+                      color: OnoteColors.graphite400),
+                  const SizedBox(width: 5),
+                  Text('${app.syncDeviceCount(app.notebookId!)} devices',
+                      style: const TextStyle(
+                          fontSize: 11, color: OnoteColors.graphite400)),
+                ]),
+              ),
+            ),
+          const SizedBox(width: 12),
           // Active compute engine (§ADR-0002): green chip when the Rust core
           // is linked, with the live page content-hash it computed on save.
           Tooltip(

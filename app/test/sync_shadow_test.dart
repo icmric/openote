@@ -375,6 +375,179 @@ void main() {
         }));
   });
 
+  group('two devices (ADR-0006 step 3)', () {
+    /// Write ops as if another machine had synced its log in beside ours.
+    /// That IS the transport in this design: a device only ever appends to its
+    /// own file, so "another device edited" and "a file appeared" are the same
+    /// event, and there is nothing to resolve.
+    void otherDeviceWrites(OpLogStore store, List<Op> ops) =>
+        store.append('other-device', ops);
+
+    Op op(int seq, int lamport, OpKind kind, Map<String, dynamic> d) => Op(
+        device: 'other-device',
+        seq: seq,
+        lamport: lamport,
+        timestamp: 1000 + seq,
+        kind: kind,
+        data: d);
+
+    test('a remote page edit lands in the container', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp) = await freshRepo('onote_sync_pull_');
+      addTearDown(() {
+        repo.dispose();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      final nb = await repo.createNotebook('Pull');
+      final app = AppState(repo);
+      app.notebookId = nb.id;
+      app.reloadNodes();
+      final pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+      app.pageId = pageId;
+      app.blocks = [
+        Block(type: BlockType.text, x: 0, y: 0, content: {'text': 'mine'})
+      ];
+      app.markDirty();
+      await app.flushSave();
+
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+      final store = OpLogStore.forNotebook(ref.file);
+
+      // The other device adds a DIFFERENT block to the same page — the case
+      // block-level ops exist to make work.
+      otherDeviceWrites(store, [
+        op(1, 500, OpKind.blockSet, {
+          'pageId': pageId,
+          'block': {
+            'id': 'remote-block',
+            'type': 'text',
+            'x': 0,
+            'y': 100,
+            'w': 320,
+            'content': {'text': 'theirs'}
+          }
+        }),
+      ]);
+
+      final pulled = await app.syncPull(nb.id);
+      expect(pulled, 1);
+
+      // Both edits survive, in the container, not just in memory.
+      final stored = repo.readPage(nb.id, pageId);
+      final texts = [
+        for (final b in stored.blocks) b.content['text'] as String?
+      ];
+      expect(texts, containsAll(<String>['mine', 'theirs']));
+    });
+
+    test('pulling twice is a no-op (the watermark holds)', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp) = await freshRepo('onote_sync_twice_');
+      addTearDown(() {
+        repo.dispose();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      final nb = await repo.createNotebook('Twice');
+      final app = AppState(repo);
+      app.notebookId = nb.id;
+      app.reloadNodes();
+      final pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+      app.pageId = pageId;
+
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+      final store = OpLogStore.forNotebook(ref.file);
+      otherDeviceWrites(store, [
+        op(1, 500, OpKind.blockSet, {
+          'pageId': pageId,
+          'block': {
+            'id': 'r1',
+            'type': 'text',
+            'x': 0,
+            'y': 0,
+            'w': 320,
+            'content': {'text': 'remote'}
+          }
+        }),
+      ]);
+
+      expect(await app.syncPull(nb.id), 1);
+      expect(await app.syncPull(nb.id), 0,
+          reason: 'already folded in; re-applying would be work for nothing');
+    });
+
+    test('a remote page creation appears in the tree', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp) = await freshRepo('onote_sync_tree_');
+      addTearDown(() {
+        repo.dispose();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      final nb = await repo.createNotebook('Tree');
+      final app = AppState(repo);
+      app.notebookId = nb.id;
+      app.reloadNodes();
+      final section =
+          app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
+
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+      final store = OpLogStore.forNotebook(ref.file);
+      otherDeviceWrites(store, [
+        op(1, 500, OpKind.nodeUpsert, {
+          'id': 'remote-page',
+          'kind': 'page',
+          'parentId': section,
+          'title': 'Made elsewhere',
+          'position': 'a999',
+          'level': 0,
+          'createdAt': 1,
+          'updatedAt': 2,
+        }),
+      ]);
+
+      await app.syncPull(nb.id);
+      expect(app.nodes.map((n) => n.title), contains('Made elsewhere'));
+    });
+
+    test('a remote delete wins over a local edit', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp) = await freshRepo('onote_sync_del_');
+      addTearDown(() {
+        repo.dispose();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      final nb = await repo.createNotebook('Del');
+      final app = AppState(repo);
+      app.notebookId = nb.id;
+      app.reloadNodes();
+      final page = app.nodes.firstWhere((n) => n.kind == NodeKind.page);
+      // Local edit of the page's title, recorded to our own log.
+      app.renameNode(page.id, 'Renamed here');
+
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+      final store = OpLogStore.forNotebook(ref.file);
+      otherDeviceWrites(store, [
+        op(1, 1, OpKind.nodeDelete, {'id': page.id, 'deletedAt': 500}),
+      ]);
+
+      await app.syncPull(nb.id);
+      // ADR-0006 §6a.3: delete wins, whichever sorts later — and it is
+      // recoverable because it lands in the recycle bin, not the void.
+      expect(app.nodes.map((n) => n.id), isNot(contains(page.id)));
+    });
+  });
+
   test('a notebook rename reaches the log', () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (repo, tmp) = await freshRepo('onote_shadow_meta_');
