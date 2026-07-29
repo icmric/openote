@@ -5,7 +5,6 @@
 // wiki-link targets and code — the content people write most and least want
 // flagged. Offsets must be RAW-text offsets, because the live editor styles the
 // unmodified buffer including its markers.
-import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/spell/spell_checker.dart';

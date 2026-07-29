@@ -1179,6 +1179,9 @@ fn emit_boxes(
         .map(|l| l.depth)
         .min()
         .unwrap_or(0);
+    // A nested helper threading the enclosing function's own parameters; the
+    // count is the price of not capturing `out` mutably in a closure.
+    #[allow(clippy::too_many_arguments)]
     fn flush(
         seg: &mut Vec<&Line>,
         x: f32,
