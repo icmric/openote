@@ -5,6 +5,7 @@ import '../export/onenote_import.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'onboarding.dart';
 
 /// The notebook manager (style guide §7b) — the one place notebooks are managed.
 ///
@@ -166,6 +167,18 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 size: 17),
             label: const Text('Import'),
             onPressed: () => setState(() => _importOpen = !_importOpen),
+          ),
+          // The welcome flow is where "open the notebook that's already in my
+          // Drive" lives, and it should not be a one-shot you can never get
+          // back to — that path matters most on a machine you set up months
+          // after the first one.
+          TextButton.icon(
+            icon: const Icon(Icons.explore_outlined, size: 17),
+            label: const Text('Get started'),
+            onPressed: () async {
+              Navigator.pop(context);
+              await showOnboarding(context, app);
+            },
           ),
           const Spacer(),
           TextButton(

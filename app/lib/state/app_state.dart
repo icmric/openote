@@ -1640,6 +1640,7 @@ class AppState extends ChangeNotifier {
     if (as is bool) autoSync = as;
     final sc = _repo.getSetting('spellCheck');
     if (sc is bool) spellCheckEnabled = sc;
+    onboardingSeen = _repo.getSetting('onboardingSeen') == true;
     // Personal dictionary: workspace-scoped and deliberately NOT synced — one
     // person's jargon shouldn't become everyone's on a shared notebook.
     final lw = _repo.getSetting('learnedWords');
@@ -1679,6 +1680,11 @@ class AppState extends ChangeNotifier {
       });
     }
     final lastNb = _repo.getSetting('lastNotebook') as String?;
+    // A workspace with no notebooks at all shouldn't happen — Repository.open
+    // seeds one — but `first` on an empty list throws, which would turn an
+    // odd registry into a startup that shows only an error screen. Making one
+    // is always better than refusing to start.
+    if (_repo.notebooks.isEmpty) await _repo.createNotebook('My notebook');
     notebookId = _repo.notebooks.any((n) => n.id == lastNb)
         ? lastNb!
         : _repo.notebooks.first.id;
@@ -1733,6 +1739,21 @@ class AppState extends ChangeNotifier {
   Future<void> createNotebook(String title) async {
     await flushSave();
     final ref = await _repo.createNotebook(title);
+    await selectNotebook(ref.id);
+  }
+
+  /// Whether the welcome flow has run for this workspace.
+  bool onboardingSeen = false;
+  void markOnboardingSeen() {
+    if (onboardingSeen) return;
+    onboardingSeen = true;
+    _repo.setSetting('onboardingSeen', true);
+  }
+
+  /// Open a `.onote` that already exists on disk — the second-device flow.
+  Future<void> openExistingNotebook(String path) async {
+    await flushSave();
+    final ref = await _repo.openExistingNotebook(path);
     await selectNotebook(ref.id);
   }
 

@@ -341,6 +341,29 @@ class Repository {
     return ref;
   }
 
+  /// Register a `.onote` file that already exists, wherever it lives.
+  ///
+  /// The whole point of syncing through a shared folder is that the second
+  /// device *finds* the notebook rather than being given a copy of it — so the
+  /// registry has to be able to point outside the workspace. It already can:
+  /// entries are stored with `p.join(workspaceDir, file)`, which returns an
+  /// absolute path unchanged. Opening the same file twice is a no-op that
+  /// returns the existing entry, so a double-click can't fork the registry.
+  Future<NotebookRef> openExistingNotebook(String path, {String? title}) async {
+    final file = File(path);
+    if (!file.existsSync()) throw StateError('no notebook at $path');
+    final already =
+        notebooks.where((n) => p.equals(n.file, path)).firstOrNull;
+    if (already != null) return already;
+    final id = newId();
+    final ref = NotebookRef(
+        id: id, file: path, title: title ?? p.basenameWithoutExtension(path));
+    notebooks.add(ref);
+    _open[id] = openOnote(path, notebookId: id, title: ref.title);
+    await _saveNow();
+    return ref;
+  }
+
   /// A unique `<base>.onote` path in the workspace (suffixing `-2`, `-3`, … as
   /// needed). Shared by create and duplicate so both name files the same way.
   String _freeNotebookPath(String title) {

@@ -8,6 +8,7 @@ import '../model/tags.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'command_bar.dart';
+import 'onboarding.dart';
 import 'sidebar.dart';
 import 'study_panel.dart';
 import 'sync_dialog.dart';
@@ -36,6 +37,11 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_onKey);
+    // Post-frame: the welcome flow needs a Navigator, and there isn't one
+    // until this shell is mounted.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) maybeShowOnboarding(context, app);
+    });
   }
 
   @override
