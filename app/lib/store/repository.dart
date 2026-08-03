@@ -121,7 +121,10 @@ class Repository {
       final file = p.join(workspaceDir.path, m['file'] as String);
       if (File(file).existsSync()) {
         notebooks.add(NotebookRef(
-            id: m['id'] as String, file: file, title: m['title'] as String? ?? 'Notebook'));
+            id: m['id'] as String,
+            file: file,
+            title: m['title'] as String? ?? 'Notebook',
+            logDir: m['logDir'] as String?));
       }
     }
     for (final n in (j['trashed'] as List? ?? const [])) {
@@ -132,6 +135,7 @@ class Repository {
             id: m['id'] as String,
             file: file,
             title: m['title'] as String? ?? 'Notebook',
+            logDir: m['logDir'] as String?,
             deletedAt: (m['deletedAt'] as num?)?.toInt() ?? nowMs()));
       }
     }
@@ -184,14 +188,38 @@ class Repository {
       'workspace_id': _workspaceId ??= newId(),
       'notebooks': [
         for (final n in notebooks)
-          {'id': n.id, 'file': p.basename(n.file), 'title': n.title}
+          {
+            'id': n.id,
+            // Basename for a notebook that lives in the workspace, so the
+            // whole folder stays movable — but the FULL path for one that
+            // doesn't. `_loadWorkspace` re-joins against the workspace dir, so
+            // a basename for a notebook that had been moved into a cloud
+            // folder resolved to a file that isn't there, and the notebook
+            // silently disappeared from the list on the next start.
+            'file': p.isWithin(workspaceDir.path, n.file)
+                ? p.basename(n.file)
+                : n.file,
+            'title': n.title,
+            // Always absolute: the shared folder is by definition outside the
+            // workspace, so a basename would be meaningless.
+            if (n.logDir != null) 'logDir': n.logDir,
+          }
       ],
       'trashed': [
         for (final n in trashedNotebooks)
           {
             'id': n.id,
-            'file': p.basename(n.file),
+            // Same rules as the live list above. `trashNotebook` moves the
+            // very same NotebookRef between the two, so a notebook deleted
+            // after being moved to a cloud folder kept its absolute path and
+            // was then written as a bare basename — dropped at the next load,
+            // unrecoverable, and its file orphaned. The 30-day retention
+            // promise quietly became "until you restart".
+            'file': p.isWithin(workspaceDir.path, n.file)
+                ? p.basename(n.file)
+                : n.file,
             'title': n.title,
+            if (n.logDir != null) 'logDir': n.logDir,
             'deletedAt': n.deletedAt,
           }
       ],
@@ -246,7 +274,131 @@ class Repository {
         notebookId, () => openOnote(nb.file, notebookId: nb.id, title: nb.title));
   }
 
+  /// Write a **consistent** copy of a notebook's container to [destPath].
+  ///
+  /// Not `File.copy`. The container is open in WAL mode, so recent commits
+  /// live in the `-wal` sidecar rather than the main file: copying the file
+  /// alone can produce a database missing the last however-many saves, or —
+  /// mid-checkpoint — a torn one. `VACUUM INTO` asks SQLite itself to
+  /// serialise a complete, self-contained database at a consistent point,
+  /// which is exactly what a backup has to be.
+  ///
+  /// Returns false if it couldn't (locked, out of disk); a backup that failed
+  /// must never look like one that worked.
+  bool snapshotContainer(String notebookId, String destPath) {
+    try {
+      final out = File(destPath);
+      if (out.existsSync()) out.deleteSync();
+      _db(notebookId).execute('VACUUM INTO ?', [destPath]);
+      return out.existsSync() && out.lengthSync() > 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ── Notebooks ──────────────────────────────────────────────────────────
+
+  /// Move a notebook's container and its `.onotebook` log directory to
+  /// [targetDir], and point the registry at the new location.
+  ///
+  /// Copy-then-verify-then-delete, never a bare rename: the destination is
+  /// usually a *different volume* (a cloud provider's folder), where rename
+  /// isn't atomic and can't be, and a half-moved notebook is the worst
+  /// possible outcome. The original is removed only after every byte is
+  /// confirmed at the destination.
+  ///
+  /// Returns the new container path.
+  Future<String> moveNotebookTo(String notebookId, String targetDir) async {
+    final ref = notebooks.firstWhere((n) => n.id == notebookId);
+    final src = File(ref.file);
+    if (!src.existsSync()) throw StateError('notebook file is missing');
+
+    final dir = Directory(targetDir);
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+
+    // A notebook this device JOINED already keeps its container locally and
+    // shares only the logs, so "move it somewhere else" means moving the log
+    // directory — moving the container would drag a private cache into a
+    // shared folder and undo the very thing that keeps two devices apart.
+    if (ref.logDir != null) {
+      final from = Directory(ref.logDirPath);
+      if (!from.existsSync()) throw StateError('the shared folder is missing');
+      final name = p.basename(from.path);
+      final to = Directory(p.join(targetDir, name));
+      if (p.equals(from.path, to.path)) return to.path;
+      if (to.existsSync()) throw StateError('$name is already in that folder');
+      await _copyDirectory(from, to);
+      try {
+        from.deleteSync(recursive: true);
+      } catch (_) {
+        // Same reasoning as below: the data has landed, and a stale original
+        // is far better than failing after the fact.
+      }
+      ref.logDir = to.path;
+      _scheduleSaveWorkspace();
+      return to.path;
+    }
+
+    final base = p.basenameWithoutExtension(ref.file);
+    var destFile = p.join(targetDir, '$base.onote');
+    // Never overwrite something already there.
+    var n = 2;
+    while (File(destFile).existsSync() ||
+        Directory(p.join(targetDir, '$base.onotebook')).existsSync()) {
+      destFile = p.join(targetDir, '$base ($n).onote');
+      if (!File(destFile).existsSync() &&
+          !Directory(p.join(targetDir, '$base ($n).onotebook')).existsSync()) {
+        break;
+      }
+      n++;
+      if (n > 500) throw StateError('cannot find a free name in that folder');
+    }
+    final destBase = p.withoutExtension(destFile);
+
+    // Close our handle first: SQLite must not be mid-write while the file is
+    // copied, and on Windows an open handle blocks the delete outright.
+    _open.remove(notebookId)?.dispose();
+
+    await src.copy(destFile);
+    if (File(destFile).lengthSync() != src.lengthSync()) {
+      throw StateError('copy did not complete — the notebook was NOT moved');
+    }
+
+    // The log directory travels with the container, or the notebook arrives
+    // without the very thing that makes it syncable.
+    final srcLog = Directory(ref.logDirPath);
+    if (srcLog.existsSync()) {
+      await _copyDirectory(srcLog, Directory('$destBase.onotebook'));
+    }
+
+    // Only now is it safe to remove the originals.
+    try {
+      src.deleteSync();
+      if (srcLog.existsSync()) srcLog.deleteSync(recursive: true);
+    } catch (_) {
+      // Copy succeeded but cleanup didn't (a lock, a permission). The notebook
+      // is intact at the destination; leaving a stale original is far better
+      // than failing the move after the data has already landed.
+    }
+
+    ref.file = destFile;
+    _scheduleSaveWorkspace();
+    return destFile;
+  }
+
+  static Future<void> _copyDirectory(Directory from, Directory to) async {
+    to.createSync(recursive: true);
+    for (final entity in from.listSync(recursive: true)) {
+      final rel = p.relative(entity.path, from: from.path);
+      final target = p.join(to.path, rel);
+      if (entity is Directory) {
+        Directory(target).createSync(recursive: true);
+      } else if (entity is File) {
+        Directory(p.dirname(target)).createSync(recursive: true);
+        await entity.copy(target);
+      }
+    }
+  }
 
   Future<NotebookRef> createNotebook(String title) async {
     final id = newId();
@@ -258,6 +410,53 @@ class Repository {
     final section = upsertNode(id, TreeNode(kind: NodeKind.section, title: 'Section 1'));
     upsertNode(id,
         TreeNode(kind: NodeKind.page, parentId: section.id, title: 'Untitled page'));
+    await _saveNow();
+    return ref;
+  }
+
+  /// Join a notebook that already exists in a shared folder.
+  ///
+  /// **This device takes its own copy of the container and shares only the
+  /// logs**, which is the whole safety argument for folder sync. The `.onote`
+  /// is a WAL SQLite database rewritten on every save; two machines writing
+  /// one copy of it through a cloud client is precisely the corruption case
+  /// ADR-0006 §3 designs against — *"cache.onote ← local-only SQLite; never
+  /// synced"*. The op logs are the opposite: append-only, one file per device,
+  /// so concurrent writers are structurally impossible.
+  ///
+  /// So: copy the container into the workspace as a starting point (faster and
+  /// safer than replaying the whole log), and point [NotebookRef.logDir] at
+  /// the shared `.onotebook`. From then on this device writes its own
+  /// container locally and its own op log into the shared folder, and picks up
+  /// the other device's ops through the normal pull.
+  ///
+  /// Joining twice is a no-op that returns the existing entry, matched on the
+  /// shared log directory rather than the path, so a second click can't fork
+  /// the registry into two devices for one machine.
+  Future<NotebookRef> openExistingNotebook(String path, {String? title}) async {
+    final file = File(path);
+    if (!file.existsSync()) throw StateError('no notebook at $path');
+    final sharedLog = '${p.withoutExtension(path)}.onotebook';
+
+    final already = notebooks
+        .where((n) =>
+            p.equals(n.file, path) ||
+            (n.logDir != null && p.equals(n.logDir!, sharedLog)))
+        .firstOrNull;
+    if (already != null) return already;
+
+    final name = title ?? p.basenameWithoutExtension(path);
+    final local = _freeNotebookPath(name);
+    await file.copy(local);
+    if (File(local).lengthSync() != file.lengthSync()) {
+      throw StateError('could not copy the notebook into this workspace');
+    }
+
+    final id = newId();
+    final ref =
+        NotebookRef(id: id, file: local, title: name, logDir: sharedLog);
+    notebooks.add(ref);
+    _open[id] = openOnote(local, notebookId: id, title: name);
     await _saveNow();
     return ref;
   }
@@ -608,11 +807,11 @@ class Repository {
           'ON CONFLICT(page_id) DO UPDATE SET json=excluded.json, '
           'mirror_rev=mirror_rev+1, updated_at=excluded.updated_at',
           [pageId, json, nowMs()]);
-      // Placeholder CRDT row keeps the schema honest until onote-core lands.
-      db.execute(
-          'INSERT INTO page_docs(page_id,snapshot,snapshot_v,updated_at) VALUES(?,?,0,?) '
-          'ON CONFLICT(page_id) DO UPDATE SET updated_at=excluded.updated_at',
-          [pageId, Uint8List(0), nowMs()]);
+      // (No CRDT placeholder row. This used to write a zero-byte blob into
+      // `page_docs` on every single save to "keep the schema honest" for a
+      // CRDT layer that never arrived — and that ADR-0006 has now replaced with
+      // a file-based op log outside the container entirely. It was pure write
+      // amplification: an INSERT-or-UPDATE per save carrying no information.)
       // Maintain blob_refs projection: image/file blocks plus in-flow images
       // referenced from text markdown (`![alt](sha256:<hash>)`, Data Model §5.1).
       db.execute('DELETE FROM blob_refs WHERE page_id=?', [pageId]);
@@ -694,6 +893,74 @@ class Repository {
         'SELECT bytes FROM blobs WHERE hash=?', [hash.replaceFirst('sha256:', '')]);
     return rows.isEmpty ? null : rows.first['bytes'] as Uint8List;
   }
+
+  /// Pages whose content contains [query], with a snippet around the first hit.
+  ///
+  /// Brute force over `page_mirror` by design (TEXT-7). An FTS5 index would be
+  /// faster, but it is a second thing to keep correct — it must be rebuilt on
+  /// every write, it can silently drift from the content, and the spec then has
+  /// to describe it for third-party writers. Scanning JSON is ~10 ms for a
+  /// 300-page notebook, which is well inside "instant" for a search box.
+  /// Revisit when a real notebook makes it slow, not before.
+  List<({String pageId, String snippet})> searchPageContent(
+      String notebookId, String query,
+      {int limit = 50}) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    final out = <({String pageId, String snippet})>[];
+    final rows = _db(notebookId).select('SELECT page_id, json FROM page_mirror');
+    for (final r in rows) {
+      final json = r['json'] as String;
+      // Cheap reject on the raw JSON before parsing: most pages don't match,
+      // and decoding every page's block tree to find that out is the expensive
+      // part.
+      if (!json.toLowerCase().contains(q)) continue;
+      out.add((
+        pageId: r['page_id'] as String,
+        snippet: _snippetFrom(json, q),
+      ));
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
+  /// A readable line of context around the first match, from the page's text
+  /// blocks only — a raw-JSON substring would show field names and coordinates.
+  static String _snippetFrom(String json, String lowerQuery) {
+    try {
+      final j = jsonDecode(json) as Map<String, dynamic>;
+      for (final b in (j['blocks'] as List? ?? const [])) {
+        final content = (b as Map)['content'] as Map?;
+        // `sourceText` is an imported PDF slide's hidden text layer, so a
+        // lecture deck is findable by its words even though the page shows a
+        // picture (see export/pdf_import.dart).
+        final text = content?['text'] ?? content?['sourceText'];
+        if (text is! String) continue;
+        final i = text.toLowerCase().indexOf(lowerQuery);
+        if (i < 0) continue;
+        final start = (i - 30).clamp(0, text.length);
+        final end = (i + lowerQuery.length + 40).clamp(0, text.length);
+        final s = text.substring(start, end).replaceAll('\n', ' ').trim();
+        return '${start > 0 ? '…' : ''}$s${end < text.length ? '…' : ''}';
+      }
+    } catch (_) {/* fall through to no snippet */}
+    return '';
+  }
+
+  /// Every blob hash with its mime and size, but **not** its bytes.
+  ///
+  /// Deliberately metadata-only: the caller (the op-log backfill) streams blobs
+  /// one at a time via [getBlob], because loading a whole notebook's images into
+  /// memory at once would be hundreds of megabytes on a real imported notebook.
+  List<({String hash, String mime, int size})> blobIndex(String notebookId) => [
+        for (final r in _db(notebookId)
+            .select('SELECT hash,mime,size FROM blobs ORDER BY hash'))
+          (
+            hash: r['hash'] as String,
+            mime: r['mime'] as String? ?? 'application/octet-stream',
+            size: (r['size'] as num?)?.toInt() ?? 0,
+          )
+      ];
 
   void dispose() {
     // Stop the debounced registry writer first: a pending write firing after

@@ -38,7 +38,7 @@ Future<String?> materializeNotebook(AppState app) async {
   final dir = await getDirectoryPath(confirmButtonText: 'Export here');
   if (dir == null) return null;
 
-  final nb = app.repo.notebooks.firstWhere((n) => n.id == app.notebookId);
+  final nb = app.notebooks.firstWhere((n) => n.id == app.notebookId);
   final root = _uniqueDir(dir, safeFilename(nb.title));
   await Directory(root).create(recursive: true);
   final assetsDir = p.join(root, 'assets');
@@ -77,7 +77,7 @@ Future<String?> materializeNotebook(AppState app) async {
     final assetPrefix =
         p.relative(assetsDir, from: pageDir).replaceAll('\\', '/');
 
-    final data = app.repo.readPage(app.notebookId!, node.id);
+    final data = app.readPage(node.id);
     final blocks = data.blocks;
 
     // 1) Fidelity mirror.
@@ -113,7 +113,7 @@ Future<String?> materializeNotebook(AppState app) async {
   if (sharedAssets.isNotEmpty) {
     await Directory(assetsDir).create(recursive: true);
     for (final e in sharedAssets.entries) {
-      final bytes = app.repo.getBlob(app.notebookId!, e.key);
+      final bytes = app.blob(e.key);
       if (bytes != null) {
         await File(p.join(assetsDir, e.value)).writeAsBytes(bytes);
       }

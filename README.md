@@ -69,14 +69,21 @@ Start here → **[docs/README.md](docs/README.md)** (the index). In reading orde
 
 ## Project status & roadmap at a glance
 
-- **Now (2026-07):** a **working desktop app** — freeform canvas, notebook/section/page navigator, live-Markdown text, math blocks, pressure ink, images, tables, code, the open `.onote` format with Markdown/PDF/folder export, and a **native Rust core** linked over `dart:ffi`. Stack decided: **Flutter/Dart UI + Rust core, SQLite `.onote` container** ([ADRs](docs/adr/README.md)); Loro CRDT is specified but not yet wired.
-- **Already landed from later phases:** the **OneNote `.one`/`.onepkg` importer** (reverse-engineered MS-ONESTORE — text boxes at true positions, styling, images, equations, ink, whole-notebook packages), plus tables, backlinks, templates, version history, recycle bin, and lossless open-folder export.
-- **Next:** the editor-engine bake-off ([ADR-0004](docs/adr/ADR-0004-editor-engine.md)) — now the critical path, since structured rich text gates several stakeholder asks — **license ratification** ([ADR-0005](docs/adr/ADR-0005-licensing.md), still unratified and the repo has no `LICENSE` file yet), and cross-device **sync** on the CRDT core.
-- **MVP definition:** desktop, single-device, local-only. See the [MVP definition](docs/02-product-requirements.md#9-mvp-definition-the-core-essentials-cut) and the [Roadmap](ROADMAP.md) for exactly what is and isn't done.
+- **Now (2026-08):** a **working desktop app** for Windows, macOS and Linux — freeform canvas, notebook/section/page navigator, live-Markdown text, math blocks, pressure ink, images, tables, code, tags, notebook-wide search, spell check, the open `.onote` format with Markdown/PDF/folder export, and a **native Rust core** linked over `dart:ffi`. Stack decided: **Flutter/Dart UI + Rust core, SQLite `.onote` container** ([ADRs](docs/adr/README.md)).
+- **Sync between your own devices** works, with no account and no sign-in: a notebook carries a `.onotebook` directory of append-only per-device op logs plus content-addressed blobs, and you put it in a folder your cloud already keeps in step ([ADR-0006](docs/adr/ADR-0006-sync-transport-and-text-model.md)). One writer per file, so two devices cannot produce conflicting logs. Mirrors and dated backups are configurable per notebook.
+- **For students specifically:** the **OneNote `.one`/`.onepkg` importer** (reverse-engineered MS-ONESTORE — text boxes at true positions, styling, images, equations, ink, hyperlinks, whole-notebook packages), **PDF lecture slides** imported as an annotatable printout you write on with the pen, and **flashcards** generated from the lines you tagged Question or Definition, with spaced repetition and Anki export.
+- **Next:** vector (searchable) PDF export and printing — export is a raster capture today; reclaiming space from deleted images; and demoting the `.onote` container to a purely local cache, which is the remaining half of ADR-0006 §3.
+- See the [Roadmap](ROADMAP.md) for exactly what is and isn't done.
 
 ## License
 
-Proposed (pending ratification, [ADR-0005](docs/adr/ADR-0005-licensing.md)): **AGPL-3.0** for the application, **Apache-2.0** for the reference libraries, and **CC0/MIT** for the file-format specification — so the app resists closed forks while the format invites the widest possible ecosystem. Openness is a core requirement, not an afterthought.
+Ratified ([ADR-0005](docs/adr/ADR-0005-licensing.md), 2026-07-27) — three tiers, mapped in full in [LICENSING.md](LICENSING.md):
+
+- **[AGPL-3.0-or-later](LICENSE)** — the application. Fork it, self-host it, modify it; improvements stay open, including for hosted forks.
+- **[Apache-2.0](rust/onote_core/LICENSE)** — `onote_core`, the `.onote` reader/writer, hashing and importers. **Build anything you like on it, including closed commercial software.**
+- **[CC0-1.0](docs/specs/LICENSE)** — the file-format specification. Implement it freely, no attribution required.
+
+The asymmetry is the point: the app resists closed forks, while reading and writing your notes is legally frictionless for everyone. Openness is a constraint we design under, not an afterthought. Contributions are inbound = outbound with a [DCO](https://developercertificate.org/) sign-off (`git commit -s`) and no CLA.
 
 ## Contributing
 

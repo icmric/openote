@@ -26,6 +26,11 @@ class LiveMarkdownController extends TextEditingController {
       r'(\*\*(.+?)\*\*)|(__(.+?)__)|(\*(.+?)\*)|(_(.+?)_)|(`(.+?)`)|(~~(.+?)~~)|(==(.+?)==)|(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})'
       r'|(\+\+(.+?)\+\+)');
   static final _headingRe = RegExp(r'^(#{1,6})( +)');
+
+  /// A whole line that is nothing but an image reference — the in-flow form
+  /// (Data Model §5.1). Line-anchored to match the renderer exactly, so what
+  /// the editor dims is precisely what read mode turns into a picture.
+  static final _imageLineRe = RegExp(r'^\s*!\[[^\]]*\]\([^)\s]+(?:\s+=\d+x\d+)?\)\s*$');
   static final _prefixRe = RegExp(r'^(\s*)(- \[[ xX]\] |[-*] |\d+\. |> )');
 
   @override
@@ -68,9 +73,100 @@ class LiveMarkdownController extends TextEditingController {
       }
 
       collect(root);
-      if (buf.toString() == full) return root;
+      if (buf.toString() == full) {
+        return misspellings.isEmpty ? root : _underlineMisspellings(root, lo, hi);
+      }
     } catch (_) {/* fall through */}
     return TextSpan(text: full, style: base);
+  }
+
+  /// Misspelled ranges, in raw-text offsets. Set by the editing session; see
+  /// `spell/spell_checker.dart` for why the underlines are merged here rather
+  /// than through Flutter's own spell-check pipeline.
+  List<TextRange> _misspellings = const [];
+  List<TextRange> get misspellings => _misspellings;
+  set misspellings(List<TextRange> v) {
+    if (identical(v, _misspellings)) return;
+    _misspellings = v;
+    notifyListeners();
+  }
+
+  static const _misspellingStyle = TextStyle(
+    decoration: TextDecoration.underline,
+    decorationStyle: TextDecorationStyle.wavy,
+    decorationColor: Color(0xFFD23B3B),
+  );
+
+  /// Re-split the finished span tree at misspelling boundaries and merge the
+  /// wavy underline in.
+  ///
+  /// Deliberately a post-pass over the completed tree rather than a change to
+  /// the line builder: it consumes and re-emits exactly the same characters in
+  /// the same order, so the coverage invariant checked above cannot be broken
+  /// by a boundary bug — the worst case is a wrongly-placed underline, never
+  /// corrupted text.
+  TextSpan _underlineMisspellings(TextSpan root, int caretLo, int caretHi) {
+    // A word being typed must not flash red mid-word, so the range under the
+    // caret is left alone until the caret leaves it.
+    final ranges = [
+      for (final r in _misspellings)
+        if (!(caretLo >= r.start && caretHi <= r.end)) r
+    ];
+    if (ranges.isEmpty) return root;
+
+    var offset = 0;
+    TextSpan walk(TextSpan span) {
+      final text = span.text;
+      final children = span.children;
+      if (text == null) {
+        return TextSpan(
+          style: span.style,
+          children: children?.whereType<TextSpan>().map(walk).toList(),
+        );
+      }
+      final start = offset;
+      offset += text.length;
+      // Hidden marker spans render at 0.1px — an underline there is noise.
+      final hidden = (span.style?.fontSize ?? 99) <= 1;
+      final overlapping = hidden
+          ? const <TextRange>[]
+          : [
+              for (final r in ranges)
+                if (r.start < start + text.length && r.end > start) r
+            ];
+      if (overlapping.isEmpty) {
+        return TextSpan(
+            text: text,
+            style: span.style,
+            children: children?.whereType<TextSpan>().map(walk).toList());
+      }
+      // Cut points inside this span, in order.
+      final cuts = <int>{0, text.length};
+      for (final r in overlapping) {
+        cuts.add((r.start - start).clamp(0, text.length));
+        cuts.add((r.end - start).clamp(0, text.length));
+      }
+      final points = cuts.toList()..sort();
+      final pieces = <InlineSpan>[];
+      for (var i = 0; i < points.length - 1; i++) {
+        final a = points[i], b = points[i + 1];
+        if (a == b) continue;
+        final bad = overlapping
+            .any((r) => r.start <= start + a && r.end >= start + b);
+        pieces.add(TextSpan(
+          text: text.substring(a, b),
+          style: bad
+              ? (span.style ?? const TextStyle()).merge(_misspellingStyle)
+              : span.style,
+        ));
+      }
+      return TextSpan(
+        style: span.style,
+        children: [...pieces, ...?children?.whereType<TextSpan>().map(walk)],
+      );
+    }
+
+    return walk(root);
   }
 
   bool _touches(int a, int b, int lo, int hi) =>
@@ -85,6 +181,23 @@ class LiveMarkdownController extends TextEditingController {
       List<InlineSpan> out) {
     final lineEnd = lineStart + line.length;
     final onLine = lo >= 0 && hi >= lineStart && lo <= lineEnd;
+
+    // An in-flow image reference. Styled dim and monospace so it reads as a
+    // placeholder rather than as writing, and NOT replaced by the picture: a
+    // WidgetSpan would swap N characters for one U+FFFC placeholder and desync
+    // every selection offset from the raw text, which the coverage check above
+    // exists to prevent. Keeping it as text is also what makes it selectable
+    // and cuttable — the "highlight it, cut it, paste it lower down" flow.
+    if (_imageLineRe.hasMatch(line)) {
+      out.add(TextSpan(
+        text: line,
+        style: _dim(base).copyWith(
+            fontFamily: 'JetBrains Mono',
+            fontFamilyFallback: onoteFontFallback,
+            fontSize: (base.fontSize ?? 14) * 0.85),
+      ));
+      return;
+    }
 
     // Heading: markers collapse when the caret isn't on the line.
     final h = _headingRe.firstMatch(line);
@@ -139,7 +252,7 @@ class LiveMarkdownController extends TextEditingController {
       } else if (m.group(9) != null) {
         openLen = closeLen = 1;
         inner = cBase.copyWith(
-            fontFamily: 'monospace',
+            fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback,
             color: dark ? OnoteColors.ink300 : OnoteColors.ink700,
             backgroundColor:
                 dark ? OnoteColors.night100 : OnoteColors.paper100);
@@ -198,9 +311,15 @@ class WrapSelectionFormatter extends TextInputFormatter {
     '<': '>',
   };
 
+  /// A line that is exactly an opening fence, so Enter should close it.
+  static final _openFenceRe = RegExp(r'^\s*```[A-Za-z0-9+#-]*$');
+
   @override
   TextEditingValue formatEditUpdate(
       TextEditingValue oldValue, TextEditingValue newValue) {
+    final fenced = _autoCloseFence(oldValue, newValue);
+    if (fenced != null) return fenced;
+
     final sel = oldValue.selection;
     if (!sel.isValid || sel.isCollapsed) return newValue;
     final selText = oldValue.text.substring(sel.start, sel.end);
@@ -223,6 +342,42 @@ class WrapSelectionFormatter extends TextInputFormatter {
       text: wrapped,
       selection: TextSelection(
           baseOffset: sel.start + 1, extentOffset: sel.start + 1 + selText.length),
+    );
+  }
+
+  /// Pressing Enter on a bare ``` line opens a fence: insert the closing line
+  /// and leave the caret between them (TEXT-2).
+  ///
+  /// Without this, typing a code fence means typing the closing ``` yourself
+  /// and remembering to sit above it — the one Markdown construct where the
+  /// editor asking "did you mean a code block?" is unambiguously right.
+  TextEditingValue? _autoCloseFence(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final sel = oldValue.selection;
+    if (!sel.isValid || !sel.isCollapsed) return null;
+    // Exactly one newline inserted at the caret.
+    if (newValue.text.length != oldValue.text.length + 1) return null;
+    final at = sel.baseOffset;
+    if (at < 0 || at > oldValue.text.length) return null;
+    if (newValue.text.length <= at || newValue.text[at] != '\n') return null;
+
+    final lineStart = oldValue.text.lastIndexOf('\n', at - 1) + 1;
+    final line = oldValue.text.substring(lineStart, at);
+    if (!_openFenceRe.hasMatch(line)) return null;
+    // Already inside a fence (odd number of fence lines above)? Then this line
+    // is a CLOSING fence and must not spawn another.
+    final before = oldValue.text.substring(0, lineStart);
+    final fencesAbove =
+        '\n$before'.split('\n').where((l) => l.trimLeft().startsWith('```')).length;
+    if (fencesAbove.isOdd) return null;
+
+    final indent = RegExp(r'^\s*').firstMatch(line)!.group(0)!;
+    final insert = '\n$indent```';
+    final text = oldValue.text.replaceRange(at, at, '\n$insert');
+    return TextEditingValue(
+      text: text,
+      // Caret on the blank line between the fences.
+      selection: TextSelection.collapsed(offset: at + 1),
     );
   }
 }

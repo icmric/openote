@@ -50,7 +50,13 @@ class _FontPickerDialogState extends State<_FontPickerDialog> {
                 }
                 final all = [
                   'Default',
-                  ...snap.data!,
+                  // The bundled faces never appear in the OS font enumeration,
+                  // so they'd be unpickable without this — and they are the
+                  // two we most want people to pick.
+                  'Inter',
+                  'JetBrains Mono',
+                  ...snap.data!.where(
+                      (f) => f != 'Inter' && f != 'JetBrains Mono'),
                 ];
                 final shown = _query.isEmpty
                     ? all

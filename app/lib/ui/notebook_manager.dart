@@ -5,6 +5,7 @@ import '../export/onenote_import.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'onboarding.dart';
 
 /// The notebook manager (style guide §7b) — the one place notebooks are managed.
 ///
@@ -107,7 +108,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final notebooks = app.repo.notebooks;
+    final notebooks = app.notebooks;
     final trashed = app.trashedNotebooks;
     return AlertDialog(
       title: Row(children: [
@@ -166,6 +167,18 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 size: 17),
             label: const Text('Import'),
             onPressed: () => setState(() => _importOpen = !_importOpen),
+          ),
+          // The welcome flow is where "open the notebook that's already in my
+          // Drive" lives, and it should not be a one-shot you can never get
+          // back to — that path matters most on a machine you set up months
+          // after the first one.
+          TextButton.icon(
+            icon: const Icon(Icons.explore_outlined, size: 17),
+            label: const Text('Get started'),
+            onPressed: () async {
+              Navigator.pop(context);
+              await showOnboarding(context, app);
+            },
           ),
           const Spacer(),
           TextButton(
@@ -479,15 +492,18 @@ Future<void> importOneNotePackageWithFeedback(
           : "That notebook couldn't be imported: $err";
     } else if (skipped.isEmpty) {
       msg = 'Imported a notebook with $count page'
-          '${count == 1 ? '' : 's'} from OneNote.';
+          '${count == 1 ? '' : 's'} from OneNote.'
+          '${_strokeNote()}';
     } else {
       msg = 'Imported $count page${count == 1 ? '' : 's'}, but '
           '${skipped.length} section${skipped.length == 1 ? '' : 's'} '
           'could not be read: ${skipped.take(3).join(', ')}'
-          '${skipped.length > 3 ? '…' : ''}';
+          '${skipped.length > 3 ? '…' : ''}'
+          '${_strokeNote()}';
     }
     _snack(context, msg,
-        seconds: skipped.isEmpty && count > 0 ? 4 : 9);
+        seconds:
+            skipped.isEmpty && count > 0 && lastDroppedStrokes == 0 ? 4 : 9);
   } on OneNoteUnavailable {
     if (context.mounted) _snack(context, _coreMissing, seconds: 8);
   }
@@ -524,6 +540,15 @@ Future<void> importMarkdownWithFeedback(
 const _coreMissing =
     'OneNote import needs the Rust core — build onote_core.dll '
     '(see rust/onote_core/INTEGRATION.md).';
+
+/// One sentence when the parser dropped undecodable ink (~0.02 % of strokes on
+/// the reference notebook). The notes LOOK complete when a stroke vanishes,
+/// which is exactly why it has to be said out loud.
+String _strokeNote() => lastDroppedStrokes == 0
+    ? ''
+    : ' $lastDroppedStrokes ink stroke'
+        '${lastDroppedStrokes == 1 ? '' : 's'} could not be decoded and '
+        '${lastDroppedStrokes == 1 ? 'was' : 'were'} left out.';
 
 void _snack(BuildContext context, String msg, {int seconds = 4}) =>
     ScaffoldMessenger.of(context).showSnackBar(

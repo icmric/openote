@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Openote core: the CRDT-ready page-document model, deterministic mirror merge, and content hashing. The seam where the Rust/Loro sync engine grows in (ADR-0002), exposed to Flutter via flutter_rust_bridge."
-license = "AGPL-3.0-or-later" # provisional, tracks ADR-0005 (pending ratification)
+# Apache-2.0, NOT the application's AGPL: this crate is the permissive tier of
+# ADR-0005 (ratified 2026-07-27) so that any tool, including proprietary ones,
+# can read and write .onote files without friction. Adding a copyleft dependency
+# here would silently break that promise — see LICENSING.md.
+license = "Apache-2.0"
 repository = "https://github.com/openote/openote"
 publish = false
 

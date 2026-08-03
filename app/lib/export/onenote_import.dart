@@ -24,9 +24,19 @@ String _parseOnepkgInIsolate(Uint8List bytes) =>
 /// Show a busy dialog while [work] runs (import feedback for large notebooks).
 /// The dialog text tracks [message] live, so multi-phase imports can narrate
 /// progress ("Importing section 3 of 12…") as they go.
+/// Runs [work] behind a modal progress dialog. **Takes ownership of
+/// [message]** and disposes it when the work completes — both call sites
+/// hand over a notifier they never touch again, and leaving disposal to them
+/// leaked one notifier per import.
 Future<T> _withBusyDialog<T>(BuildContext? context,
     ValueNotifier<String> message, Future<T> Function() work) async {
-  if (context == null || !context.mounted) return work();
+  if (context == null || !context.mounted) {
+    try {
+      return await work();
+    } finally {
+      message.dispose();
+    }
+  }
   showDialog<void>(
     context: context,
     barrierDismissible: false,
@@ -52,6 +62,9 @@ Future<T> _withBusyDialog<T>(BuildContext? context,
     if (context.mounted) {
       Navigator.of(context, rootNavigator: true).pop();
     }
+    // Dispose only after the dialog is gone — its ValueListenableBuilder is
+    // still listening until the route pops.
+    message.dispose();
   }
 }
 
@@ -272,7 +285,7 @@ Future<int?> importOneNoteFile(AppState app,
 
   // A section named after the imported file.
   final sectionTitle = _titleFromName(p.basenameWithoutExtension(file.name));
-  final section = app.repo.upsertNode(
+  final section = app.importNode(
       nbId,
       TreeNode(
         kind: NodeKind.section,
@@ -284,7 +297,7 @@ Future<int?> importOneNoteFile(AppState app,
       _importPagesIntoSection(app, nbId, section.id, pages, next);
   final imported = pages.length;
 
-  app.nodes = app.repo.loadNodes(nbId);
+  app.reloadNodes(); // nbId is the open notebook here
   if (firstPageId != null) {
     await app.selectPage(firstPageId);
   } else {
@@ -311,6 +324,7 @@ Future<int?> importOneNotePackage(AppState app,
   // One dialog spans both phases: the native parse (single isolate call) and
   // the per-section database writes, which narrate progress as they go.
   lastSkippedSections = const [];
+  lastDroppedStrokes = 0;
   lastImportError = null;
   final progress = ValueNotifier(
       'Reading notebook… this can take a while for large notebooks.');
@@ -341,7 +355,7 @@ Future<int?> importOneNotePackage(AppState app,
 
     // The package is a whole notebook → create a fresh one named after it.
     final nbTitle = _titleFromName(p.basenameWithoutExtension(file.name));
-    final ref = await app.repo.createNotebook(nbTitle);
+    final ref = await app.importCreateNotebook(nbTitle);
     final built = buildNotebookFromPackage(app, ref.id, sections,
         onSection: (i, name) {
       progress.value = 'Importing "$name" (${i + 1} of ${sections.length})…';
@@ -359,6 +373,11 @@ Future<int?> importOneNotePackage(AppState app,
 /// quietly delivering fewer sections than the notebook contains.
 List<String> lastSkippedSections = const [];
 
+/// Ink strokes the parser could not decode in the last import (~0.02 % on the
+/// reference notebook). Non-zero means the notes look complete but a handful
+/// of pen marks are missing — worth a sentence, not silence.
+int lastDroppedStrokes = 0;
+
 /// Why the last import returned 0, when the reason wasn't "nothing usable".
 String? lastImportError;
 
@@ -375,7 +394,7 @@ Future<int> buildNotebookFromPackage(
     {Future<void> Function(int index, String name)? onSection}) async {
   // createNotebook seeds a starter section+page; remember them so the
   // scaffolding can be removed once real content has landed.
-  final seeded = app.repo.loadNodes(nbId);
+  final seeded = app.importNodes(nbId);
   final posBase = nowMs();
   var pos = 0;
   String next() => 'a${(posBase + pos++).toString().padLeft(15, '0')}';
@@ -396,8 +415,8 @@ Future<int> buildNotebookFromPackage(
     if (group != null && group.isNotEmpty) {
       groupId = groupIds.putIfAbsent(
           group,
-          () => app.repo
-              .upsertNode(
+          () => app
+                  .importNode(
                   nbId,
                   TreeNode(
                       kind: NodeKind.sectionGroup,
@@ -405,7 +424,7 @@ Future<int> buildNotebookFromPackage(
                       position: next()))
               .id);
     }
-    final section = app.repo.upsertNode(
+    final section = app.importNode(
         nbId,
         TreeNode(
           kind: NodeKind.section,
@@ -424,7 +443,7 @@ Future<int> buildNotebookFromPackage(
   if (imported > 0) {
     // Drop the seeded starter section — the notebook has real content now.
     for (final n in seeded.where((n) => n.kind == NodeKind.section)) {
-      app.repo.purgeNode(nbId, n.id);
+      app.importPurgeNode(nbId, n.id);
     }
   }
   _firstImportedPageId = firstPageId;
@@ -436,7 +455,7 @@ Future<int> buildNotebookFromPackage(
 /// dominated large imports.
 String? _importPagesIntoSection(AppState app, String nbId, String sectionId,
         List<dynamic> pages, String Function() next) =>
-    app.repo.runInTransaction(
+    app.importBatch(
         nbId, () => _importPagesLocked(app, nbId, sectionId, pages, next));
 
 String? _importPagesLocked(AppState app, String nbId, String sectionId,
@@ -447,13 +466,16 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
     final title = (page['title'] as String?)?.trim();
     final boxes = (page['boxes'] as List?) ?? const [];
     final images = (page['images'] as List?) ?? const [];
+    // Parser-side stroke drops, accumulated for the import summary — the notes
+    // LOOK complete when a stroke vanishes, which is exactly why it gets said.
+    lastDroppedStrokes += (page['dropped_strokes'] as num?)?.toInt() ?? 0;
 
     // Recover the page's original created date from the title box's date text
     // (carried out-of-band — the title box itself is not imported as content,
     // since Openote's page title band already shows the title and date).
     final createdMs = _parseOneNoteDate(page['date_text'] as String? ?? '');
 
-    final node = app.repo.upsertNode(
+    final node = app.importNode(
         nbId,
         TreeNode(
           kind: NodeKind.page,
@@ -481,7 +503,7 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
       } catch (_) {
         continue;
       }
-      final hash = app.repo.putBlob(nbId, png, 'image/png');
+      final hash = app.importBlob(nbId, png, 'image/png');
       hashByIndex[i] = hash;
       if (img['in_flow'] == true) continue; // rides a text box's flow
       final dw = (img['disp_w'] as num?)?.toDouble() ?? 0;
@@ -647,7 +669,7 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
       }
     }
 
-    app.repo.writePage(nbId, node.id, blocks, PageProps());
+    app.importPage(nbId, node.id, blocks, PageProps());
     firstPageId ??= node.id;
   }
   return firstPageId;

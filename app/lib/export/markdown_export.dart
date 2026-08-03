@@ -77,7 +77,7 @@ Future<String?> exportPageMarkdown(AppState app) async {
     final assetDir = Directory(p.join(p.dirname(outPath), 'assets'));
     await assetDir.create(recursive: true);
     for (final e in assets.entries) {
-      final bytes = app.repo.getBlob(app.notebookId!, e.key);
+      final bytes = app.blob(e.key);
       if (bytes != null) {
         await File(p.join(p.dirname(outPath), e.value)).writeAsBytes(bytes);
       }

@@ -71,7 +71,7 @@ class FileBlockView extends StatelessWidget {
   Future<void> _openWithDefaultApp(BuildContext context) async {
     final hash = block.content['blob'] as String?;
     if (hash == null) return;
-    final bytes = app.repo.getBlob(app.notebookId!, hash);
+    final bytes = app.blob(hash);
     if (bytes == null) {
       if (context.mounted) _toast(context, 'That attachment is missing.');
       return;
@@ -98,7 +98,7 @@ class FileBlockView extends StatelessWidget {
   Future<void> _saveCopy(BuildContext context) async {
     final hash = block.content['blob'] as String?;
     if (hash == null) return;
-    final bytes = app.repo.getBlob(app.notebookId!, hash);
+    final bytes = app.blob(hash);
     if (bytes == null) return;
     final loc = await getSaveLocation(
         suggestedName: block.content['name'] as String? ?? 'file');

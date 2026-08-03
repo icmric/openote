@@ -41,6 +41,17 @@ void main() {
     }
   });
 
+  test('the bundled primary face is Inter, with the chain still behind it', () {
+    // Style guide §4.1: the app must look the same on every OS, which only
+    // holds if the primary family is bundled — and the fallback chain must
+    // stay behind it, or math/symbol glyphs regress to blank boxes.
+    for (final b in Brightness.values) {
+      final body = onoteTheme(b).textTheme.bodyMedium;
+      expect(body?.fontFamily, 'Inter', reason: '$b');
+      expect(body?.fontFamilyFallback, onoteFontFallback, reason: '$b');
+    }
+  });
+
   group('chain composition', () {
     test('wide-coverage symbol fonts come before the PUA-only ones', () {
       // Symbol and Wingdings also claim U+00AC, where Symbol's glyph is a left

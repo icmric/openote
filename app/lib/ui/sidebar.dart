@@ -147,7 +147,15 @@ class _SidebarState extends State<Sidebar> {
             (n.kind == NodeKind.page || n.kind == NodeKind.section) &&
             n.title.toLowerCase().contains(q))
         .toList();
-    if (results.isEmpty) {
+    // Notebook-wide content search (TEXT-7). Titles match first because a
+    // title hit is almost always what you meant; content hits follow, minus
+    // any page already listed above.
+    final titleHits = {for (final n in results) n.id};
+    final contentHits = [
+      for (final h in _contentHitsFor(q))
+        if (!titleHits.contains(h.pageId)) h
+    ];
+    if (results.isEmpty && contentHits.isEmpty) {
       return Center(
         child: Text('No matches for “${_query.trim()}”',
             style: const TextStyle(fontSize: 12, color: OnoteColors.graphite400)),
@@ -184,8 +192,52 @@ class _SidebarState extends State<Sidebar> {
               _clearSearch();
             },
           ),
+        if (contentHits.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 10, 12, 4),
+            child: Text('In page content',
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: OnoteColors.graphite400)),
+          ),
+          for (final h in contentHits)
+            ListTile(
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              leading: const Icon(Icons.search, size: 16),
+              title: Text(app.node(h.pageId)?.title ?? 'Untitled',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13)),
+              subtitle: h.snippet.isEmpty
+                  ? null
+                  : Text(h.snippet,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11)),
+              onTap: () {
+                app.selectPage(h.pageId);
+                _clearSearch();
+              },
+            ),
+        ],
       ],
     );
+  }
+
+  /// Content hits, cached per query so the SQLite scan doesn't re-run on every
+  /// rebuild while the results are on screen.
+  String? _contentQuery;
+  List<({String pageId, String snippet})> _contentCache = const [];
+
+  List<({String pageId, String snippet})> _contentHitsFor(String q) {
+    // Below 3 characters the result set is everything, which is neither useful
+    // nor cheap.
+    if (q.length < 3) return const [];
+    if (_contentQuery == q) return _contentCache;
+    _contentQuery = q;
+    _contentCache = app.searchContent(q);
+    return _contentCache;
   }
 
   // ── Stacked zones (sections above, active section's pages below) ───────
@@ -480,7 +532,7 @@ class _NotebookHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final current =
-        app.repo.notebooks.firstWhere((n) => n.id == app.notebookId);
+        app.notebooks.firstWhere((n) => n.id == app.notebookId);
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 10, 6, 4),
       child: Tooltip(
@@ -928,6 +980,9 @@ Widget dragChip(BuildContext context, String label, IconData icon) {
   );
 }
 
+/// What dropping at the current pointer position would do (ORG-2).
+enum _DropZone { none, before, into, after }
+
 class _PageTile extends StatefulWidget {
   const _PageTile({
     required this.app,
@@ -957,9 +1012,43 @@ class _PageTileState extends State<_PageTile> {
     return DragTarget<String>(
       onWillAcceptWithDetails: (d) =>
           d.data != page.id && app.node(d.data)?.kind == NodeKind.page,
-      onAcceptWithDetails: (d) => app.makeSubpageOf(d.data, page.id),
+      onMove: (d) {
+        // Which third of the tile the pointer is over decides the gesture:
+        // edges reorder, middle nests. Tracked on move so the affordance can
+        // show what the drop will do BEFORE the user commits (ORG-2).
+        final zone = _dropZoneAt(d.offset);
+        if (zone != _zone) setState(() => _zone = zone);
+      },
+      onLeave: (_) => setState(() => _zone = _DropZone.none),
+      onAcceptWithDetails: (d) {
+        final zone = _zone;
+        setState(() => _zone = _DropZone.none);
+        switch (zone) {
+          case _DropZone.before:
+            app.reorderNode(d.data, page.id, after: false);
+          case _DropZone.after:
+            app.reorderNode(d.data, page.id, after: true);
+          case _DropZone.into:
+          case _DropZone.none:
+            app.makeSubpageOf(d.data, page.id);
+        }
+      },
       builder: (ctx, cand, rej) {
-        final tile = _tile(context, subpageTarget: cand.isNotEmpty);
+        final active = cand.isNotEmpty;
+        final tile = _tile(context,
+            subpageTarget: active && _zone == _DropZone.into);
+        if (active && (_zone == _DropZone.before || _zone == _DropZone.after)) {
+          // An insertion line, the universal "it will land here" signal.
+          final line = Container(
+            height: 2,
+            color: Theme.of(context).colorScheme.primary,
+          );
+          return Column(mainAxisSize: MainAxisSize.min, children: [
+            if (_zone == _DropZone.before) line,
+            tile,
+            if (_zone == _DropZone.after) line,
+          ]);
+        }
         // Don't wrap in a Draggable while renaming — the text field needs the
         // pointer for caret placement and selection.
         if (_renaming) return tile;
@@ -972,6 +1061,22 @@ class _PageTileState extends State<_PageTile> {
         );
       },
     );
+  }
+
+  /// Where in the tile a drag currently hovers.
+  _DropZone _zone = _DropZone.none;
+
+  /// Edges reorder, middle nests. A quarter each end is enough to hit without
+  /// making nesting hard to reach.
+  _DropZone _dropZoneAt(Offset globalOffset) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return _DropZone.into;
+    final local = box.globalToLocal(globalOffset);
+    final h = box.size.height;
+    if (h <= 0) return _DropZone.into;
+    if (local.dy < h * 0.25) return _DropZone.before;
+    if (local.dy > h * 0.75) return _DropZone.after;
+    return _DropZone.into;
   }
 
   Widget _tile(BuildContext context, {bool subpageTarget = false}) {
@@ -1123,6 +1228,8 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       if (isSection) ...[
         const PopupMenuDivider(),
         _nodeItem('togroup', Icons.drive_file_move_outline, 'Move to group…'),
+        _nodeItem('sortaz', Icons.sort_by_alpha, 'Sort pages A→Z'),
+        _nodeItem('sortdate', Icons.schedule, 'Sort pages by last edited'),
       ],
       // A page can always indent (make subpage) or outdent (promote) at some
       // level in 0..2, so the separator is shown whenever those items are.
@@ -1133,6 +1240,11 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         _nodeItem('outdent', Icons.arrow_back, 'Promote page'),
       if (isPage) ...[
         const PopupMenuDivider(),
+        _nodeItem(
+            'favourite',
+            app.isFavourite(node.id) ? Icons.star : Icons.star_border,
+            app.isFavourite(node.id) ? 'Remove favourite' : 'Add to favourites'),
+        _nodeItem('copylink', Icons.link, 'Copy link to page'),
         _nodeItem('history', Icons.history, 'Version history…'),
         _nodeItem('template', Icons.bookmark_add_outlined, 'Save as template…'),
       ],
@@ -1146,6 +1258,21 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       app.moveNode(node.id, -1);
     case 'down':
       app.moveNode(node.id, 1);
+    case 'sortaz':
+      app.sortSection(node.id, byTitle: true);
+    case 'sortdate':
+      app.sortSection(node.id, byTitle: false);
+    case 'favourite':
+      app.toggleFavourite(node.id);
+    case 'copylink':
+      // The wiki-link form the editor already resolves. Copying it means
+      // cross-referencing is paste, not retype-and-hope.
+      await Clipboard.setData(
+          ClipboardData(text: '[[${node.title}|${node.id}]]'));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Link copied — paste it into any page')));
+      }
     case 'togroup':
       final groups = app.nodes
           .where((n) => n.kind == NodeKind.sectionGroup)
@@ -1203,6 +1330,9 @@ Future<void> _promptSaveTemplate(BuildContext context, AppState app) async {
       ],
     ),
   );
+  // The dialog closing does not dispose its controller; this leaked one
+  // TextEditingController per save-as-template.
+  controller.dispose();
   if (name != null && name.trim().isNotEmpty) {
     app.saveCurrentAsTemplate(name.trim());
     if (context.mounted) {

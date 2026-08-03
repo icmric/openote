@@ -579,3 +579,231 @@ Font fallback is render-time and applies immediately. **Table column widths are 
 
 So a re-import is required regardless, and it is the same re-import that recovers the previously-missing page text.
 
+
+
+## P. Backlog pass — licence, CI, storage layer, layering (2026-07-27, night)
+
+**81 Dart tests pass, 1 skipped; analyzer clean of errors and warnings.** Rust was **not** run this pass: `cargo` is not installed on the development machine, so every Rust-side claim below is unverified locally and rests on CI.
+
+Five items were taken in the order licence → gitlink → CI → storage → layering, chosen so the cheap unblocking work landed before anything structural.
+
+### P.1 The licence gate is closed
+
+ADR-0005 ratified **as proposed** and applied: `LICENSE` (AGPL-3.0-or-later), `rust/onote_core/LICENSE` + `NOTICE` (Apache-2.0), `docs/specs/LICENSE` (CC0-1.0), and a new root `LICENSING.md` mapping all three plus the vendored MIT `cab`. Licence texts were downloaded from their canonical sources and byte-checked rather than reproduced from memory.
+
+`Cargo.toml` declared `AGPL-3.0-or-later`, which **contradicted the very ADR it cited** — the crate is the permissive tier. Corrected to `Apache-2.0`.
+
+The dependency audit ADR-0005 required before ratification was done properly for the first time, by reading each package's own `LICENSE` in the pub cache rather than trusting the ADR's list — which had drifted: it discussed `appflowy_editor` (MPL-2.0), Loro, `flutter_rust_bridge` and `drift`, **none of which are dependencies**. The real set is 15 packages, all MIT / BSD-3-Clause / Apache-2.0. Recorded in both the ADR and `LICENSING.md`, with the invariant that `onote_core` must never gain a copyleft dependency — now enforced mechanically by a `cargo-deny` CI job, because that failure mode is silent.
+
+**New revisit trigger recorded:** GPL-family licences are widely held to be incompatible with the Apple App Store's terms. PLAT-3 (phone builds) and the iPad persona therefore collide with this ADR, and it must be revisited *before* that work starts rather than after.
+
+### P.2 `onenote-ref` removed, provenance written down
+
+The gitlink pointed at commit `f9cdc59` with no `.gitmodules` **and an empty directory** — so there was nothing to move, only a dangling reference. Removed from the index; the MPL-2.0 upstream is now documented as a *reference consulted, not a dependency* in `NOTICE` and the core README. Note this also removes the `.one` test samples §G suggested using as parser fixtures — anyone wanting them must clone upstream separately.
+
+`vendor/cab/OPENOTE-PATCH.md` was written (asked for in §D): the two-method delta, why the quadratic `read_file` mattered, the deliberate keep-the-recovered-prefix behaviour from C-5, the invariant the patch depends on, and the update procedure.
+
+### P.3 CI exists — and immediately paid for itself
+
+`.github/workflows/ci.yml`: three OSes × (analyze → build → test) for the app, three OSes × (`cargo test`, `cargo clippy -D warnings`) for the core, plus the licence-invariant job.
+
+Two deliberate choices:
+
+- **Build before test.** `flutter test` on a clean checkout was exercising **62 of 82 tests — the other 20 silently skipped**, because `initSqliteForTests` couldn't find a native SQLite and every storage, persistence and import suite gates on it. Building first puts the bundled library in place. Measured here: 62 passed / 20 skipped before the build, 81 passed / 1 skipped after.
+- **`initSqliteForTests` now throws under `CI=true`** instead of returning false. A skip is right on a developer machine that hasn't built the runner; in CI it is a suite that passes without running, which is precisely the false confidence CI exists to prevent.
+
+`cargo fmt --check` was deliberately **not** added — it is a gate nobody has been meeting and could not be verified locally, and a red-on-arrival CI teaches people to ignore CI.
+
+**Unverified:** the workflow has never executed. The Rust jobs and `cargo-deny` in particular are written blind, and the macOS/Linux app jobs are the first actual test of the PLAT-1 cross-platform claim. Expect the first run to need adjustment.
+
+### P.4 The "two copies" question — the premise was wrong, the instinct was right
+
+Raised by the stakeholder: the JSON mirror seems wasteful, so why keep two copies of every notebook rather than offering export on demand?
+
+**There are not two copies.** `page_mirror` *is* the storage — `readPage` reads it, `writePage` writes it. What existed alongside it was not a second copy but **dead machinery shaped like one**:
+
+| Table | Appeared to be | Actually |
+|---|---|---|
+| `page_docs` | the CRDT source of truth, written every save | a **zero-byte** blob, carrying nothing |
+| `page_updates` | the incremental update log | never written, never read |
+| `fts_pages` | the search index | never written, never queried — sidebar search is a Dart `contains()` scan |
+
+So the honest answer to "why keep two copies" is that we weren't; we were paying an INSERT-or-UPDATE per save for a CRDT layer that never arrived — and that **ADR-0006 has already replaced**, moving the operation log out of the container and into files precisely because a single rewritten-in-full binary is the worst possible unit for consumer file sync.
+
+All three are now neither created nor written. Existing notebooks keep whatever tables they have; nothing touches them, and the container becomes a rebuildable cache once the log lands, so a migration would be paying to tidy something that is about to be regenerated anyway.
+
+The **File Format Spec is corrected to v0.2** with this stated at the top rather than buried: `page_mirror` documented as authoritative and not a projection, §5's CRDT encoding marked superseded-and-never-implemented (retained, because v0.1 readers deserve to know what those bytes were meant to be), `dirty_mirror` retired, and a new **§11** putting ADR-0006's direction into the published spec.
+
+Worth stating plainly, because it is the substantive point: **the openness guarantee gets stronger, not weaker.** v0.1's openness rested on a JSON copy kept beside an opaque authoritative one. Removing the opaque one means the open representation *is* the thing. And a third-party writer no longer needs a Loro-compatible library or a documented lossy "mirror-write mode" — SQLite and JSON now suffice, which is what OPEN-1 always claimed.
+
+### P.5 §E-1 closed: one funnel for persistent mutation
+
+`AppState.repo` is private. A documented storage facade replaces it — `blob`, `addBlob`, `notebooks`, `currentNotebook`, `readPage`, `reloadNodes` for the app, and an explicitly-named bulk path (`importNode`, `importPage`, `importBlob`, `importPurgeNode`, `importNodes`, `importBatch`, `importCreateNotebook`) for the importers. 28 call sites across 11 files migrated; the 12 copies of `nodes = repo.loadNodes(id)` collapsed into `reloadNodes()`.
+
+This was done **before** any op-log code on purpose. A log is only correct if it observes every mutation, and the failure mode of a second write path is not a crash but a log that is quietly incomplete — surfacing much later as a device that won't converge. ADR-0006 step 2 ("rebuild from the log and compare against the container") is only a usable check if there is one funnel to instrument.
+
+One review claim was **not** confirmed while doing this: §E-1 said the importer calling `repo.createNotebook` directly "bypasses `AppState.createNotebook` and therefore skips its `flushSave`". It does skip it, but the import path calls `selectNotebook` when it finishes, and that flushes — so no edit was ever at risk. The asymmetry is deliberate (switching mid-import would show a half-built notebook) and is now documented at the facade rather than silently relied upon.
+
+### P.6 Not done in this pass
+
+- **No Rust was run.** `cargo` isn't installed here; `cargo test`, `clippy` and `cargo-deny` are unverified.
+- **CI has never executed.** Until it does, "builds on macOS and Linux" remains a claim, not a fact.
+- Unchanged from §M.5: tags (TEXT-5), CANVAS-7 group/ungroup, CANVAS-4 resize, ORG-2 drag-to-reorder, MEDIA-1 paste/drag-drop, bundled fonts, MathML/HTML export, spell-check, the `AppState`/`sidebar.dart` file splits, the `onenote.rs` module split, and the finger-cannot-draw defect (C-8, still live at `page_canvas.dart:781`).
+- **No op-log code.** P.4 and P.5 are its preconditions, not its beginning.
+
+
+## Q. The operation log — ADR-0006 steps 1–2, in shadow mode (2026-07-27, night)
+
+**102 Dart tests pass (81 → 102), 1 skipped; analyzer clean of errors and warnings.** Rust untouched and still unrun locally.
+
+`app/lib/sync/` — five files, ~700 lines — implements the log ADR-0006 specifies, with the container still authoritative and the log written alongside. Nothing syncs yet, deliberately.
+
+### Q.1 Why shadow mode is the whole point
+
+The log's correctness property is **completeness**, and completeness fails silently. A mutation path that forgets to record itself throws no error, shows no symptom, and corrupts nothing today — it simply produces a log that, months later, cannot reconstruct a notebook on a second device. There is no way to notice that by inspection.
+
+So the log is written *beside* the container and checked against it: `sync_shadow_test.dart` saves a page through the real `AppState` → engine → SQLite path, then rebuilds that page **from the log alone** and asserts the two are identical. A forgotten recording call fails that test on the machine that introduced it, rather than on a user's second device a release later.
+
+This is the entire reason §E-1 (one funnel for mutation) was done first. Without it the check would be unimplementable.
+
+### Q.2 What the design forced, that the ADR had not anticipated
+
+Three things only became visible while writing it:
+
+1. **Ops must be recorded *after* the container write succeeds.** Recording first is the obvious ordering and is wrong: a failed save (disk full, DB locked) would leave the log claiming a change the notebook does not have, so rebuild-from-log would differ from the container *on every failed save* — and that divergence reads as a recording bug rather than the disk error it actually is. The check would have been abandoned as noisy.
+
+2. **A page save must be diffed, not dumped.** The app saves whole pages, so the naive recorder appends the whole page per autosave — unbounded log growth, and it discards the block granularity §6a.1 exists to provide. `SyncRecorder.page` diffs against its replayed state using a canonical JSON compare. Pinned by two tests: an unchanged save appends **nothing**, and editing one block of a two-block page appends **exactly one** `block.set`.
+
+3. **Recorders must be keyed per notebook, not per session.** Imports write into a notebook that is not the open one — by far the most likely place for the log to end up quietly incomplete, and precisely the write path §E-1 had just finished rerouting.
+
+### Q.3 Decisions visible in the code
+
+- **Ordering is Lamport → device id → seq.** The device-id tie-break is what makes the order *total* rather than partial. Two concurrent ops sharing a Lamport value must sort identically on every device or replicas diverge — the one failure this design exists to prevent, and the hardest to notice. Asserted by sorting a shuffled list two ways.
+- **Delete-wins is one deliberate omission.** `node.upsert` does not touch `deletedAt`; only `node.restore` clears it. That single line is the whole of §6a.3: an edit that raced a delete still applies its field changes but cannot resurrect the node, whichever sorts later.
+- **Blocks are *not* tombstoned**, unlike nodes — block removal is an ordinary edit within a page, and tombstoning would break undo, which legitimately re-adds a block under its own id.
+- **Unknown op kinds round-trip verbatim.** Character-level text editing will arrive as new op kinds, so a v1 device replaying a newer device's log must skip what it cannot apply without corrupting what it can. `Materializer.skipped` records them, and the verification path reports "inconclusive" rather than "incomplete" when any are present — otherwise a newer peer's log would look like data loss.
+- **A torn final line costs one op, not the file.** Append-only logs are routinely interrupted mid-write by a crash or by a sync client copying the file. `Op.decode` returns null instead of throwing.
+- **The `enc` field is on the wire, always `"none"`.** Nothing is encrypted; the field exists because adding it later would mean rewriting every log on every device at once.
+
+### Q.4 Visible change on disk
+
+Running the app now creates a **`<Notebook>.onotebook/` directory beside each `<Notebook>.onote`**, containing `manifest.json` and `ops/<device>.oplog`. It is additive and non-destructive — the `.onote` is untouched and remains the only thing read at startup. Deleting a `.onotebook` directory loses nothing today; it is rebuilt on next save.
+
+`AppState.syncLogEnabled` turns recording off wholesale, and a log that cannot be opened degrades to no recording rather than failing the save — shadow mode must never be able to break persistence it is only shadowing.
+
+### Q.5 Not done
+
+- **Blob bytes are not copied into `blobs/`.** Only hash, mime and size are recorded, so a rebuild-from-log today reconstructs page *structure* referencing blobs that live only in the container. This is the first gap to close before the container can be demoted.
+- No `cache.onote` demotion, no `nodes` migration, no Loro, **no transport of any kind**.
+- Notebook-level operations (create/rename/trash a whole notebook) are recorded only as far as their nodes; `workspace.json` remains local-only registry state by design (§6a.5).
+- The eager-vs-lazy blob fetch question (§6) is still open and still does not block.
+
+
+## R. Blobs, notebook metadata, touch drawing, Markdown tables (2026-07-27, later still)
+
+**120 Dart tests pass (102 → 120), 1 skipped; analyzer clean of errors and warnings.** Rust still untouched and unrun locally (no `cargo` on this machine).
+
+Four items, taken in the order they unblock things: close the log's remaining completeness gaps first, then two user-visible defects.
+
+### R.1 Blob bytes now live in `blobs/` — the log can reconstruct content, not just structure
+
+§Q left the log recording blob *metadata* only, so a rebuild produced pages referencing images it could not supply. Closed:
+
+- `OpLogStore.writeBlob/readBlob/hasBlob/blobHashes` — content-addressed files under `<Notebook>.onotebook/blobs/<sha256>`, written temp-then-rename. Unlike the append-only logs a torn blob is not a recoverable tail; it is a corrupt image that would look like a decoding bug forever.
+- **Immutable and idempotent**: an existing file is by definition already correct, so re-importing the same notebook rewrites nothing.
+- **`SyncRecorder.backfillBlobs`** copies blobs that exist only in the container, because every notebook created before the log holds its images in SQLite alone. It runs in the background on first open, streams one blob at a time via `Repository.blobIndex` + `getBlob` (a real imported notebook is 372 images — loading them all to build a map would be hundreds of megabytes), and yields between each so it cannot stall a frame.
+- **`AppState.syncMissingBlobs`** reports blobs the log references but cannot supply. Empty is the precondition for demoting the container to a cache; it is now assertable rather than assumed.
+
+**Transitional cost, stated plainly:** blobs exist in both the container and `blobs/` until the container is demoted. For the 48 MB sample notebook that is ~48 MB of duplication. It is the target layout, and the duplicate copy in SQLite is what disappears at the flip — but it is a real cost being paid now for a feature that does nothing yet.
+
+### R.2 Notebook renames reach the log
+
+A rebuild recovered every page and the whole tree, but not what the notebook was *called* — the manifest carried the title only from creation. `notebook.meta` ops close it, diffed so a rename to the same title records nothing, and seeded on first open so a never-renamed notebook still carries one.
+
+### R.3 C-8 fixed: a finger can draw
+
+`onPointerDown` routed **every** `PointerDeviceKind.touch` to pan unconditionally. That is palm rejection implemented as "a finger never draws" — which also meant ink was unreachable on a touch-only tablet, contradicting INK-1 outright. The pen tools were dead controls on that hardware.
+
+The distinction the old rule missed: **a resting palm is only a hazard while a pen is in use.** With no pen present, a finger is the only input the user has. So:
+
+- A finger draws, unless a stylus was seen within 2 s — the window has to outlive the gap *between* strokes, not just the stroke.
+- **Two fingers always pan and zoom**, whatever the mode, or a drawing tool would make the canvas unnavigable. A second finger landing mid-stroke cancels the wet stroke, so a pinch never leaves a stray mark.
+- `onPointerCancel` now drops the stroke too — previously absent.
+- A **Draw ▸ touch-drawing** control (Auto / Always / Never) because the right answer depends on hardware we cannot detect: "Auto" suits a convertible, "Always" a tablet, "Never" anyone who rests a hand on the glass. Persisted.
+
+The decision is a pure function in the new **`canvas/ink_ops.dart`** — the file review §E-2 asked for, now started — so it is unit-testable, which the in-widget version was not. 8 tests.
+
+**Not verified on real touch hardware.** The logic is tested; the gesture feel is not. That remains the never-run tablet spike from Phase 0.
+
+### R.4 Markdown tables render
+
+Table interop was one-way: `tableToMarkdown` wrote GFM happily and the renderer could not read one back, so a table pasted in as Markdown showed as rows of raw pipes.
+
+`markdown/md_table.dart` parses pipe tables — escaped `\|`, `:---:` alignment, ragged rows padded (and overlong rows trimmed) to the header width. Detection requires the **two-line header + delimiter signature**, so ordinary prose containing a pipe is not swallowed as a table. Rendered as a real `Table`, wrapped in a horizontal scroller so a wide pasted table does not push the whole page sideways.
+
+The test that matters is the round-trip: our own exporter's output, escaped pipes and all, must parse back to the same grid.
+
+### R.5 Not done
+
+- **No Rust run.** Unchanged; `cargo` is not installed here.
+- **CI still never executed.** Everything above is verified on Windows only.
+- **Touch drawing untested on hardware.**
+- Unchanged from §M.5: tags (TEXT-5), CANVAS-7 group/ungroup, CANVAS-4 resize, ORG-2 drag-to-reorder, MEDIA-1 paste/drag-drop, bundled fonts, MathML/HTML export, spell-check, the `AppState`/`sidebar.dart` file splits, the `onenote.rs` module split.
+- Sync: no `cache.onote` demotion, no `nodes` migration, no Loro, **no transport**.
+
+## S. Rust toolchain installed — local verification closed (2026-07-27, follow-up)
+
+Sections P–R repeatedly flagged that no Rust was run locally because `cargo` was not installed. It now is (cargo 1.97.1), and the claims are verified:
+
+- **`cargo test`: 26/26 pass** — the count every earlier session reported is confirmed for the first time on this machine.
+- **`cargo clippy --all-targets`: `onote_core` clean.** The only warnings are the 5 known `mismatched_lifetime_syntaxes` style lints in the vendored `cab`, which CI deliberately scopes out of `-D warnings` (editing the vendored crate beyond its documented two-method patch would be worse than the lint).
+- **`cargo deny check licenses`: ok.** The §P.3 allow-list, written blind, held against the real dependency graph — and was then **trimmed to what the graph actually uses** (MIT, Apache-2.0, Zlib, Unlicense, Unicode-3.0). Six allowances (BSD-2/3, ISC, CC0, LLVM-exception, Unicode-DFS) were never encountered and are removed: cargo-deny warns on unmatched entries, and an allow-list padded with plausible-but-unused licences defeats its purpose as a tripwire.
+
+Still outstanding: CI itself has never executed (needs a push), and macOS/Linux remain unverified.
+
+
+## T. The v0.2 release pass (2026-07-28/29)
+
+**172 Dart + 29 Rust tests pass; analyzer clean; `cargo clippy -D warnings` clean; CI GREEN on Windows, macOS and Linux.** That last one closes the longest-standing unverified claim in the project: PLAT-1 said all three desktop OSes were first-class, and until this pass only Windows had ever built.
+
+Worked the [v0.2 release plan](../planning/v0.2-release-plan.md) tier by tier. Nine commits on `release/v0.2`.
+
+### T.1 What CI caught that local checks did not
+
+Worth recording as a method note. My local verification had two holes, and CI found both on its first real run:
+
+1. **I had been grepping `flutter analyze` output for `error|warning` lines instead of checking the exit code.** An unused import in a test file was a genuine warning; the grep missed it in one run and I read "no output" as clean. CI ran the bar as written and failed.
+2. **I ran `cargo clippy` without `-D warnings`**, which is what CI uses. A function I had grown to eight arguments tripped `too_many_arguments`.
+
+Neither was subtle. Both survived because *my* check was weaker than *the* check. Exit codes from here on.
+
+### T.2 Tier 0 — the release becomes shippable
+
+- **`release.yml`**: tag-triggered draft releases. Windows zip, Linux AppImage + tar.gz (built on ubuntu-22.04 deliberately — an AppImage inherits its build host's glibc floor), macOS universal via `lipo` + ad-hoc re-sign + unsigned `.dmg`. Unsigned is a decision, not an oversight: no Apple account, so the release body carries the `xattr -cr` workaround.
+- **The CMake hook is wired** on Windows and Linux, closing the stale-DLL trap that cost multiple sessions. It is an `install(FILES … OPTIONAL)` rule declared **last**, not the `POST_BUILD` copy this repo's own docs recommended — that variant is broken by design on Linux, where the install sequence *begins* by `REMOVE_RECURSE`-ing the bundle. Verified by hash: after one `flutter build windows`, the bundled DLL equals `target/release`'s. No cargo → warning and a working Dart-engine app; broken crate → loud failure.
+
+### T.3 Tier 1 — the last known layout defect, and a real sync bug
+
+- **Indent loss is fixed.** Two compounding causes: non-list paragraphs were emitted flush-left at *any* depth, and `emit_boxes` re-normalised each post-math segment against its own minimum, pulling indented content back to the margin. Both fixed in the emitter, with the renderer translating leading spaces into real `indentPx` padding rather than literal spaces.
+- **Symbol PUA now translates.** `U+F000+byte` maps through the Adobe Symbol table **when the run's font is Symbol** — which dissolves the ambiguity §N.3 worried about: `0xAC` is only ambiguous *without* the font; keyed on it, Symbol's `0xAC` is `←` and `¬` is `0xD8`. Other fonts and partially-unmappable runs are left untouched.
+- **Ink erasing was going to destroy the op log.** An erase gesture appended the *whole* ink block — and an imported page keeps every stroke in one block, 0.2–7 MB serialized. Measured amplification 50–1000×; a heavy cleanup session would have appended ~300–400 MB. New `ink.strokes` op records only changed strokes, with positional inserts so the eraser's mid-list splits reproduce exactly, and a >50%-changed fallback to `block.set` so a block *drag* stays one op.
+- Writing that exposed a subtler bug: **the recorder's replayed state was aliased to the live block maps** (`Block.toJson` shares the `content` reference), so diffs compared a thing to itself and a block drag looked like a no-op. Snapshots are detached at the recording boundary now.
+
+### T.4 Tier 4 — sync actually works
+
+The headline. `syncPull` folds another device's log into the container: per-foreign-device watermarks (what I have *folded in*, not what exists), Lamport clock advanced past everything seen, and the affected pages and nodes written in one transaction.
+
+**The test caught the bug that mattered**: I wrote the live nodes and forgot the deleted ones, so a remote delete was silently ignored — delete-*loses*, the exact opposite of ADR-0006 §6a.3. Four two-device tests now pin it: a remote edit lands, a remote page appears, delete wins over a concurrent local edit, and pulling twice does nothing.
+
+### T.5 Tier 2/3/5 — parity, tags, delighters
+
+Bundled Inter + JetBrains Mono (the fallback chain preserved *behind* them). Spell check — Flutter has none on desktop, and its own pipeline is unusable here regardless, because when results exist `EditableText` builds spans via `buildTextSpanWithSpellCheckSuggestions` *instead of* the controller's `buildTextSpan`, discarding all live-Markdown styling; so underlines are merged by a post-pass over our finished span tree, which re-emits the same characters and therefore cannot break the coverage invariant. Whole-stroke eraser, six built-in templates, notebook-wide brute-force search, page outline, favourites/recents, section sort (subpages move with their parent — pinned).
+
+**Tags** shipped app-side: nine kinds, gutter markers, picker, find-tags rollup, `custom` for anything unrecognised so nothing is ever dropped.
+
+### T.6 Deliberately not done
+
+- **OneNote tag import.** The property IDs are unverified against a real tagged file, and the same code path has a latent bug — property type `0x10` is mis-sized, desynchronising every property after a tag array. Guessing risks imports that work today. Needs a small `.one` with four tag kinds and a `dump_one` run.
+- **Image paste/drag-drop, drag-to-reorder, height/corner resize, alignment guides, lasso resize/recolor.** The "feels unfinished" cluster; alignment guides alone would deliver most of the perceived value.
+- **Image `y` validation** — still circular, still needs one OneNote PDF export.
+- **Nobody has used the macOS or Linux build**, and touch drawing has never met touch hardware.

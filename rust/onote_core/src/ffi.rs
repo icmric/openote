@@ -64,6 +64,30 @@ pub unsafe extern "C" fn onote_core_page_hash(mirror: *const c_char) -> *mut c_c
     into_c(hash)
 }
 
+/// Repair Word/OneNote field codes in a block of already-imported text:
+/// `HYPERLINK` fields become the app's `[label](url)` Markdown, and every
+/// leftover field marker (the `﷟` and friends) is stripped. Text with no field
+/// characters is returned unchanged. Caller frees the result.
+///
+/// Exists because fixing the importer does nothing for notes that were already
+/// imported — the junk is stored user data by then, and asking a student to
+/// re-import a term's notes to get their links back is not a fix.
+///
+/// # Safety
+/// `text` must be a valid NUL-terminated C string (or null). The returned
+/// pointer must be freed with [`onote_core_string_free`].
+#[no_mangle]
+pub unsafe extern "C" fn onote_core_repair_field_codes(text: *const c_char) -> *mut c_char {
+    let t = from_c(text);
+    // Panic-guarded like every other entry point: unwinding across the C
+    // boundary is UB, and losing a repair is far better than losing the app.
+    let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::onenote::linkify_field_codes(&t)
+    }))
+    .unwrap_or_else(|_| t.clone());
+    into_c(out)
+}
+
 /// Import a OneNote `.one` section file. Takes the raw file bytes and returns
 /// a JSON string: `{ok, error?, pages:[{title, texts:[...],
 /// images:[{name, data_base64}]}]}`. Caller frees the result.

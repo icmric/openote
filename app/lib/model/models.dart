@@ -2,6 +2,8 @@
 /// Page JSON schema exactly, so `toJson` output IS the mirror format.
 library;
 
+import 'package:path/path.dart' as p;
+
 import '../core/ids.dart';
 
 int nowMs() => DateTime.now().millisecondsSinceEpoch;
@@ -37,9 +39,48 @@ class TreeNode {
 
 class NotebookRef {
   NotebookRef(
-      {required this.id, required this.file, required this.title, this.deletedAt});
+      {required this.id,
+      required this.file,
+      required this.title,
+      this.logDir,
+      this.deletedAt});
   final String id;
-  final String file; // absolute path to the .onote
+
+  /// Absolute path to the `.onote`. Mutable because a notebook can be moved
+  /// into a synced folder (`Repository.moveNotebookTo`) without becoming a
+  /// different notebook — the id is the identity, the path is just where it
+  /// happens to live.
+  String file;
+
+  /// Where this notebook's `.onotebook` op logs live, when that is NOT the
+  /// sibling of [file].
+  ///
+  /// **This is what keeps two devices off one SQLite file.** The container is
+  /// a WAL database rewritten on every save; two machines writing one copy of
+  /// it through a cloud client is the corruption case ADR-0006 §3 designs
+  /// against ("cache.onote ← local-only SQLite; never synced"). The op logs
+  /// are the opposite — append-only, one file per device — so they are safe to
+  /// share by construction.
+  ///
+  /// So a device that joins an existing notebook keeps its OWN container in
+  /// the workspace and points this at the shared folder. Null means the
+  /// default: `<file without extension>.onotebook`.
+  String? logDir;
+
+  /// Where the op logs actually are — [logDir] when set, otherwise the
+  /// sibling of [file].
+  ///
+  /// One accessor rather than the default spelled out at each call site: the
+  /// sites that missed it went subtly wrong rather than failing (the sync chip
+  /// read "not synced" for a device that had just joined, and moving a joined
+  /// notebook looked for a log directory that was never there).
+  String get logDirPath {
+    final o = logDir;
+    return (o != null && o.isNotEmpty)
+        ? o
+        : '${p.withoutExtension(file)}.onotebook';
+  }
+
   String title;
   int? deletedAt; // set while the notebook sits in the recycle bin (ORG-7)
 }

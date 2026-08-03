@@ -36,7 +36,7 @@ Future<int?> importMarkdownFolder(AppState app) async {
   final order = _PosCounter();
 
   // The import root becomes a section.
-  final section = app.repo.upsertNode(
+  final section = app.importNode(
       nbId,
       TreeNode(
         kind: NodeKind.section,
@@ -61,7 +61,7 @@ Future<int?> importMarkdownFolder(AppState app) async {
       if (name.startsWith('.')) continue; // skip .obsidian, .git, etc.
       if (e is Directory) {
         // A folder becomes a "folder page" that parents the pages inside it.
-        final folderPage = app.repo.upsertNode(
+        final folderPage = app.importNode(
             nbId,
             TreeNode(
               kind: NodeKind.page,
@@ -70,7 +70,7 @@ Future<int?> importMarkdownFolder(AppState app) async {
               title: _titleFromName(name),
               position: order.next(),
             ));
-        app.repo.writePage(nbId, folderPage.id, const [], PageProps());
+        app.importPage(nbId, folderPage.id, const [], PageProps());
         firstPageId ??= folderPage.id;
         imported++;
         walk(e, level + 1);
@@ -83,7 +83,7 @@ Future<int?> importMarkdownFolder(AppState app) async {
         }
         final body = _stripFrontMatter(raw);
         final title = _titleFromName(p.basenameWithoutExtension(e.path));
-        final page = app.repo.upsertNode(
+        final page = app.importNode(
             nbId,
             TreeNode(
               kind: NodeKind.page,
@@ -101,7 +101,7 @@ Future<int?> importMarkdownFolder(AppState app) async {
             content: {'text': _stripLeadingH1(body, title)},
           ),
         ];
-        app.repo.writePage(nbId, page.id, blocks, PageProps());
+        app.importPage(nbId, page.id, blocks, PageProps());
         firstPageId ??= page.id;
         imported++;
       }
@@ -111,7 +111,7 @@ Future<int?> importMarkdownFolder(AppState app) async {
   walk(root, 0);
 
   // Refresh the navigator and jump to the first imported page.
-  app.nodes = app.repo.loadNodes(nbId);
+  app.reloadNodes(); // nbId is the open notebook here
   if (firstPageId != null) {
     await app.selectPage(firstPageId);
   } else {

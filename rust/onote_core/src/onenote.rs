@@ -243,6 +243,11 @@ pub struct ImportedPage {
     pub ink: Vec<ImportedStroke>,
     /// Subpage indent level, 0-based (0 = top-level page, 1..2 = subpage).
     pub level: u32,
+    /// Ink strokes that could not be decoded and were dropped (~0.02 % on the
+    /// reference notebook). Counted so the app can SAY so — a silent drop reads
+    /// as "my notes imported fine" when they did not quite.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub dropped_strokes: u32,
 }
 
 #[derive(Serialize, Default)]
@@ -358,28 +363,28 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
     // below by natural pixel size (±2px).
     struct Png {
         bytes: Vec<u8>,
+        /// The type the BYTES are, not an assumption — the Dart side stores it
+        /// as the blob's mime, and a JPEG announced as PNG renders as nothing.
+        mime: &'static str,
         w: u32,
         h: u32,
         used: bool,
     }
     let mut pngs: Vec<Png> = Vec::new();
     let mut seen_png = HashSet::new();
-    for png in scan_pngs(bytes) {
+    for img in scan_images(bytes) {
         // Content hash, not (len, first byte, last byte): every PNG starts with
         // 0x89, so that key was effectively (len, last CRC byte) and two
         // same-length images collided ~1/256 of the time, silently dropping one.
-        if !seen_png.insert(crate::ids::content_hash(&png)) {
+        if !seen_png.insert(crate::ids::content_hash(&img.bytes)) {
             continue;
         }
-        let (w, h) = if png.len() >= 24 {
-            (
-                u32::from_be_bytes([png[16], png[17], png[18], png[19]]),
-                u32::from_be_bytes([png[20], png[21], png[22], png[23]]),
-            )
+        let (w, h) = if img.mime == "image/png" {
+            png_dimensions(&img.bytes)
         } else {
-            (0, 0)
+            jpeg_dimensions(&img.bytes)
         };
-        pngs.push(Png { bytes: png, w, h, used: false });
+        pngs.push(Png { bytes: img.bytes, mime: img.mime, w, h, used: false });
     }
 
     // OneNote's stored offsets are absolute in its own page space, whose origin
@@ -676,7 +681,9 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
                 ),
             );
             images.push(ImportedImage {
-                name: format!("onenote-image-{img_counter}.png"),
+                // Extension follows the real type: the Dart side derives the
+                // blob mime from it, and a JPEG named .png renders as nothing.
+                name: format!("onenote-image-{img_counter}.{}", ext_of(png.mime)),
                 x,
                 y,
                 disp_w: dw,
@@ -842,6 +849,7 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
 
         // ── Ink: container → data node → stroke nodes → packed paths ────────
         let mut ink: Vec<ImportedStroke> = Vec::new();
+        let mut dropped_strokes: u32 = 0;
         let mut seen_ink = HashSet::new();
         for &i in idxs {
             let o = &objs[i];
@@ -980,7 +988,8 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
                         } else if s2.is_finite() {
                             2
                         } else {
-                            continue; // no usable channel split
+                            dropped_strokes += 1; // no usable channel split
+                            continue;
                         };
                         idx_x = 0;
                         idx_y = 1;
@@ -990,6 +999,7 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
                     // undecodable — drop it rather than paint a page-crossing
                     // scribble (a handful per notebook; better lost than wrong).
                     if span_of(ndims, idx_x, idx_y) > SANE_MAX {
+                        dropped_strokes += 1;
                         continue;
                     }
                     let per = path.len() / ndims;
@@ -1078,7 +1088,7 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
             .unwrap_or_else(|| "Imported page".into());
         let level = meta.map(|m| m.1).unwrap_or(0);
         let ord = meta.map(|m| m.2).unwrap_or(usize::MAX);
-        pages.push((ord, ImportedPage { title, date_text, boxes, images, ink, level }));
+        pages.push((ord, ImportedPage { title, date_text, boxes, images, ink, level, dropped_strokes }));
     }
 
     // Sort by the section's display order; unmatched pages keep file order at
@@ -1098,7 +1108,7 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
         for p in pngs.iter().filter(|p| !p.used) {
             img_counter += 1;
             first.images.push(ImportedImage {
-                name: format!("onenote-image-{img_counter}.png"),
+                name: format!("onenote-image-{img_counter}.{}", ext_of(p.mime)),
                 x: 980.0,
                 y: fy,
                 disp_w: p.w as f32,
@@ -1160,6 +1170,20 @@ fn emit_boxes(
     const LINE_H: f32 = 22.0;
     let mut cy = y;
     let mut seg: Vec<&Line> = Vec::new();
+    // Depth base for the WHOLE outline, not per segment: flushing at every
+    // math/table line used to re-normalise each segment against its own
+    // minimum, so a segment consisting only of deep lines was pulled back to
+    // the left margin — indent lost exactly where the page mixed prose with
+    // equations.
+    let base_depth = lines
+        .iter()
+        .filter(|l| l.math.is_none() && l.table.is_none())
+        .map(|l| l.depth)
+        .min()
+        .unwrap_or(0);
+    // A nested helper threading the enclosing function's own parameters; the
+    // count is the price of not capturing `out` mutably in a closure.
+    #[allow(clippy::too_many_arguments)]
     fn flush(
         seg: &mut Vec<&Line>,
         x: f32,
@@ -1168,11 +1192,12 @@ fn emit_boxes(
         out: &mut Vec<PageBox>,
         img_idx: &HashMap<u32, String>,
         flow: u32,
+        base_depth: usize,
     ) {
         if seg.is_empty() {
             return;
         }
-        let md = outline_markdown(seg, img_idx);
+        let md = outline_markdown(seg, img_idx, Some(base_depth));
         if !md.trim().is_empty() {
             out.push(PageBox {
                 kind: "text".into(),
@@ -1193,7 +1218,7 @@ fn emit_boxes(
     }
     for l in lines {
         if let Some(grid) = &l.table {
-            flush(&mut seg, x, w, &mut cy, out, img_idx, flow);
+            flush(&mut seg, x, w, &mut cy, out, img_idx, flow, base_depth);
             let rows = grid.cells.len() as f32;
             out.push(PageBox {
                 kind: "table".into(),
@@ -1214,7 +1239,7 @@ fn emit_boxes(
             continue;
         }
         if let Some(latex) = &l.math {
-            flush(&mut seg, x, w, &mut cy, out, img_idx, flow);
+            flush(&mut seg, x, w, &mut cy, out, img_idx, flow, base_depth);
             out.push(PageBox {
                 kind: "math".into(),
                 x: x + 24.0,
@@ -1233,7 +1258,7 @@ fn emit_boxes(
             seg.push(l); // text AND in-flow image lines stay in the one box
         }
     }
-    flush(&mut seg, x, w, &mut cy, out, img_idx, flow);
+    flush(&mut seg, x, w, &mut cy, out, img_idx, flow, base_depth);
     cy
 }
 
@@ -1645,7 +1670,10 @@ fn styled_runs(r: &Reader, o: &Obj, res: &Resolver) -> Vec<SRun> {
         for &f in &fmt {
             st = merge_style(&st, &resolve_style(r, res, f, o.rev));
         }
-        return vec![SRun { text, style: st }];
+        let mut runs = vec![SRun { text, style: st }];
+        translate_symbol_pua(&mut runs);
+        linkify_hyperlink_runs(&mut runs);
+        return runs;
     }
 
     // Multi-run: boundaries [0, b0, b1, …, len] split the char stream.
@@ -1666,7 +1694,111 @@ fn styled_runs(r: &Reader, o: &Obj, res: &Resolver) -> Vec<SRun> {
     if runs.is_empty() {
         runs.push(SRun { text, style: base });
     }
+    translate_symbol_pua(&mut runs);
+    linkify_hyperlink_runs(&mut runs);
     runs
+}
+
+/// Adobe Symbol encoding, byte → Unicode. `None` for glyphs with no clean
+/// Unicode identity (bracket/radical extender pieces).
+///
+/// Office stores a character typed in a symbol font as `U+F000 + byte`. That
+/// PUA code point is meaningless alone — but the run records its FONT, and
+/// when the font is `Symbol` the byte maps deterministically through this
+/// table. (The review's worry that `0xAC` is ambiguous — Symbol's `←` vs a
+/// user's `¬` — only applies without the font: keyed on it, `F0AC` in a
+/// Symbol run IS the left arrow, and `¬` in Symbol is byte 0xD8.)
+fn symbol_pua_char(b: u8) -> Option<char> {
+    Some(match b {
+        // ASCII-coincident slots, with Symbol's own deviations.
+        0x20 => ' ', 0x21 => '!', 0x22 => '\u{2200}', 0x23 => '#',
+        0x24 => '\u{2203}', 0x25 => '%', 0x26 => '&', 0x27 => '\u{220B}',
+        0x28 => '(', 0x29 => ')', 0x2A => '\u{2217}', 0x2B => '+',
+        0x2C => ',', 0x2D => '\u{2212}', 0x2E => '.', 0x2F => '/',
+        0x30..=0x39 => b as char, // digits
+        0x3A => ':', 0x3B => ';', 0x3C => '<', 0x3D => '=', 0x3E => '>',
+        0x3F => '?', 0x40 => '\u{2245}',
+        // Greek capitals.
+        0x41 => 'Α', 0x42 => 'Β', 0x43 => 'Χ', 0x44 => 'Δ', 0x45 => 'Ε',
+        0x46 => 'Φ', 0x47 => 'Γ', 0x48 => 'Η', 0x49 => 'Ι', 0x4A => 'ϑ',
+        0x4B => 'Κ', 0x4C => 'Λ', 0x4D => 'Μ', 0x4E => 'Ν', 0x4F => 'Ο',
+        0x50 => 'Π', 0x51 => 'Θ', 0x52 => 'Ρ', 0x53 => 'Σ', 0x54 => 'Τ',
+        0x55 => 'Υ', 0x56 => 'ς', 0x57 => 'Ω', 0x58 => 'Ξ', 0x59 => 'Ψ',
+        0x5A => 'Ζ',
+        0x5B => '[', 0x5C => '\u{2234}', 0x5D => ']', 0x5E => '\u{22A5}',
+        0x5F => '_',
+        // Greek lowercase.
+        0x61 => 'α', 0x62 => 'β', 0x63 => 'χ', 0x64 => 'δ', 0x65 => 'ε',
+        0x66 => 'φ', 0x67 => 'γ', 0x68 => 'η', 0x69 => 'ι', 0x6A => 'ϕ',
+        0x6B => 'κ', 0x6C => 'λ', 0x6D => 'μ', 0x6E => 'ν', 0x6F => 'ο',
+        0x70 => 'π', 0x71 => 'θ', 0x72 => 'ρ', 0x73 => 'σ', 0x74 => 'τ',
+        0x75 => 'υ', 0x76 => 'ϖ', 0x77 => 'ω', 0x78 => 'ξ', 0x79 => 'ψ',
+        0x7A => 'ζ',
+        0x7B => '{', 0x7C => '|', 0x7D => '}', 0x7E => '\u{223C}',
+        // Symbols proper.
+        0xA1 => 'ϒ', 0xA2 => '\u{2032}', 0xA3 => '\u{2264}',
+        0xA4 => '\u{2044}', 0xA5 => '\u{221E}', 0xA6 => 'ƒ',
+        0xA7 => '\u{2663}', 0xA8 => '\u{2666}', 0xA9 => '\u{2665}',
+        0xAA => '\u{2660}', 0xAB => '\u{2194}', 0xAC => '\u{2190}',
+        0xAD => '\u{2191}', 0xAE => '\u{2192}', 0xAF => '\u{2193}',
+        0xB0 => '°', 0xB1 => '±', 0xB2 => '\u{2033}', 0xB3 => '\u{2265}',
+        0xB4 => '×', 0xB5 => '\u{221D}', 0xB6 => '\u{2202}', 0xB7 => '•',
+        0xB8 => '÷', 0xB9 => '\u{2260}', 0xBA => '\u{2261}',
+        0xBB => '\u{2248}', 0xBC => '\u{2026}', 0xBF => '\u{21B5}',
+        0xC0 => '\u{2135}', 0xC1 => '\u{2111}', 0xC2 => '\u{211C}',
+        0xC3 => '\u{2118}', 0xC4 => '\u{2297}', 0xC5 => '\u{2295}',
+        0xC6 => '\u{2205}', 0xC7 => '\u{2229}', 0xC8 => '\u{222A}',
+        0xC9 => '\u{2283}', 0xCA => '\u{2287}', 0xCB => '\u{2284}',
+        0xCC => '\u{2282}', 0xCD => '\u{2286}', 0xCE => '\u{2208}',
+        0xCF => '\u{2209}',
+        0xD0 => '\u{2220}', 0xD1 => '\u{2207}', 0xD2 => '®', 0xD3 => '©',
+        0xD4 => '\u{2122}', 0xD5 => '\u{220F}', 0xD6 => '\u{221A}',
+        0xD7 => '\u{22C5}', 0xD8 => '¬', 0xD9 => '\u{2227}',
+        0xDA => '\u{2228}', 0xDB => '\u{21D4}', 0xDC => '\u{21D0}',
+        0xDD => '\u{21D1}', 0xDE => '\u{21D2}', 0xDF => '\u{21D3}',
+        0xE0 => '\u{25CA}', 0xE1 => '\u{27E8}', 0xE2 => '®', 0xE3 => '©',
+        0xE4 => '\u{2122}', 0xE5 => '\u{2211}', 0xF1 => '\u{27E9}',
+        0xF2 => '\u{222B}',
+        // Everything else (bracket pieces, radical extenders, 0x60, 0xA0,
+        // 0xBD/0xBE, 0xE6…) has no standalone Unicode identity.
+        _ => return None,
+    })
+}
+
+/// Translate Office's symbol-font PUA storage (`U+F000 + byte`) to real
+/// Unicode for runs whose font is `Symbol`. Applied only when EVERY PUA char
+/// in the run maps — a partial translation would leave a run that half-renders
+/// in the wrong alphabet. On success the run's font is cleared: the characters
+/// are ordinary Unicode now, and keeping `Symbol` would re-encode them wrongly
+/// (Symbol's cmap maps `A` to Alpha).
+fn translate_symbol_pua(runs: &mut [SRun]) {
+    for run in runs {
+        if run.style.font.as_deref() != Some("Symbol") {
+            continue;
+        }
+        if !run.text.chars().any(|c| ('\u{F020}'..='\u{F0FF}').contains(&c)) {
+            continue;
+        }
+        let mut out = String::with_capacity(run.text.len());
+        let mut ok = true;
+        for c in run.text.chars() {
+            if ('\u{F020}'..='\u{F0FF}').contains(&c) {
+                match symbol_pua_char((c as u32 - 0xF000) as u8) {
+                    Some(mapped) => out.push(mapped),
+                    None => {
+                        ok = false;
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        if ok {
+            run.text = out;
+            run.style.font = None;
+        }
+    }
 }
 
 /// Fold a Mathematical-Alphanumeric-Symbols code point back to plain ASCII
@@ -1706,6 +1838,419 @@ fn is_math_control(c: char) -> bool {
     let u = c as u32;
     // Office linear-math structure noncharacters + invisible operators.
     (0xFDD0..=0xFDEF).contains(&u) || matches!(u, 0x2061..=0x2064) || u == 0x200B
+}
+
+// ── Word/OneNote field codes: hyperlinks ────────────────────────────────────
+//
+// A hyperlink is not a property in the OneNote file. It is a Word-style FIELD
+// embedded in the paragraph's own text buffer: a begin marker, the instruction
+// `HYPERLINK "https://…"`, and the display text. `PropSet::run_text` returns
+// that buffer verbatim and nothing downstream filtered it, so every imported
+// link arrived in the note as literal junk — `﷟HYPERLINK "https://…"` sitting
+// next to the words it was supposed to be attached to, with no way to follow
+// it.
+//
+// These markers live in the same Office noncharacter block as
+// [`is_math_control`]'s fraction delimiters (U+FDD0..U+FDEF). That overlap is
+// why the conversion lives here and runs only on PROSE runs: a math run's
+// U+FDD0 is structure that `office_math_to_latex` consumes, not a field.
+
+/// Field-begin markers. U+FDDF is what OneNote writes; U+0013 is Word's
+/// classic field-begin, accepted because content pasted from Word keeps it.
+const FIELD_BEGIN: [char; 3] = ['\u{FDDF}', '\u{FDDE}', '\u{0013}'];
+/// Separates a field's instruction from its cached result (the display text).
+const FIELD_SEP: char = '\u{0014}';
+/// Ends a field's result.
+const FIELD_END: char = '\u{0015}';
+
+fn is_field_begin(c: char) -> bool {
+    FIELD_BEGIN.contains(&c)
+}
+
+/// Any field scaffolding character. None of these may ever reach a note.
+fn is_field_control(c: char) -> bool {
+    is_field_begin(c) || c == FIELD_SEP || c == FIELD_END
+}
+
+/// A located `HYPERLINK` instruction: the marker through the closing quote and
+/// any switches. Deliberately does NOT cover the display text — OneNote writes
+/// that on either side of the instruction depending on version, so who owns it
+/// is the caller's decision (see [`linkify_hyperlink_runs`]).
+struct FieldLink {
+    /// Char index of the begin marker.
+    start: usize,
+    /// Char index one past the instruction (and its `\u{0014}`, if present).
+    end: usize,
+    url: String,
+}
+
+/// Find the next `HYPERLINK` field instruction at or after `from`.
+///
+/// A field whose instruction is anything else (`PAGEREF`, `TOC`, `DATE`) is
+/// skipped rather than consumed: its visible text is the user's writing and
+/// must survive, and the stray marker is removed by the caller's final sweep.
+fn find_field_link(chars: &[char], from: usize) -> Option<FieldLink> {
+    const KW: &str = "HYPERLINK";
+    let mut i = from;
+    while i < chars.len() {
+        if !is_field_begin(chars[i]) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        let mut j = i + 1;
+        while j < chars.len() && chars[j].is_whitespace() {
+            j += 1;
+        }
+        let matched = KW
+            .chars()
+            .enumerate()
+            .all(|(k, c)| chars.get(j + k).is_some_and(|d| d.eq_ignore_ascii_case(&c)));
+        if !matched {
+            i += 1;
+            continue;
+        }
+        j += KW.len();
+        while j < chars.len() && chars[j].is_whitespace() {
+            j += 1;
+        }
+        let mut url = String::new();
+        if chars.get(j) == Some(&'"') {
+            j += 1;
+            while j < chars.len() && chars[j] != '"' {
+                url.push(chars[j]);
+                j += 1;
+            }
+            j = (j + 1).min(chars.len()); // closing quote
+        } else {
+            while j < chars.len() && !chars[j].is_whitespace() && !is_field_control(chars[j]) {
+                url.push(chars[j]);
+                j += 1;
+            }
+        }
+        // Switches. `\l "anchor"` names a bookmark inside the target and is the
+        // one that changes where you land; `\o` (tooltip) and `\t` (target
+        // frame) carry nothing we can show, but must still be consumed or they
+        // would be mistaken for display text.
+        loop {
+            let mut k = j;
+            while k < chars.len() && chars[k] == ' ' {
+                k += 1;
+            }
+            if chars.get(k) != Some(&'\\') {
+                break;
+            }
+            let Some(sw) = chars.get(k + 1).map(|c| c.to_ascii_lowercase()) else {
+                break;
+            };
+            k += 2;
+            while k < chars.len() && chars[k] == ' ' {
+                k += 1;
+            }
+            let mut arg = String::new();
+            if chars.get(k) == Some(&'"') {
+                k += 1;
+                while k < chars.len() && chars[k] != '"' {
+                    arg.push(chars[k]);
+                    k += 1;
+                }
+                k = (k + 1).min(chars.len());
+            } else {
+                while k < chars.len() && !chars[k].is_whitespace() && !is_field_control(chars[k]) {
+                    arg.push(chars[k]);
+                    k += 1;
+                }
+            }
+            if sw == 'l' && !arg.is_empty() && !url.contains('#') {
+                url.push('#');
+                url.push_str(&arg);
+            }
+            j = k;
+        }
+        if chars.get(j) == Some(&FIELD_SEP) {
+            j += 1;
+        }
+        if url.trim().is_empty() {
+            i += 1;
+            continue;
+        }
+        return Some(FieldLink {
+            start,
+            end: j,
+            url: url.trim().to_string(),
+        });
+    }
+    None
+}
+
+/// Percent-encode only what would break the app's link regex.
+///
+/// `md_render`'s pattern reads the target as `[^)\s]+`, so a space or a
+/// parenthesis truncates it. Everything else is left exactly as OneNote stored
+/// it — a URL is not ours to normalise — and an existing `%XX` escape is
+/// stepped over so `%20` never becomes `%2520`.
+fn encode_url(u: &str) -> String {
+    let c: Vec<char> = u.chars().collect();
+    let mut out = String::with_capacity(u.len());
+    let mut i = 0;
+    while i < c.len() {
+        if c[i] == '%'
+            && c.get(i + 1).is_some_and(|d| d.is_ascii_hexdigit())
+            && c.get(i + 2).is_some_and(|d| d.is_ascii_hexdigit())
+        {
+            out.push('%');
+            i += 1;
+            continue;
+        }
+        match c[i] {
+            ' ' => out.push_str("%20"),
+            '(' => out.push_str("%28"),
+            ')' => out.push_str("%29"),
+            ch if is_field_control(ch) || ch.is_control() => {}
+            ch => out.push(ch),
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Render one link as the app's Markdown, or degrade to plain text.
+///
+/// Emitted NAKED, with no emphasis wrapper, and that is load-bearing: the app's
+/// inline parser is non-recursive, so a link nested inside the blue-underlined
+/// styling OneNote gives it — `{{#0563C1 ++[x](y)++}}` — would print as
+/// literal source. An imported link therefore loses OneNote's link colouring
+/// and picks up the app's own, which is what every Markdown editor does anyway.
+///
+/// `onenote:` and `file:` targets degrade to their label: the app opens three
+/// schemes on purpose (a deliberate security decision), so emitting a link it
+/// would print literally only swaps one kind of junk for another.
+fn markdown_link(url: &str, label: &str) -> String {
+    let url = encode_url(url);
+    let lower = url.to_ascii_lowercase();
+    let openable = lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("mailto:");
+    let label: String = label
+        .chars()
+        .filter(|c| !matches!(c, '[' | ']' | '\n' | '\r') && !is_field_control(*c))
+        .collect();
+    let label = label.trim();
+    if !openable {
+        // The app opens three schemes on purpose, so `[x](onenote:…)` would
+        // print as literal source — but DROPPING the address is worse than
+        // showing it. This runs over already-imported notes too (the repair
+        // path), where the `.one` may be long gone, and a silently discarded
+        // link target is unrecoverable user data. Plain text keeps it.
+        return if label.is_empty() {
+            url
+        } else {
+            format!("{label} ({url})")
+        };
+    }
+    if label.is_empty() {
+        // The URL as its own label: still clickable, and the address is
+        // information the student can act on.
+        return format!("[{url}]({url})");
+    }
+    format!("[{label}]({url})")
+}
+
+/// Convert `HYPERLINK` fields in a bare string, then strip every marker.
+///
+/// For text with no run structure — titles, bullet strings. Where the styled
+/// runs are available, [`linkify_hyperlink_runs`] does better.
+pub(crate) fn linkify_field_codes(s: &str) -> String {
+    if !s.chars().any(is_field_control) {
+        return s.to_string();
+    }
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    let mut at = 0usize;
+    while let Some(f) = find_field_link(&chars, at) {
+        out.extend(chars[at..f.start].iter());
+        // Display text after the instruction is Word's documented layout.
+        let mut k = f.end;
+        let mut label = String::new();
+        while k < chars.len() && chars[k] != FIELD_END && chars[k] != '\n' && !is_field_begin(chars[k])
+        {
+            label.push(chars[k]);
+            k += 1;
+        }
+        if chars.get(k) == Some(&FIELD_END) {
+            k += 1;
+        }
+        out.push_str(&markdown_link(&f.url, label.trim()));
+        at = k;
+    }
+    out.extend(chars[at..].iter());
+    out.chars().filter(|c| !is_field_control(*c)).collect()
+}
+
+/// Convert hyperlink fields across a paragraph's styled runs.
+///
+/// **Measured against a real `.one` file**, not inferred. The paragraph
+/// `Video: <link>` stores one text buffer:
+///
+/// ```text
+/// Video: \u{FDDF}HYPERLINK "https://…/watch?v=DsT_YiMiUQo"Natural Language and …
+/// ^run 0 ^run 1 (boundary 7)                              ^run 2 (boundary 63)
+/// ```
+///
+/// So the display text FOLLOWS the instruction, and — this is the part worth
+/// knowing — it is its own run, because OneNote gives the invisible instruction
+/// characters the *surrounding prose's* formatting and the visible label the
+/// link's. In that file "Video: " and the instruction are both bold and the
+/// label is not.
+///
+/// That is why the label is found by the **run boundary at the instruction's
+/// end**, not by comparing styles with the instruction. Comparing styles gets
+/// it exactly backwards: it stops before the real label and then walks
+/// backwards into the prose, which is how `Video: <link>` first came out as
+/// `[Video:](url)Natural Language …` — the label wrong and the sentence's
+/// lead-in eaten.
+///
+/// Runs in `styled_runs`, AFTER the run split — the 0x1E12 boundaries are char
+/// offsets into the raw buffer, so rewriting the text before the split would
+/// misalign every style boundary in the paragraph.
+fn linkify_hyperlink_runs(runs: &mut Vec<SRun>) {
+    if !runs.iter().any(|r| r.text.chars().any(is_field_control)) {
+        return;
+    }
+    let mut chars: Vec<char> = Vec::new();
+    let mut owner: Vec<usize> = Vec::new();
+    for (i, r) in runs.iter().enumerate() {
+        for c in r.text.chars() {
+            chars.push(c);
+            owner.push(i);
+        }
+    }
+    let multi = runs.len() > 1;
+    // Non-overlapping, ascending: (span to replace, replacement markdown).
+    let mut edits: Vec<(usize, usize, String)> = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(f) = find_field_link(&chars, cursor) {
+        cursor = f.end;
+        // Forward: the display text, which follows the instruction.
+        let mut hi = f.end;
+        // A run boundary exactly at the instruction's end means OneNote split
+        // the label into its own run — take that run and any following runs
+        // that look identical, and stop. This is the reliable case.
+        let split_here = f.end < chars.len() && f.end > 0 && owner[f.end] != owner[f.end - 1];
+        let label_run = split_here.then(|| owner[f.end]);
+        while hi < chars.len()
+            && chars[hi] != FIELD_END
+            && chars[hi] != '\n'
+            && !is_field_begin(chars[hi])
+        {
+            // Bounded by the label's OWN run when there is one. Extending
+            // through following runs that merely compare equal under
+            // `same_visible` swallows the prose after the link — the styles we
+            // parse are few, so "looks the same" is a much weaker signal than
+            // the run boundary that put the label in its own run to begin
+            // with. Truncating a label that OneNote split across runs costs a
+            // few words of link text; over-reading costs the sentence.
+            //
+            // (Written as a match rather than `Option::is_some_and`, which is
+            // newer than this crate's MSRV of 1.75 — clippy's
+            // `incompatible_msrv` fires, and CI runs clippy with `-D warnings`.)
+            if let Some(r) = label_run {
+                if owner[hi] != r {
+                    break;
+                }
+            }
+            hi += 1;
+        }
+        let mut lo = f.start;
+        let mut label: String = chars[f.end..hi].iter().collect();
+        label = label.trim().to_string();
+        if chars.get(hi) == Some(&FIELD_END) {
+            hi += 1;
+        }
+        if label.is_empty() && multi {
+            // Nothing after the instruction at all. Some versions put the label
+            // BEFORE it, so take the preceding run only when it actually looks
+            // like link text — underlined or coloured. Deliberately NOT a
+            // same-style-as-the-instruction test: the instruction is formatted
+            // like the prose around it, so that test eats the sentence.
+            let floor = edits.last().map(|e| e.1).unwrap_or(0);
+            let mut k = f.start;
+            while k > floor && chars[k - 1] != '\n' && !is_field_control(chars[k - 1]) {
+                let s = &runs[owner[k - 1]].style;
+                // `color_hex`, not `color != 0`: OneNote writes FF000000 for
+                // *automatic* black, and 75 of the 78 styled runs in the one
+                // real file we have carry exactly that. Testing `!= 0` treats
+                // ordinary prose as link-coloured, so the walk ran to the
+                // start of the line and turned the whole sentence into the
+                // label — the `[Video:](url)…` failure, still reachable.
+                if !(s.underline || color_hex(s.color).is_some()) {
+                    break;
+                }
+                k -= 1;
+            }
+            let back: String = chars[k..f.start].iter().collect();
+            if !back.trim().is_empty() {
+                // Keep any leading space outside the link, so "see foo" doesn't
+                // become "see[ foo](…)".
+                let kept = back.len() - back.trim_start().len();
+                lo = k + back[..kept].chars().count();
+                label = back.trim().to_string();
+            }
+        }
+        edits.push((lo, hi, markdown_link(&f.url, &label)));
+    }
+    if edits.is_empty() {
+        // Only unrecognised fields: strip the scaffolding in place.
+        for r in runs.iter_mut() {
+            if r.text.chars().any(is_field_control) {
+                r.text = r.text.chars().filter(|c| !is_field_control(*c)).collect();
+            }
+        }
+        return;
+    }
+
+    // Rebuild. Text outside the edits keeps the style of the run it came from.
+    let mut out: Vec<SRun> = Vec::new();
+    let push_span = |out: &mut Vec<SRun>, a: usize, b: usize| {
+        let mut i = a;
+        while i < b {
+            let who = owner[i];
+            let mut j = i;
+            while j < b && owner[j] == who {
+                j += 1;
+            }
+            let text: String = chars[i..j].iter().filter(|c| !is_field_control(**c)).collect();
+            if !text.is_empty() {
+                out.push(SRun {
+                    text,
+                    style: runs[who].style.clone(),
+                });
+            }
+            i = j;
+        }
+    };
+    let mut at = 0usize;
+    for (lo, hi, md) in &edits {
+        push_span(&mut out, at, *lo);
+        if !md.is_empty() {
+            // Every emphasis flag cleared — see [`markdown_link`].
+            let mut st = runs[owner[*lo]].style.clone();
+            st.bold = false;
+            st.italic = false;
+            st.underline = false;
+            st.strike = false;
+            st.highlight = false;
+            st.color = 0;
+            st.is_math = false;
+            out.push(SRun {
+                text: md.clone(),
+                style: st,
+            });
+        }
+        at = *hi;
+    }
+    push_span(&mut out, at, chars.len());
+    *runs = out;
 }
 
 /// Best-effort conversion of OneNote's Office linear-math Unicode (as stored in
@@ -1976,7 +2521,7 @@ fn parse_table(
             let mut guard = HashSet::new();
             collect_tree(r, cell, res, 0, &mut lines, &mut guard);
             let refs: Vec<&Line> = lines.iter().collect();
-            cells.push(outline_markdown(&refs, img_idx).trim().to_string());
+            cells.push(outline_markdown(&refs, img_idx, None).trim().to_string());
         }
         if !cells.is_empty() {
             grid.push(cells);
@@ -2308,7 +2853,11 @@ impl PropSet {
 }
 
 fn clean_str(s: String) -> String {
-    s.trim_matches(|c: char| c == '\0').trim_end().to_string()
+    let s = s.trim_matches(|c: char| c == '\0').trim_end();
+    // Defence in depth: titles and bullet strings have no run structure, so a
+    // field marker there would otherwise reach the UI. `run_text` itself is
+    // deliberately NOT filtered — the structure dumps rely on the raw buffer.
+    linkify_field_codes(s)
 }
 
 /// Full property-set parse with stream resolution for reference properties.
@@ -2553,14 +3102,27 @@ fn dominant_size(lines: &[&Line]) -> Option<f32> {
 }
 
 /// Render collected lines as indented Markdown for Openote's renderer. List
-/// items keep their original bullet; non-list paragraphs stay flush-left (bold
-/// runs become `**…**` — the OneNote heading look); in-flow images render as
+/// items keep their original bullet; in-flow images render as
 /// `![image](onote-img://N)` placeholder lines (the importer rewrites N to the
 /// stored blob hash). Math never reaches here: [emit_boxes] splits equations
-/// into their own boxes first. Normalised so the shallowest line sits at the
-/// left margin; 2 spaces per indent level.
-fn outline_markdown(lines: &[&Line], img_idx: &HashMap<u32, String>) -> String {
-    let min_depth = lines.iter().map(|l| l.depth).min().unwrap_or(0);
+/// into their own boxes first. 2 spaces per indent level, emitted for EVERY
+/// line kind — non-list paragraphs used to stay flush-left, which silently
+/// discarded their OneNote indent and produced the measured `45u × levels`
+/// residual offset on exactly those rows (review §K.1's last open item).
+///
+/// [base_depth] is the depth to normalise against. `emit_boxes` splits an
+/// outline into segments at every math/table line, and each segment
+/// re-normalising against its own minimum pulled post-math indented content
+/// back to the margin — so the caller computes the base once per outline and
+/// passes it to every segment. `None` keeps per-call normalisation (table
+/// cells, where each cell is its own little document).
+fn outline_markdown(
+    lines: &[&Line],
+    img_idx: &HashMap<u32, String>,
+    base_depth: Option<usize>,
+) -> String {
+    let min_depth = base_depth
+        .unwrap_or_else(|| lines.iter().map(|l| l.depth).min().unwrap_or(0));
     let mut out = String::new();
     for l in lines {
         let level = l.depth.saturating_sub(min_depth);
@@ -2572,8 +3134,8 @@ fn outline_markdown(lines: &[&Line], img_idx: &HashMap<u32, String>) -> String {
             }
             continue;
         }
+        out.push_str(&"  ".repeat(level));
         if l.is_list {
-            out.push_str(&"  ".repeat(level));
             out.push_str(&l.bullet);
             out.push(' ');
         }
@@ -2750,21 +3312,178 @@ fn decode_utf16(b: &[u8]) -> String {
 
 // ── Inline PNG recovery ─────────────────────────────────────────────────────
 
-fn scan_pngs(d: &[u8]) -> Vec<Vec<u8>> {
+/// One recovered image and the MIME type its bytes say it is.
+pub struct ScannedImage {
+    pub bytes: Vec<u8>,
+    pub mime: &'static str,
+}
+
+/// Recover embedded images by signature.
+///
+/// **PNG and JPEG**, not PNG alone. Student notebooks are full of phone photos
+/// of whiteboards and worksheets, and those are JPEG — so a PNG-only scan meant
+/// a switcher's photographs silently vanished at import. That is data loss, not
+/// a fidelity gap, which is why JPEG earns a place next to PNG rather than
+/// waiting behind EMF and the rest.
+fn scan_images(d: &[u8]) -> Vec<ScannedImage> {
     let mut out = Vec::new();
     let mut i = 0;
-    while let Some(rel) = find(&d[i..], PNG_SIG) {
-        let start = i + rel;
-        // End = the IEND chunk: 'IEND' marker + 4-byte CRC.
-        if let Some(erel) = find(&d[start..], b"IEND") {
-            let end = (start + erel + 8).min(d.len());
-            out.push(d[start..end].to_vec());
-            i = end;
+    while i < d.len() {
+        let png_at = find(&d[i..], PNG_SIG).map(|r| i + r);
+        let jpg_at = find_jpeg(d, i);
+        // Take whichever comes first so images stay in document order.
+        let (start, is_png) = match (png_at, jpg_at) {
+            (Some(p), Some(j)) => {
+                if p <= j {
+                    (p, true)
+                } else {
+                    (j, false)
+                }
+            }
+            (Some(p), None) => (p, true),
+            (None, Some(j)) => (j, false),
+            (None, None) => break,
+        };
+        let end = if is_png {
+            // End = the IEND chunk: 'IEND' marker + 4-byte CRC.
+            match find(&d[start..], b"IEND") {
+                Some(erel) => (start + erel + 8).min(d.len()),
+                None => break,
+            }
         } else {
-            break;
+            match jpeg_end(d, start) {
+                Some(e) => e,
+                // A truncated JPEG: skip past its header and keep looking
+                // rather than abandoning every later image in the blob.
+                None => {
+                    i = start + 2;
+                    continue;
+                }
+            }
+        };
+        if end > start {
+            out.push(ScannedImage {
+                bytes: d[start..end].to_vec(),
+                mime: if is_png { "image/png" } else { "image/jpeg" },
+            });
         }
+        i = end.max(start + 2);
     }
     out
+}
+
+/// File extension for a recovered image's real MIME type.
+fn ext_of(mime: &str) -> &'static str {
+    if mime == "image/jpeg" { "jpg" } else { "png" }
+}
+
+/// PNG pixel dimensions from the IHDR chunk.
+fn png_dimensions(d: &[u8]) -> (u32, u32) {
+    if d.len() < 24 {
+        return (0, 0);
+    }
+    (
+        u32::from_be_bytes([d[16], d[17], d[18], d[19]]),
+        u32::from_be_bytes([d[20], d[21], d[22], d[23]]),
+    )
+}
+
+/// JPEG pixel dimensions from the first SOF segment (walking markers, since a
+/// JPEG has no fixed-offset header the way PNG does).
+fn jpeg_dimensions(d: &[u8]) -> (u32, u32) {
+    let mut i = 2;
+    for _ in 0..1024 {
+        if i + 9 >= d.len() || d[i] != 0xFF {
+            return (0, 0);
+        }
+        let marker = d[i + 1];
+        // SOF0-SOF15, excluding DHT(C4), JPGA(C8) and DAC(CC) which share the range.
+        if (0xC0..=0xCF).contains(&marker)
+            && marker != 0xC4
+            && marker != 0xC8
+            && marker != 0xCC
+        {
+            let h = u16::from_be_bytes([d[i + 5], d[i + 6]]) as u32;
+            let w = u16::from_be_bytes([d[i + 7], d[i + 8]]) as u32;
+            return (w, h);
+        }
+        if marker == 0xD8 || marker == 0x01 || (0xD0..=0xD7).contains(&marker) {
+            i += 2;
+            continue;
+        }
+        let len = u16::from_be_bytes([d[i + 2], d[i + 3]]) as usize;
+        if len < 2 {
+            return (0, 0);
+        }
+        i += 2 + len;
+    }
+    (0, 0)
+}
+
+/// Offset of the next JPEG SOI that is followed by a plausible marker.
+///
+/// `FF D8` alone occurs constantly inside compressed data, so the third byte
+/// must also be `FF` (the start of the next marker) — this is what stops the
+/// scanner manufacturing images out of LZX noise.
+fn find_jpeg(d: &[u8], from: usize) -> Option<usize> {
+    let mut i = from;
+    while i + 3 < d.len() {
+        let rel = find(&d[i..], &[0xFF, 0xD8, 0xFF])?;
+        let at = i + rel;
+        // A real JFIF/EXIF stream begins APP0/APP1/… (0xE0-0xEF) or DQT.
+        match d.get(at + 3) {
+            Some(&m) if (0xE0..=0xEF).contains(&m) || m == 0xDB => return Some(at),
+            Some(_) => i = at + 2,
+            None => return None,
+        }
+    }
+    None
+}
+
+/// End offset (exclusive) of the JPEG beginning at `start`, walking its marker
+/// segments to the EOI. Segment-walking rather than searching for `FF D9`,
+/// because that byte pair appears inside entropy-coded scan data too.
+fn jpeg_end(d: &[u8], start: usize) -> Option<usize> {
+    let mut i = start + 2; // past SOI
+    // Bounded: a malformed file must not spin here on hostile input.
+    for _ in 0..4096 {
+        if i + 1 >= d.len() {
+            return None;
+        }
+        if d[i] != 0xFF {
+            return None;
+        }
+        let marker = d[i + 1];
+        match marker {
+            0xD8 => i += 2,                    // another SOI
+            0xD9 => return Some(i + 2),        // EOI
+            0x01 | 0xD0..=0xD7 => i += 2,      // standalone markers
+            0xDA => {
+                // Start of scan: entropy-coded data follows, terminated by the
+                // next marker that isn't a stuffed FF00 or a restart marker.
+                let len = u16::from_be_bytes([*d.get(i + 2)?, *d.get(i + 3)?]) as usize;
+                let mut j = i + 2 + len;
+                while j + 1 < d.len() {
+                    if d[j] == 0xFF
+                        && d[j + 1] != 0x00
+                        && !(0xD0..=0xD7).contains(&d[j + 1])
+                    {
+                        break;
+                    }
+                    j += 1;
+                }
+                i = j;
+            }
+            _ => {
+                let len = u16::from_be_bytes([*d.get(i + 2)?, *d.get(i + 3)?]) as usize;
+                if len < 2 {
+                    return None;
+                }
+                i += 2 + len;
+            }
+        }
+    }
+    None
 }
 
 fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
@@ -3202,6 +3921,343 @@ mod tests {
     fn rejects_non_one_input() {
         let out = import_one_json(b"not a onenote file at all, padding.......................");
         assert!(out.contains("\"ok\":false"));
+    }
+
+    fn text_line(depth: usize, text: &str, is_list: bool) -> Line {
+        Line {
+            depth,
+            is_list,
+            bullet: if is_list { "-".into() } else { String::new() },
+            runs: vec![SRun { text: text.into(), style: Style::default() }],
+            math: None,
+            table: None,
+            image: None,
+        }
+    }
+
+    /// Regression for the last known layout defect: non-list paragraphs used
+    /// to be emitted flush-left whatever their depth, losing OneNote's indent
+    /// (a measured 45u-per-lost-level horizontal offset on those rows).
+    #[test]
+    fn indented_prose_keeps_its_level() {
+        let lines = [
+            text_line(1, "top", false),
+            text_line(3, "deep paragraph", false),
+            text_line(2, "item", true),
+        ];
+        let refs: Vec<&Line> = lines.iter().collect();
+        let md = outline_markdown(&refs, &HashMap::new(), None);
+        let rows: Vec<&str> = md.lines().collect();
+        assert_eq!(rows[0], "top"); // shallowest normalises to the margin
+        assert_eq!(rows[1], "    deep paragraph"); // 2 levels = 4 spaces, NOT flush
+        assert_eq!(rows[2], "  - item");
+    }
+
+    /// Office stores a Symbol-font char as U+F000+byte; keyed on the run's
+    /// font the byte maps deterministically. `∈` is Symbol 0xCE, `¬` is 0xD8,
+    /// and the reference notebook's 17× U+F0AC are left arrows.
+    #[test]
+    fn symbol_pua_translates_when_the_font_says_symbol() {
+        let mut runs = vec![SRun {
+            text: "x \u{F0CE} A \u{F0D8}B \u{F0AC}".into(),
+            style: Style { font: Some("Symbol".into()), ..Default::default() },
+        }];
+        translate_symbol_pua(&mut runs);
+        assert_eq!(runs[0].text, "x \u{2208} A ¬B \u{2190}");
+        assert_eq!(runs[0].style.font, None, "now real Unicode, not Symbol-encoded");
+
+        // A different font must NOT translate — Wingdings 0xCE is a different
+        // glyph entirely, and guessing would corrupt content.
+        let mut wd = vec![SRun {
+            text: "\u{F0CE}".into(),
+            style: Style { font: Some("Wingdings".into()), ..Default::default() },
+        }];
+        translate_symbol_pua(&mut wd);
+        assert_eq!(wd[0].text, "\u{F0CE}");
+        assert_eq!(wd[0].style.font.as_deref(), Some("Wingdings"));
+
+        // An unmappable byte (bracket extender 0xE6) keeps the whole run
+        // untouched rather than half-translating it.
+        let mut partial = vec![SRun {
+            text: "\u{F0CE}\u{F0E6}".into(),
+            style: Style { font: Some("Symbol".into()), ..Default::default() },
+        }];
+        translate_symbol_pua(&mut partial);
+        assert_eq!(partial[0].text, "\u{F0CE}\u{F0E6}");
+    }
+
+    /// A hyperlink is a Word FIELD inside the paragraph's own text, not a
+    /// property — so an unfiltered import put `﷟HYPERLINK "https://…"` in the
+    /// note next to the words it was attached to, and there was nothing to
+    /// click.
+    #[test]
+    fn hyperlink_field_becomes_a_markdown_link() {
+        assert_eq!(
+            linkify_field_codes(
+                "See \u{FDDF}HYPERLINK \"https://www.youtube.com/watch?v=DsT_YiMiUQo\"this video"
+            ),
+            "See [this video](https://www.youtube.com/watch?v=DsT_YiMiUQo)"
+        );
+        // Word's full form, with the separator and end markers.
+        assert_eq!(
+            linkify_field_codes(
+                "\u{13}HYPERLINK \"https://a.test/x\"\u{14}label\u{15} tail"
+            ),
+            "[label](https://a.test/x) tail"
+        );
+        // A `\l` switch names a fragment inside the target.
+        assert_eq!(
+            linkify_field_codes("\u{FDDF}HYPERLINK \"https://a.test/p\" \\l \"sec2\"Jump"),
+            "[Jump](https://a.test/p#sec2)"
+        );
+    }
+
+    /// No display text at all still has to produce something clickable, and the
+    /// address is information the student can act on.
+    #[test]
+    fn hyperlink_without_display_text_links_the_url() {
+        assert_eq!(
+            linkify_field_codes("\u{FDDF}HYPERLINK \"https://a.test/x\""),
+            "[https://a.test/x](https://a.test/x)"
+        );
+    }
+
+    /// The app opens http/https/mailto only (a deliberate security decision),
+    /// so anything else must degrade to plain text — emitting
+    /// `[x](onenote:…)` would print as literal source, i.e. new junk.
+    ///
+    /// But the ADDRESS is kept. This same conversion runs over notes that were
+    /// imported long ago (the repair path), where the `.one` may be gone, so a
+    /// silently discarded link target is user data nothing can bring back.
+    #[test]
+    fn unopenable_schemes_degrade_to_text_but_keep_the_address() {
+        assert_eq!(
+            linkify_field_codes("\u{FDDF}HYPERLINK \"onenote:///C:/notes/a.one\"My page"),
+            "My page (onenote:///C:/notes/a.one)"
+        );
+        assert_eq!(
+            linkify_field_codes("a \u{FDDF}HYPERLINK \"file:///c:/x.pdf\"the PDF b"),
+            "a the PDF b (file:///c:/x.pdf)"
+        );
+    }
+
+    /// The app's link regex reads the target as `[^)\s]+`, so a space or a
+    /// paren truncates it — but an existing escape must not be double-encoded.
+    #[test]
+    fn url_is_encoded_only_where_the_renderer_would_break() {
+        assert_eq!(
+            linkify_field_codes("\u{FDDF}HYPERLINK \"https://a.test/my file (1).pdf\"doc"),
+            "[doc](https://a.test/my%20file%20%281%29.pdf)"
+        );
+        assert_eq!(encode_url("https://a.test/a%20b"), "https://a.test/a%20b");
+    }
+
+    /// An instruction we don't understand must never cost the user text — but
+    /// the scaffolding still has to go.
+    #[test]
+    fn unknown_field_keeps_its_text_and_loses_its_markers() {
+        let out = linkify_field_codes("see \u{13}PAGEREF _Toc1 \\h \u{14}page 4\u{15}.");
+        assert_eq!(out, "see PAGEREF _Toc1 \\h page 4.");
+        assert!(
+            !out.chars().any(|c| is_field_control(c) || is_math_control(c)),
+            "no field scaffolding may reach the note: {out:?}"
+        );
+    }
+
+    /// The real layout, taken byte-for-byte from
+    /// `Natural Language and Intro to Truth Tables.one`: one text buffer,
+    /// 0x1E12 boundaries at 7 and 63, three 0x1E13 style OIDs.
+    ///
+    /// The trap this pins: OneNote gives the invisible instruction characters
+    /// the *surrounding prose's* formatting (here, bold — the same as
+    /// "Video: ") and the visible label the link's. Matching the label by
+    /// "same style as the instruction" therefore gets it exactly backwards —
+    /// it stops before the real label and walks back into the sentence, which
+    /// is how this line first came out as `[Video:](url)Natural Language …`.
+    /// The run BOUNDARY at the instruction's end is the reliable signal.
+    #[test]
+    fn real_onenote_hyperlink_labels_the_text_that_follows() {
+        let bold = Style { bold: true, ..Default::default() };
+        let mut runs = vec![
+            SRun { text: "Video: ".into(), style: bold.clone() },
+            SRun {
+                text: "\u{FDDF}HYPERLINK \"https://www.youtube.com/watch?v=DsT_YiMiUQo\""
+                    .into(),
+                style: bold,
+            },
+            SRun {
+                text: "Natural Language and Introduction to Truth Tables".into(),
+                style: Style::default(),
+            },
+        ];
+        // Boundaries line up with the file: "Video: " is 7 chars, and the
+        // marker plus `HYPERLINK "<43-char url>"` is 56 more.
+        assert_eq!(runs[0].text.chars().count(), 7);
+        assert_eq!(runs[1].text.chars().count(), 56);
+
+        linkify_hyperlink_runs(&mut runs);
+        assert_eq!(
+            render_runs(&runs),
+            "**Video:** [Natural Language and Introduction to Truth Tables]\
+             (https://www.youtube.com/watch?v=DsT_YiMiUQo)"
+        );
+    }
+
+    /// The fallback, for a field with nothing after it: take the preceding run
+    /// only when it actually looks like link text. Deliberately not a
+    /// same-style-as-the-instruction test — that is what ate the sentence.
+    #[test]
+    fn a_trailing_field_labels_the_link_styled_run_before_it() {
+        let link = Style { underline: true, color: 0x0563C1, ..Default::default() };
+        let mut runs = vec![
+            SRun { text: "Watch ".into(), style: Style::default() },
+            SRun { text: "this video".into(), style: link },
+            SRun {
+                text: "\u{FDDF}HYPERLINK \"https://a.test/v\"".into(),
+                style: Style::default(),
+            },
+        ];
+        linkify_hyperlink_runs(&mut runs);
+        assert_eq!(render_runs(&runs), "Watch [this video](https://a.test/v)");
+    }
+
+    /// Plain prose before a trailing field is NOT a label — it stays prose,
+    /// and the address stands in for itself.
+    #[test]
+    fn plain_prose_before_a_trailing_field_is_not_eaten() {
+        // Run for BOTH colour shapes, because the real file distinguishes
+        // them: OneNote writes FF000000 for *automatic* black, and 75 of the
+        // 78 styled runs in it carry exactly that. A fixture built only from
+        // `Style::default()` (colour 0) passes for a reason unrelated to the
+        // guard working — and that false assurance is how the sentence-eating
+        // `[Video:](url)…` behaviour survived a rewrite meant to kill it.
+        for color in [0u32, 0xFF00_0000] {
+            let style = Style { color, ..Default::default() };
+            let mut runs = vec![
+                SRun {
+                    text: "Some notes about logic ".into(),
+                    style: style.clone(),
+                },
+                SRun {
+                    text: "\u{FDDF}HYPERLINK \"https://a.test/v\"".into(),
+                    style,
+                },
+            ];
+            linkify_hyperlink_runs(&mut runs);
+            let md = render_runs(&runs);
+            assert!(
+                md.starts_with("Some notes about logic "),
+                "color {color:08X}: {md:?}"
+            );
+            assert!(
+                md.contains("[https://a.test/v](https://a.test/v)"),
+                "color {color:08X}: {md:?}"
+            );
+        }
+    }
+
+    /// The label is bounded by its OWN run. Extending through following runs
+    /// that merely compare equal under `same_visible` swallows the prose after
+    /// the link — we parse few style properties, so "looks the same" is a much
+    /// weaker signal than the boundary that put the label in its own run.
+    #[test]
+    fn the_label_does_not_absorb_the_prose_after_it() {
+        let link = Style { underline: true, ..Default::default() };
+        let mut runs = vec![
+            SRun {
+                text: "\u{FDDF}HYPERLINK \"https://a.test/v\"".into(),
+                style: Style::default(),
+            },
+            SRun { text: "watch this".into(), style: link },
+            SRun { text: " before the exam".into(), style: Style::default() },
+        ];
+        linkify_hyperlink_runs(&mut runs);
+        assert_eq!(
+            render_runs(&runs),
+            "[watch this](https://a.test/v) before the exam"
+        );
+    }
+
+    /// The emitted link must be NAKED. The app's inline parser is
+    /// non-recursive, so `{{#0563C1 ++[x](y)++}}` renders as literal source —
+    /// the single easiest way to ship a fix that fixes nothing.
+    #[test]
+    fn imported_link_carries_no_emphasis_wrapper() {
+        let mut runs = vec![SRun {
+            text: "\u{FDDF}HYPERLINK \"https://a.test/v\"watch".into(),
+            style: Style {
+                underline: true,
+                color: 0x0563C1,
+                bold: true,
+                ..Default::default()
+            },
+        }];
+        linkify_hyperlink_runs(&mut runs);
+        let md = render_runs(&runs);
+        assert_eq!(md, "[watch](https://a.test/v)");
+        assert!(!md.contains("++") && !md.contains("{{#") && !md.contains("**"));
+    }
+
+    /// Student notebooks are full of phone photos, which are JPEG — a PNG-only
+    /// scan meant those silently vanished at import.
+    #[test]
+    fn scans_jpeg_alongside_png() {
+        // Minimal but structurally real JPEG: SOI, APP0, SOF0 (2x3), SOS with
+        // a tiny scan, EOI.
+        let mut jpg: Vec<u8> = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x04, 0x00, 0x00];
+        // SOF0: length 0x0B = 2 + precision(1) + h(2) + w(2) + ncomp(1) + 3.
+        jpg.extend_from_slice(&[
+            0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x03, 0x00, 0x02, 0x01, 0x01, 0x11,
+            0x00,
+        ]);
+        jpg.extend_from_slice(&[0xFF, 0xDA, 0x00, 0x04, 0x00, 0x00]);
+        jpg.extend_from_slice(&[0x12, 0x34, 0xFF, 0x00, 0x56]); // stuffed FF00
+        jpg.extend_from_slice(&[0xFF, 0xD9]);
+
+        let mut png: Vec<u8> = PNG_SIG.to_vec();
+        png.extend_from_slice(&[0, 0, 0, 13]);
+        png.extend_from_slice(b"IHDR");
+        png.extend_from_slice(&7u32.to_be_bytes()); // width
+        png.extend_from_slice(&5u32.to_be_bytes()); // height
+        png.extend_from_slice(&[8, 6, 0, 0, 0]);
+        png.extend_from_slice(b"IEND");
+        png.extend_from_slice(&[0, 0, 0, 0]);
+
+        // Interleaved with junk, as they are inside a real .one blob.
+        let mut blob = vec![0xAA; 16];
+        blob.extend_from_slice(&png);
+        blob.extend_from_slice(&[0xBB; 8]);
+        blob.extend_from_slice(&jpg);
+
+        let found = scan_images(&blob);
+        assert_eq!(found.len(), 2, "both images recovered");
+        assert_eq!(found[0].mime, "image/png", "document order preserved");
+        assert_eq!(found[1].mime, "image/jpeg");
+        assert_eq!(png_dimensions(&found[0].bytes), (7, 5));
+        assert_eq!(jpeg_dimensions(&found[1].bytes), (2, 3));
+        assert_eq!(ext_of(found[1].mime), "jpg");
+    }
+
+    /// `FF D8` occurs constantly inside compressed data; only a real marker
+    /// sequence may start an image, or the scanner invents images from noise.
+    #[test]
+    fn does_not_invent_jpegs_from_noise() {
+        let noise = vec![0xFF, 0xD8, 0x42, 0x00, 0xFF, 0xD8, 0x11, 0x22, 0x33];
+        assert!(scan_images(&noise).is_empty());
+    }
+
+    /// A segment made only of deep lines must not be pulled back to the
+    /// margin: the base depth comes from the whole outline, not the segment.
+    #[test]
+    fn segment_after_math_keeps_outline_base() {
+        let deep = [text_line(3, "after the equation", false)];
+        let refs: Vec<&Line> = deep.iter().collect();
+        // Per-segment normalisation (None) would emit flush-left; the outline
+        // base (Some(1)) preserves the two extra levels.
+        assert_eq!(
+            outline_markdown(&refs, &HashMap::new(), Some(1)),
+            "    after the equation"
+        );
     }
 
     #[test]

@@ -1,7 +1,9 @@
 name: openote
 description: An open-source, natively cross-platform alternative to Microsoft OneNote.
 publish_to: "none"
-version: 0.1.0+1
+# Single source of truth for the app version; release.yml derives artifact
+# names from the git tag and asserts it matches this field.
+version: 0.2.0+2
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -27,6 +29,9 @@ dependencies:
   # FFI to the Rust core (onote-core) — optional at runtime; the app falls
   # back to the pure-Dart engine when the native library isn't present.
   ffi: ^2.1.0
+  super_clipboard: ^0.9.1
+  desktop_drop: ^0.7.1
+  pdfrx: ^2.2.24
 
 dev_dependencies:
   flutter_test:
@@ -51,3 +56,28 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon/openote_icon.png
+    # Spell-check wordlist (TEXT-11). Loaded lazily on a background isolate the
+    # first time text is edited — never at startup.
+    - assets/dict/en_us.txt
+  # Bundled type (style guide §4.1): the app previously rendered in each OS's
+  # system font, so no two platforms looked alike. Inter is the UI + note face,
+  # JetBrains Mono the code face; both OFL-1.1 (texts beside the assets, rows
+  # in LICENSING.md). The onoteFontFallback chain stays BEHIND these — it is
+  # what resolves math/symbol glyphs the primary faces lack.
+  fonts:
+    - family: Inter
+      fonts:
+        - { asset: assets/fonts/inter/Inter-Regular.ttf, weight: 400 }
+        - { asset: assets/fonts/inter/Inter-Italic.ttf, weight: 400, style: italic }
+        - { asset: assets/fonts/inter/Inter-Medium.ttf, weight: 500 }
+        - { asset: assets/fonts/inter/Inter-MediumItalic.ttf, weight: 500, style: italic }
+        - { asset: assets/fonts/inter/Inter-SemiBold.ttf, weight: 600 }
+        - { asset: assets/fonts/inter/Inter-SemiBoldItalic.ttf, weight: 600, style: italic }
+        - { asset: assets/fonts/inter/Inter-Bold.ttf, weight: 700 }
+        - { asset: assets/fonts/inter/Inter-BoldItalic.ttf, weight: 700, style: italic }
+    - family: JetBrains Mono
+      fonts:
+        - { asset: assets/fonts/jetbrains-mono/JetBrainsMono-Regular.ttf, weight: 400 }
+        - { asset: assets/fonts/jetbrains-mono/JetBrainsMono-Italic.ttf, weight: 400, style: italic }
+        - { asset: assets/fonts/jetbrains-mono/JetBrainsMono-Bold.ttf, weight: 700 }
+        - { asset: assets/fonts/jetbrains-mono/JetBrainsMono-BoldItalic.ttf, weight: 700, style: italic }

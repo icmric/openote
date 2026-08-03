@@ -183,7 +183,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
                     child: TextField(
                       controller: _hex,
                       style: const TextStyle(
-                          fontSize: 13, fontFamily: 'monospace'),
+                          fontSize: 13, fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback),
                       decoration: const InputDecoration(
                           isDense: true, border: UnderlineInputBorder()),
                       onSubmitted: (v) {

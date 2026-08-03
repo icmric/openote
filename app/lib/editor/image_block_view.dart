@@ -41,7 +41,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
 
   void _load() {
     _hash = widget.block.content['blob'] as String?;
-    _bytes = _hash == null ? null : widget.app.repo.getBlob(widget.app.notebookId!, _hash!);
+    _bytes = _hash == null ? null : widget.app.blob(_hash!);
     _provider = _bytes == null ? null : MemoryImage(_bytes!);
     // Record intrinsic size once, so width-resize keeps aspect ratio.
     if (_bytes != null && widget.block.content['naturalW'] == null) {

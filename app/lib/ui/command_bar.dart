@@ -2,11 +2,14 @@ import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../export/markdown_export.dart';
 import '../export/open_export.dart';
 import '../export/pdf_export.dart';
+import '../export/pdf_import.dart';
 import '../model/models.dart';
+import '../model/tags.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'color_picker.dart';
@@ -85,6 +88,23 @@ class _CommandBarState extends State<CommandBar> {
                       onPressed: () => app.setTool(Tool.select),
                     ),
                   ),
+                // Study: the due count is the whole nudge, so it's on the
+                // badge rather than hidden behind the panel.
+                _StudyButton(app: app),
+                IconButton(
+                  icon: const Icon(Icons.label_outline, size: 17),
+                  tooltip: 'Find tags',
+                  isSelected: app.showTagsPanel,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: app.toggleTagsPanel,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.toc, size: 17),
+                  tooltip: 'Page outline',
+                  isSelected: app.showTocPanel,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: app.toggleTocPanel,
+                ),
                 IconButton(
                   icon: const Icon(Icons.account_tree_outlined, size: 17),
                   tooltip: 'Links & backlinks',
@@ -235,6 +255,12 @@ class _CommandBarState extends State<CommandBar> {
           () => app.toggleLinePrefix('- [ ] ')),
       fmt(Icons.format_quote, 'Quote', () => app.toggleLinePrefix('> ')),
       const _Div(),
+      // Tags (TEXT-5). OneNote users organise around these, so they get a
+      // first-class place on Home rather than a submenu. The button shows the
+      // caret line's active tags, which is why it reads state on every build.
+      _TagButton(app: app),
+      _MakeCardButton(app: app),
+      const _Div(),
       // Text colour — split button (§7a.2): main area applies the current
       // colour; the arrow opens the full picker (palette/wheel/RGBA).
       Tooltip(
@@ -309,6 +335,11 @@ class _CommandBarState extends State<CommandBar> {
       ins(Icons.code, 'Code', _insertCode),
       ins(Icons.table_chart_outlined, 'Table', _insertTable),
       ins(Icons.image_outlined, 'Image', () => _insertImage(context)),
+      // The lecture-slide flow. Default is a printout down THIS page — one
+      // continuous thing you scroll and write on, next to the notes already
+      // there — with page-per-slide behind the arrow for a big unit you want
+      // in the navigator.
+      _PdfImportButton(app: app),
       ins(Icons.attach_file, 'File', () => _insertFile(context)),
       ins(Icons.link, 'Page link', () => _insertPageLink(context)),
       ins(Icons.dashboard_customize_outlined, 'Template',
@@ -333,7 +364,11 @@ class _CommandBarState extends State<CommandBar> {
           ),
           onPressed: () => app.setTool(t),
         );
-    final inkActive = app.tool == Tool.pen || app.tool == Tool.highlighter;
+    // The swatches also appear with ink selected, so a lassoed diagram can be
+    // recoloured without first re-picking the pen.
+    final inkActive = app.tool == Tool.pen ||
+        app.tool == Tool.highlighter ||
+        app.hasInkSelection;
     final colors = app.tool == Tool.highlighter
         ? OnoteColors.highlighterColors
         : OnoteColors.penColors;
@@ -354,7 +389,16 @@ class _CommandBarState extends State<CommandBar> {
               borderRadius: BorderRadius.circular(99),
               onTap: () {
                 app.penColor = i;
-                app.refresh();
+                // With ink selected (typically just lassoed), a colour click
+                // recolours it rather than only arming the next stroke —
+                // recolouring after the fact is most of why you lasso a
+                // diagram (INK-7).
+                if (app.hasInkSelection) {
+                  app.recolorSelectedInk('#'
+                      '${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}');
+                } else {
+                  app.refresh();
+                }
               },
               child: Container(
                 width: 18,
@@ -385,15 +429,63 @@ class _CommandBarState extends State<CommandBar> {
             },
           ),
         ),
-      ] else if (app.tool == Tool.eraser)
-        Text('Eraser splits strokes where you rub',
-            style: TextStyle(fontSize: 11, color: OnoteColors.graphite400))
+      ] else if (app.tool == Tool.eraser) ...[
+        SegmentedButton<EraserMode>(
+          segments: [
+            for (final m in EraserMode.values)
+              ButtonSegment(
+                  value: m,
+                  label: Text(m.label, style: const TextStyle(fontSize: 11))),
+          ],
+          selected: {app.eraserMode},
+          onSelectionChanged: (s) => app.setEraserMode(s.first),
+          showSelectedIcon: false,
+          style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+        ),
+        const SizedBox(width: 8),
+        Text(
+            app.eraserMode == EraserMode.area
+                ? 'Splits strokes where you rub'
+                : 'Removes any stroke you touch',
+            style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+      ]
       else if (app.tool == Tool.lasso)
         Text('Draw a loop around ink to select it — then drag or delete',
             style: TextStyle(fontSize: 11, color: OnoteColors.graphite400))
       else
-        Text('Pick the pen or highlighter to draw — fingers pan, pen draws',
+        Text('Pick the pen or highlighter to draw',
             style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+      const Spacer(),
+      // Touch drawing (INK-1). Exposed because the right answer depends on
+      // hardware we can't detect reliably: "Auto" suits a pen-and-touch
+      // convertible, "Always" a touch-only tablet, "Never" anyone who rests a
+      // hand on the glass while thinking.
+      const _Div(),
+      Tooltip(
+        message: 'Draw with your finger.\nAuto: a finger draws until you use '
+            'the pen, then touch pans so your palm can\'t mark the page.\n'
+            'Two fingers always pan and zoom.',
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.touch_app_outlined,
+              size: 16, color: OnoteColors.graphite400),
+          const SizedBox(width: 4),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<TouchDrawing>(
+              value: app.touchDrawing,
+              isDense: true,
+              style: TextStyle(fontSize: 11, color: scheme.onSurface),
+              items: [
+                for (final v in TouchDrawing.values)
+                  DropdownMenuItem(value: v, child: Text(v.label)),
+              ],
+              onChanged: (v) => v == null ? null : app.setTouchDrawing(v),
+            ),
+          ),
+        ]),
+      ),
+      const SizedBox(width: 4),
     ]);
   }
 
@@ -467,6 +559,20 @@ class _CommandBarState extends State<CommandBar> {
         selected: {app.themeMode},
         onSelectionChanged: (s) => app.setThemeMode(s.first),
       ),
+      const _Div(),
+      // Spell check (TEXT-11). English-only in this release; the toggle exists
+      // because a wordlist checker WILL flag jargon and proper nouns, and the
+      // answer to that has to be one click away.
+      Tooltip(
+        message: 'Underline misspelled words while editing (English)',
+        child: IconButton(
+          icon: const Icon(Icons.spellcheck, size: 18),
+          isSelected: app.spellCheckEnabled,
+          visualDensity: VisualDensity.compact,
+          color: app.spellCheckEnabled ? scheme.primary : null,
+          onPressed: () => app.setSpellCheck(!app.spellCheckEnabled),
+        ),
+      ),
     ]);
   }
 
@@ -533,7 +639,7 @@ class _CommandBarState extends State<CommandBar> {
       'webp' => 'image/webp',
       _ => 'image/png',
     };
-    final hash = app.repo.putBlob(app.notebookId!, bytes, mime);
+    final hash = app.addBlob(bytes, mime);
     final c = _center();
     final b = app.addBlock(Block(
         type: BlockType.image,
@@ -549,7 +655,7 @@ class _CommandBarState extends State<CommandBar> {
     if (file == null) return;
     final Uint8List bytes = await file.readAsBytes();
     final hash =
-        app.repo.putBlob(app.notebookId!, bytes, 'application/octet-stream');
+        app.addBlob(bytes, 'application/octet-stream');
     final c = _center();
     final b = app.addBlock(Block(
         type: BlockType.file,
@@ -715,5 +821,337 @@ class _FontSizeField extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// The tag button on Home: applies a tag to the caret's line, and shows which
+/// tags that line already carries.
+///
+/// A menu rather than a row of buttons because the set is open-ended (nine
+/// built-ins plus, later, user-defined ones) and the toolbar is already dense.
+class _TagButton extends StatelessWidget {
+  const _TagButton({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final active = app.tagsAtCaret();
+    final enabled = app.canFormatText;
+    return MenuAnchor(
+      builder: (context, controller, _) => Tooltip(
+        message: active.isEmpty
+            ? 'Tag this line (To Do, Important, Question…)'
+            : 'Tagged: ${active.map((k) => k.label).join(', ')}',
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: enabled
+              ? () => controller.isOpen ? controller.close() : controller.open()
+              : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(
+                  active.isEmpty
+                      ? Icons.label_outline
+                      : active.first.icon,
+                  size: 17,
+                  color: !enabled
+                      ? OnoteColors.graphite400
+                      : active.isEmpty
+                          ? null
+                          : active.first.color),
+              Icon(Icons.arrow_drop_down,
+                  size: 16,
+                  color: enabled ? null : OnoteColors.graphite400),
+            ]),
+          ),
+        ),
+      ),
+      menuChildren: [
+        for (final k in TagKind.pickable)
+          MenuItemButton(
+            leadingIcon: Icon(k.icon, size: 16, color: k.color),
+            trailingIcon: active.contains(k)
+                ? Icon(Icons.check, size: 15, color: scheme.primary)
+                : null,
+            onPressed: () => app.toggleTagOnSelection(k),
+            child: Text(k.label),
+          ),
+      ],
+    );
+  }
+}
+
+/// One button that turns the caret's line into a flashcard.
+///
+/// Tags remain the underlying mechanism — a card is a *view* of a tagged line,
+/// which is what makes editing the note edit the card. But "tag it Question or
+/// Definition, and remember which one, and get the shape right" is a rule the
+/// student has to learn before anything happens, and getting it wrong produced
+/// nothing with no explanation. This reads the line, picks the tag, and says
+/// what it did.
+class _MakeCardButton extends StatelessWidget {
+  const _MakeCardButton({required this.app});
+  final AppState app;
+
+  void _say(BuildContext context, String? msg) {
+    if (msg == null || !context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg), duration: const Duration(seconds: 3)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = app.canFormatText;
+    return MenuAnchor(
+      builder: (context, controller, _) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Tooltip(
+            message: 'Make this line a flashcard',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: enabled
+                  ? () => _say(context, app.makeCardAtCaret())
+                  : null,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                child: Icon(Icons.style_outlined,
+                    size: 17,
+                    color: enabled ? null : OnoteColors.graphite400),
+              ),
+            ),
+          ),
+          InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: enabled
+                ? () => controller.isOpen ? controller.close() : controller.open()
+                : null,
+            child: Icon(Icons.arrow_drop_down,
+                size: 16, color: enabled ? null : OnoteColors.graphite400),
+          ),
+        ],
+      ),
+      menuChildren: [
+        MenuItemButton(
+          leadingIcon:
+              Icon(TagKind.question.icon, size: 16, color: TagKind.question.color),
+          shortcut: const SingleActivator(LogicalKeyboardKey.digit3, control: true),
+          onPressed: () => app.toggleTagOnSelection(TagKind.question),
+          child: const Text('Question card'),
+        ),
+        MenuItemButton(
+          leadingIcon: Icon(TagKind.definition.icon,
+              size: 16, color: TagKind.definition.color),
+          shortcut: const SingleActivator(LogicalKeyboardKey.digit5, control: true),
+          onPressed: () => app.toggleTagOnSelection(TagKind.definition),
+          child: const Text('Definition card'),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.format_underlined, size: 16),
+          onPressed: () {
+            if (!app.blankOutSelection()) {
+              _say(context, 'Select the words to blank out first.');
+            }
+          },
+          child: const Text('Blank out selection'),
+        ),
+        const Divider(height: 8),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.school_outlined, size: 16),
+          onPressed: () {
+            if (!app.showStudyPanel) app.toggleStudyPanel();
+          },
+          child: const Text('Open study panel'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Study button with a due badge.
+///
+/// The count is the feature's entire nudge — "12 due" the week before an exam
+/// is what turns notes into revision, and a bare icon says nothing.
+class _StudyButton extends StatelessWidget {
+  const _StudyButton({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final (due, total) = app.deckCounts(sectionId: app.activeSectionId);
+    return Tooltip(
+      message: total == 0
+          ? 'Study — tag a line Question or Definition to make a card'
+          : '$due of $total card${total == 1 ? '' : 's'} due in this section',
+      child: Stack(clipBehavior: Clip.none, children: [
+        IconButton(
+          icon: const Icon(Icons.school_outlined, size: 17),
+          isSelected: app.showStudyPanel,
+          visualDensity: VisualDensity.compact,
+          onPressed: app.toggleStudyPanel,
+        ),
+        if (due > 0)
+          Positioned(
+            right: 2,
+            top: 2,
+            child: IgnorePointer(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text('$due',
+                    style: TextStyle(
+                        fontSize: 9,
+                        height: 1.2,
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).colorScheme.onPrimary)),
+              ),
+            ),
+          ),
+      ]),
+    );
+  }
+}
+
+/// Insert ▸ PDF, as a split button.
+///
+/// The main action is the one a student wants nine times in ten: the slides
+/// laid down THIS page, below what is already on it, the way OneNote's "PDF
+/// printout" works. The arrow keeps the page-per-slide import, which is the
+/// better shape for a whole unit you want as separate pages in the navigator.
+class _PdfImportButton extends StatelessWidget {
+  const _PdfImportButton({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    return MenuAnchor(
+      builder: (context, controller, _) => Padding(
+        padding: const EdgeInsets.only(right: 4),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          TextButton.icon(
+            icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+            label: const Text('PDF slides', style: TextStyle(fontSize: 12)),
+            onPressed: () {
+              // Close the menu if it is open: otherwise the file picker opens
+              // behind a menu that is still sitting on top of it.
+              controller.close();
+              _importPdfWithProgress(context, app,
+                  placement: PdfPlacement.currentPage);
+            },
+          ),
+          Tooltip(
+            message: 'Where the slides go',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () =>
+                  controller.isOpen ? controller.close() : controller.open(),
+              // A bare 16px icon leaves most of the toolbar row's height as
+              // dead space around it; sized to the row so the arrow is
+              // actually hittable.
+              child: const SizedBox(
+                width: 22,
+                height: 34,
+                child: Icon(Icons.arrow_drop_down, size: 16),
+              ),
+            ),
+          ),
+        ]),
+      ),
+      menuChildren: [
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.vertical_align_bottom, size: 16),
+          onPressed: () => _importPdfWithProgress(context, app,
+              placement: PdfPlacement.currentPage),
+          child: const Text('Printout on this page'),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.auto_stories_outlined, size: 16),
+          onPressed: () => _importPdfWithProgress(context, app,
+              placement: PdfPlacement.pagePerSlide),
+          child: const Text('One page per slide'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Import a PDF, with progress.
+///
+/// A lecture deck is 40–120 pages and each one is a pdfium render plus a PNG
+/// encode, so this is seconds, not milliseconds — a modal with a live count is
+/// the difference between "working" and "frozen".
+Future<void> _importPdfWithProgress(BuildContext context, AppState app,
+    {PdfPlacement placement = PdfPlacement.currentPage}) async {
+  final progress = ValueNotifier<String>('Opening PDF…');
+  var dialogOpen = false;
+  if (context.mounted) {
+    dialogOpen = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        content: Row(children: [
+          const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.6)),
+          const SizedBox(width: 16),
+          Expanded(
+            child: ValueListenableBuilder<String>(
+              valueListenable: progress,
+              builder: (_, text, __) => Text(text),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+  try {
+    final result = await importPdfAsPages(
+      app,
+      placement: placement,
+      onProgress: (done, total) =>
+          progress.value = 'Importing page $done of $total…',
+    );
+    if (dialogOpen && context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      dialogOpen = false;
+    }
+    if (result == null) return; // cancelled at the file picker
+    if (!context.mounted) return;
+    if (result.pages == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("That PDF couldn't be read.")));
+      return;
+    }
+    // Only navigate for the page-per-slide import — a printout landed on the
+    // page you are already looking at, and jumping would be disorienting.
+    if (result.sectionId != null && result.firstPageId != null) {
+      await app.selectPage(result.firstPageId!);
+    }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 6),
+      content: Text('Imported ${result.pages} '
+          '${result.pages == 1 ? 'slide' : 'slides'}'
+          '${result.sectionId == null ? ' onto this page' : ''} — pick the pen '
+          'and write on them. The slide text is searchable.'),
+    ));
+  } catch (e) {
+    if (dialogOpen && context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('PDF import failed: $e')));
+    }
+  } finally {
+    progress.dispose();
   }
 }

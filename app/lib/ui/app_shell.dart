@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../canvas/media_drop.dart';
 import '../canvas/page_canvas.dart';
 import '../model/models.dart';
+import '../model/tags.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'command_bar.dart';
+import 'onboarding.dart';
 import 'sidebar.dart';
+import 'study_panel.dart';
+import 'sync_dialog.dart';
 
 /// Layout per style guide §5.4: navigator | (toolbar / canvas-as-hero / status).
 ///
@@ -32,6 +37,11 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_onKey);
+    // Post-frame: the welcome flow needs a Navigator, and there isn't one
+    // until this shell is mounted.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) maybeShowOnboarding(context, app);
+    });
   }
 
   @override
@@ -105,6 +115,29 @@ class _AppShellState extends State<AppShell> {
           app.toggleTextColor();
           return true;
         }
+        // Ctrl+1/2/3 — tag the caret's line. OneNote's own chords, so the
+        // muscle memory a switching student already has keeps working.
+        final tag = switch (k) {
+          LogicalKeyboardKey.digit1 => TagKind.todo,
+          LogicalKeyboardKey.digit2 => TagKind.important,
+          LogicalKeyboardKey.digit3 => TagKind.question,
+          LogicalKeyboardKey.digit4 => TagKind.remember,
+          LogicalKeyboardKey.digit5 => TagKind.definition,
+          _ => null,
+        };
+        if (tag != null) {
+          app.toggleTagOnSelection(tag);
+          return true;
+        }
+        // Ctrl+V with an IMAGE on the clipboard. Flutter's own paste handles
+        // text only, so screenshot → click in the box → Ctrl+V silently did
+        // nothing. Handled here only when there is an image; anything else
+        // falls through to the field's own paste, because breaking plain-text
+        // paste into a note would be a far worse bug than the one being fixed.
+        if (k == LogicalKeyboardKey.keyV) {
+          _pasteImageIntoEditor();
+          return false; // never swallow the keystroke
+        }
       }
       return false;
     }
@@ -121,8 +154,11 @@ class _AppShellState extends State<AppShell> {
         return true;
       }
       if (k == LogicalKeyboardKey.keyV) {
-        if (!app.canPasteBlocks) return false;
-        app.pasteBlocks();
+        // System clipboard first (an image from a screenshot tool), our own
+        // block clipboard second. The reverse order would make Ctrl+V paste a
+        // stale block instead of the screenshot just taken — and copying a
+        // block is far rarer than copying an image from elsewhere.
+        _pasteFromSystemOrBlocks();
         return true;
       }
       if (k == LogicalKeyboardKey.keyF) {
@@ -178,6 +214,37 @@ class _AppShellState extends State<AppShell> {
     return true;
   }
 
+  /// Ctrl+V while the caret is in a text box, when the clipboard holds an
+  /// image: splice an in-flow reference at the caret.
+  ///
+  /// Deliberately fire-and-forget and never blocking: the keystroke is passed
+  /// through to Flutter's own paste regardless, so a clipboard with both an
+  /// image and text still pastes the text if the image read fails. In the
+  /// normal case the image read wins the race by a frame and the text branch
+  /// finds nothing to do.
+  Future<void> _pasteImageIntoEditor() async {
+    final ae = app.activeEditor;
+    if (ae == null) return;
+    final bytes = await readClipboardImage();
+    if (bytes == null || !mounted) return;
+    if (app.activeEditor?.block.id != ae.block.id) return; // moved on
+    final hash = app.addBlob(bytes.bytes, bytes.mime);
+    app.insertTextAtActiveCursor('\n![](sha256:$hash)\n');
+    ae.block.content['autoWidth'] = false;
+  }
+
+  /// Ctrl+V on the canvas: system clipboard media if there is any, else our
+  /// own copied blocks.
+  Future<void> _pasteFromSystemOrBlocks() async {
+    final at = app.canvas.screenToPage(Offset(
+        app.canvas.viewport.width / 2, app.canvas.viewport.height / 2));
+    final result = await pasteOntoCanvas(app, at,
+        dark: Theme.of(context).brightness == Brightness.dark);
+    if (result == PasteResult.nothing && app.canPasteBlocks) {
+      app.pasteBlocks();
+    }
+  }
+
   /// Memoised navigator. The whole shell sits under one `ListenableBuilder`, so
   /// *every* notify — each keystroke (`markDirty`), each drag frame — used to
   /// rebuild the navigator too: three `nodes.where(...)` scans plus a nested
@@ -197,7 +264,7 @@ class _AppShellState extends State<AppShell> {
       app.notebookId,
       app.collapsedPages.length,
       app.collapsedGroups.length,
-      app.repo.notebooks.length,
+      app.notebooks.length,
     ];
     final cached = _navCache;
     if (cached != null && _navKey != null && _listEq(_navKey!, key)) {
@@ -241,6 +308,18 @@ class _AppShellState extends State<AppShell> {
                                 : PageCanvas(
                                     key: ValueKey(app.pageId), state: app),
                           ),
+                          if (app.showStudyPanel) ...[
+                            const VerticalDivider(width: 1),
+                            StudyPanel(app: app),
+                          ],
+                          if (app.showTagsPanel) ...[
+                            const VerticalDivider(width: 1),
+                            _TagsPanel(app: app),
+                          ],
+                          if (app.showTocPanel && page != null) ...[
+                            const VerticalDivider(width: 1),
+                            _TocPanel(app: app),
+                          ],
                           if (app.showLinksPanel && page != null) ...[
                             const VerticalDivider(width: 1),
                             _LinksPanel(app: app),
@@ -261,12 +340,80 @@ class _AppShellState extends State<AppShell> {
 }
 
 /// Find-on-page bar (TEXT-7): live matches, next/prev cycles & centers.
-class _FindBar extends StatelessWidget {
+class _FindBar extends StatefulWidget {
   const _FindBar({required this.app});
   final AppState app;
 
   @override
+  State<_FindBar> createState() => _FindBarState();
+}
+
+class _FindBarState extends State<_FindBar> {
+  AppState get app => widget.app;
+
+  /// Replace is opt-in: a permanently visible replace field doubles the height
+  /// of the bar for a job most searches don't want.
+  bool _showReplace = false;
+  final _replaceCtl = TextEditingController();
+
+  @override
+  void dispose() {
+    _replaceCtl.dispose();
+    super.dispose();
+  }
+
+  void _replace({required bool all}) {
+    final n = app.replaceAll(app.findQuery, _replaceCtl.text,
+        onlyCurrent: !all);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(n == 0
+            ? 'Nothing replaced'
+            : 'Replaced $n occurrence${n == 1 ? '' : 's'}')));
+  }
+
+  @override
   Widget build(BuildContext context) {
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      _findRow(context),
+      if (_showReplace) _replaceRow(context),
+    ]);
+  }
+
+  Widget _replaceRow(BuildContext context) => Container(
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          border:
+              Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
+        ),
+        child: Row(children: [
+          const SizedBox(width: 24),
+          Expanded(
+            child: TextField(
+              controller: _replaceCtl,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: 'Replace with…',
+              ),
+              style: const TextStyle(fontSize: 13),
+              onSubmitted: (_) => _replace(all: false),
+            ),
+          ),
+          TextButton(
+            onPressed: app.findMatches.isEmpty ? null : () => _replace(all: false),
+            child: const Text('Replace', style: TextStyle(fontSize: 12)),
+          ),
+          TextButton(
+            onPressed: app.findMatches.isEmpty ? null : () => _replace(all: true),
+            child: const Text('All', style: TextStyle(fontSize: 12)),
+          ),
+        ]),
+      );
+
+  Widget _findRow(BuildContext context) {
     return Container(
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -309,6 +456,15 @@ class _FindBar extends StatelessWidget {
             onPressed: app.findMatches.isEmpty ? null : () => app.findNext(1),
           ),
           IconButton(
+            icon: Icon(
+                _showReplace ? Icons.find_replace : Icons.find_replace_outlined,
+                size: 17),
+            visualDensity: VisualDensity.compact,
+            isSelected: _showReplace,
+            tooltip: 'Replace',
+            onPressed: () => setState(() => _showReplace = !_showReplace),
+          ),
+          IconButton(
             icon: const Icon(Icons.close, size: 16),
             visualDensity: VisualDensity.compact,
             tooltip: 'Close (Esc)',
@@ -330,7 +486,7 @@ class _PageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final section = app.node(page.parentId ?? '');
     final notebook =
-        app.repo.notebooks.firstWhere((n) => n.id == app.notebookId);
+        app.notebooks.firstWhere((n) => n.id == app.notebookId);
     final crumbStyle =
         TextStyle(fontSize: 11.5, color: OnoteColors.graphite400);
     return Container(
@@ -356,6 +512,201 @@ class _PageHeader extends StatelessWidget {
 }
 
 /// Right-side links panel: incoming backlinks + outgoing links (TEXT-8).
+/// Find tags (TEXT-5): every tagged line in the notebook, grouped by tag.
+///
+/// This is half the value of tags in OneNote — marking a line is only useful
+/// if you can later ask "what did I mark?". Scanning page mirrors rather than
+/// maintaining an index, for the same reason as notebook-wide search: one
+/// source of truth beats an index that can silently drift.
+class _TagsPanel extends StatelessWidget {
+  const _TagsPanel({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final all = app.allTags();
+    final byKind = <TagKind, List<({String pageId, String pageTitle, NoteTag tag, String text})>>{};
+    for (final e in all) {
+      byKind.putIfAbsent(e.tag.kind, () => []).add(e);
+    }
+    return Container(
+      width: 260,
+      color: dark ? OnoteColors.night0 : OnoteColors.paper50,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
+            child: Row(children: [
+              const Icon(Icons.label_outline,
+                  size: 14, color: OnoteColors.graphite400),
+              const SizedBox(width: 6),
+              Text('TAGS',
+                  style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: .6,
+                      color: OnoteColors.graphite400)),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close, size: 15),
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Close tags',
+                onPressed: app.toggleTagsPanel,
+              ),
+            ]),
+          ),
+          if (all.isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 4, 12, 12),
+              child: Text(
+                  'No tags in this notebook yet.\nTag a line from the Home tab.',
+                  style:
+                      TextStyle(fontSize: 11.5, color: OnoteColors.graphite400)),
+            )
+          else
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.only(bottom: 8),
+                children: [
+                  for (final kind in byKind.keys)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+                          child: Row(children: [
+                            Icon(kind.icon, size: 13, color: kind.color),
+                            const SizedBox(width: 5),
+                            Text('${kind.label}  (${byKind[kind]!.length})',
+                                style: const TextStyle(
+                                    fontSize: 11, fontWeight: FontWeight.w600)),
+                          ]),
+                        ),
+                        for (final e in byKind[kind]!)
+                          InkWell(
+                            onTap: () => app.selectPage(e.pageId),
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.fromLTRB(30, 3, 12, 3),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                      e.text.isEmpty ? '(empty line)' : e.text,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          decoration:
+                                              (e.tag.checked ?? false)
+                                                  ? TextDecoration.lineThrough
+                                                  : null,
+                                          color: (e.tag.checked ?? false)
+                                              ? OnoteColors.graphite400
+                                              : null)),
+                                  Text(e.pageTitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                          fontSize: 10.5,
+                                          color: OnoteColors.graphite400)),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Page outline (TEXT-10): the current page's headings, click to jump.
+///
+/// Deliberately derived from the Markdown rather than stored: a heading IS
+/// `# text` in a text block, so an outline that could disagree with the page
+/// would be a second source of truth for no gain.
+class _TocPanel extends StatelessWidget {
+  const _TocPanel({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final items = app.pageOutline();
+    return Container(
+      width: 240,
+      color: dark ? OnoteColors.night0 : OnoteColors.paper50,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
+            child: Row(children: [
+              const Icon(Icons.toc, size: 14, color: OnoteColors.graphite400),
+              const SizedBox(width: 6),
+              Text('OUTLINE',
+                  style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: .6,
+                      color: OnoteColors.graphite400)),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close, size: 15),
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Close outline',
+                onPressed: app.toggleTocPanel,
+              ),
+            ]),
+          ),
+          if (items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 4, 12, 12),
+              child: Text('No headings on this page.\nStart a line with # to add one.',
+                  style:
+                      TextStyle(fontSize: 11.5, color: OnoteColors.graphite400)),
+            )
+          else
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.only(bottom: 8),
+                itemCount: items.length,
+                itemBuilder: (_, i) {
+                  final it = items[i];
+                  return InkWell(
+                    onTap: () => app.jumpToBlock(it.blockId),
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                          12.0 + (it.level - 1) * 14.0, 5, 12, 5),
+                      child: Text(
+                        it.text,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: it.level == 1 ? 13 : 12,
+                          fontWeight: it.level == 1
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LinksPanel extends StatelessWidget {
   const _LinksPanel({required this.app});
   final AppState app;
@@ -503,6 +854,11 @@ class _StatusBar extends StatelessWidget {
             ]),
           ),
           const SizedBox(width: 12),
+          // Sync (ADR-0006). Shown only once a second device has touched this
+          // notebook — until then there is nothing to say, and a permanent
+          // "1 device" chip would be noise.
+          if (app.notebookId != null) _SyncChip(app: app),
+          const SizedBox(width: 12),
           // Active compute engine (§ADR-0002): green chip when the Rust core
           // is linked, with the live page content-hash it computed on save.
           Tooltip(
@@ -569,5 +925,73 @@ class _EmptyState extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Sync state in the status bar.
+///
+/// Driven by [SyncStatus] — where the notebook LIVES — rather than by how many
+/// devices have written logs. The old chip used the device count as a proxy,
+/// so a notebook correctly placed in Google Drive still read "Not synced yet"
+/// until a second machine appeared: the app disagreeing with what the user had
+/// just successfully done.
+class _SyncChip extends StatelessWidget {
+  const _SyncChip({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final nb = app.notebookId!;
+    final s = app.syncStatus(nb);
+    final scheme = Theme.of(context).colorScheme;
+    // Green once it is actually somewhere that syncs; grey when it is only on
+    // this machine. The colour is the whole at-a-glance answer.
+    final color = s.isSynced ? OnoteColors.success : OnoteColors.graphite400;
+
+    return Tooltip(
+      message: _tooltip(s),
+      child: InkWell(
+        onTap: () => showSyncDialog(context, app),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(s.icon, size: 12, color: color),
+            const SizedBox(width: 5),
+            Text(s.label, style: TextStyle(fontSize: 11, color: color)),
+            if (s.isSynced && s.hasOtherDevices) ...[
+              const SizedBox(width: 6),
+              InkWell(
+                onTap: () async {
+                  final n = await app.syncPull(nb);
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(n == 0
+                          ? 'Already up to date.'
+                          : 'Pulled $n change${n == 1 ? '' : 's'}.')));
+                },
+                child: Icon(Icons.refresh, size: 12, color: scheme.primary),
+              ),
+            ],
+          ]),
+        ),
+      ),
+    );
+  }
+
+  String _tooltip(SyncStatus s) {
+    final b = StringBuffer();
+    if (s.isSynced) {
+      b.write('Syncing through ${s.folder!.name}.\n');
+      b.write(s.hasOtherDevices
+          ? 'Edited on ${s.devices} devices — changes arrive automatically.'
+          : 'Open this notebook on another device to sync it.');
+    } else {
+      b.write('Only on this computer.\n'
+          'Click to put it in a folder your cloud already syncs.');
+    }
+    if (s.mirrors > 0) {
+      b.write('\n${s.mirrors} backup destination${s.mirrors == 1 ? '' : 's'}.');
+    }
+    return b.toString();
   }
 }

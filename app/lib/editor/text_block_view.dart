@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
+import '../model/tags.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'onote_text_editor.dart';
@@ -30,9 +31,9 @@ class TextBlockView extends StatefulWidget {
   static const double minAutoW = 200, maxAutoW = 640;
 
   static String? _fontFamilyOf(String? font) => switch (font) {
-        null || '' || 'sans' => null,
+        null || '' || 'sans' => 'Inter', // the bundled default face
         'serif' => 'Georgia', // legacy token
-        'mono' => 'monospace', // legacy token
+        'mono' => 'JetBrains Mono', // legacy token
         _ => font, // any system family name (font picker)
       };
 
@@ -105,8 +106,14 @@ class TextBlockView extends StatefulWidget {
     if (b.type != BlockType.text || b.content['autoWidth'] == false) return b.w;
     const chrome = 26.0, slack = 18.0;
     final engine = OnoteEditors.active;
-    final w = engine.measureIntrinsicWidth(
-        engine.deserialize(b.content), baseStyle(b, dark: dark));
+    // Image references are stripped before measuring: `![](sha256:<64 hex>)`
+    // is 80-odd characters of source that the reader never sees, and measuring
+    // it would pin any auto-width box to its maximum the instant a picture
+    // landed in it.
+    final source = engine
+        .deserialize(b.content)
+        .replaceAll(RegExp(r'^\s*!\[[^\]]*\]\([^)]*\)\s*$', multiLine: true), '');
+    final w = engine.measureIntrinsicWidth(source, baseStyle(b, dark: dark));
     return (w + chrome + slack).clamp(minAutoW, maxAutoW).toDouble();
   }
 
@@ -154,6 +161,18 @@ class _TextBlockViewState extends State<TextBlockView> {
             widget.app.pushUndo();
             _undoPushed = true;
           }
+          // Tags record a line index, so a keystroke that adds or removes a
+          // line moves every marker below it onto the wrong sentence — and
+          // takes the flashcards derived from them with it. Rebase before the
+          // new text lands, while both versions are still available, and carry
+          // each moved tag's review schedule across with it: a card is
+          // identified by `blockId:line`, so a tag that moves alone leaves its
+          // schedule orphaned under a name nothing points at any more.
+          widget.app.remapCardStates(
+            widget.block.id,
+            NoteTag.rebase(widget.block.content,
+                _engine.deserialize(widget.block.content), v),
+          );
           _engine.serialize(widget.block.content, v);
           widget.block.updatedAt = nowMs();
           // Width is measured in the parent build (lag-free); markDirty here
@@ -189,9 +208,14 @@ class _TextBlockViewState extends State<TextBlockView> {
       // Register for command-bar formatting. An engine with its own selection
       // model reports no controller, and the buttons then stay disabled rather
       // than acting on a stale target.
+      // Hand the caret target to the session before it builds; it consumes it
+      // once, so the caret lands where the click did.
+      session.pendingCaretGlobal ??= widget.app.pendingCaretGlobal;
+      widget.app.pendingCaretGlobal = null;
       final ctrl = session.commandController;
       if (ctrl != null) {
-        widget.app.setActiveEditor(ctrl, widget.block, _engine.textStorageKey);
+        widget.app.setActiveEditor(ctrl, widget.block, _engine.textStorageKey,
+            session: session);
       }
       return session.build(context, surface);
     }

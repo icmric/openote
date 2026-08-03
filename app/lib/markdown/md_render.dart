@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 
 import '../core/platform_open.dart';
+import '../model/tags.dart';
 import '../theme/onote_theme.dart';
+import 'md_table.dart';
 
 /// Interim inline-Markdown rendering (TEXT-2/4 at block granularity):
 /// a text block RENDERS its Markdown when not being edited and reveals the
@@ -29,6 +31,10 @@ final _reImage =
 final _reQuote = RegExp(r'^>\s?(.*)$');
 final _reDisplayMath = RegExp(r'^\s*\$\$(.+)\$\$\s*$');
 final _reDivider = RegExp(r'^\s*(-{3,}|\*{3,})\s*$');
+// A plain paragraph carrying the 2-spaces-per-level indent encoding. Only
+// matched after every other line form, so lists/checkboxes/images (which do
+// their own indent handling) never reach it.
+final _rePlainIndent = RegExp(r'^( +)(\S.*)$');
 // The 12-branch inline alternation, also compiled once per process rather than
 // once per rendered line.
 final _reInline = RegExp(
@@ -39,7 +45,14 @@ final _reInline = RegExp(
     r'|(\[([^\]\[]+)\]\((https?://[^)\s]+|mailto:[^)\s]+)\))'
     // Group 22-23: `++underline++`. Markdown has no underline and `__x__` means
     // bold, so the dialect borrows the `==highlight==` shape (Data Model §5.2).
-    r'|(\+\+(.+?)\+\+)');
+    r'|(\+\+(.+?)\+\+)'
+    // Groups 24-25: a BARE url, autolinked. A URL typed or pasted into a note
+    // is a link in every other app; requiring `[label](url)` syntax to make it
+    // clickable is a Markdown detail nobody asked to learn. Last in the
+    // alternation so an explicit `[label](url)` (group 19) always wins at the
+    // same position, and the lookbehind keeps it from firing mid-word or on the
+    // `(url)` half of a link the scanner has already stepped over.
+    r'|((?:^|(?<=[\s(<]))(https?://[^\s)\]<]+))');
 
 /// Indent per nesting level, as a multiple of the text's font size.
 ///
@@ -75,6 +88,8 @@ class MarkdownView extends StatefulWidget {
     this.onToggleCheckbox,
     this.onWikiLink,
     this.imageResolver,
+    this.tagsByLine = const {},
+    this.onToggleTag,
   });
 
   final String text;
@@ -82,6 +97,14 @@ class MarkdownView extends StatefulWidget {
 
   /// Called with the new full text when a checkbox line is toggled.
   final void Function(String newText)? onToggleCheckbox;
+
+  /// Tags on this block, by 0-based line index (TEXT-5). Rendered as markers
+  /// in the line's left gutter — OneNote's model, where a tag decorates a
+  /// paragraph rather than living in its text.
+  final Map<int, List<NoteTag>> tagsByLine;
+
+  /// Called when a to-do marker is clicked.
+  final void Function(int line, bool checked)? onToggleTag;
 
   /// Called when a `[[Page|id]]` link is tapped (EMBED-1).
   final void Function(String label, String? id)? onWikiLink;
@@ -151,7 +174,7 @@ class _MarkdownViewState extends State<MarkdownView> {
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(fenceBuf.join('\n'),
-            style: baseStyle.copyWith(fontFamily: 'monospace', fontSize: 13)),
+            style: baseStyle.copyWith(fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, fontSize: 13)),
       ));
       fenceBuf.clear();
     }
@@ -169,7 +192,16 @@ class _MarkdownViewState extends State<MarkdownView> {
         fenceBuf.add(line);
         continue;
       }
-      children.add(_renderLine(context, line, i, dark));
+      // GFM pipe table. Checked before the per-line path because a table is a
+      // multi-line construct — rendering its rows one at a time is exactly what
+      // produced the raw-pipes output this replaces.
+      final table = parsePipeTable(lines, i);
+      if (table != null) {
+        children.add(_renderTable(context, table.table, dark));
+        i += table.consumed - 1; // the loop's own i++ consumes the last line
+        continue;
+      }
+      children.add(_withTagGutter(i, _renderLine(context, line, i, dark)));
     }
     if (inFence) flushFence();
 
@@ -177,6 +209,98 @@ class _MarkdownViewState extends State<MarkdownView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: children.isEmpty ? [Text(' ', style: baseStyle)] : children,
+    );
+  }
+
+  /// Prefix a rendered line with its tag markers, if it has any.
+  ///
+  /// A hanging gutter rather than inline content: the tag decorates the
+  /// paragraph, so it must not shift the text or become part of it when the
+  /// line is edited.
+  Widget _withTagGutter(int lineIndex, Widget line) {
+    final tags = widget.tagsByLine[lineIndex];
+    if (tags == null || tags.isEmpty) return line;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 2, right: 5),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            for (final t in tags)
+              if (t.kind == TagKind.todo)
+                InkWell(
+                  onTap: widget.onToggleTag == null
+                      ? null
+                      : () => widget.onToggleTag!(lineIndex, !(t.checked ?? false)),
+                  child: Icon(
+                      (t.checked ?? false)
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                      size: 15,
+                      color: t.kind.color),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.only(right: 1),
+                  child: Tooltip(
+                    message: t.displayLabel,
+                    child: Icon(t.kind.icon, size: 14, color: t.kind.color),
+                  ),
+                ),
+          ]),
+        ),
+        Flexible(child: line),
+      ],
+    );
+  }
+
+  Widget _renderTable(BuildContext context, MdTable t, bool dark) {
+    final border = dark ? OnoteColors.night100 : OnoteColors.paper100;
+    final scheme = Theme.of(context).colorScheme;
+
+    TextAlign textAlign(int col) => switch (t.align[col]) {
+          MdAlign.center => TextAlign.center,
+          MdAlign.right => TextAlign.right,
+          MdAlign.left => TextAlign.left,
+        };
+
+    TableRow row(List<String> cells, {required bool header}) => TableRow(
+          decoration: header
+              ? BoxDecoration(color: scheme.surfaceContainerHighest)
+              : null,
+          children: [
+            for (var c = 0; c < t.columns; c++)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Text(
+                  c < cells.length ? cells[c] : '',
+                  textAlign: textAlign(c),
+                  style: header
+                      ? baseStyle.copyWith(fontWeight: FontWeight.w600)
+                      : baseStyle,
+                ),
+              ),
+          ],
+        );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      // Horizontally scrollable: a wide pasted table must not force the whole
+      // page to scroll sideways.
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 240),
+          child: Table(
+            defaultColumnWidth: const IntrinsicColumnWidth(),
+            border: TableBorder.all(color: border, width: 1),
+            children: [
+              row(t.header, header: true),
+              for (final r in t.rows) row(r, header: false),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -359,7 +483,7 @@ class _MarkdownViewState extends State<MarkdownView> {
               textStyle: baseStyle.copyWith(fontSize: 18),
               onErrorFallback: (e) => Text(dm.group(1)!,
                   style: const TextStyle(
-                      fontFamily: 'monospace', color: OnoteColors.graphite400)),
+                      fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, color: OnoteColors.graphite400)),
             ),
           ),
         ),
@@ -369,6 +493,25 @@ class _MarkdownViewState extends State<MarkdownView> {
     // Divider
     if (_reDivider.hasMatch(line)) {
       return const Divider(height: 12);
+    }
+
+    // Indented plain paragraph: leading spaces are an INDENT ENCODING
+    // (2 spaces = 1 level, same as lists), not content. Rendering them as
+    // literal spaces gave ~4px where OneNote gives 2.45×fontSize per level —
+    // the other half of the importer's lost-indent defect: the parser now
+    // emits the levels, and this is what makes them the right width.
+    final plainIndent = _rePlainIndent.firstMatch(line);
+    if (plainIndent != null) {
+      return Padding(
+        padding: EdgeInsets.only(
+            left: indentPx(plainIndent.group(1)!.length, baseStyle.fontSize)),
+        child: Text.rich(
+          TextSpan(
+              children: inlineSpans(
+                  plainIndent.group(2)!, baseStyle, dark, onWikiLink)),
+          style: baseStyle,
+        ),
+      );
     }
 
     // Paragraph (empty lines keep their height)
@@ -423,7 +566,7 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
           textStyle: base,
           onErrorFallback: (e) => Text(m.group(15)!,
               style: const TextStyle(
-                  fontFamily: 'monospace', color: OnoteColors.graphite400)),
+                  fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, color: OnoteColors.graphite400)),
         ),
       ));
     } else if (m.group(19) != null) {
@@ -435,8 +578,25 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
         child: _ExternalLink(
             label: label,
             url: url,
+            base: base,
             color: dark ? OnoteColors.ink300 : OnoteColors.ink600),
       ));
+    } else if (m.group(24) != null) {
+      // A bare URL. Trailing sentence punctuation belongs to the writer, not
+      // to the address — "see https://a.test/x." must not link the full stop.
+      final raw = m.group(25)!;
+      final url = raw.replaceFirst(RegExp(r'[.,;:!?]+$'), '');
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: _ExternalLink(
+            label: _shortUrl(url),
+            url: url,
+            base: base,
+            color: dark ? OnoteColors.ink300 : OnoteColors.ink600),
+      ));
+      if (url.length < raw.length) {
+        spans.add(TextSpan(text: raw.substring(url.length)));
+      }
     } else if (m.group(22) != null) {
       spans.add(TextSpan(
           text: m.group(23),
@@ -451,7 +611,7 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
       spans.add(TextSpan(
         text: m.group(9),
         style: TextStyle(
-          fontFamily: 'monospace',
+          fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback,
           fontSize: (base.fontSize ?? 14) * 0.9,
           color: dark ? OnoteColors.ink300 : OnoteColors.ink700,
           backgroundColor: dark ? OnoteColors.night100 : OnoteColors.paper100,
@@ -481,12 +641,30 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
 /// An external `[label](https://…)` link. Hands the URL to the OS default
 /// browser; the scheme allow-list lives in [PlatformOpen] because note content
 /// is untrusted.
+/// A bare URL, shortened for reading. The scheme and `www.` carry no meaning to
+/// the reader, and a lecture link can be 200 characters — the full address
+/// stays in the tooltip and is what actually opens.
+String _shortUrl(String url) {
+  var s = url.replaceFirst(RegExp(r'^https?://(www\.)?'), '');
+  if (s.endsWith('/')) s = s.substring(0, s.length - 1);
+  if (s.length <= 52) return s;
+  return '${s.substring(0, 34)}…${s.substring(s.length - 14)}';
+}
+
 class _ExternalLink extends StatelessWidget {
   const _ExternalLink(
-      {required this.label, required this.url, required this.color});
+      {required this.label,
+      required this.url,
+      required this.color,
+      required this.base});
   final String label;
   final String url;
   final Color color;
+
+  /// The surrounding text's style. A WidgetSpan's child does NOT inherit the
+  /// enclosing TextSpan style, so without this a link renders at the app's
+  /// default size in the middle of a heading or a 20pt note.
+  final TextStyle base;
 
   @override
   Widget build(BuildContext context) {
@@ -506,13 +684,14 @@ class _ExternalLink extends StatelessWidget {
           child: Text.rich(TextSpan(children: [
             TextSpan(
                 text: label,
-                style: TextStyle(
+                style: base.copyWith(
                     color: color,
                     decoration: TextDecoration.underline,
                     decorationColor: color)),
             TextSpan(
                 text: ' ↗',
-                style: TextStyle(color: color, fontSize: 11)),
+                style: base.copyWith(
+                    color: color, fontSize: (base.fontSize ?? 14) * 0.78)),
           ])),
         ),
       ),

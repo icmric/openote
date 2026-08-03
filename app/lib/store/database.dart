@@ -1,7 +1,13 @@
 /// The .onote container — File Format Spec (docs/specs/10-file-format-spec.md).
-/// This file executes the spec's normative DDL (§3) verbatim in intent;
-/// the app currently runs in mirror-write mode (§4): CRDT columns are
-/// populated with placeholders and `dirty_mirror` is set in notebook_meta.
+///
+/// `page_mirror` holds page content and is **authoritative**, not a projection.
+/// The spec originally layered a CRDT (`page_docs`/`page_updates`) underneath it
+/// as the source of truth, with the mirror as the open-format window onto it;
+/// that layer was never implemented, and [ADR-0006] replaced it with an
+/// append-only operation log kept in files inside a `.onotebook` directory. So
+/// there is exactly one copy of a page in this container, and once the op log
+/// lands this whole container becomes a rebuildable local cache that is never
+/// synced.
 library;
 
 import 'dart:convert';
@@ -57,15 +63,17 @@ void _ensureSchema(Database db) {
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
       deleted_at INTEGER);
     CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parent_id, position);
-    CREATE TABLE IF NOT EXISTS page_docs (
-      page_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
-      snapshot BLOB NOT NULL, snapshot_v INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS page_updates (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      page_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-      update_v INTEGER NOT NULL, bytes BLOB NOT NULL, created_at INTEGER NOT NULL);
-    CREATE INDEX IF NOT EXISTS idx_updates_page ON page_updates(page_id, id);
+    -- NOTE: `page_docs` and `page_updates` (the CRDT-in-SQLite layer of File
+    -- Format Spec §3/§5) are deliberately NOT created. They were never
+    -- populated — `page_docs` took a zero-byte placeholder on every save and
+    -- `page_updates` was never written at all — and ADR-0006 supersedes the
+    -- design: the operation log lives in FILES inside a `.onotebook` directory,
+    -- not in the container, precisely so that dumb file sync has one writer per
+    -- file. Creating empty tables shaped like a superseded plan misleads
+    -- third-party readers about where the data is. Existing notebooks keep
+    -- whatever tables they already have; nothing reads or writes them, and the
+    -- container is rebuildable from the log once that lands, so there is no
+    -- migration worth paying for now.
     CREATE TABLE IF NOT EXISTS page_mirror (
       page_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
       json TEXT NOT NULL, mirror_rev INTEGER NOT NULL, updated_at INTEGER NOT NULL);
@@ -89,11 +97,11 @@ void _ensureSchema(Database db) {
       label TEXT,
       PRIMARY KEY (page_id, version_at));
   ''');
-  // FTS5 is present in sqlite3_flutter_libs bundles; degrade gracefully if not.
-  try {
-    db.execute(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS fts_pages USING fts5(title, body, content='', tokenize='unicode61 remove_diacritics 2');");
-  } catch (_) {/* search degrades; never blocks notebooks */}
+  // `fts_pages` is likewise not created. It was created on every open and then
+  // never written to or queried — sidebar search is a Dart `contains()` scan —
+  // so its presence advertised a search index that held nothing. Notebook-wide
+  // search (TEXT-7) should build it deliberately, as a derived index of the
+  // materialised cache, at the point someone implements the feature.
 }
 
 /// First-create-only: stamp the format identity and seed notebook metadata.
@@ -106,9 +114,14 @@ void _seedNotebook(Database db, {required String notebookId, required String tit
     'notebook_id': notebookId,
     'title': title,
     'created_at': now,
-    'app': 'openote-mvp/0.1.0 (mirror-write mode)',
+    'app': 'openote/0.1.0',
     'features': <String>[],
-    'dirty_mirror': true, // spec §4: signals the future CRDT engine to reconcile
+    // `page_mirror` is the authoritative store in this container, not a
+    // projection of something else — so there is no CRDT state for a
+    // `dirty_mirror` flag to mark as stale, and setting one would tell a
+    // third-party reader the opposite of the truth. Declared as a capability
+    // instead: a reader that understands SQLite + JSON has everything.
+    'content': 'page_mirror',
   };
   final stmt = db.prepare('INSERT OR REPLACE INTO notebook_meta(key,value) VALUES (?,?)');
   meta.forEach((k, v) => stmt.execute([k, jsonEncode(v)]));

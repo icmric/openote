@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,7 +10,10 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../ui/context_menus.dart';
 import 'block_view.dart';
+import 'align_guides.dart';
 import 'canvas_controller.dart';
+import 'ink_ops.dart';
+import 'media_drop.dart';
 import 'ink_painter.dart';
 import 'page_title_view.dart';
 
@@ -60,6 +64,54 @@ class _PageCanvasState extends State<PageCanvas> {
 
   bool get _inkTool =>
       app.tool == Tool.pen || app.tool == Tool.highlighter || app.tool == Tool.eraser;
+
+  /// When a stylus was last seen, so palm rejection can be *conditional*
+  /// (INK-4) instead of absolute.
+  ///
+  /// The previous rule sent every touch to pan unconditionally, which does
+  /// implement palm rejection — and also means **a finger can never draw**, so
+  /// on a touch-only tablet ink was simply unreachable, contradicting INK-1.
+  /// The distinction the old rule missed is that a resting palm is only a
+  /// hazard when a pen is in use; with no pen present, a finger is the only
+  /// input the user has.
+  DateTime? _lastStylus;
+
+  /// True while a file drag hovers the page, for the drop affordance.
+  bool _dragOver = false;
+
+  /// A palm rests *while* writing, so the window only has to outlive the gap
+  /// between strokes, not a pause for thought.
+  static const _stylusGrace = Duration(seconds: 2);
+
+  bool get _stylusActive {
+    final t = _lastStylus;
+    return t != null && DateTime.now().difference(t) < _stylusGrace;
+  }
+
+  /// Whether this touch should draw rather than pan.
+  ///
+  /// Single finger only: a second finger always means pan/zoom, which is what
+  /// every drawing app does and what makes the canvas navigable while a drawing
+  /// tool is selected.
+  bool _touchDraws() => touchShouldDraw(
+        mode: app.touchDrawing,
+        activeTouches: _touches.length,
+        stylusActive: _stylusActive,
+      );
+
+  void _noteStylus(PointerEvent e) {
+    if (e.kind == PointerDeviceKind.stylus ||
+        e.kind == PointerDeviceKind.invertedStylus) {
+      _lastStylus = DateTime.now();
+    }
+  }
+
+  /// Abandon the stroke in progress without committing it — used when a second
+  /// finger lands, turning what looked like a draw into a pinch. Without this
+  /// the first finger of every two-finger gesture would leave a stray mark.
+  void _cancelWetStroke() {
+    if (_wet != null) setState(() => _wet = null);
+  }
 
   bool get _lassoTool => app.tool == Tool.lasso;
 
@@ -199,6 +251,11 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     final radius = 12.0 / controller.scale;
     final r2 = radius * radius;
+    // INK-6: 'area' rubs points out mid-stroke (splitting survivors); 'stroke'
+    // removes any stroke the eraser touches whole — OneNote's default, and the
+    // mode that makes cleaning up a scratched-out word one swipe instead of
+    // twenty.
+    final wholeStroke = app.eraserMode == EraserMode.stroke;
     var changed = false;
     for (final b in app.blocks.where((b) => b.type == BlockType.ink)) {
       // Cheap reject: the eraser can only affect a block whose rect it touches.
@@ -222,6 +279,11 @@ class _PageCanvasState extends State<PageCanvas> {
         });
         if (!keep.contains(false)) {
           out.add(sj.cast<String, dynamic>());
+          continue;
+        }
+        if (wholeStroke) {
+          // Touched at all → the whole stroke goes; no splitting.
+          blockChanged = true;
           continue;
         }
         blockChanged = true;
@@ -736,6 +798,20 @@ class _PageCanvasState extends State<PageCanvas> {
                       ),
                     ),
                   ),
+                // Alignment guides (CANVAS-7), above the grid so they read as
+                // the stronger signal while dragging.
+                if (app.alignGuides.isNotEmpty)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _AlignGuidePainter(
+                          controller: controller,
+                          guides: app.alignGuides,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ),
                 // Marquee + selected-ink outlines (screen-space overlay)
                 Positioned.fill(
                   child: IgnorePointer(
@@ -771,23 +847,41 @@ class _PageCanvasState extends State<PageCanvas> {
         child: canvas,
       );
     } else if (_inkTool) {
-      // Palm rejection (INK-4): the pen (stylus) and mouse draw; fingers
-      // (touch) pan/pinch instead of drawing — so a resting palm never marks
-      // the page. Matches OneNote's default "draw with pen, navigate with
-      // touch" behaviour.
+      // Palm rejection (INK-4), stylus-CONDITIONAL. Pen and mouse always draw.
+      // A finger draws too — unless a stylus is in use, in which case touch
+      // reverts to pan/pinch so a resting palm never marks the page (OneNote's
+      // "draw with pen, navigate with touch"). A second finger always pans,
+      // whatever the setting, so the canvas stays navigable while a drawing
+      // tool is selected. See `app.touchDrawing` for the user override.
       canvas = Listener(
         behavior: HitTestBehavior.opaque,
         onPointerDown: (e) {
-          if (e.kind == PointerDeviceKind.touch) {
-            _touchDown(e);
-          } else {
+          _noteStylus(e);
+          if (e.kind != PointerDeviceKind.touch) {
             _inkDown(e);
+            return;
+          }
+          _touches[e.pointer] = e.localPosition;
+          if (_touches.length > 1) {
+            // The first finger may already be mid-stroke; a pinch is not a
+            // drawing, so drop it rather than leaving a stray mark.
+            _cancelWetStroke();
+            _touchDown(e);
+            return;
+          }
+          if (_touchDraws()) {
+            _touches.remove(e.pointer); // it's a drawing pointer, not a gesture
+            _inkDown(e);
+          } else {
+            _touches.remove(e.pointer); // _touchDown re-adds and sets up pinch
+            _touchDown(e);
           }
         },
         onPointerMove: (e) {
+          _noteStylus(e);
           if (_touches.containsKey(e.pointer)) {
             _touchMove(e);
-          } else if (e.kind != PointerDeviceKind.touch) {
+          } else {
             _inkMove(e);
           }
         },
@@ -797,6 +891,10 @@ class _PageCanvasState extends State<PageCanvas> {
           } else {
             _inkUp(e);
           }
+        },
+        onPointerCancel: (e) {
+          _touches.remove(e.pointer);
+          _cancelWetStroke();
         },
         child: canvas,
       );
@@ -809,6 +907,61 @@ class _PageCanvasState extends State<PageCanvas> {
         child: canvas,
       );
     }
+
+    // Drag-and-drop (MEDIA-1): files dropped anywhere on the page land where
+    // they were dropped. Wraps the whole canvas so the drop target matches
+    // what the user sees, and highlights only while a drag is over it.
+    canvas = DropTarget(
+      onDragEntered: (_) => setState(() => _dragOver = true),
+      onDragExited: (_) => setState(() => _dragOver = false),
+      onDragDone: (details) async {
+        setState(() => _dragOver = false);
+        // `details.localPosition` is ALREADY local to this DropTarget —
+        // desktop_drop calls globalToLocal itself. Converting a second time
+        // subtracted the canvas's global origin (navigator width, command-bar
+        // height) again, so every dropped file landed up and to the left of
+        // the cursor. That was survivable while a drop made a floating block;
+        // it is not, now that the drop point decides which text box you are
+        // dropping INTO.
+        final at = controller.screenToPage(details.localPosition);
+        final n = await dropFilesOntoCanvas(
+            app, [for (final f in details.files) f.path], at,
+            dark: Theme.of(context).brightness == Brightness.dark);
+        if (n > 0 && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Added $n item${n == 1 ? '' : 's'}')));
+        }
+      },
+      child: Stack(children: [
+        canvas,
+        if (_dragOver)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(
+                color: Theme.of(context)
+                    .colorScheme
+                    .primary
+                    .withValues(alpha: .06),
+                child: Center(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: Theme.of(context).colorScheme.primary,
+                          width: 1.5),
+                    ),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      child: Text('Drop to add to this page'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ]),
+    );
 
     return Listener(
       onPointerSignal: _onScroll,
@@ -1023,4 +1176,43 @@ class _OverlayPainter extends CustomPainter {
       (lasso?.length ?? 0) != (old.lasso?.length ?? 0) ||
       old.controller.offset != controller.offset ||
       old.controller.scale != controller.scale;
+}
+
+/// Draws the alignment guides while a block is being dragged.
+///
+/// Screen-space, one physical pixel wide at any zoom: a guide scaled with the
+/// page becomes a fat bar zoomed in and invisible zoomed out, when what it
+/// needs to be is a hairline that says "these edges match".
+class _AlignGuidePainter extends CustomPainter {
+  _AlignGuidePainter({
+    required this.controller,
+    required this.guides,
+    required this.color,
+  }) : super(repaint: controller);
+
+  final CanvasController controller;
+  final List<AlignGuide> guides;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withValues(alpha: .85)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+    for (final g in guides) {
+      final a = controller.pageToScreen(
+          g.vertical ? Offset(g.position, g.from) : Offset(g.from, g.position));
+      final b = controller.pageToScreen(
+          g.vertical ? Offset(g.position, g.to) : Offset(g.to, g.position));
+      // Extend a little past both blocks so the line clearly spans them.
+      const overhang = 10.0;
+      final dir = g.vertical ? const Offset(0, 1) : const Offset(1, 0);
+      canvas.drawLine(a - dir * overhang, b + dir * overhang, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _AlignGuidePainter old) =>
+      old.guides != guides || old.color != color;
 }

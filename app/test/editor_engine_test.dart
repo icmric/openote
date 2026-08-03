@@ -59,7 +59,7 @@ class _ProbeEngine extends OnoteTextEditor {
       text.length * 7.0;
 }
 
-class _ProbeSession implements OnoteEditSession {
+class _ProbeSession extends OnoteEditSession {
   _ProbeSession(this._engine, this._text);
   final _ProbeEngine _engine;
   String _text;

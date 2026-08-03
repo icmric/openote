@@ -62,7 +62,7 @@ class _CodeBlockViewState extends State<CodeBlockView> {
     _handleExitTransition();
     final dark = Theme.of(context).brightness == Brightness.dark;
     final mono = TextStyle(
-      fontFamily: 'monospace',
+      fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback,
       fontSize: 13,
       height: 1.45,
       color: dark ? OnoteColors.moon100 : OnoteColors.graphite700,

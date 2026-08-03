@@ -1,0 +1,39 @@
+# cargo-deny configuration — enforces ADR-0005's licensing invariant in CI.
+#
+# `onote_core` is the PERMISSIVE tier: the whole point is that any tool, however
+# licensed, can read and write .onote files. A single copyleft crate anywhere in
+# this dependency graph would silently void that promise, and the failure mode is
+# quiet — nothing breaks, the guarantee just stops being true. So it's checked
+# mechanically rather than remembered.
+#
+# See ../../LICENSING.md and ../../docs/adr/ADR-0005-licensing.md.
+
+[licenses]
+# Every licence here is permissive. Adding to this list is a licensing decision,
+# not a build fix — if a dependency forces a change, take it to ADR-0005 first.
+# Trimmed to what the dependency graph actually uses (verified locally,
+# `cargo deny check licenses` → ok). cargo-deny warns on unmatched allowances,
+# so an unused entry is noise; add licences back only when a dependency
+# genuinely carries them.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Zlib",
+    "Unlicense",
+    # Unicode data tables (unicode-ident) — a permissive data licence, not
+    # code copyleft.
+    "Unicode-3.0",
+]
+confidence-threshold = 0.9
+
+# The crate itself is Apache-2.0; nothing to except.
+exceptions = []
+
+[bans]
+# Nothing banned outright yet. If a copyleft crate ever becomes tempting, the
+# right move is a deliberate ADR revision, not an entry here.
+multiple-versions = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

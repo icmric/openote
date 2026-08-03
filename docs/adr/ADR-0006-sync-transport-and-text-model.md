@@ -180,13 +180,199 @@ main reason to sequence it this way.
 - **Operational Transform instead of CRDT.** Needs a central sequencer to order
   operations, which contradicts dumb file transports.
 
-## 6. Open questions for the stakeholder
+## 6. Stakeholder questions — two answered 2026-07-27
 
-- Is **per-notebook** the right sync granularity, or should a section be
-  independently shareable? This changes whether the manifest is per notebook or
-  per section, and is much cheaper to decide now.
-- Should the imported-notebook case (324 pages, 372 images, ~65k strokes) sync
-  eagerly or lazily on first open? Lazy needs a placeholder state in the UI.
-- `.onotebook` as a directory changes what "open a notebook" means on each
-  platform. macOS can present a directory as a bundle; Windows and Linux cannot,
-  so a notebook becomes a folder the user can see inside. Acceptable?
+- **Sync granularity: per notebook, section later.** ✅ Ship one manifest and
+  device registry per notebook, but shape the manifest so it can describe a
+  *subset* of sections without a format migration. Concretely: the manifest
+  carries an explicit scope object rather than implying "everything under this
+  directory", so a future section-scoped share is a new scope value and not a
+  new file layout. Sharing a single section today means splitting it into its
+  own notebook.
+- **`.onotebook` as a visible directory: accepted.** ✅ Windows and Linux will
+  show a folder the user can open. macOS may present it as a bundle; that is a
+  presentation detail and MUST NOT change the layout, or the two platforms would
+  disagree about what a notebook is. The app is responsible for making a folder
+  feel like one object — the file picker filters to `*.onotebook`, and the
+  navigator never exposes the internal paths.
+- **Eager vs lazy first sync — still open.** For the imported-notebook case
+  (324 pages, 372 images, ~65k strokes) lazy blob fetch needs a placeholder
+  state in the UI. This does **not** block step 1: blobs are content-addressed
+  and independently fetchable either way, so the decision only changes when they
+  are pulled, not how they are stored.
+
+## 6a. Log-format decisions (2026-07-27)
+
+Four decisions that get written into bytes on disk, so they are taken before any
+log code rather than discovered during it. The three questions in §6 turned out
+to be an incomplete list — none of these four was on it, and all four are more
+expensive to change later than the ones that were.
+
+### 6a.1 An operation is **block-level**, in a **versioned envelope**
+
+An op says *"block X now has this content"*. Concurrent edits to **different
+blocks of the same page merge cleanly**; concurrent edits to **the same text
+block** resolve last-writer-wins and one side's edit is lost.
+
+That limitation is accepted deliberately and is not permanent. The envelope
+carries a format version and an op-type tag, so finer-grained text operations
+become new op types rather than a format break — the migration path §4 describes
+(Markdown → `nodes` → Loro sequence CRDT) lands as `text.splice` ops alongside
+the existing `block.set`, and old logs stay replayable.
+
+The reasoning: the case that actually happens to a single user with several
+devices — laptop edits one page, desktop edits another — is *fully* solved by
+block-level ops. Same-paragraph collision requires two people typing in one
+paragraph at once, which is **live collaboration** (SYNC-6, Phase 3). Blocking
+all sync on the CRDT would trade a solved common case for an unsolved rare one.
+
+### 6a.2 Device identity: per-install UUID, **fork on conflict**
+
+One-writer-per-file is the entire correctness argument of §3, so the identity
+that names the writer is load-bearing.
+
+- The id is a UUIDv7 generated at install and stored in **app config, not in the
+  notebook**. Storing it in the notebook would mean copying a notebook folder
+  clones the identity — instantly two writers on one log.
+- Normal use cannot produce a collision. The dangerous cases are **cloned
+  machines, restored backups, and copied installs**, where two running copies
+  legitimately believe they are the same device.
+- Therefore each device remembers, locally, the sequence number it last wrote to
+  its own log. On open, if the log's tail is **ahead of what we remember
+  writing**, someone else is using our identity: the device **forks to a fresh
+  id** and continues there, rather than appending.
+
+The failure this prevents is silent and unrecoverable — two interleaved writers
+produce a log that looks valid and cannot be untangled — which is why it earns
+the extra bookkeeping.
+
+### 6a.3 Delete wins, **into the recycle bin**
+
+When one device deletes a page and another concurrently edits it, the delete
+wins and propagates. This is only a safe choice because **ORG-7's recycle bin
+already exists**: "delete wins" means the page lands in the bin on every device
+with its 30-day retention, not that work is destroyed. A wrong guess costs a
+restore, not data.
+
+This also replaces the current behaviour, which is worse than either option:
+`mirror.rs` merges add-wins with **no delete propagation at all**, so a page
+deleted on one device simply returns.
+
+### 6a.4 An encryption envelope is **reserved, not implemented**
+
+Op records carry a header with an algorithm field (`"none"` for now) and treat
+the payload as opaque bytes. Nothing is encrypted yet.
+
+Reserving costs a few bytes per record. Retrofitting would rewrite **every byte
+of every log on every device** — the one change this design makes genuinely
+painful, since logs are append-only and devices hold independent copies. SYNC-5
+(E2E, blind-relay) is on the roadmap, so the space is worth holding.
+
+### 6a.5 Deferred deliberately
+
+- **Compaction never deletes log prefixes** in v1. Safe deletion requires knowing
+  every device has consumed them, which needs a device registry with watermarks —
+  a second distributed problem. Snapshots stay a pure read optimisation, as §3
+  requires. Revisit when a log actually gets large; the ~65k-stroke imported
+  notebook is the case to measure.
+- **Migration is non-destructive.** Converting an existing `.onote` builds the
+  `.onotebook` *beside* it and leaves the original in place until the user
+  confirms. There is a real 324-page imported notebook to protect.
+- **`workspace.json` stays local-only** — a registry of where notebooks are plus
+  view state. It is never synced, and a notebook may live anywhere, including
+  inside a provider's folder.
+- **Eager vs lazy blob fetch** (§6) remains open and still does not block: blobs
+  are content-addressed either way, so the decision changes *when* they are
+  pulled, not how they are stored.
+
+## 7. Status of the storage layer as of 2026-07-27
+
+Step 1 groundwork has begun, ahead of any op-log code:
+
+- The container's **dead CRDT layer has been removed** — `page_docs` took a
+  zero-byte placeholder write on every save, and `page_updates` and `fts_pages`
+  were created but never touched. None is created or written now. This matters
+  to this ADR because those tables were the in-container form of exactly the
+  design §3 replaces; leaving them would have meant two contradictory sync
+  designs visible in one schema.
+- The [File Format Spec](../specs/10-file-format-spec.md) is corrected to v0.2:
+  `page_mirror` is documented as **authoritative, not a projection**, §5's CRDT
+  encoding is marked superseded-and-never-implemented, and a new §11 states this
+  ADR's direction in the published spec so third-party implementers can see
+  where the format is going.
+### Built 2026-07-27 (steps 1–2), in `app/lib/sync/`
+
+| File | Role |
+|---|---|
+| `op.dart` | The envelope — version, device, per-device seq, Lamport counter, reserved `enc` field, op tag, payload. JSON Lines. Deterministic total order (`lamport`, then device id, then seq). |
+| `op_log.dart` | `Foo.onotebook/{manifest.json, ops/<device>.oplog}` beside `Foo.onote`. Append-only writes; `readAll()` is the merge — concatenate every device's log and sort. |
+| `device_identity.dart` | Per-install UUID in app settings, with the fork-on-conflict check. |
+| `materializer.dart` | Replay → state. Pure function of the ordered op list. |
+| `sync_recorder.dart` | Diffs a page save into block-level ops and appends them. |
+
+**Running in shadow mode**: the `.onote` remains authoritative, and every
+mutation through `AppState`'s facade also records ops. `sync_shadow_test.dart`
+asserts the step-2 property directly — **rebuild a page from the log alone and
+it equals the container**.
+
+Three decisions were forced by writing it, all recorded in the code:
+
+- **Ops are recorded *after* the container write succeeds.** The reverse would
+  make rebuild-from-log differ on every failed save, and that divergence would
+  read as a recording bug rather than the disk error it is.
+- **A page save is diffed, not dumped.** Recording the whole page per autosave
+  would grow the log without bound and would throw away the block granularity
+  §6a.1 exists to provide. An unchanged save now appends nothing.
+- **Recorders are keyed per notebook**, because imports write into a notebook
+  that is not the open one — the single most likely place for the log to end up
+  quietly incomplete.
+
+Not yet built: **blob bytes are not copied into `blobs/`** (only the hash, mime
+and size are recorded), the container is not yet demoted to `cache.onote`, the
+`nodes` migration, Loro, and every transport.
+
+## 8. Cloud transports — decided 2026-08-03: folders, not APIs
+
+Google Drive, OneDrive, iCloud Drive and Dropbox all ship a desktop client that
+presents the cloud as an ordinary local folder. §3's design already syncs
+correctly through any such folder, because one-writer-per-file means the
+provider is never asked to merge anything — which is precisely the thing these
+providers do badly.
+
+**So Openote never talks to a cloud API.** The alternative was considered and
+rejected on four grounds:
+
+1. **Secrets that aren't secret.** OAuth requires registering with each vendor
+   and shipping a client ID/secret inside an open-source binary, where anyone
+   can extract them.
+2. **Attack surface.** Holding refresh tokens with broad Drive scopes on disk
+   is a far larger security liability than reading and writing files the user
+   already syncs — and the vision's local-first promise gets harder to keep the
+   moment the app can reach the network at all.
+3. **Maintenance.** Four vendor APIs, four auth flows, four sets of breaking
+   changes, and a token-refresh failure mode for every user.
+4. **It buys nothing.** The provider's own client already does the transport,
+   better and with the user's existing credentials.
+
+**What this means for self-hosting:** it is the same feature. Syncthing,
+Nextcloud's client, a NAS mount, or an rsync cron job all produce a folder, so
+self-hosting needs no Openote-side support at all and exposes nothing to the
+network. That is the strongest possible answer to "can I run this myself?"
+
+### Implemented (`app/lib/sync/`)
+
+| File | Role |
+|---|---|
+| `cloud_folders.dart` | Detects Drive/OneDrive/iCloud/Dropbox/Nextcloud/Syncthing folders by well-known path, and carries the per-provider caveat (all four big providers evict files by default, which looks exactly like data loss). |
+| `folder_watch.dart` | Watches `ops/` and pulls when a **foreign** log changes — own-device writes are ignored, or every save would schedule a re-read of what it just wrote. Debounced, because a cloud client writes one edit as a burst. |
+| `Repository.moveNotebookTo` | Copy → verify length → copy the `.onotebook` directory → only then delete the originals. Never a bare rename: the destination is usually a different volume, where rename is not atomic, and a half-moved notebook is the worst outcome. Never overwrites an existing file. |
+| `ui/sync_dialog.dart` | The whole setup flow, one dialog: pick a detected folder or choose any folder. |
+
+Re-entrancy: `AppState.syncPull` holds a lock, because the watcher can fire
+again mid-pull and two overlapping pulls would both read the same pending ops,
+both write them, and both advance the watermark — applying remote edits twice.
+
+**Deliberately still open:** a notebook in a shared folder edited by two people
+*at the same moment in the same paragraph* resolves last-writer-wins until the
+structured text model and a sequence CRDT land (§4). Different pages, different
+blocks, and different paragraphs of different blocks all merge correctly today.
