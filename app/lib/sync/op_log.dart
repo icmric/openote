@@ -34,7 +34,15 @@ class OpLogStore {
   /// Deliberately a sibling, not a replacement: migration is non-destructive
   /// (ADR-0006 §6a.5) and there is a real 324-page imported notebook that must
   /// not be risked to a half-built feature.
-  factory OpLogStore.forNotebook(String onotePath) {
+  /// The log directory for a notebook.
+  ///
+  /// [logDir] overrides the default sibling-of-the-container location. That
+  /// override is what lets a second device keep its own local container while
+  /// sharing the logs — see [NotebookRef.logDir].
+  factory OpLogStore.forNotebook(String onotePath, {String? logDir}) {
+    if (logDir != null && logDir.isNotEmpty) {
+      return OpLogStore(Directory(logDir));
+    }
     final base = p.withoutExtension(onotePath);
     return OpLogStore(Directory('$base.onotebook'));
   }

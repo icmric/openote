@@ -11,9 +11,11 @@
 /// A **backup** is a mirror with history: instead of overwriting one copy it
 /// writes a timestamped snapshot and prunes old ones. Same one-way property.
 ///
-/// Both are deliberately dumb file copies. A notebook is a directory of
-/// append-only logs plus content-addressed blobs, so copying it is correct by
-/// construction — there is no database to quiesce and no index to rebuild.
+/// The LOGS are deliberately dumb file copies: append-only files plus
+/// content-addressed blobs, so copying them is correct by construction. The
+/// `.onote` container is not — it is an open WAL database, and a backup asks
+/// SQLite itself for a consistent copy rather than copying the file behind its
+/// back.
 library;
 
 import 'dart:io';
@@ -67,8 +69,14 @@ class MirrorTarget {
 /// byte-identical and re-copying it is pure waste — on a notebook with 372
 /// images that is the difference between a mirror that runs in milliseconds
 /// and one that stalls the app.
+/// [containerPath] is the `.onote` beside (or, once a device joins a shared
+/// folder, far from) the log directory. A **backup** copies it in; a mirror
+/// does not — see below. [snapshot] is how to obtain a *consistent* copy of
+/// it (SQLite's own `VACUUM INTO`); a plain file copy is the fallback.
 Future<String?> mirrorNotebook(String sourceDir, MirrorTarget target,
-    {DateTime? now}) async {
+    {String? containerPath,
+    bool Function(String destPath)? snapshot,
+    DateTime? now}) async {
   final src = Directory(sourceDir);
   if (!src.existsSync()) return null;
   final name = p.basename(sourceDir);
@@ -87,10 +95,6 @@ Future<String?> mirrorNotebook(String sourceDir, MirrorTarget target,
       continue;
     }
     if (entity is! File) continue;
-    // Skip the local-only cache: it is rebuildable from the logs, it is the
-    // largest file in the notebook, and it is the one file that is rewritten
-    // on every single save.
-    if (p.extension(entity.path) == '.onote' && !target.isBackup) continue;
     final outFile = File(outPath);
     if (!target.isBackup && outFile.existsSync()) {
       final srcStat = entity.statSync();
@@ -102,6 +106,29 @@ Future<String?> mirrorNotebook(String sourceDir, MirrorTarget target,
     }
     await Directory(p.dirname(outPath)).create(recursive: true);
     await entity.copy(outPath);
+  }
+
+  // A BACKUP takes the container too. The `.onote` is a sibling of the log
+  // directory, never inside it, so walking the source alone could never pick
+  // it up — which meant a "backup" contained no notebook at all, only the logs
+  // it would have to be rebuilt from. A snapshot you have to reconstruct
+  // before you can read it is not what anyone wants in an emergency.
+  //
+  // A MIRROR still skips it, on purpose: it is rebuildable, it is the largest
+  // file, and it is rewritten on every single save.
+  if (target.isBackup && containerPath != null) {
+    final container = File(containerPath);
+    if (container.existsSync()) {
+      final dest = p.join(destPath, p.basename(containerPath));
+      // Ask SQLite for the copy when we can. The container is open in WAL
+      // mode, so recent commits live in the `-wal` sidecar and a plain file
+      // copy can capture a database missing the last several saves — or, mid
+      // checkpoint, a torn one. A backup that silently loses a week is worse
+      // than no backup, because it is trusted.
+      if (snapshot == null || !snapshot(dest)) {
+        await container.copy(dest);
+      }
+    }
   }
 
   if (target.isBackup) await _prune(p.join(target.path, name), target.keepVersions);

@@ -8,6 +8,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:openote/store/repository.dart';
 import 'package:openote/sync/mirrors.dart';
@@ -52,10 +53,53 @@ void main() {
     expect(ref.title, 'Lectures');
     expect(repo2.notebooks.any((n) => n.id == ref.id), isTrue);
 
-    // Opening the same file twice must not fork the registry.
+    // THE SAFETY PROPERTY. The `.onote` is a WAL SQLite database rewritten on
+    // every save; two machines writing one copy of it through a cloud client
+    // is the corruption case ADR-0006 §3 designs against. So the joining
+    // device must take its OWN container and share only the append-only logs,
+    // where one-writer-per-file makes a conflict structurally impossible.
+    expect(ref.file, isNot(moved),
+        reason: 'the second device must not open the shared container');
+    expect(p.isWithin(tmp2.path, ref.file), isTrue,
+        reason: 'its container belongs in its own workspace');
+    expect(File(ref.file).existsSync(), isTrue);
+    expect(ref.logDir, '${p.withoutExtension(moved)}.onotebook',
+        reason: 'the logs, and only the logs, are shared');
+
+    // Joining twice must not fork the registry into two devices for one
+    // machine — matched on the shared log dir, not the path.
     final again = await repo2.openExistingNotebook(moved);
     expect(again.id, ref.id);
-    expect(repo2.notebooks.where((n) => n.file == moved).length, 1);
+    expect(repo2.notebooks.length, 1);
+  });
+
+  test('a notebook outside the workspace survives a restart', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // The registry stored a BASENAME and re-joined it against the workspace
+    // folder on load, so a notebook moved into a cloud folder resolved to a
+    // file that isn't there and silently vanished from the list on the next
+    // start. The file was never lost — but the notebook was, as far as the
+    // user could tell.
+    final tmp = Directory.systemTemp.createTempSync('onote_restart_');
+    final shared = Directory.systemTemp.createTempSync('onote_restart_cloud_');
+    addTearDown(() {
+      for (final d in [tmp, shared]) {
+        try {
+          d.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    });
+
+    final repo = await Repository.openAt(tmp);
+    final made = await repo.createNotebook('Moved');
+    final moved = await repo.moveNotebookTo(made.id, shared.path);
+    await repo.flushWorkspace();
+    repo.dispose();
+
+    final reopened = await Repository.openAt(tmp);
+    addTearDown(reopened.dispose);
+    expect(reopened.notebooks.length, 1, reason: 'the notebook disappeared');
+    expect(reopened.notebooks.single.file, moved);
   });
 
   test('opening a path with nothing there fails loudly', () async {
@@ -131,20 +175,31 @@ void main() {
       );
     });
 
-    test('a mirror skips the rebuildable container', () async {
-      // The `.onote` is a cache of the logs, it is the largest file, and it is
-      // rewritten on every save — copying it every time is pure waste.
-      File('${src.path}/Notes.onote').writeAsStringSync('sqlite');
-      final out = await mirrorNotebook(
-          src.path, MirrorTarget(path: dest.path, keepVersions: 0));
-      expect(File('$out/Notes.onote').existsSync(), isFalse);
+    test('a mirror skips the container but a backup contains it', () async {
+      // The container is a SIBLING of the log directory, never inside it, so
+      // walking the source alone could never pick it up — which meant a
+      // "backup" held no notebook at all, only the logs it would have to be
+      // rebuilt from. It has to be passed in explicitly.
+      final container = '${dest.parent.path}/Notes.onote';
+      File(container).writeAsStringSync('sqlite');
+      addTearDown(() {
+        try {
+          File(container).deleteSync();
+        } catch (_) {}
+      });
 
-      // A BACKUP does take it: a snapshot you have to rebuild before you can
-      // read it is not the thing you want in an emergency.
+      final out = await mirrorNotebook(
+          src.path, MirrorTarget(path: dest.path, keepVersions: 0),
+          containerPath: container);
+      expect(File('$out/Notes.onote').existsSync(), isFalse,
+          reason: 'a mirror skips it: rebuildable, largest, rewritten hourly');
+
       final backup = await mirrorNotebook(
           src.path, MirrorTarget(path: dest.path, keepVersions: 3),
-          now: DateTime(2026, 8, 3));
-      expect(File('$backup/Notes.onote').existsSync(), isTrue);
+          containerPath: container, now: DateTime(2026, 8, 3));
+      expect(File('$backup/Notes.onote').existsSync(), isTrue,
+          reason: 'a snapshot you must rebuild before reading is not a backup');
+      expect(File('$backup/ops/dev-a.oplog').existsSync(), isTrue);
     });
   });
 }

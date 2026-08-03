@@ -42,20 +42,41 @@ const double kPdfRenderScale = 2.0;
 /// so a slide fills the page the way it does in a PDF reader.
 const double kPdfPageWidth = 1100.0;
 
+/// Gap between stacked slides on a single page, and above the first one.
+const double kPdfStackGap = 36.0;
+
+/// Where the imported slides go.
+enum PdfPlacement {
+  /// Every slide stacked down the CURRENT page, below whatever is already
+  /// there. The default, because a printout is what a student reaches for:
+  /// one continuous page you scroll through and write on, exactly like
+  /// OneNote's "Insert ▸ PDF printout", and it keeps the slides next to the
+  /// notes already on that page.
+  currentPage,
+
+  /// One Openote page per PDF page, in a new section named after the file.
+  /// Better for a 200-slide unit you want in the navigator as separate pages.
+  pagePerSlide,
+}
+
 /// Result of an import, for the caller's summary.
 typedef PdfImportResult = ({int pages, String? sectionId, String? firstPageId});
 
-/// Pick a PDF and import it into the current notebook as annotatable pages.
-Future<PdfImportResult?> importPdfAsPages(AppState app,
-    {BuildContext? progressContext,
-    void Function(int done, int total)? onProgress}) async {
+/// Pick a PDF and import it into the current notebook.
+Future<PdfImportResult?> importPdfAsPages(
+  AppState app, {
+  BuildContext? progressContext,
+  PdfPlacement placement = PdfPlacement.currentPage,
+  void Function(int done, int total)? onProgress,
+}) async {
   const typeGroup = XTypeGroup(label: 'PDF', extensions: ['pdf']);
   final file = await openFile(acceptedTypeGroups: [typeGroup]);
   if (file == null) return null;
-  return importPdfFile(app, file.path, file.name, onProgress: onProgress);
+  return importPdfFile(app, file.path, file.name,
+      placement: placement, onProgress: onProgress);
 }
 
-/// Import [path] as one Openote page per PDF page.
+/// Import [path], either onto the current page or as one page per slide.
 ///
 /// Exposed separately from the picker so it can be driven by a drop, by a
 /// test, or by a future "attach the reading list" flow.
@@ -63,13 +84,21 @@ Future<PdfImportResult> importPdfFile(
   AppState app,
   String path,
   String displayName, {
+  PdfPlacement placement = PdfPlacement.currentPage,
   void Function(int done, int total)? onProgress,
 }) async {
   final nb = app.notebookId;
   if (nb == null) return (pages: 0, sectionId: null, firstPageId: null);
+  if (placement == PdfPlacement.currentPage && app.pageId == null) {
+    // Nowhere to stack onto; fall back rather than silently do nothing.
+    placement = PdfPlacement.pagePerSlide;
+  }
 
   final doc = await PdfDocument.openFile(path);
   try {
+    if (placement == PdfPlacement.currentPage) {
+      return await _importOntoCurrentPage(app, nb, doc, onProgress);
+    }
     final title = displayName.replaceAll(RegExp(r'\.pdf$', caseSensitive: false), '');
     // A section per PDF: a 60-slide deck dumped into an existing section
     // would bury everything already there.
@@ -168,6 +197,100 @@ Future<PdfImportResult> importPdfFile(
   } finally {
     await doc.dispose();
   }
+}
+
+/// Stack every slide down the page that is currently open, below whatever is
+/// already on it.
+///
+/// Deliberately incremental rather than one transaction: each slide is added
+/// to the LIVE page as it finishes rendering, so a 60-slide deck fills in
+/// visibly instead of the window sitting still and then jumping. That also
+/// means the normal save path handles it — no separate import transaction, and
+/// the op log records the blocks the same way it records any other edit.
+///
+/// One `pushUndo` for the whole import, so Ctrl+Z takes the deck back out in
+/// one go rather than sixty times.
+Future<PdfImportResult> _importOntoCurrentPage(
+  AppState app,
+  String nb,
+  PdfDocument doc,
+  void Function(int done, int total)? onProgress,
+) async {
+  final total = doc.pages.length;
+  // Slide width: the page's own writing column, so a slide lines up with the
+  // text already on the page instead of hanging off the side.
+  final width = (app.pageProps.pageWidth - AppState.pageLeftMargin * 2)
+      .clamp(320.0, kPdfPageWidth);
+  // Below the last box.
+  //
+  // Belt and braces, because landing on top of somebody's notes is not a
+  // recoverable mistake: take the lower of what `contentExtent` reports and
+  // the bottom of the furthest-down block by its own stored geometry. The
+  // former can under-report — a block scrolled out of view is culled, so it
+  // never measured itself and only an estimate is available — and the import
+  // is exactly the moment when most of the page is off screen.
+  var y = app.contentExtent().bottom;
+  for (final b in app.blocks) {
+    final bottom = b.y + (b.h ?? app.renderSizes[b.id]?.height ?? app.estimatedHeight(b));
+    if (bottom > y) y = bottom;
+  }
+  y += kPdfStackGap;
+
+  app.pushUndo();
+  final top = y;
+  Block? first;
+  var made = 0;
+  for (var i = 0; i < total; i++) {
+    final rendered = await _renderPageToPng(doc.pages[i]);
+    if (rendered == null) continue;
+    String? text;
+    try {
+      text = (await doc.pages[i].loadText())?.fullText.trim();
+    } catch (_) {
+      text = null; // a scanned deck has no text layer; that's fine
+    }
+    final hash = app.addBlob(rendered.png, 'image/png');
+    final h = rendered.height / rendered.width * width;
+    final block = app.addBlock(
+      Block(
+        type: BlockType.image,
+        x: AppState.pageLeftMargin,
+        y: y,
+        w: width,
+        content: {
+          'blob': 'sha256:$hash',
+          'mime': 'image/png',
+          // Locked, because the point is to write ON it: a 2 MB image that
+          // slides sideways when you miss with the pen is worse than no import
+          // at all. The move bar and handles are gated on the same flag, so a
+          // locked slide has no chrome either.
+          'locked': true,
+          if (text != null && text.isNotEmpty) 'sourceText': text,
+        },
+      )..h = h,
+      recordUndo: false,
+    );
+    first ??= block;
+    // Read the position back: addBlock may snap it to the grid, and computing
+    // the next slide's y from the requested position would drift.
+    y = block.y + h + kPdfStackGap;
+    made++;
+    onProgress?.call(made, total);
+    // Yield so the window keeps painting — this is what makes the slides
+    // appear one by one rather than all at the end.
+    await Future<void>.delayed(Duration.zero);
+  }
+  // Bring the result into view. The slides land BELOW everything already on
+  // the page, which on a page with any content at all means off screen — so
+  // without this the app reports "imported 40 slides" while nothing visibly
+  // changes, and the user has to go looking for what they were just told
+  // about.
+  if (first != null) {
+    app.select(first.id);
+    app.canvas.centerOn(Offset(width / 2 + AppState.pageLeftMargin, top + 200));
+  }
+  await app.flushSave();
+  return (pages: made, sectionId: null, firstPageId: app.pageId);
 }
 
 /// A rendered page's PNG bytes and pixel size.

@@ -39,6 +39,13 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       _item('cut', Icons.cut_outlined, 'Cut', shortcut: 'Ctrl+X'),
       _item('duplicate', Icons.copy_all_outlined, 'Duplicate',
           shortcut: 'Ctrl+D'),
+      // An imported PDF slide is locked so the pen can't shove it around.
+      // Without a way back out, "won't move" reads as a broken control rather
+      // than a state — and the slides now land on the user's own page.
+      _item(
+          'lock',
+          b.content['locked'] == true ? Icons.lock_open_outlined : Icons.lock_outline,
+          b.content['locked'] == true ? 'Unlock' : 'Lock in place'),
       const PopupMenuDivider(),
       _item('front', Icons.flip_to_front, 'Bring to front'),
       _item('back', Icons.flip_to_back, 'Send to back'),
@@ -49,6 +56,14 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
   switch (action) {
     case 'edit':
       app.select(b.id, edit: true);
+    case 'lock':
+      app.pushUndo();
+      if (b.content['locked'] == true) {
+        b.content.remove('locked');
+      } else {
+        b.content['locked'] = true;
+      }
+      app.updateBlock(b);
     case 'copy':
       app.copySelectedBlocks();
     case 'cut':

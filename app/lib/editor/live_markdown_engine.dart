@@ -134,30 +134,47 @@ class _LiveMarkdownSession extends OnoteEditSession {
     if (controller.text != value) controller.text = value;
   }
 
-  /// Reach the live [EditableTextState] under our focus node.
+  /// Reach the live [EditableTextState] that owns our focus node.
   ///
-  /// The focus node is handed to [TextField], which attaches it inside its own
-  /// [EditableText] — so walking down from the node's context finds the state
-  /// that owns the text layout. This is the one place the engine leans on
-  /// Flutter's internal widget composition, which is why every caller treats a
-  /// null answer as "don't know" rather than an error.
+  /// **Upwards, and that is the whole trick.** `EditableText.build` wraps its
+  /// content in `Focus(focusNode: widget.focusNode, …)` — the Focus is built
+  /// *inside* EditableText — so the node's context sits BELOW the state, and
+  /// walking down from it can never find it. Searching downwards silently
+  /// returned null every time, which is why the caret kept landing at the end
+  /// of the block: with no offset to place, `EditableText` fell through to
+  /// `_adjustedSelectionWhenFocused`, whose documented behaviour is "place
+  /// cursor at the end if the selection is invalid when we receive focus".
+  ///
+  /// This is the one place the engine leans on Flutter's internal widget
+  /// composition, which is why every caller treats a null answer as "don't
+  /// know" rather than an error.
   EditableTextState? _editableState() {
     final ctx = _focus.context;
-    if (ctx is! Element) return null;
+    // `mounted` is load-bearing: an ancestor walk from a deactivated element
+    // asserts, and this runs from a post-frame callback that can fire after
+    // the block has been rebuilt out from under us.
+    if (ctx == null || !ctx.mounted) return null;
     EditableTextState? found;
-    void visit(Element e) {
-      if (found != null) return;
+    ctx.visitAncestorElements((e) {
       if (e is StatefulElement && e.state is EditableTextState) {
         found = e.state as EditableTextState;
-        return;
+        return false;
       }
-      e.visitChildren(visit);
-    }
-
-    ctx.visitChildren(visit);
+      return true;
+    });
     return found;
   }
 
+  /// **Known imprecision, by construction.** The point comes from a click on
+  /// the READ-ONLY view, where Markdown markers are gone, and is resolved
+  /// against the EDIT view, where they are present (dimmed, or collapsed to a
+  /// hairline). On a plain line the two layouts are identical and the caret
+  /// lands exactly where you clicked; on a line with markers it can be off by
+  /// their width. Every live-Markdown editor has this, and the alternative —
+  /// teaching `MarkdownView` to report source offsets — is a much larger piece
+  /// of machinery than the error justifies. Worth knowing before someone files
+  /// it as the "caret at the end" bug again; that one was a different thing
+  /// entirely (see [_editableState]).
   @override
   int? offsetAtGlobal(Offset globalPosition) {
     final st = _editableState();

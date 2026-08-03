@@ -2037,7 +2037,16 @@ fn markdown_link(url: &str, label: &str) -> String {
         .collect();
     let label = label.trim();
     if !openable {
-        return label.to_string();
+        // The app opens three schemes on purpose, so `[x](onenote:…)` would
+        // print as literal source — but DROPPING the address is worse than
+        // showing it. This runs over already-imported notes too (the repair
+        // path), where the `.one` may be long gone, and a silently discarded
+        // link target is unrecoverable user data. Plain text keeps it.
+        return if label.is_empty() {
+            url
+        } else {
+            format!("{label} ({url})")
+        };
     }
     if label.is_empty() {
         // The URL as its own label: still clickable, and the address is
@@ -2080,14 +2089,26 @@ pub(crate) fn linkify_field_codes(s: &str) -> String {
 
 /// Convert hyperlink fields across a paragraph's styled runs.
 ///
-/// Runs rather than a joined string, because the display text is identified by
-/// its FORMATTING: OneNote colours a link blue and underlines it, and gives the
-/// invisible instruction characters that same format. The run boundaries
-/// therefore say how far the link's text extends — which is what lets this work
-/// whether OneNote wrote the display text before or after the instruction. We
-/// have no committed `.one` fixture to settle which it does (a real notebook is
-/// the only place that answer lives), so both are handled rather than guessed
-/// at, and the failure mode of either is a slightly-off label, never lost text.
+/// **Measured against a real `.one` file**, not inferred. The paragraph
+/// `Video: <link>` stores one text buffer:
+///
+/// ```text
+/// Video: \u{FDDF}HYPERLINK "https://…/watch?v=DsT_YiMiUQo"Natural Language and …
+/// ^run 0 ^run 1 (boundary 7)                              ^run 2 (boundary 63)
+/// ```
+///
+/// So the display text FOLLOWS the instruction, and — this is the part worth
+/// knowing — it is its own run, because OneNote gives the invisible instruction
+/// characters the *surrounding prose's* formatting and the visible label the
+/// link's. In that file "Video: " and the instruction are both bold and the
+/// label is not.
+///
+/// That is why the label is found by the **run boundary at the instruction's
+/// end**, not by comparing styles with the instruction. Comparing styles gets
+/// it exactly backwards: it stops before the real label and then walks
+/// backwards into the prose, which is how `Video: <link>` first came out as
+/// `[Video:](url)Natural Language …` — the label wrong and the sentence's
+/// lead-in eaten.
 ///
 /// Runs in `styled_runs`, AFTER the run split — the 0x1E12 boundaries are char
 /// offsets into the raw buffer, so rewriting the text before the split would
@@ -2110,34 +2131,59 @@ fn linkify_hyperlink_runs(runs: &mut Vec<SRun>) {
     let mut cursor = 0usize;
     while let Some(f) = find_field_link(&chars, cursor) {
         cursor = f.end;
-        let sty = runs[owner[f.start]].style.clone();
-        // Forward: text sharing the instruction's format, to the field end.
+        // Forward: the display text, which follows the instruction.
         let mut hi = f.end;
+        // A run boundary exactly at the instruction's end means OneNote split
+        // the label into its own run — take that run and any following runs
+        // that look identical, and stop. This is the reliable case.
+        let split_here = f.end < chars.len() && f.end > 0 && owner[f.end] != owner[f.end - 1];
+        let label_run = split_here.then(|| owner[f.end]);
         while hi < chars.len()
             && chars[hi] != FIELD_END
             && chars[hi] != '\n'
             && !is_field_begin(chars[hi])
-            && (!multi || same_visible(&runs[owner[hi]].style, &sty))
         {
+            // Bounded by the label's OWN run when there is one. Extending
+            // through following runs that merely compare equal under
+            // `same_visible` swallows the prose after the link — the styles we
+            // parse are few, so "looks the same" is a much weaker signal than
+            // the run boundary that put the label in its own run to begin
+            // with. Truncating a label that OneNote split across runs costs a
+            // few words of link text; over-reading costs the sentence.
+            //
+            // (Written as a match rather than `Option::is_some_and`, which is
+            // newer than this crate's MSRV of 1.75 — clippy's
+            // `incompatible_msrv` fires, and CI runs clippy with `-D warnings`.)
+            if let Some(r) = label_run {
+                if owner[hi] != r {
+                    break;
+                }
+            }
             hi += 1;
         }
-        let label: String = chars[f.end..hi].iter().collect();
         let mut lo = f.start;
-        let mut label = label.trim().to_string();
+        let mut label: String = chars[f.end..hi].iter().collect();
+        label = label.trim().to_string();
         if chars.get(hi) == Some(&FIELD_END) {
             hi += 1;
         }
         if label.is_empty() && multi {
-            // Backward: the label sits BEFORE the instruction. Accept the
-            // preceding text while it either shares the instruction's format or
-            // looks like link text (underlined, or coloured — OneNote's blue).
-            // Bounded by the line and by the previous edit, so a paragraph can
-            // never be swallowed whole.
+            // Nothing after the instruction at all. Some versions put the label
+            // BEFORE it, so take the preceding run only when it actually looks
+            // like link text — underlined or coloured. Deliberately NOT a
+            // same-style-as-the-instruction test: the instruction is formatted
+            // like the prose around it, so that test eats the sentence.
             let floor = edits.last().map(|e| e.1).unwrap_or(0);
             let mut k = f.start;
             while k > floor && chars[k - 1] != '\n' && !is_field_control(chars[k - 1]) {
                 let s = &runs[owner[k - 1]].style;
-                if !(same_visible(s, &sty) || s.underline || s.color != 0) {
+                // `color_hex`, not `color != 0`: OneNote writes FF000000 for
+                // *automatic* black, and 75 of the 78 styled runs in the one
+                // real file we have carry exactly that. Testing `!= 0` treats
+                // ordinary prose as link-coloured, so the walk ran to the
+                // start of the line and turned the whole sentence into the
+                // label — the `[Video:](url)…` failure, still reachable.
+                if !(s.underline || color_hex(s.color).is_some()) {
                     break;
                 }
                 k -= 1;
@@ -3979,15 +4025,19 @@ mod tests {
     /// The app opens http/https/mailto only (a deliberate security decision),
     /// so anything else must degrade to plain text — emitting
     /// `[x](onenote:…)` would print as literal source, i.e. new junk.
+    ///
+    /// But the ADDRESS is kept. This same conversion runs over notes that were
+    /// imported long ago (the repair path), where the `.one` may be gone, so a
+    /// silently discarded link target is user data nothing can bring back.
     #[test]
-    fn unopenable_schemes_degrade_to_their_label() {
+    fn unopenable_schemes_degrade_to_text_but_keep_the_address() {
         assert_eq!(
-            linkify_field_codes("\u{FDDF}HYPERLINK \"onenote:///C:\\notes\\a.one\"My page"),
-            "My page"
+            linkify_field_codes("\u{FDDF}HYPERLINK \"onenote:///C:/notes/a.one\"My page"),
+            "My page (onenote:///C:/notes/a.one)"
         );
         assert_eq!(
             linkify_field_codes("a \u{FDDF}HYPERLINK \"file:///c:/x.pdf\"the PDF b"),
-            "a the PDF b"
+            "a the PDF b (file:///c:/x.pdf)"
         );
     }
 
@@ -4014,27 +4064,118 @@ mod tests {
         );
     }
 
-    /// OneNote also writes the display text BEFORE the instruction. The run
-    /// styling is what says how far the link's text extends, so the label is
-    /// recovered from whichever side it is on.
+    /// The real layout, taken byte-for-byte from
+    /// `Natural Language and Intro to Truth Tables.one`: one text buffer,
+    /// 0x1E12 boundaries at 7 and 63, three 0x1E13 style OIDs.
+    ///
+    /// The trap this pins: OneNote gives the invisible instruction characters
+    /// the *surrounding prose's* formatting (here, bold — the same as
+    /// "Video: ") and the visible label the link's. Matching the label by
+    /// "same style as the instruction" therefore gets it exactly backwards —
+    /// it stops before the real label and walks back into the sentence, which
+    /// is how this line first came out as `[Video:](url)Natural Language …`.
+    /// The run BOUNDARY at the instruction's end is the reliable signal.
     #[test]
-    fn hyperlink_label_before_the_instruction_is_recovered() {
-        let link = Style {
-            underline: true,
-            color: 0x0563C1,
-            ..Default::default()
-        };
+    fn real_onenote_hyperlink_labels_the_text_that_follows() {
+        let bold = Style { bold: true, ..Default::default() };
+        let mut runs = vec![
+            SRun { text: "Video: ".into(), style: bold.clone() },
+            SRun {
+                text: "\u{FDDF}HYPERLINK \"https://www.youtube.com/watch?v=DsT_YiMiUQo\""
+                    .into(),
+                style: bold,
+            },
+            SRun {
+                text: "Natural Language and Introduction to Truth Tables".into(),
+                style: Style::default(),
+            },
+        ];
+        // Boundaries line up with the file: "Video: " is 7 chars, and the
+        // marker plus `HYPERLINK "<43-char url>"` is 56 more.
+        assert_eq!(runs[0].text.chars().count(), 7);
+        assert_eq!(runs[1].text.chars().count(), 56);
+
+        linkify_hyperlink_runs(&mut runs);
+        assert_eq!(
+            render_runs(&runs),
+            "**Video:** [Natural Language and Introduction to Truth Tables]\
+             (https://www.youtube.com/watch?v=DsT_YiMiUQo)"
+        );
+    }
+
+    /// The fallback, for a field with nothing after it: take the preceding run
+    /// only when it actually looks like link text. Deliberately not a
+    /// same-style-as-the-instruction test — that is what ate the sentence.
+    #[test]
+    fn a_trailing_field_labels_the_link_styled_run_before_it() {
+        let link = Style { underline: true, color: 0x0563C1, ..Default::default() };
         let mut runs = vec![
             SRun { text: "Watch ".into(), style: Style::default() },
-            SRun { text: "this video".into(), style: link.clone() },
+            SRun { text: "this video".into(), style: link },
             SRun {
                 text: "\u{FDDF}HYPERLINK \"https://a.test/v\"".into(),
-                style: link,
+                style: Style::default(),
             },
-            SRun { text: " tonight".into(), style: Style::default() },
         ];
         linkify_hyperlink_runs(&mut runs);
-        assert_eq!(render_runs(&runs), "Watch [this video](https://a.test/v) tonight");
+        assert_eq!(render_runs(&runs), "Watch [this video](https://a.test/v)");
+    }
+
+    /// Plain prose before a trailing field is NOT a label — it stays prose,
+    /// and the address stands in for itself.
+    #[test]
+    fn plain_prose_before_a_trailing_field_is_not_eaten() {
+        // Run for BOTH colour shapes, because the real file distinguishes
+        // them: OneNote writes FF000000 for *automatic* black, and 75 of the
+        // 78 styled runs in it carry exactly that. A fixture built only from
+        // `Style::default()` (colour 0) passes for a reason unrelated to the
+        // guard working — and that false assurance is how the sentence-eating
+        // `[Video:](url)…` behaviour survived a rewrite meant to kill it.
+        for color in [0u32, 0xFF00_0000] {
+            let style = Style { color, ..Default::default() };
+            let mut runs = vec![
+                SRun {
+                    text: "Some notes about logic ".into(),
+                    style: style.clone(),
+                },
+                SRun {
+                    text: "\u{FDDF}HYPERLINK \"https://a.test/v\"".into(),
+                    style,
+                },
+            ];
+            linkify_hyperlink_runs(&mut runs);
+            let md = render_runs(&runs);
+            assert!(
+                md.starts_with("Some notes about logic "),
+                "color {color:08X}: {md:?}"
+            );
+            assert!(
+                md.contains("[https://a.test/v](https://a.test/v)"),
+                "color {color:08X}: {md:?}"
+            );
+        }
+    }
+
+    /// The label is bounded by its OWN run. Extending through following runs
+    /// that merely compare equal under `same_visible` swallows the prose after
+    /// the link — we parse few style properties, so "looks the same" is a much
+    /// weaker signal than the boundary that put the label in its own run.
+    #[test]
+    fn the_label_does_not_absorb_the_prose_after_it() {
+        let link = Style { underline: true, ..Default::default() };
+        let mut runs = vec![
+            SRun {
+                text: "\u{FDDF}HYPERLINK \"https://a.test/v\"".into(),
+                style: Style::default(),
+            },
+            SRun { text: "watch this".into(), style: link },
+            SRun { text: " before the exam".into(), style: Style::default() },
+        ];
+        linkify_hyperlink_runs(&mut runs);
+        assert_eq!(
+            render_runs(&runs),
+            "[watch this](https://a.test/v) before the exam"
+        );
     }
 
     /// The emitted link must be NAKED. The app's inline parser is

@@ -229,11 +229,17 @@ void main() {
       } catch (_) {}
     });
 
+    // Wrapped in a ListenableBuilder because the real shell is: entering edit
+    // mode has to actually swap the read-only Markdown for a live TextField,
+    // or the caret and selection tests would be testing nothing.
     Future<void> pump(WidgetTester t) => t.pumpWidget(MaterialApp(
           home: Scaffold(
-            body: Stack(children: [
-              BlockView(block: block, app: app, controller: app.canvas),
-            ]),
+            body: ListenableBuilder(
+              listenable: app,
+              builder: (_, __) => Stack(children: [
+                BlockView(block: block, app: app, controller: app.canvas),
+              ]),
+            ),
           ),
         ));
 
@@ -254,6 +260,95 @@ void main() {
       // completes. Cancelling is the only correct answer here.
       app.cancelPendingSave();
     }
+
+    /// The offset the live editor's caret currently sits at, or null if no
+    /// editor is open.
+    int? caret(AppState a) {
+      final s = a.activeEditor?.controller.selection;
+      return s != null && s.isValid ? s.baseOffset : null;
+    }
+
+    testWidgets('clicking into a paragraph puts the caret where you clicked',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The bug: the caret always landed at the END of the block, whatever you
+      // clicked. The mechanism to place it existed but never fired, because it
+      // searched DOWNWARDS from the focus node's context for the
+      // EditableTextState — and `EditableText` builds its `Focus` inside
+      // itself, so the state is an ANCESTOR. With no offset to place,
+      // EditableText fell through to its documented "place cursor at the end
+      // if the selection is invalid when we receive focus".
+      block.content['text'] = 'first line here\nsecond line here\nthird line';
+      block.h = null; // a text box is auto-height; a fixed one clips
+      await pump(t);
+
+      // Near the start of the first line.
+      await t.tapAt(Offset(block.x + 12, block.y + 12));
+      await t.pump(); // the session is created during this build
+      await t.pump(); // its post-frame callback places the caret
+      app.cancelPendingSave();
+
+      final at = caret(app);
+      final len = (block.content['text'] as String).length;
+      expect(at, isNotNull, reason: 'a tap must open an editor');
+      expect(at, lessThan(len),
+          reason: 'the caret jumped to the end of the block again');
+      expect(at, lessThan(20),
+          reason: 'clicked near the start of the first line, landed at $at');
+    });
+
+    testWidgets('the caret follows the click to a later line', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      block.content['text'] = 'first line here\nsecond line here\nthird line';
+      block.h = null; // a text box is auto-height; a fixed one clips
+      await pump(t);
+      // Two clicks at clearly different heights must give clearly different
+      // offsets — a caret that is merely "not at the end" could still be
+      // pinned at zero.
+      await t.tapAt(Offset(block.x + 12, block.y + 8));
+      await t.pump();
+      await t.pump();
+      final high = caret(app);
+
+      app.select(null);
+      await t.pump();
+      await t.tapAt(Offset(block.x + 12, block.y + 40));
+      await t.pump();
+      await t.pump();
+      final low = caret(app);
+      app.cancelPendingSave();
+
+      expect(high, isNotNull);
+      expect(low, isNotNull);
+      expect(low!, greaterThan(high!),
+          reason: 'clicking lower down must land later in the text');
+    });
+
+    testWidgets('dragging across an unselected box selects its text',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // A non-editing block renders read-only Markdown — there is no field to
+      // drag-select in until the session exists. The first drag has to open
+      // one mid-gesture and extend the selection from the press point.
+      block.content['text'] = 'aaaa bbbb cccc dddd eeee ffff';
+      block.h = null;
+      await pump(t);
+
+      final g = await t.startGesture(Offset(block.x + 10, block.y + 12));
+      for (var i = 0; i < 6; i++) {
+        await g.moveBy(const Offset(18, 0));
+        await t.pump();
+      }
+      await g.up();
+      await t.pump();
+      app.cancelPendingSave();
+
+      final sel = app.activeEditor?.controller.selection;
+      expect(sel, isNotNull, reason: 'the drag must have opened an editor');
+      expect(sel!.isCollapsed, isFalse,
+          reason: 'dragging across the text must select it, not just focus it');
+      expect(sel.textInside(app.activeEditor!.controller.text), isNotEmpty);
+    });
 
     testWidgets('dragging the body does NOT move the block', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');

@@ -335,9 +335,11 @@ class _CommandBarState extends State<CommandBar> {
       ins(Icons.code, 'Code', _insertCode),
       ins(Icons.table_chart_outlined, 'Table', _insertTable),
       ins(Icons.image_outlined, 'Image', () => _insertImage(context)),
-      // The lecture-slide flow: each PDF page becomes a page you can write on.
-      ins(Icons.picture_as_pdf_outlined, 'PDF slides',
-          () => _importPdf(context)),
+      // The lecture-slide flow. Default is a printout down THIS page — one
+      // continuous thing you scroll and write on, next to the notes already
+      // there — with page-per-slide behind the arrow for a big unit you want
+      // in the navigator.
+      _PdfImportButton(app: app),
       ins(Icons.attach_file, 'File', () => _insertFile(context)),
       ins(Icons.link, 'Page link', () => _insertPageLink(context)),
       ins(Icons.dashboard_customize_outlined, 'Template',
@@ -623,9 +625,6 @@ class _CommandBarState extends State<CommandBar> {
         }));
     app.select(b.id, edit: true);
   }
-
-  Future<void> _importPdf(BuildContext context) =>
-      _importPdfWithProgress(context, app);
 
   Future<void> _insertImage(BuildContext context) async {
     const typeGroup = XTypeGroup(
@@ -1019,12 +1018,76 @@ class _StudyButton extends StatelessWidget {
   }
 }
 
-/// Import a PDF as annotatable pages, with progress.
+/// Insert ▸ PDF, as a split button.
+///
+/// The main action is the one a student wants nine times in ten: the slides
+/// laid down THIS page, below what is already on it, the way OneNote's "PDF
+/// printout" works. The arrow keeps the page-per-slide import, which is the
+/// better shape for a whole unit you want as separate pages in the navigator.
+class _PdfImportButton extends StatelessWidget {
+  const _PdfImportButton({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    return MenuAnchor(
+      builder: (context, controller, _) => Padding(
+        padding: const EdgeInsets.only(right: 4),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          TextButton.icon(
+            icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+            label: const Text('PDF slides', style: TextStyle(fontSize: 12)),
+            onPressed: () {
+              // Close the menu if it is open: otherwise the file picker opens
+              // behind a menu that is still sitting on top of it.
+              controller.close();
+              _importPdfWithProgress(context, app,
+                  placement: PdfPlacement.currentPage);
+            },
+          ),
+          Tooltip(
+            message: 'Where the slides go',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () =>
+                  controller.isOpen ? controller.close() : controller.open(),
+              // A bare 16px icon leaves most of the toolbar row's height as
+              // dead space around it; sized to the row so the arrow is
+              // actually hittable.
+              child: const SizedBox(
+                width: 22,
+                height: 34,
+                child: Icon(Icons.arrow_drop_down, size: 16),
+              ),
+            ),
+          ),
+        ]),
+      ),
+      menuChildren: [
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.vertical_align_bottom, size: 16),
+          onPressed: () => _importPdfWithProgress(context, app,
+              placement: PdfPlacement.currentPage),
+          child: const Text('Printout on this page'),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.auto_stories_outlined, size: 16),
+          onPressed: () => _importPdfWithProgress(context, app,
+              placement: PdfPlacement.pagePerSlide),
+          child: const Text('One page per slide'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Import a PDF, with progress.
 ///
 /// A lecture deck is 40–120 pages and each one is a pdfium render plus a PNG
 /// encode, so this is seconds, not milliseconds — a modal with a live count is
 /// the difference between "working" and "frozen".
-Future<void> _importPdfWithProgress(BuildContext context, AppState app) async {
+Future<void> _importPdfWithProgress(BuildContext context, AppState app,
+    {PdfPlacement placement = PdfPlacement.currentPage}) async {
   final progress = ValueNotifier<String>('Opening PDF…');
   var dialogOpen = false;
   if (context.mounted) {
@@ -1052,6 +1115,7 @@ Future<void> _importPdfWithProgress(BuildContext context, AppState app) async {
   try {
     final result = await importPdfAsPages(
       app,
+      placement: placement,
       onProgress: (done, total) =>
           progress.value = 'Importing page $done of $total…',
     );
@@ -1066,13 +1130,18 @@ Future<void> _importPdfWithProgress(BuildContext context, AppState app) async {
           content: Text("That PDF couldn't be read.")));
       return;
     }
-    if (result.firstPageId != null) await app.selectPage(result.firstPageId!);
+    // Only navigate for the page-per-slide import — a printout landed on the
+    // page you are already looking at, and jumping would be disorienting.
+    if (result.sectionId != null && result.firstPageId != null) {
+      await app.selectPage(result.firstPageId!);
+    }
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       duration: const Duration(seconds: 6),
-      content: Text('Imported ${result.pages} page'
-          '${result.pages == 1 ? '' : 's'} — pick the pen and write on them. '
-          'The slide text is searchable.'),
+      content: Text('Imported ${result.pages} '
+          '${result.pages == 1 ? 'slide' : 'slides'}'
+          '${result.sectionId == null ? ' onto this page' : ''} — pick the pen '
+          'and write on them. The slide text is searchable.'),
     ));
   } catch (e) {
     if (dialogOpen && context.mounted) {

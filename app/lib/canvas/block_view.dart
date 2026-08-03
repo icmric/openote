@@ -87,8 +87,11 @@ class _BlockViewState extends State<BlockView> {
       app.select(b.id, additive: true);
     } else if (_editableType) {
       // Where the click landed, so the caret goes there instead of jumping to
-      // the end of the block. Consumed once by the session on its first build.
-      app.pendingCaretGlobal = _pressGlobal;
+      // the end of the block. Only TEXT consumes it — a click on a table, a
+      // code block or an equation would otherwise leave the token set, and the
+      // next text box you opened by any other route would jump its caret to a
+      // point on a completely different block.
+      if (b.type == BlockType.text) app.pendingCaretGlobal = _pressGlobal;
       app.select(b.id, edit: true); // tap-to-edit (F-4)
     } else {
       app.select(b.id);
@@ -119,7 +122,7 @@ class _BlockViewState extends State<BlockView> {
     if (!_textDragging) {
       _textDragging = true;
       if (!editing) {
-        app.pendingCaretGlobal = from;
+        if (b.type == BlockType.text) app.pendingCaretGlobal = from;
         app.select(b.id, edit: true);
         return; // the field appears next frame; extend from the move after
       }
@@ -130,6 +133,10 @@ class _BlockViewState extends State<BlockView> {
     final base = _selectBase;
     final extent = session.offsetAtGlobal(e.position);
     if (base == null || extent == null) return;
+    // The session's own post-frame caret placement runs AFTER this handler in
+    // the same frame and would collapse the selection we just made. Once the
+    // drag has taken over, it has nothing left to do.
+    session.pendingCaretGlobal = null;
     session.setSelection(base, extent);
   }
 

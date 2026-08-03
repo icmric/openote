@@ -121,7 +121,10 @@ class Repository {
       final file = p.join(workspaceDir.path, m['file'] as String);
       if (File(file).existsSync()) {
         notebooks.add(NotebookRef(
-            id: m['id'] as String, file: file, title: m['title'] as String? ?? 'Notebook'));
+            id: m['id'] as String,
+            file: file,
+            title: m['title'] as String? ?? 'Notebook',
+            logDir: m['logDir'] as String?));
       }
     }
     for (final n in (j['trashed'] as List? ?? const [])) {
@@ -132,6 +135,7 @@ class Repository {
             id: m['id'] as String,
             file: file,
             title: m['title'] as String? ?? 'Notebook',
+            logDir: m['logDir'] as String?,
             deletedAt: (m['deletedAt'] as num?)?.toInt() ?? nowMs()));
       }
     }
@@ -184,14 +188,38 @@ class Repository {
       'workspace_id': _workspaceId ??= newId(),
       'notebooks': [
         for (final n in notebooks)
-          {'id': n.id, 'file': p.basename(n.file), 'title': n.title}
+          {
+            'id': n.id,
+            // Basename for a notebook that lives in the workspace, so the
+            // whole folder stays movable — but the FULL path for one that
+            // doesn't. `_loadWorkspace` re-joins against the workspace dir, so
+            // a basename for a notebook that had been moved into a cloud
+            // folder resolved to a file that isn't there, and the notebook
+            // silently disappeared from the list on the next start.
+            'file': p.isWithin(workspaceDir.path, n.file)
+                ? p.basename(n.file)
+                : n.file,
+            'title': n.title,
+            // Always absolute: the shared folder is by definition outside the
+            // workspace, so a basename would be meaningless.
+            if (n.logDir != null) 'logDir': n.logDir,
+          }
       ],
       'trashed': [
         for (final n in trashedNotebooks)
           {
             'id': n.id,
-            'file': p.basename(n.file),
+            // Same rules as the live list above. `trashNotebook` moves the
+            // very same NotebookRef between the two, so a notebook deleted
+            // after being moved to a cloud folder kept its absolute path and
+            // was then written as a bare basename — dropped at the next load,
+            // unrecoverable, and its file orphaned. The 30-day retention
+            // promise quietly became "until you restart".
+            'file': p.isWithin(workspaceDir.path, n.file)
+                ? p.basename(n.file)
+                : n.file,
             'title': n.title,
+            if (n.logDir != null) 'logDir': n.logDir,
             'deletedAt': n.deletedAt,
           }
       ],
@@ -246,6 +274,28 @@ class Repository {
         notebookId, () => openOnote(nb.file, notebookId: nb.id, title: nb.title));
   }
 
+  /// Write a **consistent** copy of a notebook's container to [destPath].
+  ///
+  /// Not `File.copy`. The container is open in WAL mode, so recent commits
+  /// live in the `-wal` sidecar rather than the main file: copying the file
+  /// alone can produce a database missing the last however-many saves, or —
+  /// mid-checkpoint — a torn one. `VACUUM INTO` asks SQLite itself to
+  /// serialise a complete, self-contained database at a consistent point,
+  /// which is exactly what a backup has to be.
+  ///
+  /// Returns false if it couldn't (locked, out of disk); a backup that failed
+  /// must never look like one that worked.
+  bool snapshotContainer(String notebookId, String destPath) {
+    try {
+      final out = File(destPath);
+      if (out.existsSync()) out.deleteSync();
+      _db(notebookId).execute('VACUUM INTO ?', [destPath]);
+      return out.existsSync() && out.lengthSync() > 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ── Notebooks ──────────────────────────────────────────────────────────
 
   /// Move a notebook's container and its `.onotebook` log directory to
@@ -265,6 +315,29 @@ class Repository {
 
     final dir = Directory(targetDir);
     if (!dir.existsSync()) dir.createSync(recursive: true);
+
+    // A notebook this device JOINED already keeps its container locally and
+    // shares only the logs, so "move it somewhere else" means moving the log
+    // directory — moving the container would drag a private cache into a
+    // shared folder and undo the very thing that keeps two devices apart.
+    if (ref.logDir != null) {
+      final from = Directory(ref.logDirPath);
+      if (!from.existsSync()) throw StateError('the shared folder is missing');
+      final name = p.basename(from.path);
+      final to = Directory(p.join(targetDir, name));
+      if (p.equals(from.path, to.path)) return to.path;
+      if (to.existsSync()) throw StateError('$name is already in that folder');
+      await _copyDirectory(from, to);
+      try {
+        from.deleteSync(recursive: true);
+      } catch (_) {
+        // Same reasoning as below: the data has landed, and a stale original
+        // is far better than failing after the fact.
+      }
+      ref.logDir = to.path;
+      _scheduleSaveWorkspace();
+      return to.path;
+    }
 
     final base = p.basenameWithoutExtension(ref.file);
     var destFile = p.join(targetDir, '$base.onote');
@@ -293,7 +366,7 @@ class Repository {
 
     // The log directory travels with the container, or the notebook arrives
     // without the very thing that makes it syncable.
-    final srcLog = Directory('${p.withoutExtension(ref.file)}.onotebook');
+    final srcLog = Directory(ref.logDirPath);
     if (srcLog.existsSync()) {
       await _copyDirectory(srcLog, Directory('$destBase.onotebook'));
     }
@@ -341,25 +414,49 @@ class Repository {
     return ref;
   }
 
-  /// Register a `.onote` file that already exists, wherever it lives.
+  /// Join a notebook that already exists in a shared folder.
   ///
-  /// The whole point of syncing through a shared folder is that the second
-  /// device *finds* the notebook rather than being given a copy of it — so the
-  /// registry has to be able to point outside the workspace. It already can:
-  /// entries are stored with `p.join(workspaceDir, file)`, which returns an
-  /// absolute path unchanged. Opening the same file twice is a no-op that
-  /// returns the existing entry, so a double-click can't fork the registry.
+  /// **This device takes its own copy of the container and shares only the
+  /// logs**, which is the whole safety argument for folder sync. The `.onote`
+  /// is a WAL SQLite database rewritten on every save; two machines writing
+  /// one copy of it through a cloud client is precisely the corruption case
+  /// ADR-0006 §3 designs against — *"cache.onote ← local-only SQLite; never
+  /// synced"*. The op logs are the opposite: append-only, one file per device,
+  /// so concurrent writers are structurally impossible.
+  ///
+  /// So: copy the container into the workspace as a starting point (faster and
+  /// safer than replaying the whole log), and point [NotebookRef.logDir] at
+  /// the shared `.onotebook`. From then on this device writes its own
+  /// container locally and its own op log into the shared folder, and picks up
+  /// the other device's ops through the normal pull.
+  ///
+  /// Joining twice is a no-op that returns the existing entry, matched on the
+  /// shared log directory rather than the path, so a second click can't fork
+  /// the registry into two devices for one machine.
   Future<NotebookRef> openExistingNotebook(String path, {String? title}) async {
     final file = File(path);
     if (!file.existsSync()) throw StateError('no notebook at $path');
-    final already =
-        notebooks.where((n) => p.equals(n.file, path)).firstOrNull;
+    final sharedLog = '${p.withoutExtension(path)}.onotebook';
+
+    final already = notebooks
+        .where((n) =>
+            p.equals(n.file, path) ||
+            (n.logDir != null && p.equals(n.logDir!, sharedLog)))
+        .firstOrNull;
     if (already != null) return already;
+
+    final name = title ?? p.basenameWithoutExtension(path);
+    final local = _freeNotebookPath(name);
+    await file.copy(local);
+    if (File(local).lengthSync() != file.lengthSync()) {
+      throw StateError('could not copy the notebook into this workspace');
+    }
+
     final id = newId();
-    final ref = NotebookRef(
-        id: id, file: path, title: title ?? p.basenameWithoutExtension(path));
+    final ref =
+        NotebookRef(id: id, file: local, title: name, logDir: sharedLog);
     notebooks.add(ref);
-    _open[id] = openOnote(path, notebookId: id, title: ref.title);
+    _open[id] = openOnote(local, notebookId: id, title: name);
     await _saveNow();
     return ref;
   }

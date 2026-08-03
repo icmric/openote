@@ -144,6 +144,82 @@ void main() {
         reason: 'merely looking at a card must not persist a schedule');
   });
 
+  test('grading in one notebook keeps the other notebook\'s schedule',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // Card scheduling is stored per WORKSPACE but a deck is per NOTEBOOK, so
+    // pruning "everything not in this deck" deleted every OTHER notebook's
+    // review history the first time you graded a card after switching — a
+    // term of spaced repetition gone, silently, with no undo.
+    final (repo, tmp, app) = await fixture('onote_study_cross_', 2);
+    addTearDown(() => cleanup(repo, tmp));
+
+    for (final c in app.deck()) {
+      app.gradeCard(c.id, Grade.easy);
+    }
+    final first = app.notebookId!;
+    final firstCards = {for (final c in app.deck()) c.id};
+    expect(firstCards, isNotEmpty);
+
+    // A second notebook in the same workspace, with its own card.
+    final nb2 = await repo.createNotebook('Other');
+    app.notebookId = nb2.id;
+    app.reloadNodes();
+    final section =
+        app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
+    final node = app.importNode(
+        nb2.id,
+        TreeNode(
+            kind: NodeKind.page,
+            parentId: section,
+            title: 'P',
+            position: 'a000000000000001'));
+    final b = Block(
+        type: BlockType.text, x: 0, y: 0, content: {'text': 'Why?\n  Because.'});
+    NoteTag.writeInto(b.content, [NoteTag(kind: TagKind.question, line: 0)]);
+    app.importPage(nb2.id, node.id, [b], PageProps());
+    app.reloadNodes();
+    await app.selectPage(node.id);
+
+    app.gradeCard(app.deck().first.id, Grade.good);
+
+    final stored = repo.getSetting('cardStates') as Map?;
+    expect(stored, isNotNull);
+    for (final id in firstCards) {
+      expect(stored!.containsKey(id), isTrue,
+          reason: 'notebook $first lost the schedule for $id');
+    }
+  });
+
+  test('a card keeps its schedule when its line moves', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // A card is identified by 'blockId:line', so re-basing a tag RENAMES its
+    // card. Without carrying the schedule across, it is orphaned under the old
+    // name and the next prune deletes it — weeks of spacing gone from pressing
+    // Enter above a tagged line.
+    final (repo, tmp, app) = await fixture('onote_study_move_', 2);
+    addTearDown(() => cleanup(repo, tmp));
+
+    final card = app.deck(pageId: app.pageId).single;
+    app.gradeCard(card.id, Grade.easy);
+    final due = app.cardState(card.id).dueAt;
+    expect(due, greaterThan(0));
+
+    // Exactly what typing a line above it does.
+    final b = app.blocks.first;
+    final before = b.content['text'] as String;
+    final after = 'Lecture 4\n$before';
+    app.remapCardStates(b.id, NoteTag.rebase(b.content, before, after));
+    b.content['text'] = after;
+    app.markDirty();
+
+    final moved = app.deck(pageId: app.pageId).single;
+    expect(moved.id, isNot(card.id), reason: 'the card was renamed');
+    expect(moved.front, card.front, reason: 'but it asks the same question');
+    expect(app.cardState(moved.id).dueAt, due,
+        reason: 'and it must still be scheduled for the same day');
+  });
+
   test('a newly tagged line on the OPEN page becomes a card immediately',
       () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');

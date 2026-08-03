@@ -57,10 +57,11 @@ class SyncRecorder {
     required String notebookId,
     required String notebookPath,
     required String title,
+    String? logDir,
     required Object? Function(String key) readSetting,
     required void Function(String key, Object? value) writeSetting,
   }) {
-    final store = OpLogStore.forNotebook(notebookPath);
+    final store = OpLogStore.forNotebook(notebookPath, logDir: logDir);
     store.ensureInitialised(notebookId: notebookId, title: title);
     final device = DeviceIdentity.resolve(
       store: store,

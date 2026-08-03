@@ -4,7 +4,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as p; // ThemeMode + widgets (re-exports foundation)
+// ThemeMode + widgets (re-exports foundation)
 
 import '../canvas/align_guides.dart';
 import '../canvas/canvas_controller.dart';
@@ -155,6 +155,7 @@ class AppState extends ChangeNotifier {
         notebookId: nb,
         notebookPath: ref.file,
         title: ref.title,
+        logDir: ref.logDir,
         readSetting: _repo.getSetting,
         writeSetting: _repo.setSetting,
       );
@@ -355,7 +356,9 @@ class AppState extends ChangeNotifier {
     if (src == null) return;
     for (final t in targets) {
       try {
-        await mirrorNotebook(src, t);
+        await mirrorNotebook(src, t,
+            containerPath: notebookPath(nb),
+            snapshot: (dest) => _repo.snapshotContainer(nb, dest));
       } catch (e) {
         // A mirror is a convenience; a failing one (USB stick unplugged,
         // network share down) must never interfere with editing.
@@ -369,11 +372,8 @@ class AppState extends ChangeNotifier {
   int lastMirrorAt = 0;
 
   /// The `.onotebook` directory for a notebook, which is what gets mirrored.
-  String? notebookLogDir(String nb) {
-    final path = notebookPath(nb);
-    if (path == null) return null;
-    return '${p.withoutExtension(path)}.onotebook';
-  }
+  String? notebookLogDir(String nb) =>
+      _repo.notebooks.where((n) => n.id == nb).firstOrNull?.logDirPath;
 
   /// Pull automatically when another device's log changes. On by default —
   /// a sync you have to remember to click isn't sync.
@@ -454,7 +454,10 @@ class AppState extends ChangeNotifier {
     final hit = _syncStatusCache[nb];
     if (hit != null && now - hit.at < 5000) return hit.status;
 
-    final path = notebookPath(nb);
+    // The LOG directory, not the container: a device that joined a shared
+    // notebook keeps its container in the local workspace, so asking where the
+    // container is told that device it wasn't syncing — while it was.
+    final path = notebookLogDir(nb);
     final folder = path == null ? null : cloudFolderContaining(path);
     final devices = syncDeviceCount(nb);
     final status = SyncStatus(
@@ -834,6 +837,14 @@ class AppState extends ChangeNotifier {
   final Map<String, List<Flashcard>> _deckCache = {};
   static const _deckCacheMax = 6;
 
+  /// Every block id the last whole-notebook deck build walked past.
+  ///
+  /// Needed because card scheduling is stored per WORKSPACE while a deck is
+  /// per NOTEBOOK: without knowing which ids belong to the notebook in front
+  /// of us, pruning "everything not in this deck" deletes every other
+  /// notebook's review history. See [_persistCardStates].
+  Set<String> _notebookBlockIds = const {};
+
   /// The OPEN page's cards, held separately from [_deckCache].
   ///
   /// Two caches rather than one, because the two halves go stale for different
@@ -871,11 +882,18 @@ class AppState extends ChangeNotifier {
       // A revision bumped: every entry keyed on the old one is dead weight.
       if (_deckCache.length >= _deckCacheMax) _deckCache.clear();
       final out = <Flashcard>[];
+      final seen = <String>{};
       for (final n in nodes.where(inScope)) {
         if (n.id == this.pageId) continue; // the live half, below
         for (final b in readPage(n.id).blocks) {
+          seen.add(b.id);
           out.addAll(cardsFromBlock(b, n.id, n.title));
         }
+      }
+      // Only the unscoped build sees the whole notebook, so only it may
+      // answer "does this block belong to us?".
+      if (sectionId == null && pageId == null) {
+        _notebookBlockIds = seen..addAll(blocks.map((b) => b.id));
       }
       _deckCache[key] = stored = out;
     }
@@ -951,6 +969,32 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Carry review schedules across when a block's tags change line.
+  ///
+  /// A card's identity is `blockId:line` — chosen because it survives edits to
+  /// other lines with no extra bookkeeping — so re-basing a tag *renames its
+  /// card*. Without this the schedule is orphaned under the old name and the
+  /// next prune deletes it: press Enter above a tagged line and weeks of
+  /// spacing are gone, from a keystroke that changed nothing about the card.
+  ///
+  /// Removed first, then re-added, so a run of tags shifting by one can't
+  /// overwrite each other on the way past.
+  void remapCardStates(String blockId, Map<int, int> moved) {
+    if (moved.isEmpty) return;
+    final carried = <String, CardState>{};
+    for (final e in moved.entries) {
+      if (e.key == e.value) continue;
+      final s = _cardStates.remove('$blockId:${e.key}');
+      if (s != null) carried['$blockId:${e.value}'] = s;
+    }
+    if (carried.isEmpty) return;
+    _cardStates.addAll(carried);
+    _repo.setSetting('cardStates', {
+      for (final e in _cardStates.entries) e.key: e.value.toJson()
+    });
+    studyRevision++;
+  }
+
   /// Forget a card's schedule — it becomes new again.
   void resetCard(String cardId) {
     if (_cardStates.remove(cardId) == null) return;
@@ -973,11 +1017,27 @@ class AppState extends ChangeNotifier {
   }
 
   void _persistCardStates() {
-    // Prune as we write. A card id is `blockId:line`, so deleting a note or
-    // untagging a line strands its schedule forever otherwise — and this blob
-    // is loaded on every start.
+    // Prune as we write: a card id is `blockId:line`, so untagging a line
+    // strands its schedule forever otherwise, and this blob is loaded on every
+    // start.
+    //
+    // **Scoped to this notebook, and that is not a detail.** The blob is
+    // workspace-wide but a deck is per notebook, so pruning "everything not in
+    // this deck" deleted every OTHER notebook's review history the first time
+    // you graded a card after switching — a term of spaced repetition gone,
+    // silently, with no undo. An entry is only removed when we can see that
+    // its block is one of ours and no longer produces that card.
+    //
+    // The deliberate leak: a card whose block was DELETED is not in
+    // `_notebookBlockIds` either, so its state survives. Keeping a few dead
+    // rows costs bytes; guessing wrong costs somebody their schedule.
     final alive = {for (final c in deck()) c.id};
-    _cardStates.removeWhere((k, _) => !alive.contains(k));
+    final mine = _notebookBlockIds;
+    _cardStates.removeWhere((k, _) {
+      if (alive.contains(k)) return false;
+      final cut = k.lastIndexOf(':');
+      return mine.contains(cut < 0 ? k : k.substring(0, cut));
+    });
     _repo.setSetting('cardStates', {
       for (final e in _cardStates.entries) e.key: e.value.toJson()
     });
@@ -1869,20 +1929,33 @@ class AppState extends ChangeNotifier {
   void _repairImportedFieldCodes() {
     final core = OnoteCore.instance;
     if (core == null) return; // Dart-only build: leave the text untouched.
-    var changed = false;
+
+    // Worked out in full BEFORE anything is written, so the undo checkpoint
+    // below captures the page as it was on disk rather than as it will be.
+    final repairs = <Block, String>{};
     for (final b in blocks) {
       final text = b.content['text'];
       if (text is! String || !textNeedsFieldRepair(text)) continue;
       final fixed = core.repairFieldCodes(text);
       if (fixed == text || fixed.isEmpty) continue;
-      b.content['text'] = fixed;
-      b.updatedAt = nowMs();
-      changed = true;
+      repairs[b] = fixed;
+    }
+    if (repairs.isEmpty) return;
+
+    // Undoable. This is the one automatic path that rewrites text the user
+    // already owns, and it runs the moment a page opens — without a checkpoint
+    // there is no way back if the conversion reads a paragraph wrong. The
+    // stack was cleared by `selectPage` just above, so this becomes its first
+    // entry: one Ctrl+Z restores exactly what was on disk.
+    pushUndo();
+    for (final e in repairs.entries) {
+      e.key.content['text'] = e.value;
+      e.key.updatedAt = nowMs();
     }
     // Save through the normal funnel so the op log records it and the change
     // reaches other devices — a repair that only ever ran locally would have to
     // run again on every one of them.
-    if (changed) markDirty();
+    markDirty();
   }
 
   // ── Version history (SYNC-8) ───────────────────────────────────────────
@@ -1975,11 +2048,40 @@ class AppState extends ChangeNotifier {
   ({double right, double bottom}) contentExtent() {
     var right = pageLeftMargin, bottom = contentTop;
     for (final b in blocks) {
-      final bh = b.h ?? renderSizes[b.id]?.height ?? 60;
+      final bh = b.h ?? renderSizes[b.id]?.height ?? estimatedHeight(b);
       if (b.x + b.w > right) right = b.x + b.w;
       if (b.y + bh > bottom) bottom = b.y + bh;
     }
     return (right: right, bottom: bottom);
+  }
+
+  /// A height for a block that has neither a stored one nor a measured one.
+  ///
+  /// `renderSizes` is only written by blocks that actually built, and the
+  /// canvas culls everything outside the viewport — so a long note further
+  /// down the page reports nothing at all. A flat 60px guess for it made
+  /// [contentExtent] report a bottom edge ABOVE the real content, which is the
+  /// wrong direction for every caller: the page stops growing early, fit-to-
+  /// content clips, and anything that appends "below the last box" lands on
+  /// top of the user's writing.
+  ///
+  /// Estimating from the text is coarse — it ignores wrapping, so it can still
+  /// undershoot a long unwrapped paragraph — but it is far closer than a
+  /// constant, and it errs low only where a constant erred catastrophically.
+  double estimatedHeight(Block b) {
+    if (b.type != BlockType.text) return 60;
+    final text = b.content['text'] as String? ?? '';
+    if (text.isEmpty) return 60;
+    final size = (b.content['fontSize'] as num?)?.toDouble() ?? 15;
+    final lh = (b.content['lineHeight'] as num?)?.toDouble() ?? 1.5;
+    // Very rough wrap estimate: characters that fit across the box, at ~0.5em
+    // per character for a proportional face.
+    final perLine = ((b.w - 20) / (size * 0.5)).clamp(8, 400);
+    var lines = 0;
+    for (final l in text.split('\n')) {
+      lines += l.isEmpty ? 1 : (l.length / perLine).ceil();
+    }
+    return (lines * size * lh + 16).clamp(36, 20000);
   }
 
   /// Content-based page size (used off-view, e.g. export). The on-screen page
@@ -2543,6 +2645,11 @@ class AppState extends ChangeNotifier {
   }
 
   void select(String? id, {bool edit = false, bool additive = false}) {
+    // The caret token is for the selection being made RIGHT NOW. Expiring it
+    // here rather than trusting one widget type to consume it means a click
+    // that never opens a text editor can't leave it lying around for the next
+    // one — which showed up as a caret landing at a point on another block.
+    if (!edit) pendingCaretGlobal = null;
     if (id == null) {
       selectedIds.clear();
       selectedBlockId = null;

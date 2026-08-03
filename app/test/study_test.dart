@@ -211,6 +211,97 @@ void main() {
     });
   });
 
+  group('tags follow the lines they mark', () {
+    // A tag records a line INDEX. That is what lets it survive edits to other
+    // lines and travel through the op log with no new op kind — but nothing
+    // shifted it when the text gained or lost a line, so pressing Enter above
+    // a tagged line moved the marker onto the wrong sentence. The flashcard
+    // followed it (cardsFromBlock reads lines[tag.line]) while its id stayed
+    // 'blockId:line', so the review schedule stayed attached to a card that
+    // was now about something else.
+
+    Map<String, dynamic> marked(String text, List<int> lines) {
+      final c = <String, dynamic>{'text': text};
+      NoteTag.writeInto(
+          c, [for (final l in lines) NoteTag(kind: TagKind.question, line: l)]);
+      return c;
+    }
+
+    List<int> linesOf(Map<String, dynamic> c) =>
+        [for (final t in NoteTag.listFrom(c)) t.line];
+
+    const abc = 'alpha\nbeta\ngamma';
+
+    test('a line inserted above pushes the tag down', () {
+      final c = marked(abc, [2]);
+      NoteTag.rebase(c, abc, 'alpha\nNEW\nbeta\ngamma');
+      expect(linesOf(c), [3]);
+    });
+
+    test('a line removed above pulls the tag up', () {
+      final c = marked(abc, [2]);
+      NoteTag.rebase(c, abc, 'alpha\ngamma');
+      expect(linesOf(c), [1]);
+    });
+
+    test('a tag above the edit does not move', () {
+      final c = marked(abc, [0]);
+      NoteTag.rebase(c, abc, 'alpha\nbeta\nNEW\ngamma');
+      expect(linesOf(c), [0]);
+    });
+
+    test('editing within a line moves nothing', () {
+      final c = marked(abc, [1, 2]);
+      NoteTag.rebase(c, abc, 'alpha\nbetaX\ngamma');
+      expect(linesOf(c), [1, 2]);
+    });
+
+    test('deleting the tagged line takes its tag with it', () {
+      final c = marked(abc, [1]);
+      NoteTag.rebase(c, abc, 'alpha\ngamma');
+      expect(linesOf(c), isEmpty);
+    });
+
+    test('a rewritten region drops its tags rather than relocating them', () {
+      // Select three lines and type two different ones. The old lines are
+      // gone, so a tag inside that region marks nothing the user wrote —
+      // shifting it by the line delta would silently move the marker (and the
+      // flashcard behind it) onto a sentence it never marked.
+      final c = marked('A\nB\nC\nD', [1]);
+      NoteTag.rebase(c, 'A\nB\nC\nD', 'A\nW\nX\nY\nZ\nD');
+      expect(linesOf(c), isEmpty);
+    });
+
+    test('it reports where each tag moved to', () {
+      // Load-bearing: a flashcard is identified by 'blockId:line', so a tag
+      // that moves without its schedule moving too IS a lost schedule.
+      final c = marked(abc, [1, 2]);
+      final moved = NoteTag.rebase(c, abc, 'NEW\nalpha\nbeta\ngamma');
+      expect(moved, {1: 2, 2: 3});
+    });
+
+    test('the card keeps asking the same question', () {
+      // The consequence that actually matters.
+      const before = 'What is a truth table?\n  A grid of every case.';
+      const after =
+          'Lecture 3\nWhat is a truth table?\n  A grid of every case.';
+      final c = marked(before, [0]);
+      final was = cardsFromBlock(
+              Block(type: BlockType.text, x: 0, y: 0, content: c), 'p', 'Page')
+          .single;
+      expect(was.front, 'What is a truth table?');
+
+      NoteTag.rebase(c, before, after);
+      c['text'] = after;
+      final now = cardsFromBlock(
+              Block(type: BlockType.text, x: 0, y: 0, content: c), 'p', 'Page')
+          .single;
+      expect(now.front, was.front,
+          reason: 'the card must still ask the same question');
+      expect(now.back, was.back);
+    });
+  });
+
   group('Anki export', () {
     test('emits tab-separated fields with headers', () {
       final b = tagged('Ohm — one volt per ampere',
