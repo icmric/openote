@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 
+import '../math/evaluate.dart';
 import '../math/linear_math.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
@@ -76,6 +77,16 @@ class _MathBlockViewState extends State<MathBlockView> {
       });
     }
     _wasEditing = editing;
+  }
+
+  /// The evaluated value of what's typed, or null when there's nothing to
+  /// evaluate. Recomputed per build — parsing a line of arithmetic is trivial
+  /// next to laying out the LaTeX preview beside it.
+  EvalResult? get _evaluated {
+    final src = _controller.text.trim();
+    if (src.isEmpty) return null;
+    final r = evaluateLinear(src);
+    return r.isOk ? r : null;
   }
 
   void _insertAtCaret(String s) {
@@ -166,6 +177,38 @@ class _MathBlockViewState extends State<MathBlockView> {
                 ],
               ),
             ),
+            // Live numeric result (MATH-7). OneNote paywalls math answers
+            // behind an Education subscription; we own the grammar, so this is
+            // free. A calculator, not a solver — an expression it can't reduce
+            // simply shows nothing rather than an error the user didn't ask for.
+            if (_evaluated case final r? when r.isOk) ...[
+              const SizedBox(height: 6),
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                Text('= ',
+                    style: TextStyle(
+                        fontSize: 14, color: OnoteColors.graphite400)),
+                SelectableText(
+                  r.display,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: dark ? OnoteColors.moon0 : OnoteColors.graphite900,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: 'Insert the result into the equation',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(4),
+                    onTap: () => _insertAtCaret(' = ${r.display}'),
+                    child: const Padding(
+                      padding: EdgeInsets.all(2),
+                      child: Icon(Icons.subdirectory_arrow_left, size: 15),
+                    ),
+                  ),
+                ),
+              ]),
+            ],
             if (preview.isNotEmpty) ...[
               const Divider(height: 14),
               FittedBox(

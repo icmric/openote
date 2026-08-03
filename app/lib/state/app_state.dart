@@ -14,6 +14,7 @@ import '../model/models.dart';
 import '../store/repository.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
+import '../study/flashcards.dart';
 import 'builtin_templates.dart';
 import '../sync/sync_recorder.dart';
 
@@ -527,6 +528,69 @@ class AppState extends ChangeNotifier {
   bool showTagsPanel = false;
   void toggleTagsPanel() {
     showTagsPanel = !showTagsPanel;
+    notifyListeners();
+  }
+
+  // ── Study: flashcards from tagged lines ──────────────────────────────
+
+  /// Scheduling state per card id. Workspace-scoped and **not synced**: when
+  /// you should review is personal, and pushing it through the op log would
+  /// make one person's review schedule everyone's on a shared notebook.
+  final Map<String, CardState> _cardStates = {};
+
+  /// Every card the notebook can produce, in page order.
+  List<Flashcard> deck({String? sectionId}) {
+    if (notebookId == null) return const [];
+    final out = <Flashcard>[];
+    for (final n in nodes.where((n) => n.kind == NodeKind.page)) {
+      if (sectionId != null && n.parentId != sectionId) continue;
+      // The open page's in-memory blocks are fresher than the container.
+      final blocksOf = n.id == pageId ? blocks : readPage(n.id).blocks;
+      for (final b in blocksOf) {
+        out.addAll(cardsFromBlock(b, n.id, n.title));
+      }
+    }
+    return out;
+  }
+
+  CardState cardState(String cardId) =>
+      _cardStates[cardId] ?? (_cardStates[cardId] = CardState());
+
+  /// Cards due now, hardest-overdue first, capped so a session ends.
+  ///
+  /// A deck of 400 with no cap is a wall a student bounces off; 40 is a
+  /// sitting, and tomorrow's session picks up the rest.
+  List<Flashcard> dueCards({String? sectionId, int max = 40}) {
+    final now = nowMs();
+    final due = [
+      for (final c in deck(sectionId: sectionId))
+        if (cardState(c.id).isDue(now)) c
+    ]..sort((a, b) => cardState(a.id).dueAt.compareTo(cardState(b.id).dueAt));
+    return due.length <= max ? due : due.sublist(0, max);
+  }
+
+  void gradeCard(String cardId, Grade g) {
+    applyGrade(cardState(cardId), g, nowMs());
+    _repo.setSetting('cardStates', {
+      for (final e in _cardStates.entries) e.key: e.value.toJson()
+    });
+    notifyListeners();
+  }
+
+  /// Counts for the study surface: (due now, total).
+  (int, int) deckCounts({String? sectionId}) {
+    final all = deck(sectionId: sectionId);
+    final now = nowMs();
+    var due = 0;
+    for (final c in all) {
+      if (cardState(c.id).isDue(now)) due++;
+    }
+    return (due, all.length);
+  }
+
+  bool showStudyPanel = false;
+  void toggleStudyPanel() {
+    showStudyPanel = !showStudyPanel;
     notifyListeners();
   }
 
@@ -1071,6 +1135,10 @@ class AppState extends ChangeNotifier {
     final lw = _repo.getSetting('learnedWords');
     if (lw is List) loadLearnedWords(lw.cast<String>());
     onLearnedChanged = (words) => _repo.setSetting('learnedWords', words);
+    final cs = _repo.getSetting('cardStates');
+    if (cs is Map) {
+      cs.forEach((k, v) => _cardStates['$k'] = CardState.fromJson(v));
+    }
     final fav = _repo.getSetting('favourites');
     if (fav is List) _favourites.addAll(fav.cast<String>());
     final rec = _repo.getSetting('recentPages');

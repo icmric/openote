@@ -86,6 +86,9 @@ class _CommandBarState extends State<CommandBar> {
                       onPressed: () => app.setTool(Tool.select),
                     ),
                   ),
+                // Study: the due count is the whole nudge, so it's on the
+                // badge rather than hidden behind the panel.
+                _StudyButton(app: app),
                 IconButton(
                   icon: const Icon(Icons.label_outline, size: 17),
                   tooltip: 'Find tags',
@@ -855,6 +858,53 @@ class _TagButton extends StatelessWidget {
             child: Text(k.label),
           ),
       ],
+    );
+  }
+}
+
+/// Study button with a due badge.
+///
+/// The count is the feature's entire nudge — "12 due" the week before an exam
+/// is what turns notes into revision, and a bare icon says nothing.
+class _StudyButton extends StatelessWidget {
+  const _StudyButton({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final (due, total) = app.deckCounts(sectionId: app.activeSectionId);
+    return Tooltip(
+      message: total == 0
+          ? 'Study — tag a line Question or Definition to make a card'
+          : '$due of $total card${total == 1 ? '' : 's'} due in this section',
+      child: Stack(clipBehavior: Clip.none, children: [
+        IconButton(
+          icon: const Icon(Icons.school_outlined, size: 17),
+          isSelected: app.showStudyPanel,
+          visualDensity: VisualDensity.compact,
+          onPressed: app.toggleStudyPanel,
+        ),
+        if (due > 0)
+          Positioned(
+            right: 2,
+            top: 2,
+            child: IgnorePointer(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text('$due',
+                    style: TextStyle(
+                        fontSize: 9,
+                        height: 1.2,
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).colorScheme.onPrimary)),
+              ),
+            ),
+          ),
+      ]),
     );
   }
 }

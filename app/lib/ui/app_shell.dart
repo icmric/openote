@@ -9,6 +9,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'command_bar.dart';
 import 'sidebar.dart';
+import 'study_panel.dart';
 
 /// Layout per style guide §5.4: navigator | (toolbar / canvas-as-hero / status).
 ///
@@ -271,6 +272,10 @@ class _AppShellState extends State<AppShell> {
                                 : PageCanvas(
                                     key: ValueKey(app.pageId), state: app),
                           ),
+                          if (app.showStudyPanel) ...[
+                            const VerticalDivider(width: 1),
+                            StudyPanel(app: app),
+                          ],
                           if (app.showTagsPanel) ...[
                             const VerticalDivider(width: 1),
                             _TagsPanel(app: app),
