@@ -39,7 +39,11 @@ class NotebookRef {
   NotebookRef(
       {required this.id, required this.file, required this.title, this.deletedAt});
   final String id;
-  final String file; // absolute path to the .onote
+  /// Absolute path to the `.onote`. Mutable because a notebook can be moved
+  /// into a synced folder (`Repository.moveNotebookTo`) without becoming a
+  /// different notebook — the id is the identity, the path is just where it
+  /// happens to live.
+  String file;
   String title;
   int? deletedAt; // set while the notebook sits in the recycle bin (ORG-7)
 }

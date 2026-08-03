@@ -16,6 +16,8 @@ import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../study/flashcards.dart';
 import 'builtin_templates.dart';
+import '../sync/folder_watch.dart';
+import '../sync/op.dart';
 import '../sync/sync_recorder.dart';
 
 enum Tool { select, text, pen, highlighter, eraser, lasso }
@@ -185,11 +187,30 @@ class AppState extends ChangeNotifier {
   /// resolve. Merging is reading: sort the union, apply, write the result.
   ///
   /// Returns the number of ops folded in.
+  /// True while a pull is in flight.
+  ///
+  /// Guards re-entrancy: the watcher can fire again mid-pull (a cloud client
+  /// writing a second log while we read the first), and two overlapping pulls
+  /// would both read the same pending ops, both write them, and both advance
+  /// the watermark — applying remote edits twice.
+  bool _pulling = false;
+
   Future<int> syncPull(String nb) async {
+    if (_pulling) return 0;
     final r = _recorderFor(nb);
     if (r == null) return 0;
     final pending = r.pendingForeignOps(_repo.getSetting);
     if (pending.isEmpty) return 0;
+    _pulling = true;
+    try {
+      return await _syncPullLocked(nb, r, pending);
+    } finally {
+      _pulling = false;
+    }
+  }
+
+  Future<int> _syncPullLocked(
+      String nb, SyncRecorder r, List<Op> pending) async {
 
     // Flush first: a local edit still sitting in the debounce would otherwise
     // be overwritten by the materialised page we're about to write.
@@ -257,6 +278,71 @@ class AppState extends ChangeNotifier {
 
   /// Ops folded in by the last [syncPull], for the status surface.
   int lastSyncPull = 0;
+
+  // ── Cloud sync: a synced folder is the transport ─────────────────────
+
+  /// Move a notebook into [targetDir] (a Drive/OneDrive/iCloud/Syncthing
+  /// folder) so other devices see it. Returns the new path.
+  ///
+  /// No OAuth and no tokens by design: those providers' desktop clients
+  /// already present the cloud as a local folder, and one-writer-per-file
+  /// means they never have to merge anything — which is the thing they do
+  /// badly. See `sync/cloud_folders.dart` for the full reasoning.
+  Future<String> moveNotebookToFolder(String nb, String targetDir) async {
+    await flushSave();
+    // Drop the recorder: it holds the OLD path, and a stale log location would
+    // silently write this device's ops somewhere nobody is looking.
+    _recorders.remove(nb);
+    _stopWatching();
+    final path = await _repo.moveNotebookTo(nb, targetDir);
+    if (nb == notebookId) {
+      await _loadNotebook();
+      _startWatching();
+    }
+    notifyListeners();
+    return path;
+  }
+
+  /// Pull automatically when another device's log changes. On by default —
+  /// a sync you have to remember to click isn't sync.
+  bool autoSync = true;
+
+  void setAutoSync(bool v) {
+    autoSync = v;
+    _repo.setSetting('autoSync', v);
+    v ? _startWatching() : _stopWatching();
+    notifyListeners();
+  }
+
+  OpFolderWatcher? _watcher;
+
+  void _startWatching() {
+    _stopWatching();
+    if (!autoSync || notebookId == null) return;
+    final r = _recorderFor(notebookId!);
+    if (r == null) return;
+    _watcher = OpFolderWatcher(
+      opsDir: r.store.opsDir,
+      ownDevice: r.device.id,
+      onForeignChange: () {
+        // Fire-and-forget: a failed pull must not take down the watcher, and
+        // the next change (or the manual button) retries anyway.
+        syncPull(notebookId!).catchError((Object e) {
+          debugPrint('[openote/sync] auto-pull failed: $e');
+          return 0;
+        });
+      },
+    )..start();
+  }
+
+  void _stopWatching() {
+    _watcher?.stop();
+    _watcher = null;
+  }
+
+  /// Where this notebook lives, for the sync surface.
+  String? notebookPath(String nb) =>
+      _repo.notebooks.where((n) => n.id == nb).firstOrNull?.file;
 
   /// Devices that have written to this notebook, for the status surface.
   int syncDeviceCount(String nb) =>
@@ -1128,6 +1214,8 @@ class AppState extends ChangeNotifier {
     if (tm != null) themeMode = ThemeMode.values.asNameMap()[tm] ?? themeMode;
     final ns = _repo.getSetting('navSplit');
     if (ns is num) navSplit = ns.toDouble().clamp(0.15, 0.7);
+    final as = _repo.getSetting('autoSync');
+    if (as is bool) autoSync = as;
     final sc = _repo.getSetting('spellCheck');
     if (sc is bool) spellCheckEnabled = sc;
     // Personal dictionary: workspace-scoped and deliberately NOT synced — one
@@ -1166,6 +1254,8 @@ class AppState extends ChangeNotifier {
     await _repo.purgeExpiredNotebooks();
     _repo.purgeExpiredNodes(notebookId!);
     reloadNodes();
+    // Watch for other devices once the notebook is open.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startWatching());
     final lastPage = _repo.getSetting('lastPage') as String?;
     final target = nodes.any((n) => n.id == lastPage && n.kind == NodeKind.page)
         ? lastPage
@@ -2160,6 +2250,7 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _stopWatching();
     _saveDebounce?.cancel();
     canvas.dispose();
     _repo.dispose();

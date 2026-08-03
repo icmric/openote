@@ -10,6 +10,7 @@ import '../theme/onote_theme.dart';
 import 'command_bar.dart';
 import 'sidebar.dart';
 import 'study_panel.dart';
+import 'sync_dialog.dart';
 
 /// Layout per style guide §5.4: navigator | (toolbar / canvas-as-hero / status).
 ///
@@ -821,28 +822,44 @@ class _StatusBar extends StatelessWidget {
           // Sync (ADR-0006). Shown only once a second device has touched this
           // notebook — until then there is nothing to say, and a permanent
           // "1 device" chip would be noise.
-          if (app.notebookId != null && app.syncDeviceCount(app.notebookId!) > 1)
+          if (app.notebookId != null)
             Tooltip(
-              message: 'This notebook has been edited on '
-                  '${app.syncDeviceCount(app.notebookId!)} devices.\n'
-                  'Click to pull in changes from the others.',
-              child: InkWell(
-                onTap: () async {
-                  final n = await app.syncPull(app.notebookId!);
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text(n == 0
-                          ? 'Already up to date.'
-                          : 'Pulled $n change${n == 1 ? '' : 's'} from another device.')));
-                },
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.devices, size: 12,
-                      color: OnoteColors.graphite400),
-                  const SizedBox(width: 5),
-                  Text('${app.syncDeviceCount(app.notebookId!)} devices',
-                      style: const TextStyle(
-                          fontSize: 11, color: OnoteColors.graphite400)),
-                ]),
+              message: app.syncDeviceCount(app.notebookId!) > 1
+                  ? 'Edited on ${app.syncDeviceCount(app.notebookId!)} devices.'
+                      '\nClick to pull; right-click for sync settings.'
+                  : 'Not synced yet — click to put this notebook in a folder '
+                      'your cloud already syncs.',
+              child: GestureDetector(
+                onSecondaryTap: () => showSyncDialog(context, app),
+                child: InkWell(
+                  onTap: () async {
+                    if (app.syncDeviceCount(app.notebookId!) <= 1) {
+                      await showSyncDialog(context, app);
+                      return;
+                    }
+                    final n = await app.syncPull(app.notebookId!);
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(n == 0
+                            ? 'Already up to date.'
+                            : 'Pulled $n change${n == 1 ? '' : 's'} from another device.')));
+                  },
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(
+                        app.syncDeviceCount(app.notebookId!) > 1
+                            ? Icons.devices
+                            : Icons.cloud_off_outlined,
+                        size: 12,
+                        color: OnoteColors.graphite400),
+                    const SizedBox(width: 5),
+                    Text(
+                        app.syncDeviceCount(app.notebookId!) > 1
+                            ? '${app.syncDeviceCount(app.notebookId!)} devices'
+                            : 'Sync…',
+                        style: const TextStyle(
+                            fontSize: 11, color: OnoteColors.graphite400)),
+                  ]),
+                ),
               ),
             ),
           const SizedBox(width: 12),

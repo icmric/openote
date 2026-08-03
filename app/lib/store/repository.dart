@@ -248,6 +248,85 @@ class Repository {
 
   // ── Notebooks ──────────────────────────────────────────────────────────
 
+  /// Move a notebook's container and its `.onotebook` log directory to
+  /// [targetDir], and point the registry at the new location.
+  ///
+  /// Copy-then-verify-then-delete, never a bare rename: the destination is
+  /// usually a *different volume* (a cloud provider's folder), where rename
+  /// isn't atomic and can't be, and a half-moved notebook is the worst
+  /// possible outcome. The original is removed only after every byte is
+  /// confirmed at the destination.
+  ///
+  /// Returns the new container path.
+  Future<String> moveNotebookTo(String notebookId, String targetDir) async {
+    final ref = notebooks.firstWhere((n) => n.id == notebookId);
+    final src = File(ref.file);
+    if (!src.existsSync()) throw StateError('notebook file is missing');
+
+    final dir = Directory(targetDir);
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+
+    final base = p.basenameWithoutExtension(ref.file);
+    var destFile = p.join(targetDir, '$base.onote');
+    // Never overwrite something already there.
+    var n = 2;
+    while (File(destFile).existsSync() ||
+        Directory(p.join(targetDir, '$base.onotebook')).existsSync()) {
+      destFile = p.join(targetDir, '$base ($n).onote');
+      if (!File(destFile).existsSync() &&
+          !Directory(p.join(targetDir, '$base ($n).onotebook')).existsSync()) {
+        break;
+      }
+      n++;
+      if (n > 500) throw StateError('cannot find a free name in that folder');
+    }
+    final destBase = p.withoutExtension(destFile);
+
+    // Close our handle first: SQLite must not be mid-write while the file is
+    // copied, and on Windows an open handle blocks the delete outright.
+    _open.remove(notebookId)?.dispose();
+
+    await src.copy(destFile);
+    if (File(destFile).lengthSync() != src.lengthSync()) {
+      throw StateError('copy did not complete — the notebook was NOT moved');
+    }
+
+    // The log directory travels with the container, or the notebook arrives
+    // without the very thing that makes it syncable.
+    final srcLog = Directory('${p.withoutExtension(ref.file)}.onotebook');
+    if (srcLog.existsSync()) {
+      await _copyDirectory(srcLog, Directory('$destBase.onotebook'));
+    }
+
+    // Only now is it safe to remove the originals.
+    try {
+      src.deleteSync();
+      if (srcLog.existsSync()) srcLog.deleteSync(recursive: true);
+    } catch (_) {
+      // Copy succeeded but cleanup didn't (a lock, a permission). The notebook
+      // is intact at the destination; leaving a stale original is far better
+      // than failing the move after the data has already landed.
+    }
+
+    ref.file = destFile;
+    _scheduleSaveWorkspace();
+    return destFile;
+  }
+
+  static Future<void> _copyDirectory(Directory from, Directory to) async {
+    to.createSync(recursive: true);
+    for (final entity in from.listSync(recursive: true)) {
+      final rel = p.relative(entity.path, from: from.path);
+      final target = p.join(to.path, rel);
+      if (entity is Directory) {
+        Directory(target).createSync(recursive: true);
+      } else if (entity is File) {
+        Directory(p.dirname(target)).createSync(recursive: true);
+        await entity.copy(target);
+      }
+    }
+  }
+
   Future<NotebookRef> createNotebook(String title) async {
     final id = newId();
     final file = _freeNotebookPath(title);

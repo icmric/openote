@@ -330,3 +330,49 @@ Three decisions were forced by writing it, all recorded in the code:
 Not yet built: **blob bytes are not copied into `blobs/`** (only the hash, mime
 and size are recorded), the container is not yet demoted to `cache.onote`, the
 `nodes` migration, Loro, and every transport.
+
+## 8. Cloud transports — decided 2026-08-03: folders, not APIs
+
+Google Drive, OneDrive, iCloud Drive and Dropbox all ship a desktop client that
+presents the cloud as an ordinary local folder. §3's design already syncs
+correctly through any such folder, because one-writer-per-file means the
+provider is never asked to merge anything — which is precisely the thing these
+providers do badly.
+
+**So Openote never talks to a cloud API.** The alternative was considered and
+rejected on four grounds:
+
+1. **Secrets that aren't secret.** OAuth requires registering with each vendor
+   and shipping a client ID/secret inside an open-source binary, where anyone
+   can extract them.
+2. **Attack surface.** Holding refresh tokens with broad Drive scopes on disk
+   is a far larger security liability than reading and writing files the user
+   already syncs — and the vision's local-first promise gets harder to keep the
+   moment the app can reach the network at all.
+3. **Maintenance.** Four vendor APIs, four auth flows, four sets of breaking
+   changes, and a token-refresh failure mode for every user.
+4. **It buys nothing.** The provider's own client already does the transport,
+   better and with the user's existing credentials.
+
+**What this means for self-hosting:** it is the same feature. Syncthing,
+Nextcloud's client, a NAS mount, or an rsync cron job all produce a folder, so
+self-hosting needs no Openote-side support at all and exposes nothing to the
+network. That is the strongest possible answer to "can I run this myself?"
+
+### Implemented (`app/lib/sync/`)
+
+| File | Role |
+|---|---|
+| `cloud_folders.dart` | Detects Drive/OneDrive/iCloud/Dropbox/Nextcloud/Syncthing folders by well-known path, and carries the per-provider caveat (all four big providers evict files by default, which looks exactly like data loss). |
+| `folder_watch.dart` | Watches `ops/` and pulls when a **foreign** log changes — own-device writes are ignored, or every save would schedule a re-read of what it just wrote. Debounced, because a cloud client writes one edit as a burst. |
+| `Repository.moveNotebookTo` | Copy → verify length → copy the `.onotebook` directory → only then delete the originals. Never a bare rename: the destination is usually a different volume, where rename is not atomic, and a half-moved notebook is the worst outcome. Never overwrites an existing file. |
+| `ui/sync_dialog.dart` | The whole setup flow, one dialog: pick a detected folder or choose any folder. |
+
+Re-entrancy: `AppState.syncPull` holds a lock, because the watcher can fire
+again mid-pull and two overlapping pulls would both read the same pending ops,
+both write them, and both advance the watermark — applying remote edits twice.
+
+**Deliberately still open:** a notebook in a shared folder edited by two people
+*at the same moment in the same paragraph* resolves last-writer-wins until the
+structured text model and a sequence CRDT land (§4). Different pages, different
+blocks, and different paragraphs of different blocks all merge correctly today.
