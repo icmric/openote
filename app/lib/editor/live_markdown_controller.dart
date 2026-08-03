@@ -289,9 +289,15 @@ class WrapSelectionFormatter extends TextInputFormatter {
     '<': '>',
   };
 
+  /// A line that is exactly an opening fence, so Enter should close it.
+  static final _openFenceRe = RegExp(r'^\s*```[A-Za-z0-9+#-]*$');
+
   @override
   TextEditingValue formatEditUpdate(
       TextEditingValue oldValue, TextEditingValue newValue) {
+    final fenced = _autoCloseFence(oldValue, newValue);
+    if (fenced != null) return fenced;
+
     final sel = oldValue.selection;
     if (!sel.isValid || sel.isCollapsed) return newValue;
     final selText = oldValue.text.substring(sel.start, sel.end);
@@ -314,6 +320,42 @@ class WrapSelectionFormatter extends TextInputFormatter {
       text: wrapped,
       selection: TextSelection(
           baseOffset: sel.start + 1, extentOffset: sel.start + 1 + selText.length),
+    );
+  }
+
+  /// Pressing Enter on a bare ``` line opens a fence: insert the closing line
+  /// and leave the caret between them (TEXT-2).
+  ///
+  /// Without this, typing a code fence means typing the closing ``` yourself
+  /// and remembering to sit above it — the one Markdown construct where the
+  /// editor asking "did you mean a code block?" is unambiguously right.
+  TextEditingValue? _autoCloseFence(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final sel = oldValue.selection;
+    if (!sel.isValid || !sel.isCollapsed) return null;
+    // Exactly one newline inserted at the caret.
+    if (newValue.text.length != oldValue.text.length + 1) return null;
+    final at = sel.baseOffset;
+    if (at < 0 || at > oldValue.text.length) return null;
+    if (newValue.text.length <= at || newValue.text[at] != '\n') return null;
+
+    final lineStart = oldValue.text.lastIndexOf('\n', at - 1) + 1;
+    final line = oldValue.text.substring(lineStart, at);
+    if (!_openFenceRe.hasMatch(line)) return null;
+    // Already inside a fence (odd number of fence lines above)? Then this line
+    // is a CLOSING fence and must not spawn another.
+    final before = oldValue.text.substring(0, lineStart);
+    final fencesAbove =
+        '\n$before'.split('\n').where((l) => l.trimLeft().startsWith('```')).length;
+    if (fencesAbove.isOdd) return null;
+
+    final indent = RegExp(r'^\s*').firstMatch(line)!.group(0)!;
+    final insert = '\n$indent```';
+    final text = oldValue.text.replaceRange(at, at, '\n$insert');
+    return TextEditingValue(
+      text: text,
+      // Caret on the blank line between the fences.
+      selection: TextSelection.collapsed(offset: at + 1),
     );
   }
 }

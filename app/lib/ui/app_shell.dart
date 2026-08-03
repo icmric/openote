@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../canvas/media_drop.dart';
 import '../canvas/page_canvas.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
@@ -106,6 +107,20 @@ class _AppShellState extends State<AppShell> {
           app.toggleTextColor();
           return true;
         }
+        // Ctrl+1/2/3 — tag the caret's line. OneNote's own chords, so the
+        // muscle memory a switching student already has keeps working.
+        final tag = switch (k) {
+          LogicalKeyboardKey.digit1 => TagKind.todo,
+          LogicalKeyboardKey.digit2 => TagKind.important,
+          LogicalKeyboardKey.digit3 => TagKind.question,
+          LogicalKeyboardKey.digit4 => TagKind.remember,
+          LogicalKeyboardKey.digit5 => TagKind.definition,
+          _ => null,
+        };
+        if (tag != null) {
+          app.toggleTagOnSelection(tag);
+          return true;
+        }
       }
       return false;
     }
@@ -122,8 +137,11 @@ class _AppShellState extends State<AppShell> {
         return true;
       }
       if (k == LogicalKeyboardKey.keyV) {
-        if (!app.canPasteBlocks) return false;
-        app.pasteBlocks();
+        // System clipboard first (an image from a screenshot tool), our own
+        // block clipboard second. The reverse order would make Ctrl+V paste a
+        // stale block instead of the screenshot just taken — and copying a
+        // block is far rarer than copying an image from elsewhere.
+        _pasteFromSystemOrBlocks();
         return true;
       }
       if (k == LogicalKeyboardKey.keyF) {
@@ -177,6 +195,17 @@ class _AppShellState extends State<AppShell> {
   bool _tool(Tool t) {
     app.setTool(t);
     return true;
+  }
+
+  /// Ctrl+V on the canvas: system clipboard media if there is any, else our
+  /// own copied blocks.
+  Future<void> _pasteFromSystemOrBlocks() async {
+    final at = app.canvas.screenToPage(Offset(
+        app.canvas.viewport.width / 2, app.canvas.viewport.height / 2));
+    final result = await pasteOntoCanvas(app, at);
+    if (result == PasteResult.nothing && app.canPasteBlocks) {
+      app.pasteBlocks();
+    }
   }
 
   /// Memoised navigator. The whole shell sits under one `ListenableBuilder`, so
@@ -270,12 +299,80 @@ class _AppShellState extends State<AppShell> {
 }
 
 /// Find-on-page bar (TEXT-7): live matches, next/prev cycles & centers.
-class _FindBar extends StatelessWidget {
+class _FindBar extends StatefulWidget {
   const _FindBar({required this.app});
   final AppState app;
 
   @override
+  State<_FindBar> createState() => _FindBarState();
+}
+
+class _FindBarState extends State<_FindBar> {
+  AppState get app => widget.app;
+
+  /// Replace is opt-in: a permanently visible replace field doubles the height
+  /// of the bar for a job most searches don't want.
+  bool _showReplace = false;
+  final _replaceCtl = TextEditingController();
+
+  @override
+  void dispose() {
+    _replaceCtl.dispose();
+    super.dispose();
+  }
+
+  void _replace({required bool all}) {
+    final n = app.replaceAll(app.findQuery, _replaceCtl.text,
+        onlyCurrent: !all);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(n == 0
+            ? 'Nothing replaced'
+            : 'Replaced $n occurrence${n == 1 ? '' : 's'}')));
+  }
+
+  @override
   Widget build(BuildContext context) {
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      _findRow(context),
+      if (_showReplace) _replaceRow(context),
+    ]);
+  }
+
+  Widget _replaceRow(BuildContext context) => Container(
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          border:
+              Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
+        ),
+        child: Row(children: [
+          const SizedBox(width: 24),
+          Expanded(
+            child: TextField(
+              controller: _replaceCtl,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: 'Replace with…',
+              ),
+              style: const TextStyle(fontSize: 13),
+              onSubmitted: (_) => _replace(all: false),
+            ),
+          ),
+          TextButton(
+            onPressed: app.findMatches.isEmpty ? null : () => _replace(all: false),
+            child: const Text('Replace', style: TextStyle(fontSize: 12)),
+          ),
+          TextButton(
+            onPressed: app.findMatches.isEmpty ? null : () => _replace(all: true),
+            child: const Text('All', style: TextStyle(fontSize: 12)),
+          ),
+        ]),
+      );
+
+  Widget _findRow(BuildContext context) {
     return Container(
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -316,6 +413,15 @@ class _FindBar extends StatelessWidget {
             icon: const Icon(Icons.keyboard_arrow_down, size: 18),
             visualDensity: VisualDensity.compact,
             onPressed: app.findMatches.isEmpty ? null : () => app.findNext(1),
+          ),
+          IconButton(
+            icon: Icon(
+                _showReplace ? Icons.find_replace : Icons.find_replace_outlined,
+                size: 17),
+            visualDensity: VisualDensity.compact,
+            isSelected: _showReplace,
+            tooltip: 'Replace',
+            onPressed: () => setState(() => _showReplace = !_showReplace),
           ),
           IconButton(
             icon: const Icon(Icons.close, size: 16),

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import '../ui/context_menus.dart';
 import 'block_view.dart';
 import 'canvas_controller.dart';
 import 'ink_ops.dart';
+import 'media_drop.dart';
 import 'ink_painter.dart';
 import 'page_title_view.dart';
 
@@ -72,6 +74,9 @@ class _PageCanvasState extends State<PageCanvas> {
   /// hazard when a pen is in use; with no pen present, a finger is the only
   /// input the user has.
   DateTime? _lastStylus;
+
+  /// True while a file drag hovers the page, for the drop affordance.
+  bool _dragOver = false;
 
   /// A palm rests *while* writing, so the window only has to outlive the gap
   /// between strokes, not a pause for thought.
@@ -887,6 +892,56 @@ class _PageCanvasState extends State<PageCanvas> {
         child: canvas,
       );
     }
+
+    // Drag-and-drop (MEDIA-1): files dropped anywhere on the page land where
+    // they were dropped. Wraps the whole canvas so the drop target matches
+    // what the user sees, and highlights only while a drag is over it.
+    canvas = DropTarget(
+      onDragEntered: (_) => setState(() => _dragOver = true),
+      onDragExited: (_) => setState(() => _dragOver = false),
+      onDragDone: (details) async {
+        setState(() => _dragOver = false);
+        final box = context.findRenderObject() as RenderBox?;
+        final local = box?.globalToLocal(details.localPosition) ??
+            details.localPosition;
+        final at = controller.screenToPage(local);
+        final n = await dropFilesOntoCanvas(
+            app, [for (final f in details.files) f.path], at);
+        if (n > 0 && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Added $n item${n == 1 ? '' : 's'}')));
+        }
+      },
+      child: Stack(children: [
+        canvas,
+        if (_dragOver)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(
+                color: Theme.of(context)
+                    .colorScheme
+                    .primary
+                    .withValues(alpha: .06),
+                child: Center(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: Theme.of(context).colorScheme.primary,
+                          width: 1.5),
+                    ),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      child: Text('Drop to add to this page'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ]),
+    );
 
     return Listener(
       onPointerSignal: _onScroll,

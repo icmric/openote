@@ -161,6 +161,18 @@ class _LiveMarkdownSession implements OnoteEditSession {
             hintStyle:
                 const TextStyle(color: OnoteColors.graphite400, fontSize: 13),
           ),
+          // Spell suggestions on right-click. Flutter's own spell-check menu
+          // is unreachable here (see spell/spell_checker.dart for why), so the
+          // corrections are spliced into the standard adaptive menu instead of
+          // replacing it — cut/copy/paste must keep working.
+          contextMenuBuilder: (context, editable) {
+            final items = [...editable.contextMenuButtonItems];
+            final extra = _spellMenuItems(editable);
+            return AdaptiveTextSelectionToolbar.buttonItems(
+              anchors: editable.contextMenuAnchors,
+              buttonItems: [...extra, ...items],
+            );
+          },
           onChanged: (v) {
             onChanged(v);
             _scheduleSpellCheck();
@@ -168,6 +180,46 @@ class _LiveMarkdownSession implements OnoteEditSession {
         ),
       ),
     );
+  }
+
+  /// Correction items for the word under the caret, plus "Add to dictionary".
+  /// Empty when the click didn't land on a misspelling — the menu then looks
+  /// exactly as it always did.
+  List<ContextMenuButtonItem> _spellMenuItems(EditableTextState editable) {
+    final checker = SpellChecker.loaded;
+    if (checker == null || !spellCheckEnabled) return const [];
+    final sel = controller.selection;
+    if (!sel.isValid) return const [];
+    final text = controller.text;
+    final range = checker.misspelledAt(text, sel.baseOffset.clamp(0, text.length));
+    if (range == null) return const [];
+    final word = text.substring(range.start, range.end);
+
+    void replaceWith(String replacement) {
+      final next = text.replaceRange(range.start, range.end, replacement);
+      controller.value = controller.value.copyWith(
+        text: next,
+        selection:
+            TextSelection.collapsed(offset: range.start + replacement.length),
+        composing: TextRange.empty,
+      );
+      onChanged(next); // a programmatic edit doesn't fire the field's onChanged
+      _scheduleSpellCheck(delay: const Duration(milliseconds: 10));
+      editable.hideToolbar();
+    }
+
+    return [
+      for (final s in checker.suggest(word))
+        ContextMenuButtonItem(label: s, onPressed: () => replaceWith(s)),
+      ContextMenuButtonItem(
+        label: 'Add to dictionary',
+        onPressed: () {
+          learnWord(word);
+          _scheduleSpellCheck(delay: const Duration(milliseconds: 10));
+          editable.hideToolbar();
+        },
+      ),
+    ];
   }
 
   /// Convert the code point at the caret (or the selection) in place. Returns

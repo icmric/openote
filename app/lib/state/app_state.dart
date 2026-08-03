@@ -13,6 +13,7 @@ import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
 import '../store/repository.dart';
 import '../model/tags.dart';
+import '../spell/spell_checker.dart';
 import 'builtin_templates.dart';
 import '../sync/sync_recorder.dart';
 
@@ -1065,6 +1066,11 @@ class AppState extends ChangeNotifier {
     if (ns is num) navSplit = ns.toDouble().clamp(0.15, 0.7);
     final sc = _repo.getSetting('spellCheck');
     if (sc is bool) spellCheckEnabled = sc;
+    // Personal dictionary: workspace-scoped and deliberately NOT synced — one
+    // person's jargon shouldn't become everyone's on a shared notebook.
+    final lw = _repo.getSetting('learnedWords');
+    if (lw is List) loadLearnedWords(lw.cast<String>());
+    onLearnedChanged = (words) => _repo.setSetting('learnedWords', words);
     final fav = _repo.getSetting('favourites');
     if (fav is List) _favourites.addAll(fav.cast<String>());
     final rec = _repo.getSetting('recentPages');
@@ -1941,6 +1947,63 @@ class AppState extends ChangeNotifier {
   }
 
   void _jumpToMatch() => jumpToBlock(findMatches[findIndex]);
+
+  /// Replace text in the matched blocks (TEXT-7).
+  ///
+  /// Replaces in the *text-bearing* content field per block type, so replacing
+  /// in a code block edits its source and not its language tag. Case-sensitive
+  /// matching is deliberately not offered yet — find is case-insensitive, and a
+  /// replace that matched differently from the find that found it would be a
+  /// trap.
+  ///
+  /// Returns the number of occurrences replaced.
+  int replaceAll(String find, String replacement, {bool onlyCurrent = false}) {
+    if (find.isEmpty) return 0;
+    final targets = onlyCurrent
+        ? (findMatches.isEmpty
+            ? const <String>[]
+            : [findMatches[findIndex.clamp(0, findMatches.length - 1)]])
+        : findMatches;
+    if (targets.isEmpty) return 0;
+    pushUndo();
+    final needle = find.toLowerCase();
+    var count = 0;
+    for (final id in targets) {
+      final b = blocks.where((x) => x.id == id).firstOrNull;
+      if (b == null) continue;
+      final key = switch (b.type) {
+        BlockType.text => 'text',
+        BlockType.code => 'source',
+        _ => null,
+      };
+      if (key == null) continue;
+      final src = b.content[key] as String? ?? '';
+      final out = StringBuffer();
+      var i = 0;
+      while (i < src.length) {
+        final at = src.toLowerCase().indexOf(needle, i);
+        if (at < 0) {
+          out.write(src.substring(i));
+          break;
+        }
+        out
+          ..write(src.substring(i, at))
+          ..write(replacement);
+        i = at + find.length;
+        count++;
+      }
+      if (count > 0) b.content[key] = out.toString();
+    }
+    if (count > 0) {
+      markDirty();
+      docRevision++;
+      // Re-run the search: the replaced text may no longer match, and leaving
+      // stale matches would let a second Replace All hit blocks that no longer
+      // contain the needle.
+      setFindQuery(findQuery);
+    }
+    return count;
+  }
 
   /// Select a block and centre the view on it. Shared by find and the page
   /// outline so both behave identically.

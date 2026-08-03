@@ -24,14 +24,32 @@ import 'package:flutter/widgets.dart' show TextRange;
 /// recorded in the release plan rather than half-built here.
 const String kDictionaryAsset = 'assets/dict/en_us.txt';
 
-/// Words the user taught us this session ("Add to dictionary").
+/// Words the user taught us ("Add to dictionary").
 ///
-/// Deliberately process-scoped rather than persisted: a per-notebook custom
-/// dictionary is a real feature with its own storage and sync questions
-/// (it would need to be an op, or it diverges between devices), and shipping
-/// a half-version that silently forgets on restart is worse than shipping the
-/// obvious one.
+/// Workspace-scoped and persisted (see [loadLearnedWords] / [onLearnedChanged]).
+/// Deliberately NOT synced: a personal dictionary is about the words *this
+/// person* uses, and pushing it through the op log would make one device's
+/// jargon everyone's — including on a shared group notebook.
 final Set<String> learnedWords = <String>{};
+
+/// Called whenever [learnedWords] changes, so the host can persist it. Set once
+/// at startup; null in tests.
+void Function(List<String> words)? onLearnedChanged;
+
+/// Teach the checker a word and persist it.
+void learnWord(String word) {
+  final w = word.trim().toLowerCase();
+  if (w.isEmpty || !learnedWords.add(w)) return;
+  onLearnedChanged?.call(learnedWords.toList()..sort());
+}
+
+/// Restore the persisted set at startup.
+void loadLearnedWords(Iterable<String> words) {
+  for (final w in words) {
+    final t = w.trim().toLowerCase();
+    if (t.isNotEmpty) learnedWords.add(t);
+  }
+}
 
 /// A loaded, queryable dictionary.
 class SpellDictionary {
@@ -121,6 +139,18 @@ class SpellChecker {
         // An ALL-CAPS token is usually an acronym, and flagging every one of
         // them makes technical notes unusable.
         (word.length > 1 && word == word.toUpperCase());
+  }
+
+  /// The misspelled word range containing [offset], or null.
+  ///
+  /// Used by the right-click menu: a suggestion list is only useful if we can
+  /// find which word was clicked, and the caret lands *inside* the word rather
+  /// than on its boundary.
+  TextRange? misspelledAt(String text, int offset) {
+    for (final r in check(text)) {
+      if (offset >= r.start && offset <= r.end) return r;
+    }
+    return null;
   }
 
   /// Misspelled ranges in [text], as offsets into the RAW string.

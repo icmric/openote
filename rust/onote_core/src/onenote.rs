@@ -363,28 +363,28 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
     // below by natural pixel size (±2px).
     struct Png {
         bytes: Vec<u8>,
+        /// The type the BYTES are, not an assumption — the Dart side stores it
+        /// as the blob's mime, and a JPEG announced as PNG renders as nothing.
+        mime: &'static str,
         w: u32,
         h: u32,
         used: bool,
     }
     let mut pngs: Vec<Png> = Vec::new();
     let mut seen_png = HashSet::new();
-    for png in scan_pngs(bytes) {
+    for img in scan_images(bytes) {
         // Content hash, not (len, first byte, last byte): every PNG starts with
         // 0x89, so that key was effectively (len, last CRC byte) and two
         // same-length images collided ~1/256 of the time, silently dropping one.
-        if !seen_png.insert(crate::ids::content_hash(&png)) {
+        if !seen_png.insert(crate::ids::content_hash(&img.bytes)) {
             continue;
         }
-        let (w, h) = if png.len() >= 24 {
-            (
-                u32::from_be_bytes([png[16], png[17], png[18], png[19]]),
-                u32::from_be_bytes([png[20], png[21], png[22], png[23]]),
-            )
+        let (w, h) = if img.mime == "image/png" {
+            png_dimensions(&img.bytes)
         } else {
-            (0, 0)
+            jpeg_dimensions(&img.bytes)
         };
-        pngs.push(Png { bytes: png, w, h, used: false });
+        pngs.push(Png { bytes: img.bytes, mime: img.mime, w, h, used: false });
     }
 
     // OneNote's stored offsets are absolute in its own page space, whose origin
@@ -681,7 +681,9 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
                 ),
             );
             images.push(ImportedImage {
-                name: format!("onenote-image-{img_counter}.png"),
+                // Extension follows the real type: the Dart side derives the
+                // blob mime from it, and a JPEG named .png renders as nothing.
+                name: format!("onenote-image-{img_counter}.{}", ext_of(png.mime)),
                 x,
                 y,
                 disp_w: dw,
@@ -1106,7 +1108,7 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
         for p in pngs.iter().filter(|p| !p.used) {
             img_counter += 1;
             first.images.push(ImportedImage {
-                name: format!("onenote-image-{img_counter}.png"),
+                name: format!("onenote-image-{img_counter}.{}", ext_of(p.mime)),
                 x: 980.0,
                 y: fy,
                 disp_w: p.w as f32,
@@ -2891,21 +2893,178 @@ fn decode_utf16(b: &[u8]) -> String {
 
 // ── Inline PNG recovery ─────────────────────────────────────────────────────
 
-fn scan_pngs(d: &[u8]) -> Vec<Vec<u8>> {
+/// One recovered image and the MIME type its bytes say it is.
+pub struct ScannedImage {
+    pub bytes: Vec<u8>,
+    pub mime: &'static str,
+}
+
+/// Recover embedded images by signature.
+///
+/// **PNG and JPEG**, not PNG alone. Student notebooks are full of phone photos
+/// of whiteboards and worksheets, and those are JPEG — so a PNG-only scan meant
+/// a switcher's photographs silently vanished at import. That is data loss, not
+/// a fidelity gap, which is why JPEG earns a place next to PNG rather than
+/// waiting behind EMF and the rest.
+fn scan_images(d: &[u8]) -> Vec<ScannedImage> {
     let mut out = Vec::new();
     let mut i = 0;
-    while let Some(rel) = find(&d[i..], PNG_SIG) {
-        let start = i + rel;
-        // End = the IEND chunk: 'IEND' marker + 4-byte CRC.
-        if let Some(erel) = find(&d[start..], b"IEND") {
-            let end = (start + erel + 8).min(d.len());
-            out.push(d[start..end].to_vec());
-            i = end;
+    while i < d.len() {
+        let png_at = find(&d[i..], PNG_SIG).map(|r| i + r);
+        let jpg_at = find_jpeg(d, i);
+        // Take whichever comes first so images stay in document order.
+        let (start, is_png) = match (png_at, jpg_at) {
+            (Some(p), Some(j)) => {
+                if p <= j {
+                    (p, true)
+                } else {
+                    (j, false)
+                }
+            }
+            (Some(p), None) => (p, true),
+            (None, Some(j)) => (j, false),
+            (None, None) => break,
+        };
+        let end = if is_png {
+            // End = the IEND chunk: 'IEND' marker + 4-byte CRC.
+            match find(&d[start..], b"IEND") {
+                Some(erel) => (start + erel + 8).min(d.len()),
+                None => break,
+            }
         } else {
-            break;
+            match jpeg_end(d, start) {
+                Some(e) => e,
+                // A truncated JPEG: skip past its header and keep looking
+                // rather than abandoning every later image in the blob.
+                None => {
+                    i = start + 2;
+                    continue;
+                }
+            }
+        };
+        if end > start {
+            out.push(ScannedImage {
+                bytes: d[start..end].to_vec(),
+                mime: if is_png { "image/png" } else { "image/jpeg" },
+            });
         }
+        i = end.max(start + 2);
     }
     out
+}
+
+/// File extension for a recovered image's real MIME type.
+fn ext_of(mime: &str) -> &'static str {
+    if mime == "image/jpeg" { "jpg" } else { "png" }
+}
+
+/// PNG pixel dimensions from the IHDR chunk.
+fn png_dimensions(d: &[u8]) -> (u32, u32) {
+    if d.len() < 24 {
+        return (0, 0);
+    }
+    (
+        u32::from_be_bytes([d[16], d[17], d[18], d[19]]),
+        u32::from_be_bytes([d[20], d[21], d[22], d[23]]),
+    )
+}
+
+/// JPEG pixel dimensions from the first SOF segment (walking markers, since a
+/// JPEG has no fixed-offset header the way PNG does).
+fn jpeg_dimensions(d: &[u8]) -> (u32, u32) {
+    let mut i = 2;
+    for _ in 0..1024 {
+        if i + 9 >= d.len() || d[i] != 0xFF {
+            return (0, 0);
+        }
+        let marker = d[i + 1];
+        // SOF0-SOF15, excluding DHT(C4), JPGA(C8) and DAC(CC) which share the range.
+        if (0xC0..=0xCF).contains(&marker)
+            && marker != 0xC4
+            && marker != 0xC8
+            && marker != 0xCC
+        {
+            let h = u16::from_be_bytes([d[i + 5], d[i + 6]]) as u32;
+            let w = u16::from_be_bytes([d[i + 7], d[i + 8]]) as u32;
+            return (w, h);
+        }
+        if marker == 0xD8 || marker == 0x01 || (0xD0..=0xD7).contains(&marker) {
+            i += 2;
+            continue;
+        }
+        let len = u16::from_be_bytes([d[i + 2], d[i + 3]]) as usize;
+        if len < 2 {
+            return (0, 0);
+        }
+        i += 2 + len;
+    }
+    (0, 0)
+}
+
+/// Offset of the next JPEG SOI that is followed by a plausible marker.
+///
+/// `FF D8` alone occurs constantly inside compressed data, so the third byte
+/// must also be `FF` (the start of the next marker) — this is what stops the
+/// scanner manufacturing images out of LZX noise.
+fn find_jpeg(d: &[u8], from: usize) -> Option<usize> {
+    let mut i = from;
+    while i + 3 < d.len() {
+        let rel = find(&d[i..], &[0xFF, 0xD8, 0xFF])?;
+        let at = i + rel;
+        // A real JFIF/EXIF stream begins APP0/APP1/… (0xE0-0xEF) or DQT.
+        match d.get(at + 3) {
+            Some(&m) if (0xE0..=0xEF).contains(&m) || m == 0xDB => return Some(at),
+            Some(_) => i = at + 2,
+            None => return None,
+        }
+    }
+    None
+}
+
+/// End offset (exclusive) of the JPEG beginning at `start`, walking its marker
+/// segments to the EOI. Segment-walking rather than searching for `FF D9`,
+/// because that byte pair appears inside entropy-coded scan data too.
+fn jpeg_end(d: &[u8], start: usize) -> Option<usize> {
+    let mut i = start + 2; // past SOI
+    // Bounded: a malformed file must not spin here on hostile input.
+    for _ in 0..4096 {
+        if i + 1 >= d.len() {
+            return None;
+        }
+        if d[i] != 0xFF {
+            return None;
+        }
+        let marker = d[i + 1];
+        match marker {
+            0xD8 => i += 2,                    // another SOI
+            0xD9 => return Some(i + 2),        // EOI
+            0x01 | 0xD0..=0xD7 => i += 2,      // standalone markers
+            0xDA => {
+                // Start of scan: entropy-coded data follows, terminated by the
+                // next marker that isn't a stuffed FF00 or a restart marker.
+                let len = u16::from_be_bytes([*d.get(i + 2)?, *d.get(i + 3)?]) as usize;
+                let mut j = i + 2 + len;
+                while j + 1 < d.len() {
+                    if d[j] == 0xFF
+                        && d[j + 1] != 0x00
+                        && !(0xD0..=0xD7).contains(&d[j + 1])
+                    {
+                        break;
+                    }
+                    j += 1;
+                }
+                i = j;
+            }
+            _ => {
+                let len = u16::from_be_bytes([*d.get(i + 2)?, *d.get(i + 3)?]) as usize;
+                if len < 2 {
+                    return None;
+                }
+                i += 2 + len;
+            }
+        }
+    }
+    None
 }
 
 fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
@@ -3406,6 +3565,54 @@ mod tests {
         }];
         translate_symbol_pua(&mut partial);
         assert_eq!(partial[0].text, "\u{F0CE}\u{F0E6}");
+    }
+
+    /// Student notebooks are full of phone photos, which are JPEG — a PNG-only
+    /// scan meant those silently vanished at import.
+    #[test]
+    fn scans_jpeg_alongside_png() {
+        // Minimal but structurally real JPEG: SOI, APP0, SOF0 (2x3), SOS with
+        // a tiny scan, EOI.
+        let mut jpg: Vec<u8> = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x04, 0x00, 0x00];
+        // SOF0: length 0x0B = 2 + precision(1) + h(2) + w(2) + ncomp(1) + 3.
+        jpg.extend_from_slice(&[
+            0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x03, 0x00, 0x02, 0x01, 0x01, 0x11,
+            0x00,
+        ]);
+        jpg.extend_from_slice(&[0xFF, 0xDA, 0x00, 0x04, 0x00, 0x00]);
+        jpg.extend_from_slice(&[0x12, 0x34, 0xFF, 0x00, 0x56]); // stuffed FF00
+        jpg.extend_from_slice(&[0xFF, 0xD9]);
+
+        let mut png: Vec<u8> = PNG_SIG.to_vec();
+        png.extend_from_slice(&[0, 0, 0, 13]);
+        png.extend_from_slice(b"IHDR");
+        png.extend_from_slice(&7u32.to_be_bytes()); // width
+        png.extend_from_slice(&5u32.to_be_bytes()); // height
+        png.extend_from_slice(&[8, 6, 0, 0, 0]);
+        png.extend_from_slice(b"IEND");
+        png.extend_from_slice(&[0, 0, 0, 0]);
+
+        // Interleaved with junk, as they are inside a real .one blob.
+        let mut blob = vec![0xAA; 16];
+        blob.extend_from_slice(&png);
+        blob.extend_from_slice(&[0xBB; 8]);
+        blob.extend_from_slice(&jpg);
+
+        let found = scan_images(&blob);
+        assert_eq!(found.len(), 2, "both images recovered");
+        assert_eq!(found[0].mime, "image/png", "document order preserved");
+        assert_eq!(found[1].mime, "image/jpeg");
+        assert_eq!(png_dimensions(&found[0].bytes), (7, 5));
+        assert_eq!(jpeg_dimensions(&found[1].bytes), (2, 3));
+        assert_eq!(ext_of(found[1].mime), "jpg");
+    }
+
+    /// `FF D8` occurs constantly inside compressed data; only a real marker
+    /// sequence may start an image, or the scanner invents images from noise.
+    #[test]
+    fn does_not_invent_jpegs_from_noise() {
+        let noise = vec![0xFF, 0xD8, 0x42, 0x00, 0xFF, 0xD8, 0x11, 0x22, 0x33];
+        assert!(scan_images(&noise).is_empty());
     }
 
     /// A segment made only of deep lines must not be pulled back to the

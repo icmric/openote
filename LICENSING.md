@@ -52,8 +52,9 @@ an Apache-2.0 core:
 | Dependency | Licence |
 |---|---|
 | `sqlite3`, `sqlite3_flutter_libs`, `perfect_freehand`, `uuid` | MIT |
-| `path`, `path_provider`, `ffi`, `file_selector`, `flutter_lints` | BSD-3-Clause |
-| `flutter_math_fork`, `pdf` | Apache-2.0 |
+| `super_clipboard`, `super_native_extensions`, `irondash_*` | MIT |
+| `path`, `path_provider`, `ffi`, `file_selector`, `flutter_lints`, `win32`, `win32_registry` | BSD-3-Clause |
+| `flutter_math_fork`, `pdf`, `desktop_drop` | Apache-2.0 |
 | `serde`, `serde_json` | MIT OR Apache-2.0 |
 | `cab` (vendored) | MIT |
 

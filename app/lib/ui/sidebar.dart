@@ -1191,6 +1191,7 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
             'favourite',
             app.isFavourite(node.id) ? Icons.star : Icons.star_border,
             app.isFavourite(node.id) ? 'Remove favourite' : 'Add to favourites'),
+        _nodeItem('copylink', Icons.link, 'Copy link to page'),
         _nodeItem('history', Icons.history, 'Version history…'),
         _nodeItem('template', Icons.bookmark_add_outlined, 'Save as template…'),
       ],
@@ -1210,6 +1211,15 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       app.sortSection(node.id, byTitle: false);
     case 'favourite':
       app.toggleFavourite(node.id);
+    case 'copylink':
+      // The wiki-link form the editor already resolves. Copying it means
+      // cross-referencing is paste, not retype-and-hope.
+      await Clipboard.setData(
+          ClipboardData(text: '[[${node.title}|${node.id}]]'));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Link copied — paste it into any page')));
+      }
     case 'togroup':
       final groups = app.nodes
           .where((n) => n.kind == NodeKind.sectionGroup)
