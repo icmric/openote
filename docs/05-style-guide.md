@@ -326,7 +326,8 @@ The navigator is how users move through notebooks, and it was reworked from a si
 The canvas is the product; its interaction model deserves explicit rules so it stays predictable across platforms and input methods.
 
 ### 8.1 Tools & modes
-- **Select/Move** (default): click a block to select; drag to move; handles to resize; marquee-drag empty space to multi-select.
+- **Select/Move** (default): a container's **top bar** is the only place a drag moves it — inside a text box, click places the caret where you clicked and drag selects text, because that is what a click-drag in a text box means to everyone who has ever used one. Handles on the right edge, bottom edge and corner resize; marquee-drag empty space to multi-selects; clicking the bar selects the whole container (the reliable way into a multi-selection). Escape hatches for moving without the bar: **Alt-drag** the body, or **long-press then drag** on touch. Blocks with nothing to select — pictures, attachments — still drag by their body, as OneNote does.
+  - Chrome is *reserved* around the block, never overflowed: `RenderBox.hitTest` rejects anything outside a box's own size (`Clip.none` affects painting only), so chrome drawn at negative offsets is mostly ungrabbable.
 - **Text**: click empty canvas to create a text container and start typing (CANVAS-3). Double-click empty space also creates text (familiar OneNote behavior).
 - **Pen / Highlighter / Eraser**: ink tools; while active, single-finger/pen draws and palm is rejected (INK-4). Two-finger gesture still pans/zooms.
 - **Lasso** (later): freehand-select ink and mixed content.

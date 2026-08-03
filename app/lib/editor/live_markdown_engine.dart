@@ -84,7 +84,7 @@ class LiveMarkdownEngine extends OnoteTextEditor {
   }
 }
 
-class _LiveMarkdownSession implements OnoteEditSession {
+class _LiveMarkdownSession extends OnoteEditSession {
   _LiveMarkdownSession({required this.controller, required this.onChanged});
 
   final LiveMarkdownController controller;
@@ -124,11 +124,61 @@ class _LiveMarkdownSession implements OnoteEditSession {
   TextEditingController? get commandController => controller;
 
   @override
+  Offset? pendingCaretGlobal;
+
+  @override
   String get text => controller.text;
 
   @override
   set text(String value) {
     if (controller.text != value) controller.text = value;
+  }
+
+  /// Reach the live [EditableTextState] under our focus node.
+  ///
+  /// The focus node is handed to [TextField], which attaches it inside its own
+  /// [EditableText] — so walking down from the node's context finds the state
+  /// that owns the text layout. This is the one place the engine leans on
+  /// Flutter's internal widget composition, which is why every caller treats a
+  /// null answer as "don't know" rather than an error.
+  EditableTextState? _editableState() {
+    final ctx = _focus.context;
+    if (ctx is! Element) return null;
+    EditableTextState? found;
+    void visit(Element e) {
+      if (found != null) return;
+      if (e is StatefulElement && e.state is EditableTextState) {
+        found = e.state as EditableTextState;
+        return;
+      }
+      e.visitChildren(visit);
+    }
+
+    ctx.visitChildren(visit);
+    return found;
+  }
+
+  @override
+  int? offsetAtGlobal(Offset globalPosition) {
+    final st = _editableState();
+    if (st == null) return null;
+    try {
+      final r = st.renderEditable;
+      if (!r.hasSize) return null;
+      return r.getPositionForPoint(globalPosition).offset;
+    } catch (_) {
+      // No layout yet, or the field went away between frames.
+      return null;
+    }
+  }
+
+  @override
+  void setSelection(int base, int extent) {
+    final n = controller.text.length;
+    controller.selection = TextSelection(
+      baseOffset: base.clamp(0, n),
+      extentOffset: extent.clamp(0, n),
+    );
   }
 
   @override
@@ -137,7 +187,21 @@ class _LiveMarkdownSession implements OnoteEditSession {
     // Focus is claimed post-frame: the host decides *that* a block is being
     // edited, but the field only exists after this build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_focus.context != null && !_focus.hasFocus) _focus.requestFocus();
+      if (_focus.context == null) return;
+      // Place the caret where the click landed BEFORE taking focus.
+      // EditableText's focus handler only overwrites an INVALID selection, so
+      // setting a valid one first survives — and without this the caret always
+      // jumped to the END of the block, so clicking into the middle of a
+      // paragraph put you somewhere else.
+      final want = pendingCaretGlobal;
+      if (want != null) {
+        pendingCaretGlobal = null;
+        final at = offsetAtGlobal(want);
+        if (at != null) {
+          controller.selection = TextSelection.collapsed(offset: at);
+        }
+      }
+      if (!_focus.hasFocus) _focus.requestFocus();
     });
     return Padding(
       padding: s.inset,

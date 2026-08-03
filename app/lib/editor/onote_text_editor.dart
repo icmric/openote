@@ -118,6 +118,28 @@ abstract class OnoteEditSession {
   /// rather than silently no-op on the wrong target.
   TextEditingController? get commandController;
 
+  /// Where the click that opened this session landed, in global coordinates.
+  ///
+  /// The canvas sets it before the session first builds; the engine consumes
+  /// it once, to place the caret there. Null means "wherever you would
+  /// normally put it".
+  Offset? pendingCaretGlobal;
+
+  /// The text offset under a point in global (screen) coordinates, or null if
+  /// the engine can't answer right now.
+  ///
+  /// Null is a supported answer, not a failure: the field may not have laid
+  /// out yet, and a future engine may have no Flutter text layer at all.
+  /// Callers must degrade (place the caret normally) rather than throw. This
+  /// is what lets the canvas put the caret where you clicked, and drag-select
+  /// from the very first gesture, without the canvas knowing anything about
+  /// how the engine lays text out.
+  int? offsetAtGlobal(Offset globalPosition) => null;
+
+  /// Move the caret or extend the selection. No-op for an engine with no
+  /// selection model of its own.
+  void setSelection(int base, int extent) {}
+
   void dispose();
 }
 

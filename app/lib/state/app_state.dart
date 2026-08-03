@@ -11,6 +11,7 @@ import '../canvas/canvas_controller.dart';
 import '../core/engine.dart';
 import '../core/ids.dart';
 import '../core/onote_ffi.dart';
+import '../editor/onote_text_editor.dart';
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
 import '../store/repository.dart';
@@ -1234,15 +1235,33 @@ class AppState extends ChangeNotifier {
   /// so command-bar formatting can act on the live selection.
   ({TextEditingController controller, Block block, String contentKey})?
       activeEditor;
+  /// The same editor as [activeEditor], through the engine seam.
+  ///
+  /// The canvas needs two things a bare controller can't give it: where a
+  /// screen point lands in the text, and a way to extend the selection. Both
+  /// live on the session, so the pointer handling in `block_view.dart` can
+  /// place the caret where you clicked and drag-select from the first gesture
+  /// without knowing how the engine lays text out.
+  OnoteEditSession? activeSession;
+
   void setActiveEditor(
-      TextEditingController c, Block b, String key) {
+      TextEditingController c, Block b, String key,
+      {OnoteEditSession? session}) {
     activeEditor = (controller: c, block: b, contentKey: key);
+    if (session != null) activeSession = session;
     // No notify: called during build; enablement rides the select() notify.
   }
 
   void clearActiveEditor(String blockId) {
-    if (activeEditor?.block.id == blockId) activeEditor = null;
+    if (activeEditor?.block.id == blockId) {
+      activeEditor = null;
+      activeSession = null;
+    }
   }
+
+  /// Where the click that is about to open an editor landed. Consumed once by
+  /// the session on its first build.
+  Offset? pendingCaretGlobal;
 
   void _commitActiveEditor() {
     final ae = activeEditor;
@@ -2761,6 +2780,14 @@ class AppState extends ChangeNotifier {
     _persistSession();
     await _repo.flushWorkspace(); // settle the debounced registry write
   }
+
+  /// Drop a pending debounced save without writing it.
+  ///
+  /// Only for tests: a widget test runs in a fake-async zone where the save's
+  /// disk I/O would never complete, and leaving the timer armed fails the
+  /// test's own "no pending timers" invariant.
+  @visibleForTesting
+  void cancelPendingSave() => _saveDebounce?.cancel();
 
   @override
   void dispose() {

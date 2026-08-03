@@ -123,6 +123,15 @@ class _AppShellState extends State<AppShell> {
           app.toggleTagOnSelection(tag);
           return true;
         }
+        // Ctrl+V with an IMAGE on the clipboard. Flutter's own paste handles
+        // text only, so screenshot → click in the box → Ctrl+V silently did
+        // nothing. Handled here only when there is an image; anything else
+        // falls through to the field's own paste, because breaking plain-text
+        // paste into a note would be a far worse bug than the one being fixed.
+        if (k == LogicalKeyboardKey.keyV) {
+          _pasteImageIntoEditor();
+          return false; // never swallow the keystroke
+        }
       }
       return false;
     }
@@ -199,12 +208,32 @@ class _AppShellState extends State<AppShell> {
     return true;
   }
 
+  /// Ctrl+V while the caret is in a text box, when the clipboard holds an
+  /// image: splice an in-flow reference at the caret.
+  ///
+  /// Deliberately fire-and-forget and never blocking: the keystroke is passed
+  /// through to Flutter's own paste regardless, so a clipboard with both an
+  /// image and text still pastes the text if the image read fails. In the
+  /// normal case the image read wins the race by a frame and the text branch
+  /// finds nothing to do.
+  Future<void> _pasteImageIntoEditor() async {
+    final ae = app.activeEditor;
+    if (ae == null) return;
+    final bytes = await readClipboardImage();
+    if (bytes == null || !mounted) return;
+    if (app.activeEditor?.block.id != ae.block.id) return; // moved on
+    final hash = app.addBlob(bytes.bytes, bytes.mime);
+    app.insertTextAtActiveCursor('\n![](sha256:$hash)\n');
+    ae.block.content['autoWidth'] = false;
+  }
+
   /// Ctrl+V on the canvas: system clipboard media if there is any, else our
   /// own copied blocks.
   Future<void> _pasteFromSystemOrBlocks() async {
     final at = app.canvas.screenToPage(Offset(
         app.canvas.viewport.width / 2, app.canvas.viewport.height / 2));
-    final result = await pasteOntoCanvas(app, at);
+    final result = await pasteOntoCanvas(app, at,
+        dark: Theme.of(context).brightness == Brightness.dark);
     if (result == PasteResult.nothing && app.canPasteBlocks) {
       app.pasteBlocks();
     }

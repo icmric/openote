@@ -916,12 +916,17 @@ class _PageCanvasState extends State<PageCanvas> {
       onDragExited: (_) => setState(() => _dragOver = false),
       onDragDone: (details) async {
         setState(() => _dragOver = false);
-        final box = context.findRenderObject() as RenderBox?;
-        final local = box?.globalToLocal(details.localPosition) ??
-            details.localPosition;
-        final at = controller.screenToPage(local);
+        // `details.localPosition` is ALREADY local to this DropTarget —
+        // desktop_drop calls globalToLocal itself. Converting a second time
+        // subtracted the canvas's global origin (navigator width, command-bar
+        // height) again, so every dropped file landed up and to the left of
+        // the cursor. That was survivable while a drop made a floating block;
+        // it is not, now that the drop point decides which text box you are
+        // dropping INTO.
+        final at = controller.screenToPage(details.localPosition);
         final n = await dropFilesOntoCanvas(
-            app, [for (final f in details.files) f.path], at);
+            app, [for (final f in details.files) f.path], at,
+            dark: Theme.of(context).brightness == Brightness.dark);
         if (n > 0 && context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text('Added $n item${n == 1 ? '' : 's'}')));

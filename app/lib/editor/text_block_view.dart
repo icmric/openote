@@ -105,8 +105,14 @@ class TextBlockView extends StatefulWidget {
     if (b.type != BlockType.text || b.content['autoWidth'] == false) return b.w;
     const chrome = 26.0, slack = 18.0;
     final engine = OnoteEditors.active;
-    final w = engine.measureIntrinsicWidth(
-        engine.deserialize(b.content), baseStyle(b, dark: dark));
+    // Image references are stripped before measuring: `![](sha256:<64 hex>)`
+    // is 80-odd characters of source that the reader never sees, and measuring
+    // it would pin any auto-width box to its maximum the instant a picture
+    // landed in it.
+    final source = engine
+        .deserialize(b.content)
+        .replaceAll(RegExp(r'^\s*!\[[^\]]*\]\([^)]*\)\s*$', multiLine: true), '');
+    final w = engine.measureIntrinsicWidth(source, baseStyle(b, dark: dark));
     return (w + chrome + slack).clamp(minAutoW, maxAutoW).toDouble();
   }
 
@@ -189,9 +195,14 @@ class _TextBlockViewState extends State<TextBlockView> {
       // Register for command-bar formatting. An engine with its own selection
       // model reports no controller, and the buttons then stay disabled rather
       // than acting on a stale target.
+      // Hand the caret target to the session before it builds; it consumes it
+      // once, so the caret lands where the click did.
+      session.pendingCaretGlobal ??= widget.app.pendingCaretGlobal;
+      widget.app.pendingCaretGlobal = null;
       final ctrl = session.commandController;
       if (ctrl != null) {
-        widget.app.setActiveEditor(ctrl, widget.block, _engine.textStorageKey);
+        widget.app.setActiveEditor(ctrl, widget.block, _engine.textStorageKey,
+            session: session);
       }
       return session.build(context, surface);
     }

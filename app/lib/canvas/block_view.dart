@@ -33,10 +33,41 @@ class BlockView extends StatefulWidget {
   State<BlockView> createState() => _BlockViewState();
 }
 
+/// Screen-space chrome reserved AROUND the block's content, in page units.
+///
+/// Reserved rather than overflowed, and that is the whole trick.
+/// `RenderBox.hitTest` rejects anything outside a box's own size — `Clip.none`
+/// affects painting only — so the old chrome, drawn at negative offsets, was
+/// mostly unclickable: of a 10px resize handle at `right: -6` only 4px could be
+/// grabbed, and the duplicate/delete buttons at `top: -16` sat on top of the
+/// block's own first line of text and stole clicks from it. Padding the render
+/// box means every piece of chrome has a non-negative offset and is fully
+/// hit-testable, while the content still paints at exactly (b.x, b.y).
+const double _kChromePad = 8;
+
+/// Height of the move bar — the strip above the content that is the ONLY place
+/// a drag moves the container. OneNote's model, and the reason for it is that
+/// a click-drag inside a text box means "select this text" to everyone who has
+/// ever used a text box.
+const double _kBarH = 16;
+
 class _BlockViewState extends State<BlockView> {
-  bool _hover = false;
+  bool _hoverBody = false;
+  bool _hoverChrome = false;
+  bool get _hover => _hoverBody || _hoverChrome;
   bool _dragUndoPushed = false;
   bool _resizeUndoPushed = false;
+
+  /// Whether the in-progress body drag is allowed to move the block. Editable
+  /// blocks say no unless Alt is held — see [_bodyDragStart].
+  bool _bodyDragMoves = false;
+
+  /// Text-drag selection state, driven from the raw [Listener] rather than a
+  /// gesture recognizer so it never has to win an arena against the field's
+  /// own selection gestures.
+  Offset? _pressGlobal;
+  int? _selectBase;
+  bool _textDragging = false;
 
   Block get b => widget.block;
   AppState get app => widget.app;
@@ -55,10 +86,57 @@ class _BlockViewState extends State<BlockView> {
     if (shift) {
       app.select(b.id, additive: true);
     } else if (_editableType) {
+      // Where the click landed, so the caret goes there instead of jumping to
+      // the end of the block. Consumed once by the session on its first build.
+      app.pendingCaretGlobal = _pressGlobal;
       app.select(b.id, edit: true); // tap-to-edit (F-4)
     } else {
       app.select(b.id);
     }
+  }
+
+  // ── Pointer-level text selection ───────────────────────────────────────
+  //
+  // A non-editing text block renders read-only Markdown — there is no field to
+  // drag-select in until the session exists. So the FIRST drag over the body
+  // opens the editor, resolves the press point to a text offset, and extends
+  // the selection from there. Done on the raw Listener because the pointer
+  // route is pinned at down: it keeps arriving even once the widget tree under
+  // the cursor has been replaced by the editing view.
+
+  void _pointerDown(PointerDownEvent e) {
+    app.claimedPointers.add(e.pointer);
+    _pressGlobal = e.position;
+    _selectBase = null;
+    _textDragging = false;
+  }
+
+  void _pointerMove(PointerMoveEvent e) {
+    final from = _pressGlobal;
+    if (from == null || !_editableType || _locked) return;
+    if (!_textDragging && (e.position - from).distance < 4) return;
+    if (HardwareKeyboard.instance.isAltPressed) return; // Alt-drag moves
+    if (!_textDragging) {
+      _textDragging = true;
+      if (!editing) {
+        app.pendingCaretGlobal = from;
+        app.select(b.id, edit: true);
+        return; // the field appears next frame; extend from the move after
+      }
+    }
+    final session = app.activeSession;
+    if (session == null || app.editingBlockId != b.id) return;
+    _selectBase ??= session.offsetAtGlobal(from);
+    final base = _selectBase;
+    final extent = session.offsetAtGlobal(e.position);
+    if (base == null || extent == null) return;
+    session.setSelection(base, extent);
+  }
+
+  void _pointerUp(PointerEvent e) {
+    _selectBase = null;
+    _textDragging = false;
+    // _pressGlobal is left for _tap, which fires after the pointer is up.
   }
 
   void _dragStart(DragStartDetails d) {
@@ -85,6 +163,124 @@ class _BlockViewState extends State<BlockView> {
     app.settleSelected();
     app.setDragging(false);
   }
+
+  // Dragging the BODY of a text box means "select this text", so the body pan
+  // is registered but declines to move unless Alt is held (the escape hatch)
+  // or the block has no text to select — an image or an attachment, where
+  // dragging the picture is unambiguous and matches OneNote.
+  void _bodyDragStart(DragStartDetails d) {
+    _bodyDragMoves = _locked
+        ? false
+        : !_editableType || HardwareKeyboard.instance.isAltPressed;
+    if (_bodyDragMoves) _dragStart(d);
+  }
+
+  void _bodyDrag(DragUpdateDetails d) {
+    if (_bodyDragMoves) _drag(d);
+  }
+
+  void _bodyDragEnd(DragEndDetails d) {
+    if (_bodyDragMoves) _dragEnd(d);
+    _bodyDragMoves = false;
+  }
+
+  /// Long-press reports a cumulative offset, not a delta.
+  Offset _lastLongPress = Offset.zero;
+
+  void _longPressStart(LongPressStartDetails d) {
+    _lastLongPress = Offset.zero;
+    _dragStart(DragStartDetails(globalPosition: d.globalPosition));
+  }
+
+  void _longPressMove(LongPressMoveUpdateDetails d) {
+    final delta = d.offsetFromOrigin - _lastLongPress;
+    _lastLongPress = d.offsetFromOrigin;
+    _drag(DragUpdateDetails(globalPosition: d.globalPosition, delta: delta));
+  }
+
+  void _longPressEnd(LongPressEndDetails d) => _dragEnd(DragEndDetails());
+
+  /// The strip above the block: the only place a drag moves the container.
+  ///
+  /// OneNote's model, adopted because it resolves an ambiguity that has no
+  /// other answer — inside a text box, a click-drag means "select this text"
+  /// to everybody, so the container needs somewhere else to be grabbed. It
+  /// also gives block actions a home that isn't sitting on top of the block's
+  /// own first line of text, and clicking it selects the whole container,
+  /// which is the reliable way to get a text box into a multi-selection.
+  Widget _moveBar(BuildContext context, Color primaryColor, bool dark) {
+    final live = selected || editing;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hoverChrome = true),
+      onExit: (_) => setState(() => _hoverChrome = false),
+      cursor: SystemMouseCursors.move,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        supportedDevices: const {
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.touch,
+          PointerDeviceKind.stylus,
+          PointerDeviceKind.invertedStylus,
+        },
+        // Moving is allowed WHILE editing — OneNote lets you drag a container
+        // by its bar with the caret still in it.
+        onPanStart: _dragStart,
+        onPanUpdate: _drag,
+        onPanEnd: _dragEnd,
+        onTap: () =>
+            app.select(b.id, additive: HardwareKeyboard.instance.isShiftPressed),
+        // Block actions stay reachable while editing, which they were not
+        // when the only right-click target was the text itself.
+        onSecondaryTapUp: (d) => showBlockMenu(context, app, b, d.globalPosition),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: _kChromePad),
+          child: Container(
+            decoration: BoxDecoration(
+              color: live
+                  ? primaryColor.withValues(alpha: .85)
+                  : (dark ? OnoteColors.night200 : OnoteColors.paper200),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+            ),
+            child: Row(
+              children: [
+                const SizedBox(width: 6),
+                Icon(Icons.drag_indicator,
+                    size: 12,
+                    color: live
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : OnoteColors.graphite400),
+                const Spacer(),
+                if (primary) ...[
+                  _barButton(context, Icons.copy_all_outlined,
+                      'Duplicate (Ctrl+D)', () => app.duplicateBlock(b.id), live),
+                  _barButton(context, Icons.close, 'Delete (Del)',
+                      () => app.removeSelected(), live),
+                  const SizedBox(width: 2),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _barButton(BuildContext context, IconData icon, String tip,
+          VoidCallback onTap, bool live) =>
+      Tooltip(
+        message: tip,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: Icon(icon,
+                size: 11,
+                color: live
+                    ? Theme.of(context).colorScheme.onPrimary
+                    : OnoteColors.graphite400),
+          ),
+        ),
+      );
 
   String _a11yLabel() {
     final t = switch (b.type) {
@@ -231,47 +427,105 @@ class _BlockViewState extends State<BlockView> {
         app.tool == Tool.highlighter ||
         app.tool == Tool.eraser;
 
+    // Chrome is only live for its OWN block, so two abutting blocks can never
+    // both offer a bar at once even though the reserved strips overlap.
+    final showChrome = !inkToolActive && !_locked && (_hover || selected || editing);
+
+    const devices = {
+      // Trackpad two-finger scrolls arrive as PointerPanZoom events, which
+      // drag recognizers would otherwise claim — hovering a block and
+      // scrolling must pan the CANVAS, never move the block. A physical
+      // trackpad click-drag reports as a mouse pointer, so deliberate drags
+      // still work with the trackpad excluded here.
+      PointerDeviceKind.mouse,
+      PointerDeviceKind.touch,
+      PointerDeviceKind.stylus,
+      PointerDeviceKind.invertedStylus,
+    };
+
+    final body = MouseRegion(
+      onEnter: (_) => setState(() => _hoverBody = true),
+      onExit: (_) => setState(() => _hoverBody = false),
+      cursor: _editableType && !editing
+          ? SystemMouseCursors.text
+          : MouseCursor.defer,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        supportedDevices: devices,
+        onTap: editing ? null : _tap,
+        onSecondaryTapUp: editing
+            ? null
+            : (d) => showBlockMenu(context, app, b, d.globalPosition),
+        // A locked block (an imported PDF slide) is an annotation surface: it
+        // must not move when the pen misses, or the whole point of writing on
+        // it is lost.
+        onPanStart: editing || _locked ? null : _bodyDragStart,
+        onPanUpdate: editing || _locked ? null : _bodyDrag,
+        onPanEnd: editing || _locked ? null : _bodyDragEnd,
+        child: Container(
+          width: displayW,
+          height: b.h,
+          constraints: const BoxConstraints(minHeight: 36),
+          decoration: BoxDecoration(
+            color: editing || selected || _hover
+                ? (dark ? OnoteColors.night50 : OnoteColors.paper0)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              width: primary && !editing ? 2 : 1,
+              color: editing
+                  ? primaryColor.withValues(alpha: .55)
+                  : selected
+                      ? primaryColor
+                      : _hover
+                          ? (dark ? OnoteColors.night300 : OnoteColors.paper300)
+                          : Colors.transparent,
+            ),
+          ),
+          child: labelled,
+        ),
+      ),
+    );
+
+    // Touch has no hover, so the bar cannot be the only way to move a block.
+    // Long-press-then-drag is the platform convention there — and it is scoped
+    // to touch and stylus so a slow mouse click can never move a text box by
+    // accident, which is the very complaint the bar exists to fix.
+    final touchable = GestureDetector(
+      supportedDevices: const {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.stylus,
+      },
+      onLongPressStart: editing || _locked ? null : _longPressStart,
+      onLongPressMoveUpdate: editing || _locked ? null : _longPressMove,
+      onLongPressEnd: editing || _locked ? null : _longPressEnd,
+      child: body,
+    );
+
     return Positioned(
-      left: b.x,
-      top: b.y,
+      // Shifted by the reserved chrome so the CONTENT still paints at
+      // (b.x, b.y) — renderSizes, marquee, culling and export all continue to
+      // mean the content box.
+      left: b.x - _kChromePad,
+      top: b.y - _kBarH,
       child: IgnorePointer(
         ignoring: inkToolActive,
+        // Raw pointer stream: claims the pointer so the canvas ignores it, and
+        // drives text drag-selection. `deferToChild` (the default) means the
+        // reserved margin does NOT claim clicks that miss the content — a
+        // click just outside a box still creates a new text box.
         child: Listener(
-        // Claim this pointer so the canvas-level handler ignores it.
-        onPointerDown: (e) => app.claimedPointers.add(e.pointer),
-        child: MouseRegion(
-          onEnter: (_) => setState(() => _hover = true),
-          onExit: (_) => setState(() => _hover = false),
-          cursor: _editableType && !editing
-              ? SystemMouseCursors.text
-              : MouseCursor.defer,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            // Trackpad two-finger scrolls arrive as PointerPanZoom events,
-            // which drag recognizers would otherwise claim — hovering a block
-            // and scrolling must pan the CANVAS, never move the block. A
-            // physical trackpad click-drag reports as a mouse pointer, so
-            // deliberate drags still work with the trackpad excluded here.
-            supportedDevices: const {
-              PointerDeviceKind.mouse,
-              PointerDeviceKind.touch,
-              PointerDeviceKind.stylus,
-              PointerDeviceKind.invertedStylus,
-            },
-            onTap: editing ? null : _tap,
-            onSecondaryTapUp: editing
-                ? null
-                : (d) => showBlockMenu(context, app, b, d.globalPosition),
-            // A locked block (an imported PDF slide) is an annotation
-            // surface: it must not move when the pen misses, or the whole
-            // point of writing on it is lost.
-            onPanStart: editing || _locked ? null : _dragStart,
-            onPanUpdate: editing || _locked ? null : _drag,
-            onPanEnd: editing ? null : _dragEnd,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                _MeasureSize(
+          onPointerDown: _pointerDown,
+          onPointerMove: _pointerMove,
+          onPointerUp: _pointerUp,
+          onPointerCancel: _pointerUp,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    _kChromePad, _kBarH, _kChromePad, _kChromePad),
+                child: _MeasureSize(
                   onChange: (size) {
                     app.renderSizes[b.id] = size;
                     // Keep the model width in sync for self-sizing math blocks
@@ -282,54 +536,67 @@ class _BlockViewState extends State<BlockView> {
                       b.w = size.width;
                     }
                   },
-                  child: Container(
-                    width: displayW,
-                    height: b.h,
-                    constraints: const BoxConstraints(minHeight: 36),
-                    decoration: BoxDecoration(
-                      color: editing || selected || _hover
-                          ? (dark ? OnoteColors.night50 : OnoteColors.paper0)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        width: primary && !editing ? 2 : 1,
-                        color: editing
-                            ? primaryColor.withValues(alpha: .55)
-                            : selected
-                                ? primaryColor
-                                : _hover
-                                    ? (dark
-                                        ? OnoteColors.night300
-                                        : OnoteColors.paper300)
-                                    : Colors.transparent,
+                  child: touchable,
+                ),
+              ),
+              if (showChrome)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  height: _kBarH,
+                  child: _moveBar(context, primaryColor, dark),
+                ),
+              // Resize handles. Now that the chrome sits INSIDE the render
+              // box, each handle's full visual extent is grabbable instead of
+              // the 4px sliver that was all the old negative offsets left
+              // inside the box.
+              if (primary && !_locked) ...[
+                Positioned(
+                  right: 0,
+                  top: _kBarH,
+                  bottom: 0,
+                  width: _kChromePad + 6,
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.resizeLeftRight,
+                    child: GestureDetector(
+                      supportedDevices: devices,
+                      onPanUpdate: _resize,
+                      onPanEnd: (_) => _resizeUndoPushed = false,
+                      child: Center(
+                        child: Container(
+                          width: 10,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: primaryColor.withValues(alpha: .85),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                        ),
                       ),
                     ),
-                    child: labelled,
                   ),
                 ),
-                // Resize handle — available whenever the block is primary,
-                // including while editing a text box (so it's resizable).
-                if (primary && !_locked) ...[
+                // Bottom edge and corner (CANVAS-4). Only offered when the
+                // block has a real height to drive: an auto-height text box
+                // is sized by its content, and a handle that fought the text
+                // would be a control that appears not to work.
+                if (_canResizeHeight) ...[
                   Positioned(
-                    right: -6,
-                    top: 0,
+                    left: _kChromePad,
+                    right: _kChromePad + 12,
                     bottom: 0,
+                    height: _kChromePad + 6,
                     child: MouseRegion(
-                      cursor: SystemMouseCursors.resizeLeftRight,
+                      cursor: SystemMouseCursors.resizeUpDown,
                       child: GestureDetector(
-                        // Same trackpad exclusion as the block drag above.
-                        supportedDevices: const {
-                          PointerDeviceKind.mouse,
-                          PointerDeviceKind.touch,
-                          PointerDeviceKind.stylus,
-                          PointerDeviceKind.invertedStylus,
-                        },
-                        onPanUpdate: _resize,
+                        supportedDevices: devices,
+                        onPanUpdate: (d) =>
+                            _resizeBy(d, width: false, height: true),
                         onPanEnd: (_) => _resizeUndoPushed = false,
                         child: Center(
                           child: Container(
-                            width: 10,
-                            height: 28,
+                            width: 28,
+                            height: 10,
                             decoration: BoxDecoration(
                               color: primaryColor.withValues(alpha: .85),
                               borderRadius: BorderRadius.circular(5),
@@ -339,99 +606,32 @@ class _BlockViewState extends State<BlockView> {
                       ),
                     ),
                   ),
-                  // Bottom edge and corner (CANVAS-4). Only offered when the
-                  // block has a real height to drive: an auto-height text box
-                  // is sized by its content, and a handle that fought the text
-                  // would be a control that appears not to work.
-                  if (_canResizeHeight) ...[
-                    Positioned(
-                      left: 0,
-                      right: 12,
-                      bottom: -6,
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.resizeUpDown,
-                        child: GestureDetector(
-                          supportedDevices: const {
-                            PointerDeviceKind.mouse,
-                            PointerDeviceKind.touch,
-                            PointerDeviceKind.stylus,
-                            PointerDeviceKind.invertedStylus,
-                          },
-                          onPanUpdate: (d) =>
-                              _resizeBy(d, width: false, height: true),
-                          onPanEnd: (_) => _resizeUndoPushed = false,
-                          child: Center(
-                            child: Container(
-                              width: 28,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                color: primaryColor.withValues(alpha: .85),
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      right: -6,
-                      bottom: -6,
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.resizeDownRight,
-                        child: GestureDetector(
-                          supportedDevices: const {
-                            PointerDeviceKind.mouse,
-                            PointerDeviceKind.touch,
-                            PointerDeviceKind.stylus,
-                            PointerDeviceKind.invertedStylus,
-                          },
-                          onPanUpdate: (d) =>
-                              _resizeBy(d, width: true, height: true),
-                          onPanEnd: (_) => _resizeUndoPushed = false,
-                          child: Container(
-                            width: 13,
-                            height: 13,
-                            decoration: BoxDecoration(
-                              color: primaryColor,
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-                // Duplicate/delete affordances only when selected, not typing.
-                if (primary && !editing) ...[
                   Positioned(
-                    top: -16,
-                    right: -8,
-                    child: Row(
-                      children: [
-                        IconButton.filledTonal(
-                          iconSize: 13,
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.copy_all_outlined),
-                          tooltip: 'Duplicate (Ctrl+D)',
-                          onPressed: () => app.duplicateBlock(b.id),
+                    right: 1,
+                    bottom: 1,
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.resizeDownRight,
+                      child: GestureDetector(
+                        supportedDevices: devices,
+                        onPanUpdate: (d) =>
+                            _resizeBy(d, width: true, height: true),
+                        onPanEnd: (_) => _resizeUndoPushed = false,
+                        child: Container(
+                          width: 14,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            color: primaryColor,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
                         ),
-                        const SizedBox(width: 2),
-                        IconButton.filledTonal(
-                          iconSize: 13,
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.close),
-                          tooltip: 'Delete (Del)',
-                          onPressed: () => app.removeSelected(),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ],
               ],
-            ),
+            ],
           ),
         ),
-      ),
       ),
     );
   }

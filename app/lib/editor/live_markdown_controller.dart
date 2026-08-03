@@ -26,6 +26,11 @@ class LiveMarkdownController extends TextEditingController {
       r'(\*\*(.+?)\*\*)|(__(.+?)__)|(\*(.+?)\*)|(_(.+?)_)|(`(.+?)`)|(~~(.+?)~~)|(==(.+?)==)|(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})'
       r'|(\+\+(.+?)\+\+)');
   static final _headingRe = RegExp(r'^(#{1,6})( +)');
+
+  /// A whole line that is nothing but an image reference — the in-flow form
+  /// (Data Model §5.1). Line-anchored to match the renderer exactly, so what
+  /// the editor dims is precisely what read mode turns into a picture.
+  static final _imageLineRe = RegExp(r'^\s*!\[[^\]]*\]\([^)\s]+(?:\s+=\d+x\d+)?\)\s*$');
   static final _prefixRe = RegExp(r'^(\s*)(- \[[ xX]\] |[-*] |\d+\. |> )');
 
   @override
@@ -176,6 +181,23 @@ class LiveMarkdownController extends TextEditingController {
       List<InlineSpan> out) {
     final lineEnd = lineStart + line.length;
     final onLine = lo >= 0 && hi >= lineStart && lo <= lineEnd;
+
+    // An in-flow image reference. Styled dim and monospace so it reads as a
+    // placeholder rather than as writing, and NOT replaced by the picture: a
+    // WidgetSpan would swap N characters for one U+FFFC placeholder and desync
+    // every selection offset from the raw text, which the coverage check above
+    // exists to prevent. Keeping it as text is also what makes it selectable
+    // and cuttable — the "highlight it, cut it, paste it lower down" flow.
+    if (_imageLineRe.hasMatch(line)) {
+      out.add(TextSpan(
+        text: line,
+        style: _dim(base).copyWith(
+            fontFamily: 'JetBrains Mono',
+            fontFamilyFallback: onoteFontFallback,
+            fontSize: (base.fontSize ?? 14) * 0.85),
+      ));
+      return;
+    }
 
     // Heading: markers collapse when the caret isn't on the line.
     final h = _headingRe.firstMatch(line);
