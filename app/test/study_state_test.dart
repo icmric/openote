@@ -191,4 +191,31 @@ void main() {
     expect(sw.elapsedMilliseconds, lessThan(50),
         reason: '200 deckStats calls took ${sw.elapsedMilliseconds}ms');
   });
+
+  test('several scopes in one frame all stay cached', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app) = await fixture('onote_study_scopes_', 12);
+    addTearDown(() => cleanup(repo, tmp));
+
+    // The deck picker shows this-page / this-section / whole-notebook counts
+    // side by side, and grading prunes against the whole notebook while the
+    // panel is scoped. A single-slot cache would have those keys evicting each
+    // other, so EVERY call would re-read all twelve pages — the cache still
+    // nominally present and doing nothing.
+    final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
+    for (var i = 0; i < 3; i++) {
+      app.deckStats(pageId: app.pageId);
+      app.deckStats(sectionId: section);
+      app.deckStats();
+    }
+    final sw = Stopwatch()..start();
+    for (var i = 0; i < 100; i++) {
+      app.deckStats(pageId: app.pageId);
+      app.deckStats(sectionId: section);
+      app.deckStats();
+    }
+    sw.stop();
+    expect(sw.elapsedMilliseconds, lessThan(50),
+        reason: '300 mixed-scope calls took ${sw.elapsedMilliseconds}ms');
+  });
 }

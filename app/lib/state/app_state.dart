@@ -821,7 +821,18 @@ class AppState extends ChangeNotifier {
   /// rebuilds on every notify — i.e. every keystroke — so an uncached deck
   /// meant ~324 database reads per character typed on a real notebook, and the
   /// app crawled. Any widget that shows a count must go through here.
-  ({String key, List<Flashcard> cards})? _deckCache;
+  /// Closed-page cards, keyed by scope.
+  ///
+  /// A **map**, not one slot, because several scopes are asked for in the same
+  /// frame: the deck picker shows this-page / this-section / whole-notebook
+  /// counts side by side, and `_persistCardStates` prunes against the whole
+  /// notebook while the panel is scoped to a section. With one slot those
+  /// alternating keys evict each other, so every single call would re-read the
+  /// entire notebook — the exact regression the cache exists to prevent, with
+  /// the cache still nominally in place. Bounded because scopes are few and a
+  /// stale entry costs memory for a deck nobody is looking at.
+  final Map<String, List<Flashcard>> _deckCache = {};
+  static const _deckCacheMax = 6;
 
   /// The OPEN page's cards, held separately from [_deckCache].
   ///
@@ -855,8 +866,10 @@ class AppState extends ChangeNotifier {
     // Closed pages. nodesRevision covers pages added/renamed/removed;
     // docRevision covers a page's stored content being replaced wholesale.
     final key = '$notebookId#$sectionId#$pageId#$docRevision#$nodesRevision#${this.pageId}';
-    var stored = _deckCache?.key == key ? _deckCache!.cards : null;
+    var stored = _deckCache[key];
     if (stored == null) {
+      // A revision bumped: every entry keyed on the old one is dead weight.
+      if (_deckCache.length >= _deckCacheMax) _deckCache.clear();
       final out = <Flashcard>[];
       for (final n in nodes.where(inScope)) {
         if (n.id == this.pageId) continue; // the live half, below
@@ -864,7 +877,7 @@ class AppState extends ChangeNotifier {
           out.addAll(cardsFromBlock(b, n.id, n.title));
         }
       }
-      _deckCache = (key: key, cards: stored = out);
+      _deckCache[key] = stored = out;
     }
 
     final open = nodes.where((n) => n.id == this.pageId && inScope(n)).firstOrNull;
