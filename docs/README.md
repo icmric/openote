@@ -53,7 +53,8 @@ Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/AD
 ## Supporting documents
 
 - [Roadmap](../ROADMAP.md) — phased plan from MVP to collaboration.
-- [v0.2 release plan](planning/v0.2-release-plan.md) — the tiered plan for the first public release: exit checklist, sizes, and open decisions.
+- [v0.3 student plan](planning/v0.3-student-plan.md) — the current plan: OneNote parity for students, plus the differentiators (PDF slide annotation, flashcards from tags, free math evaluation, group notebooks).
+- [v0.2 release plan](planning/v0.2-release-plan.md) — the tiered plan for the first public release: exit checklist, sizes, and open decisions (carries the outstanding verification checklist).
 - [Contributing](../CONTRIBUTING.md) — how to get involved.
 - [README](../README.md) — project overview.
 

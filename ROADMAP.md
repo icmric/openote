@@ -31,7 +31,9 @@ by *scope*. Anything marked started has code or a decision in the tree already.
 - **Image import geometry** — width/height verified to 0.03 mm; **`y` has never been independently validated** because the check was circular. Needs one OneNote PDF export to close.
 - **Layering cleanup** — the `export/` write path is **closed** (2026-07-27): `AppState.repo` is private behind a storage facade, and both importers write through it, so there is now exactly one funnel for persistent mutation — the precondition for the op log observing every change. Still to do: the `AppState`/`sidebar.dart` file splits and the `onenote.rs` module split.
 
-> **Detailed next-release plan:** [docs/planning/v0.2-release-plan.md](docs/planning/v0.2-release-plan.md) — the tiered plan for **v0.2, the first public release** (verification & packaging → data-safety fixes → switcher parity → tags → two-device sync → format freeze), with sizes, the exit checklist, and the open decisions.
+> **Detailed next-release plans:**
+> - [docs/planning/v0.3-student-plan.md](docs/planning/v0.3-student-plan.md) — **v0.3, the student release** (current): the parity sprint, PDF slide annotation as flagship, flashcards from tags, free math evaluation, group notebooks over shared folders.
+> - [docs/planning/v0.2-release-plan.md](docs/planning/v0.2-release-plan.md) — the tiered plan for **v0.2, the first public release** (verification & packaging → data-safety fixes → switcher parity → tags → two-device sync → format freeze), with sizes, the exit checklist, and the open decisions.
 
 ### Next, in rough priority order
 1. ~~Ratify the licence~~ — **done 2026-07-27.** The repo is legally open source; outside contributions can now be accepted.
