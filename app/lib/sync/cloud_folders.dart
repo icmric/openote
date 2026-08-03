@@ -69,6 +69,20 @@ String? get _home =>
 /// files to find a relocated folder means parsing four undocumented formats
 /// that change without notice. If someone has moved theirs, "Choose a
 /// folder…" covers it in one click and cannot break.
+/// Which detected cloud folder [path] lives inside, if any.
+///
+/// This is what tells the UI a notebook *is* syncing. The previous status used
+/// "more than one device has written a log", which is a different question and
+/// answers "no" for the whole period between setting sync up and a second
+/// device actually appearing — exactly when a user most wants confirmation
+/// that it worked.
+CloudFolder? cloudFolderContaining(String path) {
+  for (final f in detectCloudFolders()) {
+    if (p.isWithin(f.path, path) || p.equals(f.path, path)) return f;
+  }
+  return null;
+}
+
 List<CloudFolder> detectCloudFolders() {
   final home = _home;
   final out = <CloudFolder>[];

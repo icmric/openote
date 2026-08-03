@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart'; // ThemeMode + widgets (re-exports foundation)
+import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p; // ThemeMode + widgets (re-exports foundation)
 
 import '../canvas/align_guides.dart';
 import '../canvas/canvas_controller.dart';
@@ -19,6 +20,8 @@ import '../study/flashcards.dart';
 import 'builtin_templates.dart';
 import '../sync/folder_watch.dart';
 import '../sync/op.dart';
+import '../sync/cloud_folders.dart';
+import '../sync/mirrors.dart';
 import '../sync/sync_recorder.dart';
 
 enum Tool { select, text, pen, highlighter, eraser, lasso }
@@ -273,6 +276,7 @@ class AppState extends ChangeNotifier {
       docRevision++;
     }
     lastSyncPull = pending.length;
+    _invalidateSyncStatus();
     notifyListeners();
     return pending.length;
   }
@@ -296,12 +300,78 @@ class AppState extends ChangeNotifier {
     _recorders.remove(nb);
     _stopWatching();
     final path = await _repo.moveNotebookTo(nb, targetDir);
+    _invalidateSyncStatus();
     if (nb == notebookId) {
       await _loadNotebook();
       _startWatching();
     }
     notifyListeners();
     return path;
+  }
+
+  // ── Mirrors and backups ──────────────────────────────────────────────
+
+  /// Extra one-way destinations per notebook id.
+  final Map<String, List<MirrorTarget>> _mirrors = {};
+
+  List<MirrorTarget> mirrorsFor(String nb) => _mirrors[nb] ?? const [];
+
+  void addMirror(String nb, MirrorTarget t) {
+    _mirrors.putIfAbsent(nb, () => []).add(t);
+    _saveMirrors();
+    _invalidateSyncStatus();
+    // Run once immediately: a mirror you have to wait for is one you don't
+    // trust yet.
+    unawaited(runMirrors(nb));
+    notifyListeners();
+  }
+
+  void removeMirror(String nb, String path) {
+    _mirrors[nb]?.removeWhere((t) => t.path == path);
+    _saveMirrors();
+    _invalidateSyncStatus();
+    notifyListeners();
+  }
+
+  void _saveMirrors() => _repo.setSetting('mirrors', {
+        for (final e in _mirrors.entries)
+          e.key: [for (final t in e.value) t.toJson()]
+      });
+
+  /// When each notebook's mirrors last ran, so saves don't trigger a copy
+  /// storm. A mirror is a safety net, not a live replica.
+  final Map<String, int> _lastMirrorRun = {};
+  static const _mirrorMinGapMs = 60000;
+
+  /// Copy [nb] out to its mirrors, at most once a minute.
+  Future<void> runMirrors(String nb, {bool force = false}) async {
+    final targets = mirrorsFor(nb);
+    if (targets.isEmpty) return;
+    final now = nowMs();
+    if (!force && now - (_lastMirrorRun[nb] ?? 0) < _mirrorMinGapMs) return;
+    _lastMirrorRun[nb] = now;
+    final src = notebookLogDir(nb);
+    if (src == null) return;
+    for (final t in targets) {
+      try {
+        await mirrorNotebook(src, t);
+      } catch (e) {
+        // A mirror is a convenience; a failing one (USB stick unplugged,
+        // network share down) must never interfere with editing.
+        debugPrint('[openote/mirror] ${t.path} failed: $e');
+      }
+    }
+    lastMirrorAt = nowMs();
+    notifyListeners();
+  }
+
+  int lastMirrorAt = 0;
+
+  /// The `.onotebook` directory for a notebook, which is what gets mirrored.
+  String? notebookLogDir(String nb) {
+    final path = notebookPath(nb);
+    if (path == null) return null;
+    return '${p.withoutExtension(path)}.onotebook';
   }
 
   /// Pull automatically when another device's log changes. On by default —
@@ -346,8 +416,54 @@ class AppState extends ChangeNotifier {
       _repo.notebooks.where((n) => n.id == nb).firstOrNull?.file;
 
   /// Devices that have written to this notebook, for the status surface.
-  int syncDeviceCount(String nb) =>
-      _recorderFor(nb)?.store.deviceIds().length ?? 0;
+  ///
+  /// **Cached with a short TTL.** This is a synchronous directory listing, and
+  /// the status bar that shows it rebuilds on every notify — i.e. every
+  /// keystroke. Worse, once the notebook is in a cloud folder that listing hits
+  /// a sync-client-backed (sometimes network) path, so uncached it cost
+  /// milliseconds *per character typed*. The count changes only when another
+  /// device appears, which is not a per-frame event.
+  int syncDeviceCount(String nb) {
+    final now = nowMs();
+    final hit = _deviceCountCache[nb];
+    if (hit != null && now - hit.at < 5000) return hit.count;
+    final n = _recorderFor(nb)?.store.deviceIds().length ?? 0;
+    _deviceCountCache[nb] = (count: n, at: now);
+    return n;
+  }
+
+  final Map<String, ({int count, int at})> _deviceCountCache = {};
+
+  /// Drop the cached count after something that can change it.
+  void _invalidateSyncStatus() {
+    _deviceCountCache.clear();
+    _syncStatusCache.clear();
+  }
+
+  final Map<String, ({SyncStatus status, int at})> _syncStatusCache = {};
+
+  /// What to show the user about this notebook's sync state.
+  ///
+  /// Answers "where does this notebook live", not "how many devices have
+  /// touched it" — those differ for the entire period between setting sync up
+  /// and a second device appearing, which is precisely when the user is
+  /// looking for confirmation that it worked.
+  SyncStatus syncStatus(String nb) {
+    final now = nowMs();
+    final hit = _syncStatusCache[nb];
+    if (hit != null && now - hit.at < 5000) return hit.status;
+
+    final path = notebookPath(nb);
+    final folder = path == null ? null : cloudFolderContaining(path);
+    final devices = syncDeviceCount(nb);
+    final status = SyncStatus(
+      folder: folder,
+      devices: devices,
+      mirrors: mirrorsFor(nb).length,
+    );
+    _syncStatusCache[nb] = (status: status, at: now);
+    return status;
+  }
 
   /// Blobs the log references but whose bytes are not yet in `blobs/`.
   ///
@@ -587,9 +703,19 @@ class AppState extends ChangeNotifier {
   /// Scans page mirrors rather than a maintained index: same reasoning as
   /// notebook-wide search — one source of truth beats an index that can drift,
   /// until it measurably hurts.
+  ({
+    String key,
+    List<({String pageId, String pageTitle, NoteTag tag, String text})> tags
+  })? _allTagsCache;
+
   List<({String pageId, String pageTitle, NoteTag tag, String text})>
       allTags() {
     if (notebookId == null) return const [];
+    // Same reasoning as [deck]: this reads every page in the notebook, and the
+    // panel that shows it rebuilds on every notify.
+    final key = '$notebookId#$docRevision#$nodesRevision#$pageId';
+    final cached = _allTagsCache;
+    if (cached != null && cached.key == key) return cached.tags;
     final out = <({String pageId, String pageTitle, NoteTag tag, String text})>[];
     for (final n in nodes.where((n) => n.kind == NodeKind.page)) {
       // The open page's in-memory blocks are fresher than the container.
@@ -609,6 +735,7 @@ class AppState extends ChangeNotifier {
         }
       }
     }
+    _allTagsCache = (key: key, tags: out);
     return out;
   }
 
@@ -626,8 +753,24 @@ class AppState extends ChangeNotifier {
   final Map<String, CardState> _cardStates = {};
 
   /// Every card the notebook can produce, in page order.
+  /// Cached deck, keyed on everything that can change what cards exist.
+  ///
+  /// **This cache is not an optimisation, it is a correctness-of-experience
+  /// fix.** Building a deck reads and JSON-decodes *every page in the
+  /// notebook* from SQLite. The study button lives in the command bar, which
+  /// rebuilds on every notify — i.e. every keystroke — so an uncached deck
+  /// meant ~324 database reads per character typed on a real notebook, and the
+  /// app crawled. Any widget that shows a count must go through here.
+  ({String key, List<Flashcard> cards})? _deckCache;
+
   List<Flashcard> deck({String? sectionId}) {
     if (notebookId == null) return const [];
+    // docRevision covers edits to the open page; nodesRevision covers pages
+    // being added, renamed or removed. Both are cheap counters.
+    final key = '$notebookId#$sectionId#$docRevision#$nodesRevision#$pageId';
+    final cached = _deckCache;
+    if (cached != null && cached.key == key) return cached.cards;
+
     final out = <Flashcard>[];
     for (final n in nodes.where((n) => n.kind == NodeKind.page)) {
       if (sectionId != null && n.parentId != sectionId) continue;
@@ -637,6 +780,7 @@ class AppState extends ChangeNotifier {
         out.addAll(cardsFromBlock(b, n.id, n.title));
       }
     }
+    _deckCache = (key: key, cards: out);
     return out;
   }
 
@@ -1304,6 +1448,16 @@ class AppState extends ChangeNotifier {
     final lw = _repo.getSetting('learnedWords');
     if (lw is List) loadLearnedWords(lw.cast<String>());
     onLearnedChanged = (words) => _repo.setSetting('learnedWords', words);
+    final mi = _repo.getSetting('mirrors');
+    if (mi is Map) {
+      mi.forEach((k, v) {
+        if (v is! List) return;
+        _mirrors['$k'] = [
+          for (final t in v)
+            if (MirrorTarget.fromJson(t) case final m?) m
+        ];
+      });
+    }
     final cs = _repo.getSetting('cardStates');
     if (cs is Map) {
       cs.forEach((k, v) => _cardStates['$k'] = CardState.fromJson(v));
@@ -2364,6 +2518,8 @@ class AppState extends ChangeNotifier {
       // The recorder diffs against its replayed state, so an autosave that
       // changed one block appends one op, not the whole page.
       _recorderFor(nb)?.page(id, blocks, pageProps);
+      // Throttled inside; a mirror is a safety net, not a live replica.
+      unawaited(runMirrors(nb));
     } catch (e) {
       // Stay dirty so the next edit (or exit flush) retries, and tell the user.
       saveError = e;
@@ -2398,5 +2554,40 @@ class AppState extends ChangeNotifier {
     canvas.dispose();
     _repo.dispose();
     super.dispose();
+  }
+}
+
+/// What the UI needs to know about a notebook's sync state.
+class SyncStatus {
+  const SyncStatus({
+    required this.folder,
+    required this.devices,
+    required this.mirrors,
+  });
+
+  /// The detected cloud folder the notebook lives in, or null when it is only
+  /// on this machine.
+  final CloudFolder? folder;
+
+  /// How many devices have written a log here (this one included).
+  final int devices;
+
+  /// Configured one-way mirror/backup destinations.
+  final int mirrors;
+
+  bool get isSynced => folder != null;
+  bool get hasOtherDevices => devices > 1;
+
+  /// The chip label.
+  String get label {
+    if (!isSynced) return mirrors > 0 ? 'Backed up' : 'Sync…';
+    if (hasOtherDevices) return '$devices devices';
+    return folder!.kind.label;
+  }
+
+  IconData get icon {
+    if (!isSynced) return mirrors > 0 ? Icons.backup_outlined : Icons.cloud_off_outlined;
+    if (hasOtherDevices) return Icons.devices;
+    return Icons.cloud_done_outlined;
   }
 }

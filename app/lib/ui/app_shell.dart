@@ -822,46 +822,7 @@ class _StatusBar extends StatelessWidget {
           // Sync (ADR-0006). Shown only once a second device has touched this
           // notebook — until then there is nothing to say, and a permanent
           // "1 device" chip would be noise.
-          if (app.notebookId != null)
-            Tooltip(
-              message: app.syncDeviceCount(app.notebookId!) > 1
-                  ? 'Edited on ${app.syncDeviceCount(app.notebookId!)} devices.'
-                      '\nClick to pull; right-click for sync settings.'
-                  : 'Not synced yet — click to put this notebook in a folder '
-                      'your cloud already syncs.',
-              child: GestureDetector(
-                onSecondaryTap: () => showSyncDialog(context, app),
-                child: InkWell(
-                  onTap: () async {
-                    if (app.syncDeviceCount(app.notebookId!) <= 1) {
-                      await showSyncDialog(context, app);
-                      return;
-                    }
-                    final n = await app.syncPull(app.notebookId!);
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(n == 0
-                            ? 'Already up to date.'
-                            : 'Pulled $n change${n == 1 ? '' : 's'} from another device.')));
-                  },
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(
-                        app.syncDeviceCount(app.notebookId!) > 1
-                            ? Icons.devices
-                            : Icons.cloud_off_outlined,
-                        size: 12,
-                        color: OnoteColors.graphite400),
-                    const SizedBox(width: 5),
-                    Text(
-                        app.syncDeviceCount(app.notebookId!) > 1
-                            ? '${app.syncDeviceCount(app.notebookId!)} devices'
-                            : 'Sync…',
-                        style: const TextStyle(
-                            fontSize: 11, color: OnoteColors.graphite400)),
-                  ]),
-                ),
-              ),
-            ),
+          if (app.notebookId != null) _SyncChip(app: app),
           const SizedBox(width: 12),
           // Active compute engine (§ADR-0002): green chip when the Rust core
           // is linked, with the live page content-hash it computed on save.
@@ -929,5 +890,73 @@ class _EmptyState extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Sync state in the status bar.
+///
+/// Driven by [SyncStatus] — where the notebook LIVES — rather than by how many
+/// devices have written logs. The old chip used the device count as a proxy,
+/// so a notebook correctly placed in Google Drive still read "Not synced yet"
+/// until a second machine appeared: the app disagreeing with what the user had
+/// just successfully done.
+class _SyncChip extends StatelessWidget {
+  const _SyncChip({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final nb = app.notebookId!;
+    final s = app.syncStatus(nb);
+    final scheme = Theme.of(context).colorScheme;
+    // Green once it is actually somewhere that syncs; grey when it is only on
+    // this machine. The colour is the whole at-a-glance answer.
+    final color = s.isSynced ? OnoteColors.success : OnoteColors.graphite400;
+
+    return Tooltip(
+      message: _tooltip(s),
+      child: InkWell(
+        onTap: () => showSyncDialog(context, app),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(s.icon, size: 12, color: color),
+            const SizedBox(width: 5),
+            Text(s.label, style: TextStyle(fontSize: 11, color: color)),
+            if (s.isSynced && s.hasOtherDevices) ...[
+              const SizedBox(width: 6),
+              InkWell(
+                onTap: () async {
+                  final n = await app.syncPull(nb);
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(n == 0
+                          ? 'Already up to date.'
+                          : 'Pulled $n change${n == 1 ? '' : 's'}.')));
+                },
+                child: Icon(Icons.refresh, size: 12, color: scheme.primary),
+              ),
+            ],
+          ]),
+        ),
+      ),
+    );
+  }
+
+  String _tooltip(SyncStatus s) {
+    final b = StringBuffer();
+    if (s.isSynced) {
+      b.write('Syncing through ${s.folder!.name}.\n');
+      b.write(s.hasOtherDevices
+          ? 'Edited on ${s.devices} devices — changes arrive automatically.'
+          : 'Open this notebook on another device to sync it.');
+    } else {
+      b.write('Only on this computer.\n'
+          'Click to put it in a folder your cloud already syncs.');
+    }
+    if (s.mirrors > 0) {
+      b.write('\n${s.mirrors} backup destination${s.mirrors == 1 ? '' : 's'}.');
+    }
+    return b.toString();
   }
 }
