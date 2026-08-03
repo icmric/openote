@@ -12,7 +12,9 @@ From 0.2.0 onward: **notebooks created by any Openote release open in every late
 - **Flashcards from your own notes.** Tag a line Question or Definition while taking notes; the week before the exam Openote quizzes you on them, with spaced repetition. A `==highlight==` inside a tagged line becomes a fill-in-the-blank. Export to Anki if you'd rather revise there.
 - **Maths that computes.** Type an expression in an equation block and see the answer — arithmetic, powers, roots, trig, logs, factorials, constants. OneNote charges an Education subscription for this.
 - **Cloud sync through a folder your cloud already syncs.** Move a notebook into Drive, OneDrive, iCloud, Dropbox, Nextcloud or Syncthing and your devices stay in step — no account, no sign-in, and Openote never gets access to the rest of your Drive. Changes from other devices are pulled automatically. Self-hosting works the same way, with nothing exposed to the network.
+- **Annotate lecture slides.** Insert ▸ PDF slides turns each page of a PDF into a page you can write on with the pen, and the slide's text stays searchable. GoodNotes and Notability charge for this and only on Apple; OneNote's version loses the text.
 - **Paste and drag-drop.** Paste a screenshot straight onto the page; drop files on it to add them.
+- **Resize anything properly** — corner and bottom handles, with ink scaling instead of being clipped; **alignment guides** that snap a block flush with its neighbours; **drag pages to reorder** them, with subpages coming along; **recolour lassoed ink**.
 - **Find and replace**, spell-check **suggestions** on right-click with "Add to dictionary", **Ctrl+1–5** tag shortcuts, **copy link to page**, and ``` + Enter to open a code fence.
 
 ### Fixed — student release (2026-08-03)
@@ -53,7 +55,6 @@ From 0.2.0 onward: **notebooks created by any Openote release open in every late
 - **Touch drawing has not been tested on real touch hardware** — the logic is unit-tested, the feel is not.
 - There is no first-party sync service, by design — Openote never talks to a server, so nothing of yours passes through us.
 - Two people editing **the same paragraph at the same moment** in a shared notebook resolve last-writer-wins. Different pages, different blocks and different paragraphs all merge correctly; true concurrent editing of one paragraph waits for the structured text model.
-- **Lecture-slide PDF annotation is not in this release** — it needs a native PDF renderer bundled per platform, which deserves its own pass.
 
 *(This entry grows as the release is built — see [docs/planning/v0.2-release-plan.md](docs/planning/v0.2-release-plan.md) for the full plan.)*
 
