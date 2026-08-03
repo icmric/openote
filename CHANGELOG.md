@@ -51,7 +51,9 @@ From 0.2.0 onward: **notebooks created by any Openote release open in every late
 - **OneNote tags are not yet imported.** Tags work for notes you write; extracting them from `.one` files needs the property IDs verified against a real tagged notebook, and the investigation found a latent parser bug in the same area — guessing would risk imports that work today.
 - **Spell check is English only.** The upgrade path (hunspell dictionaries via the Rust core) is recorded but not built.
 - **Touch drawing has not been tested on real touch hardware** — the logic is unit-tested, the feel is not.
-- Sync is manual (pull on click), not automatic; and there is no first-party sync service by design.
+- There is no first-party sync service, by design — Openote never talks to a server, so nothing of yours passes through us.
+- Two people editing **the same paragraph at the same moment** in a shared notebook resolve last-writer-wins. Different pages, different blocks and different paragraphs all merge correctly; true concurrent editing of one paragraph waits for the structured text model.
+- **Lecture-slide PDF annotation is not in this release** — it needs a native PDF renderer bundled per platform, which deserves its own pass.
 
 *(This entry grows as the release is built — see [docs/planning/v0.2-release-plan.md](docs/planning/v0.2-release-plan.md) for the full plan.)*
 
