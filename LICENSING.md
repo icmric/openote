@@ -53,8 +53,10 @@ an Apache-2.0 core:
 |---|---|
 | `sqlite3`, `sqlite3_flutter_libs`, `perfect_freehand`, `uuid` | MIT |
 | `super_clipboard`, `super_native_extensions`, `irondash_*` | MIT |
+| `pdfrx`, `pdfrx_engine`, `pdfium_dart`, `pdfium_flutter`, `synchronized` | MIT |
+| **pdfium** (the bundled PDF engine binary, ~5.6 MB) | BSD-3-Clause (Google) |
 | `path`, `path_provider`, `ffi`, `file_selector`, `flutter_lints`, `win32`, `win32_registry` | BSD-3-Clause |
-| `flutter_math_fork`, `pdf`, `desktop_drop` | Apache-2.0 |
+| `flutter_math_fork`, `pdf`, `desktop_drop`, `rxdart` | Apache-2.0 |
 | `serde`, `serde_json` | MIT OR Apache-2.0 |
 | `cab` (vendored) | MIT |
 

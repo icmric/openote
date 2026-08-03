@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../export/markdown_export.dart';
 import '../export/open_export.dart';
 import '../export/pdf_export.dart';
+import '../export/pdf_import.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart';
@@ -332,6 +333,9 @@ class _CommandBarState extends State<CommandBar> {
       ins(Icons.code, 'Code', _insertCode),
       ins(Icons.table_chart_outlined, 'Table', _insertTable),
       ins(Icons.image_outlined, 'Image', () => _insertImage(context)),
+      // The lecture-slide flow: each PDF page becomes a page you can write on.
+      ins(Icons.picture_as_pdf_outlined, 'PDF slides',
+          () => _importPdf(context)),
       ins(Icons.attach_file, 'File', () => _insertFile(context)),
       ins(Icons.link, 'Page link', () => _insertPageLink(context)),
       ins(Icons.dashboard_customize_outlined, 'Template',
@@ -617,6 +621,9 @@ class _CommandBarState extends State<CommandBar> {
         }));
     app.select(b.id, edit: true);
   }
+
+  Future<void> _importPdf(BuildContext context) =>
+      _importPdfWithProgress(context, app);
 
   Future<void> _insertImage(BuildContext context) async {
     const typeGroup = XTypeGroup(
@@ -919,5 +926,73 @@ class _StudyButton extends StatelessWidget {
           ),
       ]),
     );
+  }
+}
+
+/// Import a PDF as annotatable pages, with progress.
+///
+/// A lecture deck is 40–120 pages and each one is a pdfium render plus a PNG
+/// encode, so this is seconds, not milliseconds — a modal with a live count is
+/// the difference between "working" and "frozen".
+Future<void> _importPdfWithProgress(BuildContext context, AppState app) async {
+  final progress = ValueNotifier<String>('Opening PDF…');
+  var dialogOpen = false;
+  if (context.mounted) {
+    dialogOpen = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        content: Row(children: [
+          const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.6)),
+          const SizedBox(width: 16),
+          Expanded(
+            child: ValueListenableBuilder<String>(
+              valueListenable: progress,
+              builder: (_, text, __) => Text(text),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+  try {
+    final result = await importPdfAsPages(
+      app,
+      onProgress: (done, total) =>
+          progress.value = 'Importing page $done of $total…',
+    );
+    if (dialogOpen && context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      dialogOpen = false;
+    }
+    if (result == null) return; // cancelled at the file picker
+    if (!context.mounted) return;
+    if (result.pages == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("That PDF couldn't be read.")));
+      return;
+    }
+    if (result.firstPageId != null) await app.selectPage(result.firstPageId!);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 6),
+      content: Text('Imported ${result.pages} page'
+          '${result.pages == 1 ? '' : 's'} — pick the pen and write on them. '
+          'The slide text is searchable.'),
+    ));
+  } catch (e) {
+    if (dialogOpen && context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('PDF import failed: $e')));
+    }
+  } finally {
+    progress.dispose();
   }
 }

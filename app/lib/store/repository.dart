@@ -810,7 +810,11 @@ class Repository {
     try {
       final j = jsonDecode(json) as Map<String, dynamic>;
       for (final b in (j['blocks'] as List? ?? const [])) {
-        final text = ((b as Map)['content'] as Map?)?['text'];
+        final content = (b as Map)['content'] as Map?;
+        // `sourceText` is an imported PDF slide's hidden text layer, so a
+        // lecture deck is findable by its words even though the page shows a
+        // picture (see export/pdf_import.dart).
+        final text = content?['text'] ?? content?['sourceText'];
         if (text is! String) continue;
         final i = text.toLowerCase().indexOf(lowerQuery);
         if (i < 0) continue;

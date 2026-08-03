@@ -31,6 +31,7 @@ dependencies:
   ffi: ^2.1.0
   super_clipboard: ^0.9.1
   desktop_drop: ^0.7.1
+  pdfrx: ^2.2.24
 
 dev_dependencies:
   flutter_test:

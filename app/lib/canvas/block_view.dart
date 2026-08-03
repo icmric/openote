@@ -100,6 +100,10 @@ class _BlockViewState extends State<BlockView> {
     return t.trim().isEmpty ? '${b.type.name} block' : t;
   }
 
+  /// True for a background layer that must not be moved or resized —
+  /// currently an imported PDF slide (see `export/pdf_import.dart`).
+  bool get _locked => b.content['locked'] == true;
+
   /// Height is only draggable for blocks that own one. A text block's height
   /// comes from its text, so a height handle there would fight the content.
   bool get _canResizeHeight =>
@@ -258,8 +262,11 @@ class _BlockViewState extends State<BlockView> {
             onSecondaryTapUp: editing
                 ? null
                 : (d) => showBlockMenu(context, app, b, d.globalPosition),
-            onPanStart: editing ? null : _dragStart,
-            onPanUpdate: editing ? null : _drag,
+            // A locked block (an imported PDF slide) is an annotation
+            // surface: it must not move when the pen misses, or the whole
+            // point of writing on it is lost.
+            onPanStart: editing || _locked ? null : _dragStart,
+            onPanUpdate: editing || _locked ? null : _drag,
             onPanEnd: editing ? null : _dragEnd,
             child: Stack(
               clipBehavior: Clip.none,
@@ -302,7 +309,7 @@ class _BlockViewState extends State<BlockView> {
                 ),
                 // Resize handle — available whenever the block is primary,
                 // including while editing a text box (so it's resizable).
-                if (primary) ...[
+                if (primary && !_locked) ...[
                   Positioned(
                     right: -6,
                     top: 0,
