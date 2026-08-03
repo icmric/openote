@@ -356,7 +356,11 @@ class _CommandBarState extends State<CommandBar> {
           ),
           onPressed: () => app.setTool(t),
         );
-    final inkActive = app.tool == Tool.pen || app.tool == Tool.highlighter;
+    // The swatches also appear with ink selected, so a lassoed diagram can be
+    // recoloured without first re-picking the pen.
+    final inkActive = app.tool == Tool.pen ||
+        app.tool == Tool.highlighter ||
+        app.hasInkSelection;
     final colors = app.tool == Tool.highlighter
         ? OnoteColors.highlighterColors
         : OnoteColors.penColors;
@@ -377,7 +381,16 @@ class _CommandBarState extends State<CommandBar> {
               borderRadius: BorderRadius.circular(99),
               onTap: () {
                 app.penColor = i;
-                app.refresh();
+                // With ink selected (typically just lassoed), a colour click
+                // recolours it rather than only arming the next stroke —
+                // recolouring after the fact is most of why you lasso a
+                // diagram (INK-7).
+                if (app.hasInkSelection) {
+                  app.recolorSelectedInk('#'
+                      '${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}');
+                } else {
+                  app.refresh();
+                }
               },
               child: Container(
                 width: 18,

@@ -980,6 +980,9 @@ Widget dragChip(BuildContext context, String label, IconData icon) {
   );
 }
 
+/// What dropping at the current pointer position would do (ORG-2).
+enum _DropZone { none, before, into, after }
+
 class _PageTile extends StatefulWidget {
   const _PageTile({
     required this.app,
@@ -1009,9 +1012,43 @@ class _PageTileState extends State<_PageTile> {
     return DragTarget<String>(
       onWillAcceptWithDetails: (d) =>
           d.data != page.id && app.node(d.data)?.kind == NodeKind.page,
-      onAcceptWithDetails: (d) => app.makeSubpageOf(d.data, page.id),
+      onMove: (d) {
+        // Which third of the tile the pointer is over decides the gesture:
+        // edges reorder, middle nests. Tracked on move so the affordance can
+        // show what the drop will do BEFORE the user commits (ORG-2).
+        final zone = _dropZoneAt(d.offset);
+        if (zone != _zone) setState(() => _zone = zone);
+      },
+      onLeave: (_) => setState(() => _zone = _DropZone.none),
+      onAcceptWithDetails: (d) {
+        final zone = _zone;
+        setState(() => _zone = _DropZone.none);
+        switch (zone) {
+          case _DropZone.before:
+            app.reorderNode(d.data, page.id, after: false);
+          case _DropZone.after:
+            app.reorderNode(d.data, page.id, after: true);
+          case _DropZone.into:
+          case _DropZone.none:
+            app.makeSubpageOf(d.data, page.id);
+        }
+      },
       builder: (ctx, cand, rej) {
-        final tile = _tile(context, subpageTarget: cand.isNotEmpty);
+        final active = cand.isNotEmpty;
+        final tile = _tile(context,
+            subpageTarget: active && _zone == _DropZone.into);
+        if (active && (_zone == _DropZone.before || _zone == _DropZone.after)) {
+          // An insertion line, the universal "it will land here" signal.
+          final line = Container(
+            height: 2,
+            color: Theme.of(context).colorScheme.primary,
+          );
+          return Column(mainAxisSize: MainAxisSize.min, children: [
+            if (_zone == _DropZone.before) line,
+            tile,
+            if (_zone == _DropZone.after) line,
+          ]);
+        }
         // Don't wrap in a Draggable while renaming — the text field needs the
         // pointer for caret placement and selection.
         if (_renaming) return tile;
@@ -1024,6 +1061,22 @@ class _PageTileState extends State<_PageTile> {
         );
       },
     );
+  }
+
+  /// Where in the tile a drag currently hovers.
+  _DropZone _zone = _DropZone.none;
+
+  /// Edges reorder, middle nests. A quarter each end is enough to hit without
+  /// making nesting hard to reach.
+  _DropZone _dropZoneAt(Offset globalOffset) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return _DropZone.into;
+    final local = box.globalToLocal(globalOffset);
+    final h = box.size.height;
+    if (h <= 0) return _DropZone.into;
+    if (local.dy < h * 0.25) return _DropZone.before;
+    if (local.dy > h * 0.75) return _DropZone.after;
+    return _DropZone.into;
   }
 
   Widget _tile(BuildContext context, {bool subpageTarget = false}) {

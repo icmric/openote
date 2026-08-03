@@ -72,12 +72,16 @@ class _BlockViewState extends State<BlockView> {
       _dragUndoPushed = true;
     }
     if (!selected) app.select(b.id);
-    app.moveSelectedBy(
-        d.delta.dx / widget.controller.scale, d.delta.dy / widget.controller.scale);
+    final scale = widget.controller.scale;
+    app.moveSelectedBy(d.delta.dx / scale, d.delta.dy / scale);
+    // Alignment guides (CANVAS-7). Computed after the move so the guide
+    // reflects where the block actually is, and the snap nudges it flush.
+    app.updateAlignGuides(scale);
   }
 
   void _dragEnd(DragEndDetails d) {
     _dragUndoPushed = false;
+    app.applyAlignSnap();
     app.settleSelected();
     app.setDragging(false);
   }
@@ -96,15 +100,77 @@ class _BlockViewState extends State<BlockView> {
     return t.trim().isEmpty ? '${b.type.name} block' : t;
   }
 
-  void _resize(DragUpdateDetails d) {
+  /// Height is only draggable for blocks that own one. A text block's height
+  /// comes from its text, so a height handle there would fight the content.
+  bool get _canResizeHeight =>
+      b.type == BlockType.ink ||
+      b.type == BlockType.image ||
+      b.type == BlockType.table ||
+      b.h != null;
+
+  void _resize(DragUpdateDetails d) => _resizeBy(d, width: true, height: false);
+
+  /// Resize by a drag delta (CANVAS-4).
+  ///
+  /// [width]/[height] pick which axes the handle drives, so the same code
+  /// serves the right edge, the bottom edge and the corner.
+  ///
+  /// **Ink scales with its block.** OneNote does this, and the alternative —
+  /// clipping — silently destroys strokes the moment a box is made smaller.
+  /// Stroke coordinates are page-absolute (Ink Spec §3), so they are scaled
+  /// about the block's own origin, which is what keeps the drawing where the
+  /// user put it relative to the box.
+  void _resizeBy(DragUpdateDetails d,
+      {required bool width, required bool height}) {
     if (!_resizeUndoPushed) {
       app.pushUndo();
       _resizeUndoPushed = true;
     }
-    // Manual resize locks the width (text boxes stop auto-growing).
-    if (b.type == BlockType.text) b.content['autoWidth'] = false;
-    b.w = (b.w + d.delta.dx / widget.controller.scale).clamp(80.0, 4000.0);
+    final scale = widget.controller.scale;
+    final oldW = b.w;
+    final oldH = b.h ?? app.renderSizes[b.id]?.height;
+
+    if (width) {
+      // Manual resize locks the width (text boxes stop auto-growing).
+      if (b.type == BlockType.text) b.content['autoWidth'] = false;
+      b.w = (b.w + d.delta.dx / scale).clamp(80.0, 4000.0);
+    }
+    if (height && oldH != null) {
+      b.h = (oldH + d.delta.dy / scale).clamp(40.0, 4000.0);
+    }
+
+    if (b.type == BlockType.ink) {
+      _scaleInk(
+        sx: width && oldW > 0 ? b.w / oldW : 1.0,
+        sy: height && oldH != null && oldH > 0 && b.h != null
+            ? b.h! / oldH
+            : 1.0,
+      );
+    }
     app.updateBlock(b);
+  }
+
+  /// Scale every stroke coordinate about the block's origin.
+  void _scaleInk({required double sx, required double sy}) {
+    if (sx == 1.0 && sy == 1.0) return;
+    final strokes = b.content['strokes'];
+    if (strokes is! List) return;
+    for (final raw in strokes) {
+      if (raw is! Map) continue;
+      final xs = raw['x'], ys = raw['y'];
+      if (xs is List) {
+        for (var i = 0; i < xs.length; i++) {
+          final v = xs[i];
+          if (v is num) xs[i] = b.x + (v - b.x) * sx;
+        }
+      }
+      if (ys is List) {
+        for (var i = 0; i < ys.length; i++) {
+          final v = ys[i];
+          if (v is num) ys[i] = b.y + (v - b.y) * sy;
+        }
+      }
+    }
   }
 
   @override
@@ -266,6 +332,67 @@ class _BlockViewState extends State<BlockView> {
                       ),
                     ),
                   ),
+                  // Bottom edge and corner (CANVAS-4). Only offered when the
+                  // block has a real height to drive: an auto-height text box
+                  // is sized by its content, and a handle that fought the text
+                  // would be a control that appears not to work.
+                  if (_canResizeHeight) ...[
+                    Positioned(
+                      left: 0,
+                      right: 12,
+                      bottom: -6,
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.resizeUpDown,
+                        child: GestureDetector(
+                          supportedDevices: const {
+                            PointerDeviceKind.mouse,
+                            PointerDeviceKind.touch,
+                            PointerDeviceKind.stylus,
+                            PointerDeviceKind.invertedStylus,
+                          },
+                          onPanUpdate: (d) =>
+                              _resizeBy(d, width: false, height: true),
+                          onPanEnd: (_) => _resizeUndoPushed = false,
+                          child: Center(
+                            child: Container(
+                              width: 28,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: primaryColor.withValues(alpha: .85),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      right: -6,
+                      bottom: -6,
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.resizeDownRight,
+                        child: GestureDetector(
+                          supportedDevices: const {
+                            PointerDeviceKind.mouse,
+                            PointerDeviceKind.touch,
+                            PointerDeviceKind.stylus,
+                            PointerDeviceKind.invertedStylus,
+                          },
+                          onPanUpdate: (d) =>
+                              _resizeBy(d, width: true, height: true),
+                          onPanEnd: (_) => _resizeUndoPushed = false,
+                          child: Container(
+                            width: 13,
+                            height: 13,
+                            decoration: BoxDecoration(
+                              color: primaryColor,
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
                 // Duplicate/delete affordances only when selected, not typing.
                 if (primary && !editing) ...[

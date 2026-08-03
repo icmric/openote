@@ -10,6 +10,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../ui/context_menus.dart';
 import 'block_view.dart';
+import 'align_guides.dart';
 import 'canvas_controller.dart';
 import 'ink_ops.dart';
 import 'media_drop.dart';
@@ -797,6 +798,20 @@ class _PageCanvasState extends State<PageCanvas> {
                       ),
                     ),
                   ),
+                // Alignment guides (CANVAS-7), above the grid so they read as
+                // the stronger signal while dragging.
+                if (app.alignGuides.isNotEmpty)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _AlignGuidePainter(
+                          controller: controller,
+                          guides: app.alignGuides,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ),
                 // Marquee + selected-ink outlines (screen-space overlay)
                 Positioned.fill(
                   child: IgnorePointer(
@@ -1156,4 +1171,43 @@ class _OverlayPainter extends CustomPainter {
       (lasso?.length ?? 0) != (old.lasso?.length ?? 0) ||
       old.controller.offset != controller.offset ||
       old.controller.scale != controller.scale;
+}
+
+/// Draws the alignment guides while a block is being dragged.
+///
+/// Screen-space, one physical pixel wide at any zoom: a guide scaled with the
+/// page becomes a fat bar zoomed in and invisible zoomed out, when what it
+/// needs to be is a hairline that says "these edges match".
+class _AlignGuidePainter extends CustomPainter {
+  _AlignGuidePainter({
+    required this.controller,
+    required this.guides,
+    required this.color,
+  }) : super(repaint: controller);
+
+  final CanvasController controller;
+  final List<AlignGuide> guides;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withValues(alpha: .85)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+    for (final g in guides) {
+      final a = controller.pageToScreen(
+          g.vertical ? Offset(g.position, g.from) : Offset(g.from, g.position));
+      final b = controller.pageToScreen(
+          g.vertical ? Offset(g.position, g.to) : Offset(g.to, g.position));
+      // Extend a little past both blocks so the line clearly spans them.
+      const overhang = 10.0;
+      final dir = g.vertical ? const Offset(0, 1) : const Offset(1, 0);
+      canvas.drawLine(a - dir * overhang, b + dir * overhang, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _AlignGuidePainter old) =>
+      old.guides != guides || old.color != color;
 }

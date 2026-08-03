@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart'; // ThemeMode + widgets (re-exports foundation)
 
+import '../canvas/align_guides.dart';
 import '../canvas/canvas_controller.dart';
 import '../core/engine.dart';
 import '../core/ids.dart';
@@ -796,6 +797,86 @@ class AppState extends ChangeNotifier {
     touchDrawing = v;
     _repo.setSetting('touchDrawing', v.name);
     notifyListeners();
+  }
+
+  /// True when the selection is ink and can therefore be recoloured (INK-7).
+  bool get hasInkSelection => blocks.any(
+      (b) => selectedIds.contains(b.id) && b.type == BlockType.ink);
+
+  /// Recolour every stroke in the selected ink blocks.
+  ///
+  /// Completes the lasso story: gathering, moving and deleting worked, but a
+  /// lassoed diagram couldn't be changed — and recolouring after the fact is
+  /// most of why you'd lasso a diagram at all. Resizing came free once blocks
+  /// gained ink-scaling handles.
+  void recolorSelectedInk(String hex) {
+    if (!hasInkSelection) return;
+    pushUndo();
+    for (final b in blocks) {
+      if (!selectedIds.contains(b.id) || b.type != BlockType.ink) continue;
+      final strokes = b.content['strokes'];
+      if (strokes is! List) continue;
+      for (final raw in strokes) {
+        if (raw is Map) raw['color'] = hex;
+      }
+      b.updatedAt = nowMs();
+    }
+    markDirty();
+    docRevision++;
+    notifyListeners();
+  }
+
+  /// Guides to draw while dragging (CANVAS-7), and the snap they imply.
+  List<AlignGuide> alignGuides = const [];
+  Offset _pendingSnap = Offset.zero;
+
+  /// Recompute guides for the current selection against its neighbours.
+  ///
+  /// [scale] converts the fixed screen-pixel tolerance into page units, so the
+  /// guide feels equally sticky at every zoom — a fixed page-unit threshold is
+  /// unreachable zoomed out and glue-like zoomed in.
+  void updateAlignGuides(double scale) {
+    if (selectedIds.isEmpty || snapToGrid) {
+      // Snap-to-grid already decides placement; two competing snaps fight.
+      if (alignGuides.isNotEmpty) {
+        alignGuides = const [];
+        _pendingSnap = Offset.zero;
+      }
+      return;
+    }
+    final moving = _unionRect(selectedIds);
+    if (moving == null) return;
+    final others = [
+      for (final b in blocks)
+        if (!selectedIds.contains(b.id)) _rectOf(b)
+    ];
+    final r = findAlignment(moving, others, threshold: 7.0 / scale);
+    alignGuides = r.guides;
+    _pendingSnap = r.offset;
+  }
+
+  /// Apply the snap the guides promised, on drag end.
+  ///
+  /// Deliberately at the END rather than live: nudging mid-drag makes the
+  /// block jitter against the pointer, which reads as the app fighting you.
+  void applyAlignSnap() {
+    if (_pendingSnap != Offset.zero) {
+      moveSelectedBy(_pendingSnap.dx, _pendingSnap.dy);
+      _pendingSnap = Offset.zero;
+    }
+    alignGuides = const [];
+  }
+
+  Rect _rectOf(Block b) => Rect.fromLTWH(
+      b.x, b.y, b.w, b.h ?? renderSizes[b.id]?.height ?? 60);
+
+  Rect? _unionRect(Set<String> ids) {
+    Rect? out;
+    for (final b in blocks.where((b) => ids.contains(b.id))) {
+      final r = _rectOf(b);
+      out = out == null ? r : out.expandToInclude(r);
+    }
+    return out;
   }
 
   // True while a block is being dragged — the canvas shows a faint grid then.
@@ -1619,6 +1700,68 @@ class AppState extends ChangeNotifier {
   }
 
   /// Reorder among siblings (ORG-2, menu-driven for MVP).
+  /// Drop [movingId] immediately before or after [targetId] among its siblings
+  /// (ORG-2).
+  ///
+  /// Rebuilds every sibling's position rather than inventing a key between two
+  /// neighbours: the position scheme is `'a' + padded-ms`, so there is no
+  /// guaranteed gap between adjacent keys, and manufacturing one would collide
+  /// eventually. Rewriting the run is O(siblings) and always correct.
+  ///
+  /// Subpages travel with their parent, for the same reason section sorting
+  /// does it: the navigator renders hierarchy from contiguous runs, so moving
+  /// a page without its children silently reparents them.
+  void reorderNode(String movingId, String targetId, {required bool after}) {
+    final moving = node(movingId), target = node(targetId);
+    if (moving == null || target == null || movingId == targetId) return;
+    if (moving.kind != target.kind) return;
+
+    final siblings = nodes
+        .where((s) => s.kind == moving.kind && s.parentId == target.parentId)
+        .toList();
+    if (siblings.isEmpty) return;
+
+    // Group each top-level entry with the deeper-level run that follows it.
+    final groups = <List<TreeNode>>[];
+    for (final s in siblings) {
+      if (s.level == 0 || groups.isEmpty) {
+        groups.add([s]);
+      } else {
+        groups.last.add(s);
+      }
+    }
+    final movingGroup =
+        groups.where((g) => g.any((n) => n.id == movingId)).firstOrNull;
+    if (movingGroup == null) return;
+    // Dropping a page onto its own subpage would try to nest it inside itself.
+    if (movingGroup.any((n) => n.id == targetId) &&
+        movingGroup.first.id != targetId) {
+      return;
+    }
+    groups.remove(movingGroup);
+    final targetGroup =
+        groups.where((g) => g.any((n) => n.id == targetId)).firstOrNull;
+    final at = targetGroup == null
+        ? groups.length
+        : groups.indexOf(targetGroup) + (after ? 1 : 0);
+    groups.insert(at.clamp(0, groups.length), movingGroup);
+
+    pushUndo();
+    // Re-parent in case the page came from another section.
+    if (moving.parentId != target.parentId) {
+      moving.parentId = target.parentId;
+    }
+    var seq = nowMs();
+    for (final g in groups) {
+      for (final n in g) {
+        n.position = 'a${(seq++).toString().padLeft(15, '0')}';
+        _putNode(notebookId!, n);
+      }
+    }
+    reloadNodes();
+    notifyListeners();
+  }
+
   void moveNode(String id, int delta) {
     final n = node(id);
     if (n == null) return;
