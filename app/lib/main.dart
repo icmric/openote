@@ -1,6 +1,7 @@
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
+import 'package:pdfrx/pdfrx.dart';
 
 import 'state/app_state.dart';
 import 'store/repository.dart';
@@ -9,6 +10,13 @@ import 'ui/app_shell.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // pdfrx wires its own statics (asset loader, and the cache directory pdfium
+  // needs for its font cache) inside this call. Its *widgets* do it implicitly
+  // in initState, but Openote drives the document API directly and never
+  // builds one — so without this, opening a PDF throws
+  // "Pdfrx.getCacheDirectory is not set" before pdfium is even touched.
+  // Must run on the root isolate, before any PDF work.
+  pdfrxFlutterInitialize();
   // Paint a window IMMEDIATELY; open the workspace behind it. Blocking runApp
   // on Repository.open + init left the window invisible until SQLite and the
   // restored page were fully loaded ("the app takes ages to appear").

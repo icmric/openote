@@ -36,6 +36,8 @@ class OnoteCore {
             lib.lookupFunction<_ImportOneNative, _ImportOne>('onote_core_import_one'),
         _importOnepkg = lib.lookupFunction<_ImportOneNative, _ImportOne>(
             'onote_core_import_onepkg'),
+        _repairFields = lib.lookupFunction<_HashNative, _HashNative>(
+            'onote_core_repair_field_codes'),
         _free = lib.lookupFunction<_FreeNative, _Free>('onote_core_string_free');
 
   final _VersionNative _version;
@@ -43,6 +45,7 @@ class OnoteCore {
   final _HashNative _hash;
   final _ImportOne _importOne;
   final _ImportOne _importOnepkg;
+  final _HashNative _repairFields;
   final _Free _free;
 
   static bool _tried = false;
@@ -147,6 +150,22 @@ class OnoteCore {
     }
   }
 
+  /// Turn Word/OneNote `HYPERLINK` field codes in already-imported text into
+  /// `[label](url)`, stripping every leftover field marker.
+  ///
+  /// Fixing the importer does nothing for notes imported before the fix — by
+  /// then the `﷟HYPERLINK "…"` junk is stored user data. Callers should check
+  /// [textNeedsFieldRepair] first: it is a substring test on text already in
+  /// memory, so clean pages pay nothing.
+  String repairFieldCodes(String text) {
+    final tp = text.toNativeUtf8();
+    try {
+      return _takeString(_repairFields(tp));
+    } finally {
+      malloc.free(tp);
+    }
+  }
+
   /// Import a OneNote `.one` section file. Returns the parser's JSON string
   /// (`{ok, error?, pages:[...]}`); see the Rust `onenote` module.
   String importOne(List<int> bytes) => _importBytes(_importOne, bytes);
@@ -176,3 +195,16 @@ class OnoteCore {
     }
   }
 }
+
+/// Does this text carry Word/OneNote field scaffolding?
+///
+/// A cheap substring test, so the repair path costs nothing on the 99.9% of
+/// blocks that were never near a `.one` file. U+FDDF is what OneNote writes;
+/// U+0013..U+0015 are Word's classic field begin/separator/end, which survive a
+/// paste from Word.
+bool textNeedsFieldRepair(String s) =>
+    s.contains('\uFDDF') ||
+    s.contains('\uFDDE') ||
+    s.contains('\u0013') ||
+    s.contains('\u0014') ||
+    s.contains('\u0015');

@@ -1672,6 +1672,7 @@ fn styled_runs(r: &Reader, o: &Obj, res: &Resolver) -> Vec<SRun> {
         }
         let mut runs = vec![SRun { text, style: st }];
         translate_symbol_pua(&mut runs);
+        linkify_hyperlink_runs(&mut runs);
         return runs;
     }
 
@@ -1694,6 +1695,7 @@ fn styled_runs(r: &Reader, o: &Obj, res: &Resolver) -> Vec<SRun> {
         runs.push(SRun { text, style: base });
     }
     translate_symbol_pua(&mut runs);
+    linkify_hyperlink_runs(&mut runs);
     runs
 }
 
@@ -1836,6 +1838,373 @@ fn is_math_control(c: char) -> bool {
     let u = c as u32;
     // Office linear-math structure noncharacters + invisible operators.
     (0xFDD0..=0xFDEF).contains(&u) || matches!(u, 0x2061..=0x2064) || u == 0x200B
+}
+
+// ── Word/OneNote field codes: hyperlinks ────────────────────────────────────
+//
+// A hyperlink is not a property in the OneNote file. It is a Word-style FIELD
+// embedded in the paragraph's own text buffer: a begin marker, the instruction
+// `HYPERLINK "https://…"`, and the display text. `PropSet::run_text` returns
+// that buffer verbatim and nothing downstream filtered it, so every imported
+// link arrived in the note as literal junk — `﷟HYPERLINK "https://…"` sitting
+// next to the words it was supposed to be attached to, with no way to follow
+// it.
+//
+// These markers live in the same Office noncharacter block as
+// [`is_math_control`]'s fraction delimiters (U+FDD0..U+FDEF). That overlap is
+// why the conversion lives here and runs only on PROSE runs: a math run's
+// U+FDD0 is structure that `office_math_to_latex` consumes, not a field.
+
+/// Field-begin markers. U+FDDF is what OneNote writes; U+0013 is Word's
+/// classic field-begin, accepted because content pasted from Word keeps it.
+const FIELD_BEGIN: [char; 3] = ['\u{FDDF}', '\u{FDDE}', '\u{0013}'];
+/// Separates a field's instruction from its cached result (the display text).
+const FIELD_SEP: char = '\u{0014}';
+/// Ends a field's result.
+const FIELD_END: char = '\u{0015}';
+
+fn is_field_begin(c: char) -> bool {
+    FIELD_BEGIN.contains(&c)
+}
+
+/// Any field scaffolding character. None of these may ever reach a note.
+fn is_field_control(c: char) -> bool {
+    is_field_begin(c) || c == FIELD_SEP || c == FIELD_END
+}
+
+/// A located `HYPERLINK` instruction: the marker through the closing quote and
+/// any switches. Deliberately does NOT cover the display text — OneNote writes
+/// that on either side of the instruction depending on version, so who owns it
+/// is the caller's decision (see [`linkify_hyperlink_runs`]).
+struct FieldLink {
+    /// Char index of the begin marker.
+    start: usize,
+    /// Char index one past the instruction (and its `\u{0014}`, if present).
+    end: usize,
+    url: String,
+}
+
+/// Find the next `HYPERLINK` field instruction at or after `from`.
+///
+/// A field whose instruction is anything else (`PAGEREF`, `TOC`, `DATE`) is
+/// skipped rather than consumed: its visible text is the user's writing and
+/// must survive, and the stray marker is removed by the caller's final sweep.
+fn find_field_link(chars: &[char], from: usize) -> Option<FieldLink> {
+    const KW: &str = "HYPERLINK";
+    let mut i = from;
+    while i < chars.len() {
+        if !is_field_begin(chars[i]) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        let mut j = i + 1;
+        while j < chars.len() && chars[j].is_whitespace() {
+            j += 1;
+        }
+        let matched = KW
+            .chars()
+            .enumerate()
+            .all(|(k, c)| chars.get(j + k).is_some_and(|d| d.eq_ignore_ascii_case(&c)));
+        if !matched {
+            i += 1;
+            continue;
+        }
+        j += KW.len();
+        while j < chars.len() && chars[j].is_whitespace() {
+            j += 1;
+        }
+        let mut url = String::new();
+        if chars.get(j) == Some(&'"') {
+            j += 1;
+            while j < chars.len() && chars[j] != '"' {
+                url.push(chars[j]);
+                j += 1;
+            }
+            j = (j + 1).min(chars.len()); // closing quote
+        } else {
+            while j < chars.len() && !chars[j].is_whitespace() && !is_field_control(chars[j]) {
+                url.push(chars[j]);
+                j += 1;
+            }
+        }
+        // Switches. `\l "anchor"` names a bookmark inside the target and is the
+        // one that changes where you land; `\o` (tooltip) and `\t` (target
+        // frame) carry nothing we can show, but must still be consumed or they
+        // would be mistaken for display text.
+        loop {
+            let mut k = j;
+            while k < chars.len() && chars[k] == ' ' {
+                k += 1;
+            }
+            if chars.get(k) != Some(&'\\') {
+                break;
+            }
+            let Some(sw) = chars.get(k + 1).map(|c| c.to_ascii_lowercase()) else {
+                break;
+            };
+            k += 2;
+            while k < chars.len() && chars[k] == ' ' {
+                k += 1;
+            }
+            let mut arg = String::new();
+            if chars.get(k) == Some(&'"') {
+                k += 1;
+                while k < chars.len() && chars[k] != '"' {
+                    arg.push(chars[k]);
+                    k += 1;
+                }
+                k = (k + 1).min(chars.len());
+            } else {
+                while k < chars.len() && !chars[k].is_whitespace() && !is_field_control(chars[k]) {
+                    arg.push(chars[k]);
+                    k += 1;
+                }
+            }
+            if sw == 'l' && !arg.is_empty() && !url.contains('#') {
+                url.push('#');
+                url.push_str(&arg);
+            }
+            j = k;
+        }
+        if chars.get(j) == Some(&FIELD_SEP) {
+            j += 1;
+        }
+        if url.trim().is_empty() {
+            i += 1;
+            continue;
+        }
+        return Some(FieldLink {
+            start,
+            end: j,
+            url: url.trim().to_string(),
+        });
+    }
+    None
+}
+
+/// Percent-encode only what would break the app's link regex.
+///
+/// `md_render`'s pattern reads the target as `[^)\s]+`, so a space or a
+/// parenthesis truncates it. Everything else is left exactly as OneNote stored
+/// it — a URL is not ours to normalise — and an existing `%XX` escape is
+/// stepped over so `%20` never becomes `%2520`.
+fn encode_url(u: &str) -> String {
+    let c: Vec<char> = u.chars().collect();
+    let mut out = String::with_capacity(u.len());
+    let mut i = 0;
+    while i < c.len() {
+        if c[i] == '%'
+            && c.get(i + 1).is_some_and(|d| d.is_ascii_hexdigit())
+            && c.get(i + 2).is_some_and(|d| d.is_ascii_hexdigit())
+        {
+            out.push('%');
+            i += 1;
+            continue;
+        }
+        match c[i] {
+            ' ' => out.push_str("%20"),
+            '(' => out.push_str("%28"),
+            ')' => out.push_str("%29"),
+            ch if is_field_control(ch) || ch.is_control() => {}
+            ch => out.push(ch),
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Render one link as the app's Markdown, or degrade to plain text.
+///
+/// Emitted NAKED, with no emphasis wrapper, and that is load-bearing: the app's
+/// inline parser is non-recursive, so a link nested inside the blue-underlined
+/// styling OneNote gives it — `{{#0563C1 ++[x](y)++}}` — would print as
+/// literal source. An imported link therefore loses OneNote's link colouring
+/// and picks up the app's own, which is what every Markdown editor does anyway.
+///
+/// `onenote:` and `file:` targets degrade to their label: the app opens three
+/// schemes on purpose (a deliberate security decision), so emitting a link it
+/// would print literally only swaps one kind of junk for another.
+fn markdown_link(url: &str, label: &str) -> String {
+    let url = encode_url(url);
+    let lower = url.to_ascii_lowercase();
+    let openable = lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("mailto:");
+    let label: String = label
+        .chars()
+        .filter(|c| !matches!(c, '[' | ']' | '\n' | '\r') && !is_field_control(*c))
+        .collect();
+    let label = label.trim();
+    if !openable {
+        return label.to_string();
+    }
+    if label.is_empty() {
+        // The URL as its own label: still clickable, and the address is
+        // information the student can act on.
+        return format!("[{url}]({url})");
+    }
+    format!("[{label}]({url})")
+}
+
+/// Convert `HYPERLINK` fields in a bare string, then strip every marker.
+///
+/// For text with no run structure — titles, bullet strings. Where the styled
+/// runs are available, [`linkify_hyperlink_runs`] does better.
+pub(crate) fn linkify_field_codes(s: &str) -> String {
+    if !s.chars().any(is_field_control) {
+        return s.to_string();
+    }
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    let mut at = 0usize;
+    while let Some(f) = find_field_link(&chars, at) {
+        out.extend(chars[at..f.start].iter());
+        // Display text after the instruction is Word's documented layout.
+        let mut k = f.end;
+        let mut label = String::new();
+        while k < chars.len() && chars[k] != FIELD_END && chars[k] != '\n' && !is_field_begin(chars[k])
+        {
+            label.push(chars[k]);
+            k += 1;
+        }
+        if chars.get(k) == Some(&FIELD_END) {
+            k += 1;
+        }
+        out.push_str(&markdown_link(&f.url, label.trim()));
+        at = k;
+    }
+    out.extend(chars[at..].iter());
+    out.chars().filter(|c| !is_field_control(*c)).collect()
+}
+
+/// Convert hyperlink fields across a paragraph's styled runs.
+///
+/// Runs rather than a joined string, because the display text is identified by
+/// its FORMATTING: OneNote colours a link blue and underlines it, and gives the
+/// invisible instruction characters that same format. The run boundaries
+/// therefore say how far the link's text extends — which is what lets this work
+/// whether OneNote wrote the display text before or after the instruction. We
+/// have no committed `.one` fixture to settle which it does (a real notebook is
+/// the only place that answer lives), so both are handled rather than guessed
+/// at, and the failure mode of either is a slightly-off label, never lost text.
+///
+/// Runs in `styled_runs`, AFTER the run split — the 0x1E12 boundaries are char
+/// offsets into the raw buffer, so rewriting the text before the split would
+/// misalign every style boundary in the paragraph.
+fn linkify_hyperlink_runs(runs: &mut Vec<SRun>) {
+    if !runs.iter().any(|r| r.text.chars().any(is_field_control)) {
+        return;
+    }
+    let mut chars: Vec<char> = Vec::new();
+    let mut owner: Vec<usize> = Vec::new();
+    for (i, r) in runs.iter().enumerate() {
+        for c in r.text.chars() {
+            chars.push(c);
+            owner.push(i);
+        }
+    }
+    let multi = runs.len() > 1;
+    // Non-overlapping, ascending: (span to replace, replacement markdown).
+    let mut edits: Vec<(usize, usize, String)> = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(f) = find_field_link(&chars, cursor) {
+        cursor = f.end;
+        let sty = runs[owner[f.start]].style.clone();
+        // Forward: text sharing the instruction's format, to the field end.
+        let mut hi = f.end;
+        while hi < chars.len()
+            && chars[hi] != FIELD_END
+            && chars[hi] != '\n'
+            && !is_field_begin(chars[hi])
+            && (!multi || same_visible(&runs[owner[hi]].style, &sty))
+        {
+            hi += 1;
+        }
+        let label: String = chars[f.end..hi].iter().collect();
+        let mut lo = f.start;
+        let mut label = label.trim().to_string();
+        if chars.get(hi) == Some(&FIELD_END) {
+            hi += 1;
+        }
+        if label.is_empty() && multi {
+            // Backward: the label sits BEFORE the instruction. Accept the
+            // preceding text while it either shares the instruction's format or
+            // looks like link text (underlined, or coloured — OneNote's blue).
+            // Bounded by the line and by the previous edit, so a paragraph can
+            // never be swallowed whole.
+            let floor = edits.last().map(|e| e.1).unwrap_or(0);
+            let mut k = f.start;
+            while k > floor && chars[k - 1] != '\n' && !is_field_control(chars[k - 1]) {
+                let s = &runs[owner[k - 1]].style;
+                if !(same_visible(s, &sty) || s.underline || s.color != 0) {
+                    break;
+                }
+                k -= 1;
+            }
+            let back: String = chars[k..f.start].iter().collect();
+            if !back.trim().is_empty() {
+                // Keep any leading space outside the link, so "see foo" doesn't
+                // become "see[ foo](…)".
+                let kept = back.len() - back.trim_start().len();
+                lo = k + back[..kept].chars().count();
+                label = back.trim().to_string();
+            }
+        }
+        edits.push((lo, hi, markdown_link(&f.url, &label)));
+    }
+    if edits.is_empty() {
+        // Only unrecognised fields: strip the scaffolding in place.
+        for r in runs.iter_mut() {
+            if r.text.chars().any(is_field_control) {
+                r.text = r.text.chars().filter(|c| !is_field_control(*c)).collect();
+            }
+        }
+        return;
+    }
+
+    // Rebuild. Text outside the edits keeps the style of the run it came from.
+    let mut out: Vec<SRun> = Vec::new();
+    let push_span = |out: &mut Vec<SRun>, a: usize, b: usize| {
+        let mut i = a;
+        while i < b {
+            let who = owner[i];
+            let mut j = i;
+            while j < b && owner[j] == who {
+                j += 1;
+            }
+            let text: String = chars[i..j].iter().filter(|c| !is_field_control(**c)).collect();
+            if !text.is_empty() {
+                out.push(SRun {
+                    text,
+                    style: runs[who].style.clone(),
+                });
+            }
+            i = j;
+        }
+    };
+    let mut at = 0usize;
+    for (lo, hi, md) in &edits {
+        push_span(&mut out, at, *lo);
+        if !md.is_empty() {
+            // Every emphasis flag cleared — see [`markdown_link`].
+            let mut st = runs[owner[*lo]].style.clone();
+            st.bold = false;
+            st.italic = false;
+            st.underline = false;
+            st.strike = false;
+            st.highlight = false;
+            st.color = 0;
+            st.is_math = false;
+            out.push(SRun {
+                text: md.clone(),
+                style: st,
+            });
+        }
+        at = *hi;
+    }
+    push_span(&mut out, at, chars.len());
+    *runs = out;
 }
 
 /// Best-effort conversion of OneNote's Office linear-math Unicode (as stored in
@@ -2438,7 +2807,11 @@ impl PropSet {
 }
 
 fn clean_str(s: String) -> String {
-    s.trim_matches(|c: char| c == '\0').trim_end().to_string()
+    let s = s.trim_matches(|c: char| c == '\0').trim_end();
+    // Defence in depth: titles and bullet strings have no run structure, so a
+    // field marker there would otherwise reach the UI. `run_text` itself is
+    // deliberately NOT filtered — the structure dumps rely on the raw buffer.
+    linkify_field_codes(s)
 }
 
 /// Full property-set parse with stream resolution for reference properties.
@@ -3565,6 +3938,123 @@ mod tests {
         }];
         translate_symbol_pua(&mut partial);
         assert_eq!(partial[0].text, "\u{F0CE}\u{F0E6}");
+    }
+
+    /// A hyperlink is a Word FIELD inside the paragraph's own text, not a
+    /// property — so an unfiltered import put `﷟HYPERLINK "https://…"` in the
+    /// note next to the words it was attached to, and there was nothing to
+    /// click.
+    #[test]
+    fn hyperlink_field_becomes_a_markdown_link() {
+        assert_eq!(
+            linkify_field_codes(
+                "See \u{FDDF}HYPERLINK \"https://www.youtube.com/watch?v=DsT_YiMiUQo\"this video"
+            ),
+            "See [this video](https://www.youtube.com/watch?v=DsT_YiMiUQo)"
+        );
+        // Word's full form, with the separator and end markers.
+        assert_eq!(
+            linkify_field_codes(
+                "\u{13}HYPERLINK \"https://a.test/x\"\u{14}label\u{15} tail"
+            ),
+            "[label](https://a.test/x) tail"
+        );
+        // A `\l` switch names a fragment inside the target.
+        assert_eq!(
+            linkify_field_codes("\u{FDDF}HYPERLINK \"https://a.test/p\" \\l \"sec2\"Jump"),
+            "[Jump](https://a.test/p#sec2)"
+        );
+    }
+
+    /// No display text at all still has to produce something clickable, and the
+    /// address is information the student can act on.
+    #[test]
+    fn hyperlink_without_display_text_links_the_url() {
+        assert_eq!(
+            linkify_field_codes("\u{FDDF}HYPERLINK \"https://a.test/x\""),
+            "[https://a.test/x](https://a.test/x)"
+        );
+    }
+
+    /// The app opens http/https/mailto only (a deliberate security decision),
+    /// so anything else must degrade to plain text — emitting
+    /// `[x](onenote:…)` would print as literal source, i.e. new junk.
+    #[test]
+    fn unopenable_schemes_degrade_to_their_label() {
+        assert_eq!(
+            linkify_field_codes("\u{FDDF}HYPERLINK \"onenote:///C:\\notes\\a.one\"My page"),
+            "My page"
+        );
+        assert_eq!(
+            linkify_field_codes("a \u{FDDF}HYPERLINK \"file:///c:/x.pdf\"the PDF b"),
+            "a the PDF b"
+        );
+    }
+
+    /// The app's link regex reads the target as `[^)\s]+`, so a space or a
+    /// paren truncates it — but an existing escape must not be double-encoded.
+    #[test]
+    fn url_is_encoded_only_where_the_renderer_would_break() {
+        assert_eq!(
+            linkify_field_codes("\u{FDDF}HYPERLINK \"https://a.test/my file (1).pdf\"doc"),
+            "[doc](https://a.test/my%20file%20%281%29.pdf)"
+        );
+        assert_eq!(encode_url("https://a.test/a%20b"), "https://a.test/a%20b");
+    }
+
+    /// An instruction we don't understand must never cost the user text — but
+    /// the scaffolding still has to go.
+    #[test]
+    fn unknown_field_keeps_its_text_and_loses_its_markers() {
+        let out = linkify_field_codes("see \u{13}PAGEREF _Toc1 \\h \u{14}page 4\u{15}.");
+        assert_eq!(out, "see PAGEREF _Toc1 \\h page 4.");
+        assert!(
+            !out.chars().any(|c| is_field_control(c) || is_math_control(c)),
+            "no field scaffolding may reach the note: {out:?}"
+        );
+    }
+
+    /// OneNote also writes the display text BEFORE the instruction. The run
+    /// styling is what says how far the link's text extends, so the label is
+    /// recovered from whichever side it is on.
+    #[test]
+    fn hyperlink_label_before_the_instruction_is_recovered() {
+        let link = Style {
+            underline: true,
+            color: 0x0563C1,
+            ..Default::default()
+        };
+        let mut runs = vec![
+            SRun { text: "Watch ".into(), style: Style::default() },
+            SRun { text: "this video".into(), style: link.clone() },
+            SRun {
+                text: "\u{FDDF}HYPERLINK \"https://a.test/v\"".into(),
+                style: link,
+            },
+            SRun { text: " tonight".into(), style: Style::default() },
+        ];
+        linkify_hyperlink_runs(&mut runs);
+        assert_eq!(render_runs(&runs), "Watch [this video](https://a.test/v) tonight");
+    }
+
+    /// The emitted link must be NAKED. The app's inline parser is
+    /// non-recursive, so `{{#0563C1 ++[x](y)++}}` renders as literal source —
+    /// the single easiest way to ship a fix that fixes nothing.
+    #[test]
+    fn imported_link_carries_no_emphasis_wrapper() {
+        let mut runs = vec![SRun {
+            text: "\u{FDDF}HYPERLINK \"https://a.test/v\"watch".into(),
+            style: Style {
+                underline: true,
+                color: 0x0563C1,
+                bold: true,
+                ..Default::default()
+            },
+        }];
+        linkify_hyperlink_runs(&mut runs);
+        let md = render_runs(&runs);
+        assert_eq!(md, "[watch](https://a.test/v)");
+        assert!(!md.contains("++") && !md.contains("{{#") && !md.contains("**"));
     }
 
     /// Student notebooks are full of phone photos, which are JPEG — a PNG-only

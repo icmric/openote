@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../export/markdown_export.dart';
 import '../export/open_export.dart';
@@ -258,6 +259,7 @@ class _CommandBarState extends State<CommandBar> {
       // first-class place on Home rather than a submenu. The button shows the
       // caret line's active tags, which is why it reads state on every build.
       _TagButton(app: app),
+      _MakeCardButton(app: app),
       const _Div(),
       // Text colour — split button (§7a.2): main area applies the current
       // colour; the arrow opens the full picker (palette/wheel/RGBA).
@@ -877,6 +879,94 @@ class _TagButton extends StatelessWidget {
             onPressed: () => app.toggleTagOnSelection(k),
             child: Text(k.label),
           ),
+      ],
+    );
+  }
+}
+
+/// One button that turns the caret's line into a flashcard.
+///
+/// Tags remain the underlying mechanism — a card is a *view* of a tagged line,
+/// which is what makes editing the note edit the card. But "tag it Question or
+/// Definition, and remember which one, and get the shape right" is a rule the
+/// student has to learn before anything happens, and getting it wrong produced
+/// nothing with no explanation. This reads the line, picks the tag, and says
+/// what it did.
+class _MakeCardButton extends StatelessWidget {
+  const _MakeCardButton({required this.app});
+  final AppState app;
+
+  void _say(BuildContext context, String? msg) {
+    if (msg == null || !context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg), duration: const Duration(seconds: 3)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = app.canFormatText;
+    return MenuAnchor(
+      builder: (context, controller, _) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Tooltip(
+            message: 'Make this line a flashcard',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: enabled
+                  ? () => _say(context, app.makeCardAtCaret())
+                  : null,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                child: Icon(Icons.style_outlined,
+                    size: 17,
+                    color: enabled ? null : OnoteColors.graphite400),
+              ),
+            ),
+          ),
+          InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: enabled
+                ? () => controller.isOpen ? controller.close() : controller.open()
+                : null,
+            child: Icon(Icons.arrow_drop_down,
+                size: 16, color: enabled ? null : OnoteColors.graphite400),
+          ),
+        ],
+      ),
+      menuChildren: [
+        MenuItemButton(
+          leadingIcon:
+              Icon(TagKind.question.icon, size: 16, color: TagKind.question.color),
+          shortcut: const SingleActivator(LogicalKeyboardKey.digit3, control: true),
+          onPressed: () => app.toggleTagOnSelection(TagKind.question),
+          child: const Text('Question card'),
+        ),
+        MenuItemButton(
+          leadingIcon: Icon(TagKind.definition.icon,
+              size: 16, color: TagKind.definition.color),
+          shortcut: const SingleActivator(LogicalKeyboardKey.digit5, control: true),
+          onPressed: () => app.toggleTagOnSelection(TagKind.definition),
+          child: const Text('Definition card'),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.format_underlined, size: 16),
+          onPressed: () {
+            if (!app.blankOutSelection()) {
+              _say(context, 'Select the words to blank out first.');
+            }
+          },
+          child: const Text('Blank out selection'),
+        ),
+        const Divider(height: 8),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.school_outlined, size: 16),
+          onPressed: () {
+            if (!app.showStudyPanel) app.toggleStudyPanel();
+          },
+          child: const Text('Open study panel'),
+        ),
       ],
     );
   }

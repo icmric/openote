@@ -45,7 +45,14 @@ final _reInline = RegExp(
     r'|(\[([^\]\[]+)\]\((https?://[^)\s]+|mailto:[^)\s]+)\))'
     // Group 22-23: `++underline++`. Markdown has no underline and `__x__` means
     // bold, so the dialect borrows the `==highlight==` shape (Data Model §5.2).
-    r'|(\+\+(.+?)\+\+)');
+    r'|(\+\+(.+?)\+\+)'
+    // Groups 24-25: a BARE url, autolinked. A URL typed or pasted into a note
+    // is a link in every other app; requiring `[label](url)` syntax to make it
+    // clickable is a Markdown detail nobody asked to learn. Last in the
+    // alternation so an explicit `[label](url)` (group 19) always wins at the
+    // same position, and the lookbehind keeps it from firing mid-word or on the
+    // `(url)` half of a link the scanner has already stepped over.
+    r'|((?:^|(?<=[\s(<]))(https?://[^\s)\]<]+))');
 
 /// Indent per nesting level, as a multiple of the text's font size.
 ///
@@ -571,8 +578,25 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
         child: _ExternalLink(
             label: label,
             url: url,
+            base: base,
             color: dark ? OnoteColors.ink300 : OnoteColors.ink600),
       ));
+    } else if (m.group(24) != null) {
+      // A bare URL. Trailing sentence punctuation belongs to the writer, not
+      // to the address — "see https://a.test/x." must not link the full stop.
+      final raw = m.group(25)!;
+      final url = raw.replaceFirst(RegExp(r'[.,;:!?]+$'), '');
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: _ExternalLink(
+            label: _shortUrl(url),
+            url: url,
+            base: base,
+            color: dark ? OnoteColors.ink300 : OnoteColors.ink600),
+      ));
+      if (url.length < raw.length) {
+        spans.add(TextSpan(text: raw.substring(url.length)));
+      }
     } else if (m.group(22) != null) {
       spans.add(TextSpan(
           text: m.group(23),
@@ -617,12 +641,30 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
 /// An external `[label](https://…)` link. Hands the URL to the OS default
 /// browser; the scheme allow-list lives in [PlatformOpen] because note content
 /// is untrusted.
+/// A bare URL, shortened for reading. The scheme and `www.` carry no meaning to
+/// the reader, and a lecture link can be 200 characters — the full address
+/// stays in the tooltip and is what actually opens.
+String _shortUrl(String url) {
+  var s = url.replaceFirst(RegExp(r'^https?://(www\.)?'), '');
+  if (s.endsWith('/')) s = s.substring(0, s.length - 1);
+  if (s.length <= 52) return s;
+  return '${s.substring(0, 34)}…${s.substring(s.length - 14)}';
+}
+
 class _ExternalLink extends StatelessWidget {
   const _ExternalLink(
-      {required this.label, required this.url, required this.color});
+      {required this.label,
+      required this.url,
+      required this.color,
+      required this.base});
   final String label;
   final String url;
   final Color color;
+
+  /// The surrounding text's style. A WidgetSpan's child does NOT inherit the
+  /// enclosing TextSpan style, so without this a link renders at the app's
+  /// default size in the middle of a heading or a 20pt note.
+  final TextStyle base;
 
   @override
   Widget build(BuildContext context) {
@@ -642,13 +684,14 @@ class _ExternalLink extends StatelessWidget {
           child: Text.rich(TextSpan(children: [
             TextSpan(
                 text: label,
-                style: TextStyle(
+                style: base.copyWith(
                     color: color,
                     decoration: TextDecoration.underline,
                     decorationColor: color)),
             TextSpan(
                 text: ' ↗',
-                style: TextStyle(color: color, fontSize: 11)),
+                style: base.copyWith(
+                    color: color, fontSize: (base.fontSize ?? 14) * 0.78)),
           ])),
         ),
       ),

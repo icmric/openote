@@ -129,13 +129,24 @@ void main() {
     const day = 86400000;
     const now = 1000000000000;
 
-    test('a new card graded Good waits a day, then six', () {
+    test('a new card graded Good comes back in minutes, then days', () {
+      // Textbook SM-2 jumps a brand-new card straight to a day. Learning steps
+      // are what let you actually learn it in the sitting you met it in.
       final s = CardState();
       applyGrade(s, Grade.good, now);
+      expect(s.intervalDays, 0, reason: 'still in learning');
+      expect(s.dueAt, lessThan(now + day));
+      applyGrade(s, Grade.good, now + 600000);
       expect(s.intervalDays, 1);
-      expect(s.dueAt, now + day);
       applyGrade(s, Grade.good, now + day);
       expect(s.intervalDays, 6);
+    });
+
+    test('Easy skips the learning step', () {
+      final s = CardState();
+      applyGrade(s, Grade.easy, now);
+      expect(s.intervalDays, greaterThanOrEqualTo(1));
+      expect(s.dueAt, greaterThanOrEqualTo(now + day));
     });
 
     test('intervals grow by ease after the second review', () {
@@ -144,13 +155,35 @@ void main() {
       expect(s.intervalDays, 15); // 6 * 2.5
     });
 
-    test('Again resets the interval and counts a lapse', () {
+    test('Again brings the card back inside the same sitting', () {
+      // The bug this pins: a lapse used to schedule the card for TOMORROW, so
+      // "let me try that one again" was impossible and the card looked like it
+      // had vanished.
       final s = CardState(repetitions: 5, intervalDays: 40, ease: 2.5);
       applyGrade(s, Grade.again, now);
       expect(s.repetitions, 0);
-      expect(s.intervalDays, 1);
       expect(s.lapses, 1);
-      expect(s.dueAt, now + day);
+      expect(s.dueAt, lessThan(now + 3600000), reason: 'minutes, not a day');
+      expect(s.isDue(now + 601000), isTrue);
+    });
+
+    test('the button preview matches what the button then does', () {
+      // A preview that drifts from the algorithm is worse than none: the
+      // student plans around it.
+      final s = CardState(repetitions: 2, intervalDays: 6, ease: 2.5);
+      for (final g in Grade.values) {
+        final shown = previewInterval(s, g, now);
+        final actual = formatDelay(applyGrade(s.copy(), g, now).dueAt - now);
+        expect(shown, actual, reason: '${g.label} preview');
+      }
+      expect(s.intervalDays, 6, reason: 'preview must not mutate the card');
+    });
+
+    test('delays read the way a student would say them', () {
+      expect(formatDelay(600000), '10m');
+      expect(formatDelay(day * 3), '3d');
+      expect(formatDelay(day * 60), '2mo');
+      expect(formatDelay(-5), 'now');
     });
 
     test('ease has a floor, so a hard card never becomes daily forever', () {

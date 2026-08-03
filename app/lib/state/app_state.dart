@@ -698,6 +698,65 @@ class AppState extends ChangeNotifier {
     return '\n'.allMatches(text.substring(0, at)).length;
   }
 
+  /// Turn the caret's line into a flashcard, picking the tag that fits it.
+  ///
+  /// Tagging is the on-ramp — you mark a line while taking notes and it becomes
+  /// a card — but "tag it Question or Definition and remember which one" is a
+  /// rule the student has to learn before anything happens, and getting it
+  /// wrong produces nothing at all with no explanation. So: one action, and it
+  /// reads the line.
+  ///
+  /// Returns what a caller should tell the user, or null if there was no line
+  /// to work with.
+  String? makeCardAtCaret() {
+    final b = blocks
+        .where((x) => x.id == (editingBlockId ?? selectedBlockId))
+        .firstOrNull;
+    if (b == null || b.type != BlockType.text) return null;
+    final lines = (b.content['text'] as String? ?? '').split('\n');
+    final idx = _caretLine(b);
+    if (idx >= lines.length) return null;
+    final line = lines[idx].trim();
+    if (line.isEmpty) return 'Put the caret on a line with something on it.';
+
+    final kind = line.endsWith('?') ? TagKind.question : TagKind.definition;
+    if (!tagsAtCaret().contains(kind)) toggleTagOnSelection(kind);
+
+    // Say whether it actually produced a card. Silence is what made tagging
+    // feel like it did nothing.
+    final made = cardsFromBlock(b, pageId ?? '', '')
+        .where((c) => c.line == idx)
+        .isNotEmpty;
+    if (made) return '${kind.label} card created.';
+    return kind == TagKind.question
+        ? 'Tagged as a Question — now indent the answer on the line below.'
+        : 'Tagged as a Definition — write it as “term — meaning” to make a card.';
+  }
+
+  /// Blank out the selected words on a tagged line, making it a fill-in-the-
+  /// blank. Returns false when there is no selection to blank.
+  bool blankOutSelection() {
+    final ed = activeEditor;
+    if (ed == null) return false;
+    final sel = ed.controller.selection;
+    if (!sel.isValid || sel.isCollapsed) return false;
+    final text = ed.controller.text;
+    final a = sel.start, z = sel.end;
+    final word = text.substring(a, z);
+    if (word.trim().isEmpty) return false;
+    pushUndo();
+    ed.controller.value = ed.controller.value.copyWith(
+      text: text.replaceRange(a, z, '==$word=='),
+      selection: TextSelection.collapsed(offset: z + 4),
+      composing: TextRange.empty,
+    );
+    // Blanking only means something on a line that is already a card.
+    if (tagsAtCaret().isEmpty) toggleTagOnSelection(TagKind.question);
+    markDirty();
+    notifyListeners();
+    return true;
+  }
+
   /// Every tagged line in the notebook, for the find-tags rollup.
   ///
   /// Scans page mirrors rather than a maintained index: same reasoning as
@@ -763,60 +822,179 @@ class AppState extends ChangeNotifier {
   /// app crawled. Any widget that shows a count must go through here.
   ({String key, List<Flashcard> cards})? _deckCache;
 
-  List<Flashcard> deck({String? sectionId}) {
-    if (notebookId == null) return const [];
-    // docRevision covers edits to the open page; nodesRevision covers pages
-    // being added, renamed or removed. Both are cheap counters.
-    final key = '$notebookId#$sectionId#$docRevision#$nodesRevision#$pageId';
-    final cached = _deckCache;
-    if (cached != null && cached.key == key) return cached.cards;
+  /// The OPEN page's cards, held separately from [_deckCache].
+  ///
+  /// Two caches rather than one, because the two halves go stale for different
+  /// reasons and cost wildly different amounts to rebuild. Closed pages come
+  /// from SQLite and only change structurally; the open page changes on every
+  /// keystroke but is already in memory. Merging them into one key meant either
+  /// re-reading the whole notebook per character (the regression) or a tagged
+  /// line producing no card until you navigated away (the bug).
+  ({String key, List<Flashcard> cards})? _liveDeckCache;
 
-    final out = <Flashcard>[];
-    for (final n in nodes.where((n) => n.kind == NodeKind.page)) {
-      if (sectionId != null && n.parentId != sectionId) continue;
-      // The open page's in-memory blocks are fresher than the container.
-      final blocksOf = n.id == pageId ? blocks : readPage(n.id).blocks;
-      for (final b in blocksOf) {
-        out.addAll(cardsFromBlock(b, n.id, n.title));
+  /// Bumped whenever the open page's content changes, so the live half of the
+  /// deck rebuilds — once per edit, not once per widget rebuild.
+  int contentRevision = 0;
+
+  /// Bumped whenever a card's schedule changes, so study surfaces refresh.
+  int studyRevision = 0;
+
+  /// Every card in a scope, in page order.
+  ///
+  /// Scope narrows outward-in: [pageId] beats [sectionId] beats the whole
+  /// notebook. Pages ARE the deck structure — a lecture page is a deck without
+  /// anyone having to build one.
+  List<Flashcard> deck({String? sectionId, String? pageId}) {
+    if (notebookId == null) return const [];
+    bool inScope(TreeNode n) =>
+        n.kind == NodeKind.page &&
+        (pageId == null || n.id == pageId) &&
+        (sectionId == null || n.parentId == sectionId);
+
+    // Closed pages. nodesRevision covers pages added/renamed/removed;
+    // docRevision covers a page's stored content being replaced wholesale.
+    final key = '$notebookId#$sectionId#$pageId#$docRevision#$nodesRevision#${this.pageId}';
+    var stored = _deckCache?.key == key ? _deckCache!.cards : null;
+    if (stored == null) {
+      final out = <Flashcard>[];
+      for (final n in nodes.where(inScope)) {
+        if (n.id == this.pageId) continue; // the live half, below
+        for (final b in readPage(n.id).blocks) {
+          out.addAll(cardsFromBlock(b, n.id, n.title));
+        }
       }
+      _deckCache = (key: key, cards: stored = out);
     }
-    _deckCache = (key: key, cards: out);
-    return out;
+
+    final open = nodes.where((n) => n.id == this.pageId && inScope(n)).firstOrNull;
+    if (open == null) return stored;
+    // contentRevision covers edits; docRevision covers the block list being
+    // replaced under us — an undo, a version restore, a sync pull.
+    final liveKey = '${open.id}#${open.title}#$contentRevision#$docRevision';
+    var live = _liveDeckCache?.key == liveKey ? _liveDeckCache!.cards : null;
+    if (live == null) {
+      final out = <Flashcard>[];
+      for (final b in blocks) {
+        out.addAll(cardsFromBlock(b, open.id, open.title));
+      }
+      _liveDeckCache = (key: liveKey, cards: live = out);
+    }
+    if (live.isEmpty) return stored;
+    if (stored.isEmpty) return live;
+    return [...stored, ...live];
   }
 
-  CardState cardState(String cardId) =>
-      _cardStates[cardId] ?? (_cardStates[cardId] = CardState());
+  /// Scheduling state for a card. **Read-only**: a card that has never been
+  /// graded must not be written just because something asked about it, or the
+  /// settings blob grows with every card the student merely looked at.
+  CardState cardState(String cardId) => _cardStates[cardId] ?? CardState();
 
-  /// Cards due now, hardest-overdue first, capped so a session ends.
+  /// Cards for one sitting.
   ///
-  /// A deck of 400 with no cap is a wall a student bounces off; 40 is a
-  /// sitting, and tomorrow's session picks up the rest.
-  List<Flashcard> dueCards({String? sectionId, int max = 40}) {
+  /// [StudyMode.due] is the real schedule: what spaced repetition says you
+  /// should see, most-overdue first, capped so a session ends — a deck of 400
+  /// with no cap is a wall a student bounces off.
+  ///
+  /// [StudyMode.cram] ignores the schedule entirely and shuffles. It exists
+  /// because "I want to go over this again" is the single most common thing a
+  /// student wants the night before an exam, and a review app that answers it
+  /// with "nothing due" is useless to them.
+  List<Flashcard> sessionCards({
+    String? sectionId,
+    String? pageId,
+    StudyMode mode = StudyMode.due,
+    int max = 40,
+  }) {
+    final all = deck(sectionId: sectionId, pageId: pageId);
+    if (mode == StudyMode.cram) {
+      final shuffled = [...all]..shuffle();
+      return shuffled.length <= max ? shuffled : shuffled.sublist(0, max);
+    }
     final now = nowMs();
     final due = [
-      for (final c in deck(sectionId: sectionId))
+      for (final c in all)
         if (cardState(c.id).isDue(now)) c
     ]..sort((a, b) => cardState(a.id).dueAt.compareTo(cardState(b.id).dueAt));
     return due.length <= max ? due : due.sublist(0, max);
   }
 
-  void gradeCard(String cardId, Grade g) {
-    applyGrade(cardState(cardId), g, nowMs());
+  /// Kept for callers that only want the schedule.
+  List<Flashcard> dueCards({String? sectionId, int max = 40}) =>
+      sessionCards(sectionId: sectionId, max: max);
+
+  /// Record a grade.
+  ///
+  /// [schedule] false is cram mode: going over a card early must not push its
+  /// real due date out, or a night of cramming silently wipes weeks of
+  /// spacing. Getting one WRONG still counts — that is information about the
+  /// card regardless of why you were looking at it.
+  void gradeCard(String cardId, Grade g, {bool schedule = true}) {
+    if (!schedule && g != Grade.again) return;
+    final s = _cardStates.putIfAbsent(cardId, CardState.new);
+    applyGrade(s, g, nowMs());
+    _persistCardStates();
+    studyRevision++;
+    notifyListeners();
+  }
+
+  /// Forget a card's schedule — it becomes new again.
+  void resetCard(String cardId) {
+    if (_cardStates.remove(cardId) == null) return;
+    _persistCardStates();
+    studyRevision++;
+    notifyListeners();
+  }
+
+  /// Forget every schedule in a scope. Returns how many were cleared.
+  int resetDeck({String? sectionId, String? pageId}) {
+    var n = 0;
+    for (final c in deck(sectionId: sectionId, pageId: pageId)) {
+      if (_cardStates.remove(c.id) != null) n++;
+    }
+    if (n == 0) return 0;
+    _persistCardStates();
+    studyRevision++;
+    notifyListeners();
+    return n;
+  }
+
+  void _persistCardStates() {
+    // Prune as we write. A card id is `blockId:line`, so deleting a note or
+    // untagging a line strands its schedule forever otherwise — and this blob
+    // is loaded on every start.
+    final alive = {for (final c in deck()) c.id};
+    _cardStates.removeWhere((k, _) => !alive.contains(k));
     _repo.setSetting('cardStates', {
       for (final e in _cardStates.entries) e.key: e.value.toJson()
     });
-    notifyListeners();
   }
 
   /// Counts for the study surface: (due now, total).
   (int, int) deckCounts({String? sectionId}) {
-    final all = deck(sectionId: sectionId);
+    final s = deckStats(sectionId: sectionId);
+    return (s.due, s.total);
+  }
+
+  /// Everything a study surface needs to say something useful.
+  ///
+  /// [nextDueAt] is what turns "Nothing due" — a dead end that reads like the
+  /// feature is broken — into "All caught up, next card in 6h".
+  ({int due, int total, int unseen, int? nextDueAt}) deckStats(
+      {String? sectionId, String? pageId}) {
+    final all = deck(sectionId: sectionId, pageId: pageId);
     final now = nowMs();
-    var due = 0;
+    var due = 0, unseen = 0;
+    int? next;
     for (final c in all) {
-      if (cardState(c.id).isDue(now)) due++;
+      final s = cardState(c.id);
+      if (s.dueAt == 0) unseen++;
+      if (s.isDue(now)) {
+        due++;
+      } else if (next == null || s.dueAt < next) {
+        next = s.dueAt;
+      }
     }
-    return (due, all.length);
+    return (due: due, total: all.length, unseen: unseen, nextDueAt: next);
   }
 
   bool showStudyPanel = false;
@@ -1611,6 +1789,7 @@ class AppState extends ChangeNotifier {
       final data = await engine.loadPage(notebookId!, id);
       blocks = data.blocks;
       pageProps = data.props;
+      _repairImportedFieldCodes();
       // Keep the navigator's focused section in sync with the open page.
       activeSectionId = nodes.where((n) => n.id == id).firstOrNull?.parentId ??
           activeSectionId;
@@ -1619,6 +1798,38 @@ class AppState extends ChangeNotifier {
     docRevision++;
     _persistSession();
     notifyListeners();
+  }
+
+  /// Heal Word/OneNote field codes left in an already-imported page.
+  ///
+  /// The importer emitted a hyperlink as raw Word field scaffolding —
+  /// `﷟HYPERLINK "https://…"` sitting next to the words it was attached to,
+  /// unclickable. Fixing the importer does nothing for notes imported before
+  /// the fix, and asking a student to re-import a term's notes to get their
+  /// links back is not a fix. So a page repairs itself the first time it is
+  /// opened.
+  ///
+  /// Cost on a clean page is one substring test per text block over text that
+  /// is already in memory — no database read, no allocation, nothing written.
+  /// The conversion itself is the Rust importer's own, over FFI, so there is
+  /// exactly one parser rather than two that drift apart.
+  void _repairImportedFieldCodes() {
+    final core = OnoteCore.instance;
+    if (core == null) return; // Dart-only build: leave the text untouched.
+    var changed = false;
+    for (final b in blocks) {
+      final text = b.content['text'];
+      if (text is! String || !textNeedsFieldRepair(text)) continue;
+      final fixed = core.repairFieldCodes(text);
+      if (fixed == text || fixed.isEmpty) continue;
+      b.content['text'] = fixed;
+      b.updatedAt = nowMs();
+      changed = true;
+    }
+    // Save through the normal funnel so the op log records it and the change
+    // reaches other devices — a repair that only ever ran locally would have to
+    // run again on every one of them.
+    if (changed) markDirty();
   }
 
   // ── Version history (SYNC-8) ───────────────────────────────────────────
@@ -2486,6 +2697,10 @@ class AppState extends ChangeNotifier {
 
   void markDirty() {
     _dirty = true;
+    // Cheap counter, not a rebuild: it lets the open page's flashcards be
+    // rederived once per edit, so tagging a line produces a card immediately
+    // instead of only after you navigate away.
+    contentRevision++;
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 700), flushSave);
     notifyListeners();

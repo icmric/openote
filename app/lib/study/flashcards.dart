@@ -185,6 +185,16 @@ String _answerFollowing(List<String> lines, int at) {
 
 // ── Scheduling (SM-2) ───────────────────────────────────────────────────────
 
+/// What a review session should contain.
+enum StudyMode {
+  /// The real schedule: what spaced repetition says you should see today.
+  due,
+
+  /// Everything in scope, shuffled, schedule untouched. "Go over this again"
+  /// is the most common thing a student wants the night before an exam.
+  cram,
+}
+
 /// How well a card was recalled.
 enum Grade {
   again(0, 'Again'),
@@ -221,6 +231,14 @@ class CardState {
 
   bool isDue(int now) => dueAt <= now;
 
+  CardState copy() => CardState(
+        repetitions: repetitions,
+        intervalDays: intervalDays,
+        ease: ease,
+        dueAt: dueAt,
+        lapses: lapses,
+      );
+
   Map<String, dynamic> toJson() => {
         'n': repetitions,
         'i': intervalDays,
@@ -241,34 +259,76 @@ class CardState {
   }
 }
 
+const _dayMs = 86400000;
+
+/// How soon a card you just got wrong comes back. Ten minutes, not tomorrow.
+const _relearnMs = 600000;
+
 /// Apply a grade, returning the updated state (SM-2).
 ///
-/// The classic algorithm, with one deliberate deviation: a lapse resets the
-/// interval but keeps a floor on ease, because SM-2's unbounded ease decay
-/// punishes a genuinely hard card into daily repetition forever — which is how
-/// students end up hating their own deck.
+/// Two deliberate deviations from the classic algorithm:
+///
+/// 1. **Ease has a floor.** SM-2's unbounded ease decay punishes a genuinely
+///    hard card into daily repetition forever — which is how students end up
+///    hating their own deck.
+/// 2. **Sub-day learning steps.** Textbook SM-2 has a one-day minimum, so
+///    pressing Again meant the card vanished until tomorrow and there was no
+///    way to have another go at the thing you just failed. That is the opposite
+///    of how anyone actually revises. A lapse, and a brand-new card's first
+///    correct answer, come back in ten minutes — inside the same sitting — and
+///    only then graduate to days.
 CardState applyGrade(CardState s, Grade g, int now) {
-  const dayMs = 86400000;
   final q = g.quality;
   if (q < 3) {
     s
       ..repetitions = 0
-      ..intervalDays = 1
+      ..intervalDays = 0
       ..lapses += 1
       ..ease = (s.ease - 0.20).clamp(1.3, 3.0)
-      ..dueAt = now + dayMs;
+      ..dueAt = now + _relearnMs;
     return s;
   }
-  s.ease = (s.ease + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)))
-      .clamp(1.3, 3.0);
+  s.ease = (s.ease + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))).clamp(1.3, 3.0);
   s.repetitions += 1;
-  s.intervalDays = switch (s.repetitions) {
-    1 => 1,
-    2 => 6,
+  // The learning step. A card met for the first time (or just failed) comes
+  // back in minutes, and only the NEXT correct answer graduates it to days —
+  // so you can actually learn it in the sitting you met it in. `Easy` skips
+  // the step; that is what the button is for.
+  if (s.intervalDays == 0 && s.repetitions == 1 && g != Grade.easy) {
+    s.dueAt = now + _relearnMs;
+    return s;
+  }
+  // Driven by the interval rather than the repetition count, so a card
+  // restored from an older schedule keeps its place in the ladder.
+  s.intervalDays = switch (s.intervalDays) {
+    0 => 1,
+    1 => 6,
     _ => (s.intervalDays * s.ease).round().clamp(1, 3650),
   };
-  s.dueAt = now + s.intervalDays * dayMs;
+  if (g == Grade.easy) s.intervalDays = (s.intervalDays * 1.3).round();
+  s.dueAt = now + s.intervalDays * _dayMs;
   return s;
+}
+
+/// What each button would do, for the label under it.
+///
+/// Runs the real scheduler on a copy — a preview that drifts from the algorithm
+/// is worse than no preview, because the student plans around it.
+String previewInterval(CardState s, Grade g, int now) =>
+    formatDelay(applyGrade(s.copy(), g, now).dueAt - now);
+
+/// A duration as a student would say it: `10m`, `3d`, `2mo`.
+String formatDelay(int ms) {
+  if (ms <= 0) return 'now';
+  final mins = ms ~/ 60000;
+  if (mins < 60) return '${mins.clamp(1, 59)}m';
+  final hours = ms ~/ 3600000;
+  if (hours < 36) return '${hours}h';
+  final days = (ms / _dayMs).round();
+  if (days < 31) return '${days}d';
+  if (days < 365) return '${(days / 30).round()}mo';
+  final years = days / 365;
+  return years < 10 ? '${years.toStringAsFixed(1)}y' : '${years.round()}y';
 }
 
 // ── Anki export ─────────────────────────────────────────────────────────────
