@@ -23,6 +23,17 @@ pub extern "C" fn onote_core_version() -> *mut c_char {
     into_c(crate::core_version().to_string())
 }
 
+/// Build identity: `"<epoch-seconds> <git-sha>"`. Caller frees the result.
+///
+/// Deliberately a separate symbol from [`onote_core_version`], which is the
+/// semantic version and changes only when someone bumps it. This one changes
+/// whenever the library is rebuilt, which is the property that answers "is this
+/// library stale?".
+#[no_mangle]
+pub extern "C" fn onote_core_build_id() -> *mut c_char {
+    into_c(crate::core_build_id().to_string())
+}
+
 /// Merge two page-mirror JSON documents. On malformed input, returns the
 /// `local` document unchanged (a sync round should degrade, never crash).
 /// Caller frees the result.

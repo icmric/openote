@@ -7,6 +7,7 @@ import '../canvas/media_drop.dart';
 import '../canvas/page_canvas.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
+import '../core/onote_ffi.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'command_bar.dart';
@@ -807,6 +808,20 @@ class _LinksPanel extends StatelessWidget {
   }
 }
 
+/// One line naming the loaded core's build, for the engine tooltip.
+String _coreBuildLine() {
+  final id = OnoteCore.instance?.buildId;
+  if (id == null) {
+    return 'This library predates the build stamp — it is an OLD core. '
+        'Rebuild it (flutter build, or sync-core.bat on Windows) before '
+        'trusting any importer or repair behaviour.';
+  }
+  final t = id.built.toLocal();
+  String two(int v) => v.toString().padLeft(2, '0');
+  return 'Core built ${t.year}-${two(t.month)}-${two(t.day)} '
+      '${two(t.hour)}:${two(t.minute)} from ${id.commit}.';
+}
+
 class _StatusBar extends StatelessWidget {
   const _StatusBar({required this.app});
   final AppState app;
@@ -872,9 +887,14 @@ class _StatusBar extends StatelessWidget {
           // Active compute engine (§ADR-0002): green chip when the Rust core
           // is linked, with the live page content-hash it computed on save.
           Tooltip(
+            // The build stamp is here because the stale-library trap keeps
+            // costing real time: the app loads a compiled artefact, so being on
+            // the right branch says nothing about what is actually running.
+            // Importer and repair fixes live in that library, so "I pulled and
+            // it still does the old thing" is answered by reading this line.
             message: rust
                 ? 'The Rust core (onote-core) is linked and computing this '
-                    'page\'s content hash on save.'
+                    "page's content hash on save.\n${_coreBuildLine()}"
                 : 'Running the pure-Dart engine. Build the onote-core library '
                     'to link the Rust core.',
             child: Row(mainAxisSize: MainAxisSize.min, children: [

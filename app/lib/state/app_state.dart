@@ -1734,14 +1734,41 @@ class AppState extends ChangeNotifier implements StudyDocument {
     // Worked out in full BEFORE anything is written, so the undo checkpoint
     // below captures the page as it was on disk rather than as it will be.
     final repairs = <Block, String>{};
-    for (final b in blocks) {
-      final text = b.content['text'];
-      if (text is! String || !textNeedsFieldRepair(text)) continue;
+    // Table cells too. The walk only ever looked at `content['text']`, so an
+    // imported table kept its field codes and its needless `$…$` for ever —
+    // and a table is exactly where imported notes put symbols.
+    final cellRepairs = <Block, List<List<String>>>{};
+    String? repair(String text) {
+      if (!textNeedsFieldRepair(text)) return null;
       final fixed = core.repairFieldCodes(text);
-      if (fixed == text || fixed.isEmpty) continue;
-      repairs[b] = fixed;
+      return (fixed == text || fixed.isEmpty) ? null : fixed;
     }
-    if (repairs.isEmpty) return;
+
+    for (final b in blocks) {
+      if (b.type == BlockType.table) {
+        final rows = b.content['cells'];
+        if (rows is! List) continue;
+        var touched = false;
+        final out = <List<String>>[];
+        for (final row in rows) {
+          final cells = <String>[];
+          for (final c in (row is List ? row : const [])) {
+            final text = c?.toString() ?? '';
+            final fixed = repair(text);
+            if (fixed != null) touched = true;
+            cells.add(fixed ?? text);
+          }
+          out.add(cells);
+        }
+        if (touched) cellRepairs[b] = out;
+        continue;
+      }
+      final text = b.content['text'];
+      if (text is! String) continue;
+      final fixed = repair(text);
+      if (fixed != null) repairs[b] = fixed;
+    }
+    if (repairs.isEmpty && cellRepairs.isEmpty) return;
 
     // Undoable. This is the one automatic path that rewrites text the user
     // already owns, and it runs the moment a page opens — without a checkpoint
@@ -1751,6 +1778,10 @@ class AppState extends ChangeNotifier implements StudyDocument {
     pushUndo();
     for (final e in repairs.entries) {
       e.key.content['text'] = e.value;
+      e.key.updatedAt = nowMs();
+    }
+    for (final e in cellRepairs.entries) {
+      e.key.content['cells'] = e.value;
       e.key.updatedAt = nowMs();
     }
     // Save through the normal funnel so the op log records it and the change

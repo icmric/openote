@@ -38,9 +38,23 @@ class OnoteCore {
             'onote_core_import_onepkg'),
         _repairFields = lib.lookupFunction<_HashNative, _HashNative>(
             'onote_core_repair_field_codes'),
-        _free = lib.lookupFunction<_FreeNative, _Free>('onote_core_string_free');
+        _free = lib.lookupFunction<_FreeNative, _Free>('onote_core_string_free'),
+        // Looked up leniently, and that is the whole point: a library built
+        // before this symbol existed is exactly the stale library we are trying
+        // to detect, and it must still load and work rather than taking OneNote
+        // import down with it. Null here means "old core", which is reported.
+        _buildId = _optional(lib, 'onote_core_build_id');
+
+  static _VersionNative? _optional(DynamicLibrary lib, String symbol) {
+    try {
+      return lib.lookupFunction<_VersionNative, _VersionNative>(symbol);
+    } catch (_) {
+      return null;
+    }
+  }
 
   final _VersionNative _version;
+  final _VersionNative? _buildId;
   final _MergeNative _merge;
   final _HashNative _hash;
   final _ImportOne _importOne;
@@ -119,6 +133,25 @@ class OnoteCore {
       ..add(p.join('..', 'rust', 'onote_core', 'target', 'release', name))
       ..add(p.join('rust', 'onote_core', 'target', 'release', name));
     return paths;
+  }
+
+  /// When this library was built, and from which commit — or null when the
+  /// loaded library predates the stamp, which itself means it is old.
+  ///
+  /// Answers the question git cannot: the app loads a compiled artefact, so
+  /// "my checkout is on the right commit" and "the code running is that commit"
+  /// are different claims. This is the second one.
+  ({DateTime built, String commit})? get buildId {
+    final f = _buildId;
+    if (f == null) return null;
+    final raw = _takeString(f());
+    final parts = raw.split(' ');
+    final secs = int.tryParse(parts.first);
+    if (secs == null || secs <= 0) return null;
+    return (
+      built: DateTime.fromMillisecondsSinceEpoch(secs * 1000),
+      commit: parts.length > 1 ? parts[1] : '?',
+    );
   }
 
   /// Core version string (e.g. "0.1.0").
