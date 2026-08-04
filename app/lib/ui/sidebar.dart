@@ -411,10 +411,32 @@ class _SidebarState extends State<Sidebar> {
       children: [
         for (final g in groups) ...[
           _GroupHeader(app: app, group: g),
+          // Indented AND railed. Indentation alone says "these are children";
+          // the rail is what says where the group ENDS — with several groups
+          // in a column, an indent that just stops is ambiguous, because the
+          // next group's header looks like an outdented sibling either way.
           if (!app.collapsedGroups.contains(g.id))
-            for (final s in app.nodes.where(
-                (n) => n.kind == NodeKind.section && n.parentId == g.id))
-              row(s),
+            Padding(
+              padding: const EdgeInsets.only(left: 13),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                        color: dark
+                            ? OnoteColors.night300
+                            : OnoteColors.paper300),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final s in app.nodes.where((n) =>
+                        n.kind == NodeKind.section && n.parentId == g.id))
+                      row(s),
+                  ],
+                ),
+              ),
+            ),
         ],
         for (final s in looseSections) row(s),
       ],
@@ -1503,6 +1525,15 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       _nodeItem('down', Icons.keyboard_arrow_down, 'Move down'),
       if (isSection) ...[
         const PopupMenuDivider(),
+        // The colour chip is the obvious thing to right-click, so this is
+        // where people look for it — a row of swatches rather than a submenu,
+        // because picking a colour is one glance and one click.
+        PopupMenuItem<String>(
+          enabled: false,
+          height: 34,
+          child: _SectionColorRow(app: app, section: node),
+        ),
+        const PopupMenuDivider(),
         // The one-click add lived on every section row until the two-column
         // layout tightened those rows; the pages pane's [+] covers the ACTIVE
         // section, and this covers the rest.
@@ -1722,4 +1753,58 @@ String _fmtWhen(int ms) {
   if (day == today) return 'Today $hm';
   if (day == today.subtract(const Duration(days: 1))) return 'Yesterday $hm';
   return '${d.day}/${d.month}/${d.year} $hm';
+}
+
+/// The colour swatches inside a section's context menu.
+///
+/// Lives in a disabled `PopupMenuItem` so the row itself isn't a menu action —
+/// each swatch closes the menu on its own. That keeps the picker inline
+/// (one glance, one click) instead of behind a submenu, which is what you
+/// want from something you reached by right-clicking the colour chip.
+class _SectionColorRow extends StatefulWidget {
+  const _SectionColorRow({required this.app, required this.section});
+  final AppState app;
+  final TreeNode section;
+
+  @override
+  State<_SectionColorRow> createState() => _SectionColorRowState();
+}
+
+class _SectionColorRowState extends State<_SectionColorRow> {
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final scheme = Theme.of(context).colorScheme;
+    final current = widget.app.node(widget.section.id)?.color;
+    return Row(children: [
+      const Text('Colour',
+          style: TextStyle(fontSize: 12.5, color: OnoteColors.graphite500)),
+      const SizedBox(width: 10),
+      for (final token in AppState.sectionColorTokens)
+        Padding(
+          padding: const EdgeInsets.only(right: 5),
+          child: Tooltip(
+            message: token ?? 'Default',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(11),
+              onTap: () {
+                widget.app.setNodeColor(widget.section.id, token);
+                Navigator.of(context).pop();
+              },
+              child: Container(
+                width: 19,
+                height: 19,
+                decoration: BoxDecoration(
+                  color: _sectionColor(token, dark),
+                  shape: BoxShape.circle,
+                  border: token == current
+                      ? Border.all(color: scheme.onSurface, width: 2)
+                      : null,
+                ),
+              ),
+            ),
+          ),
+        ),
+    ]);
+  }
 }

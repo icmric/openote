@@ -392,9 +392,14 @@ class _BlockViewState extends State<BlockView> {
     // never re-measures every text box. The measured width is written back to
     // the model so persistence, export, and hit-testing agree with the screen.
     double? displayW = b.w;
-    if (b.type == BlockType.text &&
-        editing &&
-        b.content['autoWidth'] != false) {
+    // Measured in BOTH modes, not just while editing. Measuring only the
+    // block being edited meant an auto-width box carried whatever width it
+    // was created with until you first clicked into it, and then snapped to
+    // its real width — the "slight horizontal growth when editing" report.
+    // The measurement is memoised, so the read-mode cost is a map lookup.
+    // (Imported boxes are `autoWidth: false` — OneNote gave them a real
+    // width — so this does not disturb an imported layout.)
+    if (b.type == BlockType.text && b.content['autoWidth'] != false) {
       displayW = TextBlockView.autoWidth(b, dark: dark);
       b.w = displayW;
     }

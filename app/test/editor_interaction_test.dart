@@ -268,6 +268,50 @@ void main() {
       return s != null && s.isValid ? s.baseOffset : null;
     }
 
+    testWidgets('a box does not change width when you edit it', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // Auto-width was measured ONLY for the block being edited, so a box
+      // carried whatever width it was created with until you first clicked
+      // into it and then snapped to its real width — visible as the box
+      // growing sideways the moment you started typing in it.
+      block.content['text'] = 'The quick brown fox jumps over the lazy dog';
+      block.h = null;
+      await pump(t);
+      await t.pump();
+      final read = block.w;
+
+      app.select(block.id, edit: true);
+      await t.pump();
+      await t.pump();
+      final editing = block.w;
+
+      app.select(null);
+      await t.pump();
+      await t.pump();
+      app.cancelPendingSave();
+
+      expect(editing, read, reason: 'entering edit resized the box');
+      expect(block.w, read, reason: 'leaving edit resized the box');
+    });
+
+    testWidgets('a manually resized box is never re-measured', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // Dragging the handle sets autoWidth: false, and the OneNote importer
+      // sets it too — OneNote gave those boxes a real width, and measuring
+      // them would rewrite an imported page's layout.
+      block.content['text'] = 'short';
+      block.content['autoWidth'] = false;
+      block.w = 300;
+      block.h = null;
+      await pump(t);
+      await t.pump();
+      app.select(block.id, edit: true);
+      await t.pump();
+      await t.pump();
+      app.cancelPendingSave();
+      expect(block.w, 300);
+    });
+
     testWidgets('clicking into a paragraph puts the caret where you clicked',
         (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');

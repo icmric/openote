@@ -4,6 +4,32 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased — 0.2.0] · the first public release
 
+### Changed — navigator polish + storage honesty (2026-08-05)
+- **Sections inside a group are indented, with a guide rail** down their left
+  edge, so where a group starts and ends is unambiguous.
+- **Section colours can be set.** Right-click a section — the colour swatches
+  are right there. The chip has always been drawn but only the OneNote
+  importer ever wrote it, so on a notebook you started yourself it was a
+  control that looked interactive and wasn't.
+- **Notebooks ▸ Repair** heals every page in one pass. The automatic repair
+  only runs when a page is opened, so a notebook imported before the importer
+  was fixed keeps its junk on every page you have not happened to visit.
+- **The sync dialog says where your notebook actually is** — both paths, both
+  sizes, and which of them your cloud can see. It also finds notebook files
+  nothing points at, and can delete the ones inside your own workspace.
+
+### Fixed — data safety (2026-08-05)
+- **Emptying the recycle bin no longer strands a notebook's sync log.** Purge
+  deleted the notes file and left the `.onotebook` behind — logs and every
+  image they held — invisible to the app and permanent. Shared logs another
+  device still uses are never touched.
+- **Re-joining a notebook you had deleted restores it** instead of copying it
+  again under a new identity, which is how a workspace ends up holding several
+  copies of one notebook.
+- **A text box no longer grows sideways when you click into it.** Auto-width
+  was measured only for the block being edited, so a box kept its creation
+  width until first edit and then snapped.
+
 ### Changed — navigator redesign (2026-08-04)
 - **Sections and pages are side-by-side columns now**, the OneNote shape: both
   independently scrollable and resizable, so you can see the section list and a

@@ -2313,6 +2313,27 @@ class AppState extends ChangeNotifier implements StudyDocument {
     notifyListeners();
   }
 
+  /// The colour tokens a section can be given, in picker order. `null` is the
+  /// unset default, which renders in the app's own ink.
+  static const List<String?> sectionColorTokens = [
+    null, 'brass-400', 'green', 'blue', 'violet', 'red',
+  ];
+
+  /// Recolour a section.
+  ///
+  /// The colour chip has always been rendered but only ever *written* by the
+  /// OneNote importer, so on a notebook you started yourself every section was
+  /// the same colour with no way to change it — a control that looks
+  /// interactive and isn't.
+  void setNodeColor(String id, String? token) {
+    final n = node(id);
+    if (n == null) return; // deleted while a menu was open
+    n.color = token;
+    _putNode(notebookId!, n);
+    bumpNodes();
+    notifyListeners();
+  }
+
   /// Subpage indent (ORG-6): level 0..2.
   void indentPage(String id, int delta) {
     final n = node(id);
