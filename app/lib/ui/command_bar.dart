@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../export/markdown_export.dart';
 import '../export/open_export.dart';
 import '../export/pdf_export.dart';
+import '../export/pdf_vector_export.dart';
 import '../export/pdf_import.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
@@ -77,91 +78,122 @@ class _CommandBarState extends State<CommandBar> {
                     ),
                   ),
                 const Spacer(),
-                // Current-tool escape hatch: visible whenever not in Select.
-                if (app.tool != Tool.select)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: ActionChip(
-                      avatar: Icon(_toolIcon(app.tool), size: 14),
-                      label: const Text('Done', style: TextStyle(fontSize: 11)),
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () => app.setTool(Tool.select),
-                    ),
+                // The trailing cluster scrolls rather than overflowing.
+                //
+                // A `Row` that overflows is CLIPPED, and clipped pixels do not
+                // hit-test — so on a narrow window (laptop + navigator open)
+                // the rightmost buttons stopped responding with no visible
+                // reason. `Flexible` lets the cluster shrink before the tabs
+                // do, and `reverse: true` keeps the right-hand end — the end
+                // that would otherwise be cut off — in view.
+                Flexible(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    reverse: true,
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      // Current-tool escape hatch: visible whenever not in Select.
+                      if (app.tool != Tool.select)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: ActionChip(
+                            avatar: Icon(_toolIcon(app.tool), size: 14),
+                            label: const Text('Done',
+                                style: TextStyle(fontSize: 11)),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => app.setTool(Tool.select),
+                          ),
+                        ),
+                      // Study: the due count is the whole nudge, so it's on the
+                      // badge rather than hidden behind the panel.
+                      _StudyButton(app: app),
+                      IconButton(
+                        icon: const Icon(Icons.label_outline, size: 17),
+                        tooltip: 'Find tags',
+                        isSelected: app.showTagsPanel,
+                        visualDensity: VisualDensity.compact,
+                        onPressed: app.toggleTagsPanel,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.toc, size: 17),
+                        tooltip: 'Page outline',
+                        isSelected: app.showTocPanel,
+                        visualDensity: VisualDensity.compact,
+                        onPressed: app.toggleTocPanel,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.account_tree_outlined, size: 17),
+                        tooltip: 'Links & backlinks',
+                        isSelected: app.showLinksPanel,
+                        visualDensity: VisualDensity.compact,
+                        onPressed: app.toggleLinksPanel,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.search, size: 17),
+                        tooltip: 'Find on page  (Ctrl+F)',
+                        isSelected: app.findOpen,
+                        visualDensity: VisualDensity.compact,
+                        onPressed: app.toggleFind,
+                      ),
+                      MenuAnchor(
+                        builder: (context, controller, _) => IconButton(
+                          icon: const Icon(Icons.ios_share_outlined, size: 17),
+                          tooltip: 'Export page…',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => controller.isOpen
+                              ? controller.close()
+                              : controller.open(),
+                        ),
+                        menuChildren: [
+                          MenuItemButton(
+                            leadingIcon: const Icon(Icons.description_outlined,
+                                size: 18),
+                            onPressed: () =>
+                                _export(context, exportPageMarkdown),
+                            child: const Text('Markdown (.md)'),
+                          ),
+                          // Vector by default: the shared/printed artefact
+                          // should be searchable, selectable and small. The
+                          // raster capture stays available for the rare page
+                          // whose look matters more than its text.
+                          MenuItemButton(
+                            leadingIcon: const Icon(
+                                Icons.picture_as_pdf_outlined,
+                                size: 18),
+                            onPressed: () =>
+                                _export(context, exportPagePdfVector),
+                            child: const Text('PDF (.pdf)'),
+                          ),
+                          MenuItemButton(
+                            leadingIcon:
+                                const Icon(Icons.image_outlined, size: 18),
+                            onPressed: () => _export(context, exportPagePdf),
+                            child: const Text('PDF — picture of the page'),
+                          ),
+                          MenuItemButton(
+                            leadingIcon:
+                                const Icon(Icons.hub_outlined, size: 18),
+                            onPressed: () =>
+                                _export(context, exportPageJsonCanvas),
+                            child: const Text('JSON Canvas (.canvas)'),
+                          ),
+                          MenuItemButton(
+                            leadingIcon: const Icon(Icons.gesture, size: 18),
+                            onPressed: () => _export(context, exportPageInkML),
+                            child: const Text('Ink → InkML (.inkml)'),
+                          ),
+                          const Divider(height: 6),
+                          MenuItemButton(
+                            leadingIcon:
+                                const Icon(Icons.folder_zip_outlined, size: 18),
+                            onPressed: () =>
+                                _export(context, materializeNotebook),
+                            child:
+                                const Text('Materialize notebook to folder…'),
+                          ),
+                        ],
+                      ),
+                    ]),
                   ),
-                // Study: the due count is the whole nudge, so it's on the
-                // badge rather than hidden behind the panel.
-                _StudyButton(app: app),
-                IconButton(
-                  icon: const Icon(Icons.label_outline, size: 17),
-                  tooltip: 'Find tags',
-                  isSelected: app.showTagsPanel,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: app.toggleTagsPanel,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.toc, size: 17),
-                  tooltip: 'Page outline',
-                  isSelected: app.showTocPanel,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: app.toggleTocPanel,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.account_tree_outlined, size: 17),
-                  tooltip: 'Links & backlinks',
-                  isSelected: app.showLinksPanel,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: app.toggleLinksPanel,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.search, size: 17),
-                  tooltip: 'Find on page  (Ctrl+F)',
-                  isSelected: app.findOpen,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: app.toggleFind,
-                ),
-                MenuAnchor(
-                  builder: (context, controller, _) => IconButton(
-                    icon: const Icon(Icons.ios_share_outlined, size: 17),
-                    tooltip: 'Export page…',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => controller.isOpen
-                        ? controller.close()
-                        : controller.open(),
-                  ),
-                  menuChildren: [
-                    MenuItemButton(
-                      leadingIcon:
-                          const Icon(Icons.description_outlined, size: 18),
-                      onPressed: () => _export(context, exportPageMarkdown),
-                      child: const Text('Markdown (.md)'),
-                    ),
-                    MenuItemButton(
-                      leadingIcon:
-                          const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                      onPressed: () => _export(context, exportPagePdf),
-                      child: const Text('PDF (.pdf)'),
-                    ),
-                    MenuItemButton(
-                      leadingIcon:
-                          const Icon(Icons.hub_outlined, size: 18),
-                      onPressed: () =>
-                          _export(context, exportPageJsonCanvas),
-                      child: const Text('JSON Canvas (.canvas)'),
-                    ),
-                    MenuItemButton(
-                      leadingIcon: const Icon(Icons.gesture, size: 18),
-                      onPressed: () => _export(context, exportPageInkML),
-                      child: const Text('Ink → InkML (.inkml)'),
-                    ),
-                    const Divider(height: 6),
-                    MenuItemButton(
-                      leadingIcon:
-                          const Icon(Icons.folder_zip_outlined, size: 18),
-                      onPressed: () =>
-                          _export(context, materializeNotebook),
-                      child: const Text('Materialize notebook to folder…'),
-                    ),
-                  ],
                 ),
                 const SizedBox(width: 6),
               ],
@@ -236,10 +268,12 @@ class _CommandBarState extends State<CommandBar> {
       ),
       const _Div(),
       fmt(Icons.format_bold, 'Bold  (Ctrl+B)', () => app.wrapSelection('**')),
-      fmt(Icons.format_italic, 'Italic  (Ctrl+I)', () => app.wrapSelection('*')),
+      fmt(Icons.format_italic, 'Italic  (Ctrl+I)',
+          () => app.wrapSelection('*')),
       fmt(Icons.format_underlined, 'Underline  (Ctrl+U)',
           () => app.wrapSelection('++')),
-      fmt(Icons.strikethrough_s, 'Strikethrough', () => app.wrapSelection('~~')),
+      fmt(Icons.strikethrough_s, 'Strikethrough',
+          () => app.wrapSelection('~~')),
       fmt(Icons.code, 'Inline code', () => app.wrapSelection('`')),
       fmt(Icons.border_color, 'Highlight', () => app.wrapSelection('==')),
       const _Div(),
@@ -302,7 +336,8 @@ class _CommandBarState extends State<CommandBar> {
         onPressed: canFormat
             ? () async {
                 final f = await showFontPicker(context,
-                    current: app.activeEditor?.block.content['font'] as String?);
+                    current:
+                        app.activeEditor?.block.content['font'] as String?);
                 if (f != null) app.setActiveBlockFont(f);
               }
             : null,
@@ -357,9 +392,8 @@ class _CommandBarState extends State<CommandBar> {
           isSelected: app.tool == t,
           visualDensity: VisualDensity.compact,
           style: IconButton.styleFrom(
-            backgroundColor: app.tool == t
-                ? scheme.primary.withValues(alpha: .14)
-                : null,
+            backgroundColor:
+                app.tool == t ? scheme.primary.withValues(alpha: .14) : null,
             foregroundColor: app.tool == t ? scheme.primary : null,
           ),
           onPressed: () => app.setTool(t),
@@ -408,9 +442,8 @@ class _CommandBarState extends State<CommandBar> {
                   shape: BoxShape.circle,
                   border: Border.all(
                     width: 2,
-                    color: app.penColor == i
-                        ? scheme.primary
-                        : Colors.transparent,
+                    color:
+                        app.penColor == i ? scheme.primary : Colors.transparent,
                   ),
                 ),
               ),
@@ -450,14 +483,19 @@ class _CommandBarState extends State<CommandBar> {
                 ? 'Splits strokes where you rub'
                 : 'Removes any stroke you touch',
             style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
-      ]
-      else if (app.tool == Tool.lasso)
+      ] else if (app.tool == Tool.lasso)
         Text('Draw a loop around ink to select it — then drag or delete',
             style: TextStyle(fontSize: 11, color: OnoteColors.graphite400))
       else
         Text('Pick the pen or highlighter to draw',
             style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
-      const Spacer(),
+      // NO `Spacer` here, and none in any command row. Every row is built
+      // inside a horizontal `SingleChildScrollView`, which offers unbounded
+      // width — and a flex child (`Spacer` is `Expanded`) under an unbounded
+      // constraint is a hard layout assertion, not a soft one. The Draw row
+      // therefore failed to lay out *at all*: no pen, no highlighter, no
+      // eraser, nothing clickable. Push things apart with a fixed gap.
+      const SizedBox(width: 12),
       // Touch drawing (INK-1). Exposed because the right answer depends on
       // hardware we can't detect reliably: "Auto" suits a pen-and-touch
       // convertible, "Always" a touch-only tablet, "Never" anyone who rests a
@@ -584,7 +622,11 @@ class _CommandBarState extends State<CommandBar> {
   void _insertText() {
     final pos = app.smartTextPosition(_center());
     final b = app.addBlock(Block(
-        type: BlockType.text, x: pos.dx, y: pos.dy, w: 320, content: {'text': ''}));
+        type: BlockType.text,
+        x: pos.dx,
+        y: pos.dy,
+        w: 320,
+        content: {'text': ''}));
     app.select(b.id, edit: true);
   }
 
@@ -654,8 +696,7 @@ class _CommandBarState extends State<CommandBar> {
     final file = await openFile();
     if (file == null) return;
     final Uint8List bytes = await file.readAsBytes();
-    final hash =
-        app.addBlob(bytes, 'application/octet-stream');
+    final hash = app.addBlob(bytes, 'application/octet-stream');
     final c = _center();
     final b = app.addBlock(Block(
         type: BlockType.file,
@@ -768,14 +809,30 @@ class _FontSizeField extends StatelessWidget {
   final AppState app;
   final bool enabled;
 
-  static const _sizes = <double>[8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48];
+  static const _sizes = <double>[
+    8,
+    9,
+    10,
+    11,
+    12,
+    14,
+    16,
+    18,
+    20,
+    24,
+    28,
+    36,
+    48
+  ];
 
   @override
   Widget build(BuildContext context) {
     // Stored px → pt for display; null means "the theme default".
     final px = app.activeBlockFontSize;
     final pt = px == null ? null : px * 72.0 / 120.0;
-    final label = pt == null ? '–' : (pt % 1 == 0 ? pt.toStringAsFixed(0) : pt.toStringAsFixed(1));
+    final label = pt == null
+        ? '–'
+        : (pt % 1 == 0 ? pt.toStringAsFixed(0) : pt.toStringAsFixed(1));
     return Tooltip(
       message: enabled
           ? 'Text size (points)'
@@ -803,8 +860,7 @@ class _FontSizeField extends StatelessWidget {
                       fontSize: 12,
                       color: enabled ? null : OnoteColors.graphite400)),
               Icon(Icons.arrow_drop_down,
-                  size: 16,
-                  color: enabled ? null : OnoteColors.graphite400),
+                  size: 16, color: enabled ? null : OnoteColors.graphite400),
             ]),
           ),
         ),
@@ -851,10 +907,7 @@ class _TagButton extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(
-                  active.isEmpty
-                      ? Icons.label_outline
-                      : active.first.icon,
+              Icon(active.isEmpty ? Icons.label_outline : active.first.icon,
                   size: 17,
                   color: !enabled
                       ? OnoteColors.graphite400
@@ -862,8 +915,7 @@ class _TagButton extends StatelessWidget {
                           ? null
                           : active.first.color),
               Icon(Icons.arrow_drop_down,
-                  size: 16,
-                  color: enabled ? null : OnoteColors.graphite400),
+                  size: 16, color: enabled ? null : OnoteColors.graphite400),
             ]),
           ),
         ),
@@ -897,8 +949,8 @@ class _MakeCardButton extends StatelessWidget {
 
   void _say(BuildContext context, String? msg) {
     if (msg == null || !context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(msg), duration: const Duration(seconds: 3)));
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), duration: const Duration(seconds: 3)));
   }
 
   @override
@@ -912,22 +964,20 @@ class _MakeCardButton extends StatelessWidget {
             message: 'Make this line a flashcard',
             child: InkWell(
               borderRadius: BorderRadius.circular(6),
-              onTap: enabled
-                  ? () => _say(context, app.makeCardAtCaret())
-                  : null,
+              onTap:
+                  enabled ? () => _say(context, app.makeCardAtCaret()) : null,
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
                 child: Icon(Icons.style_outlined,
-                    size: 17,
-                    color: enabled ? null : OnoteColors.graphite400),
+                    size: 17, color: enabled ? null : OnoteColors.graphite400),
               ),
             ),
           ),
           InkWell(
             borderRadius: BorderRadius.circular(6),
             onTap: enabled
-                ? () => controller.isOpen ? controller.close() : controller.open()
+                ? () =>
+                    controller.isOpen ? controller.close() : controller.open()
                 : null,
             child: Icon(Icons.arrow_drop_down,
                 size: 16, color: enabled ? null : OnoteColors.graphite400),
@@ -936,16 +986,18 @@ class _MakeCardButton extends StatelessWidget {
       ),
       menuChildren: [
         MenuItemButton(
-          leadingIcon:
-              Icon(TagKind.question.icon, size: 16, color: TagKind.question.color),
-          shortcut: const SingleActivator(LogicalKeyboardKey.digit3, control: true),
+          leadingIcon: Icon(TagKind.question.icon,
+              size: 16, color: TagKind.question.color),
+          shortcut:
+              const SingleActivator(LogicalKeyboardKey.digit3, control: true),
           onPressed: () => app.toggleTagOnSelection(TagKind.question),
           child: const Text('Question card'),
         ),
         MenuItemButton(
           leadingIcon: Icon(TagKind.definition.icon,
               size: 16, color: TagKind.definition.color),
-          shortcut: const SingleActivator(LogicalKeyboardKey.digit5, control: true),
+          shortcut:
+              const SingleActivator(LogicalKeyboardKey.digit5, control: true),
           onPressed: () => app.toggleTagOnSelection(TagKind.definition),
           child: const Text('Definition card'),
         ),
@@ -1126,8 +1178,8 @@ Future<void> _importPdfWithProgress(BuildContext context, AppState app,
     if (result == null) return; // cancelled at the file picker
     if (!context.mounted) return;
     if (result.pages == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("That PDF couldn't be read.")));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("That PDF couldn't be read.")));
       return;
     }
     // Only navigate for the page-per-slide import — a printout landed on the
@@ -1148,8 +1200,8 @@ Future<void> _importPdfWithProgress(BuildContext context, AppState app,
       Navigator.of(context, rootNavigator: true).pop();
     }
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('PDF import failed: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('PDF import failed: $e')));
     }
   } finally {
     progress.dispose();

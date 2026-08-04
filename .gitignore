@@ -1,0 +1,5 @@
+# The MPL-2.0 onenote reference checkout — deliberately untracked. It was once
+# a broken gitlink (no .gitmodules); the index entry was removed, and it must
+# not come back as a plain directory either: it is licence-incompatible
+# reference material, not part of the build.
+/rust/onote_core/onenote-ref/

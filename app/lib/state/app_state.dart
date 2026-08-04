@@ -167,9 +167,9 @@ class AppState extends ChangeNotifier {
       // hundreds of images, and doing it inline would stall the open.
       unawaited(r
           .backfillBlobs(
-            index: _repo.blobIndex(nb),
-            read: (h) => _repo.getBlob(nb, h),
-          )
+        index: _repo.blobIndex(nb),
+        read: (h) => _repo.getBlob(nb, h),
+      )
           .catchError((Object e) {
         debugPrint('[openote/sync] blob backfill for $nb stopped: $e');
         return 0;
@@ -201,15 +201,39 @@ class AppState extends ChangeNotifier {
   /// the watermark — applying remote edits twice.
   bool _pulling = false;
 
+  /// Set when a pull is requested while one is already running.
+  ///
+  /// Returning early on re-entrancy would **drop** that request: the watcher's
+  /// debounce has already fired, so nothing else is going to ask again, and the
+  /// other device's edits would sit unapplied until some later unrelated change
+  /// happened to fire the watcher — possibly never, if they stopped typing.
+  /// Auto-pull would then be "auto-pull, usually", which is worse than manual
+  /// because nothing tells you it didn't happen.
+  bool _pullAgain = false;
+
   Future<int> syncPull(String nb) async {
-    if (_pulling) return 0;
-    final r = _recorderFor(nb);
-    if (r == null) return 0;
-    final pending = r.pendingForeignOps(_repo.getSetting);
-    if (pending.isEmpty) return 0;
+    if (_pulling) {
+      // Don't queue a second concurrent pull — two overlapping pulls would both
+      // read the same pending ops and both advance the watermark, applying
+      // remote edits twice. Record that another round is owed instead.
+      _pullAgain = true;
+      return 0;
+    }
     _pulling = true;
     try {
-      return await _syncPullLocked(nb, r, pending);
+      var total = 0;
+      // Loop rather than recurse: a device syncing a burst of logs can keep
+      // setting the flag, and each round must see the ops that landed during
+      // the previous one.
+      do {
+        _pullAgain = false;
+        final r = _recorderFor(nb);
+        if (r == null) break;
+        final pending = r.pendingForeignOps(_repo.getSetting);
+        if (pending.isEmpty) continue;
+        total += await _syncPullLocked(nb, r, pending);
+      } while (_pullAgain);
+      return total;
     } finally {
       _pulling = false;
     }
@@ -217,7 +241,6 @@ class AppState extends ChangeNotifier {
 
   Future<int> _syncPullLocked(
       String nb, SyncRecorder r, List<Op> pending) async {
-
     // Flush first: a local edit still sitting in the debounce would otherwise
     // be overwritten by the materialised page we're about to write.
     await flushSave();
@@ -231,8 +254,8 @@ class AppState extends ChangeNotifier {
           for (final b in (mirror['blocks'] as List? ?? const []))
             Block.fromJson((b as Map).cast<String, dynamic>())
         ];
-        final props =
-            PageProps.fromJson((mirror['page'] as Map?)?.cast<String, dynamic>());
+        final props = PageProps.fromJson(
+            (mirror['page'] as Map?)?.cast<String, dynamic>());
         _repo.writePage(nb, pageId, blocks, props);
       }
       if (changed.treeChanged) {
@@ -267,7 +290,8 @@ class AppState extends ChangeNotifier {
     for (final op in pending) {
       if (op.seq > (highest[op.device] ?? 0)) highest[op.device] = op.seq;
     }
-    highest.forEach((dev, seq) => r.markForeignSeen(dev, seq, _repo.setSetting));
+    highest
+        .forEach((dev, seq) => r.markForeignSeen(dev, seq, _repo.setSetting));
 
     // Re-read whatever the user is looking at.
     reloadNodes();
@@ -640,7 +664,8 @@ class AppState extends ChangeNotifier {
   /// removes it, which is what a toolbar button that shows its own state has
   /// to do.
   void toggleTagOnSelection(TagKind kind, {int? line}) {
-    final b = blocks.where((x) => x.id == (editingBlockId ?? selectedBlockId))
+    final b = blocks
+        .where((x) => x.id == (editingBlockId ?? selectedBlockId))
         .firstOrNull;
     if (b == null || b.type != BlockType.text) return;
     final idx = line ?? _caretLine(b);
@@ -651,9 +676,7 @@ class AppState extends ChangeNotifier {
       tags.removeAt(at);
     } else {
       tags.add(NoteTag(
-          kind: kind,
-          line: idx,
-          checked: kind == TagKind.todo ? false : null));
+          kind: kind, line: idx, checked: kind == TagKind.todo ? false : null));
     }
     NoteTag.writeInto(b.content, tags);
     updateBlock(b);
@@ -681,7 +704,8 @@ class AppState extends ChangeNotifier {
 
   /// Tags on the caret's line, so the toolbar can show which are active.
   Set<TagKind> tagsAtCaret() {
-    final b = blocks.where((x) => x.id == (editingBlockId ?? selectedBlockId))
+    final b = blocks
+        .where((x) => x.id == (editingBlockId ?? selectedBlockId))
         .firstOrNull;
     if (b == null || b.type != BlockType.text) return const {};
     final idx = _caretLine(b);
@@ -695,7 +719,8 @@ class AppState extends ChangeNotifier {
   /// Falls back to line 0 when nothing is being edited (a tag applied to a
   /// merely-selected block is a tag on its first line).
   int _caretLine(Block b) {
-    final ctl = activeEditor?.block.id == b.id ? activeEditor?.controller : null;
+    final ctl =
+        activeEditor?.block.id == b.id ? activeEditor?.controller : null;
     final text = b.content['text'] as String? ?? '';
     if (ctl == null || !ctl.selection.isValid) return 0;
     final at = ctl.selection.baseOffset.clamp(0, text.length);
@@ -779,7 +804,8 @@ class AppState extends ChangeNotifier {
     final key = '$notebookId#$docRevision#$nodesRevision#$pageId';
     final cached = _allTagsCache;
     if (cached != null && cached.key == key) return cached.tags;
-    final out = <({String pageId, String pageTitle, NoteTag tag, String text})>[];
+    final out =
+        <({String pageId, String pageTitle, NoteTag tag, String text})>[];
     for (final n in nodes.where((n) => n.kind == NodeKind.page)) {
       // The open page's in-memory blocks are fresher than the container.
       final blocksOf = n.id == pageId ? blocks : readPage(n.id).blocks;
@@ -876,7 +902,8 @@ class AppState extends ChangeNotifier {
 
     // Closed pages. nodesRevision covers pages added/renamed/removed;
     // docRevision covers a page's stored content being replaced wholesale.
-    final key = '$notebookId#$sectionId#$pageId#$docRevision#$nodesRevision#${this.pageId}';
+    final key =
+        '$notebookId#$sectionId#$pageId#$docRevision#$nodesRevision#${this.pageId}';
     var stored = _deckCache[key];
     if (stored == null) {
       // A revision bumped: every entry keyed on the old one is dead weight.
@@ -898,7 +925,8 @@ class AppState extends ChangeNotifier {
       _deckCache[key] = stored = out;
     }
 
-    final open = nodes.where((n) => n.id == this.pageId && inScope(n)).firstOrNull;
+    final open =
+        nodes.where((n) => n.id == this.pageId && inScope(n)).firstOrNull;
     if (open == null) return stored;
     // contentRevision covers edits; docRevision covers the block list being
     // replaced under us — an undo, a version restore, a sync pull.
@@ -989,9 +1017,8 @@ class AppState extends ChangeNotifier {
     }
     if (carried.isEmpty) return;
     _cardStates.addAll(carried);
-    _repo.setSetting('cardStates', {
-      for (final e in _cardStates.entries) e.key: e.value.toJson()
-    });
+    _repo.setSetting('cardStates',
+        {for (final e in _cardStates.entries) e.key: e.value.toJson()});
     studyRevision++;
   }
 
@@ -1038,9 +1065,8 @@ class AppState extends ChangeNotifier {
       final cut = k.lastIndexOf(':');
       return mine.contains(cut < 0 ? k : k.substring(0, cut));
     });
-    _repo.setSetting('cardStates', {
-      for (final e in _cardStates.entries) e.key: e.value.toJson()
-    });
+    _repo.setSetting('cardStates',
+        {for (final e in _cardStates.entries) e.key: e.value.toJson()});
   }
 
   /// Counts for the study surface: (due now, total).
@@ -1196,8 +1222,8 @@ class AppState extends ChangeNotifier {
   }
 
   /// True when the selection is ink and can therefore be recoloured (INK-7).
-  bool get hasInkSelection => blocks.any(
-      (b) => selectedIds.contains(b.id) && b.type == BlockType.ink);
+  bool get hasInkSelection =>
+      blocks.any((b) => selectedIds.contains(b.id) && b.type == BlockType.ink);
 
   /// Recolour every stroke in the selected ink blocks.
   ///
@@ -1263,8 +1289,8 @@ class AppState extends ChangeNotifier {
     alignGuides = const [];
   }
 
-  Rect _rectOf(Block b) => Rect.fromLTWH(
-      b.x, b.y, b.w, b.h ?? renderSizes[b.id]?.height ?? 60);
+  Rect _rectOf(Block b) =>
+      Rect.fromLTWH(b.x, b.y, b.w, b.h ?? renderSizes[b.id]?.height ?? 60);
 
   Rect? _unionRect(Set<String> ids) {
     Rect? out;
@@ -1306,8 +1332,12 @@ class AppState extends ChangeNotifier {
 
   /// The text/code editor currently mounted & editing, registered by its view
   /// so command-bar formatting can act on the live selection.
-  ({TextEditingController controller, Block block, String contentKey})?
-      activeEditor;
+  ({
+    TextEditingController controller,
+    Block block,
+    String contentKey
+  })? activeEditor;
+
   /// The same editor as [activeEditor], through the engine seam.
   ///
   /// The canvas needs two things a bare controller can't give it: where a
@@ -1317,8 +1347,7 @@ class AppState extends ChangeNotifier {
   /// without knowing how the engine lays text out.
   OnoteEditSession? activeSession;
 
-  void setActiveEditor(
-      TextEditingController c, Block b, String key,
+  void setActiveEditor(TextEditingController c, Block b, String key,
       {OnoteEditSession? session}) {
     activeEditor = (controller: c, block: b, contentKey: key);
     if (session != null) activeSession = session;
@@ -1530,7 +1559,11 @@ class AppState extends ChangeNotifier {
   void startBodyFromTitle() {
     final pos = smartTextPosition(const Offset(pageLeftMargin, contentTop));
     final b = addBlock(Block(
-        type: BlockType.text, x: pos.dx, y: pos.dy, w: 320, content: {'text': ''}));
+        type: BlockType.text,
+        x: pos.dx,
+        y: pos.dy,
+        w: 320,
+        content: {'text': ''}));
     select(b.id, edit: true);
   }
 
@@ -1558,8 +1591,8 @@ class AppState extends ChangeNotifier {
           baseOffset: s - mark.length, extentOffset: e - mark.length);
     } else {
       c.text = t.replaceRange(s, e, '$mark${t.substring(s, e)}$close');
-      c.selection =
-          TextSelection(baseOffset: s + mark.length, extentOffset: e + mark.length);
+      c.selection = TextSelection(
+          baseOffset: s + mark.length, extentOffset: e + mark.length);
     }
     _commitActiveEditor();
     notifyListeners();
@@ -1606,7 +1639,8 @@ class AppState extends ChangeNotifier {
   void copySelectedBlocks() {
     if (selectedIds.isEmpty) return;
     _blockClipboard = jsonEncode([
-      for (final b in blocks.where((b) => selectedIds.contains(b.id))) b.toJson()
+      for (final b in blocks.where((b) => selectedIds.contains(b.id)))
+        b.toJson()
     ]);
     notifyListeners();
   }
@@ -1747,8 +1781,7 @@ class AppState extends ChangeNotifier {
     if (vm is Map) {
       vm.forEach((k, v) {
         if (v is List && v.length == 3) {
-          _viewMemory[k as String] =
-              [for (final x in v) (x as num).toDouble()];
+          _viewMemory[k as String] = [for (final x in v) (x as num).toDouble()];
         }
       });
     }
@@ -1969,7 +2002,8 @@ class AppState extends ChangeNotifier {
     if (json == null) return;
     pushUndo();
     final j = jsonDecode(json) as Map<String, dynamic>;
-    pageProps = PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>());
+    pageProps =
+        PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>());
     blocks = [
       for (final b in (j['blocks'] as List))
         Block.fromJson((b as Map).cast<String, dynamic>())
@@ -1994,7 +2028,8 @@ class AppState extends ChangeNotifier {
   }
 
   void saveCurrentAsTemplate(String name) {
-    final t = (_repo.getSetting('templates') as Map?)?.cast<String, dynamic>() ?? {};
+    final t =
+        (_repo.getSetting('templates') as Map?)?.cast<String, dynamic>() ?? {};
     t[name] = jsonEncode({
       'page': pageProps.toJson(),
       'blocks': [for (final b in blocks) b.toJson()],
@@ -2006,11 +2041,13 @@ class AppState extends ChangeNotifier {
   void applyTemplate(String name) {
     final t = _repo.getSetting('templates');
     // User template first so a same-named save shadows the built-in.
-    final raw = (t is Map ? t[name] as String? : null) ?? builtinTemplates[name];
+    final raw =
+        (t is Map ? t[name] as String? : null) ?? builtinTemplates[name];
     if (raw == null) return;
     pushUndo();
     final j = jsonDecode(raw) as Map<String, dynamic>;
-    pageProps = PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>());
+    pageProps =
+        PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>());
     for (final bj in (j['blocks'] as List)) {
       final src = Block.fromJson((bj as Map).cast<String, dynamic>());
       final fresh = Block(
@@ -2099,8 +2136,7 @@ class AppState extends ChangeNotifier {
   Offset smartTextPosition(Offset click) {
     const alignX = 56.0; // snap-to-left-edge threshold
     const alignY = 22.0; // snap-to-neighbour threshold
-    final contentBlocks =
-        blocks.where((b) => b.type != BlockType.ink).toList();
+    final contentBlocks = blocks.where((b) => b.type != BlockType.ink).toList();
 
     // Empty page, clicked anywhere up top → the standard top-left spot.
     if (contentBlocks.isEmpty && click.dy < contentTop + 220) {
@@ -2114,14 +2150,18 @@ class AppState extends ChangeNotifier {
     for (final cx in xs) {
       if ((cx - click.dx).abs() < (bestX - click.dx).abs()) bestX = cx;
     }
-    x = (bestX - click.dx).abs() < alignX ? bestX : math.max(click.dx, pageLeftMargin);
+    x = (bestX - click.dx).abs() < alignX
+        ? bestX
+        : math.max(click.dx, pageLeftMargin);
 
     // Y: snap just under a nearby block, or align with a block's top.
     var y = math.max(click.dy - 12, contentTop);
     final ys = <double>[];
     for (final b in contentBlocks) {
       final bh = b.h ?? renderSizes[b.id]?.height ?? 60;
-      ys..add(b.y)..add(b.y + bh + 14);
+      ys
+        ..add(b.y)
+        ..add(b.y + bh + 14);
     }
     var bestY = double.infinity;
     for (final cy in ys) {
@@ -2154,7 +2194,12 @@ class AppState extends ChangeNotifier {
   // ── Tree ops ───────────────────────────────────────────────────────────
 
   static const _sectionColors = [
-    'ink-500', 'brass-400', 'green', 'blue', 'violet', 'red'
+    'ink-500',
+    'brass-400',
+    'green',
+    'blue',
+    'violet',
+    'red'
   ];
 
   Future<void> addSection({String? groupId}) async {
@@ -2348,8 +2393,10 @@ class AppState extends ChangeNotifier {
   /// Cached on the same key as the links panel: without it, the panel rescans
   /// every block's Markdown on each notify — i.e. per keystroke — which is the
   /// exact cost the memoised navigator exists to avoid.
-  ({String key, List<({String blockId, int level, String text})> items})?
-      _tocCache;
+  ({
+    String key,
+    List<({String blockId, int level, String text})> items
+  })? _tocCache;
 
   List<({String blockId, int level, String text})> pageOutline() {
     final key = '$pageId#$docRevision';
@@ -2404,9 +2451,8 @@ class AppState extends ChangeNotifier {
     for (final b in blocks.where((b) => b.type == BlockType.text)) {
       for (final m
           in _outgoingLinkRe.allMatches(b.content['text'] as String? ?? '')) {
-        final target = m.group(2) != null
-            ? node(m.group(2))
-            : pageByTitle(m.group(1)!);
+        final target =
+            m.group(2) != null ? node(m.group(2)) : pageByTitle(m.group(1)!);
         if (target != null) out[target.id] = target;
       }
     }
@@ -2435,7 +2481,8 @@ class AppState extends ChangeNotifier {
   /// Resolve a wiki-link target (EMBED-1): prefer the stable id, fall back to
   /// title match, and navigate.
   void openWikiLink(String label, String? id) {
-    final target = (id != null && node(id) != null) ? id : pageByTitle(label)?.id;
+    final target =
+        (id != null && node(id) != null) ? id : pageByTitle(label)?.id;
     if (target != null) selectPage(target);
   }
 
@@ -2528,7 +2575,8 @@ class AppState extends ChangeNotifier {
 
   void _restore(String snap) {
     final j = jsonDecode(snap) as Map<String, dynamic>;
-    pageProps = PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>());
+    pageProps =
+        PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>());
     blocks = [
       for (final b in (j['blocks'] as List))
         Block.fromJson((b as Map).cast<String, dynamic>())
@@ -2656,8 +2704,7 @@ class AppState extends ChangeNotifier {
       editingBlockId = null;
     } else if (additive) {
       if (!selectedIds.add(id)) selectedIds.remove(id);
-      selectedBlockId =
-          selectedIds.contains(id) ? id : selectedIds.firstOrNull;
+      selectedBlockId = selectedIds.contains(id) ? id : selectedIds.firstOrNull;
       editingBlockId = null;
     } else {
       selectedIds
@@ -2849,7 +2896,8 @@ class AppState extends ChangeNotifier {
   String _blockText(Block b) => switch (b.type) {
         BlockType.text => b.content['text'] as String? ?? '',
         BlockType.code => b.content['source'] as String? ?? '',
-        BlockType.math => '${b.content['latex'] ?? ''} ${b.content['linearSource'] ?? ''}',
+        BlockType.math =>
+          '${b.content['latex'] ?? ''} ${b.content['linearSource'] ?? ''}',
         _ => '',
       };
 
@@ -2969,7 +3017,8 @@ class SyncStatus {
   }
 
   IconData get icon {
-    if (!isSynced) return mirrors > 0 ? Icons.backup_outlined : Icons.cloud_off_outlined;
+    if (!isSynced)
+      return mirrors > 0 ? Icons.backup_outlined : Icons.cloud_off_outlined;
     if (hasOtherDevices) return Icons.devices;
     return Icons.cloud_done_outlined;
   }

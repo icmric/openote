@@ -261,6 +261,61 @@ void main() {
       expect(stored.blocks.where((b) => b.id == 'r1'), hasLength(1));
     });
 
+    test('ops that arrive DURING a pull are not dropped', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final tmp = Directory.systemTemp.createTempSync('onote_pull_live_');
+      final repo = await Repository.openAt(tmp);
+      addTearDown(() {
+        repo.dispose();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      final nb = await repo.createNotebook('Live');
+      final app = AppState(repo)..notebookId = nb.id;
+      app.reloadNodes();
+      final pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+      app.pageId = pageId;
+
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+      final store = OpLogStore.forNotebook(ref.file);
+      Op remoteBlock(int seq, int lamport, String id) => Op(
+              device: 'other',
+              seq: seq,
+              lamport: lamport,
+              timestamp: 1,
+              kind: OpKind.blockSet,
+              data: {
+                'pageId': pageId,
+                'block': {
+                  'id': id,
+                  'type': 'text',
+                  'x': 0,
+                  'y': 0,
+                  'w': 320,
+                  'content': {'text': id}
+                }
+              });
+
+      store.append('other', [remoteBlock(1, 9, 'r1')]);
+
+      // Start a pull, and while it is in flight let a second change land and
+      // the watcher fire again. The re-entrant call must not be swallowed: the
+      // debounce has already fired, so if this request is dropped nothing will
+      // ask again and `r2` sits unapplied indefinitely.
+      final first = app.syncPull(nb.id);
+      store.append('other', [remoteBlock(2, 10, 'r2')]);
+      final reentrant = await app.syncPull(nb.id);
+      await first;
+
+      expect(reentrant, 0, reason: 'the re-entrant call itself does no work');
+      final stored = repo.readPage(nb.id, pageId);
+      expect(stored.blocks.where((b) => b.id == 'r1'), hasLength(1));
+      expect(stored.blocks.where((b) => b.id == 'r2'), hasLength(1),
+          reason: 'the change that arrived mid-pull must still be applied');
+    });
+
     test('stop() is idempotent and safe before start', () {
       final tmp = Directory.systemTemp.createTempSync('onote_watch_stop_');
       addTearDown(() {

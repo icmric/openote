@@ -90,8 +90,20 @@ Future<PdfImportResult> importPdfFile(
   final nb = app.notebookId;
   if (nb == null) return (pages: 0, sectionId: null, firstPageId: null);
   if (placement == PdfPlacement.currentPage && app.pageId == null) {
-    // Nowhere to stack onto; fall back rather than silently do nothing.
-    placement = PdfPlacement.pagePerSlide;
+    // No page open — make one and stack onto it.
+    //
+    // This used to silently switch to one-page-per-slide, which is a different
+    // feature, not a fallback: the deck arrived scattered across dozens of
+    // navigator entries and nothing said why. Opening the app on a section
+    // rather than a page is an ordinary thing to do, so the "wrong" mode was
+    // reachable without the user choosing it. Honour the mode that was asked
+    // for; only the arrow menu switches modes now.
+    await app.addPage();
+    if (app.pageId == null) {
+      // Still nowhere to put it (no section at all) — say so rather than
+      // quietly doing something else.
+      return (pages: 0, sectionId: null, firstPageId: null);
+    }
   }
 
   final doc = await PdfDocument.openFile(path);
@@ -99,7 +111,8 @@ Future<PdfImportResult> importPdfFile(
     if (placement == PdfPlacement.currentPage) {
       return await _importOntoCurrentPage(app, nb, doc, onProgress);
     }
-    final title = displayName.replaceAll(RegExp(r'\.pdf$', caseSensitive: false), '');
+    final title =
+        displayName.replaceAll(RegExp(r'\.pdf$', caseSensitive: false), '');
     // A section per PDF: a 60-slide deck dumped into an existing section
     // would bury everything already there.
     final section = app.importNode(
@@ -221,23 +234,15 @@ Future<PdfImportResult> _importOntoCurrentPage(
   // text already on the page instead of hanging off the side.
   final width = (app.pageProps.pageWidth - AppState.pageLeftMargin * 2)
       .clamp(320.0, kPdfPageWidth);
-  // Below the last box.
-  //
-  // Belt and braces, because landing on top of somebody's notes is not a
-  // recoverable mistake: take the lower of what `contentExtent` reports and
-  // the bottom of the furthest-down block by its own stored geometry. The
-  // former can under-report — a block scrolled out of view is culled, so it
-  // never measured itself and only an estimate is available — and the import
-  // is exactly the moment when most of the page is off screen.
-  var y = app.contentExtent().bottom;
-  for (final b in app.blocks) {
-    final bottom = b.y + (b.h ?? app.renderSizes[b.id]?.height ?? app.estimatedHeight(b));
-    if (bottom > y) y = bottom;
-  }
-  y += kPdfStackGap;
+  final anchor = _insertionAnchor(app);
+  var y = anchor.top;
 
   app.pushUndo();
   final top = y;
+  // Everything that sat below the insertion point moves down as slides land,
+  // so inserting at the caret opens a gap instead of burying what follows.
+  // Empty when appending at the end, which is the common case.
+  final displaced = anchor.displaced;
   Block? first;
   var made = 0;
   for (var i = 0; i < total; i++) {
@@ -273,7 +278,16 @@ Future<PdfImportResult> _importOntoCurrentPage(
     first ??= block;
     // Read the position back: addBlock may snap it to the grid, and computing
     // the next slide's y from the requested position would drift.
+    final advance = block.y + h + kPdfStackGap - y;
     y = block.y + h + kPdfStackGap;
+    // Open the gap as we go, so a slide inserted at the caret pushes the notes
+    // below it down rather than landing on top of them. Doing it per slide
+    // (rather than once at the end from a total height) keeps the page
+    // self-consistent at every yield, which matters because the canvas paints
+    // between iterations.
+    for (final d in displaced) {
+      d.y += advance;
+    }
     made++;
     onProgress?.call(made, total);
     // Yield so the window keeps painting — this is what makes the slides
@@ -292,6 +306,64 @@ Future<PdfImportResult> _importOntoCurrentPage(
   await app.flushSave();
   return (pages: made, sectionId: null, firstPageId: app.pageId);
 }
+
+/// Where a printout should start, and which blocks have to move to make room.
+///
+/// **At the cursor if there is one, below everything otherwise.** A student
+/// importing a deck mid-lecture wants it where they are working, not appended
+/// a screen and a half below their last note; a student importing into an empty
+/// page wants it at the top. Anchoring on the block being edited (or, failing
+/// that, the selected one) reads as "insert here" without needing a separate
+/// insertion-point UI.
+///
+/// [displaced] is every block strictly below the anchor, which the caller
+/// shifts down as slides land. Landing on top of somebody's notes is not a
+/// recoverable mistake.
+({double top, List<Block> displaced}) _insertionAnchor(AppState app) {
+  final caretId = app.editingBlockId ?? app.selectedBlockId;
+  final caret = caretId == null
+      ? null
+      : app.blocks.where((b) => b.id == caretId).firstOrNull;
+
+  double bottomOf(Block b) =>
+      b.y + (b.h ?? app.renderSizes[b.id]?.height ?? app.estimatedHeight(b));
+
+  if (caret != null) {
+    final top = bottomOf(caret) + kPdfStackGap;
+    return (
+      top: top,
+      // Strictly below the anchor block, by its own top edge — a block that
+      // merely overlaps the gap stays put, because moving something that
+      // starts above the insertion point would look like the import shuffled
+      // unrelated notes.
+      displaced: [
+        for (final b in app.blocks)
+          if (b.id != caret.id && b.y >= caret.y + 1) b
+      ],
+    );
+  }
+
+  // Nothing focused: append below everything.
+  //
+  // Belt and braces, because `contentExtent` can under-report — a block
+  // scrolled out of view is culled, so it never measured itself and only an
+  // estimate is available — and an import is exactly when most of the page is
+  // off screen. Take the lower of the two answers.
+  var y = app.contentExtent().bottom;
+  for (final b in app.blocks) {
+    final bottom = bottomOf(b);
+    if (bottom > y) y = bottom;
+  }
+  return (top: y + kPdfStackGap, displaced: const []);
+}
+
+/// The placement decision, exposed for tests.
+///
+/// The rendering half needs pdfium and a real file; the *placement* half is
+/// where the reported bug lived, and it is pure.
+@visibleForTesting
+({double top, List<Block> displaced}) debugInsertionAnchor(AppState app) =>
+    _insertionAnchor(app);
 
 /// A rendered page's PNG bytes and pixel size.
 typedef _Rendered = ({Uint8List png, int width, int height});
