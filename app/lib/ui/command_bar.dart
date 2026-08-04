@@ -9,9 +9,11 @@ import '../export/open_export.dart';
 import '../export/pdf_export.dart';
 import '../export/pdf_vector_export.dart';
 import '../export/pdf_import.dart';
+import '../export/print_page.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart';
+import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'color_picker.dart';
 import 'font_picker.dart';
@@ -162,6 +164,14 @@ class _CommandBarState extends State<CommandBar> {
                             onPressed: () =>
                                 _export(context, exportPagePdfVector),
                             child: const Text('PDF (.pdf)'),
+                          ),
+                          MenuItemButton(
+                            leadingIcon:
+                                const Icon(Icons.print_outlined, size: 18),
+                            shortcut: const SingleActivator(
+                                LogicalKeyboardKey.keyP, control: true),
+                            onPressed: () => printCurrentPage(app),
+                            child: const Text('Print…'),
                           ),
                           MenuItemButton(
                             leadingIcon:
@@ -1031,13 +1041,30 @@ class _StudyButton extends StatelessWidget {
   const _StudyButton({required this.app});
   final AppState app;
 
+  /// How close an exam has to be before the badge changes colour. A week is
+  /// when revision stops being a good intention, and it keeps the accent rare
+  /// enough to still mean something when it appears.
+  static const _urgentDays = 7;
+
   @override
   Widget build(BuildContext context) {
-    final (due, total) = app.deckCounts(sectionId: app.activeSectionId);
+    final (due, total) = app.study.deckCounts(sectionId: app.activeSectionId);
+    // Read from the date map and the counts already in hand — deliberately not
+    // through `examPlanFor`, which would walk the deck a second time on a
+    // widget that rebuilds with every keystroke.
+    final exam = app.study.examDate(app.activeSectionId);
+    final daysLeft =
+        exam == null ? null : daysBetween(DateTime.now(), exam);
+    final urgent =
+        daysLeft != null && daysLeft >= 0 && daysLeft <= _urgentDays && due > 0;
+    final countdown = daysLeft == null || daysLeft < 0
+        ? ''
+        : ' · exam ${formatCountdown(daysLeft)}';
     return Tooltip(
       message: total == 0
           ? 'Study — tag a line Question or Definition to make a card'
-          : '$due of $total card${total == 1 ? '' : 's'} due in this section',
+          : '$due of $total card${total == 1 ? '' : 's'} due in this section'
+              '$countdown',
       child: Stack(clipBehavior: Clip.none, children: [
         IconButton(
           icon: const Icon(Icons.school_outlined, size: 17),
@@ -1053,7 +1080,12 @@ class _StudyButton extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary,
+                  // Brass once the exam is inside a week. Colour never carries
+                  // this alone (style guide §3.5) — the tooltip says how many
+                  // days, and the count itself is unchanged.
+                  color: urgent
+                      ? OnoteColors.brass500
+                      : Theme.of(context).colorScheme.primary,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text('$due',
@@ -1061,7 +1093,9 @@ class _StudyButton extends StatelessWidget {
                         fontSize: 9,
                         height: 1.2,
                         fontWeight: FontWeight.w700,
-                        color: Theme.of(context).colorScheme.onPrimary)),
+                        color: urgent
+                            ? Colors.white
+                            : Theme.of(context).colorScheme.onPrimary)),
               ),
             ),
           ),

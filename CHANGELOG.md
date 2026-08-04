@@ -4,6 +4,59 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased — 0.2.0] · the first public release
 
+### Changed — navigator polish + storage honesty (2026-08-05)
+- **Sections inside a group are indented, with a guide rail** down their left
+  edge, so where a group starts and ends is unambiguous.
+- **Section colours can be set.** Right-click a section — the colour swatches
+  are right there. The chip has always been drawn but only the OneNote
+  importer ever wrote it, so on a notebook you started yourself it was a
+  control that looked interactive and wasn't.
+- **Notebooks ▸ Repair** heals every page in one pass. The automatic repair
+  only runs when a page is opened, so a notebook imported before the importer
+  was fixed keeps its junk on every page you have not happened to visit.
+- **The sync dialog says where your notebook actually is** — both paths, both
+  sizes, and which of them your cloud can see. It also finds notebook files
+  nothing points at, and can delete the ones inside your own workspace.
+
+### Fixed — data safety (2026-08-05)
+- **Emptying the recycle bin no longer strands a notebook's sync log.** Purge
+  deleted the notes file and left the `.onotebook` behind — logs and every
+  image they held — invisible to the app and permanent. Shared logs another
+  device still uses are never touched.
+- **Re-joining a notebook you had deleted restores it** instead of copying it
+  again under a new identity, which is how a workspace ends up holding several
+  copies of one notebook.
+- **A text box no longer grows sideways when you click into it**, and lines
+  no longer wrap that shouldn't. Two causes: auto-width was measured only for
+  the block being edited, so a box kept its creation width until first edit
+  and then snapped; and the three paths that render or measure a box each
+  inherited a different Material letter-spacing (read 0.25, edit 0.5, the
+  measurement 0), so letters visibly spread on entering edit and the box was
+  measured narrower than the field it had to hold.
+
+### Changed — navigator redesign (2026-08-04)
+- **Sections and pages are side-by-side columns now**, the OneNote shape: both
+  independently scrollable and resizable, so you can see the section list and a
+  page list at once instead of the two fighting over one column's height.
+- **Browsing never loses your place.** Opening a section returns you to the
+  page you were last on there — not its first page.
+- **Home** — favourites and recent pages finally have a surface, above the
+  section list. Right-click a page ▸ Favourite to pin it.
+- **Collapse to a rail** (Ctrl+\): a 44px strip with the notebook, Home, and a
+  chip per section, so the canvas gets the width back while everything stays
+  one click away.
+- **Keyboard**: Ctrl+PageDown/PageUp — next/previous page; Ctrl+Tab /
+  Ctrl+Shift+Tab — next/previous section.
+
+### Fixed — edit/view text parity (2026-08-04)
+- **Text no longer compresses when you click into a box.** Three separate
+  causes, all pinned by tests now: the editor's implicit strut forced every
+  line to the base height so headings could not be tall while editing; the
+  field's decoration added 8px the read view doesn't have; and the editor used
+  different heading sizes (23/19/16.5 vs 22/18.5/16) with none of the read
+  view's heading spacing. Checkbox and quote rows also reserve the same room
+  in both modes.
+
 ### Compatibility promise
 
 From 0.2.0 onward: **notebooks created by any Openote release open in every later release.** Format v1 (the `.onote` container) and op-log v1 (the `.onotebook` directory) freeze at this release; future format changes bump the format version and migrate one-way-forward.
@@ -17,6 +70,37 @@ From 0.2.0 onward: **notebooks created by any Openote release open in every late
 - **Paste and drag-drop.** Paste a screenshot straight onto the page; drop files on it to add them.
 - **Resize anything properly** — corner and bottom handles, with ink scaling instead of being clipped; **alignment guides** that snap a block flush with its neighbours; **drag pages to reorder** them, with subpages coming along; **recolour lassoed ink**.
 - **Find and replace**, spell-check **suggestions** on right-click with "Add to dictionary", **Ctrl+1–5** tag shortcuts, **copy link to page**, and ``` + Enter to open a code fence.
+
+### Added — sharing, printing and the way out of a deck (2026-08-04)
+- **Hand the annotated deck back in.** Writing on lecture slides worked; getting
+  the result out did not. A section now exports as **one PDF** — "Export section
+  as PDF…" on the section, in navigator order — and each slide keeps its own
+  shape instead of being squeezed onto a portrait sheet with white space under
+  it. The slide's text goes out with it, invisibly, so the exported deck is
+  still searchable in any reader. Losing the picture no longer loses the words.
+- **Share as PDF** from a page's menu, and **Print** (Ctrl+P) for a page or a
+  whole section — the same searchable, selectable, few-hundred-KB page that
+  export produces, straight to the printer.
+- **An import now says what arrived.** "Imported 324 pages, 372 images and
+  64,616 ink strokes from OneNote." Previously it reported only what it could
+  *not* read, so a clean import of five years of notes was a page count and a
+  silence.
+
+### Added — study stats and the exam countdown (2026-08-04)
+- **A reason to open the study panel tomorrow.** The deck now says how much of
+  it you have actually seen, how many cards you reviewed today, and how many
+  days in a row you have turned up — with a fortnight of activity underneath it.
+  A streak stays alive until a whole day has gone by empty, so a morning you
+  haven't studied yet shows the number you are about to keep, not a zero.
+- **Put your exam date on a section** — from the section's right-click menu in
+  the navigator, or from the study panel. It becomes a countdown and a pace:
+  *"14 days · 40 to learn · 3 a day covers them by then."* The target counts
+  cards you have never seen, so it is a number that stays true as you approach
+  it rather than one that recedes. The study button's badge turns brass once the
+  exam is inside a week.
+- Practising counts towards your streak. It still never touches your schedule.
+- Exam dates and review history stay on your own machine: they are personal, so
+  they don't travel to everyone else through a shared notebook.
 
 ### Fixed — post-merge pass (2026-08-04)
 - **The Draw tools work again.** The pen, highlighter, eraser and lasso could not be selected at all: the Draw row contained a spacer that is illegal inside a horizontally scrolling toolbar, so the entire row failed to lay out.

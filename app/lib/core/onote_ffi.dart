@@ -38,9 +38,23 @@ class OnoteCore {
             'onote_core_import_onepkg'),
         _repairFields = lib.lookupFunction<_HashNative, _HashNative>(
             'onote_core_repair_field_codes'),
-        _free = lib.lookupFunction<_FreeNative, _Free>('onote_core_string_free');
+        _free = lib.lookupFunction<_FreeNative, _Free>('onote_core_string_free'),
+        // Looked up leniently, and that is the whole point: a library built
+        // before this symbol existed is exactly the stale library we are trying
+        // to detect, and it must still load and work rather than taking OneNote
+        // import down with it. Null here means "old core", which is reported.
+        _buildId = _optional(lib, 'onote_core_build_id');
+
+  static _VersionNative? _optional(DynamicLibrary lib, String symbol) {
+    try {
+      return lib.lookupFunction<_VersionNative, _VersionNative>(symbol);
+    } catch (_) {
+      return null;
+    }
+  }
 
   final _VersionNative _version;
+  final _VersionNative? _buildId;
   final _MergeNative _merge;
   final _HashNative _hash;
   final _ImportOne _importOne;
@@ -121,6 +135,25 @@ class OnoteCore {
     return paths;
   }
 
+  /// When this library was built, and from which commit — or null when the
+  /// loaded library predates the stamp, which itself means it is old.
+  ///
+  /// Answers the question git cannot: the app loads a compiled artefact, so
+  /// "my checkout is on the right commit" and "the code running is that commit"
+  /// are different claims. This is the second one.
+  ({DateTime built, String commit})? get buildId {
+    final f = _buildId;
+    if (f == null) return null;
+    final raw = _takeString(f());
+    final parts = raw.split(' ');
+    final secs = int.tryParse(parts.first);
+    if (secs == null || secs <= 0) return null;
+    return (
+      built: DateTime.fromMillisecondsSinceEpoch(secs * 1000),
+      commit: parts.length > 1 ? parts[1] : '?',
+    );
+  }
+
   /// Core version string (e.g. "0.1.0").
   String version() {
     final ptr = _version();
@@ -196,15 +229,22 @@ class OnoteCore {
   }
 }
 
-/// Does this text carry Word/OneNote field scaffolding?
+/// Does this text carry anything the import repair can fix?
 ///
 /// A cheap substring test, so the repair path costs nothing on the 99.9% of
 /// blocks that were never near a `.one` file. U+FDDF is what OneNote writes;
 /// U+0013..U+0015 are Word's classic field begin/separator/end, which survive a
 /// paste from Word.
+///
+/// `\$` is here for the second repair: a symbol from OneNote's palette was
+/// imported wrapped in `\$…\$`, which reads correctly until you click into the
+/// box. A page containing no dollar at all — almost all of them — still costs
+/// one substring scan and nothing else, and the repair itself leaves real
+/// equations alone.
 bool textNeedsFieldRepair(String s) =>
     s.contains('\uFDDF') ||
     s.contains('\uFDDE') ||
     s.contains('\u0013') ||
     s.contains('\u0014') ||
-    s.contains('\u0015');
+    s.contains('\u0015') ||
+    s.contains('\$');

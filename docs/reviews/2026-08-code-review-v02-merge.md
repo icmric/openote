@@ -264,7 +264,7 @@ than only recommendations. **309 Dart + 41 Rust tests pass; analyzer clean.**
 | **C.2** `AppState` god object | **Deferred, scheduled.** Item E3 of [v0.4-and-beyond](../planning/v0.4-and-beyond.md), explicitly *before* v0.4 features so they don't land in it. |
 | **C.3** blob duplication + no GC | **Deferred with a corrected diagnosis.** De-duplication is not a standalone change: SQLite is what the app reads and `.onotebook/blobs/` is what sync replicates, so removing either breaks a real path — it **is** the C.4 container demotion, and GC needs its own ADR because a blob is referenced by pages, history snapshots *and* unsynced foreign logs. E1/E2 of v0.4. |
 | **C.4** container in the synced folder | **Deferred**, now paired with C.3 as one piece of work. |
-| **C.5** hygiene | **Partly done** — `.gitignore` added for the untracked MPL-2.0 `onenote-ref` checkout. The `.gitattributes` line-ending normalisation is still deliberately not done (it needs a one-time whole-tree commit). |
+| **C.5** hygiene | **Done 2026-08-04** — and the diagnosis was wrong in a useful way; see §H below. |
 | **D.2** vector PDF export | **Shipped.** Text as embedded-subset Inter with a `/ToUnicode` CMap (so Ctrl+F and copy-paste work in any reader), ink as stroked PDF paths, images embedded, tall pages paginated into sheets. `buildPagePdf` is factored out so **printing (P13)** and **annotated-slide re-export (Phase B step 4)** reuse it. Seven tests. |
 | **§E** product suggestions | **Recorded** in [v0.4-and-beyond.md](../planning/v0.4-and-beyond.md) with sizes, rationale and blockers, rather than living in a review. |
 
@@ -288,3 +288,66 @@ now cover tool selection, the rebuild a tool tap causes, and a narrow window.
 The v0.3 plan already lists "smoke tests for the surfaces with none"
 (`pdf_import`, `study_panel`, `sync_dialog`, `onboarding`) — this is evidence
 that item is worth more than it looks.
+
+---
+
+## H. The hygiene pass, and what it turned out to be (2026-08-04)
+
+§C.5 read the symptom correctly — generated files churning on every checkout —
+and prescribed for the wrong cause. Measuring first changed all three items.
+
+**The line endings were never the problem.** Of 268 tracked files, the only ones
+holding a CR in the index are the two PDFs, the fourteen bundled font files and
+the seven icons. **Not one text file is stored with CRLF.** So the "one-time
+whole-tree normalisation commit" that this review priced as the cost of a
+`.gitattributes` costs nothing: `git add --renormalize .` afterwards reports no
+changes at all. The file is in now, purely as a guard against a contributor
+whose `core.autocrlf` differs — with `*.bat`/`*.cmd`/`*.ps1` pinned to CRLF,
+because `sync-core.bat` is a build script and cmd.exe mis-parses an LF-only
+batch file in ways that look like a `goto` silently doing nothing.
+
+**What was actually churning** is `app/.flutter-plugins-dependencies`: a file
+whose own first line says *"This is a generated file; do not edit or check into
+version control"*, which records **absolute pub-cache paths** (the committed
+copy carries `C:\Users\ericm\AppData\Local\Pub\Cache\...`), and which
+`app/.gitignore` already names — with no effect, because a `.gitignore` entry
+does nothing for a file that is already tracked. `git rm --cached` removes the
+source instead of normalising the symptom, and `flutter pub get` regenerates it
+on every machine including CI, which runs `pub get` before it builds.
+
+**And a worse one found on the way.** `app/.gitignore` also listed `windows/`,
+`linux/` and `macos/` — while 56 files under those directories are tracked.
+Ignore rules do not apply to tracked files, so the entries did nothing for what
+was already there and everything to what was not: **a new file added to any
+runner project was invisible to `git status`** and would be silently left out of
+a commit. Demonstrated rather than assumed — `touch app/windows/_probe.txt`
+produced no output from `git status` before the change and `?? app/windows/_probe.txt`
+after it.
+
+That is not an abstract risk for this project. The hook that builds and bundles
+the Rust core lives in `app/windows/CMakeLists.txt` and `app/linux/CMakeLists.txt`;
+the plugin registrants and the pdfium bundling live beside them. A missing file
+there reproduces the stale-library trap that cost several sessions, and CI is
+the only thing that would have caught it. Each of those directories already
+carries Flutter's own `.gitignore` covering the parts that genuinely are
+generated (`flutter/ephemeral/`, `Pods/`, `xcuserdata/`), which is the right
+granularity and was already working — so the blanket rules were pure downside.
+`ios/`, `android/` and `web/` stay ignored, since none exists, with a comment
+saying to delete the line *before* generating one.
+
+**`app/README.md` was the most misleading file in the repository.** Its "Running
+it" section instructed the reader to run `flutter create --platforms=windows,macos,linux .`
+on the claim that the runner directories "are not committed" — they are, and
+`flutter create` would overwrite the CMake hooks and quietly reintroduce the
+stale-library trap. The same passage told them to delete `test/widget_test.dart`,
+which holds seven real tests today. Below that, two thirds of the file was an
+iteration-2-to-9 changelog duplicating the record that this document already is,
+and the "still not implemented" list named tags, notebook-wide find and external
+links — all shipped. Rewritten as a description of the app as it stands, with
+the macOS gap stated plainly (there is no CMake hook on macOS, so a local
+`flutter build macos` produces an app with no Rust core and therefore no OneNote
+import; `release.yml` handles it explicitly, so releases are unaffected).
+
+Verified after: 340 Dart tests and 41 Rust tests pass, `flutter analyze` clean
+(74 pre-existing infos, none in the changed files), and `git status` stays clean
+across a `flutter pub get`.

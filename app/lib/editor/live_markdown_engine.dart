@@ -233,10 +233,26 @@ class _LiveMarkdownSession extends OnoteEditSession {
           focusNode: _focus,
           maxLines: null,
           style: s.baseStyle,
+          // NON-FORCED strut, explicitly. TextField's default when none is
+          // given is `StrutStyle.fromTextStyle(style, forceStrutHeight: true)`,
+          // and a forced strut makes every line box EXACTLY the base height —
+          // per-span metrics are discarded, so the controller's 22px heading
+          // style was being measured and then thrown away. That is most of why
+          // "the text slightly compresses during editing": headings physically
+          // could not be taller than a body line. Non-forced keeps the strut as
+          // a minimum (empty and marker-only lines hold their height) while a
+          // taller span grows its line, same as the read renderer.
+          strutStyle:
+              StrutStyle.fromTextStyle(s.baseStyle, forceStrutHeight: false),
           cursorColor: Theme.of(context).colorScheme.primary,
           inputFormatters: [WrapSelectionFormatter()],
           decoration: InputDecoration(
             isDense: true,
+            // Zero, not the dense default: InputDecorator otherwise adds 8px
+            // of vertical padding that the read renderer does not have, so
+            // every block grew 8px on entering edit and shrank back on exit.
+            // The block's own inset already provides the breathing room.
+            contentPadding: EdgeInsets.zero,
             border: InputBorder.none,
             hintText: s.hintText,
             hintStyle:

@@ -24,7 +24,9 @@ import '../model/models.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart';
 import '../study/flashcards.dart';
+import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
+import 'exam_date.dart';
 
 /// Which pages a session draws from. Pages ARE the deck structure — a lecture
 /// page is a deck without anyone having to build one — so this is a view over
@@ -82,7 +84,7 @@ class _StudyPanelState extends State<StudyPanel> {
 
   void _start(StudyMode mode) {
     final cards =
-        app.sessionCards(sectionId: _sectionId, pageId: _pageId, mode: mode);
+        app.study.sessionCards(sectionId: _sectionId, pageId: _pageId, mode: mode);
     if (cards.isEmpty) return; // nothing to enter; the overview stays put
     setState(() {
       _mode = mode;
@@ -111,7 +113,7 @@ class _StudyPanelState extends State<StudyPanel> {
     final s = _session;
     if (s == null || _index >= s.length) return;
     final card = s[_index];
-    app.gradeCard(card.id, g, schedule: _mode == StudyMode.due);
+    app.study.gradeCard(card.id, g, schedule: _mode == StudyMode.due);
     if (g == Grade.again && !_missed.any((c) => c.id == card.id)) {
       _missed.add(card);
     }
@@ -152,7 +154,7 @@ class _StudyPanelState extends State<StudyPanel> {
   }
 
   Future<void> _export() async {
-    final cards = app.deck(sectionId: _sectionId, pageId: _pageId);
+    final cards = app.study.deck(sectionId: _sectionId, pageId: _pageId);
     if (cards.isEmpty) return;
     final path = await getSaveLocation(
       suggestedName: 'openote-cards.txt',
@@ -190,7 +192,7 @@ class _StudyPanelState extends State<StudyPanel> {
       ),
     );
     if (ok != true) return;
-    final n = app.resetDeck(sectionId: _sectionId, pageId: _pageId);
+    final n = app.study.resetDeck(sectionId: _sectionId, pageId: _pageId);
     if (!mounted) return;
     _end();
     ScaffoldMessenger.of(context)
@@ -207,7 +209,7 @@ class _StudyPanelState extends State<StudyPanel> {
       _session = null;
       _missed.clear();
     }
-    final stats = app.deckStats(sectionId: _sectionId, pageId: _pageId);
+    final stats = app.study.deckStats(sectionId: _sectionId, pageId: _pageId);
     final session = _session;
     final inSession = session != null && _index < session.length;
 
@@ -260,22 +262,52 @@ class _StudyPanelState extends State<StudyPanel> {
               icon: const Icon(Icons.more_horiz, size: 16),
               tooltip: 'Deck actions',
               padding: EdgeInsets.zero,
-              onSelected: (v) {
-                if (v == 'export') _export();
-                if (v == 'reset') _resetSchedule();
+              onSelected: (v) async {
+                final sectionId = app.activeSectionId;
+                switch (v) {
+                  case 'export':
+                    await _export();
+                  case 'reset':
+                    await _resetSchedule();
+                  case 'exam':
+                    if (sectionId != null &&
+                        await pickExamDate(context, app, sectionId) &&
+                        mounted) {
+                      setState(() {});
+                    }
+                  case 'examclear':
+                    if (sectionId != null && mounted) {
+                      clearExamDate(context, app, sectionId);
+                    }
+                }
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                    value: 'export',
-                    height: 36,
-                    child: Text('Export to Anki…',
-                        style: TextStyle(fontSize: 12.5))),
-                PopupMenuItem(
-                    value: 'reset',
-                    height: 36,
-                    child: Text('Forget schedule…',
-                        style: TextStyle(fontSize: 12.5))),
-              ],
+              itemBuilder: (_) {
+                final hasExam = app.study.examDate(app.activeSectionId) != null;
+                return [
+                  const PopupMenuItem(
+                      value: 'export',
+                      height: 36,
+                      child: Text('Export to Anki…',
+                          style: TextStyle(fontSize: 12.5))),
+                  if (app.activeSectionId != null)
+                    PopupMenuItem(
+                        value: 'exam',
+                        height: 36,
+                        child: Text(hasExam ? 'Change exam date…' : 'Set exam date…',
+                            style: const TextStyle(fontSize: 12.5))),
+                  if (hasExam)
+                    const PopupMenuItem(
+                        value: 'examclear',
+                        height: 36,
+                        child: Text('Remove exam date',
+                            style: TextStyle(fontSize: 12.5))),
+                  const PopupMenuItem(
+                      value: 'reset',
+                      height: 36,
+                      child: Text('Forget schedule…',
+                          style: TextStyle(fontSize: 12.5))),
+                ];
+              },
             ),
           IconButton(
             icon: const Icon(Icons.close, size: 15),
@@ -300,6 +332,10 @@ class _StudyPanelState extends State<StudyPanel> {
             if (s.total == 0)
               _emptyHelp(dark)
             else ...[
+              if (_examBanner(dark, s) case final banner?) ...[
+                banner,
+                const SizedBox(height: 14),
+              ],
               Text.rich(TextSpan(children: [
                 TextSpan(
                     text: '${s.due}',
@@ -357,10 +393,299 @@ class _StudyPanelState extends State<StudyPanel> {
                   textAlign: TextAlign.center,
                   style:
                       TextStyle(fontSize: 10.5, color: OnoteColors.graphite400)),
+              _progress(s, dark),
             ],
           ],
         ),
       );
+
+  // ── The exam countdown ────────────────────────────────────────────────
+
+  /// The banner above the counts, or null when there is no exam to show.
+  ///
+  /// Placed above the due count rather than below the buttons because it is
+  /// the *reason* for the numbers underneath — "14 days" reframes "12 due"
+  /// from a chore into a pace. It stays one compact strip: the primary action
+  /// on this panel is still Review, and a countdown that pushed the button
+  /// below the fold would be a worse feature than no countdown at all.
+  ///
+  /// Takes the caller's [s] rather than re-deriving it: the overview has
+  /// already counted this deck, and `examPlanFor` would walk every card in it
+  /// a second time for numbers that are sitting right there.
+  Widget? _examBanner(
+      bool dark, ({int due, int total, int unseen, int? nextDueAt}) s) {
+    // A whole-notebook deck spans subjects, so there is no single revision
+    // plan to state — three modules' cards are not "the exam's" cards. Show
+    // the soonest exam as context, and offer the jump to the deck it means.
+    if (_scope == DeckScope.notebook) {
+      final next = app.study.nextExam();
+      if (next == null) return null;
+      return _bannerBox(
+        dark: dark,
+        tint: OnoteColors.brass500,
+        icon: Icons.event_outlined,
+        title: next.section.title,
+        trailing: formatCountdown(next.plan.daysLeft),
+        detail: 'Tap to study this section',
+        onTap: () {
+          app.activateSection(next.section.id);
+          setState(() {
+            _scope = DeckScope.section;
+            _session = null;
+          });
+        },
+      );
+    }
+
+    final sectionId = app.activeSectionId;
+    final plan = examPlan(
+      exam: app.study.examDate(sectionId),
+      today: DateTime.now(),
+      unseen: s.unseen,
+      total: s.total,
+    );
+    if (plan == null) return null;
+
+    if (plan.isPast) {
+      // Kept visible rather than quietly dropped: a countdown that vanishes
+      // reads as a bug, and the student is the only one who can say whether
+      // the date was wrong or the exam is simply over.
+      return _bannerBox(
+        dark: dark,
+        tint: OnoteColors.graphite400,
+        icon: Icons.event_available_outlined,
+        title: 'Exam ${formatCountdown(plan.daysLeft)}',
+        trailing: formatExamDate(plan.date, DateTime.now()),
+        detail: 'These cards keep their schedule.',
+        onClear: sectionId == null
+            ? null
+            : () => clearExamDate(context, app, sectionId),
+      );
+    }
+
+    final detail = switch ((plan.isToday, plan.unseen)) {
+      (true, 0) => 'Every card seen. Good luck.',
+      (true, final n) => "$n you haven't seen yet.",
+      (false, 0) => 'All ${plan.total} seen — keep the reviews up.',
+      (false, final n) =>
+        '$n to learn · ${plan.newPerDay} a day covers them by then',
+    };
+    return _bannerBox(
+      dark: dark,
+      tint: OnoteColors.brass500,
+      icon: Icons.flag_outlined,
+      title: plan.isToday
+          ? 'Exam today'
+          : 'Exam ${formatExamDate(plan.date, DateTime.now())}',
+      trailing: formatCountdown(plan.daysLeft),
+      detail: detail,
+      onTap: sectionId == null
+          ? null
+          : () async {
+              if (await pickExamDate(context, app, sectionId) && mounted) {
+                setState(() {});
+              }
+            },
+      onClear: sectionId == null
+          ? null
+          : () => clearExamDate(context, app, sectionId),
+    );
+  }
+
+  Widget _bannerBox({
+    required bool dark,
+    required Color tint,
+    required IconData icon,
+    required String title,
+    required String trailing,
+    required String detail,
+    VoidCallback? onTap,
+    VoidCallback? onClear,
+  }) =>
+      Material(
+        color: tint.withValues(alpha: dark ? .14 : .10),
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(10, 8, onClear == null ? 10 : 2, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(icon, size: 13, color: tint),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(title,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w700)),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(trailing,
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: tint)),
+                  if (onClear != null)
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 12),
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 26, minHeight: 22),
+                      tooltip: 'Remove exam date',
+                      color: OnoteColors.graphite400,
+                      onPressed: onClear,
+                    ),
+                ]),
+                const SizedBox(height: 2),
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Text(detail,
+                      style: const TextStyle(
+                          fontSize: 11,
+                          height: 1.3,
+                          color: OnoteColors.graphite400)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  // ── Progress ──────────────────────────────────────────────────────────
+
+  /// How far through the deck you are, and whether you turned up today.
+  ///
+  /// Below the actions on purpose: it is a reason to come back tomorrow, not a
+  /// thing to read before starting. The two halves are scoped differently and
+  /// labelled so — the deck's progress is this deck's, while the streak counts
+  /// every notebook, because the habit is one habit.
+  Widget _progress(
+      ({int due, int total, int unseen, int? nextDueAt}) s, bool dark) {
+    final seen = s.total - s.unseen;
+    final today = app.study.reviewsToday();
+    final streak = app.study.studyStreakDays();
+    final sectionId = app.activeSectionId;
+    final hasExam = app.study.examDate(sectionId) != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 18),
+        const Divider(height: 1),
+        const SizedBox(height: 12),
+        Row(children: [
+          const Expanded(
+            child: Text('SEEN',
+                style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: .6,
+                    color: OnoteColors.graphite400)),
+          ),
+          Text('$seen of ${s.total}',
+              style: const TextStyle(
+                  fontSize: 11.5, fontWeight: FontWeight.w600)),
+        ]),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: LinearProgressIndicator(
+            value: s.total == 0 ? 0 : seen / s.total,
+            minHeight: 4,
+            backgroundColor: dark ? OnoteColors.night200 : OnoteColors.paper200,
+          ),
+        ),
+        if (app.study.hasStudyHistory) ...[
+          const SizedBox(height: 12),
+          Row(children: [
+            Icon(
+              Icons.local_fire_department,
+              size: 14,
+              color: streak > 0 ? OnoteColors.brass500 : OnoteColors.graphite400,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(_streakLine(streak, today),
+                  style: const TextStyle(fontSize: 11.5, height: 1.3)),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          _activityStrip(app.study.studyActivity(), dark),
+        ],
+        // The only place an exam date can be added from the study side. Quiet
+        // by design — it is an offer, not a demand, and a student with no exam
+        // in sight should not be nagged about one.
+        if (!hasExam && sectionId != null && _scope != DeckScope.notebook) ...[
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              icon: const Icon(Icons.event_outlined, size: 14),
+              label: const Text('Add an exam date',
+                  style: TextStyle(fontSize: 11.5)),
+              style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 6)),
+              onPressed: () async {
+                if (await pickExamDate(context, app, sectionId) && mounted) {
+                  setState(() {});
+                }
+              },
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  static String _streakLine(int streak, int today) {
+    if (streak <= 0) {
+      return today > 0 ? '$today reviewed today' : 'Nothing reviewed today';
+    }
+    // The one line in this panel that is trying to change behaviour: a streak
+    // is only motivating while it is still savable, and the day it is at risk
+    // is the day worth saying so.
+    if (today <= 0) return '$streak-day streak — keep it going today';
+    return '$streak-day streak · $today today';
+  }
+
+  /// Reviews per day for the last fortnight. Today is the full-strength bar,
+  /// so "did I turn up?" is answerable at a glance rather than by counting
+  /// from the left.
+  Widget _activityStrip(List<int> bars, bool dark) {
+    final peak = bars.fold<int>(0, (m, v) => v > m ? v : m);
+    final idle = dark ? OnoteColors.night200 : OnoteColors.paper200;
+    final primary = Theme.of(context).colorScheme.primary;
+    return Tooltip(
+      message: 'Reviews in the last ${bars.length} days',
+      child: SizedBox(
+        height: 20,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            for (var i = 0; i < bars.length; i++) ...[
+              if (i > 0) const SizedBox(width: 2),
+              Expanded(
+                child: Container(
+                  height: peak == 0 ? 2.0 : 2.0 + 18.0 * (bars[i] / peak),
+                  decoration: BoxDecoration(
+                    color: bars[i] == 0
+                        ? idle
+                        : primary.withValues(
+                            alpha: i == bars.length - 1 ? 1.0 : 0.5),
+                    borderRadius: BorderRadius.circular(1.5),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _scopePicker() => Row(children: [
         const Text('Deck',
@@ -386,7 +711,7 @@ class _StudyPanelState extends State<StudyPanel> {
                   DropdownMenuItem(
                     value: s,
                     child: Builder(builder: (_) {
-                      final st = app.deckStats(
+                      final st = app.study.deckStats(
                         sectionId:
                             s == DeckScope.notebook ? null : app.activeSectionId,
                         pageId: s == DeckScope.page ? app.pageId : null,
@@ -450,7 +775,7 @@ class _StudyPanelState extends State<StudyPanel> {
 
   Widget _summary(bool dark) {
     final done = _session?.length ?? 0;
-    final stats = app.deckStats(sectionId: _sectionId, pageId: _pageId);
+    final stats = app.study.deckStats(sectionId: _sectionId, pageId: _pageId);
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(14, 6, 14, 14),
@@ -478,6 +803,39 @@ class _StudyPanelState extends State<StudyPanel> {
               style: const TextStyle(
                   fontSize: 12, color: OnoteColors.graphite400, height: 1.35),
             ),
+            // The payoff. Finishing a sitting is the one moment a student is
+            // certain to be looking at this panel, so it is where the streak
+            // is worth stating — a number that only ever appears in a corner
+            // of an overview screen is a number nobody notices going up.
+            if (app.study.studyStreakDays() > 0) ...[
+              const SizedBox(height: 10),
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const Icon(Icons.local_fire_department,
+                    size: 15, color: OnoteColors.brass500),
+                const SizedBox(width: 5),
+                Text('${app.study.studyStreakDays()}-day streak · '
+                    '${app.study.reviewsToday()} today',
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w600)),
+              ]),
+            ],
+            if (examPlan(
+                  exam: app.study.examDate(app.activeSectionId),
+                  today: DateTime.now(),
+                  unseen: stats.unseen,
+                  total: stats.total,
+                ) case final p? when !p.isPast) ...[
+              const SizedBox(height: 6),
+              Text(
+                p.isToday
+                    ? 'Exam today.'
+                    : '${formatCountdown(p.daysLeft)} until the exam'
+                        '${p.unseen > 0 ? ' · ${p.unseen} still unseen' : ''}.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 11.5, color: OnoteColors.graphite400),
+              ),
+            ],
             const SizedBox(height: 16),
             if (_missed.isNotEmpty)
               FilledButton.icon(
@@ -505,7 +863,7 @@ class _StudyPanelState extends State<StudyPanel> {
 
   Widget _card(Flashcard c, bool dark) {
     final total = _session!.length;
-    final state = app.cardState(c.id);
+    final state = app.study.cardState(c.id);
     final now = nowMs();
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 2, 14, 12),

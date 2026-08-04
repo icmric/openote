@@ -2286,6 +2286,66 @@ fn office_math_to_latex(s: &str) -> String {
     latexify_prose(&joined)
 }
 
+/// Unwrap inline `$…$` spans that never needed to be maths.
+///
+/// **For notes that were imported before the fix.** A character inserted from
+/// OneNote's symbol palette arrives as a maths run, and every maths run used to
+/// be wrapped in `$…$` — so a page reads correctly until you click into it and
+/// find `$∀$` in the middle of your sentence. Fixing the importer does nothing
+/// for a notebook already on disk; by then the delimiters are stored user data.
+///
+/// The test is the same one the importer now applies: a span whose content is
+/// character-for-character what it would render as is not notation, it is a
+/// character. Anything containing a backslash command, a script marker or a
+/// brace is left exactly alone, so real equations are never touched.
+pub fn unwrap_needless_math(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] != '$' {
+            out.push(chars[i]);
+            i += 1;
+            continue;
+        }
+        // `$$` is display maths on its own line — a different dialect, and not
+        // this function's business.
+        if chars.get(i + 1) == Some(&'$') {
+            out.push('$');
+            out.push('$');
+            i += 2;
+            continue;
+        }
+        match chars[i + 1..].iter().position(|c| *c == '$') {
+            Some(rel) => {
+                let inner: String = chars[i + 1..i + 1 + rel].iter().collect();
+                if inner.is_empty() || is_real_notation(&inner) {
+                    out.push('$');
+                    i += 1;
+                } else {
+                    out.push_str(&inner);
+                    i += rel + 2;
+                }
+            }
+            // An unpaired `$` is just a dollar sign.
+            None => {
+                out.push('$');
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// Does this span actually need typesetting?
+fn is_real_notation(inner: &str) -> bool {
+    inner.contains('\\')
+        || inner.contains('^')
+        || inner.contains('_')
+        || inner.contains('{')
+        || inner.contains('}')
+}
+
 /// Wrap prose words (≥2 consecutive letters) in `\text{…}`, grouping runs of
 /// words so their spaces survive LaTeX math mode. OneNote math zones freely mix
 /// sentences with symbols ("A path is a sequence of edges e1, …, en ∈ E such
@@ -2401,15 +2461,40 @@ fn run_markdown(run: &SRun) -> String {
     // right trade — an empty conversion is exactly what used to empty whole
     // pages of content.
     if run.style.is_math {
-        let latex = office_math_to_latex(s.trim_end_matches('\0'));
-        return if latex.trim().is_empty() {
-            s.chars()
-                .map(fold_math_char)
-                .filter(|c| !is_math_control(*c))
-                .collect()
-        } else {
-            format!("{lead}${latex}${trail}")
-        };
+        let src = s.trim_end_matches('\0');
+        let plain: String = src
+            .chars()
+            .map(fold_math_char)
+            .filter(|c| !is_math_control(*c) && *c != '\0')
+            .collect();
+        let latex = office_math_to_latex(src);
+        if latex.trim().is_empty() {
+            return plain;
+        }
+        // **A symbol is not an equation.** OneNote marks a single character as
+        // a math run the moment you insert it from the symbol palette, so a
+        // sentence like "for all x in S" came back as "$∀$ x in S": rendered
+        // correctly in the read-only view, and then showing raw `$∀$` the
+        // instant you clicked into the box. Reported as exactly that.
+        //
+        // The test is whether the conversion actually produced any LaTeX. When
+        // the "LaTeX" is character-for-character the plain text, there is no
+        // notation to typeset — it is a character the app's font chain already
+        // renders — so emit the character and leave the delimiters out. A real
+        // equation converts to something different (\frac, ^, _, \sum) and
+        // still gets its `$…$`.
+        // Compared after normalising BOTH the same way, which the first
+        // attempt at this did not do — and that is why it looked fixed and
+        // wasn't. `office_math_to_latex` strips trailing NULs and collapses
+        // runs of whitespace; the plain string did neither, and `str::trim`
+        // does not remove a NUL because a NUL is not whitespace. So the
+        // comparison was "∀" against "∀\0", which never matches, and every
+        // symbol stayed wrapped exactly as before.
+        let norm = |x: &str| x.split_whitespace().collect::<Vec<_>>().join(" ");
+        if norm(&latex) == norm(&plain) {
+            return plain;
+        }
+        return format!("{lead}${latex}${trail}");
     }
     let core = s[lead.len()..s.len() - trail.len()].to_string();
     let mut core = core;
@@ -2497,7 +2582,21 @@ fn parse_table(
                     PVal::Str(b) => format!("str[{}] {:?}", b.len(), decode_utf16(b)),
                     PVal::Oids(v) => format!("oids[{}]", v.len()),
                     PVal::Osids(v) => format!("osids[{}]", v.len()),
-                    PVal::Other => "other".into(),
+                    PVal::Array(sets) => {
+            let inner: Vec<String> = sets
+                .iter()
+                .map(|s| {
+                    let ps: Vec<String> = s
+                        .props
+                        .iter()
+                        .map(|(pid, v)| format!("{pid:06X}={}", fmt_pval(v)))
+                        .collect();
+                    format!("{{{}}}", ps.join(" "))
+                })
+                .collect();
+            format!("array[{}]{}", sets.len(), inner.join(""))
+        }
+        PVal::Other(t) => format!("other(type=0x{t:02X})"),
                 }
             );
         }
@@ -2780,10 +2879,18 @@ enum PVal {
     /// ObjectSpaceID references (compact IDs from the OSID stream) — resolve
     /// via the global-id table to a space's ExtendedGUID.
     Osids(Vec<u32>),
-    Other,
+    /// A decoded `ArrayOfPropertyValues` (type 0x10) — a property whose value
+    /// is itself a list of property sets. OneNote writes a paragraph's tag
+    /// references this way.
+    Array(Vec<PropSet>),
+    /// A property this parser does not decode, tagged with its MS-ONESTORE
+    /// property type so the dumper can say WHICH one — the difference between
+    /// "something is here" and a diagnosis.
+    Other(u8),
 }
 
 /// One object's fully-parsed property set, in declaration order.
+#[derive(Clone, Debug)]
 struct PropSet {
     props: Vec<(u32, PVal)>,
 }
@@ -2924,7 +3031,7 @@ fn read_propset(r: &Reader, start: usize, len: usize) -> PropSet {
                 if data_o + 4 + cb <= end && cb <= 1 << 20 {
                     PVal::Str(r.d[data_o + 4..data_o + 4 + cb].to_vec())
                 } else {
-                    PVal::Other
+                    PVal::Other(0x07)
                 }
             }
             0x08 => {
@@ -2959,12 +3066,40 @@ fn read_propset(r: &Reader, start: usize, len: usize) -> PropSet {
                 }
                 PVal::Osids(v)
             }
-            _ => PVal::Other,
+            // Decoded in place, sharing the id cursors, because a nested set's
+            // ObjectIDs come from THIS object's stream: reading them anywhere
+            // else would resolve them against the wrong list.
+            0x10 => {
+                let sets = read_prop_array(
+                    r,
+                    data_o,
+                    end,
+                    oid_stream,
+                    max_oids,
+                    &mut oid_cursor,
+                    osid_stream,
+                    max_osids,
+                    &mut osid_cursor,
+                    0,
+                );
+                PVal::Array(sets)
+            }
+            _ => PVal::Other(ptype),
         };
         // 0x05 (4-byte) is stored as raw bits (PVal::U32); callers read it as
         // either f32() or u32() since the type alone doesn't say which.
         props.push((pid, val));
-        data_o += data_size(r, data_o, ptype);
+        let span = prop_span(r, data_o, ptype, end, 0);
+        // A nested property set can itself hold ObjectIDs, which come from THIS
+        // object's id stream — so the cursors have to skip what the nesting
+        // consumed, or every id-typed property after it reads someone else's
+        // reference. The simple types advance their own cursor in the match
+        // above; only the nested ones are accounted for here.
+        if ptype == 0x11 {
+            oid_cursor += span.oids;
+            osid_cursor += span.osids;
+        }
+        data_o += span.bytes;
         if data_o > end {
             break;
         }
@@ -3230,24 +3365,275 @@ fn node_ref(r: &Reader, o: usize, s: u8, c: u8) -> Option<Fcr> {
 
 // ── Property-set parsing (MS-ONE ObjectSpaceObjectPropSet) ──────────────────
 
-fn data_size(r: &Reader, o: usize, ptype: u8) -> usize {
-    match ptype {
-        0x01 | 0x02 => 0,
-        0x03 => 1,
-        0x04 => 2,
-        0x05 => 4,
-        0x06 => 8,
-        0x07 => 4 + r.u32(o) as usize,
-        0x08 => 0,
-        0x09 => 4,
-        0x0A => 0,
-        0x0B => 4,
-        0x0C => 0,
-        0x0D => 4,
-        0x10 => 4,
-        0x11 => 0,
-        _ => 0,
+/// Decode an `ArrayOfPropertyValues` into its nested property sets.
+///
+/// Shares the parent object's id cursors by reference: a nested set's
+/// `ObjectID` properties are indices into the *parent's* stream, taken in
+/// document order along with the parent's own. Passing the cursors down is what
+/// keeps a tag reference pointing at the tag it was written for.
+#[allow(clippy::too_many_arguments)]
+fn read_prop_array(
+    r: &Reader,
+    o: usize,
+    end: usize,
+    oid_stream: usize,
+    max_oids: usize,
+    oid_cursor: &mut usize,
+    osid_stream: usize,
+    max_osids: usize,
+    osid_cursor: &mut usize,
+    depth: u32,
+) -> Vec<PropSet> {
+    let mut out = Vec::new();
+    if depth >= MAX_PROP_NESTING || o + 8 > end {
+        return out;
     }
+    let count = r.u32(o) as usize;
+    if count == 0 || count > 1 << 16 {
+        return out;
+    }
+    let mut p = o + 8;
+    for _ in 0..count {
+        if p + 2 > end {
+            break;
+        }
+        let (set, size) = read_nested_propset(
+            r, p, end, oid_stream, max_oids, oid_cursor, osid_stream, max_osids,
+            osid_cursor, depth + 1,
+        );
+        out.push(set);
+        if size == 0 {
+            break; // malformed: refuse to spin
+        }
+        p += size;
+    }
+    out
+}
+
+/// One embedded `PropertySet`, returning it and the bytes it occupied.
+#[allow(clippy::too_many_arguments)]
+fn read_nested_propset(
+    r: &Reader,
+    o: usize,
+    end: usize,
+    oid_stream: usize,
+    max_oids: usize,
+    oid_cursor: &mut usize,
+    osid_stream: usize,
+    max_osids: usize,
+    osid_cursor: &mut usize,
+    depth: u32,
+) -> (PropSet, usize) {
+    let mut props = Vec::new();
+    if depth >= MAX_PROP_NESTING || o + 2 > end {
+        return (PropSet { props }, 0);
+    }
+    let count = r.u16(o) as usize;
+    let prids = o + 2;
+    let mut data_o = prids + count * 4;
+    if data_o > end || count > 4096 {
+        return (PropSet { props }, 2);
+    }
+    for i in 0..count {
+        let prid = r.u32(prids + i * 4);
+        let pid = prid & 0x03FF_FFFF;
+        let ptype = ((prid >> 26) & 0x1F) as u8;
+        let bool_val = (prid >> 31) & 1 == 1;
+        let val = match ptype {
+            0x02 => PVal::Bool(bool_val),
+            0x03 => PVal::U32(r.u8(data_o) as u32),
+            0x04 => PVal::U32(r.u16(data_o) as u32),
+            0x05 => PVal::U32(r.u32(data_o)),
+            0x06 => PVal::U64(r.u32(data_o) as u64 | ((r.u32(data_o + 4) as u64) << 32)),
+            0x07 => {
+                let cb = r.u32(data_o) as usize;
+                if data_o + 4 + cb <= end && cb <= 1 << 20 {
+                    PVal::Str(r.d[data_o + 4..data_o + 4 + cb].to_vec())
+                } else {
+                    PVal::Other(0x07)
+                }
+            }
+            0x08 => {
+                let v = if *oid_cursor < max_oids {
+                    r.u32(oid_stream + *oid_cursor * 4)
+                } else {
+                    0
+                };
+                *oid_cursor += 1;
+                PVal::Oids(vec![v])
+            }
+            0x09 => {
+                let n = r.u32(data_o) as usize;
+                let mut v = Vec::new();
+                for _ in 0..n {
+                    if *oid_cursor < max_oids {
+                        v.push(r.u32(oid_stream + *oid_cursor * 4));
+                    }
+                    *oid_cursor += 1;
+                }
+                PVal::Oids(v)
+            }
+            0x0A => {
+                let v = if *osid_cursor < max_osids {
+                    r.u32(osid_stream + *osid_cursor * 4)
+                } else {
+                    0
+                };
+                *osid_cursor += 1;
+                PVal::Osids(vec![v])
+            }
+            0x0B => {
+                let n = r.u32(data_o) as usize;
+                let mut v = Vec::new();
+                for _ in 0..n {
+                    if *osid_cursor < max_osids {
+                        v.push(r.u32(osid_stream + *osid_cursor * 4));
+                    }
+                    *osid_cursor += 1;
+                }
+                PVal::Osids(v)
+            }
+            0x10 => PVal::Array(read_prop_array(
+                r, data_o, end, oid_stream, max_oids, oid_cursor, osid_stream,
+                max_osids, osid_cursor, depth + 1,
+            )),
+            _ => PVal::Other(ptype),
+        };
+        props.push((pid, val));
+        data_o += prop_span(r, data_o, ptype, end, depth).bytes;
+        if data_o > end {
+            break;
+        }
+    }
+    (PropSet { props }, data_o.saturating_sub(o))
+}
+
+/// How much space one property's data occupies, and how many ids it consumes.
+///
+/// The id counts matter as much as the byte count: `ObjectID`-typed properties
+/// carry no inline data at all and instead take the next entry from the
+/// object's own id stream, so a nested structure that contains one shifts every
+/// id read after it.
+#[derive(Default, Clone, Copy)]
+struct PropSpan {
+    bytes: usize,
+    oids: usize,
+    osids: usize,
+}
+
+/// Bytes occupied by one property's data.
+///
+/// Kept as a thin wrapper over [prop_span] because most callers only walk
+/// forward and never look at an id.
+fn data_size(r: &Reader, o: usize, ptype: u8) -> usize {
+    prop_span(r, o, ptype, r.d.len(), 0).bytes
+}
+
+/// The full span of one property's data.
+///
+/// **Types 0x10 and 0x11 are variable-length, and getting that wrong is not a
+/// cosmetic bug.** `ArrayOfPropertyValues` (0x10) and `PropertySet` (0x11)
+/// embed whole property sets inside a property. They were previously sized at a
+/// flat 4 and 0 bytes, which meant every property *after* one of them was read
+/// from the wrong offset — and OneNote writes a tag reference (0x3489) as a
+/// 0x10 array, immediately before the paragraph's own text on a tagged
+/// paragraph. So a tagged to-do lost its text entirely: the string's length
+/// prefix was read out of the middle of the tag array, came back as nonsense,
+/// failed the bounds check, and the paragraph silently vanished from the
+/// import. Reproduced from a real tagged `.one`; see the tests.
+///
+/// [depth] bounds the recursion. The structures are self-describing and a
+/// corrupt file can claim arbitrary nesting, so this refuses to follow it
+/// rather than growing the stack — every other parser entry point in this file
+/// is hardened the same way.
+fn prop_span(r: &Reader, o: usize, ptype: u8, end: usize, depth: u32) -> PropSpan {
+    let bytes = |n: usize| PropSpan { bytes: n, ..Default::default() };
+    match ptype {
+        0x01 | 0x02 => bytes(0),
+        0x03 => bytes(1),
+        0x04 => bytes(2),
+        0x05 => bytes(4),
+        0x06 => bytes(8),
+        0x07 => bytes(4 + r.u32(o) as usize),
+        0x08 => PropSpan { bytes: 0, oids: 1, osids: 0 },
+        0x09 => PropSpan { bytes: 4, oids: r.u32(o) as usize, osids: 0 },
+        0x0A => PropSpan { bytes: 0, oids: 0, osids: 1 },
+        0x0B => PropSpan { bytes: 4, oids: 0, osids: r.u32(o) as usize },
+        // ContextIDs come from a stream this parser does not track; the byte
+        // sizes are still correct, which is what keeps the walk aligned.
+        0x0C => bytes(0),
+        0x0D => bytes(4),
+        0x10 => array_of_property_values_span(r, o, end, depth),
+        0x11 => nested_propset_span(r, o, end, depth),
+        _ => bytes(0),
+    }
+}
+
+/// Deepest nesting followed before giving up. Real files use one or two levels;
+/// anything beyond this is corruption or an attack, and the safe answer is to
+/// stop rather than to recurse.
+const MAX_PROP_NESTING: u32 = 8;
+
+/// `ArrayOfPropertyValues`: cProperties (4) + prid (4) + cProperties property
+/// sets, each laid out exactly like a nested [nested_propset_span].
+fn array_of_property_values_span(
+    r: &Reader,
+    o: usize,
+    end: usize,
+    depth: u32,
+) -> PropSpan {
+    if depth >= MAX_PROP_NESTING || o + 4 > end {
+        return PropSpan { bytes: 4, ..Default::default() };
+    }
+    let count = r.u32(o) as usize;
+    // An empty array still carries its prid, and a count large enough to be
+    // nonsense means the file is not what it claims — walk no further.
+    if count == 0 || count > 1 << 16 {
+        return PropSpan { bytes: 8, ..Default::default() };
+    }
+    let mut span = PropSpan { bytes: 8, ..Default::default() };
+    let mut p = o + 8;
+    for _ in 0..count {
+        if p >= end {
+            break;
+        }
+        let inner = nested_propset_span(r, p, end, depth + 1);
+        p += inner.bytes;
+        span.bytes += inner.bytes;
+        span.oids += inner.oids;
+        span.osids += inner.osids;
+    }
+    span
+}
+
+/// A `PropertySet` embedded inside a property: cProperties (2) + the prid
+/// array + each property's data.
+fn nested_propset_span(r: &Reader, o: usize, end: usize, depth: u32) -> PropSpan {
+    if depth >= MAX_PROP_NESTING || o + 2 > end {
+        return PropSpan::default();
+    }
+    let count = r.u16(o) as usize;
+    let mut span = PropSpan {
+        bytes: 2 + count * 4,
+        ..Default::default()
+    };
+    let mut data = o + span.bytes;
+    if data > end {
+        return PropSpan { bytes: 2, ..Default::default() };
+    }
+    for i in 0..count {
+        if data >= end {
+            break;
+        }
+        let prid = r.u32(o + 2 + i * 4);
+        let ptype = ((prid >> 26) & 0x1F) as u8;
+        let inner = prop_span(r, data, ptype, end, depth + 1);
+        data += inner.bytes;
+        span.bytes += inner.bytes;
+        span.oids += inner.oids;
+        span.osids += inner.osids;
+    }
+    span
 }
 
 /// Decode an MS-ISF multi-byte stream of signed numbers: a length-prefixed
@@ -3909,13 +4295,235 @@ fn fmt_pval(v: &PVal) -> String {
         }
         PVal::Oids(v) => format!("oids={v:08X?}"),
         PVal::Osids(v) => format!("osids={v:08X?}"),
-        PVal::Other => "other".into(),
+        PVal::Array(sets) => {
+            let inner: Vec<String> = sets
+                .iter()
+                .map(|set| {
+                    let ps: Vec<String> = set
+                        .props
+                        .iter()
+                        .map(|(pid, v)| format!("{pid:06X}={}", fmt_pval(v)))
+                        .collect();
+                    format!("{{{}}}", ps.join(" "))
+                })
+                .collect();
+            format!("array[{}] {}", sets.len(), inner.join(" "))
+        }
+        PVal::Other(t) => format!("other(type=0x{t:02X})"),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Build one object property set the way MS-ONESTORE lays it out, so the
+    /// property walk can be exercised without a real file.
+    ///
+    /// Header: oid count (bit 31 set = no object-space stream), the oid stream,
+    /// then the property count, the property-id array, and the data.
+    fn propset_blob(oids: &[u32], props: &[(u32, u8, Vec<u8>)]) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(&((oids.len() as u32) | 0x8000_0000).to_le_bytes());
+        for o in oids {
+            b.extend_from_slice(&o.to_le_bytes());
+        }
+        b.extend_from_slice(&(props.len() as u16).to_le_bytes());
+        for (pid, ptype, _) in props {
+            b.extend_from_slice(&(pid | ((*ptype as u32) << 26)).to_le_bytes());
+        }
+        for (_, _, data) in props {
+            b.extend_from_slice(data);
+        }
+        b
+    }
+
+    /// A tagged paragraph, reduced to the shape that broke it.
+    ///
+    /// Measured from a real tagged `.one`: OneNote writes the paragraph's tag
+    /// reference as property 0x3489, type 0x10 (`ArrayOfPropertyValues`), whose
+    /// single element is a property set holding 0x3488 — an ObjectID pointing at
+    /// the tag definition. On the *to-do* paragraph that array is written BEFORE
+    /// the run's own text (0x3498), and 0x10 was sized at a flat 4 bytes.
+    ///
+    /// So the text's length prefix was read out of the middle of the tag array,
+    /// came back as nonsense, failed its bounds check, and the paragraph
+    /// vanished from the import with no warning at all. One line of a page,
+    /// gone, on every tagged to-do anyone ever imported.
+    #[test]
+    fn a_tag_array_before_the_text_does_not_eat_it() {
+        // ArrayOfPropertyValues: count, prid, then one nested PropertySet
+        // holding a single ObjectID property (0x3488).
+        let mut array = Vec::new();
+        array.extend_from_slice(&1u32.to_le_bytes()); // cProperties
+        array.extend_from_slice(&0x3488u32.to_le_bytes()); // prid
+        array.extend_from_slice(&1u16.to_le_bytes()); // nested count
+        array.extend_from_slice(&(0x3488u32 | (0x08 << 26)).to_le_bytes());
+
+        let mut text = Vec::new();
+        text.extend_from_slice(&4u32.to_le_bytes());
+        text.extend_from_slice(b"Todo");
+
+        let blob = propset_blob(
+            &[0x15],
+            &[(0x3489, 0x10, array), (0x3498, 0x07, text)],
+        );
+        let r = Reader { d: &blob };
+        let set = read_propset(&r, 0, blob.len());
+
+        let text = set.props.iter().find(|(pid, _)| *pid == 0x3498);
+        match text {
+            Some((_, PVal::Str(b))) => assert_eq!(b, b"Todo"),
+            other => panic!("the tagged line lost its text: {other:?}"),
+        }
+        // And the tag itself is readable, which is what makes import possible.
+        match set.props.iter().find(|(pid, _)| *pid == 0x3489) {
+            Some((_, PVal::Array(sets))) => {
+                assert_eq!(sets.len(), 1);
+                assert!(matches!(
+                    sets[0].props.first(),
+                    Some((0x3488, PVal::Oids(v))) if v == &vec![0x15]
+                ));
+            }
+            other => panic!("tag reference not decoded: {other:?}"),
+        }
+    }
+
+    /// The same walk, with the array LAST — the case that always worked, kept
+    /// so a future change can't fix one ordering by breaking the other.
+    #[test]
+    fn a_tag_array_after_the_text_still_reads_both() {
+        let mut array = Vec::new();
+        array.extend_from_slice(&1u32.to_le_bytes());
+        array.extend_from_slice(&0x3488u32.to_le_bytes());
+        array.extend_from_slice(&1u16.to_le_bytes());
+        array.extend_from_slice(&(0x3488u32 | (0x08 << 26)).to_le_bytes());
+        let mut text = Vec::new();
+        text.extend_from_slice(&8u32.to_le_bytes());
+        text.extend_from_slice(b"Question");
+
+        let blob = propset_blob(
+            &[0x19],
+            &[(0x3498, 0x07, text), (0x3489, 0x10, array)],
+        );
+        let r = Reader { d: &blob };
+        let set = read_propset(&r, 0, blob.len());
+        assert!(matches!(
+            set.props.iter().find(|(pid, _)| *pid == 0x3498),
+            Some((_, PVal::Str(b))) if b == b"Question"
+        ));
+    }
+
+    /// A malformed nested structure must stop, not recurse until the stack does.
+    #[test]
+    fn absurd_nesting_is_refused_rather_than_followed() {
+        // cProperties large, then a nested set that claims to contain itself.
+        let mut array = Vec::new();
+        array.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+        array.extend_from_slice(&0x3488u32.to_le_bytes());
+        let blob = propset_blob(&[], &[(0x3489, 0x10, array)]);
+        let r = Reader { d: &blob };
+        let set = read_propset(&r, 0, blob.len()); // must return, not hang
+        assert_eq!(set.props.len(), 1);
+    }
+
+    /// Reported: "some symbols end up with $x$ around them when I start
+    /// editing a box". They do: OneNote marks a character inserted from the
+    /// symbol palette as a math run, and every math run was wrapped in `$…$`.
+    /// The view renders that as maths and the editor shows the source, so the
+    /// delimiters appear the moment you click in.
+    #[test]
+    fn a_lone_symbol_is_not_wrapped_in_math_delimiters() {
+        let math = Style { is_math: true, ..Default::default() };
+        for sym in ["∀", "∈", "ℝ", "θ", "≤", "∑"] {
+            let run = SRun { text: sym.into(), style: math.clone() };
+            assert_eq!(
+                run_markdown(&run),
+                sym,
+                "a bare {sym} should import as itself, not as ${sym}$"
+            );
+        }
+    }
+
+    /// The shape that occurs in a real file, and that the first attempt at this
+    /// fix missed entirely.
+    ///
+    /// OneNote run text is NUL-terminated, and `str::trim` does not strip a NUL
+    /// because a NUL is not whitespace — so comparing the converted LaTeX
+    /// against an un-normalised plain string compared "∀" with "∀\0" and never
+    /// matched. The symbols stayed wrapped, the tests passed, and the bug was
+    /// still there on the next import. Both sides are normalised now.
+    #[test]
+    fn a_symbol_with_a_trailing_nul_is_still_just_a_symbol() {
+        let math = Style { is_math: true, ..Default::default() };
+        for raw in ["∀\0", "∈\0\0", "ℝ\0"] {
+            let run = SRun { text: raw.into(), style: math.clone() };
+            let out = run_markdown(&run);
+            assert!(
+                !out.contains('$'),
+                "{raw:?} imported as {out:?} — still wrapped"
+            );
+            assert!(!out.contains('\0'), "{out:?} kept a NUL");
+        }
+    }
+
+    /// Internal whitespace is collapsed by the LaTeX path too, so it must not
+    /// count as a difference either.
+    #[test]
+    fn spacing_alone_does_not_make_it_an_equation() {
+        let run = SRun {
+            text: "E  ∩  O\0".into(),
+            style: Style { is_math: true, ..Default::default() },
+        };
+        assert!(!run_markdown(&run).contains('$'));
+    }
+
+    /// …while something that genuinely needs typesetting keeps its delimiters.
+    #[test]
+    fn real_notation_still_becomes_inline_math() {
+        let run = SRun {
+            text: "\u{FDD0}a\u{FDEE}b\u{FDEF}".into(),
+            style: Style { is_math: true, ..Default::default() },
+        };
+        let out = run_markdown(&run);
+        assert!(out.starts_with('$') && out.ends_with('$'), "got {out:?}");
+        assert!(out.contains("\\frac"), "got {out:?}");
+    }
+
+    #[test]
+    fn healing_unwraps_a_symbol_but_never_an_equation() {
+        // What an already-imported page looks like.
+        assert_eq!(
+            unwrap_needless_math("for all $∀$ x in $S$"),
+            "for all ∀ x in S"
+        );
+        // Real notation keeps its delimiters, whatever else is on the line.
+        for eq in [
+            "$\\frac{a}{b}$",
+            "$x^2$",
+            "$a_1$",
+            "$\\sum_{i=1}^{n}$",
+        ] {
+            assert_eq!(unwrap_needless_math(eq), eq, "{eq} must stay maths");
+        }
+        // Display maths is a different dialect and is left alone.
+        assert_eq!(unwrap_needless_math("$$x^2$$"), "$$x^2$$");
+        // A lone dollar is a dollar.
+        assert_eq!(unwrap_needless_math("costs $5 today"), "costs $5 today");
+        // Mixed line: unwrap the symbol, keep the equation.
+        assert_eq!(
+            unwrap_needless_math("if $θ$ then $x^2$"),
+            "if θ then $x^2$"
+        );
+    }
+
+    #[test]
+    fn healing_leaves_ordinary_prose_untouched() {
+        for s in ["nothing here", "", "a $ b $ c"] {
+            let out = unwrap_needless_math(s);
+            assert!(out.len() <= s.len() + 1, "{s:?} -> {out:?}");
+        }
+    }
 
     #[test]
     fn rejects_non_one_input() {

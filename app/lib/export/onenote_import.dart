@@ -263,6 +263,11 @@ Future<int?> importOneNoteFile(AppState app,
   if (file == null) return null;
 
   final Uint8List bytes = await file.readAsBytes();
+  // Reset here too. These are process-global counters, so without this a
+  // section imported after a package reported the package's numbers — which
+  // matters more now that the report says what ARRIVED and not only what did
+  // not.
+  _resetImportReport();
   Map<String, dynamic> result;
   try {
     final json = await _withBusyDialog(
@@ -323,9 +328,7 @@ Future<int?> importOneNotePackage(AppState app,
   final Uint8List bytes = await file.readAsBytes();
   // One dialog spans both phases: the native parse (single isolate call) and
   // the per-section database writes, which narrate progress as they go.
-  lastSkippedSections = const [];
-  lastDroppedStrokes = 0;
-  lastImportError = null;
+  _resetImportReport();
   final progress = ValueNotifier(
       'Reading notebook… this can take a while for large notebooks.');
   return _withBusyDialog(progressContext, progress, () async {
@@ -377,6 +380,28 @@ List<String> lastSkippedSections = const [];
 /// reference notebook). Non-zero means the notes look complete but a handful
 /// of pen marks are missing — worth a sentence, not silence.
 int lastDroppedStrokes = 0;
+
+/// Clear every last-import counter. One function, because they are reset from
+/// two entry points and the one that forgot was silently wrong.
+void _resetImportReport() {
+  lastSkippedSections = const [];
+  lastDroppedStrokes = 0;
+  lastImportedImages = 0;
+  lastImportedStrokes = 0;
+  lastImportError = null;
+}
+
+/// What ARRIVED in the last import — images stored and ink strokes decoded.
+///
+/// The failure half of an import has been surfaced since the Tier-1 pass
+/// (skipped sections, dropped strokes). This is the other half, and it is not
+/// symmetry for its own sake: a switcher who has just handed us five years of
+/// notes has no way to know whether it worked, and silence reads as "probably
+/// lost something". The numbers were already being walked past — every image is
+/// counted as it is stored and every stroke as it is decoded — so saying them
+/// costs two integers.
+int lastImportedImages = 0;
+int lastImportedStrokes = 0;
 
 /// Why the last import returned 0, when the reason wasn't "nothing usable".
 String? lastImportError;
@@ -505,6 +530,7 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
       }
       final hash = app.importBlob(nbId, png, 'image/png');
       hashByIndex[i] = hash;
+      lastImportedImages++;
       if (img['in_flow'] == true) continue; // rides a text box's flow
       final dw = (img['disp_w'] as num?)?.toDouble() ?? 0;
       final dh = (img['disp_h'] as num?)?.toDouble() ?? 0;
@@ -658,6 +684,7 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
         });
       }
       if (strokes.isNotEmpty) {
+        lastImportedStrokes += strokes.length;
         blocks.add(Block(
           type: BlockType.ink,
           x: mnx - 6,

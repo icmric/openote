@@ -118,6 +118,99 @@ void main() {
     );
   });
 
+  test('purging a notebook reclaims its logs too', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // Purge deleted only the .onote and left the .onotebook behind — logs and
+    // every blob they held, stranded somewhere the app would never look
+    // again. On a synced notebook that is hundreds of megabytes of cloud
+    // quota, permanently.
+    final tmp = Directory.systemTemp.createTempSync('onote_purge_');
+    final repo = await Repository.openAt(tmp);
+    addTearDown(() {
+      repo.dispose();
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    final made = await repo.createNotebook('Doomed');
+    final logs = Directory('${p.withoutExtension(made.file)}.onotebook');
+    logs.createSync(recursive: true);
+    File('${logs.path}/manifest.json').writeAsStringSync('{}');
+
+    await repo.createNotebook('Keeper'); // never the only notebook
+    await repo.trashNotebook(made.id);
+    await repo.purgeNotebook(made.id);
+
+    expect(File(made.file).existsSync(), isFalse);
+    expect(logs.existsSync(), isFalse, reason: 'the log directory leaked');
+  });
+
+  test('purge never deletes logs another notebook still shares', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // A device that joined a shared folder keeps a private container and
+    // points logDir at the shared logs, so two entries can legitimately name
+    // the same directory. Purging one must not take the other's data.
+    final tmp = Directory.systemTemp.createTempSync('onote_purge_shared_');
+    final shared = Directory.systemTemp.createTempSync('onote_purge_cloud_');
+    final repo = await Repository.openAt(tmp);
+    addTearDown(() {
+      repo.dispose();
+      for (final d in [tmp, shared]) {
+        try {
+          d.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    });
+
+    final sharedLogs = Directory('${shared.path}/Shared.onotebook')
+      ..createSync(recursive: true);
+    File('${sharedLogs.path}/manifest.json').writeAsStringSync('{}');
+
+    final a = await repo.createNotebook('A');
+    final b = await repo.createNotebook('B');
+    a.logDir = sharedLogs.path;
+    b.logDir = sharedLogs.path;
+
+    await repo.trashNotebook(a.id);
+    await repo.purgeNotebook(a.id);
+    expect(sharedLogs.existsSync(), isTrue,
+        reason: "purging one device's entry must not delete shared logs");
+  });
+
+  test('re-joining a trashed notebook restores it instead of copying',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // The dedupe check looked only at LIVE notebooks, so trash-then-rejoin
+    // copied the container again under a fresh id — which is how a workspace
+    // ends up holding five ~95MB copies of one notebook.
+    final tmp = Directory.systemTemp.createTempSync('onote_rejoin_');
+    final shared = Directory.systemTemp.createTempSync('onote_rejoin_cloud_');
+    final repo = await Repository.openAt(tmp);
+    addTearDown(() {
+      repo.dispose();
+      for (final d in [tmp, shared]) {
+        try {
+          d.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    });
+
+    final made = await repo.createNotebook('Shared');
+    await repo.createNotebook('Other'); // so trashing is allowed
+    final moved = await repo.moveNotebookTo(made.id, shared.path);
+
+    final joined = await repo.openExistingNotebook(moved);
+    final countAfterJoin = repo.notebooks.length;
+    await repo.trashNotebook(joined.id);
+    final again = await repo.openExistingNotebook(moved);
+
+    expect(again.id, joined.id, reason: 'the same notebook, not a new copy');
+    expect(repo.notebooks.length, countAfterJoin);
+    expect(repo.trashedNotebooks.any((n) => n.id == joined.id), isFalse,
+        reason: 'and it came back out of the bin');
+  });
+
   group('mirrors and backups', () {
     late Directory src, dest;
 

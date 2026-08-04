@@ -45,7 +45,8 @@ or a rewrite, which is an acceptable price for the trust it buys.
 
 ## Third-party dependency audit
 
-Verified 2026-07-27 (ADR-0005 required this before ratification). All direct
+Verified 2026-07-27 (ADR-0005 required this before ratification); `printing`
+added and audited 2026-08-04 (Apache-2.0, same author as `pdf`). All direct
 dependencies are permissive and compatible with both an AGPL-3.0 application and
 an Apache-2.0 core:
 
@@ -56,7 +57,7 @@ an Apache-2.0 core:
 | `pdfrx`, `pdfrx_engine`, `pdfium_dart`, `pdfium_flutter`, `synchronized` | MIT |
 | **pdfium** (the bundled PDF engine binary, ~5.6 MB) | BSD-3-Clause (Google) |
 | `path`, `path_provider`, `ffi`, `file_selector`, `flutter_lints`, `win32`, `win32_registry` | BSD-3-Clause |
-| `flutter_math_fork`, `pdf`, `desktop_drop`, `rxdart` | Apache-2.0 |
+| `flutter_math_fork`, `pdf`, `printing`, `desktop_drop`, `rxdart` | Apache-2.0 |
 | `serde`, `serde_json` | MIT OR Apache-2.0 |
 | `cab` (vendored) | MIT |
 

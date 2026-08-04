@@ -17,6 +17,7 @@ import 'package:openote/model/tags.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/study/flashcards.dart';
+import 'package:openote/study/study_stats.dart';
 
 import 'support/sqlite.dart';
 
@@ -67,11 +68,11 @@ void main() {
     final (repo, tmp, app) = await fixture('onote_study_again_', 3);
     addTearDown(() => cleanup(repo, tmp));
 
-    final card = app.deck().first;
-    app.gradeCard(card.id, Grade.again);
+    final card = app.study.deck().first;
+    app.study.gradeCard(card.id, Grade.again);
     // The old behaviour scheduled it for tomorrow, so it disappeared from the
     // deck entirely and "let me try that one again" was impossible.
-    final s = app.cardState(card.id);
+    final s = app.study.cardState(card.id);
     expect(s.dueAt - nowMs(), lessThan(3600000));
   });
 
@@ -80,22 +81,22 @@ void main() {
     final (repo, tmp, app) = await fixture('onote_study_cram_', 4);
     addTearDown(() => cleanup(repo, tmp));
 
-    for (final c in app.deck()) {
-      app.gradeCard(c.id, Grade.easy);
+    for (final c in app.study.deck()) {
+      app.study.gradeCard(c.id, Grade.easy);
     }
-    expect(app.sessionCards().length, 0, reason: 'everything is scheduled out');
+    expect(app.study.sessionCards().length, 0, reason: 'everything is scheduled out');
 
-    final practice = app.sessionCards(mode: StudyMode.cram);
+    final practice = app.study.sessionCards(mode: StudyMode.cram);
     expect(practice.length, 4, reason: 'practice ignores the schedule');
 
-    final before = app.cardState(practice.first.id).dueAt;
-    app.gradeCard(practice.first.id, Grade.good, schedule: false);
-    expect(app.cardState(practice.first.id).dueAt, before,
+    final before = app.study.cardState(practice.first.id).dueAt;
+    app.study.gradeCard(practice.first.id, Grade.good, schedule: false);
+    expect(app.study.cardState(practice.first.id).dueAt, before,
         reason: 'a night of cramming must not wipe weeks of spacing');
 
     // Getting one WRONG is information about the card whatever the mode.
-    app.gradeCard(practice.first.id, Grade.again, schedule: false);
-    expect(app.cardState(practice.first.id).dueAt, lessThan(before));
+    app.study.gradeCard(practice.first.id, Grade.again, schedule: false);
+    expect(app.study.cardState(practice.first.id).dueAt, lessThan(before));
   });
 
   test('deckStats says when the next card is due', () async {
@@ -103,11 +104,11 @@ void main() {
     final (repo, tmp, app) = await fixture('onote_study_stats_', 3);
     addTearDown(() => cleanup(repo, tmp));
 
-    expect(app.deckStats().unseen, 3);
-    for (final c in app.deck()) {
-      app.gradeCard(c.id, Grade.easy);
+    expect(app.study.deckStats().unseen, 3);
+    for (final c in app.study.deck()) {
+      app.study.gradeCard(c.id, Grade.easy);
     }
-    final s = app.deckStats();
+    final s = app.study.deckStats();
     expect(s.due, 0);
     expect(s.total, 3);
     expect(s.nextDueAt, isNotNull,
@@ -120,12 +121,12 @@ void main() {
     final (repo, tmp, app) = await fixture('onote_study_reset_', 3);
     addTearDown(() => cleanup(repo, tmp));
 
-    for (final c in app.deck()) {
-      app.gradeCard(c.id, Grade.easy);
+    for (final c in app.study.deck()) {
+      app.study.gradeCard(c.id, Grade.easy);
     }
-    expect(app.resetDeck(), 3);
-    expect(app.deckStats().due, 3);
-    expect(app.deckStats().unseen, 3);
+    expect(app.study.resetDeck(), 3);
+    expect(app.study.deckStats().due, 3);
+    expect(app.study.deckStats().unseen, 3);
   });
 
   test('reading a schedule does not create one', () async {
@@ -133,11 +134,11 @@ void main() {
     final (repo, tmp, app) = await fixture('onote_study_read_', 3);
     addTearDown(() => cleanup(repo, tmp));
 
-    for (final c in app.deck()) {
-      app.cardState(c.id);
+    for (final c in app.study.deck()) {
+      app.study.cardState(c.id);
     }
     // Grade exactly one card; only that one may be persisted.
-    app.gradeCard(app.deck().first.id, Grade.good);
+    app.study.gradeCard(app.study.deck().first.id, Grade.good);
     final stored = repo.getSetting('cardStates') as Map?;
     expect(stored, isNotNull);
     expect(stored!.length, 1,
@@ -154,11 +155,11 @@ void main() {
     final (repo, tmp, app) = await fixture('onote_study_cross_', 2);
     addTearDown(() => cleanup(repo, tmp));
 
-    for (final c in app.deck()) {
-      app.gradeCard(c.id, Grade.easy);
+    for (final c in app.study.deck()) {
+      app.study.gradeCard(c.id, Grade.easy);
     }
     final first = app.notebookId!;
-    final firstCards = {for (final c in app.deck()) c.id};
+    final firstCards = {for (final c in app.study.deck()) c.id};
     expect(firstCards, isNotEmpty);
 
     // A second notebook in the same workspace, with its own card.
@@ -181,7 +182,7 @@ void main() {
     app.reloadNodes();
     await app.selectPage(node.id);
 
-    app.gradeCard(app.deck().first.id, Grade.good);
+    app.study.gradeCard(app.study.deck().first.id, Grade.good);
 
     final stored = repo.getSetting('cardStates') as Map?;
     expect(stored, isNotNull);
@@ -200,23 +201,23 @@ void main() {
     final (repo, tmp, app) = await fixture('onote_study_move_', 2);
     addTearDown(() => cleanup(repo, tmp));
 
-    final card = app.deck(pageId: app.pageId).single;
-    app.gradeCard(card.id, Grade.easy);
-    final due = app.cardState(card.id).dueAt;
+    final card = app.study.deck(pageId: app.pageId).single;
+    app.study.gradeCard(card.id, Grade.easy);
+    final due = app.study.cardState(card.id).dueAt;
     expect(due, greaterThan(0));
 
     // Exactly what typing a line above it does.
     final b = app.blocks.first;
     final before = b.content['text'] as String;
     final after = 'Lecture 4\n$before';
-    app.remapCardStates(b.id, NoteTag.rebase(b.content, before, after));
+    app.study.remapCardStates(b.id, NoteTag.rebase(b.content, before, after));
     b.content['text'] = after;
     app.markDirty();
 
-    final moved = app.deck(pageId: app.pageId).single;
+    final moved = app.study.deck(pageId: app.pageId).single;
     expect(moved.id, isNot(card.id), reason: 'the card was renamed');
     expect(moved.front, card.front, reason: 'but it asks the same question');
-    expect(app.cardState(moved.id).dueAt, due,
+    expect(app.study.cardState(moved.id).dueAt, due,
         reason: 'and it must still be scheduled for the same day');
   });
 
@@ -226,7 +227,7 @@ void main() {
     final (repo, tmp, app) = await fixture('onote_study_live_', 2);
     addTearDown(() => cleanup(repo, tmp));
 
-    final before = app.deck().length;
+    final before = app.study.deck().length;
     final b = app.blocks.first;
     b.content['text'] = '${b.content['text']}\nPerf — how fast it feels.';
     NoteTag.writeInto(b.content, [
@@ -236,7 +237,7 @@ void main() {
     // Exactly what an edit does — no docRevision bump, no page reload.
     app.markDirty();
 
-    expect(app.deck().length, before + 1,
+    expect(app.study.deck().length, before + 1,
         reason: 'tagging a line has to produce a card there and then');
   });
 
@@ -245,11 +246,11 @@ void main() {
     final (repo, tmp, app) = await fixture('onote_study_scope_', 5);
     addTearDown(() => cleanup(repo, tmp));
 
-    expect(app.deck().length, 5);
-    expect(app.deck(pageId: app.pageId).length, 1);
+    expect(app.study.deck().length, 5);
+    expect(app.study.deck(pageId: app.pageId).length, 1);
     final other = app.nodes.firstWhere((n) => n.title == 'Page 3').id;
-    expect(app.deck(pageId: other).length, 1);
-    expect(app.deck(pageId: other).first.pageTitle, 'Page 3');
+    expect(app.study.deck(pageId: other).length, 1);
+    expect(app.study.deck(pageId: other).first.pageTitle, 'Page 3');
   });
 
   test('deck counts stay cached across repeated calls', () async {
@@ -258,10 +259,10 @@ void main() {
     addTearDown(() => cleanup(repo, tmp));
 
     // The split cache must not have reintroduced the per-keystroke full read.
-    app.deckStats();
+    app.study.deckStats();
     final sw = Stopwatch()..start();
     for (var i = 0; i < 200; i++) {
-      app.deckStats();
+      app.study.deckStats();
     }
     sw.stop();
     expect(sw.elapsedMilliseconds, lessThan(50),
@@ -280,18 +281,152 @@ void main() {
     // nominally present and doing nothing.
     final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
     for (var i = 0; i < 3; i++) {
-      app.deckStats(pageId: app.pageId);
-      app.deckStats(sectionId: section);
-      app.deckStats();
+      app.study.deckStats(pageId: app.pageId);
+      app.study.deckStats(sectionId: section);
+      app.study.deckStats();
     }
     final sw = Stopwatch()..start();
     for (var i = 0; i < 100; i++) {
-      app.deckStats(pageId: app.pageId);
-      app.deckStats(sectionId: section);
-      app.deckStats();
+      app.study.deckStats(pageId: app.pageId);
+      app.study.deckStats(sectionId: section);
+      app.study.deckStats();
     }
     sw.stop();
     expect(sw.elapsedMilliseconds, lessThan(50),
         reason: '300 mixed-scope calls took ${sw.elapsedMilliseconds}ms');
+  });
+
+  // ── Study stats and the exam countdown (P1) ────────────────────────────
+
+  test('grading records the day, and a streak starts at one', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app) = await fixture('onote_study_today_', 3);
+    addTearDown(() => cleanup(repo, tmp));
+
+    expect(app.study.hasStudyHistory, isFalse);
+    expect(app.study.reviewsToday(), 0);
+    expect(app.study.studyStreakDays(), 0);
+
+    app.study.gradeCard(app.study.deck().first.id, Grade.good);
+    expect(app.study.reviewsToday(), 1);
+    expect(app.study.studyStreakDays(), 1);
+    expect(app.study.hasStudyHistory, isTrue);
+    expect(app.study.studyActivity().last, 1, reason: 'today is the last bar');
+  });
+
+  // The placement decision in `gradeCard`, pinned: the tally is taken before
+  // the cram-mode early return. An hour of practice the night before an exam
+  // is the most studying a student does all term, and it used to leave no
+  // trace at all — so the streak would break on the one day it mattered.
+  test('practice counts towards the streak without touching the schedule',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app) = await fixture('onote_study_cramday_', 3);
+    addTearDown(() => cleanup(repo, tmp));
+
+    final card = app.study.deck().first;
+    app.study.gradeCard(card.id, Grade.easy);
+    final scheduled = app.study.cardState(card.id).dueAt;
+    final after = app.study.reviewsToday();
+
+    app.study.gradeCard(card.id, Grade.good, schedule: false);
+    expect(app.study.reviewsToday(), after + 1, reason: 'you still did the work');
+    expect(app.study.cardState(card.id).dueAt, scheduled,
+        reason: 'and practice still must not move the schedule');
+  });
+
+  // Asserted against the settings blob rather than by reopening an AppState:
+  // the load half lives in `init()`, which registers a post-frame callback and
+  // so needs a widgets binding these plain tests deliberately don't build.
+  test('the day tally is written to workspace settings', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app) = await fixture('onote_study_persist_days_', 3);
+    addTearDown(() => cleanup(repo, tmp));
+
+    for (final c in app.study.deck()) {
+      app.study.gradeCard(c.id, Grade.good);
+    }
+    expect(app.study.reviewsToday(), 3);
+
+    final stored = repo.getSetting('studyDays');
+    expect(stored, isA<Map>());
+    expect((stored as Map)[dayKey(DateTime.now())], 3,
+        reason: 'a streak that vanishes when the app restarts is worse than '
+            'no streak at all');
+  });
+
+  test('an exam date is per section, per notebook, and reversible', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app) = await fixture('onote_study_exam_', 3);
+    addTearDown(() => cleanup(repo, tmp));
+
+    final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
+    expect(app.study.examDate(section), isNull);
+
+    final exam = DateTime(2026, 12, 1);
+    app.study.setExamDate(section, exam);
+    expect(app.study.examDate(section), exam);
+
+    // Keyed by notebook: a date set in one must not appear in another, or
+    // every notebook shares one exam.
+    final other = await repo.createNotebook('Another');
+    final previous = app.notebookId;
+    app.notebookId = other.id;
+    expect(app.study.examDate(section), isNull);
+    app.notebookId = previous;
+    expect(app.study.examDate(section), exam);
+
+    app.study.setExamDate(section, null);
+    expect(app.study.examDate(section), isNull);
+  });
+
+  test('the exam plan spreads this deck’s unseen cards over the days left',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app) = await fixture('onote_study_plan_', 8);
+    addTearDown(() => cleanup(repo, tmp));
+
+    final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
+    final today = DateTime(2026, 8, 4);
+    app.study.setExamDate(section, DateTime(2026, 8, 8));
+
+    final plan = app.study.examPlanFor(sectionId: section, now: today)!;
+    expect(plan.daysLeft, 4);
+    expect(plan.unseen, 8);
+    expect(plan.newPerDay, 2);
+
+    // Seeing cards shrinks the ask; it does not shrink the deck.
+    for (final c in app.study.deck().take(4)) {
+      app.study.gradeCard(c.id, Grade.good);
+    }
+    final later = app.study.examPlanFor(sectionId: section, now: today)!;
+    expect(later.unseen, 4);
+    expect(later.total, 8);
+    expect(later.newPerDay, 1);
+  });
+
+  test('the whole-notebook view names the soonest exam still ahead', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app) = await fixture('onote_study_next_exam_', 3);
+    addTearDown(() => cleanup(repo, tmp));
+
+    final first = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+    await app.addSection();
+    app.reloadNodes();
+    final second = app.nodes
+        .firstWhere((n) => n.kind == NodeKind.section && n.id != first.id);
+
+    final today = DateTime(2026, 8, 4);
+    app.study.setExamDate(first.id, DateTime(2026, 9, 1));
+    app.study.setExamDate(second.id, DateTime(2026, 8, 20));
+    expect(app.study.nextExam(today)?.section.id, second.id);
+
+    // A date in the past is not "next".
+    app.study.setExamDate(second.id, DateTime(2026, 7, 1));
+    expect(app.study.nextExam(today)?.section.id, first.id);
+
+    app.study.setExamDate(first.id, null);
+    app.study.setExamDate(second.id, null);
+    expect(app.study.nextExam(today), isNull);
   });
 }

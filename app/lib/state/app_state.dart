@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
-// ThemeMode + widgets (re-exports foundation)
+import 'package:flutter/material.dart'; // ThemeMode + widgets
+import 'package:path/path.dart' as p;
 
 import '../canvas/align_guides.dart';
 import '../canvas/canvas_controller.dart';
@@ -19,6 +20,7 @@ import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../study/flashcards.dart';
 import 'builtin_templates.dart';
+import 'study_state.dart';
 import '../sync/folder_watch.dart';
 import '../sync/op.dart';
 import '../sync/cloud_folders.dart';
@@ -65,8 +67,15 @@ enum TouchDrawing {
 
 /// App-wide state. Deliberately simple (ChangeNotifier) for the MVP; the
 /// domain layer beneath it is what carries forward.
-class AppState extends ChangeNotifier {
-  AppState(this._repo) : engine = _selectEngine(_repo);
+class AppState extends ChangeNotifier implements StudyDocument {
+  AppState(this._repo) : engine = _selectEngine(_repo) {
+    // Forwarded, not replaced. Every surface listens to `AppState`, so the
+    // extraction must not change who wakes up when a card is graded — the
+    // point of E3 is to give state an owner, not to renegotiate rebuilds in
+    // the same pass. Narrowing a listener to `app.study` is now possible and
+    // is a separate, checkable change.
+    study.addListener(notifyListeners);
+  }
 
   final Repository _repo;
   final DocumentEngine engine;
@@ -109,6 +118,7 @@ class AppState extends ChangeNotifier {
 
   /// Read a page of the current notebook without making it the active page —
   /// used by exporters, which walk every page in turn.
+  @override
   PageData readPage(String id) => _repo.readPage(notebookId!, id);
 
   /// Pages in this notebook whose *content* matches [query] (TEXT-7).
@@ -493,6 +503,125 @@ class AppState extends ChangeNotifier {
     return status;
   }
 
+  /// Where this notebook's container and logs actually are, with sizes.
+  Future<NotebookStorage> storageFor(String nb) async {
+    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull ??
+        _repo.trashedNotebooks.where((n) => n.id == nb).firstOrNull;
+    if (ref == null) {
+      return const NotebookStorage(
+          containerPath: '',
+          containerBytes: 0,
+          logPath: '',
+          logBytes: 0,
+          logExists: false,
+          containerCloud: null,
+          logCloud: null);
+    }
+    final logPath = ref.logDirPath;
+    final logDir = Directory(logPath);
+    return NotebookStorage(
+      containerPath: ref.file,
+      containerBytes: _fileBytes(ref.file),
+      logPath: logPath,
+      logBytes: await _dirBytes(logDir),
+      logExists: logDir.existsSync(),
+      containerCloud: cloudFolderContaining(ref.file),
+      logCloud: cloudFolderContaining(logPath),
+    );
+  }
+
+  /// Notebook files on disk that no registry entry — live or trashed — claims.
+  ///
+  /// Looks in this workspace and one level into each detected cloud folder
+  /// (plus its `Openote` subfolder), which is where the app's own flows put
+  /// things. Deliberately not a whole-disk scan.
+  Future<List<OrphanFile>> findOrphanFiles() async {
+    final claimed = <String>{};
+    for (final n in [..._repo.notebooks, ..._repo.trashedNotebooks]) {
+      claimed
+        ..add(p.canonicalize(n.file))
+        ..add(p.canonicalize(n.logDirPath));
+    }
+
+    final roots = <(String, bool)>[(_repo.workspaceDir.path, true)];
+    for (final f in detectCloudFolders()) {
+      roots
+        ..add((f.path, false))
+        ..add((p.join(f.path, 'Openote'), false));
+    }
+
+    final out = <OrphanFile>[];
+    final seen = <String>{};
+    for (final (root, isWorkspace) in roots) {
+      final dir = Directory(root);
+      if (!dir.existsSync()) continue;
+      try {
+        for (final e in dir.listSync(followLinks: false)) {
+          final ext = p.extension(e.path).toLowerCase();
+          final isLog = e is Directory && ext == '.onotebook';
+          final isContainer = e is File && ext == '.onote';
+          if (!isLog && !isContainer) continue;
+          final canon = p.canonicalize(e.path);
+          if (claimed.contains(canon) || !seen.add(canon)) continue;
+          out.add(OrphanFile(
+            path: e.path,
+            bytes: isLog
+                ? await _dirBytes(Directory(e.path))
+                : _fileBytes(e.path),
+            isLog: isLog,
+            safeToDelete: isWorkspace,
+          ));
+        }
+      } catch (_) {
+        // An unreadable folder (offline placeholders, permissions) must not
+        // break the scan of the others.
+      }
+    }
+    out.sort((a, b) => b.bytes.compareTo(a.bytes));
+    return out;
+  }
+
+  /// Delete orphans, and ONLY ones marked safe. Returns the bytes reclaimed.
+  Future<int> deleteOrphans(Iterable<OrphanFile> files) async {
+    var freed = 0;
+    for (final f in files) {
+      if (!f.safeToDelete) continue; // never a shared folder; see [OrphanFile]
+      try {
+        if (f.isLog) {
+          Directory(f.path).deleteSync(recursive: true);
+        } else {
+          File(f.path).deleteSync();
+        }
+        freed += f.bytes;
+      } catch (_) {/* locked or gone; report what actually went */}
+    }
+    return freed;
+  }
+
+  int _fileBytes(String path) {
+    try {
+      final f = File(path);
+      return f.existsSync() ? f.lengthSync() : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<int> _dirBytes(Directory dir) async {
+    if (!dir.existsSync()) return 0;
+    var total = 0;
+    try {
+      await for (final e in dir.list(recursive: true, followLinks: false)) {
+        if (e is File) {
+          try {
+            total += e.lengthSync();
+          } catch (_) {/* vanished mid-walk */}
+        }
+      }
+    } catch (_) {/* unreadable; report what we counted */}
+    return total;
+  }
+
   /// Blobs the log references but whose bytes are not yet in `blobs/`.
   ///
   /// Empty means a rebuild from the log could reconstruct this notebook's
@@ -576,11 +705,13 @@ class AppState extends ChangeNotifier {
   final canvasKey = GlobalKey();
 
   // Workspace / navigation
+  @override
   String? notebookId;
 
   List<TreeNode> _nodes = [];
 
   /// The current notebook's tree, ordered by position.
+  @override
   List<TreeNode> get nodes => _nodes;
   set nodes(List<TreeNode> v) {
     _nodes = v;
@@ -590,38 +721,114 @@ class AppState extends ChangeNotifier {
   /// Bumped whenever the tree changes shape *or* a node's rendered fields
   /// change. The navigator memoises its widget subtree on this, so typing in a
   /// page no longer rebuilds every section and page tile (§7a.6).
+  @override
   int nodesRevision = 0;
 
   /// Call after mutating a [TreeNode] in place (rename, indent) — those don't
   /// replace the list, so the setter above wouldn't notice.
   void bumpNodes() => nodesRevision++;
 
+  @override
   String? pageId;
   final Set<String> collapsedGroups = {};
 
-  // Navigator (stacked): the focused section, whose pages fill the lower zone.
+  // Navigator (§7b, two-column): the focused section fills the pages pane.
+  @override
   String? activeSectionId;
-  double navSplit = 0.38; // sections/pages height ratio (0..1)
 
   TreeNode? get activeSection => node(activeSectionId);
 
-  void setNavSplit(double v) {
-    navSplit = v.clamp(0.15, 0.7);
-    _repo.setSetting('navSplit', navSplit);
+  // ── Navigator layout state ──────────────────────────────────────────
+  //
+  // Two independent widths rather than one split: sections and pages are
+  // separate columns now (the OneNote shape), so each keeps its own size and
+  // neither steals from the other when resized.
+
+  double navSectionsW = 120; // sections column, px
+  double navPagesW = 168; // pages column, px
+  bool navCollapsed = false; // the whole navigator as a 44px rail
+
+  /// The Home surface (favourites + recents) shown in the pages pane.
+  /// Transient by design: selecting any page returns the pane to that page's
+  /// section, so Home behaves like a springboard rather than a place you can
+  /// get stuck in. Deliberately a BOOLEAN beside a real [activeSectionId], not
+  /// a sentinel section id — every consumer of activeSectionId (study scoping,
+  /// exam plans, deck counts) stays correct with zero special-casing.
+  bool navHome = false;
+
+  /// Bumped when navigator-only state changes that nothing else observes —
+  /// favourites, collapse toggles, Home. The navigator memo in AppShell keys
+  /// on it; leaving one of these out is how a stale (not broken, just frozen)
+  /// navigator ships.
+  int navRevision = 0;
+
+  void setNavSectionsW(double v) {
+    navSectionsW = v.clamp(96, 220);
+    _repo.setSetting('navSectionsW', navSectionsW);
     notifyListeners();
   }
 
-  /// Focus a section (the pages zone shows its pages). When the current page
-  /// isn't inside the section, jump to its first page.
-  void activateSection(String id) {
+  void setNavPagesW(double v) {
+    navPagesW = v.clamp(140, 320);
+    _repo.setSetting('navPagesW', navPagesW);
+    notifyListeners();
+  }
+
+  void toggleNavCollapsed() {
+    navCollapsed = !navCollapsed;
+    _repo.setSetting('navCollapsed', navCollapsed);
+    notifyListeners();
+  }
+
+  void openHome() {
+    navHome = true;
+    navRevision++;
+    notifyListeners();
+  }
+
+  /// Which page each section was last on, so browsing sections never loses
+  /// your place. Keys are '<notebookId>:<sectionId>' because settings are
+  /// workspace-scoped (same reasoning as favourites).
+  final Map<String, String> _sectionLastPage = {};
+
+  void _rememberSectionPage(String sectionId, String pageId) {
+    _sectionLastPage['$notebookId:$sectionId'] = pageId;
+    _repo.setSetting('sectionLastPage', _sectionLastPage);
+  }
+
+  /// A section's pages, in navigator order.
+  ///
+  /// One query rather than the same `where` written out at each call site — it
+  /// was open-coded in three places, and "the pages of a section, in the order
+  /// the navigator shows them" is exactly the thing a section-wide export or
+  /// sort has to agree with the navigator about.
+  List<TreeNode> pagesOf(String sectionId) => [
+        for (final n in nodes)
+          if (n.kind == NodeKind.page && n.parentId == sectionId) n
+      ];
+
+  /// Focus a section (the pages pane shows its pages). When the current page
+  /// isn't inside the section, return to the page you were last on THERE —
+  /// falling back to the first page only for a section never visited.
+  ///
+  /// The remembered page is what makes flicking between sections
+  /// non-destructive: jumping to the *first* page every time meant merely
+  /// looking at another section threw away your place in it, which OneNote
+  /// gets right and users notice immediately.
+  /// Awaitable, because `selectPage` only commits `pageId` after an awaited
+  /// flush — fire-and-forget here let two quick section clicks interleave
+  /// their page loads and land on the loser's page.
+  Future<void> activateSection(String id) async {
+    navHome = false;
     activeSectionId = id;
     final cur = node(pageId);
     if (cur == null || cur.parentId != id) {
-      final first = nodes
-          .where((n) => n.kind == NodeKind.page && n.parentId == id)
-          .firstOrNull;
-      if (first != null) {
-        selectPage(first.id); // sets activeSectionId + notifies
+      final remembered = node(_sectionLastPage['$notebookId:$id']);
+      final target = (remembered != null && remembered.parentId == id)
+          ? remembered
+          : pagesOf(id).firstOrNull;
+      if (target != null) {
+        await selectPage(target.id); // sets activeSectionId + notifies
         return;
       }
     }
@@ -629,6 +836,7 @@ class AppState extends ChangeNotifier {
   }
 
   // Page content
+  @override
   List<Block> blocks = [];
   PageProps pageProps = PageProps();
 
@@ -639,6 +847,7 @@ class AppState extends ChangeNotifier {
 
   /// Bumped when block content changes from OUTSIDE its own editor widgets
   /// (undo/redo, page load) so views rebuild from model state.
+  @override
   int docRevision = 0;
 
   /// Measured render sizes of auto-height blocks (runtime only; used for
@@ -834,268 +1043,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Study: flashcards from tagged lines ──────────────────────────────
+  // ── Study: flashcards, scheduling, stats (E3 — see study_state.dart) ──
 
-  /// Scheduling state per card id. Workspace-scoped and **not synced**: when
-  /// you should review is personal, and pushing it through the op log would
-  /// make one person's review schedule everyone's on a shared notebook.
-  final Map<String, CardState> _cardStates = {};
-
-  /// Every card the notebook can produce, in page order.
-  /// Cached deck, keyed on everything that can change what cards exist.
+  /// Cards, schedules, streaks and the exam countdown.
   ///
-  /// **This cache is not an optimisation, it is a correctness-of-experience
-  /// fix.** Building a deck reads and JSON-decodes *every page in the
-  /// notebook* from SQLite. The study button lives in the command bar, which
-  /// rebuilds on every notify — i.e. every keystroke — so an uncached deck
-  /// meant ~324 database reads per character typed on a real notebook, and the
-  /// app crawled. Any widget that shows a count must go through here.
-  /// Closed-page cards, keyed by scope.
-  ///
-  /// A **map**, not one slot, because several scopes are asked for in the same
-  /// frame: the deck picker shows this-page / this-section / whole-notebook
-  /// counts side by side, and `_persistCardStates` prunes against the whole
-  /// notebook while the panel is scoped to a section. With one slot those
-  /// alternating keys evict each other, so every single call would re-read the
-  /// entire notebook — the exact regression the cache exists to prevent, with
-  /// the cache still nominally in place. Bounded because scopes are few and a
-  /// stale entry costs memory for a deck nobody is looking at.
-  final Map<String, List<Flashcard>> _deckCache = {};
-  static const _deckCacheMax = 6;
-
-  /// Every block id the last whole-notebook deck build walked past.
-  ///
-  /// Needed because card scheduling is stored per WORKSPACE while a deck is
-  /// per NOTEBOOK: without knowing which ids belong to the notebook in front
-  /// of us, pruning "everything not in this deck" deletes every other
-  /// notebook's review history. See [_persistCardStates].
-  Set<String> _notebookBlockIds = const {};
-
-  /// The OPEN page's cards, held separately from [_deckCache].
-  ///
-  /// Two caches rather than one, because the two halves go stale for different
-  /// reasons and cost wildly different amounts to rebuild. Closed pages come
-  /// from SQLite and only change structurally; the open page changes on every
-  /// keystroke but is already in memory. Merging them into one key meant either
-  /// re-reading the whole notebook per character (the regression) or a tagged
-  /// line producing no card until you navigated away (the bug).
-  ({String key, List<Flashcard> cards})? _liveDeckCache;
-
-  /// Bumped whenever the open page's content changes, so the live half of the
-  /// deck rebuilds — once per edit, not once per widget rebuild.
-  int contentRevision = 0;
-
-  /// Bumped whenever a card's schedule changes, so study surfaces refresh.
-  int studyRevision = 0;
-
-  /// Every card in a scope, in page order.
-  ///
-  /// Scope narrows outward-in: [pageId] beats [sectionId] beats the whole
-  /// notebook. Pages ARE the deck structure — a lecture page is a deck without
-  /// anyone having to build one.
-  List<Flashcard> deck({String? sectionId, String? pageId}) {
-    if (notebookId == null) return const [];
-    bool inScope(TreeNode n) =>
-        n.kind == NodeKind.page &&
-        (pageId == null || n.id == pageId) &&
-        (sectionId == null || n.parentId == sectionId);
-
-    // Closed pages. nodesRevision covers pages added/renamed/removed;
-    // docRevision covers a page's stored content being replaced wholesale.
-    final key =
-        '$notebookId#$sectionId#$pageId#$docRevision#$nodesRevision#${this.pageId}';
-    var stored = _deckCache[key];
-    if (stored == null) {
-      // A revision bumped: every entry keyed on the old one is dead weight.
-      if (_deckCache.length >= _deckCacheMax) _deckCache.clear();
-      final out = <Flashcard>[];
-      final seen = <String>{};
-      for (final n in nodes.where(inScope)) {
-        if (n.id == this.pageId) continue; // the live half, below
-        for (final b in readPage(n.id).blocks) {
-          seen.add(b.id);
-          out.addAll(cardsFromBlock(b, n.id, n.title));
-        }
-      }
-      // Only the unscoped build sees the whole notebook, so only it may
-      // answer "does this block belong to us?".
-      if (sectionId == null && pageId == null) {
-        _notebookBlockIds = seen..addAll(blocks.map((b) => b.id));
-      }
-      _deckCache[key] = stored = out;
-    }
-
-    final open =
-        nodes.where((n) => n.id == this.pageId && inScope(n)).firstOrNull;
-    if (open == null) return stored;
-    // contentRevision covers edits; docRevision covers the block list being
-    // replaced under us — an undo, a version restore, a sync pull.
-    final liveKey = '${open.id}#${open.title}#$contentRevision#$docRevision';
-    var live = _liveDeckCache?.key == liveKey ? _liveDeckCache!.cards : null;
-    if (live == null) {
-      final out = <Flashcard>[];
-      for (final b in blocks) {
-        out.addAll(cardsFromBlock(b, open.id, open.title));
-      }
-      _liveDeckCache = (key: liveKey, cards: live = out);
-    }
-    if (live.isEmpty) return stored;
-    if (stored.isEmpty) return live;
-    return [...stored, ...live];
-  }
-
-  /// Scheduling state for a card. **Read-only**: a card that has never been
-  /// graded must not be written just because something asked about it, or the
-  /// settings blob grows with every card the student merely looked at.
-  CardState cardState(String cardId) => _cardStates[cardId] ?? CardState();
-
-  /// Cards for one sitting.
-  ///
-  /// [StudyMode.due] is the real schedule: what spaced repetition says you
-  /// should see, most-overdue first, capped so a session ends — a deck of 400
-  /// with no cap is a wall a student bounces off.
-  ///
-  /// [StudyMode.cram] ignores the schedule entirely and shuffles. It exists
-  /// because "I want to go over this again" is the single most common thing a
-  /// student wants the night before an exam, and a review app that answers it
-  /// with "nothing due" is useless to them.
-  List<Flashcard> sessionCards({
-    String? sectionId,
-    String? pageId,
-    StudyMode mode = StudyMode.due,
-    int max = 40,
-  }) {
-    final all = deck(sectionId: sectionId, pageId: pageId);
-    if (mode == StudyMode.cram) {
-      final shuffled = [...all]..shuffle();
-      return shuffled.length <= max ? shuffled : shuffled.sublist(0, max);
-    }
-    final now = nowMs();
-    final due = [
-      for (final c in all)
-        if (cardState(c.id).isDue(now)) c
-    ]..sort((a, b) => cardState(a.id).dueAt.compareTo(cardState(b.id).dueAt));
-    return due.length <= max ? due : due.sublist(0, max);
-  }
-
-  /// Kept for callers that only want the schedule.
-  List<Flashcard> dueCards({String? sectionId, int max = 40}) =>
-      sessionCards(sectionId: sectionId, max: max);
-
-  /// Record a grade.
-  ///
-  /// [schedule] false is cram mode: going over a card early must not push its
-  /// real due date out, or a night of cramming silently wipes weeks of
-  /// spacing. Getting one WRONG still counts — that is information about the
-  /// card regardless of why you were looking at it.
-  void gradeCard(String cardId, Grade g, {bool schedule = true}) {
-    if (!schedule && g != Grade.again) return;
-    final s = _cardStates.putIfAbsent(cardId, CardState.new);
-    applyGrade(s, g, nowMs());
-    _persistCardStates();
-    studyRevision++;
-    notifyListeners();
-  }
-
-  /// Carry review schedules across when a block's tags change line.
-  ///
-  /// A card's identity is `blockId:line` — chosen because it survives edits to
-  /// other lines with no extra bookkeeping — so re-basing a tag *renames its
-  /// card*. Without this the schedule is orphaned under the old name and the
-  /// next prune deletes it: press Enter above a tagged line and weeks of
-  /// spacing are gone, from a keystroke that changed nothing about the card.
-  ///
-  /// Removed first, then re-added, so a run of tags shifting by one can't
-  /// overwrite each other on the way past.
-  void remapCardStates(String blockId, Map<int, int> moved) {
-    if (moved.isEmpty) return;
-    final carried = <String, CardState>{};
-    for (final e in moved.entries) {
-      if (e.key == e.value) continue;
-      final s = _cardStates.remove('$blockId:${e.key}');
-      if (s != null) carried['$blockId:${e.value}'] = s;
-    }
-    if (carried.isEmpty) return;
-    _cardStates.addAll(carried);
-    _repo.setSetting('cardStates',
-        {for (final e in _cardStates.entries) e.key: e.value.toJson()});
-    studyRevision++;
-  }
-
-  /// Forget a card's schedule — it becomes new again.
-  void resetCard(String cardId) {
-    if (_cardStates.remove(cardId) == null) return;
-    _persistCardStates();
-    studyRevision++;
-    notifyListeners();
-  }
-
-  /// Forget every schedule in a scope. Returns how many were cleared.
-  int resetDeck({String? sectionId, String? pageId}) {
-    var n = 0;
-    for (final c in deck(sectionId: sectionId, pageId: pageId)) {
-      if (_cardStates.remove(c.id) != null) n++;
-    }
-    if (n == 0) return 0;
-    _persistCardStates();
-    studyRevision++;
-    notifyListeners();
-    return n;
-  }
-
-  void _persistCardStates() {
-    // Prune as we write: a card id is `blockId:line`, so untagging a line
-    // strands its schedule forever otherwise, and this blob is loaded on every
-    // start.
-    //
-    // **Scoped to this notebook, and that is not a detail.** The blob is
-    // workspace-wide but a deck is per notebook, so pruning "everything not in
-    // this deck" deleted every OTHER notebook's review history the first time
-    // you graded a card after switching — a term of spaced repetition gone,
-    // silently, with no undo. An entry is only removed when we can see that
-    // its block is one of ours and no longer produces that card.
-    //
-    // The deliberate leak: a card whose block was DELETED is not in
-    // `_notebookBlockIds` either, so its state survives. Keeping a few dead
-    // rows costs bytes; guessing wrong costs somebody their schedule.
-    final alive = {for (final c in deck()) c.id};
-    final mine = _notebookBlockIds;
-    _cardStates.removeWhere((k, _) {
-      if (alive.contains(k)) return false;
-      final cut = k.lastIndexOf(':');
-      return mine.contains(cut < 0 ? k : k.substring(0, cut));
-    });
-    _repo.setSetting('cardStates',
-        {for (final e in _cardStates.entries) e.key: e.value.toJson()});
-  }
-
-  /// Counts for the study surface: (due now, total).
-  (int, int) deckCounts({String? sectionId}) {
-    final s = deckStats(sectionId: sectionId);
-    return (s.due, s.total);
-  }
-
-  /// Everything a study surface needs to say something useful.
-  ///
-  /// [nextDueAt] is what turns "Nothing due" — a dead end that reads like the
-  /// feature is broken — into "All caught up, next card in 6h".
-  ({int due, int total, int unseen, int? nextDueAt}) deckStats(
-      {String? sectionId, String? pageId}) {
-    final all = deck(sectionId: sectionId, pageId: pageId);
-    final now = nowMs();
-    var due = 0, unseen = 0;
-    int? next;
-    for (final c in all) {
-      final s = cardState(c.id);
-      if (s.dueAt == 0) unseen++;
-      if (s.isDue(now)) {
-        due++;
-      } else if (next == null || s.dueAt < next) {
-        next = s.dueAt;
-      }
-    }
-    return (due: due, total: all.length, unseen: unseen, nextDueAt: next);
-  }
+  /// Extracted in the E3 pass. `AppState` still forwards its notifications
+  /// (see the constructor), so every existing listener keeps working exactly
+  /// as it did — but the state itself now has an owner, and the next study
+  /// feature has somewhere to go that is not this file.
+  late final StudyState study = StudyState(this,
+      readSetting: _repo.getSetting, writeSetting: _repo.setSetting);
 
   bool showStudyPanel = false;
   void toggleStudyPanel() {
@@ -1127,6 +1084,7 @@ class AppState extends ChangeNotifier {
     final k = _pageKey(pageId);
     _favourites.contains(k) ? _favourites.remove(k) : _favourites.add(k);
     _repo.setSetting('favourites', _favourites.toList());
+    navRevision++; // the Home pane renders favourites; nothing else changes
     notifyListeners();
   }
 
@@ -1159,9 +1117,7 @@ class AppState extends ChangeNotifier {
   /// that follow it, or sorting would silently reparent every subpage in the
   /// section to whatever landed above it.
   void sortSection(String sectionId, {required bool byTitle}) {
-    final pages = nodes
-        .where((n) => n.kind == NodeKind.page && n.parentId == sectionId)
-        .toList();
+    final pages = pagesOf(sectionId);
     if (pages.length < 2) return;
     // Group each top-level page with its contiguous deeper-level run.
     final groups = <List<TreeNode>>[];
@@ -1318,6 +1274,7 @@ class AppState extends ChangeNotifier {
     collapsedPages.contains(id)
         ? collapsedPages.remove(id)
         : collapsedPages.add(id);
+    navRevision++; // lengths can alias (one collapse + one expand); this can't
     notifyListeners();
   }
 
@@ -1741,8 +1698,18 @@ class AppState extends ChangeNotifier {
     // Session restore (§7a.5): theme, custom colours, per-page views, last loc.
     final tm = _repo.getSetting('themeMode') as String?;
     if (tm != null) themeMode = ThemeMode.values.asNameMap()[tm] ?? themeMode;
-    final ns = _repo.getSetting('navSplit');
-    if (ns is num) navSplit = ns.toDouble().clamp(0.15, 0.7);
+    final nsw = _repo.getSetting('navSectionsW');
+    if (nsw is num) navSectionsW = nsw.toDouble().clamp(96, 220);
+    final npw = _repo.getSetting('navPagesW');
+    if (npw is num) navPagesW = npw.toDouble().clamp(140, 320);
+    final nc = _repo.getSetting('navCollapsed');
+    if (nc is bool) navCollapsed = nc;
+    final slp = _repo.getSetting('sectionLastPage');
+    if (slp is Map) {
+      slp.forEach((k, v) {
+        if (k is String && v is String) _sectionLastPage[k] = v;
+      });
+    }
     final as = _repo.getSetting('autoSync');
     if (as is bool) autoSync = as;
     final sc = _repo.getSetting('spellCheck');
@@ -1763,10 +1730,7 @@ class AppState extends ChangeNotifier {
         ];
       });
     }
-    final cs = _repo.getSetting('cardStates');
-    if (cs is Map) {
-      cs.forEach((k, v) => _cardStates['$k'] = CardState.fromJson(v));
-    }
+    study.load();
     final fav = _repo.getSetting('favourites');
     if (fav is List) _favourites.addAll(fav.cast<String>());
     final rec = _repo.getSetting('recentPages');
@@ -1936,9 +1900,16 @@ class AppState extends ChangeNotifier {
       blocks = data.blocks;
       pageProps = data.props;
       _repairImportedFieldCodes();
-      // Keep the navigator's focused section in sync with the open page.
-      activeSectionId = nodes.where((n) => n.id == id).firstOrNull?.parentId ??
-          activeSectionId;
+      // Keep the navigator's focused section in sync with the open page, and
+      // remember it as the section's place so activateSection can come back
+      // here. Selecting a page also leaves Home — the pane shows the
+      // destination's siblings, which is what "I went somewhere" looks like.
+      navHome = false;
+      final parent = nodes.where((n) => n.id == id).firstOrNull?.parentId;
+      if (parent != null) {
+        activeSectionId = parent;
+        _rememberSectionPage(parent, id);
+      }
       _recordRecent(id);
     }
     docRevision++;
@@ -1959,21 +1930,112 @@ class AppState extends ChangeNotifier {
   /// is already in memory — no database read, no allocation, nothing written.
   /// The conversion itself is the Rust importer's own, over FFI, so there is
   /// exactly one parser rather than two that drift apart.
+  /// Heal one page's blocks in place. Returns how many blocks changed.
+  ///
+  /// Shared by the on-open repair and the whole-notebook one so the two can
+  /// never diverge — an imported page must end up identical whichever route
+  /// reached it.
+  int _healBlocks(List<Block> blocks, OnoteCore core) {
+    String? repair(String text) {
+      if (!textNeedsFieldRepair(text)) return null;
+      final fixed = core.repairFieldCodes(text);
+      return (fixed == text || fixed.isEmpty) ? null : fixed;
+    }
+
+    var changed = 0;
+    for (final b in blocks) {
+      if (b.type == BlockType.table) {
+        final rows = b.content['cells'];
+        if (rows is! List) continue;
+        var touched = false;
+        final out = <List<String>>[];
+        for (final row in rows) {
+          final cells = <String>[];
+          for (final c in (row is List ? row : const [])) {
+            final text = c?.toString() ?? '';
+            final fixed = repair(text);
+            if (fixed != null) touched = true;
+            cells.add(fixed ?? text);
+          }
+          out.add(cells);
+        }
+        if (touched) {
+          b.content['cells'] = out;
+          b.updatedAt = nowMs();
+          changed++;
+        }
+        continue;
+      }
+      final text = b.content['text'];
+      if (text is! String) continue;
+      final fixed = repair(text);
+      if (fixed != null) {
+        b.content['text'] = fixed;
+        b.updatedAt = nowMs();
+        changed++;
+      }
+    }
+    return changed;
+  }
+
+  /// Heal EVERY page in the notebook, not just the ones you happen to open.
+  ///
+  /// The on-open repair is lazy by design — it costs nothing on a clean page
+  /// — but on a notebook imported before the importer was fixed that means
+  /// hundreds of pages keep their `﷟HYPERLINK "…"` junk and their needless
+  /// `$…$` until the day you next visit them. This is the "just fix all of
+  /// it" button, and it is worth having as an explicit action rather than a
+  /// startup cost nobody asked for.
+  ///
+  /// Yields between chunks so a 300-page notebook doesn't freeze the window,
+  /// and commits per chunk so an interruption keeps what it already fixed.
+  Future<({int pages, int blocks})> repairWholeNotebook({
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final core = OnoteCore.instance;
+    final nb = notebookId;
+    if (core == null || nb == null) return (pages: 0, blocks: 0);
+    await flushSave();
+
+    final pages = nodes.where((n) => n.kind == NodeKind.page).toList();
+    var healedPages = 0, healedBlocks = 0, done = 0;
+    const chunk = 12;
+
+    for (var start = 0; start < pages.length; start += chunk) {
+      final end = (start + chunk).clamp(0, pages.length);
+      importBatch(nb, () {
+        for (var i = start; i < end; i++) {
+          final n = pages[i];
+          // The open page is already in memory and owns unsaved edits.
+          final data = n.id == pageId
+              ? PageData(blocks, pageProps)
+              : readPage(n.id);
+          final changed = _healBlocks(data.blocks, core);
+          if (changed == 0) continue;
+          healedPages++;
+          healedBlocks += changed;
+          importPage(nb, n.id, data.blocks, data.props);
+        }
+      });
+      done = end;
+      onProgress?.call(done, pages.length);
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    // The open page's blocks may have been rewritten in place above.
+    docRevision++;
+    notifyListeners();
+    return (pages: healedPages, blocks: healedBlocks);
+  }
+
   void _repairImportedFieldCodes() {
     final core = OnoteCore.instance;
     if (core == null) return; // Dart-only build: leave the text untouched.
 
-    // Worked out in full BEFORE anything is written, so the undo checkpoint
-    // below captures the page as it was on disk rather than as it will be.
-    final repairs = <Block, String>{};
-    for (final b in blocks) {
-      final text = b.content['text'];
-      if (text is! String || !textNeedsFieldRepair(text)) continue;
-      final fixed = core.repairFieldCodes(text);
-      if (fixed == text || fixed.isEmpty) continue;
-      repairs[b] = fixed;
-    }
-    if (repairs.isEmpty) return;
+    // Worked out on a COPY first, so the undo checkpoint below captures the
+    // page as it was on disk rather than as it will be.
+    final before = [for (final b in blocks) Block.fromJson(b.toJson())];
+    if (_healBlocks(before, core) == 0) return;
 
     // Undoable. This is the one automatic path that rewrites text the user
     // already owns, and it runs the moment a page opens — without a checkpoint
@@ -1981,13 +2043,10 @@ class AppState extends ChangeNotifier {
     // stack was cleared by `selectPage` just above, so this becomes its first
     // entry: one Ctrl+Z restores exactly what was on disk.
     pushUndo();
-    for (final e in repairs.entries) {
-      e.key.content['text'] = e.value;
-      e.key.updatedAt = nowMs();
-    }
+    _healBlocks(blocks, core);
     // Save through the normal funnel so the op log records it and the change
-    // reaches other devices — a repair that only ever ran locally would have to
-    // run again on every one of them.
+    // reaches other devices — a repair that only ever ran locally would have
+    // to run again on every one of them.
     markDirty();
   }
 
@@ -2249,6 +2308,27 @@ class AppState extends ChangeNotifier {
     final n = node(id);
     if (n == null) return; // deleted while a menu was open
     n.title = title;
+    _putNode(notebookId!, n);
+    bumpNodes();
+    notifyListeners();
+  }
+
+  /// The colour tokens a section can be given, in picker order. `null` is the
+  /// unset default, which renders in the app's own ink.
+  static const List<String?> sectionColorTokens = [
+    null, 'brass-400', 'green', 'blue', 'violet', 'red',
+  ];
+
+  /// Recolour a section.
+  ///
+  /// The colour chip has always been rendered but only ever *written* by the
+  /// OneNote importer, so on a notebook you started yourself every section was
+  /// the same colour with no way to change it — a control that looks
+  /// interactive and isn't.
+  void setNodeColor(String id, String? token) {
+    final n = node(id);
+    if (n == null) return; // deleted while a menu was open
+    n.color = token;
     _putNode(notebookId!, n);
     bumpNodes();
     notifyListeners();
@@ -2540,6 +2620,7 @@ class AppState extends ChangeNotifier {
     collapsedGroups.contains(id)
         ? collapsedGroups.remove(id)
         : collapsedGroups.add(id);
+    navRevision++;
     notifyListeners();
   }
 
@@ -2908,7 +2989,7 @@ class AppState extends ChangeNotifier {
     // Cheap counter, not a rebuild: it lets the open page's flashcards be
     // rederived once per edit, so tagging a line produces a card immediately
     // instead of only after you navigate away.
-    contentRevision++;
+    study.noteContentChanged();
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 700), flushSave);
     notifyListeners();
@@ -2986,6 +3067,64 @@ class AppState extends ChangeNotifier {
     _repo.dispose();
     super.dispose();
   }
+}
+
+/// Where one notebook's bytes actually are.
+///
+/// Exists because "is this syncing?" was being answered by inference and the
+/// answer was wrong: a notebook can sit in the workspace with its logs beside
+/// it while copies of it sit in a cloud folder, and the app happily reported
+/// the copies' existence as sync. The only honest answer names the two paths
+/// and says which of them a cloud client can see.
+class NotebookStorage {
+  const NotebookStorage({
+    required this.containerPath,
+    required this.containerBytes,
+    required this.logPath,
+    required this.logBytes,
+    required this.logExists,
+    required this.containerCloud,
+    required this.logCloud,
+  });
+
+  final String containerPath;
+  final int containerBytes;
+  final String logPath;
+  final int logBytes;
+  final bool logExists;
+
+  /// The detected cloud folder each half lives in, if any.
+  final CloudFolder? containerCloud;
+  final CloudFolder? logCloud;
+
+  /// **The logs are what sync.** The container is a local cache by design
+  /// (ADR-0006 §3), so a container in Drive without its logs there is not
+  /// sync — it is a stray copy being re-uploaded on every save.
+  bool get syncs => logCloud != null;
+
+  int get totalBytes => containerBytes + logBytes;
+}
+
+/// A `.onote` or `.onotebook` on disk that no registry entry claims.
+class OrphanFile {
+  const OrphanFile({
+    required this.path,
+    required this.bytes,
+    required this.isLog,
+    required this.safeToDelete,
+  });
+
+  final String path;
+  final int bytes;
+  final bool isLog;
+
+  /// True only inside this workspace, where nothing else can be using it.
+  ///
+  /// An orphan in a SHARED folder is never safe: it may be another device's
+  /// notebook that this machine has simply never joined, and deleting it
+  /// would destroy data this device never owned. Those are listed for the
+  /// user to judge, never deleted for them.
+  final bool safeToDelete;
 }
 
 /// What the UI needs to know about a notebook's sync state.

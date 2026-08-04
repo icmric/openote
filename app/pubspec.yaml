@@ -26,6 +26,9 @@ dependencies:
   file_selector: ^1.0.3
   # PDF export (pure Dart)
   pdf: ^3.10.0
+  # Printing (P13) — drives the OS print dialog with the same vector page the
+  # exporter builds. Apache-2.0, same author as `pdf`; audited per LICENSING.md.
+  printing: ^5.13.0
   # FFI to the Rust core (onote-core) — optional at runtime; the app falls
   # back to the pure-Dart engine when the native library isn't present.
   ffi: ^2.1.0

@@ -42,6 +42,16 @@ pub fn core_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// When this library was built, and from which commit: `"<epoch-secs> <sha>"`.
+///
+/// The answer to "is the library I am running actually the source I am
+/// looking at?" — a question git cannot answer, because git describes the
+/// source tree and the app loads a compiled artefact. Surfaced in the status
+/// bar so a stale build is visible rather than mysterious.
+pub fn core_build_id() -> &'static str {
+    env!("ONOTE_CORE_BUILD")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
