@@ -27,6 +27,11 @@ class LiveMarkdownController extends TextEditingController {
       r'|(\+\+(.+?)\+\+)');
   static final _headingRe = RegExp(r'^(#{1,6})( +)');
 
+  /// The same line shapes md_render gives extra vertical room to — kept
+  /// textually in step with `_reCheckbox` / `_reQuote` there.
+  static final _checkboxLineRe = RegExp(r'^(\s*)- \[( |x|X)\]');
+  static final _quoteLineRe = RegExp(r'^>\s?');
+
   /// A whole line that is nothing but an image reference — the in-flow form
   /// (Data Model §5.1). Line-anchored to match the renderer exactly, so what
   /// the editor dims is precisely what read mode turns into a picture.
@@ -199,15 +204,42 @@ class LiveMarkdownController extends TextEditingController {
       return;
     }
 
+    // ── Vertical parity with the read renderer (md_render.dart) ──
+    //
+    // The two renderers are one text box to the user, so their line boxes must
+    // agree or the text visibly shifts on every edit-mode entry and exit. The
+    // read side expresses extra room as per-line *padding*, which a TextField
+    // cannot have — but a line's box is fontSize × height, so the same pixels
+    // can be bought with a height multiplier. Each adjustment below mirrors a
+    // specific padding in md_render._renderLine; change one only with the
+    // other, and edit_view_metrics_test.dart holds the two within 1px.
+    final baseFs = base.fontSize ?? 14;
+    final baseH = base.height ?? 1.5;
+    if (_checkboxLineRe.hasMatch(line)) {
+      // Read draws a 17px checkbox icon with 3px top padding, so its row is
+      // at least 20px however small the font.
+      final minH = 20.0 / baseFs;
+      if (minH > baseH) base = base.copyWith(height: minH);
+    } else if (_quoteLineRe.hasMatch(line)) {
+      // Read gives a quote a 2px margin above and below.
+      base = base.copyWith(height: baseH + 4.0 / baseFs);
+    }
+
     // Heading: markers collapse when the caret isn't on the line.
     final h = _headingRe.firstMatch(line);
     if (h != null) {
       final level = math.min(h.group(1)!.length, 3);
-      const sizes = [23.0, 19.0, 16.5];
+      // Same sizes and weight as the read renderer — it used to be 23/19/16.5
+      // at w700 against read's 22/18.5/16 at w600, so the glyphs themselves
+      // changed shape on entering edit.
+      const sizes = [22.0, 18.5, 16.0];
+      final size = sizes[level - 1];
+      // Read pads a heading with top 6 + bottom 2 (top 0 on the first line).
+      final extra = lineStart == 0 ? 2.0 : 8.0;
       final cStyle = base.copyWith(
-          fontSize: sizes[level - 1],
-          fontWeight: FontWeight.w700,
-          height: 1.3,
+          fontSize: size,
+          fontWeight: FontWeight.w600,
+          height: (size * baseH + extra) / size,
           color: dark ? OnoteColors.moon0 : OnoteColors.graphite900);
       final prefix = line.substring(0, h.end);
       out.add(TextSpan(text: prefix, style: onLine ? _dim(base) : _hidden(base)));
