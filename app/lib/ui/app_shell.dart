@@ -818,8 +818,13 @@ String _coreBuildLine() {
   }
   final t = id.built.toLocal();
   String two(int v) => v.toString().padLeft(2, '0');
+  // The path matters as much as the timestamp: the loader picks the NEWEST of
+  // several candidates, so "which file won" is half of any stale-library
+  // question.
+  final from = OnoteCore.loadedFrom;
   return 'Core built ${t.year}-${two(t.month)}-${two(t.day)} '
-      '${two(t.hour)}:${two(t.minute)} from ${id.commit}.';
+      '${two(t.hour)}:${two(t.minute)} from ${id.commit}.'
+      '${from == null ? '' : '\nLoaded: $from'}';
 }
 
 class _StatusBar extends StatelessWidget {
