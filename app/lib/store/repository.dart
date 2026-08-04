@@ -438,12 +438,23 @@ class Repository {
     if (!file.existsSync()) throw StateError('no notebook at $path');
     final sharedLog = '${p.withoutExtension(path)}.onotebook';
 
-    final already = notebooks
-        .where((n) =>
-            p.equals(n.file, path) ||
-            (n.logDir != null && p.equals(n.logDir!, sharedLog)))
-        .firstOrNull;
+    bool sameNotebook(NotebookRef n) =>
+        p.equals(n.file, path) ||
+        (n.logDir != null && p.equals(n.logDir!, sharedLog));
+
+    final already = notebooks.where(sameNotebook).firstOrNull;
     if (already != null) return already;
+
+    // The recycle bin counts. Joining a notebook you had deleted used to skip
+    // this check entirely and copy the container again under a fresh id —
+    // which is how a workspace ends up holding five ~95MB copies of one
+    // notebook, each with its own review history and favourites. Restoring
+    // the entry you already have is both cheaper and what the user meant.
+    final trashed = trashedNotebooks.where(sameNotebook).firstOrNull;
+    if (trashed != null) {
+      await restoreNotebook(trashed.id);
+      return trashed;
+    }
 
     final name = title ?? p.basenameWithoutExtension(path);
     final local = _freeNotebookPath(name);
@@ -546,7 +557,18 @@ class Repository {
     await _saveNow();
   }
 
-  /// Permanently delete a trashed notebook, including its .onote file.
+  /// Permanently delete a trashed notebook: its container AND its op logs.
+  ///
+  /// The log directory used to be left behind — purge deleted `ref.file` and
+  /// nothing else — so every emptied notebook stranded its `.onotebook`
+  /// (logs, and every blob it ever held) somewhere the app would never look
+  /// again. On a synced notebook that is hundreds of megabytes of the user's
+  /// cloud quota, permanently, with no way to find it except by hand.
+  ///
+  /// The one thing it must never do is delete a log directory another
+  /// notebook still writes to: a device that joined a shared folder points
+  /// its `logDir` there while keeping a private container, so two entries can
+  /// legitimately name the same logs.
   Future<void> purgeNotebook(String id) async {
     final i = trashedNotebooks.indexWhere((n) => n.id == id);
     if (i < 0) return;
@@ -556,7 +578,24 @@ class Repository {
       final f = File(ref.file);
       if (f.existsSync()) f.deleteSync();
     } catch (_) {/* best-effort; the workspace entry is already gone */}
+    try {
+      final logs = Directory(ref.logDirPath);
+      if (logs.existsSync() && !_logDirIsShared(ref)) {
+        logs.deleteSync(recursive: true);
+      }
+    } catch (_) {/* a lock or a permission must not fail the purge */}
     await _saveNow();
+  }
+
+  /// Does any OTHER registry entry (live or trashed) use this notebook's log
+  /// directory? Shared logs belong to whoever is still using them.
+  bool _logDirIsShared(NotebookRef ref) {
+    final mine = ref.logDirPath;
+    for (final n in [...notebooks, ...trashedNotebooks]) {
+      if (n.id == ref.id) continue;
+      if (p.equals(n.logDirPath, mine)) return true;
+    }
+    return false;
   }
 
   // ── Recycle-bin retention (ORG-7): auto-purge after N days ──────────────

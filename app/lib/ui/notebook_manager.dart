@@ -168,6 +168,11 @@ class _NotebookManagerState extends State<_NotebookManager> {
             label: const Text('Import'),
             onPressed: () => setState(() => _importOpen = !_importOpen),
           ),
+          TextButton.icon(
+            icon: const Icon(Icons.healing_outlined, size: 17),
+            label: const Text('Repair'),
+            onPressed: () => _repairWithProgress(context, app),
+          ),
           // The welcome flow is where "open the notebook that's already in my
           // Drive" lives, and it should not be a one-shot you can never get
           // back to — that path matters most on a machine you set up months
@@ -592,3 +597,65 @@ String _strokeNote() => lastDroppedStrokes == 0
 void _snack(BuildContext context, String msg, {int seconds = 4}) =>
     ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(msg), duration: Duration(seconds: seconds)));
+
+/// "Repair" — heal every page of the open notebook at once.
+///
+/// The on-open repair is lazy on purpose (a clean page pays nothing), but a
+/// notebook imported before the importer was fixed keeps its `﷟HYPERLINK`
+/// junk and its needless `$…$` on every page you have not happened to visit.
+/// This is the explicit "just fix all of it" pass, with a live count because
+/// on a 300-page notebook it is seconds rather than milliseconds.
+Future<void> _repairWithProgress(BuildContext context, AppState app) async {
+  final progress = ValueNotifier<String>('Checking pages…');
+  var open = false;
+  if (context.mounted) {
+    open = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        content: Row(children: [
+          const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.6)),
+          const SizedBox(width: 16),
+          Expanded(
+            child: ValueListenableBuilder<String>(
+              valueListenable: progress,
+              builder: (_, t, __) => Text(t),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+  try {
+    final r = await app.repairWholeNotebook(
+      onProgress: (done, total) =>
+          progress.value = 'Checking page $done of $total…',
+    );
+    if (open && context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      open = false;
+    }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 5),
+      content: Text(r.pages == 0
+          ? 'Nothing to repair — every page is already up to date.'
+          : 'Repaired ${r.blocks} box${r.blocks == 1 ? '' : 'es'} '
+              'across ${r.pages} page${r.pages == 1 ? '' : 's'}.'),
+    ));
+  } catch (e) {
+    if (open && context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Repair failed: $e')));
+    }
+  } finally {
+    progress.dispose();
+  }
+}

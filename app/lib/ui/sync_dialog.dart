@@ -166,6 +166,8 @@ class _SyncDialogState extends State<_SyncDialog> {
                         const TextStyle(fontSize: 12, color: OnoteColors.danger)),
               ],
               const Divider(height: 22),
+              _StorageSection(app: app, notebookId: nb),
+              const Divider(height: 22),
               _mirrorSection(),
               const Divider(height: 22),
               SwitchListTile(
@@ -375,6 +377,226 @@ class _SyncDialogState extends State<_SyncDialog> {
       ),
     );
   }
+}
+
+String _bytes(int n) {
+  if (n < 1024) return '$n B';
+  if (n < 1024 * 1024) return '${(n / 1024).toStringAsFixed(0)} KB';
+  if (n < 1024 * 1024 * 1024) {
+    return '${(n / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  return '${(n / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+}
+
+/// Where this notebook's bytes are, said plainly — and what else is lying
+/// around that nothing points at.
+///
+/// The reason this exists: a notebook can sit on this machine with its logs
+/// beside it while old copies of it sit in a cloud folder, and every surface
+/// in the app read that as "synced". It wasn't. Naming the two paths is the
+/// only answer that can't mislead.
+class _StorageSection extends StatefulWidget {
+  const _StorageSection({required this.app, required this.notebookId});
+  final AppState app;
+  final String notebookId;
+
+  @override
+  State<_StorageSection> createState() => _StorageSectionState();
+}
+
+class _StorageSectionState extends State<_StorageSection> {
+  AppState get app => widget.app;
+  late Future<NotebookStorage> _storage = app.storageFor(widget.notebookId);
+  Future<List<OrphanFile>>? _orphans;
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Where this notebook lives',
+            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        FutureBuilder<NotebookStorage>(
+          future: _storage,
+          builder: (_, snap) {
+            final s = snap.data;
+            if (s == null) {
+              return const Text('Measuring…',
+                  style: TextStyle(
+                      fontSize: 11.5, color: OnoteColors.graphite400));
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _row('Notes', s.containerPath, s.containerBytes,
+                    s.containerCloud, isContainer: true),
+                const SizedBox(height: 6),
+                _row('Sync log', s.logPath, s.logBytes, s.logCloud,
+                    missing: !s.logExists),
+                const SizedBox(height: 8),
+                Text(
+                  s.syncs
+                      ? 'The sync log is in your ${s.logCloud!.name} folder, '
+                          'so this notebook reaches your other devices.'
+                      : s.containerCloud != null
+                          ? 'The notes file is in your '
+                              '${s.containerCloud!.name} folder but the sync '
+                              'log is not — so it is being re-uploaded on '
+                              'every save without actually syncing. Use '
+                              '"Move elsewhere" above to put both in place.'
+                          : 'Both are on this computer only. Pick a folder '
+                              'above to sync this notebook.',
+                  style: const TextStyle(fontSize: 11.5, height: 1.4),
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        if (_orphans == null)
+          TextButton.icon(
+            onPressed: () => setState(
+                () => _orphans = app.findOrphanFiles()),
+            icon: const Icon(Icons.cleaning_services_outlined, size: 15),
+            label: const Text('Find leftover files…',
+                style: TextStyle(fontSize: 12)),
+          )
+        else
+          _orphanList(),
+      ],
+    );
+  }
+
+  Widget _row(String label, String path, int bytes, CloudFolder? cloud,
+      {bool isContainer = false, bool missing = false}) {
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SizedBox(
+        width: 62,
+        child: Text(label,
+            style: const TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: .4,
+                color: OnoteColors.graphite400)),
+      ),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SelectableText(path,
+                style: const TextStyle(fontSize: 10.5, height: 1.3)),
+            Row(children: [
+              Icon(
+                  missing
+                      ? Icons.help_outline
+                      : cloud != null
+                          ? Icons.cloud_done_outlined
+                          : Icons.computer_outlined,
+                  size: 12,
+                  color: cloud != null
+                      ? OnoteColors.success
+                      : OnoteColors.graphite400),
+              const SizedBox(width: 4),
+              Text(
+                missing
+                    ? 'not created yet'
+                    : '${cloud?.name ?? 'this computer'} · ${_bytes(bytes)}',
+                style: const TextStyle(
+                    fontSize: 10.5, color: OnoteColors.graphite400),
+              ),
+            ]),
+          ],
+        ),
+      ),
+      IconButton(
+        icon: const Icon(Icons.folder_open, size: 14),
+        visualDensity: VisualDensity.compact,
+        tooltip: 'Open containing folder',
+        onPressed: () => PlatformOpen.file(
+            isContainer ? p.dirname(path) : path),
+      ),
+    ]);
+  }
+
+  Widget _orphanList() => FutureBuilder<List<OrphanFile>>(
+        future: _orphans,
+        builder: (_, snap) {
+          final list = snap.data;
+          if (list == null) {
+            return const Text('Looking…',
+                style:
+                    TextStyle(fontSize: 11.5, color: OnoteColors.graphite400));
+          }
+          if (list.isEmpty) {
+            return const Text('No leftover notebook files found.',
+                style:
+                    TextStyle(fontSize: 11.5, color: OnoteColors.graphite400));
+          }
+          final safe = list.where((o) => o.safeToDelete).toList();
+          final safeBytes = safe.fold<int>(0, (a, o) => a + o.bytes);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${list.length} leftover file'
+                  '${list.length == 1 ? '' : 's'} nothing points at',
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              for (final o in list.take(8))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Row(children: [
+                    Icon(o.isLog ? Icons.history : Icons.description_outlined,
+                        size: 12, color: OnoteColors.graphite400),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text('${p.basename(o.path)}  ·  ${_bytes(o.bytes)}'
+                          '${o.safeToDelete ? '' : '  ·  shared folder'}',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 10.5)),
+                    ),
+                  ]),
+                ),
+              const SizedBox(height: 4),
+              // Only workspace files are ever deleted from here: a leftover in
+              // a SHARED folder may be another device's notebook this machine
+              // has never joined, and removing it would destroy data this
+              // device never owned.
+              const Text(
+                'Files in a shared folder are left alone — they may belong to '
+                'another device. Open the folder to review those yourself.',
+                style: TextStyle(
+                    fontSize: 10.5, height: 1.35, color: OnoteColors.graphite400),
+              ),
+              if (safe.isNotEmpty)
+                TextButton.icon(
+                  onPressed: _busy
+                      ? null
+                      : () async {
+                          setState(() => _busy = true);
+                          final freed = await app.deleteOrphans(safe);
+                          if (!mounted) return;
+                          setState(() {
+                            _busy = false;
+                            _orphans = app.findOrphanFiles();
+                            _storage = app.storageFor(widget.notebookId);
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content:
+                                  Text('Reclaimed ${_bytes(freed)}')));
+                        },
+                  icon: const Icon(Icons.delete_outline, size: 15),
+                  label: Text(
+                      'Delete ${safe.length} on this computer '
+                      '(${_bytes(safeBytes)})',
+                      style: const TextStyle(fontSize: 12)),
+                ),
+            ],
+          );
+        },
+      );
 }
 
 IconData _iconFor(CloudKind k) => switch (k) {

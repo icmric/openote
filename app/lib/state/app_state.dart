@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
-// ThemeMode + widgets (re-exports foundation)
+import 'package:flutter/material.dart'; // ThemeMode + widgets
+import 'package:path/path.dart' as p;
 
 import '../canvas/align_guides.dart';
 import '../canvas/canvas_controller.dart';
@@ -500,6 +501,125 @@ class AppState extends ChangeNotifier implements StudyDocument {
     );
     _syncStatusCache[nb] = (status: status, at: now);
     return status;
+  }
+
+  /// Where this notebook's container and logs actually are, with sizes.
+  Future<NotebookStorage> storageFor(String nb) async {
+    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull ??
+        _repo.trashedNotebooks.where((n) => n.id == nb).firstOrNull;
+    if (ref == null) {
+      return const NotebookStorage(
+          containerPath: '',
+          containerBytes: 0,
+          logPath: '',
+          logBytes: 0,
+          logExists: false,
+          containerCloud: null,
+          logCloud: null);
+    }
+    final logPath = ref.logDirPath;
+    final logDir = Directory(logPath);
+    return NotebookStorage(
+      containerPath: ref.file,
+      containerBytes: _fileBytes(ref.file),
+      logPath: logPath,
+      logBytes: await _dirBytes(logDir),
+      logExists: logDir.existsSync(),
+      containerCloud: cloudFolderContaining(ref.file),
+      logCloud: cloudFolderContaining(logPath),
+    );
+  }
+
+  /// Notebook files on disk that no registry entry — live or trashed — claims.
+  ///
+  /// Looks in this workspace and one level into each detected cloud folder
+  /// (plus its `Openote` subfolder), which is where the app's own flows put
+  /// things. Deliberately not a whole-disk scan.
+  Future<List<OrphanFile>> findOrphanFiles() async {
+    final claimed = <String>{};
+    for (final n in [..._repo.notebooks, ..._repo.trashedNotebooks]) {
+      claimed
+        ..add(p.canonicalize(n.file))
+        ..add(p.canonicalize(n.logDirPath));
+    }
+
+    final roots = <(String, bool)>[(_repo.workspaceDir.path, true)];
+    for (final f in detectCloudFolders()) {
+      roots
+        ..add((f.path, false))
+        ..add((p.join(f.path, 'Openote'), false));
+    }
+
+    final out = <OrphanFile>[];
+    final seen = <String>{};
+    for (final (root, isWorkspace) in roots) {
+      final dir = Directory(root);
+      if (!dir.existsSync()) continue;
+      try {
+        for (final e in dir.listSync(followLinks: false)) {
+          final ext = p.extension(e.path).toLowerCase();
+          final isLog = e is Directory && ext == '.onotebook';
+          final isContainer = e is File && ext == '.onote';
+          if (!isLog && !isContainer) continue;
+          final canon = p.canonicalize(e.path);
+          if (claimed.contains(canon) || !seen.add(canon)) continue;
+          out.add(OrphanFile(
+            path: e.path,
+            bytes: isLog
+                ? await _dirBytes(Directory(e.path))
+                : _fileBytes(e.path),
+            isLog: isLog,
+            safeToDelete: isWorkspace,
+          ));
+        }
+      } catch (_) {
+        // An unreadable folder (offline placeholders, permissions) must not
+        // break the scan of the others.
+      }
+    }
+    out.sort((a, b) => b.bytes.compareTo(a.bytes));
+    return out;
+  }
+
+  /// Delete orphans, and ONLY ones marked safe. Returns the bytes reclaimed.
+  Future<int> deleteOrphans(Iterable<OrphanFile> files) async {
+    var freed = 0;
+    for (final f in files) {
+      if (!f.safeToDelete) continue; // never a shared folder; see [OrphanFile]
+      try {
+        if (f.isLog) {
+          Directory(f.path).deleteSync(recursive: true);
+        } else {
+          File(f.path).deleteSync();
+        }
+        freed += f.bytes;
+      } catch (_) {/* locked or gone; report what actually went */}
+    }
+    return freed;
+  }
+
+  int _fileBytes(String path) {
+    try {
+      final f = File(path);
+      return f.existsSync() ? f.lengthSync() : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<int> _dirBytes(Directory dir) async {
+    if (!dir.existsSync()) return 0;
+    var total = 0;
+    try {
+      await for (final e in dir.list(recursive: true, followLinks: false)) {
+        if (e is File) {
+          try {
+            total += e.lengthSync();
+          } catch (_) {/* vanished mid-walk */}
+        }
+      }
+    } catch (_) {/* unreadable; report what we counted */}
+    return total;
   }
 
   /// Blobs the log references but whose bytes are not yet in `blobs/`.
@@ -1810,23 +1930,19 @@ class AppState extends ChangeNotifier implements StudyDocument {
   /// is already in memory — no database read, no allocation, nothing written.
   /// The conversion itself is the Rust importer's own, over FFI, so there is
   /// exactly one parser rather than two that drift apart.
-  void _repairImportedFieldCodes() {
-    final core = OnoteCore.instance;
-    if (core == null) return; // Dart-only build: leave the text untouched.
-
-    // Worked out in full BEFORE anything is written, so the undo checkpoint
-    // below captures the page as it was on disk rather than as it will be.
-    final repairs = <Block, String>{};
-    // Table cells too. The walk only ever looked at `content['text']`, so an
-    // imported table kept its field codes and its needless `$…$` for ever —
-    // and a table is exactly where imported notes put symbols.
-    final cellRepairs = <Block, List<List<String>>>{};
+  /// Heal one page's blocks in place. Returns how many blocks changed.
+  ///
+  /// Shared by the on-open repair and the whole-notebook one so the two can
+  /// never diverge — an imported page must end up identical whichever route
+  /// reached it.
+  int _healBlocks(List<Block> blocks, OnoteCore core) {
     String? repair(String text) {
       if (!textNeedsFieldRepair(text)) return null;
       final fixed = core.repairFieldCodes(text);
       return (fixed == text || fixed.isEmpty) ? null : fixed;
     }
 
+    var changed = 0;
     for (final b in blocks) {
       if (b.type == BlockType.table) {
         final rows = b.content['cells'];
@@ -1843,15 +1959,83 @@ class AppState extends ChangeNotifier implements StudyDocument {
           }
           out.add(cells);
         }
-        if (touched) cellRepairs[b] = out;
+        if (touched) {
+          b.content['cells'] = out;
+          b.updatedAt = nowMs();
+          changed++;
+        }
         continue;
       }
       final text = b.content['text'];
       if (text is! String) continue;
       final fixed = repair(text);
-      if (fixed != null) repairs[b] = fixed;
+      if (fixed != null) {
+        b.content['text'] = fixed;
+        b.updatedAt = nowMs();
+        changed++;
+      }
     }
-    if (repairs.isEmpty && cellRepairs.isEmpty) return;
+    return changed;
+  }
+
+  /// Heal EVERY page in the notebook, not just the ones you happen to open.
+  ///
+  /// The on-open repair is lazy by design — it costs nothing on a clean page
+  /// — but on a notebook imported before the importer was fixed that means
+  /// hundreds of pages keep their `﷟HYPERLINK "…"` junk and their needless
+  /// `$…$` until the day you next visit them. This is the "just fix all of
+  /// it" button, and it is worth having as an explicit action rather than a
+  /// startup cost nobody asked for.
+  ///
+  /// Yields between chunks so a 300-page notebook doesn't freeze the window,
+  /// and commits per chunk so an interruption keeps what it already fixed.
+  Future<({int pages, int blocks})> repairWholeNotebook({
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final core = OnoteCore.instance;
+    final nb = notebookId;
+    if (core == null || nb == null) return (pages: 0, blocks: 0);
+    await flushSave();
+
+    final pages = nodes.where((n) => n.kind == NodeKind.page).toList();
+    var healedPages = 0, healedBlocks = 0, done = 0;
+    const chunk = 12;
+
+    for (var start = 0; start < pages.length; start += chunk) {
+      final end = (start + chunk).clamp(0, pages.length);
+      importBatch(nb, () {
+        for (var i = start; i < end; i++) {
+          final n = pages[i];
+          // The open page is already in memory and owns unsaved edits.
+          final data = n.id == pageId
+              ? PageData(blocks, pageProps)
+              : readPage(n.id);
+          final changed = _healBlocks(data.blocks, core);
+          if (changed == 0) continue;
+          healedPages++;
+          healedBlocks += changed;
+          importPage(nb, n.id, data.blocks, data.props);
+        }
+      });
+      done = end;
+      onProgress?.call(done, pages.length);
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    // The open page's blocks may have been rewritten in place above.
+    docRevision++;
+    notifyListeners();
+    return (pages: healedPages, blocks: healedBlocks);
+  }
+
+  void _repairImportedFieldCodes() {
+    final core = OnoteCore.instance;
+    if (core == null) return; // Dart-only build: leave the text untouched.
+
+    // Worked out on a COPY first, so the undo checkpoint below captures the
+    // page as it was on disk rather than as it will be.
+    final before = [for (final b in blocks) Block.fromJson(b.toJson())];
+    if (_healBlocks(before, core) == 0) return;
 
     // Undoable. This is the one automatic path that rewrites text the user
     // already owns, and it runs the moment a page opens — without a checkpoint
@@ -1859,17 +2043,10 @@ class AppState extends ChangeNotifier implements StudyDocument {
     // stack was cleared by `selectPage` just above, so this becomes its first
     // entry: one Ctrl+Z restores exactly what was on disk.
     pushUndo();
-    for (final e in repairs.entries) {
-      e.key.content['text'] = e.value;
-      e.key.updatedAt = nowMs();
-    }
-    for (final e in cellRepairs.entries) {
-      e.key.content['cells'] = e.value;
-      e.key.updatedAt = nowMs();
-    }
+    _healBlocks(blocks, core);
     // Save through the normal funnel so the op log records it and the change
-    // reaches other devices — a repair that only ever ran locally would have to
-    // run again on every one of them.
+    // reaches other devices — a repair that only ever ran locally would have
+    // to run again on every one of them.
     markDirty();
   }
 
@@ -2869,6 +3046,64 @@ class AppState extends ChangeNotifier implements StudyDocument {
     _repo.dispose();
     super.dispose();
   }
+}
+
+/// Where one notebook's bytes actually are.
+///
+/// Exists because "is this syncing?" was being answered by inference and the
+/// answer was wrong: a notebook can sit in the workspace with its logs beside
+/// it while copies of it sit in a cloud folder, and the app happily reported
+/// the copies' existence as sync. The only honest answer names the two paths
+/// and says which of them a cloud client can see.
+class NotebookStorage {
+  const NotebookStorage({
+    required this.containerPath,
+    required this.containerBytes,
+    required this.logPath,
+    required this.logBytes,
+    required this.logExists,
+    required this.containerCloud,
+    required this.logCloud,
+  });
+
+  final String containerPath;
+  final int containerBytes;
+  final String logPath;
+  final int logBytes;
+  final bool logExists;
+
+  /// The detected cloud folder each half lives in, if any.
+  final CloudFolder? containerCloud;
+  final CloudFolder? logCloud;
+
+  /// **The logs are what sync.** The container is a local cache by design
+  /// (ADR-0006 §3), so a container in Drive without its logs there is not
+  /// sync — it is a stray copy being re-uploaded on every save.
+  bool get syncs => logCloud != null;
+
+  int get totalBytes => containerBytes + logBytes;
+}
+
+/// A `.onote` or `.onotebook` on disk that no registry entry claims.
+class OrphanFile {
+  const OrphanFile({
+    required this.path,
+    required this.bytes,
+    required this.isLog,
+    required this.safeToDelete,
+  });
+
+  final String path;
+  final int bytes;
+  final bool isLog;
+
+  /// True only inside this workspace, where nothing else can be using it.
+  ///
+  /// An orphan in a SHARED folder is never safe: it may be another device's
+  /// notebook that this machine has simply never joined, and deleting it
+  /// would destroy data this device never owned. Those are listed for the
+  /// user to judge, never deleted for them.
+  final bool safeToDelete;
 }
 
 /// What the UI needs to know about a notebook's sync state.
