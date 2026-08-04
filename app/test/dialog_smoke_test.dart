@@ -111,6 +111,9 @@ void main() {
       expect(tester.takeException(), isNull,
           reason: 'the sync dialog failed to lay out at $label');
       expect(find.byType(AlertDialog), findsOneWidget);
+      // Reported as hard to find: this dialog is where people are thinking
+      // about where notebooks live, so adding one belongs here too.
+      expect(find.text('Add a notebook…'), findsOneWidget);
     });
 
     testWidgets('the welcome flow opens ($label)', (tester) async {

@@ -21,6 +21,7 @@ import '../state/app_state.dart';
 import '../sync/cloud_folders.dart';
 import '../sync/mirrors.dart';
 import '../theme/onote_theme.dart';
+import 'notebook_manager.dart';
 
 Future<void> showSyncDialog(BuildContext context, AppState app) async {
   final nb = app.notebookId;
@@ -198,10 +199,30 @@ class _SyncDialogState extends State<_SyncDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.of(context).pop(),
-          child: const Text('Close'),
-        ),
+        // Reported: adding a notebook is hard to find. This dialog is where
+        // people arrive when they are thinking about *where their notebooks
+        // live*, so "add another one" belongs in the same thought — even
+        // though the manager is the surface that owns it. One Row, because
+        // AlertDialog.actions is an OverflowBar and a Spacer there throws.
+        Row(children: [
+          TextButton.icon(
+            icon: const Icon(Icons.library_add_outlined, size: 17),
+            label: const Text('Add a notebook…'),
+            onPressed: _busy
+                ? null
+                : () async {
+                    final navigator = Navigator.of(context);
+                    final ctx = context;
+                    navigator.pop();
+                    if (ctx.mounted) await showNotebookManager(ctx, app);
+                  },
+          ),
+          const Spacer(),
+          TextButton(
+            onPressed: _busy ? null : () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ]),
       ],
     );
   }

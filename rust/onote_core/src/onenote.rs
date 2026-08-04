@@ -2401,15 +2401,31 @@ fn run_markdown(run: &SRun) -> String {
     // right trade — an empty conversion is exactly what used to empty whole
     // pages of content.
     if run.style.is_math {
+        let plain: String = s
+            .chars()
+            .map(fold_math_char)
+            .filter(|c| !is_math_control(*c))
+            .collect();
         let latex = office_math_to_latex(s.trim_end_matches('\0'));
-        return if latex.trim().is_empty() {
-            s.chars()
-                .map(fold_math_char)
-                .filter(|c| !is_math_control(*c))
-                .collect()
-        } else {
-            format!("{lead}${latex}${trail}")
-        };
+        if latex.trim().is_empty() {
+            return plain;
+        }
+        // **A symbol is not an equation.** OneNote marks a single character as
+        // a math run the moment you insert it from the symbol palette, so a
+        // sentence like "for all x in S" came back as "$∀$ x in S": rendered
+        // correctly in the read-only view, and then showing raw `$∀$` the
+        // instant you clicked into the box. Reported as exactly that.
+        //
+        // The test is whether the conversion actually produced any LaTeX. When
+        // the "LaTeX" is character-for-character the plain text, there is no
+        // notation to typeset — it is a character the app's font chain already
+        // renders — so emit the character and leave the delimiters out. A real
+        // equation converts to something different (\frac, ^, _, \sum) and
+        // still gets its `$…$`.
+        if latex.trim() == plain.trim() {
+            return plain;
+        }
+        return format!("{lead}${latex}${trail}");
     }
     let core = s[lead.len()..s.len() - trail.len()].to_string();
     let mut core = core;
@@ -4340,6 +4356,36 @@ mod tests {
         let r = Reader { d: &blob };
         let set = read_propset(&r, 0, blob.len()); // must return, not hang
         assert_eq!(set.props.len(), 1);
+    }
+
+    /// Reported: "some symbols end up with $x$ around them when I start
+    /// editing a box". They do: OneNote marks a character inserted from the
+    /// symbol palette as a math run, and every math run was wrapped in `$…$`.
+    /// The view renders that as maths and the editor shows the source, so the
+    /// delimiters appear the moment you click in.
+    #[test]
+    fn a_lone_symbol_is_not_wrapped_in_math_delimiters() {
+        let math = Style { is_math: true, ..Default::default() };
+        for sym in ["∀", "∈", "ℝ", "θ"] {
+            let run = SRun { text: sym.into(), style: math.clone() };
+            assert_eq!(
+                run_markdown(&run),
+                sym,
+                "a bare {sym} should import as itself, not as ${sym}$"
+            );
+        }
+    }
+
+    /// …while something that genuinely needs typesetting keeps its delimiters.
+    #[test]
+    fn real_notation_still_becomes_inline_math() {
+        let run = SRun {
+            text: "\u{FDD0}a\u{FDEE}b\u{FDEF}".into(),
+            style: Style { is_math: true, ..Default::default() },
+        };
+        let out = run_markdown(&run);
+        assert!(out.starts_with('$') && out.ends_with('$'), "got {out:?}");
+        assert!(out.contains("\\frac"), "got {out:?}");
     }
 
     #[test]
