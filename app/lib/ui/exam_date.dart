@@ -27,7 +27,7 @@ Future<bool> pickExamDate(
     BuildContext context, AppState app, String sectionId) async {
   final today = DateTime.now();
   final start = DateTime(today.year, today.month, today.day);
-  final existing = app.examDate(sectionId);
+  final existing = app.study.examDate(sectionId);
   // An exam that has already been and gone can't be the picker's opening date
   // — `showDatePicker` asserts when the initial date precedes the first one.
   final initial = (existing != null && !existing.isBefore(start))
@@ -44,7 +44,7 @@ Future<bool> pickExamDate(
     confirmText: 'Set',
   );
   if (picked == null) return false;
-  app.setExamDate(sectionId, picked);
+  app.study.setExamDate(sectionId, picked);
   return true;
 }
 
@@ -54,8 +54,8 @@ Future<bool> pickExamDate(
 /// the cards, the schedule and the notes are all untouched — so asking "are you
 /// sure?" would be theatre. Saying what happened is enough.
 void clearExamDate(BuildContext context, AppState app, String sectionId) {
-  final had = app.examDate(sectionId);
-  app.setExamDate(sectionId, null);
+  final had = app.study.examDate(sectionId);
+  app.study.setExamDate(sectionId, null);
   if (had == null || !context.mounted) return;
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text('Exam date removed '

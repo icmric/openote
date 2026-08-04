@@ -75,13 +75,13 @@ void main() {
       });
 
       // First call populates the cache.
-      final first = app.deckCounts();
+      final first = app.study.deckCounts();
       expect(first.$2, greaterThan(0), reason: 'the fixture has cards');
 
       // Simulate what the command bar does: many rebuilds with no edit.
       final sw = Stopwatch()..start();
       for (var i = 0; i < 200; i++) {
-        app.deckCounts();
+        app.study.deckCounts();
       }
       sw.stop();
 
@@ -102,7 +102,7 @@ void main() {
         } catch (_) {}
       });
 
-      final before = app.deckCounts().$2;
+      final before = app.study.deckCounts().$2;
       // Tag another line on the open page — docRevision bumps, so the deck
       // must be rebuilt. A cache that never invalidates is worse than none.
       final b = app.blocks.first;
@@ -113,7 +113,7 @@ void main() {
       ]);
       app.docRevision++;
 
-      expect(app.deckCounts().$2, greaterThan(before),
+      expect(app.study.deckCounts().$2, greaterThan(before),
           reason: 'a new tagged line must produce a new card');
     });
   });

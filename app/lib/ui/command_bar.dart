@@ -1039,11 +1039,11 @@ class _StudyButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (due, total) = app.deckCounts(sectionId: app.activeSectionId);
+    final (due, total) = app.study.deckCounts(sectionId: app.activeSectionId);
     // Read from the date map and the counts already in hand — deliberately not
     // through `examPlanFor`, which would walk the deck a second time on a
     // widget that rebuilds with every keystroke.
-    final exam = app.examDate(app.activeSectionId);
+    final exam = app.study.examDate(app.activeSectionId);
     final daysLeft =
         exam == null ? null : daysBetween(DateTime.now(), exam);
     final urgent =

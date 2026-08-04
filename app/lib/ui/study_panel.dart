@@ -84,7 +84,7 @@ class _StudyPanelState extends State<StudyPanel> {
 
   void _start(StudyMode mode) {
     final cards =
-        app.sessionCards(sectionId: _sectionId, pageId: _pageId, mode: mode);
+        app.study.sessionCards(sectionId: _sectionId, pageId: _pageId, mode: mode);
     if (cards.isEmpty) return; // nothing to enter; the overview stays put
     setState(() {
       _mode = mode;
@@ -113,7 +113,7 @@ class _StudyPanelState extends State<StudyPanel> {
     final s = _session;
     if (s == null || _index >= s.length) return;
     final card = s[_index];
-    app.gradeCard(card.id, g, schedule: _mode == StudyMode.due);
+    app.study.gradeCard(card.id, g, schedule: _mode == StudyMode.due);
     if (g == Grade.again && !_missed.any((c) => c.id == card.id)) {
       _missed.add(card);
     }
@@ -154,7 +154,7 @@ class _StudyPanelState extends State<StudyPanel> {
   }
 
   Future<void> _export() async {
-    final cards = app.deck(sectionId: _sectionId, pageId: _pageId);
+    final cards = app.study.deck(sectionId: _sectionId, pageId: _pageId);
     if (cards.isEmpty) return;
     final path = await getSaveLocation(
       suggestedName: 'openote-cards.txt',
@@ -192,7 +192,7 @@ class _StudyPanelState extends State<StudyPanel> {
       ),
     );
     if (ok != true) return;
-    final n = app.resetDeck(sectionId: _sectionId, pageId: _pageId);
+    final n = app.study.resetDeck(sectionId: _sectionId, pageId: _pageId);
     if (!mounted) return;
     _end();
     ScaffoldMessenger.of(context)
@@ -209,7 +209,7 @@ class _StudyPanelState extends State<StudyPanel> {
       _session = null;
       _missed.clear();
     }
-    final stats = app.deckStats(sectionId: _sectionId, pageId: _pageId);
+    final stats = app.study.deckStats(sectionId: _sectionId, pageId: _pageId);
     final session = _session;
     final inSession = session != null && _index < session.length;
 
@@ -282,7 +282,7 @@ class _StudyPanelState extends State<StudyPanel> {
                 }
               },
               itemBuilder: (_) {
-                final hasExam = app.examDate(app.activeSectionId) != null;
+                final hasExam = app.study.examDate(app.activeSectionId) != null;
                 return [
                   const PopupMenuItem(
                       value: 'export',
@@ -418,7 +418,7 @@ class _StudyPanelState extends State<StudyPanel> {
     // plan to state — three modules' cards are not "the exam's" cards. Show
     // the soonest exam as context, and offer the jump to the deck it means.
     if (_scope == DeckScope.notebook) {
-      final next = app.nextExam();
+      final next = app.study.nextExam();
       if (next == null) return null;
       return _bannerBox(
         dark: dark,
@@ -439,7 +439,7 @@ class _StudyPanelState extends State<StudyPanel> {
 
     final sectionId = app.activeSectionId;
     final plan = examPlan(
-      exam: app.examDate(sectionId),
+      exam: app.study.examDate(sectionId),
       today: DateTime.now(),
       unseen: s.unseen,
       total: s.total,
@@ -565,10 +565,10 @@ class _StudyPanelState extends State<StudyPanel> {
   Widget _progress(
       ({int due, int total, int unseen, int? nextDueAt}) s, bool dark) {
     final seen = s.total - s.unseen;
-    final today = app.reviewsToday();
-    final streak = app.studyStreakDays();
+    final today = app.study.reviewsToday();
+    final streak = app.study.studyStreakDays();
     final sectionId = app.activeSectionId;
-    final hasExam = app.examDate(sectionId) != null;
+    final hasExam = app.study.examDate(sectionId) != null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -598,7 +598,7 @@ class _StudyPanelState extends State<StudyPanel> {
             backgroundColor: dark ? OnoteColors.night200 : OnoteColors.paper200,
           ),
         ),
-        if (app.hasStudyHistory) ...[
+        if (app.study.hasStudyHistory) ...[
           const SizedBox(height: 12),
           Row(children: [
             Icon(
@@ -613,7 +613,7 @@ class _StudyPanelState extends State<StudyPanel> {
             ),
           ]),
           const SizedBox(height: 8),
-          _activityStrip(app.studyActivity(), dark),
+          _activityStrip(app.study.studyActivity(), dark),
         ],
         // The only place an exam date can be added from the study side. Quiet
         // by design — it is an offer, not a demand, and a student with no exam
@@ -711,7 +711,7 @@ class _StudyPanelState extends State<StudyPanel> {
                   DropdownMenuItem(
                     value: s,
                     child: Builder(builder: (_) {
-                      final st = app.deckStats(
+                      final st = app.study.deckStats(
                         sectionId:
                             s == DeckScope.notebook ? null : app.activeSectionId,
                         pageId: s == DeckScope.page ? app.pageId : null,
@@ -775,7 +775,7 @@ class _StudyPanelState extends State<StudyPanel> {
 
   Widget _summary(bool dark) {
     final done = _session?.length ?? 0;
-    final stats = app.deckStats(sectionId: _sectionId, pageId: _pageId);
+    final stats = app.study.deckStats(sectionId: _sectionId, pageId: _pageId);
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(14, 6, 14, 14),
@@ -807,20 +807,20 @@ class _StudyPanelState extends State<StudyPanel> {
             // certain to be looking at this panel, so it is where the streak
             // is worth stating — a number that only ever appears in a corner
             // of an overview screen is a number nobody notices going up.
-            if (app.studyStreakDays() > 0) ...[
+            if (app.study.studyStreakDays() > 0) ...[
               const SizedBox(height: 10),
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 const Icon(Icons.local_fire_department,
                     size: 15, color: OnoteColors.brass500),
                 const SizedBox(width: 5),
-                Text('${app.studyStreakDays()}-day streak · '
-                    '${app.reviewsToday()} today',
+                Text('${app.study.studyStreakDays()}-day streak · '
+                    '${app.study.reviewsToday()} today',
                     style: const TextStyle(
                         fontSize: 12, fontWeight: FontWeight.w600)),
               ]),
             ],
             if (examPlan(
-                  exam: app.examDate(app.activeSectionId),
+                  exam: app.study.examDate(app.activeSectionId),
                   today: DateTime.now(),
                   unseen: stats.unseen,
                   total: stats.total,
@@ -863,7 +863,7 @@ class _StudyPanelState extends State<StudyPanel> {
 
   Widget _card(Flashcard c, bool dark) {
     final total = _session!.length;
-    final state = app.cardState(c.id);
+    final state = app.study.cardState(c.id);
     final now = nowMs();
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 2, 14, 12),

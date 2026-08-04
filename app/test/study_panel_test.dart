@@ -110,8 +110,8 @@ void main() {
 
     // Grading two cards moves the progress line, and nothing else has to be
     // told about it.
-    for (final c in app.deck().take(2)) {
-      app.gradeCard(c.id, Grade.good);
+    for (final c in app.study.deck().take(2)) {
+      app.study.gradeCard(c.id, Grade.good);
     }
     await settle(tester);
     expect(find.text('2 of 6'), findsOneWidget);
@@ -128,7 +128,7 @@ void main() {
     // zeroes telling them they have done nothing.
     expect(find.byIcon(Icons.local_fire_department), findsNothing);
 
-    app.gradeCard(app.deck().first.id, Grade.good);
+    app.study.gradeCard(app.study.deck().first.id, Grade.good);
     await settle(tester);
     expect(find.byIcon(Icons.local_fire_department), findsOneWidget);
     expect(find.text('1-day streak · 1 today'), findsOneWidget);
@@ -145,7 +145,7 @@ void main() {
     expect(find.text('Add an exam date'), findsOneWidget);
 
     final today = DateTime.now();
-    app.setExamDate(
+    app.study.setExamDate(
         sectionOf(app)!, DateTime(today.year, today.month, today.day + 3));
     await settle(tester);
 
@@ -165,7 +165,7 @@ void main() {
 
     final today = DateTime.now();
     final section = sectionOf(app)!;
-    app.setExamDate(section, DateTime(today.year, today.month, today.day - 2));
+    app.study.setExamDate(section, DateTime(today.year, today.month, today.day - 2));
     await settle(tester);
 
     // Vanishing silently would read as a bug; only the student knows whether
@@ -174,7 +174,7 @@ void main() {
 
     await tester.tap(find.byTooltip('Remove exam date'));
     await settle(tester);
-    expect(app.examDate(section), isNull);
+    expect(app.study.examDate(section), isNull);
     expect(find.text('Add an exam date'), findsOneWidget);
   });
 
@@ -185,8 +185,8 @@ void main() {
   testWidgets('the overview does not overflow a short window', (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final app = await newApp(tester, cards: 40);
-    app.setExamDate(sectionOf(app)!, DateTime.now().add(const Duration(days: 9)));
-    app.gradeCard(app.deck().first.id, Grade.good);
+    app.study.setExamDate(sectionOf(app)!, DateTime.now().add(const Duration(days: 9)));
+    app.study.gradeCard(app.study.deck().first.id, Grade.good);
 
     for (final h in [480.0, 600.0, 900.0]) {
       await tester.pumpWidget(host(app, height: h));

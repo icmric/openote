@@ -18,8 +18,8 @@ import '../store/repository.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../study/flashcards.dart';
-import '../study/study_stats.dart';
 import 'builtin_templates.dart';
+import 'study_state.dart';
 import '../sync/folder_watch.dart';
 import '../sync/op.dart';
 import '../sync/cloud_folders.dart';
@@ -66,8 +66,15 @@ enum TouchDrawing {
 
 /// App-wide state. Deliberately simple (ChangeNotifier) for the MVP; the
 /// domain layer beneath it is what carries forward.
-class AppState extends ChangeNotifier {
-  AppState(this._repo) : engine = _selectEngine(_repo);
+class AppState extends ChangeNotifier implements StudyDocument {
+  AppState(this._repo) : engine = _selectEngine(_repo) {
+    // Forwarded, not replaced. Every surface listens to `AppState`, so the
+    // extraction must not change who wakes up when a card is graded — the
+    // point of E3 is to give state an owner, not to renegotiate rebuilds in
+    // the same pass. Narrowing a listener to `app.study` is now possible and
+    // is a separate, checkable change.
+    study.addListener(notifyListeners);
+  }
 
   final Repository _repo;
   final DocumentEngine engine;
@@ -110,6 +117,7 @@ class AppState extends ChangeNotifier {
 
   /// Read a page of the current notebook without making it the active page —
   /// used by exporters, which walk every page in turn.
+  @override
   PageData readPage(String id) => _repo.readPage(notebookId!, id);
 
   /// Pages in this notebook whose *content* matches [query] (TEXT-7).
@@ -577,11 +585,13 @@ class AppState extends ChangeNotifier {
   final canvasKey = GlobalKey();
 
   // Workspace / navigation
+  @override
   String? notebookId;
 
   List<TreeNode> _nodes = [];
 
   /// The current notebook's tree, ordered by position.
+  @override
   List<TreeNode> get nodes => _nodes;
   set nodes(List<TreeNode> v) {
     _nodes = v;
@@ -591,16 +601,19 @@ class AppState extends ChangeNotifier {
   /// Bumped whenever the tree changes shape *or* a node's rendered fields
   /// change. The navigator memoises its widget subtree on this, so typing in a
   /// page no longer rebuilds every section and page tile (§7a.6).
+  @override
   int nodesRevision = 0;
 
   /// Call after mutating a [TreeNode] in place (rename, indent) — those don't
   /// replace the list, so the setter above wouldn't notice.
   void bumpNodes() => nodesRevision++;
 
+  @override
   String? pageId;
   final Set<String> collapsedGroups = {};
 
   // Navigator (stacked): the focused section, whose pages fill the lower zone.
+  @override
   String? activeSectionId;
   double navSplit = 0.38; // sections/pages height ratio (0..1)
 
@@ -630,6 +643,7 @@ class AppState extends ChangeNotifier {
   }
 
   // Page content
+  @override
   List<Block> blocks = [];
   PageProps pageProps = PageProps();
 
@@ -640,6 +654,7 @@ class AppState extends ChangeNotifier {
 
   /// Bumped when block content changes from OUTSIDE its own editor widgets
   /// (undo/redo, page load) so views rebuild from model state.
+  @override
   int docRevision = 0;
 
   /// Measured render sizes of auto-height blocks (runtime only; used for
@@ -835,412 +850,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Study: flashcards from tagged lines ──────────────────────────────
+  // ── Study: flashcards, scheduling, stats (E3 — see study_state.dart) ──
 
-  /// Scheduling state per card id. Workspace-scoped and **not synced**: when
-  /// you should review is personal, and pushing it through the op log would
-  /// make one person's review schedule everyone's on a shared notebook.
-  final Map<String, CardState> _cardStates = {};
-
-  /// Reviews per local calendar day (P1). Workspace-wide and **not** per
-  /// notebook: a streak is a fact about the student's week, not about one
-  /// subject, and splitting it per notebook would mean a diligent week spent
-  /// across three modules showed as three broken streaks.
-  final StudyDays _studyDays = {};
-
-  /// Exam day per section, keyed `'<notebookId>:<sectionId>'` → `'yyyy-mm-dd'`.
+  /// Cards, schedules, streaks and the exam countdown.
   ///
-  /// Workspace settings rather than the node envelope, matching where card
-  /// schedules and favourites already live. The node envelope would put the
-  /// date in the op log, i.e. push *your* exam date onto everyone sharing a
-  /// group notebook — and the format is frozen at v1, so adding a field there
-  /// is a format decision rather than a feature. If it should ever be shared,
-  /// that is the migration; nothing here forecloses it.
-  ///
-  /// A `yyyy-mm-dd` string, not an epoch: an exam is a day in a calendar, and
-  /// an instant would land on the wrong side of midnight for anyone whose
-  /// timezone shifts between setting it and reading it back.
-  final Map<String, String> _examDates = {};
-
-  /// Every card the notebook can produce, in page order.
-  /// Cached deck, keyed on everything that can change what cards exist.
-  ///
-  /// **This cache is not an optimisation, it is a correctness-of-experience
-  /// fix.** Building a deck reads and JSON-decodes *every page in the
-  /// notebook* from SQLite. The study button lives in the command bar, which
-  /// rebuilds on every notify — i.e. every keystroke — so an uncached deck
-  /// meant ~324 database reads per character typed on a real notebook, and the
-  /// app crawled. Any widget that shows a count must go through here.
-  /// Closed-page cards, keyed by scope.
-  ///
-  /// A **map**, not one slot, because several scopes are asked for in the same
-  /// frame: the deck picker shows this-page / this-section / whole-notebook
-  /// counts side by side, and `_persistCardStates` prunes against the whole
-  /// notebook while the panel is scoped to a section. With one slot those
-  /// alternating keys evict each other, so every single call would re-read the
-  /// entire notebook — the exact regression the cache exists to prevent, with
-  /// the cache still nominally in place. Bounded because scopes are few and a
-  /// stale entry costs memory for a deck nobody is looking at.
-  final Map<String, List<Flashcard>> _deckCache = {};
-  static const _deckCacheMax = 6;
-
-  /// Every block id the last whole-notebook deck build walked past.
-  ///
-  /// Needed because card scheduling is stored per WORKSPACE while a deck is
-  /// per NOTEBOOK: without knowing which ids belong to the notebook in front
-  /// of us, pruning "everything not in this deck" deletes every other
-  /// notebook's review history. See [_persistCardStates].
-  Set<String> _notebookBlockIds = const {};
-
-  /// The OPEN page's cards, held separately from [_deckCache].
-  ///
-  /// Two caches rather than one, because the two halves go stale for different
-  /// reasons and cost wildly different amounts to rebuild. Closed pages come
-  /// from SQLite and only change structurally; the open page changes on every
-  /// keystroke but is already in memory. Merging them into one key meant either
-  /// re-reading the whole notebook per character (the regression) or a tagged
-  /// line producing no card until you navigated away (the bug).
-  ({String key, List<Flashcard> cards})? _liveDeckCache;
-
-  /// Bumped whenever the open page's content changes, so the live half of the
-  /// deck rebuilds — once per edit, not once per widget rebuild.
-  int contentRevision = 0;
-
-  /// Bumped whenever a card's schedule changes, so study surfaces refresh.
-  int studyRevision = 0;
-
-  /// Every card in a scope, in page order.
-  ///
-  /// Scope narrows outward-in: [pageId] beats [sectionId] beats the whole
-  /// notebook. Pages ARE the deck structure — a lecture page is a deck without
-  /// anyone having to build one.
-  List<Flashcard> deck({String? sectionId, String? pageId}) {
-    if (notebookId == null) return const [];
-    bool inScope(TreeNode n) =>
-        n.kind == NodeKind.page &&
-        (pageId == null || n.id == pageId) &&
-        (sectionId == null || n.parentId == sectionId);
-
-    // Closed pages. nodesRevision covers pages added/renamed/removed;
-    // docRevision covers a page's stored content being replaced wholesale.
-    final key =
-        '$notebookId#$sectionId#$pageId#$docRevision#$nodesRevision#${this.pageId}';
-    var stored = _deckCache[key];
-    if (stored == null) {
-      // A revision bumped: every entry keyed on the old one is dead weight.
-      if (_deckCache.length >= _deckCacheMax) _deckCache.clear();
-      final out = <Flashcard>[];
-      final seen = <String>{};
-      for (final n in nodes.where(inScope)) {
-        if (n.id == this.pageId) continue; // the live half, below
-        for (final b in readPage(n.id).blocks) {
-          seen.add(b.id);
-          out.addAll(cardsFromBlock(b, n.id, n.title));
-        }
-      }
-      // Only the unscoped build sees the whole notebook, so only it may
-      // answer "does this block belong to us?".
-      if (sectionId == null && pageId == null) {
-        _notebookBlockIds = seen..addAll(blocks.map((b) => b.id));
-      }
-      _deckCache[key] = stored = out;
-    }
-
-    final open =
-        nodes.where((n) => n.id == this.pageId && inScope(n)).firstOrNull;
-    if (open == null) return stored;
-    // contentRevision covers edits; docRevision covers the block list being
-    // replaced under us — an undo, a version restore, a sync pull.
-    final liveKey = '${open.id}#${open.title}#$contentRevision#$docRevision';
-    var live = _liveDeckCache?.key == liveKey ? _liveDeckCache!.cards : null;
-    if (live == null) {
-      final out = <Flashcard>[];
-      for (final b in blocks) {
-        out.addAll(cardsFromBlock(b, open.id, open.title));
-      }
-      _liveDeckCache = (key: liveKey, cards: live = out);
-    }
-    if (live.isEmpty) return stored;
-    if (stored.isEmpty) return live;
-    return [...stored, ...live];
-  }
-
-  /// Scheduling state for a card. **Read-only**: a card that has never been
-  /// graded must not be written just because something asked about it, or the
-  /// settings blob grows with every card the student merely looked at.
-  CardState cardState(String cardId) => _cardStates[cardId] ?? CardState();
-
-  /// Cards for one sitting.
-  ///
-  /// [StudyMode.due] is the real schedule: what spaced repetition says you
-  /// should see, most-overdue first, capped so a session ends — a deck of 400
-  /// with no cap is a wall a student bounces off.
-  ///
-  /// [StudyMode.cram] ignores the schedule entirely and shuffles. It exists
-  /// because "I want to go over this again" is the single most common thing a
-  /// student wants the night before an exam, and a review app that answers it
-  /// with "nothing due" is useless to them.
-  List<Flashcard> sessionCards({
-    String? sectionId,
-    String? pageId,
-    StudyMode mode = StudyMode.due,
-    int max = 40,
-  }) {
-    final all = deck(sectionId: sectionId, pageId: pageId);
-    if (mode == StudyMode.cram) {
-      final shuffled = [...all]..shuffle();
-      return shuffled.length <= max ? shuffled : shuffled.sublist(0, max);
-    }
-    final now = nowMs();
-    final due = [
-      for (final c in all)
-        if (cardState(c.id).isDue(now)) c
-    ]..sort((a, b) => cardState(a.id).dueAt.compareTo(cardState(b.id).dueAt));
-    return due.length <= max ? due : due.sublist(0, max);
-  }
-
-  /// Kept for callers that only want the schedule.
-  List<Flashcard> dueCards({String? sectionId, int max = 40}) =>
-      sessionCards(sectionId: sectionId, max: max);
-
-  /// Record a grade.
-  ///
-  /// [schedule] false is cram mode: going over a card early must not push its
-  /// real due date out, or a night of cramming silently wipes weeks of
-  /// spacing. Getting one WRONG still counts — that is information about the
-  /// card regardless of why you were looking at it.
-  void gradeCard(String cardId, Grade g, {bool schedule = true}) {
-    // Counted BEFORE the cram-mode early return, and that placement is the
-    // decision: an hour of practice the night before an exam is the most
-    // studying a student will do all term, and a streak that ignored it would
-    // punish them for the one session that mattered most. What is recorded
-    // here is "you sat down and worked", which is true in both modes; the
-    // schedule is what practice leaves alone.
-    _recordReview();
-    if (!schedule && g != Grade.again) {
-      studyRevision++;
-      notifyListeners();
-      return;
-    }
-    final s = _cardStates.putIfAbsent(cardId, CardState.new);
-    applyGrade(s, g, nowMs());
-    _persistCardStates();
-    studyRevision++;
-    notifyListeners();
-  }
-
-  /// Carry review schedules across when a block's tags change line.
-  ///
-  /// A card's identity is `blockId:line` — chosen because it survives edits to
-  /// other lines with no extra bookkeeping — so re-basing a tag *renames its
-  /// card*. Without this the schedule is orphaned under the old name and the
-  /// next prune deletes it: press Enter above a tagged line and weeks of
-  /// spacing are gone, from a keystroke that changed nothing about the card.
-  ///
-  /// Removed first, then re-added, so a run of tags shifting by one can't
-  /// overwrite each other on the way past.
-  void remapCardStates(String blockId, Map<int, int> moved) {
-    if (moved.isEmpty) return;
-    final carried = <String, CardState>{};
-    for (final e in moved.entries) {
-      if (e.key == e.value) continue;
-      final s = _cardStates.remove('$blockId:${e.key}');
-      if (s != null) carried['$blockId:${e.value}'] = s;
-    }
-    if (carried.isEmpty) return;
-    _cardStates.addAll(carried);
-    _repo.setSetting('cardStates',
-        {for (final e in _cardStates.entries) e.key: e.value.toJson()});
-    studyRevision++;
-  }
-
-  /// Forget a card's schedule — it becomes new again.
-  void resetCard(String cardId) {
-    if (_cardStates.remove(cardId) == null) return;
-    _persistCardStates();
-    studyRevision++;
-    notifyListeners();
-  }
-
-  /// Forget every schedule in a scope. Returns how many were cleared.
-  int resetDeck({String? sectionId, String? pageId}) {
-    var n = 0;
-    for (final c in deck(sectionId: sectionId, pageId: pageId)) {
-      if (_cardStates.remove(c.id) != null) n++;
-    }
-    if (n == 0) return 0;
-    _persistCardStates();
-    studyRevision++;
-    notifyListeners();
-    return n;
-  }
-
-  void _persistCardStates() {
-    // Prune as we write: a card id is `blockId:line`, so untagging a line
-    // strands its schedule forever otherwise, and this blob is loaded on every
-    // start.
-    //
-    // **Scoped to this notebook, and that is not a detail.** The blob is
-    // workspace-wide but a deck is per notebook, so pruning "everything not in
-    // this deck" deleted every OTHER notebook's review history the first time
-    // you graded a card after switching — a term of spaced repetition gone,
-    // silently, with no undo. An entry is only removed when we can see that
-    // its block is one of ours and no longer produces that card.
-    //
-    // The deliberate leak: a card whose block was DELETED is not in
-    // `_notebookBlockIds` either, so its state survives. Keeping a few dead
-    // rows costs bytes; guessing wrong costs somebody their schedule.
-    final alive = {for (final c in deck()) c.id};
-    final mine = _notebookBlockIds;
-    _cardStates.removeWhere((k, _) {
-      if (alive.contains(k)) return false;
-      final cut = k.lastIndexOf(':');
-      return mine.contains(cut < 0 ? k : k.substring(0, cut));
-    });
-    _repo.setSetting('cardStates',
-        {for (final e in _cardStates.entries) e.key: e.value.toJson()});
-  }
-
-  /// Counts for the study surface: (due now, total).
-  (int, int) deckCounts({String? sectionId}) {
-    final s = deckStats(sectionId: sectionId);
-    return (s.due, s.total);
-  }
-
-  /// Everything a study surface needs to say something useful.
-  ///
-  /// [nextDueAt] is what turns "Nothing due" — a dead end that reads like the
-  /// feature is broken — into "All caught up, next card in 6h".
-  ({int due, int total, int unseen, int? nextDueAt}) deckStats(
-      {String? sectionId, String? pageId}) {
-    final all = deck(sectionId: sectionId, pageId: pageId);
-    final now = nowMs();
-    var due = 0, unseen = 0;
-    int? next;
-    for (final c in all) {
-      final s = cardState(c.id);
-      if (s.dueAt == 0) unseen++;
-      if (s.isDue(now)) {
-        due++;
-      } else if (next == null || s.dueAt < next) {
-        next = s.dueAt;
-      }
-    }
-    return (due: due, total: all.length, unseen: unseen, nextDueAt: next);
-  }
-
-  // ── Study stats and the exam countdown (P1) ──────────────────────────
-
-  /// Add one to today's tally.
-  void _recordReview([DateTime? now]) {
-    final today = now ?? DateTime.now();
-    _studyDays.update(dayKey(today), (n) => n + 1, ifAbsent: () => 1);
-    // Pruned on write rather than on read: the map is loaded once per launch
-    // and read on every panel build, so paying for the scan at the point it
-    // changes keeps it off the surface that repaints.
-    final kept = pruneStudyDays(_studyDays, today);
-    if (kept.length != _studyDays.length) {
-      _studyDays
-        ..clear()
-        ..addAll(kept);
-    }
-    _repo.setSetting('studyDays', _studyDays);
-  }
-
-  /// Cards graded today, in every notebook.
-  int reviewsToday([DateTime? now]) =>
-      _studyDays[dayKey(now ?? DateTime.now())] ?? 0;
-
-  /// Consecutive days studied, ending today or yesterday (see [studyStreak]).
-  int studyStreakDays([DateTime? now]) =>
-      studyStreak(_studyDays, now ?? DateTime.now());
-
-  /// Reviews on each of the last [days] days, oldest first.
-  List<int> studyActivity({int days = 14, DateTime? now}) =>
-      activityBars(_studyDays, now ?? DateTime.now(), n: days);
-
-  /// True once there is any history at all — the surface stays hidden until
-  /// there is something to show, so a first-time user isn't greeted by a row
-  /// of zeroes telling them they have done nothing.
-  bool get hasStudyHistory => _studyDays.isNotEmpty;
-
-  String _examKey(String sectionId) => '$notebookId:$sectionId';
-
-  /// The exam day set for a section, if any.
-  DateTime? examDate(String? sectionId) {
-    if (sectionId == null || notebookId == null) return null;
-    final s = _examDates[_examKey(sectionId)];
-    return s == null ? null : parseDayKey(s);
-  }
-
-  /// Set or (with null) clear a section's exam day.
-  void setExamDate(String sectionId, DateTime? date) {
-    if (notebookId == null) return;
-    final key = _examKey(sectionId);
-    if (date == null) {
-      if (_examDates.remove(key) == null) return;
-    } else {
-      final v = dayKey(date);
-      if (_examDates[key] == v) return;
-      _examDates[key] = v;
-    }
-    _repo.setSetting('examDates', _examDates);
-    notifyListeners();
-  }
-
-  /// The countdown for a deck, or null when that section has no exam set.
-  ///
-  /// Scoped to one section on purpose. A per-day target computed across a
-  /// whole notebook would be counting three subjects' cards towards one
-  /// subject's exam — see [nextExam] for what the whole-notebook view says
-  /// instead, which is context rather than a plan.
-  ExamPlan? examPlanFor({String? sectionId, String? pageId, DateTime? now}) {
-    final id = sectionId ?? activeSectionId;
-    final exam = examDate(id);
-    if (exam == null) return null;
-    final s = deckStats(sectionId: sectionId, pageId: pageId);
-    return examPlan(
-      exam: exam,
-      today: now ?? DateTime.now(),
-      unseen: s.unseen,
-      total: s.total,
-    );
-  }
-
-  /// The soonest exam still ahead in this notebook, with the section it
-  /// belongs to. What the whole-notebook scope shows: still a reason to open
-  /// the panel, without pretending a mixed deck has one revision plan.
-  /// **Two passes, and the second one runs once.** Finding the soonest date is
-  /// free — it reads a map of strings. Counting a deck is not: it walks every
-  /// page of a section out of SQLite, and the deck cache holds six entries
-  /// before clearing itself. Costing a deck per exam-dated section would
-  /// therefore evict the cache on a panel that rebuilds with every keystroke,
-  /// which is precisely the regression the cache was added to stop.
-  ({TreeNode section, ExamPlan plan})? nextExam([DateTime? now]) {
-    if (notebookId == null) return null;
-    final today = now ?? DateTime.now();
-    TreeNode? soonest;
-    DateTime? soonestDate;
-    var bestLeft = 0;
-    for (final n in nodes) {
-      if (n.kind != NodeKind.section) continue;
-      final d = examDate(n.id);
-      if (d == null) continue;
-      final left = daysBetween(today, d);
-      if (left < 0) continue;
-      if (soonest != null && left >= bestLeft) continue;
-      soonest = n;
-      soonestDate = d;
-      bestLeft = left;
-    }
-    if (soonest == null) return null;
-    final s = deckStats(sectionId: soonest.id);
-    return (
-      section: soonest,
-      plan: ExamPlan(
-          date: soonestDate!, daysLeft: bestLeft, unseen: s.unseen, total: s.total),
-    );
-  }
+  /// Extracted in the E3 pass. `AppState` still forwards its notifications
+  /// (see the constructor), so every existing listener keeps working exactly
+  /// as it did — but the state itself now has an owner, and the next study
+  /// feature has somewhere to go that is not this file.
+  late final StudyState study = StudyState(this,
+      readSetting: _repo.getSetting, writeSetting: _repo.setSetting);
 
   bool showStudyPanel = false;
   void toggleStudyPanel() {
@@ -1908,23 +1527,7 @@ class AppState extends ChangeNotifier {
         ];
       });
     }
-    final cs = _repo.getSetting('cardStates');
-    if (cs is Map) {
-      cs.forEach((k, v) => _cardStates['$k'] = CardState.fromJson(v));
-    }
-    final sd = _repo.getSetting('studyDays');
-    if (sd is Map) {
-      sd.forEach((k, v) {
-        final n = (v as num?)?.toInt() ?? 0;
-        if (n > 0 && parseDayKey('$k') != null) _studyDays['$k'] = n;
-      });
-    }
-    final ex = _repo.getSetting('examDates');
-    if (ex is Map) {
-      ex.forEach((k, v) {
-        if (v is String && parseDayKey(v) != null) _examDates['$k'] = v;
-      });
-    }
+    study.load();
     final fav = _repo.getSetting('favourites');
     if (fav is List) _favourites.addAll(fav.cast<String>());
     final rec = _repo.getSetting('recentPages');
@@ -3066,7 +2669,7 @@ class AppState extends ChangeNotifier {
     // Cheap counter, not a rebuild: it lets the open page's flashcards be
     // rederived once per edit, so tagging a line produces a card immediately
     // instead of only after you navigate away.
-    contentRevision++;
+    study.noteContentChanged();
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 700), flushSave);
     notifyListeners();

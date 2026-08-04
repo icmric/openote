@@ -1237,7 +1237,7 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         // set. The label carries the current value: a menu that says only
         // "Exam date…" makes you open a dialog to find out whether there is
         // one.
-        if (app.examDate(node.id) case final exam?) ...[
+        if (app.study.examDate(node.id) case final exam?) ...[
           _nodeItem('exam', Icons.flag_outlined,
               'Exam ${formatExamDate(exam, DateTime.now())}'
               ' · ${formatCountdown(daysBetween(DateTime.now(), exam))}…'),

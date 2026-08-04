@@ -168,7 +168,7 @@ class _TextBlockViewState extends State<TextBlockView> {
           // each moved tag's review schedule across with it: a card is
           // identified by `blockId:line`, so a tag that moves alone leaves its
           // schedule orphaned under a name nothing points at any more.
-          widget.app.remapCardStates(
+          widget.app.study.remapCardStates(
             widget.block.id,
             NoteTag.rebase(widget.block.content,
                 _engine.deserialize(widget.block.content), v),
