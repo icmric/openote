@@ -491,11 +491,13 @@ Future<void> importOneNotePackageWithFeedback(
           ? "Couldn't read any sections from that .onepkg file."
           : "That notebook couldn't be imported: $err";
     } else if (skipped.isEmpty) {
-      msg = 'Imported a notebook with $count page'
-          '${count == 1 ? '' : 's'} from OneNote.'
-          '${_strokeNote()}';
+      msg = 'Imported '
+          '${importArrivalNote(count, lastImportedImages, lastImportedStrokes)}'
+          ' from OneNote.${_strokeNote()}';
     } else {
-      msg = 'Imported $count page${count == 1 ? '' : 's'}, but '
+      msg = 'Imported '
+          '${importArrivalNote(count, lastImportedImages, lastImportedStrokes)}'
+          ', but '
           '${skipped.length} section${skipped.length == 1 ? '' : 's'} '
           'could not be read: ${skipped.take(3).join(', ')}'
           '${skipped.length > 3 ? '…' : ''}'
@@ -519,7 +521,9 @@ Future<void> importOneNoteSectionWithFeedback(
         context,
         count == 0
             ? "Couldn't read any content from that .one file."
-            : 'Imported $count page${count == 1 ? '' : 's'} from OneNote.');
+            : 'Imported '
+                '${importArrivalNote(count, lastImportedImages, lastImportedStrokes)}'
+                ' from OneNote.${_strokeNote()}');
   } on OneNoteUnavailable {
     if (context.mounted) _snack(context, _coreMissing, seconds: 8);
   }
@@ -544,6 +548,41 @@ const _coreMissing =
 /// One sentence when the parser dropped undecodable ink (~0.02 % of strokes on
 /// the reference notebook). The notes LOOK complete when a stroke vanishes,
 /// which is exactly why it has to be said out loud.
+/// What arrived, in the switcher's own terms (P5).
+///
+/// "324 pages, 372 images, 64,616 strokes" is the sentence that converts
+/// someone who has just handed over five years of notes. Until now the import
+/// said only what it could not read, so a clean import was reported as a bare
+/// page count and a silence — and silence, after a migration, reads as "it
+/// probably lost something".
+///
+/// Each clause appears only if it is non-zero: a notebook with no ink should
+/// not be told it imported no ink.
+@visibleForTesting
+String importArrivalNote(int pages, int images, int strokes) {
+  String n(int v, String one, [String? many]) =>
+      '${_grouped(v)} ${v == 1 ? one : (many ?? '${one}s')}';
+  final parts = <String>[
+    n(pages, 'page'),
+    if (images > 0) n(images, 'image'),
+    if (strokes > 0) n(strokes, 'ink stroke'),
+  ];
+  if (parts.length == 1) return parts.first;
+  return '${parts.take(parts.length - 1).join(', ')} and ${parts.last}';
+}
+
+/// Thousands separators, because 64616 is a number you have to count digits on
+/// and 64,616 is one you read.
+String _grouped(int v) {
+  final digits = v.toString();
+  final out = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) out.write(',');
+    out.write(digits[i]);
+  }
+  return out.toString();
+}
+
 String _strokeNote() => lastDroppedStrokes == 0
     ? ''
     : ' $lastDroppedStrokes ink stroke'

@@ -18,6 +18,21 @@ From 0.2.0 onward: **notebooks created by any Openote release open in every late
 - **Resize anything properly** — corner and bottom handles, with ink scaling instead of being clipped; **alignment guides** that snap a block flush with its neighbours; **drag pages to reorder** them, with subpages coming along; **recolour lassoed ink**.
 - **Find and replace**, spell-check **suggestions** on right-click with "Add to dictionary", **Ctrl+1–5** tag shortcuts, **copy link to page**, and ``` + Enter to open a code fence.
 
+### Added — sharing, printing and the way out of a deck (2026-08-04)
+- **Hand the annotated deck back in.** Writing on lecture slides worked; getting
+  the result out did not. A section now exports as **one PDF** — "Export section
+  as PDF…" on the section, in navigator order — and each slide keeps its own
+  shape instead of being squeezed onto a portrait sheet with white space under
+  it. The slide's text goes out with it, invisibly, so the exported deck is
+  still searchable in any reader. Losing the picture no longer loses the words.
+- **Share as PDF** from a page's menu, and **Print** (Ctrl+P) for a page or a
+  whole section — the same searchable, selectable, few-hundred-KB page that
+  export produces, straight to the printer.
+- **An import now says what arrived.** "Imported 324 pages, 372 images and
+  64,616 ink strokes from OneNote." Previously it reported only what it could
+  *not* read, so a clean import of five years of notes was a page count and a
+  silence.
+
 ### Added — study stats and the exam countdown (2026-08-04)
 - **A reason to open the study panel tomorrow.** The deck now says how much of
   it you have actually seen, how many cards you reviewed today, and how many
