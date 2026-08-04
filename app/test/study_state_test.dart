@@ -17,6 +17,7 @@ import 'package:openote/model/tags.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/study/flashcards.dart';
+import 'package:openote/study/study_stats.dart';
 
 import 'support/sqlite.dart';
 
@@ -293,5 +294,139 @@ void main() {
     sw.stop();
     expect(sw.elapsedMilliseconds, lessThan(50),
         reason: '300 mixed-scope calls took ${sw.elapsedMilliseconds}ms');
+  });
+
+  // ── Study stats and the exam countdown (P1) ────────────────────────────
+
+  test('grading records the day, and a streak starts at one', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app) = await fixture('onote_study_today_', 3);
+    addTearDown(() => cleanup(repo, tmp));
+
+    expect(app.hasStudyHistory, isFalse);
+    expect(app.reviewsToday(), 0);
+    expect(app.studyStreakDays(), 0);
+
+    app.gradeCard(app.deck().first.id, Grade.good);
+    expect(app.reviewsToday(), 1);
+    expect(app.studyStreakDays(), 1);
+    expect(app.hasStudyHistory, isTrue);
+    expect(app.studyActivity().last, 1, reason: 'today is the last bar');
+  });
+
+  // The placement decision in `gradeCard`, pinned: the tally is taken before
+  // the cram-mode early return. An hour of practice the night before an exam
+  // is the most studying a student does all term, and it used to leave no
+  // trace at all — so the streak would break on the one day it mattered.
+  test('practice counts towards the streak without touching the schedule',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app) = await fixture('onote_study_cramday_', 3);
+    addTearDown(() => cleanup(repo, tmp));
+
+    final card = app.deck().first;
+    app.gradeCard(card.id, Grade.easy);
+    final scheduled = app.cardState(card.id).dueAt;
+    final after = app.reviewsToday();
+
+    app.gradeCard(card.id, Grade.good, schedule: false);
+    expect(app.reviewsToday(), after + 1, reason: 'you still did the work');
+    expect(app.cardState(card.id).dueAt, scheduled,
+        reason: 'and practice still must not move the schedule');
+  });
+
+  // Asserted against the settings blob rather than by reopening an AppState:
+  // the load half lives in `init()`, which registers a post-frame callback and
+  // so needs a widgets binding these plain tests deliberately don't build.
+  test('the day tally is written to workspace settings', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app) = await fixture('onote_study_persist_days_', 3);
+    addTearDown(() => cleanup(repo, tmp));
+
+    for (final c in app.deck()) {
+      app.gradeCard(c.id, Grade.good);
+    }
+    expect(app.reviewsToday(), 3);
+
+    final stored = repo.getSetting('studyDays');
+    expect(stored, isA<Map>());
+    expect((stored as Map)[dayKey(DateTime.now())], 3,
+        reason: 'a streak that vanishes when the app restarts is worse than '
+            'no streak at all');
+  });
+
+  test('an exam date is per section, per notebook, and reversible', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app) = await fixture('onote_study_exam_', 3);
+    addTearDown(() => cleanup(repo, tmp));
+
+    final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
+    expect(app.examDate(section), isNull);
+
+    final exam = DateTime(2026, 12, 1);
+    app.setExamDate(section, exam);
+    expect(app.examDate(section), exam);
+
+    // Keyed by notebook: a date set in one must not appear in another, or
+    // every notebook shares one exam.
+    final other = await repo.createNotebook('Another');
+    final previous = app.notebookId;
+    app.notebookId = other.id;
+    expect(app.examDate(section), isNull);
+    app.notebookId = previous;
+    expect(app.examDate(section), exam);
+
+    app.setExamDate(section, null);
+    expect(app.examDate(section), isNull);
+  });
+
+  test('the exam plan spreads this deck’s unseen cards over the days left',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app) = await fixture('onote_study_plan_', 8);
+    addTearDown(() => cleanup(repo, tmp));
+
+    final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
+    final today = DateTime(2026, 8, 4);
+    app.setExamDate(section, DateTime(2026, 8, 8));
+
+    final plan = app.examPlanFor(sectionId: section, now: today)!;
+    expect(plan.daysLeft, 4);
+    expect(plan.unseen, 8);
+    expect(plan.newPerDay, 2);
+
+    // Seeing cards shrinks the ask; it does not shrink the deck.
+    for (final c in app.deck().take(4)) {
+      app.gradeCard(c.id, Grade.good);
+    }
+    final later = app.examPlanFor(sectionId: section, now: today)!;
+    expect(later.unseen, 4);
+    expect(later.total, 8);
+    expect(later.newPerDay, 1);
+  });
+
+  test('the whole-notebook view names the soonest exam still ahead', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app) = await fixture('onote_study_next_exam_', 3);
+    addTearDown(() => cleanup(repo, tmp));
+
+    final first = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+    await app.addSection();
+    app.reloadNodes();
+    final second = app.nodes
+        .firstWhere((n) => n.kind == NodeKind.section && n.id != first.id);
+
+    final today = DateTime(2026, 8, 4);
+    app.setExamDate(first.id, DateTime(2026, 9, 1));
+    app.setExamDate(second.id, DateTime(2026, 8, 20));
+    expect(app.nextExam(today)?.section.id, second.id);
+
+    // A date in the past is not "next".
+    app.setExamDate(second.id, DateTime(2026, 7, 1));
+    expect(app.nextExam(today)?.section.id, first.id);
+
+    app.setExamDate(first.id, null);
+    app.setExamDate(second.id, null);
+    expect(app.nextExam(today), isNull);
   });
 }

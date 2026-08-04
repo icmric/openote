@@ -18,6 +18,7 @@ import '../store/repository.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../study/flashcards.dart';
+import '../study/study_stats.dart';
 import 'builtin_templates.dart';
 import '../sync/folder_watch.dart';
 import '../sync/op.dart';
@@ -841,6 +842,26 @@ class AppState extends ChangeNotifier {
   /// make one person's review schedule everyone's on a shared notebook.
   final Map<String, CardState> _cardStates = {};
 
+  /// Reviews per local calendar day (P1). Workspace-wide and **not** per
+  /// notebook: a streak is a fact about the student's week, not about one
+  /// subject, and splitting it per notebook would mean a diligent week spent
+  /// across three modules showed as three broken streaks.
+  final StudyDays _studyDays = {};
+
+  /// Exam day per section, keyed `'<notebookId>:<sectionId>'` → `'yyyy-mm-dd'`.
+  ///
+  /// Workspace settings rather than the node envelope, matching where card
+  /// schedules and favourites already live. The node envelope would put the
+  /// date in the op log, i.e. push *your* exam date onto everyone sharing a
+  /// group notebook — and the format is frozen at v1, so adding a field there
+  /// is a format decision rather than a feature. If it should ever be shared,
+  /// that is the migration; nothing here forecloses it.
+  ///
+  /// A `yyyy-mm-dd` string, not an epoch: an exam is a day in a calendar, and
+  /// an instant would land on the wrong side of midnight for anyone whose
+  /// timezone shifts between setting it and reading it back.
+  final Map<String, String> _examDates = {};
+
   /// Every card the notebook can produce, in page order.
   /// Cached deck, keyed on everything that can change what cards exist.
   ///
@@ -989,7 +1010,18 @@ class AppState extends ChangeNotifier {
   /// spacing. Getting one WRONG still counts — that is information about the
   /// card regardless of why you were looking at it.
   void gradeCard(String cardId, Grade g, {bool schedule = true}) {
-    if (!schedule && g != Grade.again) return;
+    // Counted BEFORE the cram-mode early return, and that placement is the
+    // decision: an hour of practice the night before an exam is the most
+    // studying a student will do all term, and a streak that ignored it would
+    // punish them for the one session that mattered most. What is recorded
+    // here is "you sat down and worked", which is true in both modes; the
+    // schedule is what practice leaves alone.
+    _recordReview();
+    if (!schedule && g != Grade.again) {
+      studyRevision++;
+      notifyListeners();
+      return;
+    }
     final s = _cardStates.putIfAbsent(cardId, CardState.new);
     applyGrade(s, g, nowMs());
     _persistCardStates();
@@ -1095,6 +1127,119 @@ class AppState extends ChangeNotifier {
       }
     }
     return (due: due, total: all.length, unseen: unseen, nextDueAt: next);
+  }
+
+  // ── Study stats and the exam countdown (P1) ──────────────────────────
+
+  /// Add one to today's tally.
+  void _recordReview([DateTime? now]) {
+    final today = now ?? DateTime.now();
+    _studyDays.update(dayKey(today), (n) => n + 1, ifAbsent: () => 1);
+    // Pruned on write rather than on read: the map is loaded once per launch
+    // and read on every panel build, so paying for the scan at the point it
+    // changes keeps it off the surface that repaints.
+    final kept = pruneStudyDays(_studyDays, today);
+    if (kept.length != _studyDays.length) {
+      _studyDays
+        ..clear()
+        ..addAll(kept);
+    }
+    _repo.setSetting('studyDays', _studyDays);
+  }
+
+  /// Cards graded today, in every notebook.
+  int reviewsToday([DateTime? now]) =>
+      _studyDays[dayKey(now ?? DateTime.now())] ?? 0;
+
+  /// Consecutive days studied, ending today or yesterday (see [studyStreak]).
+  int studyStreakDays([DateTime? now]) =>
+      studyStreak(_studyDays, now ?? DateTime.now());
+
+  /// Reviews on each of the last [days] days, oldest first.
+  List<int> studyActivity({int days = 14, DateTime? now}) =>
+      activityBars(_studyDays, now ?? DateTime.now(), n: days);
+
+  /// True once there is any history at all — the surface stays hidden until
+  /// there is something to show, so a first-time user isn't greeted by a row
+  /// of zeroes telling them they have done nothing.
+  bool get hasStudyHistory => _studyDays.isNotEmpty;
+
+  String _examKey(String sectionId) => '$notebookId:$sectionId';
+
+  /// The exam day set for a section, if any.
+  DateTime? examDate(String? sectionId) {
+    if (sectionId == null || notebookId == null) return null;
+    final s = _examDates[_examKey(sectionId)];
+    return s == null ? null : parseDayKey(s);
+  }
+
+  /// Set or (with null) clear a section's exam day.
+  void setExamDate(String sectionId, DateTime? date) {
+    if (notebookId == null) return;
+    final key = _examKey(sectionId);
+    if (date == null) {
+      if (_examDates.remove(key) == null) return;
+    } else {
+      final v = dayKey(date);
+      if (_examDates[key] == v) return;
+      _examDates[key] = v;
+    }
+    _repo.setSetting('examDates', _examDates);
+    notifyListeners();
+  }
+
+  /// The countdown for a deck, or null when that section has no exam set.
+  ///
+  /// Scoped to one section on purpose. A per-day target computed across a
+  /// whole notebook would be counting three subjects' cards towards one
+  /// subject's exam — see [nextExam] for what the whole-notebook view says
+  /// instead, which is context rather than a plan.
+  ExamPlan? examPlanFor({String? sectionId, String? pageId, DateTime? now}) {
+    final id = sectionId ?? activeSectionId;
+    final exam = examDate(id);
+    if (exam == null) return null;
+    final s = deckStats(sectionId: sectionId, pageId: pageId);
+    return examPlan(
+      exam: exam,
+      today: now ?? DateTime.now(),
+      unseen: s.unseen,
+      total: s.total,
+    );
+  }
+
+  /// The soonest exam still ahead in this notebook, with the section it
+  /// belongs to. What the whole-notebook scope shows: still a reason to open
+  /// the panel, without pretending a mixed deck has one revision plan.
+  /// **Two passes, and the second one runs once.** Finding the soonest date is
+  /// free — it reads a map of strings. Counting a deck is not: it walks every
+  /// page of a section out of SQLite, and the deck cache holds six entries
+  /// before clearing itself. Costing a deck per exam-dated section would
+  /// therefore evict the cache on a panel that rebuilds with every keystroke,
+  /// which is precisely the regression the cache was added to stop.
+  ({TreeNode section, ExamPlan plan})? nextExam([DateTime? now]) {
+    if (notebookId == null) return null;
+    final today = now ?? DateTime.now();
+    TreeNode? soonest;
+    DateTime? soonestDate;
+    var bestLeft = 0;
+    for (final n in nodes) {
+      if (n.kind != NodeKind.section) continue;
+      final d = examDate(n.id);
+      if (d == null) continue;
+      final left = daysBetween(today, d);
+      if (left < 0) continue;
+      if (soonest != null && left >= bestLeft) continue;
+      soonest = n;
+      soonestDate = d;
+      bestLeft = left;
+    }
+    if (soonest == null) return null;
+    final s = deckStats(sectionId: soonest.id);
+    return (
+      section: soonest,
+      plan: ExamPlan(
+          date: soonestDate!, daysLeft: bestLeft, unseen: s.unseen, total: s.total),
+    );
   }
 
   bool showStudyPanel = false;
@@ -1766,6 +1911,19 @@ class AppState extends ChangeNotifier {
     final cs = _repo.getSetting('cardStates');
     if (cs is Map) {
       cs.forEach((k, v) => _cardStates['$k'] = CardState.fromJson(v));
+    }
+    final sd = _repo.getSetting('studyDays');
+    if (sd is Map) {
+      sd.forEach((k, v) {
+        final n = (v as num?)?.toInt() ?? 0;
+        if (n > 0 && parseDayKey('$k') != null) _studyDays['$k'] = n;
+      });
+    }
+    final ex = _repo.getSetting('examDates');
+    if (ex is Map) {
+      ex.forEach((k, v) {
+        if (v is String && parseDayKey(v) != null) _examDates['$k'] = v;
+      });
     }
     final fav = _repo.getSetting('favourites');
     if (fav is List) _favourites.addAll(fav.cast<String>());

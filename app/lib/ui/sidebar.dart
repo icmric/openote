@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 
 import '../model/models.dart';
 import '../state/app_state.dart';
+import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
+import 'exam_date.dart';
 import 'notebook_manager.dart';
 
 Color _sectionColor(String? token, bool dark) => switch (token) {
@@ -1230,6 +1232,18 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         _nodeItem('togroup', Icons.drive_file_move_outline, 'Move to group…'),
         _nodeItem('sortaz', Icons.sort_by_alpha, 'Sort pages A→Z'),
         _nodeItem('sortdate', Icons.schedule, 'Sort pages by last edited'),
+        // The navigator is where a student thinks in subjects rather than in
+        // decks, so it is the more natural of the two places an exam date is
+        // set. The label carries the current value: a menu that says only
+        // "Exam date…" makes you open a dialog to find out whether there is
+        // one.
+        if (app.examDate(node.id) case final exam?) ...[
+          _nodeItem('exam', Icons.flag_outlined,
+              'Exam ${formatExamDate(exam, DateTime.now())}'
+              ' · ${formatCountdown(daysBetween(DateTime.now(), exam))}…'),
+          _nodeItem('examclear', Icons.event_busy_outlined, 'Remove exam date'),
+        ] else
+          _nodeItem('exam', Icons.event_outlined, 'Set exam date…'),
       ],
       // A page can always indent (make subpage) or outdent (promote) at some
       // level in 0..2, so the separator is shown whenever those items are.
@@ -1262,6 +1276,10 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       app.sortSection(node.id, byTitle: true);
     case 'sortdate':
       app.sortSection(node.id, byTitle: false);
+    case 'exam':
+      await pickExamDate(context, app, node.id);
+    case 'examclear':
+      if (context.mounted) clearExamDate(context, app, node.id);
     case 'favourite':
       app.toggleFavourite(node.id);
     case 'copylink':

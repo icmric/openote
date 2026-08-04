@@ -18,6 +18,22 @@ From 0.2.0 onward: **notebooks created by any Openote release open in every late
 - **Resize anything properly** — corner and bottom handles, with ink scaling instead of being clipped; **alignment guides** that snap a block flush with its neighbours; **drag pages to reorder** them, with subpages coming along; **recolour lassoed ink**.
 - **Find and replace**, spell-check **suggestions** on right-click with "Add to dictionary", **Ctrl+1–5** tag shortcuts, **copy link to page**, and ``` + Enter to open a code fence.
 
+### Added — study stats and the exam countdown (2026-08-04)
+- **A reason to open the study panel tomorrow.** The deck now says how much of
+  it you have actually seen, how many cards you reviewed today, and how many
+  days in a row you have turned up — with a fortnight of activity underneath it.
+  A streak stays alive until a whole day has gone by empty, so a morning you
+  haven't studied yet shows the number you are about to keep, not a zero.
+- **Put your exam date on a section** — from the section's right-click menu in
+  the navigator, or from the study panel. It becomes a countdown and a pace:
+  *"14 days · 40 to learn · 3 a day covers them by then."* The target counts
+  cards you have never seen, so it is a number that stays true as you approach
+  it rather than one that recedes. The study button's badge turns brass once the
+  exam is inside a week.
+- Practising counts towards your streak. It still never touches your schedule.
+- Exam dates and review history stay on your own machine: they are personal, so
+  they don't travel to everyone else through a shared notebook.
+
 ### Fixed — post-merge pass (2026-08-04)
 - **The Draw tools work again.** The pen, highlighter, eraser and lasso could not be selected at all: the Draw row contained a spacer that is illegal inside a horizontally scrolling toolbar, so the entire row failed to lay out.
 - **Toolbar buttons on a narrow window respond again.** The tab row overflowed instead of scrolling, and an overflowing row is clipped — clipped pixels do not receive clicks, so the right-hand buttons silently stopped working on smaller screens.
