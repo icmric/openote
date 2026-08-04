@@ -98,6 +98,19 @@ class _AppShellState extends State<AppShell> {
       return false;
     }
 
+    // Navigator chords, BEFORE the editable early-return: none of these can
+    // collide with typing (no field inserts a character for Ctrl+PageDown),
+    // and OneNote users reach for them mid-sentence.
+    if (ctrl) {
+      if (k == LogicalKeyboardKey.pageDown) return _cyclePage(1);
+      if (k == LogicalKeyboardKey.pageUp) return _cyclePage(-1);
+      if (k == LogicalKeyboardKey.tab) return _cycleSection(shift ? -1 : 1);
+      if (k == LogicalKeyboardKey.backslash) {
+        app.toggleNavCollapsed();
+        return true;
+      }
+    }
+
     // While typing: allow only formatting accelerators; everything else
     // flows to the field untouched.
     if (editable) {
@@ -225,6 +238,34 @@ class _AppShellState extends State<AppShell> {
     return true;
   }
 
+  /// Ctrl+PageDown / Ctrl+PageUp — the next/previous page in the active
+  /// section, in the navigator's visible order. OneNote's own chords.
+  /// Clamped at the ends rather than wrapping: wrapping silently teleports
+  /// you from the last page to the first, which reads as "it jumped".
+  bool _cyclePage(int dir) {
+    final sec = app.activeSectionId;
+    if (sec == null) return false;
+    final pages = app.pagesOf(sec);
+    if (pages.isEmpty) return false;
+    final i = pages.indexWhere((n) => n.id == app.pageId);
+    final next = pages[(i + dir).clamp(0, pages.length - 1)];
+    if (next.id != app.pageId) app.selectPage(next.id);
+    return true;
+  }
+
+  /// Ctrl+Tab / Ctrl+Shift+Tab — the next/previous section. Wrapping IS right
+  /// here: cycling a ring of sections is the mental model, same as browser
+  /// tabs.
+  bool _cycleSection(int dir) {
+    final secs =
+        app.nodes.where((n) => n.kind == NodeKind.section).toList();
+    if (secs.isEmpty) return false;
+    var i = secs.indexWhere((n) => n.id == app.activeSectionId);
+    if (i < 0) i = 0;
+    app.activateSection(secs[(i + dir + secs.length) % secs.length].id);
+    return true;
+  }
+
   /// Ctrl+V while the caret is in a text box, when the clipboard holds an
   /// image: splice an in-flow reference at the caret.
   ///
@@ -271,11 +312,20 @@ class _AppShellState extends State<AppShell> {
       app.nodesRevision,
       app.pageId,
       app.activeSectionId,
-      app.navSplit,
       app.notebookId,
-      app.collapsedPages.length,
-      app.collapsedGroups.length,
       app.notebooks.length,
+      // The two-column layout's own state. Every piece of state the navigator
+      // RENDERS must appear here, or the change paints only after something
+      // else happens to invalidate the memo — a stale-not-broken failure that
+      // passes a quick smoke test and fails in real use.
+      app.navCollapsed,
+      app.navSectionsW,
+      app.navPagesW,
+      app.navHome,
+      // Collapse toggles, favourites, Home — bumped explicitly. A counter and
+      // not the sets' lengths, because one collapse plus one expand between
+      // frames leaves the length identical while the CONTENTS changed.
+      app.navRevision,
     ];
     final cached = _navCache;
     if (cached != null && _navKey != null && _listEq(_navKey!, key)) {

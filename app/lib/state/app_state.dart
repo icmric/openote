@@ -612,17 +612,68 @@ class AppState extends ChangeNotifier implements StudyDocument {
   String? pageId;
   final Set<String> collapsedGroups = {};
 
-  // Navigator (stacked): the focused section, whose pages fill the lower zone.
+  // Navigator (§7b, two-column): the focused section fills the pages pane.
   @override
   String? activeSectionId;
-  double navSplit = 0.38; // sections/pages height ratio (0..1)
 
   TreeNode? get activeSection => node(activeSectionId);
 
-  void setNavSplit(double v) {
-    navSplit = v.clamp(0.15, 0.7);
-    _repo.setSetting('navSplit', navSplit);
+  // ── Navigator layout state ──────────────────────────────────────────
+  //
+  // Two independent widths rather than one split: sections and pages are
+  // separate columns now (the OneNote shape), so each keeps its own size and
+  // neither steals from the other when resized.
+
+  double navSectionsW = 120; // sections column, px
+  double navPagesW = 168; // pages column, px
+  bool navCollapsed = false; // the whole navigator as a 44px rail
+
+  /// The Home surface (favourites + recents) shown in the pages pane.
+  /// Transient by design: selecting any page returns the pane to that page's
+  /// section, so Home behaves like a springboard rather than a place you can
+  /// get stuck in. Deliberately a BOOLEAN beside a real [activeSectionId], not
+  /// a sentinel section id — every consumer of activeSectionId (study scoping,
+  /// exam plans, deck counts) stays correct with zero special-casing.
+  bool navHome = false;
+
+  /// Bumped when navigator-only state changes that nothing else observes —
+  /// favourites, collapse toggles, Home. The navigator memo in AppShell keys
+  /// on it; leaving one of these out is how a stale (not broken, just frozen)
+  /// navigator ships.
+  int navRevision = 0;
+
+  void setNavSectionsW(double v) {
+    navSectionsW = v.clamp(96, 220);
+    _repo.setSetting('navSectionsW', navSectionsW);
     notifyListeners();
+  }
+
+  void setNavPagesW(double v) {
+    navPagesW = v.clamp(140, 320);
+    _repo.setSetting('navPagesW', navPagesW);
+    notifyListeners();
+  }
+
+  void toggleNavCollapsed() {
+    navCollapsed = !navCollapsed;
+    _repo.setSetting('navCollapsed', navCollapsed);
+    notifyListeners();
+  }
+
+  void openHome() {
+    navHome = true;
+    navRevision++;
+    notifyListeners();
+  }
+
+  /// Which page each section was last on, so browsing sections never loses
+  /// your place. Keys are '<notebookId>:<sectionId>' because settings are
+  /// workspace-scoped (same reasoning as favourites).
+  final Map<String, String> _sectionLastPage = {};
+
+  void _rememberSectionPage(String sectionId, String pageId) {
+    _sectionLastPage['$notebookId:$sectionId'] = pageId;
+    _repo.setSetting('sectionLastPage', _sectionLastPage);
   }
 
   /// A section's pages, in navigator order.
@@ -636,15 +687,28 @@ class AppState extends ChangeNotifier implements StudyDocument {
           if (n.kind == NodeKind.page && n.parentId == sectionId) n
       ];
 
-  /// Focus a section (the pages zone shows its pages). When the current page
-  /// isn't inside the section, jump to its first page.
-  void activateSection(String id) {
+  /// Focus a section (the pages pane shows its pages). When the current page
+  /// isn't inside the section, return to the page you were last on THERE —
+  /// falling back to the first page only for a section never visited.
+  ///
+  /// The remembered page is what makes flicking between sections
+  /// non-destructive: jumping to the *first* page every time meant merely
+  /// looking at another section threw away your place in it, which OneNote
+  /// gets right and users notice immediately.
+  /// Awaitable, because `selectPage` only commits `pageId` after an awaited
+  /// flush — fire-and-forget here let two quick section clicks interleave
+  /// their page loads and land on the loser's page.
+  Future<void> activateSection(String id) async {
+    navHome = false;
     activeSectionId = id;
     final cur = node(pageId);
     if (cur == null || cur.parentId != id) {
-      final first = pagesOf(id).firstOrNull;
-      if (first != null) {
-        selectPage(first.id); // sets activeSectionId + notifies
+      final remembered = node(_sectionLastPage['$notebookId:$id']);
+      final target = (remembered != null && remembered.parentId == id)
+          ? remembered
+          : pagesOf(id).firstOrNull;
+      if (target != null) {
+        await selectPage(target.id); // sets activeSectionId + notifies
         return;
       }
     }
@@ -900,6 +964,7 @@ class AppState extends ChangeNotifier implements StudyDocument {
     final k = _pageKey(pageId);
     _favourites.contains(k) ? _favourites.remove(k) : _favourites.add(k);
     _repo.setSetting('favourites', _favourites.toList());
+    navRevision++; // the Home pane renders favourites; nothing else changes
     notifyListeners();
   }
 
@@ -1089,6 +1154,7 @@ class AppState extends ChangeNotifier implements StudyDocument {
     collapsedPages.contains(id)
         ? collapsedPages.remove(id)
         : collapsedPages.add(id);
+    navRevision++; // lengths can alias (one collapse + one expand); this can't
     notifyListeners();
   }
 
@@ -1512,8 +1578,18 @@ class AppState extends ChangeNotifier implements StudyDocument {
     // Session restore (§7a.5): theme, custom colours, per-page views, last loc.
     final tm = _repo.getSetting('themeMode') as String?;
     if (tm != null) themeMode = ThemeMode.values.asNameMap()[tm] ?? themeMode;
-    final ns = _repo.getSetting('navSplit');
-    if (ns is num) navSplit = ns.toDouble().clamp(0.15, 0.7);
+    final nsw = _repo.getSetting('navSectionsW');
+    if (nsw is num) navSectionsW = nsw.toDouble().clamp(96, 220);
+    final npw = _repo.getSetting('navPagesW');
+    if (npw is num) navPagesW = npw.toDouble().clamp(140, 320);
+    final nc = _repo.getSetting('navCollapsed');
+    if (nc is bool) navCollapsed = nc;
+    final slp = _repo.getSetting('sectionLastPage');
+    if (slp is Map) {
+      slp.forEach((k, v) {
+        if (k is String && v is String) _sectionLastPage[k] = v;
+      });
+    }
     final as = _repo.getSetting('autoSync');
     if (as is bool) autoSync = as;
     final sc = _repo.getSetting('spellCheck');
@@ -1704,9 +1780,16 @@ class AppState extends ChangeNotifier implements StudyDocument {
       blocks = data.blocks;
       pageProps = data.props;
       _repairImportedFieldCodes();
-      // Keep the navigator's focused section in sync with the open page.
-      activeSectionId = nodes.where((n) => n.id == id).firstOrNull?.parentId ??
-          activeSectionId;
+      // Keep the navigator's focused section in sync with the open page, and
+      // remember it as the section's place so activateSection can come back
+      // here. Selecting a page also leaves Home — the pane shows the
+      // destination's siblings, which is what "I went somewhere" looks like.
+      navHome = false;
+      final parent = nodes.where((n) => n.id == id).firstOrNull?.parentId;
+      if (parent != null) {
+        activeSectionId = parent;
+        _rememberSectionPage(parent, id);
+      }
       _recordRecent(id);
     }
     docRevision++;
@@ -2339,6 +2422,7 @@ class AppState extends ChangeNotifier implements StudyDocument {
     collapsedGroups.contains(id)
         ? collapsedGroups.remove(id)
         : collapsedGroups.add(id);
+    navRevision++;
     notifyListeners();
   }
 

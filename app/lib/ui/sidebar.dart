@@ -40,10 +40,16 @@ List<Widget> _pageEntriesFor(AppState app, TreeNode section) {
   return out;
 }
 
-/// Navigator (style guide §7b): a notebook bar, a search/jump box, then two
-/// stacked zones — sections above, the **active** section's pages below — split
-/// by a resizable divider. One section is focused at a time, which is what keeps
-/// long notebooks scannable.
+/// Navigator (style guide §7b): a notebook bar, a search/jump box, then TWO
+/// COLUMNS — sections on the left, the active section's pages on the right —
+/// each independently scrollable and resizable, collapsible to a 44px rail.
+///
+/// The OneNote shape, adopted because the previous stacked layout made
+/// sections and pages fight over one column's height: with a real notebook
+/// both zones scrolled, and you could never see the section list and a page
+/// list at once. Beyond the shape itself, three things OneNote doesn't do:
+/// a Home pane (favourites + recents), a remembered per-section page so
+/// browsing never loses your place, and the rail.
 class Sidebar extends StatefulWidget {
   const Sidebar({super.key, required this.app});
   final AppState app;
@@ -73,22 +79,42 @@ class _SidebarState extends State<Sidebar> {
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final searching = _query.trim().isNotEmpty;
-    return Container(
-      width: 250,
-      color: dark ? OnoteColors.night100 : OnoteColors.paper100,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _NotebookHeader(app: app),
-          _searchRow(context),
-          const Divider(height: 1),
-          Expanded(
-            child: searching ? _searchResults(context) : _stackedBody(context),
+
+    if (app.navCollapsed) return _NavRail(app: app, dark: dark);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          width: app.navSectionsW + app.navPagesW,
+          color: dark ? OnoteColors.night100 : OnoteColors.paper100,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _NotebookHeader(app: app),
+              _searchRow(context),
+              const Divider(height: 1),
+              Expanded(
+                child: searching
+                    ? _searchResults(context)
+                    : _twoColumnBody(context),
+              ),
+              const Divider(height: 1),
+              _footer(context),
+            ],
           ),
-          const Divider(height: 1),
-          _footer(context),
-        ],
-      ),
+        ),
+        // The navigator's own right edge resizes the pages column, so the
+        // whole thing grows and shrinks from where your cursor already is.
+        _VDragHandle(
+          onDrag: (dx) {
+            app.navPagesW = (app.navPagesW + dx).clamp(140.0, 320.0);
+            app.refresh();
+          },
+          onEnd: () => app.setNavPagesW(app.navPagesW),
+        ),
+      ],
     );
   }
 
@@ -242,9 +268,16 @@ class _SidebarState extends State<Sidebar> {
     return _contentCache;
   }
 
-  // ── Stacked zones (sections above, active section's pages below) ───────
+  // ── Two columns: sections | pages (the OneNote shape) ──────────────────
+  //
+  // Side by side rather than stacked, because the old stack made sections and
+  // pages fight over one column's HEIGHT: with a real notebook both zones
+  // scrolled, the split handle needed constant fiddling, and you could never
+  // see the section list and a page list at the same time — which is the
+  // thing that makes OneNote's navigator effortless to scan.
 
-  Widget _stackedBody(BuildContext context) {
+  Widget _twoColumnBody(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
     final sections =
         app.nodes.where((n) => n.kind == NodeKind.section).toList();
     if (sections.isEmpty) {
@@ -256,52 +289,37 @@ class _SidebarState extends State<Sidebar> {
       );
     }
     final active = app.activeSection ?? sections.first;
-    return LayoutBuilder(
-      builder: (ctx, constraints) {
-        final h = constraints.maxHeight;
-        final secH = (h * app.navSplit).clamp(72.0, h - 120.0);
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(height: secH, child: _sectionsColumn(context)),
-            _dividerHandle(context, h),
-            Expanded(child: _pagesZone(context, active)),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _dividerHandle(BuildContext context, double h) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return MouseRegion(
-      cursor: SystemMouseCursors.resizeRow,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onVerticalDragUpdate: (d) {
-          app.navSplit = (app.navSplit + d.delta.dy / h).clamp(0.15, 0.7);
-          app.refresh();
-        },
-        onVerticalDragEnd: (_) => app.setNavSplit(app.navSplit),
-        child: Container(
-          height: 11,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(color: Theme.of(context).dividerColor),
-              bottom: BorderSide(color: Theme.of(context).dividerColor),
-            ),
-          ),
-          child: Container(
-            width: 26,
-            height: 3,
-            decoration: BoxDecoration(
-              color: dark ? OnoteColors.night300 : OnoteColors.paper300,
-              borderRadius: BorderRadius.circular(2),
-            ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: app.navSectionsW,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _HomeTile(app: app),
+              Expanded(child: _sectionsColumn(context)),
+            ],
           ),
         ),
-      ),
+        _VDragHandle(
+          onDrag: (dx) {
+            app.navSectionsW = (app.navSectionsW + dx).clamp(96.0, 220.0);
+            app.refresh();
+          },
+          onEnd: () => app.setNavSectionsW(app.navSectionsW),
+        ),
+        // The pages pane sits on the lighter surface colour — the same
+        // two-tone depth cue the canvas already uses, no new tokens.
+        Expanded(
+          child: Container(
+            color: dark ? OnoteColors.night50 : OnoteColors.paper50,
+            child: app.navHome
+                ? _HomePane(app: app)
+                : _pagesZone(context, active),
+          ),
+        ),
+      ],
     );
   }
 
@@ -416,13 +434,6 @@ class _SidebarState extends State<Sidebar> {
                 onPressed: app.addSection,
               ),
             ),
-            Expanded(
-              child: TextButton.icon(
-                icon: const Icon(Icons.note_add_outlined, size: 16),
-                label: const Text('Page', style: TextStyle(fontSize: 12)),
-                onPressed: () => app.addPage(),
-              ),
-            ),
             IconButton(
               icon: const Icon(Icons.topic_outlined, size: 16),
               tooltip: 'New section group',
@@ -519,6 +530,268 @@ class _GroupHeaderState extends State<_GroupHeader> {
   }
 }
 
+/// A vertical grab strip for resizing a navigator column.
+///
+/// 5px wide and visually just the divider line — the affordance is the cursor
+/// change, which is how every two-pane app on the desktop does it.
+class _VDragHandle extends StatelessWidget {
+  const _VDragHandle({required this.onDrag, required this.onEnd});
+  final void Function(double dx) onDrag;
+  final VoidCallback onEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragUpdate: (d) => onDrag(d.delta.dx),
+        onHorizontalDragEnd: (_) => onEnd(),
+        child: Container(
+          width: 5,
+          alignment: Alignment.center,
+          child: Container(width: 1, color: Theme.of(context).dividerColor),
+        ),
+      ),
+    );
+  }
+}
+
+/// The Home entry above the section list: favourites and recents, which were
+/// persisted state with no surface at all until this pane existed.
+class _HomeTile extends StatelessWidget {
+  const _HomeTile({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final active = app.navHome;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: app.openHome,
+        child: Container(
+          decoration: active
+              ? BoxDecoration(
+                  color: scheme.primary.withValues(alpha: .09),
+                  borderRadius: BorderRadius.circular(6))
+              : null,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+          child: Row(children: [
+            Icon(Icons.star_outline,
+                size: 15,
+                color: active ? scheme.primary : OnoteColors.brass400),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('Home',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: active ? scheme.primary : null)),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// The Home pane: favourites, then recents. A springboard, not a place — any
+/// page tap returns the pane to that page's section.
+class _HomePane extends StatelessWidget {
+  const _HomePane({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final favourites = app.favouritePages();
+    final recents = app.recentPages(max: 8);
+
+    Widget label(String s) => Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+          child: Text(s,
+              style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: .6,
+                  color: OnoteColors.graphite400)),
+        );
+
+    Widget row(TreeNode page, IconData icon, {Color? iconColor}) => InkWell(
+          onTap: () => app.selectPage(page.id),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Row(children: [
+              Icon(icon, size: 14, color: iconColor ?? OnoteColors.graphite400),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(page.title.isEmpty ? 'Untitled' : page.title,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12.5)),
+                    Text(app.node(page.parentId)?.title ?? '',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 10.5, color: OnoteColors.graphite400)),
+                  ],
+                ),
+              ),
+            ]),
+          ),
+        );
+
+    if (favourites.isEmpty && recents.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(14),
+        child: Text(
+          'Nothing here yet.\n\nRight-click a page and choose Favourite to '
+          'pin it; pages you visit show up under Recent.',
+          style: TextStyle(fontSize: 12, height: 1.45),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 12),
+      children: [
+        if (favourites.isNotEmpty) ...[
+          label('FAVOURITES'),
+          for (final p in favourites)
+            row(p, Icons.star, iconColor: OnoteColors.brass400),
+        ],
+        if (recents.isNotEmpty) ...[
+          label('RECENT'),
+          for (final p in recents) row(p, Icons.history),
+        ],
+      ],
+    );
+  }
+}
+
+/// The collapsed navigator: a 44px rail that keeps every destination one
+/// click away — expand, notebooks, Home, and a chip per section.
+class _NavRail extends StatelessWidget {
+  const _NavRail({required this.app, required this.dark});
+  final AppState app;
+  final bool dark;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final current = app.notebooks.firstWhere((n) => n.id == app.notebookId);
+    final sections =
+        app.nodes.where((n) => n.kind == NodeKind.section).toList();
+    return Container(
+      width: 44,
+      color: dark ? OnoteColors.night100 : OnoteColors.paper100,
+      child: Column(
+        children: [
+          const SizedBox(height: 6),
+          IconButton(
+            icon: const Icon(Icons.keyboard_double_arrow_right, size: 17),
+            tooltip: 'Expand the navigator  (Ctrl+\\)',
+            visualDensity: VisualDensity.compact,
+            onPressed: app.toggleNavCollapsed,
+          ),
+          Tooltip(
+            message: current.title,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () => showNotebookManager(context, app),
+              child: Container(
+                width: 26,
+                height: 26,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: .14),
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  current.title.isEmpty
+                      ? '?'
+                      : current.title.characters.first.toUpperCase(),
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.primary),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          IconButton(
+            icon: const Icon(Icons.star_outline, size: 16),
+            color: OnoteColors.brass400,
+            tooltip: 'Home — favourites & recents',
+            visualDensity: VisualDensity.compact,
+            onPressed: () {
+              app.toggleNavCollapsed();
+              app.openHome();
+            },
+          ),
+          const Divider(height: 10, indent: 10, endIndent: 10),
+          // Initial chips, not bare colour dots: section colours only exist on
+          // imported notebooks, so dots alone would be fifteen identical grey
+          // circles. A letter is scannable either way; the colour tints it
+          // when there is one.
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: 8),
+              children: [
+                for (final s in sections)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Center(
+                      child: Tooltip(
+                        message: s.title,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(6),
+                          onTap: () {
+                            app.toggleNavCollapsed();
+                            app.activateSection(s.id);
+                          },
+                          child: Container(
+                            width: 24,
+                            height: 24,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: _sectionColor(s.color, dark)
+                                  .withValues(alpha: .18),
+                              borderRadius: BorderRadius.circular(6),
+                              border: app.activeSectionId == s.id
+                                  ? Border.all(color: scheme.primary)
+                                  : null,
+                            ),
+                            child: Text(
+                              s.title.isEmpty
+                                  ? '·'
+                                  : s.title.characters.first.toUpperCase(),
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: dark
+                                      ? OnoteColors.moon100
+                                      : OnoteColors.graphite700),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The notebook bar: shows the current notebook and opens the notebook manager.
 ///
 /// **One surface, not two.** This used to be a dropdown for switching plus a
@@ -557,6 +830,12 @@ class _NotebookHeader extends StatelessWidget {
                       overflow: TextOverflow.ellipsis),
                 ),
                 const Icon(Icons.unfold_more, size: 16),
+                IconButton(
+                  icon: const Icon(Icons.keyboard_double_arrow_left, size: 16),
+                  tooltip: 'Collapse the navigator  (Ctrl+\)',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: app.toggleNavCollapsed,
+                ),
               ],
             ),
           ),
@@ -616,16 +895,18 @@ class _SectionHeaderState extends State<_SectionHeader> {
     final scheme = Theme.of(context).colorScheme;
     final active = widget.active;
     final emphasised = pageTarget || active;
+    // Plain 12px rows, not tracked small-caps: a narrow sections column has
+    // to fit real course names, and the caps identity now lives on the pages
+    // pane's header where there is room for it.
     final labelStyle = TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        letterSpacing: .6,
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
         fontStyle: pageTarget ? FontStyle.italic : FontStyle.normal,
         color: emphasised
             ? scheme.primary
             : dark
-                ? OnoteColors.moon300
-                : OnoteColors.graphite500);
+                ? OnoteColors.moon100
+                : OnoteColors.graphite700);
     return InkWell(
       onTap: _renaming ? null : () => app.activateSection(section.id),
       onTapDown: (d) => _downPos = d.globalPosition,
@@ -645,7 +926,7 @@ class _SectionHeaderState extends State<_SectionHeader> {
                     color: scheme.primary.withValues(alpha: .09),
                     borderRadius: BorderRadius.circular(6))
                 : null,
-        padding: const EdgeInsets.fromLTRB(6, 12, 4, 4),
+        padding: const EdgeInsets.fromLTRB(6, 7, 6, 7),
         child: Row(
           children: [
             const SizedBox(width: 4),
@@ -670,18 +951,11 @@ class _SectionHeaderState extends State<_SectionHeader> {
                       },
                     )
                   : Text(
-                      pageTarget ? 'move here' : section.title.toUpperCase(),
+                      pageTarget ? 'move here' : section.title,
                       overflow: TextOverflow.ellipsis,
                       style: labelStyle,
                     ),
             ),
-            if (!_renaming)
-              IconButton(
-                icon: const Icon(Icons.add, size: 15),
-                visualDensity: VisualDensity.compact,
-                tooltip: 'New page in ${section.title}',
-                onPressed: () => app.addPage(sectionId: section.id),
-              ),
           ],
         ),
       ),
@@ -1229,6 +1503,10 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       _nodeItem('down', Icons.keyboard_arrow_down, 'Move down'),
       if (isSection) ...[
         const PopupMenuDivider(),
+        // The one-click add lived on every section row until the two-column
+        // layout tightened those rows; the pages pane's [+] covers the ACTIVE
+        // section, and this covers the rest.
+        _nodeItem('newpage', Icons.note_add_outlined, 'New page'),
         _nodeItem('togroup', Icons.drive_file_move_outline, 'Move to group…'),
         _nodeItem('sortaz', Icons.sort_by_alpha, 'Sort pages A→Z'),
         _nodeItem('sortdate', Icons.schedule, 'Sort pages by last edited'),
@@ -1280,6 +1558,8 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       app.moveNode(node.id, -1);
     case 'down':
       app.moveNode(node.id, 1);
+    case 'newpage':
+      await app.addPage(sectionId: node.id);
     case 'sortaz':
       app.sortSection(node.id, byTitle: true);
     case 'sortdate':

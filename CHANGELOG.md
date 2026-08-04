@@ -4,6 +4,29 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased — 0.2.0] · the first public release
 
+### Changed — navigator redesign (2026-08-04)
+- **Sections and pages are side-by-side columns now**, the OneNote shape: both
+  independently scrollable and resizable, so you can see the section list and a
+  page list at once instead of the two fighting over one column's height.
+- **Browsing never loses your place.** Opening a section returns you to the
+  page you were last on there — not its first page.
+- **Home** — favourites and recent pages finally have a surface, above the
+  section list. Right-click a page ▸ Favourite to pin it.
+- **Collapse to a rail** (Ctrl+\): a 44px strip with the notebook, Home, and a
+  chip per section, so the canvas gets the width back while everything stays
+  one click away.
+- **Keyboard**: Ctrl+PageDown/PageUp — next/previous page; Ctrl+Tab /
+  Ctrl+Shift+Tab — next/previous section.
+
+### Fixed — edit/view text parity (2026-08-04)
+- **Text no longer compresses when you click into a box.** Three separate
+  causes, all pinned by tests now: the editor's implicit strut forced every
+  line to the base height so headings could not be tall while editing; the
+  field's decoration added 8px the read view doesn't have; and the editor used
+  different heading sizes (23/19/16.5 vs 22/18.5/16) with none of the read
+  view's heading spacing. Checkbox and quote rows also reserve the same room
+  in both modes.
+
 ### Compatibility promise
 
 From 0.2.0 onward: **notebooks created by any Openote release open in every later release.** Format v1 (the `.onote` container) and op-log v1 (the `.onotebook` directory) freeze at this release; future format changes bump the format version and migrate one-way-forward.
