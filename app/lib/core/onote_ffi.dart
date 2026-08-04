@@ -196,15 +196,22 @@ class OnoteCore {
   }
 }
 
-/// Does this text carry Word/OneNote field scaffolding?
+/// Does this text carry anything the import repair can fix?
 ///
 /// A cheap substring test, so the repair path costs nothing on the 99.9% of
 /// blocks that were never near a `.one` file. U+FDDF is what OneNote writes;
 /// U+0013..U+0015 are Word's classic field begin/separator/end, which survive a
 /// paste from Word.
+///
+/// `\$` is here for the second repair: a symbol from OneNote's palette was
+/// imported wrapped in `\$…\$`, which reads correctly until you click into the
+/// box. A page containing no dollar at all — almost all of them — still costs
+/// one substring scan and nothing else, and the repair itself leaves real
+/// equations alone.
 bool textNeedsFieldRepair(String s) =>
     s.contains('\uFDDF') ||
     s.contains('\uFDDE') ||
     s.contains('\u0013') ||
     s.contains('\u0014') ||
-    s.contains('\u0015');
+    s.contains('\u0015') ||
+    s.contains('\$');

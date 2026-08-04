@@ -2286,6 +2286,66 @@ fn office_math_to_latex(s: &str) -> String {
     latexify_prose(&joined)
 }
 
+/// Unwrap inline `$…$` spans that never needed to be maths.
+///
+/// **For notes that were imported before the fix.** A character inserted from
+/// OneNote's symbol palette arrives as a maths run, and every maths run used to
+/// be wrapped in `$…$` — so a page reads correctly until you click into it and
+/// find `$∀$` in the middle of your sentence. Fixing the importer does nothing
+/// for a notebook already on disk; by then the delimiters are stored user data.
+///
+/// The test is the same one the importer now applies: a span whose content is
+/// character-for-character what it would render as is not notation, it is a
+/// character. Anything containing a backslash command, a script marker or a
+/// brace is left exactly alone, so real equations are never touched.
+pub fn unwrap_needless_math(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] != '$' {
+            out.push(chars[i]);
+            i += 1;
+            continue;
+        }
+        // `$$` is display maths on its own line — a different dialect, and not
+        // this function's business.
+        if chars.get(i + 1) == Some(&'$') {
+            out.push('$');
+            out.push('$');
+            i += 2;
+            continue;
+        }
+        match chars[i + 1..].iter().position(|c| *c == '$') {
+            Some(rel) => {
+                let inner: String = chars[i + 1..i + 1 + rel].iter().collect();
+                if inner.is_empty() || is_real_notation(&inner) {
+                    out.push('$');
+                    i += 1;
+                } else {
+                    out.push_str(&inner);
+                    i += rel + 2;
+                }
+            }
+            // An unpaired `$` is just a dollar sign.
+            None => {
+                out.push('$');
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// Does this span actually need typesetting?
+fn is_real_notation(inner: &str) -> bool {
+    inner.contains('\\')
+        || inner.contains('^')
+        || inner.contains('_')
+        || inner.contains('{')
+        || inner.contains('}')
+}
+
 /// Wrap prose words (≥2 consecutive letters) in `\text{…}`, grouping runs of
 /// words so their spaces survive LaTeX math mode. OneNote math zones freely mix
 /// sentences with symbols ("A path is a sequence of edges e1, …, en ∈ E such
@@ -2401,12 +2461,13 @@ fn run_markdown(run: &SRun) -> String {
     // right trade — an empty conversion is exactly what used to empty whole
     // pages of content.
     if run.style.is_math {
-        let plain: String = s
+        let src = s.trim_end_matches('\0');
+        let plain: String = src
             .chars()
             .map(fold_math_char)
-            .filter(|c| !is_math_control(*c))
+            .filter(|c| !is_math_control(*c) && *c != '\0')
             .collect();
-        let latex = office_math_to_latex(s.trim_end_matches('\0'));
+        let latex = office_math_to_latex(src);
         if latex.trim().is_empty() {
             return plain;
         }
@@ -2422,7 +2483,15 @@ fn run_markdown(run: &SRun) -> String {
         // renders — so emit the character and leave the delimiters out. A real
         // equation converts to something different (\frac, ^, _, \sum) and
         // still gets its `$…$`.
-        if latex.trim() == plain.trim() {
+        // Compared after normalising BOTH the same way, which the first
+        // attempt at this did not do — and that is why it looked fixed and
+        // wasn't. `office_math_to_latex` strips trailing NULs and collapses
+        // runs of whitespace; the plain string did neither, and `str::trim`
+        // does not remove a NUL because a NUL is not whitespace. So the
+        // comparison was "∀" against "∀\0", which never matches, and every
+        // symbol stayed wrapped exactly as before.
+        let norm = |x: &str| x.split_whitespace().collect::<Vec<_>>().join(" ");
+        if norm(&latex) == norm(&plain) {
             return plain;
         }
         return format!("{lead}${latex}${trail}");
@@ -4366,7 +4435,7 @@ mod tests {
     #[test]
     fn a_lone_symbol_is_not_wrapped_in_math_delimiters() {
         let math = Style { is_math: true, ..Default::default() };
-        for sym in ["∀", "∈", "ℝ", "θ"] {
+        for sym in ["∀", "∈", "ℝ", "θ", "≤", "∑"] {
             let run = SRun { text: sym.into(), style: math.clone() };
             assert_eq!(
                 run_markdown(&run),
@@ -4374,6 +4443,39 @@ mod tests {
                 "a bare {sym} should import as itself, not as ${sym}$"
             );
         }
+    }
+
+    /// The shape that occurs in a real file, and that the first attempt at this
+    /// fix missed entirely.
+    ///
+    /// OneNote run text is NUL-terminated, and `str::trim` does not strip a NUL
+    /// because a NUL is not whitespace — so comparing the converted LaTeX
+    /// against an un-normalised plain string compared "∀" with "∀\0" and never
+    /// matched. The symbols stayed wrapped, the tests passed, and the bug was
+    /// still there on the next import. Both sides are normalised now.
+    #[test]
+    fn a_symbol_with_a_trailing_nul_is_still_just_a_symbol() {
+        let math = Style { is_math: true, ..Default::default() };
+        for raw in ["∀\0", "∈\0\0", "ℝ\0"] {
+            let run = SRun { text: raw.into(), style: math.clone() };
+            let out = run_markdown(&run);
+            assert!(
+                !out.contains('$'),
+                "{raw:?} imported as {out:?} — still wrapped"
+            );
+            assert!(!out.contains('\0'), "{out:?} kept a NUL");
+        }
+    }
+
+    /// Internal whitespace is collapsed by the LaTeX path too, so it must not
+    /// count as a difference either.
+    #[test]
+    fn spacing_alone_does_not_make_it_an_equation() {
+        let run = SRun {
+            text: "E  ∩  O\0".into(),
+            style: Style { is_math: true, ..Default::default() },
+        };
+        assert!(!run_markdown(&run).contains('$'));
     }
 
     /// …while something that genuinely needs typesetting keeps its delimiters.
@@ -4386,6 +4488,41 @@ mod tests {
         let out = run_markdown(&run);
         assert!(out.starts_with('$') && out.ends_with('$'), "got {out:?}");
         assert!(out.contains("\\frac"), "got {out:?}");
+    }
+
+    #[test]
+    fn healing_unwraps_a_symbol_but_never_an_equation() {
+        // What an already-imported page looks like.
+        assert_eq!(
+            unwrap_needless_math("for all $∀$ x in $S$"),
+            "for all ∀ x in S"
+        );
+        // Real notation keeps its delimiters, whatever else is on the line.
+        for eq in [
+            "$\\frac{a}{b}$",
+            "$x^2$",
+            "$a_1$",
+            "$\\sum_{i=1}^{n}$",
+        ] {
+            assert_eq!(unwrap_needless_math(eq), eq, "{eq} must stay maths");
+        }
+        // Display maths is a different dialect and is left alone.
+        assert_eq!(unwrap_needless_math("$$x^2$$"), "$$x^2$$");
+        // A lone dollar is a dollar.
+        assert_eq!(unwrap_needless_math("costs $5 today"), "costs $5 today");
+        // Mixed line: unwrap the symbol, keep the equation.
+        assert_eq!(
+            unwrap_needless_math("if $θ$ then $x^2$"),
+            "if θ then $x^2$"
+        );
+    }
+
+    #[test]
+    fn healing_leaves_ordinary_prose_untouched() {
+        for s in ["nothing here", "", "a $ b $ c"] {
+            let out = unwrap_needless_math(s);
+            assert!(out.len() <= s.len() + 1, "{s:?} -> {out:?}");
+        }
     }
 
     #[test]

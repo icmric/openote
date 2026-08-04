@@ -69,6 +69,11 @@ pub unsafe extern "C" fn onote_core_page_hash(mirror: *const c_char) -> *mut c_c
 /// leftover field marker (the `﷟` and friends) is stripped. Text with no field
 /// characters is returned unchanged. Caller frees the result.
 ///
+/// Also unwraps inline `$…$` around spans that never needed to be maths: a
+/// character from OneNote's symbol palette arrives as a maths run, and those
+/// used to be wrapped unconditionally, so an imported page shows `$∀$` the
+/// moment you click into it.
+///
 /// Exists because fixing the importer does nothing for notes that were already
 /// imported — the junk is stored user data by then, and asking a student to
 /// re-import a term's notes to get their links back is not a fix.
@@ -82,7 +87,11 @@ pub unsafe extern "C" fn onote_core_repair_field_codes(text: *const c_char) -> *
     // Panic-guarded like every other entry point: unwinding across the C
     // boundary is UB, and losing a repair is far better than losing the app.
     let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::onenote::linkify_field_codes(&t)
+        // Both repairs, one pass, one undo checkpoint. The symbol name stays
+        // `repair_field_codes` deliberately: it is looked up by name at load
+        // time, and renaming an exported symbol to widen its meaning would
+        // break every build that has not rebuilt the core in lockstep.
+        crate::onenote::unwrap_needless_math(&crate::onenote::linkify_field_codes(&t))
     }))
     .unwrap_or_else(|_| t.clone());
     into_c(out)
