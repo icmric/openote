@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../export/pdf_vector_export.dart';
+import '../export/print_page.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../study/study_stats.dart';
@@ -20,9 +22,7 @@ Color _sectionColor(String? token, bool dark) => switch (token) {
 /// The page rows for a section, honouring subpage collapse (a collapsed page
 /// hides everything indented beneath it).
 List<Widget> _pageEntriesFor(AppState app, TreeNode section) {
-  final pages = app.nodes
-      .where((n) => n.kind == NodeKind.page && n.parentId == section.id)
-      .toList(); // already ordered by position
+  final pages = app.pagesOf(section.id); // already ordered by position
   final out = <Widget>[];
   int? hideDeeperThan;
   for (var i = 0; i < pages.length; i++) {
@@ -1237,6 +1237,12 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         // set. The label carries the current value: a menu that says only
         // "Exam date…" makes you open a dialog to find out whether there is
         // one.
+        // The unit a student shares is "my notes for week 6", which is a
+        // section far more often than a page — and for an imported deck it is
+        // the whole deck. Vector export made the output worth sending.
+        _nodeItem('sectionpdf', Icons.picture_as_pdf_outlined,
+            'Export section as PDF…'),
+        _nodeItem('printsection', Icons.print_outlined, 'Print section…'),
         if (app.study.examDate(node.id) case final exam?) ...[
           _nodeItem('exam', Icons.flag_outlined,
               'Exam ${formatExamDate(exam, DateTime.now())}'
@@ -1258,6 +1264,8 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
             'favourite',
             app.isFavourite(node.id) ? Icons.star : Icons.star_border,
             app.isFavourite(node.id) ? 'Remove favourite' : 'Add to favourites'),
+        _nodeItem('sharepdf', Icons.picture_as_pdf_outlined, 'Share as PDF…'),
+        _nodeItem('print', Icons.print_outlined, 'Print…'),
         _nodeItem('copylink', Icons.link, 'Copy link to page'),
         _nodeItem('history', Icons.history, 'Version history…'),
         _nodeItem('template', Icons.bookmark_add_outlined, 'Save as template…'),
@@ -1282,6 +1290,25 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       if (context.mounted) clearExamDate(context, app, node.id);
     case 'favourite':
       app.toggleFavourite(node.id);
+    case 'print':
+      if (app.pageId != node.id) await app.selectPage(node.id);
+      await printCurrentPage(app);
+    case 'printsection':
+      await printSection(app, node.id);
+    case 'sharepdf':
+      if (app.pageId != node.id) await app.selectPage(node.id);
+      if (!context.mounted) return;
+      final saved = await exportPagePdfVector(app);
+      if (saved != null && context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Saved to $saved')));
+      }
+    case 'sectionpdf':
+      final messenger = ScaffoldMessenger.of(context);
+      final saved = await exportSectionPdfVector(app, node.id);
+      if (saved != null) {
+        messenger.showSnackBar(SnackBar(content: Text('Saved to $saved')));
+      }
     case 'copylink':
       // The wiki-link form the editor already resolves. Copying it means
       // cross-referencing is paste, not retype-and-hope.

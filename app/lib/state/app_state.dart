@@ -625,15 +625,24 @@ class AppState extends ChangeNotifier implements StudyDocument {
     notifyListeners();
   }
 
+  /// A section's pages, in navigator order.
+  ///
+  /// One query rather than the same `where` written out at each call site — it
+  /// was open-coded in three places, and "the pages of a section, in the order
+  /// the navigator shows them" is exactly the thing a section-wide export or
+  /// sort has to agree with the navigator about.
+  List<TreeNode> pagesOf(String sectionId) => [
+        for (final n in nodes)
+          if (n.kind == NodeKind.page && n.parentId == sectionId) n
+      ];
+
   /// Focus a section (the pages zone shows its pages). When the current page
   /// isn't inside the section, jump to its first page.
   void activateSection(String id) {
     activeSectionId = id;
     final cur = node(pageId);
     if (cur == null || cur.parentId != id) {
-      final first = nodes
-          .where((n) => n.kind == NodeKind.page && n.parentId == id)
-          .firstOrNull;
+      final first = pagesOf(id).firstOrNull;
       if (first != null) {
         selectPage(first.id); // sets activeSectionId + notifies
         return;
@@ -923,9 +932,7 @@ class AppState extends ChangeNotifier implements StudyDocument {
   /// that follow it, or sorting would silently reparent every subpage in the
   /// section to whatever landed above it.
   void sortSection(String sectionId, {required bool byTitle}) {
-    final pages = nodes
-        .where((n) => n.kind == NodeKind.page && n.parentId == sectionId)
-        .toList();
+    final pages = pagesOf(sectionId);
     if (pages.length < 2) return;
     // Group each top-level page with its contiguous deeper-level run.
     final groups = <List<TreeNode>>[];

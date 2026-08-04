@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -10,6 +12,7 @@ import '../theme/onote_theme.dart';
 import 'command_bar.dart';
 import 'onboarding.dart';
 import 'sidebar.dart';
+import '../export/print_page.dart';
 import 'study_panel.dart';
 import 'sync_dialog.dart';
 
@@ -163,6 +166,13 @@ class _AppShellState extends State<AppShell> {
       }
       if (k == LogicalKeyboardKey.keyF) {
         app.toggleFind();
+        return true;
+      }
+      if (k == LogicalKeyboardKey.keyP) {
+        // Muscle memory, and the reason P13 was worth doing at all: a student
+        // printing a revision sheet reaches for Ctrl+P, not a menu. Unawaited
+        // because the OS dialog owns the interaction from here.
+        unawaited(printCurrentPage(app));
         return true;
       }
       if (k == LogicalKeyboardKey.keyZ && !shift) {

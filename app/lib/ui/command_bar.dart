@@ -9,6 +9,7 @@ import '../export/open_export.dart';
 import '../export/pdf_export.dart';
 import '../export/pdf_vector_export.dart';
 import '../export/pdf_import.dart';
+import '../export/print_page.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart';
@@ -163,6 +164,14 @@ class _CommandBarState extends State<CommandBar> {
                             onPressed: () =>
                                 _export(context, exportPagePdfVector),
                             child: const Text('PDF (.pdf)'),
+                          ),
+                          MenuItemButton(
+                            leadingIcon:
+                                const Icon(Icons.print_outlined, size: 18),
+                            shortcut: const SingleActivator(
+                                LogicalKeyboardKey.keyP, control: true),
+                            onPressed: () => printCurrentPage(app),
+                            child: const Text('Print…'),
                           ),
                           MenuItemButton(
                             leadingIcon:

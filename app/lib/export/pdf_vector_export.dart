@@ -21,6 +21,7 @@
 library;
 
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
@@ -69,21 +70,66 @@ Future<String?> exportPagePdfVector(AppState app) async {
   return location.path;
 }
 
+/// Export a whole section — a lecture deck, a week's notes — as one PDF.
+///
+/// The unit a student shares is rarely one page. It is also the last piece of
+/// the PDF-annotation flagship (Phase B step 4): a deck imported one-slide-per-
+/// page comes back out as one document you can hand in.
+Future<String?> exportSectionPdfVector(AppState app, String sectionId) async {
+  final section = app.nodes.where((n) => n.id == sectionId).firstOrNull;
+  if (section == null) return null;
+  if (app.pagesOf(sectionId).isEmpty) return null;
+
+  final location = await getSaveLocation(
+    suggestedName: '${safeFilename(section.title, fallback: 'section')}.pdf',
+    acceptedTypeGroups: const [
+      XTypeGroup(label: 'PDF', extensions: ['pdf'])
+    ],
+  );
+  if (location == null) return null;
+
+  final bytes = await buildDeckPdf(app, sectionId, title: section.title);
+  await File(location.path).writeAsBytes(bytes);
+  return location.path;
+}
+
 /// Build the PDF bytes for a page.
 ///
 /// Separated from the file-picker half so printing (P13) and annotated-slide
 /// re-export can reuse it, and so it is testable without a UI.
 Future<Uint8List> buildPagePdf(AppState app, String pageId,
     {required String title}) async {
-  final blocks =
-      app.pageId == pageId ? app.blocks : app.readPage(pageId).blocks;
-
   final doc = pw.Document(title: title, creator: 'Openote');
   final theme = await _theme();
+  _addPageSheets(doc, app, pageId, theme);
+  return doc.save();
+}
+
+/// Build one PDF from every page of a section, in navigator order.
+Future<Uint8List> buildDeckPdf(AppState app, String sectionId,
+    {required String title}) async {
+  final doc = pw.Document(title: title, creator: 'Openote');
+  final theme = await _theme();
+  for (final p in app.pagesOf(sectionId)) {
+    _addPageSheets(doc, app, p.id, theme);
+  }
+  return doc.save();
+}
+
+/// Append one Openote page to [doc] as one or more sheets.
+///
+/// Reads the page's **own** properties rather than the open page's — exporting
+/// a section means most of these pages are closed, and borrowing the open
+/// page's width would have laid every one of them out at the wrong size.
+void _addPageSheets(
+    pw.Document doc, AppState app, String pageId, pw.ThemeData? theme) {
+  final data = app.pageId == pageId ? null : app.readPage(pageId);
+  final blocks = data?.blocks ?? app.blocks;
+  final props = data?.props ?? app.pageProps;
 
   // Content bounds in page px. The page's own width wins over the content's, so
   // a note narrower than its page still exports at the page size the user set.
-  final widthPx = app.pageProps.pageWidth;
+  final widthPx = props.pageWidth;
   var bottomPx = 0.0;
   for (final b in blocks) {
     final h = b.h ?? app.renderSizes[b.id]?.height ?? app.estimatedHeight(b);
@@ -91,7 +137,17 @@ Future<Uint8List> buildPagePdf(AppState app, String pageId,
   }
   if (bottomPx <= 0) bottomPx = _sheetHeight(widthPx);
 
-  final sheetPx = _sheetHeight(widthPx);
+  // A slide keeps its own shape. An imported deck is one full-width locked
+  // background image per page, and forcing that onto an ISO sheet would print
+  // a 16:9 slide across the top third of a portrait page with a field of white
+  // underneath — which is exactly what makes OneNote's printouts unusable to
+  // hand in. The sheet becomes the slide, and anything written past its edge
+  // extends the sheet rather than starting a second one, so one slide is always
+  // one page of the output.
+  final slide = _slideHeight(blocks, widthPx);
+  final sheetPx = slide == null
+      ? _sheetHeight(widthPx)
+      : (bottomPx > slide ? bottomPx : slide);
   final sheets = (bottomPx / sheetPx).ceil().clamp(1, 500);
   final format = PdfPageFormat(widthPx / _pxPerPoint, sheetPx / _pxPerPoint);
 
@@ -118,7 +174,30 @@ Future<Uint8List> buildPagePdf(AppState app, String pageId,
       ),
     ));
   }
-  return doc.save();
+}
+
+/// The height of the slide this page IS, or null if it isn't one.
+///
+/// "Is a slide" means exactly one locked background image, at the top, filling
+/// the page width — which is what `pdf_import` writes for one-page-per-slide.
+/// Anything else (a note that happens to contain a picture) is a normal page.
+@visibleForTesting
+double? slideHeightOf(List<Block> blocks, double widthPx) =>
+    _slideHeight(blocks, widthPx);
+
+double? _slideHeight(List<Block> blocks, double widthPx) {
+  Block? found;
+  for (final b in blocks) {
+    if (b.type != BlockType.image) continue;
+    if (b.content['background'] != true || b.content['locked'] != true) continue;
+    if (found != null) return null; // two backgrounds: not a slide page
+    found = b;
+  }
+  final h = found?.h;
+  if (found == null || h == null) return null;
+  if (found.y > 1) return null;
+  if ((found.w - widthPx).abs() > 2) return null;
+  return found.y + h;
 }
 
 bool _overlaps(AppState app, Block b, double top, double bottom) {
@@ -249,18 +328,82 @@ pw.Widget? _tableWidget(Block b) {
 }
 
 pw.Widget? _imageWidget(AppState app, Block b, double h) {
+  final wPt = b.w / _pxPerPoint;
+  final hPt = h / _pxPerPoint;
+
+  // The picture, if it can be drawn at all. A missing blob or an image the PDF
+  // encoder can't read (an odd PNG variant) must not take the whole export
+  // down — and, since the text layer below is independent of it, must not take
+  // the slide's *words* with it either. Losing the picture is bad; losing the
+  // picture and silently losing everything written on it is worse.
+  pw.Widget? image;
   final ref = b.content['blob'] as String?;
-  if (ref == null) return null;
-  final bytes = app.blob(ref);
-  if (bytes == null) return null;
-  try {
-    return pw.Image(pw.MemoryImage(bytes),
-        width: b.w / _pxPerPoint, height: h / _pxPerPoint, fit: pw.BoxFit.fill);
-  } catch (_) {
-    // An image the PDF encoder can't read (an odd PNG variant) must not take
-    // the whole export down with it.
-    return null;
+  final bytes = ref == null ? null : app.blob(ref);
+  if (bytes != null) {
+    try {
+      image = pw.Image(pw.MemoryImage(bytes),
+          width: wPt, height: hPt, fit: pw.BoxFit.fill);
+    } catch (_) {
+      image = null;
+    }
   }
+
+  // An imported slide carries the text pdfium pulled out of it. Emitting it
+  // closes the loop the importer opened: "the slide's text stays searchable"
+  // was true inside Openote and stopped being true the moment the annotated
+  // deck was exported to hand in — the picture went out, the words did not.
+  final source = b.content['sourceText'];
+  final searchable = source is String && source.trim().isNotEmpty
+      ? _searchableLayer(source, wPt, hPt)
+      : null;
+
+  if (image == null) return searchable;
+  if (searchable == null) return image;
+  return pw.Stack(children: [image, searchable]);
+}
+
+/// The slide's text, present to a reader but not to the eye.
+///
+/// Rendering mode 3 is the PDF standard's own "neither fill nor stroke" — the
+/// technique every OCR layer uses. The glyphs are real text operators in the
+/// content stream, so Ctrl+F, copy-paste and any indexer see them; nothing is
+/// painted, so the slide looks exactly as it did.
+///
+/// **What this layer is not:** per-word positioned. pdfium hands us the page's
+/// text in reading order, not a box per word, so selecting part of the slide
+/// gives you the whole slide's text rather than the phrase under the cursor.
+/// Searching — which is what the feature promised — works either way, and
+/// per-word geometry is a much larger piece of pdfium plumbing.
+pw.Widget _searchableLayer(String text, double wPt, double hPt) => pw.SizedBox(
+      width: wPt,
+      height: hPt,
+      child: pw.ClipRect(
+        child: pw.Text(
+          text,
+          style: pw.TextStyle(
+            fontSize: _invisibleFontSize(wPt, hPt, text.length),
+            renderingMode: PdfTextRenderingMode.invisible,
+          ),
+        ),
+      ),
+    );
+
+/// A size at which [chars] characters fit inside [wPt]×[hPt].
+///
+/// Sized to fit rather than fixed, because the layer is clipped to the slide
+/// and a font too large for a text-heavy slide would push the tail outside the
+/// box — losing exactly the words a search was most likely to be for. Assumes
+/// an average glyph around half the point size wide and lines at 1.2×, which is
+/// close enough for a bound that only has to avoid overflow.
+@visibleForTesting
+double invisibleFontSize(double wPt, double hPt, int chars) =>
+    _invisibleFontSize(wPt, hPt, chars);
+
+double _invisibleFontSize(double wPt, double hPt, int chars) {
+  if (chars <= 0) return 6;
+  // capacity(s) ≈ (w / 0.5s) * (h / 1.2s) = w*h / 0.6s²  ⇒  s = √(w*h/0.6n)
+  final s = math.sqrt((wPt * hPt) / (0.6 * chars));
+  return s.clamp(0.5, 8.0);
 }
 
 /// Ink as stroked PDF paths.
