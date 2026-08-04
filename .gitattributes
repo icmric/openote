@@ -1,0 +1,50 @@
+# Line endings, fixed in the repository rather than left to each contributor's
+# `core.autocrlf`.
+#
+# The 2026-08 review recommended this and priced it at "a one-time whole-tree
+# normalisation commit". Measured before writing the file: of 268 tracked files,
+# the only ones holding a CR in the index are the PDFs, fonts and icons below —
+# **no text file is stored with CRLF**. So the normalisation cost is zero, and
+# this file is purely a guard that keeps it that way when someone commits from a
+# Windows checkout with `core.autocrlf=true`.
+#
+# The churn the review actually saw came from `app/.flutter-plugins-dependencies`,
+# a generated file that records absolute pub-cache paths and was tracked despite
+# `app/.gitignore` naming it. It is untracked now, which removes the source
+# rather than normalising the symptom.
+
+* text=auto eol=lf
+
+# Windows shells are the exception. cmd.exe mis-parses an LF-only batch file in
+# ways that surface as a label or `goto` silently doing nothing — and
+# `sync-core.bat` is a build script, so a subtle failure there costs someone an
+# afternoon.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary: never converted, never diffed as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.xz binary
+*.gz binary
+*.dll binary
+*.so binary
+*.dylib binary
+
+# The formats we read. Committed fixtures must survive byte-for-byte, or an
+# importer test is asserting against a file git quietly rewrote.
+*.one binary
+*.onepkg binary
+*.onote binary
+*.cab binary
