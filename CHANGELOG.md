@@ -26,9 +26,13 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **Re-joining a notebook you had deleted restores it** instead of copying it
   again under a new identity, which is how a workspace ends up holding several
   copies of one notebook.
-- **A text box no longer grows sideways when you click into it.** Auto-width
-  was measured only for the block being edited, so a box kept its creation
-  width until first edit and then snapped.
+- **A text box no longer grows sideways when you click into it**, and lines
+  no longer wrap that shouldn't. Two causes: auto-width was measured only for
+  the block being edited, so a box kept its creation width until first edit
+  and then snapped; and the three paths that render or measure a box each
+  inherited a different Material letter-spacing (read 0.25, edit 0.5, the
+  measurement 0), so letters visibly spread on entering edit and the box was
+  measured narrower than the field it had to hold.
 
 ### Changed — navigator redesign (2026-08-04)
 - **Sections and pages are side-by-side columns now**, the OneNote shape: both

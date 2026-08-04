@@ -10,7 +10,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/live_markdown_controller.dart';
+import 'package:openote/editor/text_block_view.dart';
 import 'package:openote/markdown/md_render.dart';
+import 'package:openote/model/models.dart';
+import 'package:openote/theme/onote_theme.dart';
 
 /// The exact TextField shape _LiveMarkdownSession.build produces, minus focus
 /// and spell-check (neither affects geometry). The strut and contentPadding
@@ -33,6 +36,21 @@ Widget editField(String text, TextStyle style) => TextField(
 Widget readView(String text, TextStyle style) =>
     MarkdownView(text: text, baseStyle: style);
 
+/// Intrinsic width of a renderer, for the horizontal half of parity.
+Future<double> widthOf(WidgetTester t, Widget w) async {
+  final key = GlobalKey();
+  await t.pumpWidget(MaterialApp(
+    theme: onoteTheme(Brightness.light),
+    home: Scaffold(
+      body: Align(
+        alignment: Alignment.topLeft,
+        child: IntrinsicWidth(child: KeyedSubtree(key: key, child: w)),
+      ),
+    ),
+  ));
+  return t.getSize(find.byKey(key)).width;
+}
+
 Future<double> heightOf(WidgetTester t, Widget w) async {
   final key = GlobalKey();
   await t.pumpWidget(MaterialApp(
@@ -50,6 +68,41 @@ Future<double> heightOf(WidgetTester t, Widget w) async {
 }
 
 void main() {
+  group('letters are spaced the same in both modes', () {
+    // The three paths that render or measure a box each merged onto a
+    // DIFFERENT Material default — Text inherits bodyMedium (0.25), TextField
+    // merges onto bodyLarge (0.5), and the width measurement uses a bare
+    // TextPainter (0). So letters visibly spread on entering edit, and the box
+    // was measured narrower than the field it had to hold, which made lines
+    // wrap that had no business wrapping.
+    const style = TextStyle(
+        fontSize: 15, height: 1.5, letterSpacing: TextBlockView.letterSpacing);
+
+    testWidgets('the same sentence is the same width', (t) async {
+      for (final text in [
+        'plain',
+        'alpha beta gamma',
+        'The quick brown fox jumps over the lazy dog',
+      ]) {
+        final read = await widthOf(t, readView(text, style));
+        final edit = await widthOf(t, editField(text, style));
+        // The remainder is RenderEditable's caret reservation (cursor width +
+        // gap) — a constant, not a per-character drift. Anything that scales
+        // with length is a spacing mismatch and is the bug.
+        expect(edit - read, closeTo(3.0, 1.0),
+            reason: 'read=$read edit=$edit for ${text.length} chars');
+      }
+    });
+
+    testWidgets('baseStyle pins it rather than inheriting', (t) async {
+      // If this ever goes back to null, all three paths diverge again.
+      final b = Block(
+          type: BlockType.text, x: 0, y: 0, content: {'text': 'x'});
+      expect(TextBlockView.baseStyle(b, dark: false).letterSpacing,
+          TextBlockView.letterSpacing);
+    });
+  });
+
   // Both the hand-authored shape and the imported-notebook shape (an explicit
   // fontSize + the measured OneNote line pitch), because the line-height
   // multiplier is where the two renderers used to diverge.
