@@ -8,6 +8,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/core/platform_open.dart';
+
 import 'package:openote/markdown/md_render.dart';
 
 void main() {
@@ -94,5 +96,42 @@ void main() {
       return found == null;
     });
     expect(found?.fontSize, 24);
+  });
+
+  group('opening things from a notebook', () {
+    // Note text is untrusted — an imported OneNote page or a shared notebook
+    // can contain anything a stranger wrote — so what we hand the OS matters.
+    test('only http, https and mailto are openable', () {
+      expect(PlatformOpen.isOpenableUrl('https://example.com'), isTrue);
+      expect(PlatformOpen.isOpenableUrl('http://example.com'), isTrue);
+      expect(PlatformOpen.isOpenableUrl('mailto:a@b.com'), isTrue);
+      // A link in a note must not be able to launch a local executable.
+      expect(PlatformOpen.isOpenableUrl('file:///C:/Windows/System32/calc.exe'),
+          isFalse);
+      expect(PlatformOpen.isOpenableUrl('javascript:alert(1)'), isFalse);
+      expect(PlatformOpen.isOpenableUrl('vbscript:msgbox'), isFalse);
+      expect(PlatformOpen.isOpenableUrl('not a url'), isFalse);
+    });
+
+    // A URL is allowed to contain `&`, so the allow-list above cannot be what
+    // protects a shell — which is why there is no longer a shell. These stay
+    // openable ON PURPOSE; the safety comes from ShellExecuteW taking the
+    // target as one parameter rather than as a command line.
+    test('a URL with shell metacharacters is still a URL', () {
+      expect(PlatformOpen.isOpenableUrl('https://x.com/?a=1&b=2'), isTrue);
+      expect(PlatformOpen.isOpenableUrl('https://x.com/" & calc.exe & "'),
+          isTrue);
+    });
+
+    test('programs are recognised, documents are not', () {
+      for (final n in ['a.exe', 'a.BAT', 'setup.msi', 'x.ps1', 'y.lnk',
+                       'invoice.pdf.exe', 'notes.sh', 'app.AppImage']) {
+        expect(PlatformOpen.isExecutableName(n), isTrue, reason: n);
+      }
+      for (final n in ['notes.pdf', 'slides.pptx', 'photo.png', 'a.exe.pdf',
+                       'noextension', '.hidden']) {
+        expect(PlatformOpen.isExecutableName(n), isFalse, reason: n);
+      }
+    });
   });
 }

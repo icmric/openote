@@ -645,16 +645,6 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  /// Forget a remembered root — used when a notebook moves back out.
-  void forgetSyncRoot(String dir) {
-    final before = _syncRoots.length;
-    _syncRoots.removeWhere((f) => p.equals(f.path, dir));
-    if (_syncRoots.length == before) return;
-    _persistSyncRoots();
-    _invalidateSyncStatus();
-    notifyListeners();
-  }
-
   void _persistSyncRoots() => _repo.setSetting('syncRoots', [
         for (final f in _syncRoots)
           {'path': f.path, 'name': f.name, 'kind': f.kind.name}
@@ -1171,6 +1161,7 @@ class AppState extends ChangeNotifier
   }
 
   /// Give a tag a due day, or (with null) take it away (v0.5 stage 2).
+  @override
   bool setTagDue(String blockId, int line, TagKind kind, DateTime? day,
           {String? pageId}) =>
       _updateTag(pageId ?? this.pageId ?? '', blockId, line, kind,
@@ -1290,6 +1281,7 @@ class AppState extends ChangeNotifier
   /// until it measurably hurts.
   ({String key, List<TaggedLine> tags})? _allTagsCache;
 
+  @override
   List<TaggedLine> allTags() {
     if (notebookId == null) return const [];
     // Same reasoning as [deck]: this reads every page in the notebook, and the
@@ -3542,8 +3534,9 @@ class SyncStatus {
   }
 
   IconData get icon {
-    if (!isSynced)
+    if (!isSynced) {
       return mirrors > 0 ? Icons.backup_outlined : Icons.cloud_off_outlined;
+    }
     if (hasOtherDevices) return Icons.devices;
     return Icons.cloud_done_outlined;
   }

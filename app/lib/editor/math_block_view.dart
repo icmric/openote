@@ -183,7 +183,7 @@ class _MathBlockViewState extends State<MathBlockView> {
             if (_evaluated case final r? when r.isOk) ...[
               const SizedBox(height: 6),
               Row(mainAxisSize: MainAxisSize.min, children: [
-                Text('= ',
+                const Text('= ',
                     style: TextStyle(
                         fontSize: 14, color: OnoteColors.graphite400)),
                 SelectableText(
@@ -233,13 +233,13 @@ class _MathBlockViewState extends State<MathBlockView> {
     final latex = widget.block.content['latex'] as String? ?? '';
     if (latex.isEmpty) {
       // F-3: never render an invisible, unclickable husk.
-      return Padding(
-        padding: const EdgeInsets.all(10),
+      return const Padding(
+        padding: EdgeInsets.all(10),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.functions, size: 16, color: OnoteColors.graphite400),
-            const SizedBox(width: 6),
+            SizedBox(width: 6),
             Text('Empty equation — click to edit',
                 style:
                     TextStyle(fontSize: 12, color: OnoteColors.graphite400)),

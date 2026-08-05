@@ -88,7 +88,7 @@ class _CodeBlockViewState extends State<CodeBlockView> {
                 InkWell(
                   onTap: editing ? _pickLanguage : null,
                   child: Text(language,
-                      style: TextStyle(
+                      style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: OnoteColors.graphite400)),

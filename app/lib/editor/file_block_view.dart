@@ -9,6 +9,7 @@ import '../export/md_common.dart' show safeFilename;
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import '../theme/tokens.dart';
 
 /// File attachment block (MEDIA-2): the file lives in the notebook's
 /// content-addressed blob store; "Save a copy…" extracts it back out.
@@ -40,7 +41,7 @@ class FileBlockView extends StatelessWidget {
                     style: const TextStyle(
                         fontSize: 13, fontWeight: FontWeight.w500)),
                 Text(_fmtSize(size),
-                    style: TextStyle(
+                    style: const TextStyle(
                         fontSize: 11, color: OnoteColors.graphite400)),
               ],
             ),
@@ -78,6 +79,15 @@ class FileBlockView extends StatelessWidget {
     }
     final name = (block.content['name'] as String?)?.trim();
     final safe = safeFilename(name == null || name.isEmpty ? 'attachment' : name);
+    // A notebook can arrive from an import or a shared folder, so an
+    // attachment is not necessarily something this user chose to put here.
+    // Opening a document is safe; opening a program is a decision, and it
+    // should be one the person makes on purpose.
+    if (PlatformOpen.isExecutableName(safe)) {
+      if (!context.mounted) return;
+      final go = await _confirmRun(context, safe);
+      if (go != true || !context.mounted) return;
+    }
     try {
       final dir = await Directory.systemTemp.createTemp('onote_open_');
       final f = File(p.join(dir.path, safe));
@@ -91,6 +101,51 @@ class FileBlockView extends StatelessWidget {
       if (context.mounted) _toast(context, "Couldn't open that attachment: $e");
     }
   }
+
+  /// Ask before running a program that came out of a notebook.
+  ///
+  /// States what will happen rather than warning vaguely, and offers the safe
+  /// alternative as the other button — the same shape §7h asks of every
+  /// destructive-or-risky confirmation.
+  Future<bool?> _confirmRun(BuildContext context, String filename) =>
+      showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Run this file?'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(filename, style: OnoteType.uiStrong),
+                const SizedBox(height: OnoteSpace.x4),
+                const Text(
+                  'This attachment is a program, not a document — opening it '
+                  'runs it. If the notebook came from someone else or was '
+                  'imported, only continue if you know what this is.',
+                  style: OnoteType.ui,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx, false);
+                _saveCopy(context);
+              },
+              child: const Text('Save a copy instead'),
+            ),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Run it')),
+          ],
+        ),
+      );
 
   void _toast(BuildContext context, String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));

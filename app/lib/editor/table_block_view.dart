@@ -251,7 +251,7 @@ class _TableBlockViewState extends State<TableBlockView> {
               style: style,
               maxLines: null,
               decoration: OnoteInput.bare.copyWith(
-                  contentPadding: EdgeInsets.symmetric(vertical: 6)),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 6)),
               onChanged: (v) {
                 final cur = _cells;
                 cur[r][c] = v;

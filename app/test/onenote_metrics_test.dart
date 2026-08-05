@@ -33,8 +33,8 @@ void main() {
     test('a long box accumulates under 10px of drift', () {
       // The real first box of Lecture.one is 62 lines of 11pt text.
       const lines = 62, pt = 11.0;
-      final ours = pt * _pxPerPt * oneNoteLineHeight;
-      final onenote = pt * _pxPerPt * measured;
+      const ours = pt * _pxPerPt * oneNoteLineHeight;
+      const onenote = pt * _pxPerPt * measured;
       final drift = (ours - onenote).abs() * lines;
       expect(drift, lessThan(10.0),
           reason: 'at lineHeight 1.35 this box drifted ~161px past its '

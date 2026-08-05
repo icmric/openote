@@ -161,7 +161,7 @@ ThemeData onoteTheme(Brightness brightness) {
   // default (Roboto). That is not theoretical: it rendered every button label
   // in the app in a different face from everything around it, which is exactly
   // the per-surface inconsistency this pass exists to remove.
-  final text = TextTheme(
+  final text = const TextTheme(
     titleMedium: OnoteType.title,
     titleSmall: OnoteType.uiStrong,
     bodyMedium: OnoteType.ui,
@@ -244,11 +244,11 @@ ThemeData onoteTheme(Brightness brightness) {
         side: WidgetStatePropertyAll(BorderSide(color: surfaces.border)),
       ),
     ),
-    iconButtonTheme: IconButtonThemeData(
+    iconButtonTheme: const IconButtonThemeData(
       style: ButtonStyle(
-        iconSize: const WidgetStatePropertyAll(OnoteIcon.sm),
+        iconSize: WidgetStatePropertyAll(OnoteIcon.sm),
         splashFactory: NoSplash.splashFactory,
-        shape: const WidgetStatePropertyAll(
+        shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(borderRadius: OnoteRadius.mdAll)),
         visualDensity: VisualDensity.compact,
       ),
@@ -281,15 +281,15 @@ ThemeData onoteTheme(Brightness brightness) {
         )),
       ),
     ),
-    menuButtonTheme: MenuButtonThemeData(
+    menuButtonTheme: const MenuButtonThemeData(
       style: ButtonStyle(
         minimumSize:
-            const WidgetStatePropertyAll(Size(0, OnoteSize.menuRow)),
-        padding: const WidgetStatePropertyAll(
+            WidgetStatePropertyAll(Size(0, OnoteSize.menuRow)),
+        padding: WidgetStatePropertyAll(
             EdgeInsets.symmetric(horizontal: OnoteSpace.x5)),
-        textStyle: const WidgetStatePropertyAll(OnoteType.ui),
+        textStyle: WidgetStatePropertyAll(OnoteType.ui),
         splashFactory: NoSplash.splashFactory,
-        shape: const WidgetStatePropertyAll(RoundedRectangleBorder()),
+        shape: WidgetStatePropertyAll(RoundedRectangleBorder()),
         visualDensity: VisualDensity.compact,
       ),
     ),

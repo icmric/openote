@@ -234,7 +234,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
             InkWell(
               onTap: () => setState(() => _pickedDay = null),
               child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 child: Text('Show all',
                     style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
               ),
@@ -243,7 +243,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
         ),
         if (items.isEmpty)
           Padding(
-            padding: EdgeInsets.fromLTRB(12, 8, 12, 8),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
             child: Text('Nothing on this day.',
                 style: TextStyle(fontSize: 12, color: context.surfaces.textSecondary)),
           )

@@ -225,7 +225,7 @@ class _SidebarState extends State<Sidebar> {
           ),
         if (contentHits.isNotEmpty) ...[
           Padding(
-            padding: EdgeInsets.fromLTRB(12, 10, 12, 4),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
             child: Text('In page content',
                 style: TextStyle(
                     fontSize: 11,
@@ -995,7 +995,7 @@ class _NotebookHeader extends StatelessWidget {
                 const Icon(Icons.unfold_more, size: 16),
                 IconButton(
                   icon: const Icon(Icons.keyboard_double_arrow_left, size: 16),
-                  tooltip: 'Collapse the navigator  (Ctrl+\)',
+                  tooltip: 'Collapse the navigator  (Ctrl+)',
                   visualDensity: VisualDensity.compact,
                   onPressed: app.toggleNavCollapsed,
                 ),

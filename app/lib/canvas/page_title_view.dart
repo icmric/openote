@@ -138,7 +138,7 @@ class _PageTitleViewState extends State<PageTitleView> {
           const SizedBox(height: 2),
           Text(
             _dateLine(page.createdAt),
-            style: TextStyle(fontSize: 12, color: OnoteColors.graphite400),
+            style: const TextStyle(fontSize: 12, color: OnoteColors.graphite400),
           ),
           const SizedBox(height: 6),
           Container(

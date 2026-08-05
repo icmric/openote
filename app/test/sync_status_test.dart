@@ -117,9 +117,6 @@ void main() {
     app.rememberSyncRoot(cloud.path);
     app.rememberSyncRoot(cloud.path);
     expect(app.syncRoots.length, 1);
-
-    app.forgetSyncRoot(cloud.path);
-    expect(app.syncRoots, isEmpty);
   });
 
   // The other half of the bug: a folder that IS known but was not *there* when

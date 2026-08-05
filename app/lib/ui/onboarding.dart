@@ -246,10 +246,10 @@ class _OnboardingState extends State<_Onboarding> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Exporting from OneNote',
+            const Text('Exporting from OneNote',
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            SizedBox(height: 6),
-            Text(
+            const SizedBox(height: 6),
+            const Text(
               '1. Open OneNote for Windows (the desktop app — the Store and '
               'web versions cannot export).\n'
               '2. Make sure the notebook has finished syncing, so everything '
@@ -259,7 +259,7 @@ class _OnboardingState extends State<_Onboarding> {
               '4. Come back here and choose that file.',
               style: TextStyle(fontSize: 12, height: 1.55),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             Text(
               'On a Mac, or with only the Store version: export one section at '
               'a time as .one, or ask a Windows machine to make the .onepkg. '

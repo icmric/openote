@@ -23,8 +23,8 @@ void main() {
     test('snaps a near-miss left edge flush', () {
       // 3px off is exactly the case that makes a page look sloppy: close
       // enough to look intentional, wrong enough to look careless.
-      final moving = const Rect.fromLTWH(103, 200, 100, 50);
-      final other = const Rect.fromLTWH(100, 20, 100, 50);
+      const moving = Rect.fromLTWH(103, 200, 100, 50);
+      const other = Rect.fromLTWH(100, 20, 100, 50);
       final r = findAlignment(moving, [other], threshold: 6);
       expect(r.snapped, isTrue);
       expect(r.offset.dx, -3);
@@ -32,32 +32,32 @@ void main() {
     });
 
     test('ignores edges outside the threshold', () {
-      final moving = const Rect.fromLTWH(140, 200, 100, 50);
-      final other = const Rect.fromLTWH(100, 20, 100, 50);
+      const moving = Rect.fromLTWH(140, 200, 100, 50);
+      const other = Rect.fromLTWH(100, 20, 100, 50);
       expect(findAlignment(moving, [other], threshold: 6).snapped, isFalse);
     });
 
     test('aligns centres, not just edges', () {
       // Centre alignment reads as deliberate; without it, centred layouts
       // never snap.
-      final moving = const Rect.fromLTWH(148, 300, 100, 50); // centre 198
-      final other = const Rect.fromLTWH(100, 20, 200, 50); // centre 200
+      const moving = Rect.fromLTWH(148, 300, 100, 50); // centre 198
+      const other = Rect.fromLTWH(100, 20, 200, 50); // centre 200
       final r = findAlignment(moving, [other], threshold: 6);
       expect(r.offset.dx, 2);
     });
 
     test('snaps both axes at once', () {
-      final moving = const Rect.fromLTWH(102, 23, 100, 50);
-      final other = const Rect.fromLTWH(100, 20, 100, 50);
+      const moving = Rect.fromLTWH(102, 23, 100, 50);
+      const other = Rect.fromLTWH(100, 20, 100, 50);
       final r = findAlignment(moving, [other], threshold: 6);
       expect(r.offset.dx, -2);
       expect(r.offset.dy, -3);
     });
 
     test('prefers the nearest candidate when several are in range', () {
-      final moving = const Rect.fromLTWH(101, 300, 100, 50);
-      final near = const Rect.fromLTWH(100, 20, 100, 50); // 1px away
-      final far = const Rect.fromLTWH(104, 20, 100, 50); // 3px away
+      const moving = Rect.fromLTWH(101, 300, 100, 50);
+      const near = Rect.fromLTWH(100, 20, 100, 50); // 1px away
+      const far = Rect.fromLTWH(104, 20, 100, 50); // 3px away
       final r = findAlignment(moving, [far, near], threshold: 6);
       expect(r.offset.dx, -1);
     });
@@ -65,7 +65,7 @@ void main() {
     test('does not draw the same guide twice for shared edges', () {
       // A column of left-aligned blocks shares one edge; drawing it once per
       // neighbour just makes the line thicker.
-      final moving = const Rect.fromLTWH(101, 400, 100, 50);
+      const moving = Rect.fromLTWH(101, 400, 100, 50);
       final others = [
         const Rect.fromLTWH(100, 0, 100, 50),
         const Rect.fromLTWH(100, 60, 100, 50),
@@ -78,8 +78,8 @@ void main() {
     });
 
     test('a guide spans both blocks so it shows what it aligns to', () {
-      final moving = const Rect.fromLTWH(100, 400, 100, 50);
-      final other = const Rect.fromLTWH(100, 0, 100, 50);
+      const moving = Rect.fromLTWH(100, 400, 100, 50);
+      const other = Rect.fromLTWH(100, 0, 100, 50);
       final g = findAlignment(moving, [other], threshold: 6)
           .guides
           .firstWhere((g) => g.vertical);
