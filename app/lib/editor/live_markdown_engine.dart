@@ -254,6 +254,12 @@ class _LiveMarkdownSession extends OnoteEditSession {
             // The block's own inset already provides the breathing room.
             contentPadding: EdgeInsets.zero,
             border: InputBorder.none,
+            // The rest of the borderless set, because the themed
+            // InputDecorationTheme's enabledBorder would otherwise win over
+            // this one and put an outline round every text block.
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            filled: false,
             hintText: s.hintText,
             hintStyle:
                 const TextStyle(color: OnoteColors.graphite400, fontSize: 13),

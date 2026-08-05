@@ -1,6 +1,13 @@
 # Technology & Framework Evaluation
 
-> **Document status:** Draft v0.2 · Planning phase · Last updated 2026-07-22
+> **Document status:** v1.0 · **Decision made and validated in code** · Last updated 2026-07-22, reviewed 2026-08-05
+> The Flutter + Rust choice (ADR-0001) has now been exercised on the hard cases
+> this evaluation worried about — rich text on a zoomable canvas, ink latency,
+> a reverse-engineered binary importer in Rust over FFI — and held. The one
+> prediction that came true as written: "cross-platform frameworks give you
+> consistency but you must build the design system yourself." Flutter's stock
+> Material is *mobile* Material; leaving it unthemed is what the 2026-08 UI
+> review found. See [v0.6](planning/v0.6-ui-revamp.md).
 > **Purpose:** A balanced, evidence-based evaluation of cross-platform application frameworks and enabling technologies for Openote — the trade-off map behind the decision.
 > **Related:** [PRD](02-product-requirements.md) · [Architecture Overview](04-architecture-overview.md) · [ADR-0001](adr/ADR-0001-application-framework.md)
 > **Decision status:** **DECIDED (provisional) — Flutter/Dart UI with a Rust core**, ratified in [ADR-0001](adr/ADR-0001-application-framework.md). v0.1 of this document was deliberately balanced and left the call open, hinging on whether near-native ink latency was a hard requirement. The stakeholder has since clarified priorities — **startup speed, cross-platform consistency, and feature richness rank above pen latency; a slight ink delay is acceptable** — which resolves the central tension (§1) decisively. The v0.1 analysis is preserved below with §6–§9 revised to reflect the decision and the concrete stack that follows from it.

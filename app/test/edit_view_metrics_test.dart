@@ -14,6 +14,7 @@ import 'package:openote/editor/text_block_view.dart';
 import 'package:openote/markdown/md_render.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/theme/onote_theme.dart';
+import 'package:openote/theme/tokens.dart';
 
 /// The exact TextField shape _LiveMarkdownSession.build produces, minus focus
 /// and spell-check (neither affects geometry). The strut and contentPadding
@@ -26,11 +27,13 @@ Widget editField(String text, TextStyle style) => TextField(
       style: style,
       strutStyle: StrutStyle.fromTextStyle(style, forceStrutHeight: false),
       inputFormatters: [WrapSelectionFormatter()],
-      decoration: const InputDecoration(
-        isDense: true,
-        contentPadding: EdgeInsets.zero,
-        border: InputBorder.none,
-      ),
+      // The SHARED token, not a hand-copy: this decoration and the engine's
+      // must be the same object or this test measures something the app does
+      // not render. `OnoteInput.bare` turns every border off in every state,
+      // which matters because the themed `InputDecorationTheme.enabledBorder`
+      // overrides a decoration's own `border` — the exact 8px regression this
+      // test caught when inputs were first themed.
+      decoration: OnoteInput.bare,
     );
 
 Widget readView(String text, TextStyle style) =>

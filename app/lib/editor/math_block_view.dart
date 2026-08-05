@@ -6,6 +6,7 @@ import '../math/linear_math.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import '../theme/tokens.dart';
 
 /// Math block: linear/LaTeX entry while editing, rendered 2-D notation
 /// otherwise. Commit runs on the editing→not state transition (F-3 fix) so
@@ -132,9 +133,7 @@ class _MathBlockViewState extends State<MathBlockView> {
               focusNode: _focus,
               maxLines: null,
               style: const TextStyle(fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, fontSize: 14),
-              decoration: const InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
+              decoration: OnoteInput.bare.copyWith(
                 hintText: r'Linear math… e.g. \sum_(n=1)^oo 1/n^2',
               ),
               onChanged: (v) {
