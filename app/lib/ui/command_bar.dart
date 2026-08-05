@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -12,11 +11,14 @@ import '../export/pdf_import.dart';
 import '../export/print_page.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
+import '../planner/agenda.dart';
 import '../state/app_state.dart';
 import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'color_picker.dart';
+import 'command_button.dart';
 import 'font_picker.dart';
+import '../theme/tokens.dart';
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
 /// View. OneNote's few-clicks accessibility in Openote's calm language — a
@@ -51,7 +53,13 @@ class _CommandBarState extends State<CommandBar> {
             height: 32,
             child: Row(
               children: [
-                const SizedBox(width: 6),
+                // **No leading gutter.** A fixed chrome region runs to the edge
+                // of the region it owns (§7d); the first control's own padding
+                // is the optical margin. An extra 6px here made the toolbar
+                // look inset from the window — a floating strip rather than
+                // part of the frame — and cost hit area at the screen edge,
+                // which is the one place a pointer can be thrown at infinitely
+                // fast (Fitts's law) and always land.
                 for (var i = 0; i < _tabs.length; i++)
                   InkWell(
                     borderRadius: BorderRadius.circular(6),
@@ -71,7 +79,7 @@ class _CommandBarState extends State<CommandBar> {
                       child: Text(
                         _tabs[i],
                         style: TextStyle(
-                          fontSize: 12.5,
+                          fontSize: 13,
                           fontWeight:
                               _tab == i ? FontWeight.w600 : FontWeight.w400,
                           color: _tab == i ? scheme.primary : null,
@@ -98,7 +106,7 @@ class _CommandBarState extends State<CommandBar> {
                         Padding(
                           padding: const EdgeInsets.only(right: 4),
                           child: ActionChip(
-                            avatar: Icon(_toolIcon(app.tool), size: 14),
+                            avatar: Icon(_toolIcon(app.tool), size: 16),
                             label: const Text('Done',
                                 style: TextStyle(fontSize: 11)),
                             visualDensity: VisualDensity.compact,
@@ -108,29 +116,34 @@ class _CommandBarState extends State<CommandBar> {
                       // Study: the due count is the whole nudge, so it's on the
                       // badge rather than hidden behind the panel.
                       _StudyButton(app: app),
+                      // The planner sits beside Study rather than in a menu:
+                      // it is the other half of the same daily question, and
+                      // the whole complaint it answers was that dates were
+                      // reachable only from places you had to already be in.
+                      _PlannerButton(app: app),
                       IconButton(
-                        icon: const Icon(Icons.label_outline, size: 17),
+                        icon: const Icon(Icons.label_outline, size: 18),
                         tooltip: 'Find tags',
                         isSelected: app.showTagsPanel,
                         visualDensity: VisualDensity.compact,
                         onPressed: app.toggleTagsPanel,
                       ),
                       IconButton(
-                        icon: const Icon(Icons.toc, size: 17),
+                        icon: const Icon(Icons.toc, size: 18),
                         tooltip: 'Page outline',
                         isSelected: app.showTocPanel,
                         visualDensity: VisualDensity.compact,
                         onPressed: app.toggleTocPanel,
                       ),
                       IconButton(
-                        icon: const Icon(Icons.account_tree_outlined, size: 17),
+                        icon: const Icon(Icons.account_tree_outlined, size: 18),
                         tooltip: 'Links & backlinks',
                         isSelected: app.showLinksPanel,
                         visualDensity: VisualDensity.compact,
                         onPressed: app.toggleLinksPanel,
                       ),
                       IconButton(
-                        icon: const Icon(Icons.search, size: 17),
+                        icon: const Icon(Icons.search, size: 18),
                         tooltip: 'Find on page  (Ctrl+F)',
                         isSelected: app.findOpen,
                         visualDensity: VisualDensity.compact,
@@ -138,7 +151,7 @@ class _CommandBarState extends State<CommandBar> {
                       ),
                       MenuAnchor(
                         builder: (context, controller, _) => IconButton(
-                          icon: const Icon(Icons.ios_share_outlined, size: 17),
+                          icon: const Icon(Icons.ios_share_outlined, size: 18),
                           tooltip: 'Export page…',
                           visualDensity: VisualDensity.compact,
                           onPressed: () => controller.isOpen
@@ -205,7 +218,6 @@ class _CommandBarState extends State<CommandBar> {
                     ]),
                   ),
                 ),
-                const SizedBox(width: 6),
               ],
             ),
           ),
@@ -214,7 +226,9 @@ class _CommandBarState extends State<CommandBar> {
           // instead of throwing a RenderFlex overflow (style guide §7).
           Container(
             height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            // Flush left for the same reason as the tab row above it, so the
+            // two rows share an edge instead of being inset by different
+            // amounts. `IconButton` brings its own 8px, which is the margin.
             alignment: Alignment.centerLeft,
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -277,6 +291,19 @@ class _CommandBarState extends State<CommandBar> {
         onPressed: app.canRedo ? app.redo : null,
       ),
       const _Div(),
+      // **The row never changes shape.** An earlier revision collapsed the
+      // formatting commands to three group heads when nothing was focused, on
+      // the reasoning that a wall of greyed glyphs reads as broken. That traded
+      // one problem for a worse one: clicking into a text box made ~15 buttons
+      // appear and shoved everything to their right across the toolbar, so the
+      // control you were reaching for moved out from under the pointer at the
+      // exact moment you started using the app. Layout that moves while you aim
+      // at it is a harder failure than layout that looks quiet.
+      //
+      // So: "disabled ≠ hidden" (§7a.2) applies without exception here. Every
+      // command holds its position always; the ones that need a caret are
+      // greyed, and the hint at the end of the row — which only ever appears
+      // AFTER the last control, so it displaces nothing — says why.
       fmt(Icons.format_bold, 'Bold  (Ctrl+B)', () => app.wrapSelection('**')),
       fmt(Icons.format_italic, 'Italic  (Ctrl+I)',
           () => app.wrapSelection('*')),
@@ -316,12 +343,12 @@ class _CommandBarState extends State<CommandBar> {
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.format_color_text,
-                  size: 17, color: canFormat ? null : OnoteColors.graphite400),
+                  size: 18, color: canFormat ? null : context.surfaces.textSecondary),
               Container(
                   width: 18,
                   height: 3,
                   margin: const EdgeInsets.only(top: 1),
-                  color: canFormat ? curColor : OnoteColors.graphite400),
+                  color: canFormat ? curColor : context.surfaces.textSecondary),
             ]),
           ),
         ),
@@ -336,7 +363,7 @@ class _CommandBarState extends State<CommandBar> {
               }
             : null,
         child: Icon(Icons.arrow_drop_down,
-            size: 18, color: canFormat ? null : OnoteColors.graphite400),
+            size: 18, color: canFormat ? null : context.surfaces.textSecondary),
       ),
       // Font — opens the searchable system-font picker.
       IconButton(
@@ -358,7 +385,7 @@ class _CommandBarState extends State<CommandBar> {
       if (!canFormat) ...[
         const SizedBox(width: 10),
         Text('Click into a text box to format',
-            style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
       ],
     ]);
   }
@@ -368,11 +395,7 @@ class _CommandBarState extends State<CommandBar> {
   Widget _insertRow(BuildContext context) {
     Widget ins(IconData icon, String label, VoidCallback fn) => Padding(
           padding: const EdgeInsets.only(right: 4),
-          child: TextButton.icon(
-            icon: Icon(icon, size: 16),
-            label: Text(label, style: const TextStyle(fontSize: 12)),
-            onPressed: fn,
-          ),
+          child: CommandButton(icon: icon, label: label, onPressed: fn),
         );
     return Row(children: [
       ins(Icons.text_fields, 'Text box', _insertText),
@@ -492,13 +515,13 @@ class _CommandBarState extends State<CommandBar> {
             app.eraserMode == EraserMode.area
                 ? 'Splits strokes where you rub'
                 : 'Removes any stroke you touch',
-            style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
       ] else if (app.tool == Tool.lasso)
         Text('Draw a loop around ink to select it — then drag or delete',
-            style: TextStyle(fontSize: 11, color: OnoteColors.graphite400))
+            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary))
       else
         Text('Pick the pen or highlighter to draw',
-            style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
       // NO `Spacer` here, and none in any command row. Every row is built
       // inside a horizontal `SingleChildScrollView`, which offers unbounded
       // width — and a flex child (`Spacer` is `Expanded`) under an unbounded
@@ -517,7 +540,7 @@ class _CommandBarState extends State<CommandBar> {
             'Two fingers always pan and zoom.',
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.touch_app_outlined,
-              size: 16, color: OnoteColors.graphite400),
+              size: 16, color: context.surfaces.textSecondary),
           const SizedBox(width: 4),
           DropdownButtonHideUnderline(
             child: DropdownButton<TouchDrawing>(
@@ -760,7 +783,7 @@ class _CommandBarState extends State<CommandBar> {
             SimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, p.id),
               child: Row(children: [
-                const Icon(Icons.description_outlined, size: 15),
+                const Icon(Icons.description_outlined, size: 16),
                 const SizedBox(width: 8),
                 Flexible(child: Text(p.title, overflow: TextOverflow.ellipsis)),
               ]),
@@ -781,6 +804,12 @@ class _CommandBarState extends State<CommandBar> {
   }
 }
 
+/// `H2` / `H3` on the Home row.
+///
+/// Thin wrapper over [CommandTextButton] so the call sites keep their
+/// positional shorthand; the colours and metrics come from the shared control,
+/// which is what stops the two heading buttons rendering in the accent while
+/// the bold/italic icons beside them render in ink.
 class _TextBtn extends StatelessWidget {
   const _TextBtn(this.label, this.enabled, this.onTap);
   final String label;
@@ -788,13 +817,9 @@ class _TextBtn extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => TextButton(
+  Widget build(BuildContext context) => CommandTextButton(
+        label: label,
         onPressed: enabled ? onTap : null,
-        style: TextButton.styleFrom(
-            minimumSize: const Size(30, 32),
-            padding: const EdgeInsets.symmetric(horizontal: 6)),
-        child: Text(label,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
       );
 }
 
@@ -868,9 +893,9 @@ class _FontSizeField extends StatelessWidget {
               Text(label,
                   style: TextStyle(
                       fontSize: 12,
-                      color: enabled ? null : OnoteColors.graphite400)),
+                      color: enabled ? null : context.surfaces.textSecondary)),
               Icon(Icons.arrow_drop_down,
-                  size: 16, color: enabled ? null : OnoteColors.graphite400),
+                  size: 16, color: enabled ? null : context.surfaces.textSecondary),
             ]),
           ),
         ),
@@ -918,14 +943,14 @@ class _TagButton extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               Icon(active.isEmpty ? Icons.label_outline : active.first.icon,
-                  size: 17,
+                  size: 18,
                   color: !enabled
-                      ? OnoteColors.graphite400
+                      ? context.surfaces.textSecondary
                       : active.isEmpty
                           ? null
                           : active.first.color),
               Icon(Icons.arrow_drop_down,
-                  size: 16, color: enabled ? null : OnoteColors.graphite400),
+                  size: 16, color: enabled ? null : context.surfaces.textSecondary),
             ]),
           ),
         ),
@@ -935,13 +960,85 @@ class _TagButton extends StatelessWidget {
           MenuItemButton(
             leadingIcon: Icon(k.icon, size: 16, color: k.color),
             trailingIcon: active.contains(k)
-                ? Icon(Icons.check, size: 15, color: scheme.primary)
+                ? Icon(Icons.check, size: 16, color: scheme.primary)
                 : null,
             onPressed: () => app.toggleTagOnSelection(k),
             child: Text(k.label),
           ),
+        // Dating a tag belongs here, beside applying one — a deadline you could
+        // only set from a separate panel would be a feature most people never
+        // found, and the line you want to date is the line you are on.
+        if (active.isNotEmpty) ...[
+          const Divider(height: 1),
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.event_outlined, size: 16),
+            onPressed: () => _setDue(context),
+            child: Text(_dueOfCaret() == null ? 'Due date…' : 'Change due date…'),
+          ),
+          if (_dueOfCaret() != null)
+            MenuItemButton(
+              leadingIcon: const Icon(Icons.event_busy_outlined, size: 16),
+              onPressed: _clearDue,
+              child: const Text('Clear the due date'),
+            ),
+        ],
       ],
     );
+  }
+
+  /// The dated tag on the caret's line, if any. One date per line rather than
+  /// one per tag: a line tagged both To Do and Important has one deadline, and
+  /// asking which of the two icons owns it is a question nobody wants.
+  NoteTag? _dueOfCaret() {
+    final b = app.caretBlock();
+    if (b == null) return null;
+    final line = app.caretLineIndex();
+    for (final t in NoteTag.listFrom(b.content)) {
+      if (t.line == line && t.due != null) return t;
+    }
+    return null;
+  }
+
+  Future<void> _setDue(BuildContext context) async {
+    final b = app.caretBlock();
+    if (b == null) return;
+    final line = app.caretLineIndex();
+    final tags = [
+      for (final t in NoteTag.listFrom(b.content))
+        if (t.line == line) t
+    ];
+    if (tags.isEmpty) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final existing = _dueOfCaret()?.dueDate;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: existing != null && !existing.isBefore(today)
+          ? existing
+          : DateTime(today.year, today.month, today.day + 7),
+      firstDate: DateTime(today.year, today.month, today.day - 365),
+      lastDate: DateTime(today.year + 5, today.month, today.day),
+      helpText: 'Due date',
+      confirmText: 'Set',
+    );
+    if (picked == null) return;
+    // Onto the first tag on the line, and any other dated tag there is cleared,
+    // so the line keeps exactly one deadline however it was tagged.
+    app.setTagDue(b.id, line, tags.first.kind, picked);
+    for (final t in tags.skip(1)) {
+      if (t.due != null) app.setTagDue(b.id, line, t.kind, null);
+    }
+  }
+
+  void _clearDue() {
+    final b = app.caretBlock();
+    if (b == null) return;
+    final line = app.caretLineIndex();
+    for (final t in NoteTag.listFrom(b.content)) {
+      if (t.line == line && t.due != null) {
+        app.setTagDue(b.id, line, t.kind, null);
+      }
+    }
   }
 }
 
@@ -979,7 +1076,7 @@ class _MakeCardButton extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
                 child: Icon(Icons.style_outlined,
-                    size: 17, color: enabled ? null : OnoteColors.graphite400),
+                    size: 18, color: enabled ? null : context.surfaces.textSecondary),
               ),
             ),
           ),
@@ -990,7 +1087,7 @@ class _MakeCardButton extends StatelessWidget {
                     controller.isOpen ? controller.close() : controller.open()
                 : null,
             child: Icon(Icons.arrow_drop_down,
-                size: 16, color: enabled ? null : OnoteColors.graphite400),
+                size: 16, color: enabled ? null : context.surfaces.textSecondary),
           ),
         ],
       ),
@@ -1067,7 +1164,7 @@ class _StudyButton extends StatelessWidget {
               '$countdown',
       child: Stack(clipBehavior: Clip.none, children: [
         IconButton(
-          icon: const Icon(Icons.school_outlined, size: 17),
+          icon: const Icon(Icons.school_outlined, size: 18),
           isSelected: app.showStudyPanel,
           visualDensity: VisualDensity.compact,
           onPressed: app.toggleStudyPanel,
@@ -1090,10 +1187,85 @@ class _StudyButton extends StatelessWidget {
                 ),
                 child: Text('$due',
                     style: TextStyle(
-                        fontSize: 9,
+                        fontSize: 11,
                         height: 1.2,
                         fontWeight: FontWeight.w700,
                         color: urgent
+                            ? Colors.white
+                            : Theme.of(context).colorScheme.onPrimary)),
+              ),
+            ),
+          ),
+      ]),
+    );
+  }
+}
+
+/// Opens the planner, and says what is on today without opening it.
+///
+/// The badge counts **today's and overdue** rows, not everything dated. A
+/// number that included next month's exam would be permanently non-zero, and a
+/// badge that is always lit stops being read — the same reasoning that keeps
+/// the study badge on cards *due* rather than on the whole deck.
+class _PlannerButton extends StatelessWidget {
+  const _PlannerButton({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final sections = app.planner.sections(now: now);
+    var count = 0;
+    var overdue = false;
+    for (final s in sections) {
+      if (s.bucket == AgendaBucket.overdue) {
+        overdue = true;
+        count += s.items.length;
+      } else if (s.bucket == AgendaBucket.today) {
+        count += s.items.length;
+      }
+    }
+    final alerts = app.planner.pendingAlerts.length;
+    return Tooltip(
+      message: alerts > 0
+          ? '$alerts reminder${alerts == 1 ? '' : 's'} waiting'
+          : count == 0
+              ? 'Planner — every date you have, in one place'
+              : overdue
+                  ? 'Planner — $count today or overdue'
+                  : 'Planner — $count today',
+      child: Stack(clipBehavior: Clip.none, children: [
+        IconButton(
+          icon: const Icon(Icons.event_note_outlined, size: 18),
+          isSelected: app.showPlannerPanel,
+          visualDensity: VisualDensity.compact,
+          onPressed: app.togglePlannerPanel,
+        ),
+        if (count > 0 || alerts > 0)
+          Positioned(
+            right: 2,
+            top: 2,
+            child: IgnorePointer(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  // Red only for something already late; a waiting reminder is
+                  // brass, and an ordinary "3 today" is the primary accent.
+                  // Colour never carries this alone (style guide §3.5) — the
+                  // tooltip says which it is.
+                  color: overdue
+                      ? OnoteColors.danger
+                      : alerts > 0
+                          ? OnoteColors.brass500
+                          : Theme.of(context).colorScheme.primary,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text('${alerts > 0 ? alerts : count}',
+                    style: TextStyle(
+                        fontSize: 11,
+                        height: 1.2,
+                        fontWeight: FontWeight.w700,
+                        color: overdue || alerts > 0
                             ? Colors.white
                             : Theme.of(context).colorScheme.onPrimary)),
               ),
@@ -1120,9 +1292,9 @@ class _PdfImportButton extends StatelessWidget {
       builder: (context, controller, _) => Padding(
         padding: const EdgeInsets.only(right: 4),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          TextButton.icon(
-            icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
-            label: const Text('PDF slides', style: TextStyle(fontSize: 12)),
+          CommandButton(
+            icon: Icons.picture_as_pdf_outlined,
+            label: 'PDF slides',
             onPressed: () {
               // Close the menu if it is open: otherwise the file picker opens
               // behind a menu that is still sitting on top of it.

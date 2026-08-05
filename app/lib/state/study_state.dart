@@ -98,6 +98,25 @@ class StudyState extends ChangeNotifier {
   /// timezone shifts between setting it and reading it back.
   final Map<String, String> _examDates = {};
 
+  /// Optional clock time per section, same key → `'HH:mm'` (24-hour).
+  ///
+  /// **A separate map, not a richer value in [_examDates].** Two reasons, and
+  /// the second is the load-bearing one:
+  ///
+  /// 1. Every existing setting file already holds `'yyyy-mm-dd'` strings, and a
+  ///    separate key means old data keeps loading with no migration and no
+  ///    "what if this one is the new shape" branch in [load].
+  /// 2. **The date and the time are used for different things.** The countdown,
+  ///    the revision plan and the day bucketing are all *day* arithmetic and
+  ///    must stay that way — an exam at 09:00 is not "today" for eight hours
+  ///    fewer than an exam at 17:00. The time is presentation and alerting
+  ///    only. Keeping it in its own map makes it structurally impossible for a
+  ///    caller to accidentally do day maths on an instant.
+  ///
+  /// An entry here without a matching [_examDates] entry is meaningless and is
+  /// dropped on load.
+  final Map<String, String> _examTimes = {};
+
   /// Closed-page cards, keyed by scope.
   ///
   /// **This cache is not an optimisation, it is a correctness-of-experience
@@ -140,7 +159,13 @@ class StudyState extends ChangeNotifier {
   /// deck rebuilds — once per edit, not once per widget rebuild.
   int _contentRevision = 0;
 
-  /// Bumped whenever a card's schedule changes, so study surfaces refresh.
+  /// Bumped whenever anything this object owns changes — a card's schedule, an
+  /// exam date — so surfaces built on it can key a cache off it.
+  ///
+  /// Exam dates count, and that is not cosmetic: the planner's agenda is cached
+  /// on this counter, so a `setExamDate` that only notified would repaint a
+  /// panel that then rebuilt the *same cached agenda* and showed no date at
+  /// all.
   int studyRevision = 0;
 
   /// The open page was edited.
@@ -170,6 +195,28 @@ class StudyState extends ChangeNotifier {
         if (v is String && parseDayKey(v) != null) _examDates['$k'] = v;
       });
     }
+    final et = _read('examTimes');
+    if (et is Map) {
+      et.forEach((k, v) {
+        // Only for a section that actually has a date — a stray time would
+        // otherwise sit in the file for ever with nothing to attach to.
+        if (v is String && _parseClock(v) != null && _examDates.containsKey('$k')) {
+          _examTimes['$k'] = v;
+        }
+      });
+    }
+  }
+
+  /// `'HH:mm'` → minutes past midnight, or null if it is not that.
+  static int? _parseClock(String s) {
+    final parts = s.split(':');
+    if (parts.length != 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) {
+      return null;
+    }
+    return h * 60 + m;
   }
 
   // ── The deck ──────────────────────────────────────────────────────────
@@ -441,18 +488,71 @@ class StudyState extends ChangeNotifier {
     return s == null ? null : parseDayKey(s);
   }
 
+  /// The time of day set for a section's exam, if any, as minutes past
+  /// midnight. Null means the exam is a day with no stated hour.
+  int? examMinuteOfDay(String? sectionId) {
+    if (sectionId == null || _doc.notebookId == null) return null;
+    final s = _examTimes[_examKey(sectionId)];
+    return s == null ? null : _parseClock(s);
+  }
+
+  /// The exam as a moment, when a time is set — otherwise the same as
+  /// [examDate] (local midnight).
+  ///
+  /// Callers that are *displaying* the exam want this. Callers doing day
+  /// arithmetic — the countdown, the revision plan, the agenda bucket — want
+  /// [examDate], and the two are deliberately different methods so that choice
+  /// is made rather than inherited.
+  DateTime? examAt(String? sectionId) {
+    final day = examDate(sectionId);
+    if (day == null) return null;
+    final mins = examMinuteOfDay(sectionId);
+    if (mins == null) return day;
+    return DateTime(day.year, day.month, day.day, mins ~/ 60, mins % 60);
+  }
+
   /// Set or (with null) clear a section's exam day.
+  ///
+  /// **Clearing the date clears the time too.** A time with no date is not a
+  /// state the model has a meaning for, and leaving one behind would make
+  /// "clear it and set it again" silently restore an hour the user had not
+  /// re-chosen.
   void setExamDate(String sectionId, DateTime? date) {
     if (_doc.notebookId == null) return;
     final key = _examKey(sectionId);
     if (date == null) {
-      if (_examDates.remove(key) == null) return;
+      final hadTime = _examTimes.remove(key) != null;
+      if (_examDates.remove(key) == null && !hadTime) return;
+      if (hadTime) _write('examTimes', _examTimes);
     } else {
       final v = dayKey(date);
       if (_examDates[key] == v) return;
       _examDates[key] = v;
     }
     _write('examDates', _examDates);
+    studyRevision++;
+    notifyListeners();
+  }
+
+  /// Set or (with null) clear the clock time on a section's exam.
+  ///
+  /// A no-op when that section has no exam date: the time is an attribute of
+  /// the date, not a thing in its own right.
+  void setExamTime(String sectionId, int? minuteOfDay) {
+    if (_doc.notebookId == null) return;
+    final key = _examKey(sectionId);
+    if (!_examDates.containsKey(key)) return;
+    if (minuteOfDay == null) {
+      if (_examTimes.remove(key) == null) return;
+    } else {
+      final m = minuteOfDay.clamp(0, 24 * 60 - 1);
+      final v = '${(m ~/ 60).toString().padLeft(2, '0')}:'
+          '${(m % 60).toString().padLeft(2, '0')}';
+      if (_examTimes[key] == v) return;
+      _examTimes[key] = v;
+    }
+    _write('examTimes', _examTimes);
+    studyRevision++;
     notifyListeners();
   }
 

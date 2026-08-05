@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import '../theme/tokens.dart';
 
 /// Full colour picker per Style Guide §7a.3: preset palette grid →
 /// recent/custom row → custom area (hue slider + saturation/value field +
@@ -129,10 +130,10 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
                 const SizedBox(height: 4),
                 Text('RECENT',
                     style: TextStyle(
-                        fontSize: 10,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
                         letterSpacing: .6,
-                        color: OnoteColors.graphite400)),
+                        color: context.surfaces.textSecondary)),
                 const SizedBox(height: 4),
                 Wrap(spacing: 5, children: [
                   for (final hex in widget.app.customColors)

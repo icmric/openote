@@ -29,3 +29,8 @@ build/
 ios/
 android/
 web/
+
+# UI screenshot harness output (test/ui_screenshots_test.dart). Review
+# artifacts, not goldens: font rasterisation differs per machine, so committing
+# them would fail the comparison everywhere except the machine that made them.
+test/goldens/

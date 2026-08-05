@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import '../theme/tokens.dart';
 
 /// Table block (MEDIA-3). content: { cells: [[String,…],…] }.
 /// In edit mode each cell is a field with spreadsheet-style navigation:
@@ -249,10 +250,8 @@ class _TableBlockViewState extends State<TableBlockView> {
               focusNode: _nodes[r][c],
               style: style,
               maxLines: null,
-              decoration: const InputDecoration(
-                  isDense: true,
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 6)),
+              decoration: OnoteInput.bare.copyWith(
+                  contentPadding: const EdgeInsets.symmetric(vertical: 6)),
               onChanged: (v) {
                 final cur = _cells;
                 cur[r][c] = v;

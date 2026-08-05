@@ -14,7 +14,6 @@
 library;
 
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -27,6 +26,8 @@ import '../study/flashcards.dart';
 import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'exam_date.dart';
+import 'side_panel.dart';
+import '../theme/tokens.dart';
 
 /// Which pages a session draws from. Pages ARE the deck structure — a lecture
 /// page is a deck without anyone having to build one — so this is a view over
@@ -213,49 +214,33 @@ class _StudyPanelState extends State<StudyPanel> {
     final session = _session;
     final inSession = session != null && _index < session.length;
 
-    return Container(
-      width: 300,
-      color: dark ? OnoteColors.night0 : OnoteColors.paper50,
+    return SidePanel(
+      title: SidePanelKind.study.label,
+      icon: Icons.school_outlined,
+      onClose: app.closePanel,
+      actions: _actions(inSession),
       child: Focus(
         focusNode: _keys,
         onKeyEvent: _onKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _header(inSession),
-            Expanded(
-              child: inSession
-                  ? _card(session[_index], dark)
-                  : session != null
-                      ? _summary(dark)
-                      : _overview(stats, dark),
-            ),
-          ],
-        ),
+        child: inSession
+            ? _card(session[_index], dark)
+            : session != null
+                ? _summary(dark)
+                : _overview(stats, dark),
       ),
     );
   }
 
-  Widget _header(bool inSession) => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 4, 2),
-        child: Row(children: [
-          const Icon(Icons.school_outlined,
-              size: 14, color: OnoteColors.graphite400),
-          const SizedBox(width: 6),
-          const Text('STUDY',
-              style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: .6,
-                  color: OnoteColors.graphite400)),
-          const Spacer(),
+  /// Header actions. The panel supplies the title, icon and close button
+  /// (style guide §7c); this is only what is specific to studying.
+  List<Widget> _actions(bool inSession) => [
           if (inSession)
             TextButton(
               onPressed: _end,
               style: TextButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 8)),
-              child: const Text('End', style: TextStyle(fontSize: 11.5)),
+              child: const Text('End', style: TextStyle(fontSize: 12)),
             )
           else
             PopupMenuButton<String>(
@@ -288,35 +273,28 @@ class _StudyPanelState extends State<StudyPanel> {
                       value: 'export',
                       height: 36,
                       child: Text('Export to Anki…',
-                          style: TextStyle(fontSize: 12.5))),
+                          style: TextStyle(fontSize: 13))),
                   if (app.activeSectionId != null)
                     PopupMenuItem(
                         value: 'exam',
                         height: 36,
                         child: Text(hasExam ? 'Change exam date…' : 'Set exam date…',
-                            style: const TextStyle(fontSize: 12.5))),
+                            style: const TextStyle(fontSize: 13))),
                   if (hasExam)
                     const PopupMenuItem(
                         value: 'examclear',
                         height: 36,
                         child: Text('Remove exam date',
-                            style: TextStyle(fontSize: 12.5))),
+                            style: TextStyle(fontSize: 13))),
                   const PopupMenuItem(
                       value: 'reset',
                       height: 36,
                       child: Text('Forget schedule…',
-                          style: TextStyle(fontSize: 12.5))),
+                          style: TextStyle(fontSize: 13))),
                 ];
               },
             ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 15),
-            visualDensity: VisualDensity.compact,
-            tooltip: 'Close study',
-            onPressed: app.toggleStudyPanel,
-          ),
-        ]),
-      );
+      ];
 
   // ── Overview ──────────────────────────────────────────────────────────
 
@@ -341,17 +319,17 @@ class _StudyPanelState extends State<StudyPanel> {
                     text: '${s.due}',
                     style: const TextStyle(
                         fontSize: 22, fontWeight: FontWeight.w700)),
-                const TextSpan(
+                TextSpan(
                     text: '  due',
                     style: TextStyle(
-                        fontSize: 13, color: OnoteColors.graphite400)),
+                        fontSize: 13, color: context.surfaces.textSecondary)),
               ])),
               const SizedBox(height: 2),
               Text(
                   '${s.total} card${s.total == 1 ? '' : 's'}'
                   '${s.unseen > 0 ? ' · ${s.unseen} new' : ''}',
-                  style: const TextStyle(
-                      fontSize: 11.5, color: OnoteColors.graphite400)),
+                  style: TextStyle(
+                      fontSize: 12, color: context.surfaces.textSecondary)),
               const SizedBox(height: 14),
               if (s.due > 0)
                 FilledButton.icon(
@@ -386,13 +364,13 @@ class _StudyPanelState extends State<StudyPanel> {
                 onPressed: () => _start(StudyMode.cram),
                 icon: const Icon(Icons.refresh, size: 16),
                 label: Text('Practice all ${s.total}',
-                    style: const TextStyle(fontSize: 12.5)),
+                    style: const TextStyle(fontSize: 13)),
               ),
               const SizedBox(height: 4),
-              const Text("Practice doesn't change your schedule.",
+              Text("Practice doesn't change your schedule.",
                   textAlign: TextAlign.center,
                   style:
-                      TextStyle(fontSize: 10.5, color: OnoteColors.graphite400)),
+                      TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
               _progress(s, dark),
             ],
           ],
@@ -452,7 +430,7 @@ class _StudyPanelState extends State<StudyPanel> {
       // the date was wrong or the exam is simply over.
       return _bannerBox(
         dark: dark,
-        tint: OnoteColors.graphite400,
+        tint: context.surfaces.textSecondary,
         icon: Icons.event_available_outlined,
         title: 'Exam ${formatCountdown(plan.daysLeft)}',
         trailing: formatExamDate(plan.date, DateTime.now()),
@@ -514,7 +492,7 @@ class _StudyPanelState extends State<StudyPanel> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(children: [
-                  Icon(icon, size: 13, color: tint),
+                  Icon(icon, size: 16, color: tint),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(title,
@@ -525,17 +503,17 @@ class _StudyPanelState extends State<StudyPanel> {
                   const SizedBox(width: 6),
                   Text(trailing,
                       style: TextStyle(
-                          fontSize: 11.5,
+                          fontSize: 12,
                           fontWeight: FontWeight.w700,
                           color: tint)),
                   if (onClear != null)
                     IconButton(
-                      icon: const Icon(Icons.close, size: 12),
+                      icon: const Icon(Icons.close, size: 16),
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(minWidth: 26, minHeight: 22),
                       tooltip: 'Remove exam date',
-                      color: OnoteColors.graphite400,
+                      color: context.surfaces.textSecondary,
                       onPressed: onClear,
                     ),
                 ]),
@@ -543,10 +521,10 @@ class _StudyPanelState extends State<StudyPanel> {
                 Padding(
                   padding: const EdgeInsets.only(right: 4),
                   child: Text(detail,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 11,
                           height: 1.3,
-                          color: OnoteColors.graphite400)),
+                          color: context.surfaces.textSecondary)),
                 ),
               ],
             ),
@@ -577,25 +555,25 @@ class _StudyPanelState extends State<StudyPanel> {
         const Divider(height: 1),
         const SizedBox(height: 12),
         Row(children: [
-          const Expanded(
+          Expanded(
             child: Text('SEEN',
                 style: TextStyle(
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
                     letterSpacing: .6,
-                    color: OnoteColors.graphite400)),
+                    color: context.surfaces.textSecondary)),
           ),
           Text('$seen of ${s.total}',
               style: const TextStyle(
-                  fontSize: 11.5, fontWeight: FontWeight.w600)),
+                  fontSize: 12, fontWeight: FontWeight.w600)),
         ]),
         const SizedBox(height: 6),
         ClipRRect(
-          borderRadius: BorderRadius.circular(2),
+          borderRadius: BorderRadius.circular(4),
           child: LinearProgressIndicator(
             value: s.total == 0 ? 0 : seen / s.total,
             minHeight: 4,
-            backgroundColor: dark ? OnoteColors.night200 : OnoteColors.paper200,
+            backgroundColor: context.surfaces.border,
           ),
         ),
         if (app.study.hasStudyHistory) ...[
@@ -603,13 +581,13 @@ class _StudyPanelState extends State<StudyPanel> {
           Row(children: [
             Icon(
               Icons.local_fire_department,
-              size: 14,
-              color: streak > 0 ? OnoteColors.brass500 : OnoteColors.graphite400,
+              size: 16,
+              color: streak > 0 ? OnoteColors.brass500 : context.surfaces.textSecondary,
             ),
             const SizedBox(width: 6),
             Expanded(
               child: Text(_streakLine(streak, today),
-                  style: const TextStyle(fontSize: 11.5, height: 1.3)),
+                  style: const TextStyle(fontSize: 12, height: 1.3)),
             ),
           ]),
           const SizedBox(height: 8),
@@ -623,9 +601,9 @@ class _StudyPanelState extends State<StudyPanel> {
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
-              icon: const Icon(Icons.event_outlined, size: 14),
+              icon: const Icon(Icons.event_outlined, size: 16),
               label: const Text('Add an exam date',
-                  style: TextStyle(fontSize: 11.5)),
+                  style: TextStyle(fontSize: 12)),
               style: TextButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 6)),
@@ -657,7 +635,7 @@ class _StudyPanelState extends State<StudyPanel> {
   /// from the left.
   Widget _activityStrip(List<int> bars, bool dark) {
     final peak = bars.fold<int>(0, (m, v) => v > m ? v : m);
-    final idle = dark ? OnoteColors.night200 : OnoteColors.paper200;
+    final idle = context.surfaces.border;
     final primary = Theme.of(context).colorScheme.primary;
     return Tooltip(
       message: 'Reviews in the last ${bars.length} days',
@@ -676,7 +654,7 @@ class _StudyPanelState extends State<StudyPanel> {
                         ? idle
                         : primary.withValues(
                             alpha: i == bars.length - 1 ? 1.0 : 0.5),
-                    borderRadius: BorderRadius.circular(1.5),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
               ),
@@ -688,12 +666,12 @@ class _StudyPanelState extends State<StudyPanel> {
   }
 
   Widget _scopePicker() => Row(children: [
-        const Text('Deck',
+        Text('Deck',
             style: TextStyle(
-                fontSize: 10.5,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: .5,
-                color: OnoteColors.graphite400)),
+                color: context.surfaces.textSecondary)),
         const SizedBox(width: 8),
         Expanded(
           child: DropdownButtonHideUnderline(
@@ -701,7 +679,7 @@ class _StudyPanelState extends State<StudyPanel> {
               value: _scope,
               isDense: true,
               isExpanded: true,
-              style: const TextStyle(fontSize: 12.5),
+              style: const TextStyle(fontSize: 13),
               onChanged: (v) => setState(() {
                 _scope = v ?? _scope;
                 _session = null;
@@ -719,7 +697,7 @@ class _StudyPanelState extends State<StudyPanel> {
                       return Text('${s.label}  ·  ${st.due}/${st.total}',
                           style: DefaultTextStyle.of(context)
                               .style
-                              .copyWith(fontSize: 12.5),
+                              .copyWith(fontSize: 13),
                           overflow: TextOverflow.ellipsis);
                     }),
                   ),
@@ -733,7 +711,7 @@ class _StudyPanelState extends State<StudyPanel> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('No cards here yet.',
-              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
           const SizedBox(height: 10),
           _recipe(TagKind.question, 'Ctrl+3',
               'Tag a question. The indented line below it is the answer.'),
@@ -742,11 +720,11 @@ class _StudyPanelState extends State<StudyPanel> {
           _recipe(TagKind.remember, '== ==',
               'Highlight part of a tagged line to blank it out instead.'),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'Cards are a view of your notes, so editing the note edits the '
             'card — there is nothing separate to maintain.',
             style: TextStyle(
-                fontSize: 11.5, height: 1.4, color: OnoteColors.graphite400),
+                fontSize: 12, height: 1.4, color: context.surfaces.textSecondary),
           ),
         ],
       );
@@ -754,17 +732,17 @@ class _StudyPanelState extends State<StudyPanel> {
   Widget _recipe(TagKind kind, String chord, String what) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Icon(kind.icon, size: 14, color: kind.color),
+          Icon(kind.icon, size: 16, color: kind.color),
           const SizedBox(width: 8),
           Expanded(
             child: Text.rich(TextSpan(children: [
               TextSpan(
                   text: '$chord  ',
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontFamily: 'JetBrains Mono',
                       fontFamilyFallback: onoteFontFallback,
-                      fontSize: 10.5,
-                      color: OnoteColors.graphite400)),
+                      fontSize: 11,
+                      color: context.surfaces.textSecondary)),
               TextSpan(text: what),
             ]), style: const TextStyle(fontSize: 12, height: 1.4)),
           ),
@@ -783,7 +761,8 @@ class _StudyPanelState extends State<StudyPanel> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Icon(Icons.task_alt, size: 34, color: OnoteColors.success),
+            const Icon(Icons.task_alt,
+                size: OnoteIcon.xl, color: OnoteColors.success),
             const SizedBox(height: 10),
             Text('Reviewed $done card${done == 1 ? '' : 's'}',
                 textAlign: TextAlign.center,
@@ -800,8 +779,8 @@ class _StudyPanelState extends State<StudyPanel> {
                               '${formatDelay(stats.nextDueAt! - nowMs())}.')
                   : '${_missed.length} need another look.',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                  fontSize: 12, color: OnoteColors.graphite400, height: 1.35),
+              style: TextStyle(
+                  fontSize: 12, color: context.surfaces.textSecondary, height: 1.35),
             ),
             // The payoff. Finishing a sitting is the one moment a student is
             // certain to be looking at this panel, so it is where the streak
@@ -811,7 +790,7 @@ class _StudyPanelState extends State<StudyPanel> {
               const SizedBox(height: 10),
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 const Icon(Icons.local_fire_department,
-                    size: 15, color: OnoteColors.brass500),
+                    size: 16, color: OnoteColors.brass500),
                 const SizedBox(width: 5),
                 Text('${app.study.studyStreakDays()}-day streak · '
                     '${app.study.reviewsToday()} today',
@@ -832,8 +811,8 @@ class _StudyPanelState extends State<StudyPanel> {
                     : '${formatCountdown(p.daysLeft)} until the exam'
                         '${p.unseen > 0 ? ' · ${p.unseen} still unseen' : ''}.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontSize: 11.5, color: OnoteColors.graphite400),
+                style: TextStyle(
+                    fontSize: 12, color: context.surfaces.textSecondary),
               ),
             ],
             const SizedBox(height: 16),
@@ -852,7 +831,7 @@ class _StudyPanelState extends State<StudyPanel> {
             const SizedBox(height: 8),
             OutlinedButton(
                 onPressed: _end,
-                child: const Text('Done', style: TextStyle(fontSize: 12.5))),
+                child: const Text('Done', style: TextStyle(fontSize: 13))),
           ],
         ),
       ),
@@ -871,35 +850,35 @@ class _StudyPanelState extends State<StudyPanel> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(2),
+            borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: total == 0 ? 0 : _index / total,
               minHeight: 3,
               backgroundColor:
-                  dark ? OnoteColors.night200 : OnoteColors.paper200,
+                  context.surfaces.border,
             ),
           ),
           const SizedBox(height: 6),
           Row(children: [
             Text('${_index + 1} of $total',
-                style: const TextStyle(
-                    fontSize: 10.5,
+                style: TextStyle(
+                    fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: OnoteColors.graphite400)),
+                    color: context.surfaces.textSecondary)),
             const SizedBox(width: 6),
             Expanded(
               child: Text('· ${c.pageTitle}',
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 10.5, color: OnoteColors.graphite400)),
+                  style: TextStyle(
+                      fontSize: 11, color: context.surfaces.textSecondary)),
             ),
             if (_mode == StudyMode.cram)
-              const Text('PRACTICE',
+              Text('PRACTICE',
                   style: TextStyle(
-                      fontSize: 9,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: .5,
-                      color: OnoteColors.graphite400)),
+                      color: context.surfaces.textSecondary)),
           ]),
           const SizedBox(height: 8),
           // Centred and height-capped: on a tall window the question used to
@@ -938,9 +917,9 @@ class _StudyPanelState extends State<StudyPanel> {
     final label = c.isCloze ? 'FILL IN THE BLANK' : kind.label.toUpperCase();
     return Container(
       decoration: BoxDecoration(
-        color: dark ? OnoteColors.night50 : OnoteColors.paper0,
+        color: context.surfaces.raised,
         border: Border.all(
-            color: dark ? OnoteColors.night200 : OnoteColors.paper200),
+            color: context.surfaces.border),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -956,24 +935,24 @@ class _StudyPanelState extends State<StudyPanel> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(children: [
-              Icon(kind.icon, size: 12, color: kind.color),
+              Icon(kind.icon, size: 16, color: kind.color),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(label,
                     style: TextStyle(
-                        fontSize: 9,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
                         letterSpacing: .7,
                         color: kind.color)),
               ),
               // Demoted to an icon so it stops competing with the grades.
               IconButton(
-                icon: const Icon(Icons.open_in_new, size: 13),
+                icon: const Icon(Icons.open_in_new, size: 16),
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
                 tooltip: 'Open the note',
-                color: OnoteColors.graphite400,
+                color: context.surfaces.textSecondary,
                 onPressed: () {
                   app.selectPage(c.pageId);
                   app.jumpToBlock(c.blockId);
@@ -1028,11 +1007,11 @@ class _StudyPanelState extends State<StudyPanel> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-              color: (dark ? OnoteColors.night200 : OnoteColors.paper200)),
+              color: (context.surfaces.border)),
         ),
-        child: const Text('Answer hidden',
+        child: Text('Answer hidden',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
       );
 
   Widget _answer(Flashcard c, TagKind kind, bool dark) {
@@ -1051,13 +1030,13 @@ class _StudyPanelState extends State<StudyPanel> {
         children: [
           Text('ANSWER',
               style: TextStyle(
-                  fontSize: 9,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: .7,
                   color: kind.color)),
           const SizedBox(height: 6),
           SelectableText(c.back,
-              style: const TextStyle(fontSize: 14, height: 1.45)),
+              style: const TextStyle(fontSize: 13, height: 1.45)),
         ],
       ),
     );
@@ -1091,12 +1070,12 @@ class _StudyPanelState extends State<StudyPanel> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(g.label,
-            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
         Text(
           _mode == StudyMode.cram && g != Grade.again
               ? '—'
               : previewInterval(state, g, now),
-          style: const TextStyle(fontSize: 9.5, color: OnoteColors.graphite400),
+          style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary),
         ),
       ],
     );

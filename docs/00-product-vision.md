@@ -1,6 +1,12 @@
 # Openote — Product Vision
 
-> **Document status:** Draft v0.1 · Planning phase · Last updated 2026-07-22
+> **Document status:** v1.0 · **Implementation phase** · Last updated 2026-08-05
+> **Still accurate.** This document has needed no correction as the app was
+> built — the problem statement, the six principles and the non-goals all held.
+> The only note worth adding: principle §5.6 ("the interface is calm… we favor a
+> clean surface over a crowded ribbon") is the one the 2026-08 UI review found
+> the *implementation* falling short of, not through clutter but through
+> inconsistency. See [v0.6 — the UI revamp](planning/v0.6-ui-revamp.md).
 > **Owner:** Eric · **Audience:** Core team, contributors, prospective collaborators
 > **Related documents:** [OneNote Teardown & Gap Analysis](01-onenote-teardown.md) · [Product Requirements](02-product-requirements.md) · [Technology Evaluation](03-technology-evaluation.md) · [Architecture Overview](04-architecture-overview.md) · [Style Guide](05-style-guide.md)
 

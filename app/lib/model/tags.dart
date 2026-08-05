@@ -11,9 +11,18 @@
 /// the 0-based line index within that block's text, so a tag survives edits to
 /// other lines and travels with the block through the op log unchanged (tags
 /// ride inside block content, so they need no new op kind).
+///
+/// A tag may also carry a `"due"` day (v0.5 §2). That key is **additive**: it
+/// is written only when set, older readers ignore it, and the frozen v1 block
+/// format is untouched. It is on the tag rather than in workspace settings
+/// because a deadline is a property of the task — in a shared notebook the
+/// group's deadline is the same deadline — which is the opposite of where a
+/// *reminder* time belongs.
 library;
 
 import 'package:flutter/material.dart';
+
+import '../study/study_stats.dart' show dayKey, parseDayKey;
 
 /// The built-in tag set, mapped from OneNote's own built-ins so an imported
 /// notebook keeps its meaning. Anything unrecognised becomes [custom] rather
@@ -41,6 +50,28 @@ enum TagKind {
   static TagKind parse(String? key) => TagKind.values
       .firstWhere((k) => k.key == key, orElse: () => TagKind.custom);
 
+  /// Map one of OneNote's own tag names onto our set.
+  ///
+  /// Matched on the **label**, because that is what the file actually carries
+  /// in a form we can read. OneNote also records an icon index, which would be
+  /// locale-independent where this is not — a German notebook says "Aufgabe" —
+  /// but there is no verified shape table and inventing one is how working
+  /// imports get broken. A label we don't know becomes [custom] **keeping its
+  /// name**, so a Dutch notebook's tags arrive intact and legible even though
+  /// they aren't mapped; nothing is ever dropped.
+  static TagKind fromOneNoteLabel(String label) {
+    final l = label.trim().toLowerCase();
+    if (l.startsWith('to do')) return TagKind.todo; // incl. "To Do priority 1"
+    if (l.startsWith('important')) return TagKind.important;
+    if (l.startsWith('question')) return TagKind.question;
+    if (l.startsWith('remember')) return TagKind.remember;
+    if (l.startsWith('definition')) return TagKind.definition;
+    if (l.startsWith('idea')) return TagKind.idea;
+    if (l.startsWith('critical')) return TagKind.critical;
+    if (l.startsWith('contact')) return TagKind.contact;
+    return TagKind.custom;
+  }
+
   /// Tags offered in the picker. [custom] is the fallback for imports, not
   /// something a user picks by name.
   static List<TagKind> get pickable =>
@@ -54,6 +85,7 @@ class NoteTag {
     required this.line,
     this.checked,
     this.label,
+    this.due,
   });
 
   final TagKind kind;
@@ -69,13 +101,45 @@ class NoteTag {
   /// The tag's own name when it came from an import and isn't a built-in.
   final String? label;
 
+  /// The day this is due, as `'yyyy-mm-dd'`, or null for an undated tag.
+  ///
+  /// **A day, not an instant, and a string rather than an epoch** — the same
+  /// decision `dayKey` records for exam dates and for the same reason. "Due
+  /// Friday" does not become "due Thursday" because the device flew west, and
+  /// an essay is due on a date rather than at midnight.
+  ///
+  /// Meaningful on any kind, not just [TagKind.todo]: "revisit this Question
+  /// before Tuesday" is a real thing to want, and restricting the field would
+  /// buy nothing except a rule to explain. What the planner does with each kind
+  /// is the planner's business.
+  final String? due;
+
   String get displayLabel => label ?? kind.label;
+
+  /// [due] parsed, or null when unset or malformed. A garbage date must not
+  /// cost the tag — same tolerance as [fromJson].
+  DateTime? get dueDate => due == null ? null : parseDayKey(due!);
 
   NoteTag copyWith({int? line, bool? checked}) => NoteTag(
         kind: kind,
         line: line ?? this.line,
         checked: checked ?? this.checked,
         label: label,
+        due: due,
+      );
+
+  /// Set or (with null) clear the due day.
+  ///
+  /// A separate method rather than a `copyWith` parameter because `copyWith`
+  /// cannot express "clear this" — `due: null` is indistinguishable from "leave
+  /// it alone", and a re-date UI whose Clear button silently did nothing is
+  /// exactly the bug that shape invites.
+  NoteTag withDue(DateTime? day) => NoteTag(
+        kind: kind,
+        line: line,
+        checked: checked,
+        label: label,
+        due: day == null ? null : dayKey(day),
       );
 
   Map<String, dynamic> toJson() => {
@@ -83,17 +147,25 @@ class NoteTag {
         'line': line,
         if (checked != null) 'checked': checked,
         if (label != null) 'label': label,
+        if (due != null) 'due': due,
       };
 
   static NoteTag? fromJson(Object? j) {
     if (j is! Map) return null;
     final line = (j['line'] as num?)?.toInt();
     if (line == null) return null;
+    // An unparseable due date is dropped rather than carried: it can only have
+    // come from a corrupted write or a future format, and a date the planner
+    // cannot place would otherwise be invisible but permanent.
+    final rawDue = j['due'];
+    final due =
+        rawDue is String && parseDayKey(rawDue) != null ? rawDue : null;
     return NoteTag(
       kind: TagKind.parse(j['kind'] as String?),
       line: line,
       checked: j['checked'] as bool?,
       label: j['label'] as String?,
+      due: due,
     );
   }
 
@@ -179,8 +251,16 @@ class NoteTag {
       } else if (t.line >= changedEnd || pureInsertion) {
         final to = t.line + delta;
         moved[t.line] = to;
+        // Every field is carried, not just the ones rebasing cares about. This
+        // reconstruction is the one place a new tag field is silently lost —
+        // pressing Enter above a dated task would clear its deadline, from a
+        // keystroke that changed nothing about it.
         out.add(NoteTag(
-            kind: t.kind, line: to, checked: t.checked, label: t.label));
+            kind: t.kind,
+            line: to,
+            checked: t.checked,
+            label: t.label,
+            due: t.due));
       }
       // Inside a rewritten region: the line it marked is gone, and so is it.
     }

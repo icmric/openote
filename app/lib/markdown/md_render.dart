@@ -247,10 +247,58 @@ class _MarkdownViewState extends State<MarkdownView> {
                     child: Icon(t.kind.icon, size: 14, color: t.kind.color),
                   ),
                 ),
+            // The deadline, in the note. A due date visible only inside the
+            // planner would be a fact about this line that this line does not
+            // show — so you would have to remember to go and look, which is the
+            // failure the planner itself exists to fix.
+            if (_dueOf(tags) case final due?) _dueChip(due),
           ]),
         ),
         Flexible(child: line),
       ],
+    );
+  }
+
+  /// The due day carried by any tag on this line, parsed. One date per line —
+  /// see the tag menu, which enforces that when setting one.
+  static DateTime? _dueOf(List<NoteTag> tags) {
+    for (final t in tags) {
+      if (t.dueDate case final d?) return d;
+    }
+    return null;
+  }
+
+  /// `Fri` inside the coming week, `12 Aug` beyond it, and red once it is past.
+  ///
+  /// No icon and no "due" label: the tag beside it already says what kind of
+  /// thing this is, and the gutter is a hanging indent that must not push the
+  /// text about.
+  Widget _dueChip(DateTime due) {
+    final now = DateTime.now();
+    final days = DateTime.utc(due.year, due.month, due.day)
+        .difference(DateTime.utc(now.year, now.month, now.day))
+        .inDays;
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final label = switch (days) {
+      0 => 'today',
+      1 => 'tomorrow',
+      -1 => 'yesterday',
+      > 1 && <= 6 => weekdays[due.weekday - 1],
+      _ => '${due.day} ${months[due.month - 1]}',
+    };
+    return Padding(
+      padding: const EdgeInsets.only(left: 3, right: 1),
+      child: Text(label,
+          style: TextStyle(
+              fontSize: 10.5,
+              height: 1.2,
+              fontWeight: days < 0 ? FontWeight.w700 : FontWeight.w500,
+              color:
+                  days < 0 ? OnoteColors.danger : OnoteColors.graphite400)),
     );
   }
 

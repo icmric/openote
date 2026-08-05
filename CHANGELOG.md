@@ -4,6 +4,109 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased — 0.2.0] · the first public release
 
+### Changed — the interface, made one thing (2026-08-05)
+- **The app looked like two apps.** Openote had a colour palette and it had
+  hand-built panels, and nothing in between — so every stock Flutter control
+  came out looking like a phone app sitting next to them. Every message
+  Openote showed you was a full-window-width bar; every dialog button was a
+  lozenge; the date picker was a mobile calendar. All of it now matches the
+  rest of the app.
+- **Text is bigger and more consistent.** Seventeen slightly-different text
+  sizes (some a half-pixel apart) became five, and eleven icon sizes became
+  three. Nothing new is on screen — it just lines up now, which is most of
+  what "looking finished" is.
+- **Grey text was too faint to read**, and failed the accessibility contrast
+  standard the project holds itself to. Every caption, hint and subtitle is
+  now readable — in dark mode too, where the naive fix would have made it
+  worse.
+- **Dark mode has depth.** Panels used to sit on the same black as the page,
+  so they merged into one rectangle. The page is now the darkest surface and
+  everything else sits above it.
+- **One side panel at a time.** Study, Planner, Tags, Outline and Links could
+  all be open at once — over 1,300px of panels, which left no room for your
+  notes on a laptop screen.
+- **The toolbar no longer opens as a wall of grey.** With nothing selected it
+  shows three group icons instead of twenty disabled ones; the full set is
+  there the moment you click into a text box.
+- **The status bar stops cutting itself off** mid-sentence, and the
+  breadcrumb no longer spends a whole row repeating what the navigator is
+  already showing.
+- **Your to-dos read as words in the Planner and Tags panels** — a task
+  written as a bullet used to show up as "- Finish tutorial 4", dash and all.
+- **Notes can't hide under the page title any more.** Imported pages with
+  content up there are moved down when you open them.
+
+### Fixed — the sync button going grey (2026-08-05)
+- **A notebook you put in your own sync folder now says so** — and keeps
+  saying so after you restart. Openote was working out "is this syncing?" by
+  guessing: it checked whether the notebook sat inside one of about fifteen
+  well-known paths (`~/Dropbox`, `~/OneDrive`, Google Drive's usual drive
+  letters…). So a self-hosted Nextcloud anywhere else, a moved OneDrive, or
+  any folder you picked yourself was reported as "not syncing" even though it
+  was — and the chip's tooltip invited you to set up the sync you already had.
+- **It also stops flickering on startup.** Cloud clients mount their folders a
+  few seconds after login, so the check could run before the folder existed
+  and get a wrong answer that then sat there for the whole session. Openote
+  now remembers the folder *you chose* instead of re-deriving it, and
+  re-checks in the background so a change reaches the screen on its own.
+- The chip now names the folder — "Nextcloud", "OneDrive (work)" — instead of
+  a generic label.
+
+### Fixed — a font bug found while doing the above (2026-08-05)
+- **Every button in the app was using the wrong font.** Openote bundles Inter
+  so it looks the same on Windows, macOS and Linux — but button labels were
+  quietly falling back to the system default, so they never quite matched the
+  text beside them.
+
+### Added — the Planner: dates, reminders and your timetable (2026-08-05)
+- **Every date you have, in one place.** Exam dates, to-dos you have given a
+  deadline, reminders and your university timetable all appear in one panel,
+  bucketed into Overdue / Today / Tomorrow / This week / Later. Open it from
+  the command bar, or read the next three rows from the navigator's Home pane
+  without opening anything.
+- **Exam dates stop hiding.** They were set from two different context menus
+  and were then visible only inside the study panel, on whichever section you
+  happened to be looking at — there was no way to ask *"what dates do I have
+  at all"*. Every date can now be set, moved or cleared from the planner, and
+  an exam still carries its revision plan: *"40 to learn · 3 a day covers it"*.
+- **To-dos can have a deadline.** Right-click any tagged line's row in the
+  planner, or use Add a date ▸ Due date. The date lives on the tag inside the
+  note, so it **syncs** — in a shared notebook the group's deadline is one
+  deadline — and it follows the line when you edit around it.
+- **Reminders that tell you the truth.** Set a nudge for a time ("in an hour",
+  "this evening", or pick one) and Openote pops it up while it is open. If it
+  was closed when the time came, the reminder is waiting on next open under
+  *"3 reminders while you were away"* rather than being lost. Every reminder
+  can be snoozed. This is deliberate rather than a limitation we hid: Linux
+  has no notification-scheduling API at all and Windows would need MSIX
+  packaging, so **Openote owns the schedule** and behaves identically on all
+  three platforms. A student who trusts a reminder that never arrives is worse
+  off than one who never set it.
+- **Subscribe to your real timetable.** Paste the `.ics` address from your
+  university, Google Calendar, Outlook or Apple Calendar and your lectures
+  appear beside your notes. It is a plain download of a text file — no
+  sign-in, no account, no access to anything but the calendar you pasted — and
+  it is **read-only in both directions**: Openote never writes to your
+  calendar, and calendar rows offer no edit they could not honour. Weekly
+  lectures expand; anything more exotic is shown once and labelled rather than
+  guessed at. A failed refresh keeps the copy you already had instead of
+  blanking your timetable on a train.
+- **A month view**, off by default — the agenda is what you read daily, and
+  the grid is one click away when "when in the month is that?" is the question.
+
+### Added — OneNote tags now import (2026-08-05)
+- **Your OneNote tags come across.** To Do, Important, Question, Remember,
+  Definition, Idea, Critical and Contact arrive as real Openote tags on the
+  lines they marked — so an imported notebook's questions and definitions feed
+  the flashcard deck on day one instead of needing to be re-tagged by hand. A
+  tag we don't recognise (a custom one, or a notebook in another language)
+  arrives as a custom tag keeping its own name rather than being dropped.
+- The import summary counts them: *"Imported 324 pages, 372 images, 64,616 ink
+  strokes and 811 tags"*.
+- **Imported to-dos arrive unticked.** OneNote's completion flag is not decoded
+  yet — the two candidate properties contradict each other on the file we have,
+  and a wrongly-ticked to-do is worse than an unticked one.
+
 ### Changed — navigator polish + storage honesty (2026-08-05)
 - **Sections inside a group are indented, with a guide rail** down their left
   edge, so where a group starts and ends is unambiguous.

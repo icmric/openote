@@ -6,6 +6,7 @@ import '../math/linear_math.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import '../theme/tokens.dart';
 
 /// Math block: linear/LaTeX entry while editing, rendered 2-D notation
 /// otherwise. Commit runs on the editing→not state transition (F-3 fix) so
@@ -132,9 +133,7 @@ class _MathBlockViewState extends State<MathBlockView> {
               focusNode: _focus,
               maxLines: null,
               style: const TextStyle(fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, fontSize: 14),
-              decoration: const InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
+              decoration: OnoteInput.bare.copyWith(
                 hintText: r'Linear math… e.g. \sum_(n=1)^oo 1/n^2',
               ),
               onChanged: (v) {
@@ -184,7 +183,7 @@ class _MathBlockViewState extends State<MathBlockView> {
             if (_evaluated case final r? when r.isOk) ...[
               const SizedBox(height: 6),
               Row(mainAxisSize: MainAxisSize.min, children: [
-                Text('= ',
+                const Text('= ',
                     style: TextStyle(
                         fontSize: 14, color: OnoteColors.graphite400)),
                 SelectableText(
@@ -234,13 +233,13 @@ class _MathBlockViewState extends State<MathBlockView> {
     final latex = widget.block.content['latex'] as String? ?? '';
     if (latex.isEmpty) {
       // F-3: never render an invisible, unclickable husk.
-      return Padding(
-        padding: const EdgeInsets.all(10),
+      return const Padding(
+        padding: EdgeInsets.all(10),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.functions, size: 16, color: OnoteColors.graphite400),
-            const SizedBox(width: 6),
+            SizedBox(width: 6),
             Text('Empty equation — click to edit',
                 style:
                     TextStyle(fontSize: 12, color: OnoteColors.graphite400)),

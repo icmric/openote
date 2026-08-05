@@ -5,6 +5,7 @@ import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'code_highlight.dart';
+import '../theme/tokens.dart';
 
 /// Code block (CODE-1): monospace, language label, copy button, preserved
 /// formatting, and dependency-free syntax highlighting (see `code_highlight`;
@@ -87,7 +88,7 @@ class _CodeBlockViewState extends State<CodeBlockView> {
                 InkWell(
                   onTap: editing ? _pickLanguage : null,
                   child: Text(language,
-                      style: TextStyle(
+                      style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: OnoteColors.graphite400)),
@@ -116,10 +117,8 @@ class _CodeBlockViewState extends State<CodeBlockView> {
                     focusNode: _focus..requestFocus(),
                     maxLines: null,
                     style: mono,
-                    decoration: const InputDecoration(
-                        isDense: true,
-                        border: InputBorder.none,
-                        hintText: '// code'),
+                    decoration:
+                        OnoteInput.bare.copyWith(hintText: '// code'),
                     onChanged: (v) {
                       if (!_undoPushed) {
                         widget.app.pushUndo();

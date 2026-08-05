@@ -13,6 +13,7 @@ import '../core/engine.dart';
 import '../core/ids.dart';
 import '../core/onote_ffi.dart';
 import '../editor/onote_text_editor.dart';
+import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
 import '../store/repository.dart';
@@ -20,6 +21,7 @@ import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../study/flashcards.dart';
 import 'builtin_templates.dart';
+import 'planner_state.dart';
 import 'study_state.dart';
 import '../sync/folder_watch.dart';
 import '../sync/op.dart';
@@ -65,9 +67,42 @@ enum TouchDrawing {
       };
 }
 
+/// The panels that can occupy the right-hand slot (style guide §7c).
+///
+/// An enum rather than five booleans, so "which panel is open" has exactly one
+/// answer and cannot be five contradictory ones.
+enum SidePanelKind {
+  study('Study'),
+  planner('Planner'),
+  tags('Tags'),
+  outline('Outline'),
+  links('Links');
+
+  const SidePanelKind(this.label);
+
+  /// What the toggle's tooltip and the panel's header both say, so they cannot
+  /// drift apart.
+  final String label;
+}
+
+/// One tagged line, as the rollup and the planner both need it.
+///
+/// A typedef over a record rather than a class: it carries no behaviour, and
+/// three call sites had already written the field list out by hand — which is
+/// how [blockId] came to be missing from it for as long as nothing needed to
+/// write back to the tag. Naming it means adding a field is one edit.
+typedef TaggedLine = ({
+  String pageId,
+  String pageTitle,
+  String blockId,
+  NoteTag tag,
+  String text,
+});
+
 /// App-wide state. Deliberately simple (ChangeNotifier) for the MVP; the
 /// domain layer beneath it is what carries forward.
-class AppState extends ChangeNotifier implements StudyDocument {
+class AppState extends ChangeNotifier
+    implements StudyDocument, PlannerDocument {
   AppState(this._repo) : engine = _selectEngine(_repo) {
     // Forwarded, not replaced. Every surface listens to `AppState`, so the
     // extraction must not change who wakes up when a card is graded — the
@@ -249,6 +284,47 @@ class AppState extends ChangeNotifier implements StudyDocument {
     }
   }
 
+  /// Copy the bytes of every blob these ops mention into this device's
+  /// container, from the shared folder's content-addressed store.
+  ///
+  /// Returns how many were copied. Skips ones already held (blobs are immutable
+  /// and content-addressed, so "same hash" really is "same bytes") and ones
+  /// whose file has not arrived yet — a cloud client syncs the log and the
+  /// blobs independently, so a reference can legitimately land first. That case
+  /// is not an error and must not fail the pull; the page renders without the
+  /// image until the file turns up, and `SyncRecorder.missingBlobs` is how the
+  /// UI can say so.
+  int _ingestForeignBlobs(String nb, SyncRecorder r, List<Op> pending) {
+    var copied = 0;
+    for (final op in pending) {
+      if (op.kind != OpKind.blobPut) continue;
+      // `Op.data` is Object? — a hand-edited or future log can put anything
+      // here, and a malformed op must be skipped rather than crash the pull.
+      final d = op.data;
+      if (d is! Map) continue;
+      final hash = d['hash'];
+      if (hash is! String || hash.isEmpty) continue;
+      if (_repo.getBlob(nb, hash) != null) continue;
+      final bytes = r.store.readBlob(hash);
+      if (bytes == null) continue; // not arrived yet — not an error
+      // `putBlob` re-derives the hash from the bytes rather than trusting the
+      // op, which is the point of content-addressing — but it also means a file
+      // that does not match its claimed name would be stored under a DIFFERENT
+      // hash, leaving the page still referencing nothing and the FK still
+      // failing. Check rather than discover that later: a mismatch means a
+      // truncated or corrupted download, so skip it and say so.
+      final actual = _repo.putBlob(
+          nb, bytes, d['mime'] as String? ?? 'application/octet-stream');
+      if ('sha256:$actual' != hash && actual != hash) {
+        debugPrint('[openote/sync] blob $hash does not match its bytes '
+            '(got $actual) — skipping; the file is probably still copying');
+        continue;
+      }
+      copied++;
+    }
+    return copied;
+  }
+
   Future<int> _syncPullLocked(
       String nb, SyncRecorder r, List<Op> pending) async {
     // Flush first: a local edit still sitting in the debounce would otherwise
@@ -256,6 +332,20 @@ class AppState extends ChangeNotifier implements StudyDocument {
     await flushSave();
 
     final changed = r.applyForeign(pending);
+
+    // **Bring the bytes across before the pages that reference them.**
+    //
+    // A blob op carries only hash/mime/size; the bytes travel as a
+    // content-addressed file in the shared folder. Nothing was reading them
+    // back, so an image made on another device arrived as a reference to
+    // nothing — and not merely as a broken picture: `blob_refs.hash` is a
+    // foreign key onto `blobs`, so `writePage` threw a constraint violation and
+    // took the WHOLE pull down with it. One shared notebook with one image in
+    // it stopped that device syncing at all.
+    //
+    // Inside the same transaction as the pages, and before them, so a crash
+    // can never leave a page referencing bytes that are not there.
+    final pulledBlobs = _ingestForeignBlobs(nb, r, pending);
 
     _repo.runInTransaction(nb, () {
       for (final pageId in changed.pages) {
@@ -293,6 +383,10 @@ class AppState extends ChangeNotifier implements StudyDocument {
         }
       }
     });
+
+    if (pulledBlobs > 0) {
+      debugPrint('[openote/sync] pulled $pulledBlobs blob(s) into the container');
+    }
 
     // Watermark per device, only after the writes landed — a crash mid-pull
     // must re-apply rather than skip.
@@ -336,6 +430,10 @@ class AppState extends ChangeNotifier implements StudyDocument {
     _recorders.remove(nb);
     _stopWatching();
     final path = await _repo.moveNotebookTo(nb, targetDir);
+    // The user just told us this folder is where their notes sync. Remember
+    // it, rather than re-guessing later from a list of well-known provider
+    // paths that will not contain it.
+    rememberSyncRoot(targetDir);
     _invalidateSyncStatus();
     if (nb == notebookId) {
       await _loadNotebook();
@@ -469,6 +567,48 @@ class AppState extends ChangeNotifier implements StudyDocument {
 
   final Map<String, ({int count, int at})> _deviceCountCache = {};
 
+  /// Re-check sync status periodically, and notify only when it CHANGES.
+  ///
+  /// The second half of the grey-chip bug. Even with a folder remembered, the
+  /// answer depends on the filesystem — a mirror target appears, a provider
+  /// finishes mounting, a network share comes back — and none of those tell
+  /// the app anything. The status was only ever recomputed as a side effect of
+  /// something else calling `notifyListeners`, so a wrong answer could sit on
+  /// screen for a whole session.
+  ///
+  /// Cheap because it notifies on *change*: the common case is one directory
+  /// probe every 20 seconds that finds nothing new and repaints nothing. It
+  /// also means this is not a substitute for [_invalidateSyncStatus] — user
+  /// actions still update immediately; this is only for changes nobody told us
+  /// about.
+  Timer? _syncStatusPoll;
+
+  void _startSyncStatusPolling() {
+    _syncStatusPoll?.cancel();
+    _syncStatusPoll =
+        Timer.periodic(const Duration(seconds: 20), (_) => _pollSyncStatus());
+  }
+
+  /// Run one poll now — what the timer does, exposed so a test can drive it
+  /// without waiting twenty seconds.
+  @visibleForTesting
+  void debugPollSyncStatus() => _pollSyncStatus();
+
+  void _pollSyncStatus() {
+    final nb = notebookId;
+    if (nb == null) return;
+    final before = syncStatus(nb);
+    _invalidateSyncStatus();
+    final after = syncStatus(nb);
+    if (before.isSynced == after.isSynced &&
+        before.devices == after.devices &&
+        before.mirrors == after.mirrors &&
+        before.folder?.path == after.folder?.path) {
+      return;
+    }
+    notifyListeners();
+  }
+
   /// Drop the cached count after something that can change it.
   void _invalidateSyncStatus() {
     _deviceCountCache.clear();
@@ -476,6 +616,58 @@ class AppState extends ChangeNotifier implements StudyDocument {
   }
 
   final Map<String, ({SyncStatus status, int at})> _syncStatusCache = {};
+
+  // ── Remembered sync folders ──────────────────────────────────────────
+
+  /// Folders the user has told us are sync locations, by choosing one in
+  /// "Choose a folder…" or by joining a notebook from one.
+  ///
+  /// **Why this is stored rather than detected.** `detectCloudFolders` probes
+  /// ~15 well-known paths, which is a fine way to *offer* somewhere to sync and
+  /// a bad way to *report* whether syncing is on. It says no to any folder not
+  /// on the list — a self-hosted Nextcloud somewhere else, a relocated
+  /// OneDrive, a Google Drive on an unexpected drive letter — and it also says
+  /// no to a folder on the list that has not mounted yet, which is why the
+  /// chip could come up grey after a restart and stay grey for the session.
+  /// What the user chose is a fact; where a provider happens to have mounted
+  /// two seconds after launch is a guess.
+  final List<CloudFolder> _syncRoots = [];
+
+  List<CloudFolder> get syncRoots => List.unmodifiable(_syncRoots);
+
+  /// Record [dir] as a sync location. Idempotent.
+  void rememberSyncRoot(String dir) {
+    if (dir.trim().isEmpty) return;
+    if (_syncRoots.any((f) => p.equals(f.path, dir))) return;
+    _syncRoots.add(describeChosenFolder(dir));
+    _persistSyncRoots();
+    _invalidateSyncStatus();
+    notifyListeners();
+  }
+
+  void _persistSyncRoots() => _repo.setSetting('syncRoots', [
+        for (final f in _syncRoots)
+          {'path': f.path, 'name': f.name, 'kind': f.kind.name}
+      ]);
+
+  /// Restore the remembered roots. Public and standalone, like `study.load()`
+  /// and `planner.load()` — `init()` needs a widgets binding, and a test of
+  /// what survives a restart should not need a whole application to ask.
+  void loadSyncRoots() {
+    final raw = _repo.getSetting('syncRoots');
+    if (raw is! List) return;
+    for (final e in raw) {
+      if (e is! Map) continue;
+      final path = e['path'];
+      if (path is! String || path.isEmpty) continue;
+      if (_syncRoots.any((f) => p.equals(f.path, path))) continue;
+      _syncRoots.add(CloudFolder(
+        name: e['name'] as String? ?? p.basename(path),
+        path: path,
+        kind: CloudKind.values.asNameMap()[e['kind']] ?? CloudKind.other,
+      ));
+    }
+  }
 
   /// What to show the user about this notebook's sync state.
   ///
@@ -492,7 +684,8 @@ class AppState extends ChangeNotifier implements StudyDocument {
     // notebook keeps its container in the local workspace, so asking where the
     // container is told that device it wasn't syncing — while it was.
     final path = notebookLogDir(nb);
-    final folder = path == null ? null : cloudFolderContaining(path);
+    final folder =
+        path == null ? null : cloudFolderContaining(path, also: _syncRoots);
     final devices = syncDeviceCount(nb);
     final status = SyncStatus(
       folder: folder,
@@ -525,8 +718,8 @@ class AppState extends ChangeNotifier implements StudyDocument {
       logPath: logPath,
       logBytes: await _dirBytes(logDir),
       logExists: logDir.existsSync(),
-      containerCloud: cloudFolderContaining(ref.file),
-      logCloud: cloudFolderContaining(logPath),
+      containerCloud: cloudFolderContaining(ref.file, also: _syncRoots),
+      logCloud: cloudFolderContaining(logPath, also: _syncRoots),
     );
   }
 
@@ -911,6 +1104,74 @@ class AppState extends ChangeNotifier implements StudyDocument {
     notifyListeners();
   }
 
+  /// Change one tag, on any page of the open notebook.
+  ///
+  /// **Not open-page-only, and that is the point.** The planner lists tasks
+  /// from the whole notebook, so ticking one or re-dating it must not depend on
+  /// which page happens to be loaded. Routing it through `selectPage` instead
+  /// was the first attempt and it is worse twice over: it yanks the reader to
+  /// another page for a checkbox, and — because `selectPage` reloads the block
+  /// list from storage — an edit made in the same turn is thrown away by the
+  /// load that follows it.
+  ///
+  /// [change] is given the matching tag and returns its replacement, so the
+  /// caller says *what* changes and this says *where*. Returns whether anything
+  /// did.
+  bool _updateTag(String pageId_, String blockId, int line, TagKind kind,
+      NoteTag Function(NoteTag) change) {
+    final nb = notebookId;
+    if (nb == null) return false;
+
+    List<NoteTag>? apply(Block b) {
+      final tags = NoteTag.listFrom(b.content);
+      if (!tags.any((t) => t.line == line && t.kind == kind)) return null;
+      return [
+        for (final t in tags)
+          if (t.line == line && t.kind == kind) change(t) else t
+      ];
+    }
+
+    if (pageId_ == pageId) {
+      final b = blocks.where((x) => x.id == blockId).firstOrNull;
+      if (b == null) return false;
+      final next = apply(b);
+      if (next == null) return false;
+      pushUndo();
+      NoteTag.writeInto(b.content, next);
+      updateBlock(b);
+      docRevision++;
+      notifyListeners();
+      return true;
+    }
+
+    // A closed page: read it, change it, write it back through the bulk path —
+    // the same route `repairWholeNotebook` takes. No undo entry, because undo
+    // is scoped to the open page and pushing one here would make Ctrl+Z restore
+    // a page the user is not looking at.
+    final data = readPage(pageId_);
+    final b = data.blocks.where((x) => x.id == blockId).firstOrNull;
+    if (b == null) return false;
+    final next = apply(b);
+    if (next == null) return false;
+    NoteTag.writeInto(b.content, next);
+    importBatch(nb, () => importPage(nb, pageId_, data.blocks, data.props));
+    docRevision++;
+    notifyListeners();
+    return true;
+  }
+
+  /// Give a tag a due day, or (with null) take it away (v0.5 stage 2).
+  @override
+  bool setTagDue(String blockId, int line, TagKind kind, DateTime? day,
+          {String? pageId}) =>
+      _updateTag(pageId ?? this.pageId ?? '', blockId, line, kind,
+          (t) => t.withDue(day));
+
+  /// Tick a to-do off, wherever in the notebook it lives.
+  bool setTagCheckedOn(String pageId_, String blockId, int line, bool checked) =>
+      _updateTag(pageId_, blockId, line, TagKind.todo,
+          (t) => t.copyWith(checked: checked));
+
   /// Tags on the caret's line, so the toolbar can show which are active.
   Set<TagKind> tagsAtCaret() {
     final b = blocks
@@ -922,6 +1183,24 @@ class AppState extends ChangeNotifier implements StudyDocument {
       for (final t in NoteTag.listFrom(b.content))
         if (t.line == idx) t.kind
     };
+  }
+
+  /// The text block a tag action applies to: the one being edited, else the
+  /// one selected. Public because the tag menu needs to ask what is under the
+  /// caret before it can offer to change it — the same block [tagsAtCaret]
+  /// already answers about.
+  Block? caretBlock() {
+    final b = blocks
+        .where((x) => x.id == (editingBlockId ?? selectedBlockId))
+        .firstOrNull;
+    return b != null && b.type == BlockType.text ? b : null;
+  }
+
+  /// Which line of [caretBlock] the caret is on. 0 when nothing is being
+  /// edited, matching where a tag would land.
+  int caretLineIndex() {
+    final b = caretBlock();
+    return b == null ? 0 : _caretLine(b);
   }
 
   /// Which line the caret sits on, so a tag lands where the user is looking.
@@ -1000,21 +1279,17 @@ class AppState extends ChangeNotifier implements StudyDocument {
   /// Scans page mirrors rather than a maintained index: same reasoning as
   /// notebook-wide search — one source of truth beats an index that can drift,
   /// until it measurably hurts.
-  ({
-    String key,
-    List<({String pageId, String pageTitle, NoteTag tag, String text})> tags
-  })? _allTagsCache;
+  ({String key, List<TaggedLine> tags})? _allTagsCache;
 
-  List<({String pageId, String pageTitle, NoteTag tag, String text})>
-      allTags() {
+  @override
+  List<TaggedLine> allTags() {
     if (notebookId == null) return const [];
     // Same reasoning as [deck]: this reads every page in the notebook, and the
     // panel that shows it rebuilds on every notify.
     final key = '$notebookId#$docRevision#$nodesRevision#$pageId';
     final cached = _allTagsCache;
     if (cached != null && cached.key == key) return cached.tags;
-    final out =
-        <({String pageId, String pageTitle, NoteTag tag, String text})>[];
+    final out = <TaggedLine>[];
     for (final n in nodes.where((n) => n.kind == NodeKind.page)) {
       // The open page's in-memory blocks are fresher than the container.
       final blocksOf = n.id == pageId ? blocks : readPage(n.id).blocks;
@@ -1027,8 +1302,13 @@ class AppState extends ChangeNotifier implements StudyDocument {
           out.add((
             pageId: n.id,
             pageTitle: n.title,
+            blockId: b.id,
             tag: t,
-            text: t.line < lines.length ? lines[t.line].trim() : '',
+            // Plain, not raw: every consumer of this is a SUMMARY — the
+            // tags rollup and the planner's agenda — and neither runs the
+            // Markdown renderer, so a to-do written as a bullet showed up
+            // as "- Finish tutorial 4", dash included.
+            text: t.line < lines.length ? plainLine(lines[t.line]) : '',
           ));
         }
       }
@@ -1037,11 +1317,8 @@ class AppState extends ChangeNotifier implements StudyDocument {
     return out;
   }
 
-  bool showTagsPanel = false;
-  void toggleTagsPanel() {
-    showTagsPanel = !showTagsPanel;
-    notifyListeners();
-  }
+  bool get showTagsPanel => openPanel == SidePanelKind.tags;
+  void toggleTagsPanel() => togglePanel(SidePanelKind.tags);
 
   // ── Study: flashcards, scheduling, stats (E3 — see study_state.dart) ──
 
@@ -1054,11 +1331,59 @@ class AppState extends ChangeNotifier implements StudyDocument {
   late final StudyState study = StudyState(this,
       readSetting: _repo.getSetting, writeSetting: _repo.setSetting);
 
-  bool showStudyPanel = false;
-  void toggleStudyPanel() {
-    showStudyPanel = !showStudyPanel;
+  bool get showStudyPanel => openPanel == SidePanelKind.study;
+  void toggleStudyPanel() => togglePanel(SidePanelKind.study);
+
+  // ── The planner: dates, reminders, timetable (v0.5) ──────────────────
+
+  /// Everything you have a date for, in one place.
+  ///
+  /// Owns the reminder store and the calendar subscription; **borrows**
+  /// everything else. Exam dates stay in [study] and a task's deadline stays on
+  /// its tag, because the agenda is a lens rather than a second store — see
+  /// `planner_state.dart`.
+  late final PlannerState planner = PlannerState(this, study,
+      readSetting: _repo.getSetting, writeSetting: _repo.setSetting)
+    ..addListener(notifyListeners);
+
+  // ── The right-hand panel slot (style guide §7c) ──────────────────────
+
+  /// Which panel occupies the single right-hand slot, or null for none.
+  ///
+  /// **One slot, one panel** — the five panels were independent booleans, so
+  /// all five could be open at once: 1,360px of chrome on a Row, which leaves
+  /// the canvas nothing on a 1366px laptop. No workflow was found that needs
+  /// two at a time, and one-at-a-time is also the task-pane model a OneNote
+  /// switcher already expects.
+  ///
+  /// The old `show*Panel` fields are now getters over this, so every existing
+  /// call site keeps working and there is only one piece of state to be wrong.
+  SidePanelKind? openPanel;
+
+  /// Open [kind], replacing whatever was there. Idempotent.
+  void showPanel(SidePanelKind kind) {
+    if (openPanel == kind) return;
+    openPanel = kind;
     notifyListeners();
   }
+
+  void closePanel() {
+    if (openPanel == null) return;
+    openPanel = null;
+    notifyListeners();
+  }
+
+  /// Open [kind], or close it if it is already the open one — what a toolbar
+  /// toggle does.
+  void togglePanel(SidePanelKind kind) =>
+      openPanel == kind ? closePanel() : showPanel(kind);
+
+  bool get showPlannerPanel => openPanel == SidePanelKind.planner;
+  void togglePlannerPanel() => togglePanel(SidePanelKind.planner);
+
+  /// Open the planner (idempotent) — what a "see all your dates" affordance
+  /// elsewhere in the app should call.
+  void openPlanner() => showPanel(SidePanelKind.planner);
 
   // ── Favourites & recents (ORG-10) ────────────────────────────────────
   //
@@ -1730,7 +2055,14 @@ class AppState extends ChangeNotifier implements StudyDocument {
         ];
       });
     }
+    loadSyncRoots();
+    _startSyncStatusPolling();
     study.load();
+    planner.load();
+    // Armed only once state is restored: the scheduler's first act is to catch
+    // up on what came due while Openote was closed, and it can only know that
+    // after the reminders have been read.
+    planner.startScheduler();
     final fav = _repo.getSetting('favourites');
     if (fav is List) _favourites.addAll(fav.cast<String>());
     final rec = _repo.getSetting('recentPages');
@@ -1824,6 +2156,10 @@ class AppState extends ChangeNotifier implements StudyDocument {
   Future<void> openExistingNotebook(String path) async {
     await flushSave();
     final ref = await _repo.openExistingNotebook(path);
+    // Joining a notebook from a folder is the other moment the user tells us
+    // where their sync lives — this device's logs go into that folder, so it
+    // is a sync root by definition.
+    rememberSyncRoot(p.dirname(path));
     await selectNotebook(ref.id);
   }
 
@@ -1900,6 +2236,10 @@ class AppState extends ChangeNotifier implements StudyDocument {
       blocks = data.blocks;
       pageProps = data.props;
       _repairImportedFieldCodes();
+      // Heal a page whose content sits under the title band (§7f). Marked
+      // dirty only when something actually moved, so merely opening pages
+      // does not rewrite the notebook.
+      if (repairTitleBandOverlap() > 0) markDirty();
       // Keep the navigator's focused section in sync with the open page, and
       // remember it as the section's place so activateSection can come back
       // here. Selecting a page also leaves Home — the pane shows the
@@ -2244,10 +2584,43 @@ class AppState extends ChangeNotifier implements StudyDocument {
     return r;
   }
 
-  /// Content never above/left of the page origin (CANVAS-1 v0.3).
+  /// Content never above/left of the page origin (CANVAS-1 v0.3), and never
+  /// underneath the title band (style guide §7f).
+  ///
+  /// The band is drawn as a `Positioned` overlay in the same coordinate space
+  /// as the blocks, so a block placed above [contentTop] renders *through* the
+  /// page title — the two strike each other out and neither is readable. The
+  /// band already declared its height ([titleBandHeight]); nothing enforced it.
+  /// The title is part of the page's layout, so the layout is where it is
+  /// reserved.
   void clampBlockToPage(Block b) {
     if (b.x < 0) b.x = 0;
-    if (b.y < 0) b.y = 0;
+    if (b.y < contentTop) b.y = contentTop;
+  }
+
+  /// Push imported or legacy blocks out from under the title band.
+  ///
+  /// [clampBlockToPage] only runs on blocks the user moves. A page that
+  /// arrived from the OneNote importer — or that was written before the band
+  /// reserved its space — can already have content up there, and healing it on
+  /// open is the same shape as `_repairImportedFieldCodes`.
+  ///
+  /// Returns how many blocks moved, so the caller can decide whether the page
+  /// is dirty. The whole page shifts **together** when anything is above the
+  /// band, rather than each stray block being clamped onto the same line: a
+  /// note's blocks are positioned relative to each other, and collapsing two of
+  /// them onto one y would destroy that.
+  int repairTitleBandOverlap() {
+    var top = double.infinity;
+    for (final b in blocks) {
+      if (b.y < top) top = b.y;
+    }
+    if (top == double.infinity || top >= contentTop) return 0;
+    final shift = contentTop - top;
+    for (final b in blocks) {
+      b.y += shift;
+    }
+    return blocks.length;
   }
 
   // ── Tree ops ───────────────────────────────────────────────────────────
@@ -2462,11 +2835,8 @@ class AppState extends ChangeNotifier implements StudyDocument {
   // ── Backlinks (TEXT-8) ─────────────────────────────────────────────────
 
   /// Page outline panel (TEXT-10).
-  bool showTocPanel = false;
-  void toggleTocPanel() {
-    showTocPanel = !showTocPanel;
-    notifyListeners();
-  }
+  bool get showTocPanel => openPanel == SidePanelKind.outline;
+  void toggleTocPanel() => togglePanel(SidePanelKind.outline);
 
   /// Headings on the current page, in reading order, for the outline panel.
   ///
@@ -2502,11 +2872,8 @@ class AppState extends ChangeNotifier implements StudyDocument {
     return items;
   }
 
-  bool showLinksPanel = false;
-  void toggleLinksPanel() {
-    showLinksPanel = !showLinksPanel;
-    notifyListeners();
-  }
+  bool get showLinksPanel => openPanel == SidePanelKind.links;
+  void toggleLinksPanel() => togglePanel(SidePanelKind.links);
 
   // The links panel is rebuilt on every notify while it's open, and both of
   // these are expensive: one is a synchronous SQLite query on the UI thread, the
@@ -3062,7 +3429,12 @@ class AppState extends ChangeNotifier implements StudyDocument {
   @override
   void dispose() {
     _stopWatching();
+    _syncStatusPoll?.cancel();
     _saveDebounce?.cancel();
+    // The planner owns a Timer. A `late final` touched here is constructed
+    // just to be torn down, which costs nothing; a live timer left behind
+    // keeps the isolate awake, which does.
+    planner.dispose();
     canvas.dispose();
     _repo.dispose();
     super.dispose();
@@ -3149,15 +3521,22 @@ class SyncStatus {
   bool get hasOtherDevices => devices > 1;
 
   /// The chip label.
+  ///
+  /// The folder's own **name**, not its kind: for a detected provider the two
+  /// are the same, but "OneDrive (work)" and a folder the user chose
+  /// themselves both lose their identity if this reports the kind — the second
+  /// would read "Folder", which tells the user nothing about where their notes
+  /// went.
   String get label {
     if (!isSynced) return mirrors > 0 ? 'Backed up' : 'Sync…';
     if (hasOtherDevices) return '$devices devices';
-    return folder!.kind.label;
+    return folder!.name;
   }
 
   IconData get icon {
-    if (!isSynced)
+    if (!isSynced) {
       return mirrors > 0 ? Icons.backup_outlined : Icons.cloud_off_outlined;
+    }
     if (hasOtherDevices) return Icons.devices;
     return Icons.cloud_done_outlined;
   }

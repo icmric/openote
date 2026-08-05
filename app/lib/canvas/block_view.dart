@@ -422,7 +422,7 @@ class _BlockViewState extends State<BlockView> {
       _ => Padding(
           padding: const EdgeInsets.all(8),
           child: Text('Unsupported block: ${b.type.name}',
-              style: TextStyle(color: OnoteColors.graphite400)),
+              style: const TextStyle(color: OnoteColors.graphite400)),
         ),
     };
     // Expose content to assistive tech (PLAT-5).

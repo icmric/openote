@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/system_fonts.dart';
-import '../theme/onote_theme.dart';
+import '../theme/tokens.dart';
 
 /// Searchable system-font picker (§7a.3): every installed family, each row
 /// rendered in its own face. Returns the family name, or null.
@@ -68,7 +68,7 @@ class _FontPickerDialogState extends State<_FontPickerDialog> {
                   return Center(
                       child: Text('No fonts match',
                           style:
-                              TextStyle(color: OnoteColors.graphite400)));
+                              TextStyle(color: context.surfaces.textSecondary)));
                 }
                 return ListView.builder(
                   itemCount: shown.length,
@@ -93,7 +93,7 @@ class _FontPickerDialogState extends State<_FontPickerDialog> {
                               style: TextStyle(
                                   fontSize: 12,
                                   fontFamily: f,
-                                  color: OnoteColors.graphite400)),
+                                  color: context.surfaces.textSecondary)),
                       onTap: () =>
                           Navigator.pop(context, f == 'Default' ? '' : f),
                     );

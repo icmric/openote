@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import '../theme/tokens.dart';
 
 /// In-page title band (OneNote-style): the title and date live at the top of
 /// the page itself, editable in place — no menu. Rendered in page-space so it
@@ -105,9 +106,7 @@ class _PageTitleViewState extends State<PageTitleView> {
               focusNode: _focus,
               style: titleStyle,
               maxLines: 1,
-              decoration: const InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
+              decoration: OnoteInput.bare.copyWith(
                 hintText: 'Page title',
               ),
               onSubmitted: (_) {
@@ -139,7 +138,7 @@ class _PageTitleViewState extends State<PageTitleView> {
           const SizedBox(height: 2),
           Text(
             _dateLine(page.createdAt),
-            style: TextStyle(fontSize: 12, color: OnoteColors.graphite400),
+            style: const TextStyle(fontSize: 12, color: OnoteColors.graphite400),
           ),
           const SizedBox(height: 6),
           Container(

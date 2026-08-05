@@ -1,9 +1,20 @@
 # Openote — Style Guide & Design System
 
-> **Document status:** Draft v0.3 · **Implementation phase** · Last updated 2026-07-26
-> **Reality check:** colour tokens (§3) are implemented verbatim in `app/lib/theme/onote_theme.dart`; §7a and §7b are normative and implemented; **typography (§4.1) is NOT yet met** — no fonts are bundled, see the status note there. Tags/chips (§7) are specified but unimplemented.
+> **Document status:** v0.5 · **Implementation phase** · Last updated 2026-08-05
+> **Reality check (2026-08-05):** colour tokens (§3) are implemented verbatim in
+> `app/lib/theme/onote_theme.dart`; **fonts are bundled** (§4.1 met — Inter +
+> JetBrains Mono, 2026-08-04); tags (§7) shipped, including OneNote import; the
+> command bar (§7), navigator (§7b, rewritten this revision to match the
+> 2026-08-04 two-column redesign), study panel and planner all exist. What is
+> **not** yet real is the connective tissue: there is no token layer between
+> this document and the widgets, no component themes behind the Material
+> defaults, and one specified pairing fails its own AA rule (§3.3 note). The
+> [v0.6 UI revamp plan](planning/v0.6-ui-revamp.md) is the audit of that gap
+> and the plan to close it; the **operative values** it fixed are folded into
+> this revision (§4.2a, §5.2, §3.7, §6, §7c) and marked *operative* — they are
+> what new code must use.
 > **Purpose:** The single source of truth for how Openote looks, feels, and speaks — brand, color, type, spacing, components, canvas interaction, motion, accessibility, and voice. Written so a designer or developer can build a consistent, professional product from it.
-> **Related:** [Product Vision](00-product-vision.md) · [PRD](02-product-requirements.md)
+> **Related:** [Product Vision](00-product-vision.md) · [PRD](02-product-requirements.md) · [v0.6 UI revamp](planning/v0.6-ui-revamp.md)
 
 ---
 
@@ -96,10 +107,19 @@ Warm-tinted neutrals so surfaces read as "paper," not clinical gray.
 | `paper-100` | `#F2F1ED` | sidebar / secondary surface |
 | `paper-200` | `#E7E5DF` | dividers, borders |
 | `paper-300` | `#D6D3CA` | strong borders, disabled |
-| `graphite-400` | `#9A968C` | tertiary text, placeholders |
-| `graphite-500` | `#6E6B63` | secondary text |
+| `graphite-400` | `#9A968C` | **disabled & decorative ONLY** — see note |
+| `graphite-500` | `#6E6B63` | secondary & tertiary text, placeholders |
 | `graphite-700` | `#403D38` | body text (light) |
 | `graphite-900` | `#211F1B` | headings / max-contrast text (light) |
+
+> **Correction (2026-08-05).** Earlier revisions assigned `graphite-400` the
+> role "tertiary text" — but it measures **2.80:1 on `paper-50`** (2.95:1 on
+> white), failing AA for text at any size, so this document contradicted its
+> own §9. The role moves to `graphite-500` (5.06:1 ✓); `graphite-400` is
+> reserved for disabled states and decorative strokes, where 3:1 does not
+> apply. The app currently uses `graphite-400` as its default metadata colour
+> in ~130 places — migrating them is v0.6 stage 3. Dark mode was already
+> compliant (`moon-400` on `night-50` = 4.97:1).
 
 ### 3.4 Dark theme ("Night ink")
 
@@ -129,11 +149,49 @@ Dark-mode interactive uses `ink-400`; dark-mode accent uses `brass-400`. Both ar
 | Info | `#2F6FB3` | `#6FB0EA` | neutral information, tips |
 | Sync-live | `ink-500` | `ink-400` | active sync / collaboration presence |
 
+> Implementation note (2026-08-05): `danger` and `success` exist in
+> `OnoteColors`; `warning` and `info` are specified here but not yet defined in
+> code — add them to `tokens.dart` when first needed rather than inventing
+> near-misses inline.
+
 > Never rely on color alone (§9). Pair every semantic color with an icon and/or text.
 
 ### 3.6 Content ink palette (for the user's pen & highlighter)
 
 A default set of pen colors offered to users — chosen to be legible on paper *and* night surfaces, and colorblind-considerate. Users can pick any color; these are the curated defaults: Ink Black `#211F1B`, Ink Blue `#2F6FB3`, Ink Red `#C63838`, Forest `#2E8B57`, Violet `#6A4BC0`, Brass `#D9971F`, and Highlighter tints (yellow `#F7E27A`, green `#B6E39A`, pink `#F3B0C6`, blue `#A8CCF0`) at ~40% opacity.
+
+### 3.7 Surface roles *(operative, added 2026-08-05 — the region → token map)*
+
+The tokens above say what colours exist; this says **which region wears
+which**, in both modes, so no widget ever decides for itself. The 2026-08 UI
+review found this mapping being improvised per widget — 16 files branch on
+`Brightness.dark` by hand, and in dark mode the planner picked the *canvas*
+colour so panel and page merged into one black.
+
+| Role | Light | Dark | Regions |
+|---|---|---|---|
+| `canvas` | `paper-0` | `night-0` | the page itself — **nothing else** |
+| `chrome` | `paper-50` | `night-50` | command bar, status bar, side panels |
+| `chrome-2` | `paper-100` | `night-100` | navigator sections column, wells, insets, code-block tints |
+| `raised` | `paper-0` | `night-100` | menus, popovers, dialogs — always with elevation (§5.3) |
+| `border` | `paper-200` | `night-200` | every hairline; regions do not draw private borders on top of shell dividers |
+
+Rules: **widgets name a role, never check the brightness** (the roles live in
+a `ThemeExtension`, v0.6 stage 1); the canvas is the only `canvas` surface, so
+in dark mode the page reads as the deepest layer and chrome sits visibly above
+it — "the page is the hero" holds at night too; adjacent regions of the same
+role share one border, drawn by the shell, not one each.
+
+**The one sanctioned reason to branch on brightness** is *alpha*, not colour: a
+tint laid over a dark surface needs more opacity than the same tint on paper to
+read as the same strength. Those few sites (a card tint, a drop shadow) may ask
+the theme which mode it is. Asking in order to pick a **colour** is the thing
+this section exists to stop — that is what a role is for.
+
+**Interaction tints (operative).** State overlays are the *named* alphas of the
+role's foreground colour — `hover .05` · `selected .10` · `selected-strong .14`
+· `drag .18` · `border-on-tint .35` — replacing the twelve ad-hoc opacity
+values counted in the 2026-08 review. Clicks never ripple (§7 Buttons).
 
 ---
 
@@ -152,7 +210,13 @@ A default set of pen colors offered to users — chosen to be legible on paper *
 
 All chosen faces are **open-licensed** — consistent with the project's ethos and avoiding redistribution friction.
 
-> **Implementation status (2026-07-26): not yet met.** No fonts are bundled — `pubspec.yaml` has no `fonts:` section and `onoteTheme` sets `fontFamily: null`, so the app renders in each platform's **system UI font** (Segoe UI on Windows). Code/mono styles request the generic family `'monospace'`; math glyphs come from `flutter_math_fork`'s bundled KaTeX fonts (so the Math row above *is* satisfied). Consequences: type looks different per OS — the opposite of the "consistent in soul" principle — and the type scale below is only approximately realised. **To close:** add Inter + JetBrains Mono (both OFL/Apache, ~1–2 MB subset) to `pubspec.yaml` and set `fontFamily` in the theme; offer Source Serif as the reading-serif option. Tracked as a Phase 1 polish item (PLAT-1).
+> **Implementation status (2026-08-05): met.** Inter (4 weights + italics) and
+> JetBrains Mono are bundled (`pubspec.yaml` `fonts:`, style rows in
+> LICENSING.md) and `onoteTheme` sets `fontFamily: 'Inter'` — the app looks
+> the same on every OS. The `onoteFontFallback` chain sits *behind* the
+> bundled faces and resolves the math/symbol glyphs Inter lacks; its order is
+> load-bearing (see the comment in `onote_theme.dart`). Still open: the
+> reading-serif option (Source Serif) is not offered yet.
 
 ### 4.2 Type scale (UI)
 
@@ -172,6 +236,31 @@ A modular scale (~1.20 ratio), in px at base 14 for dense desktop UI; the editor
 
 **Rules:** one to two weights per view (400 + 600). Avoid all-caps except tiny labels with tracking. Line length in the editor targets 60–80 characters for the linear-reading fallback (the freeform canvas is exempt). Never justify body text.
 
+### 4.2a The operative UI ramp *(added 2026-08-05 — what chrome code actually uses)*
+
+§4.2 is the aspirational scale and remains right for the editor and for large
+surfaces. The app's *chrome*, however, grew *seventeen* distinct font sizes —
+including half-pixel one-offs (10.5, 11.5, 12.5) — with the mass sitting
+1–3px below the scale above. The revamp replaces all of them with this ramp,
+**integer px only**, dense enough for a desktop tool and rhythmical enough to
+read as one system:
+
+| Token | Size / line | Weight | Use |
+|---|---|---|---|
+| `display` | 22 / 28 | 700 | a number or word that IS the message (a due count) — rare by design |
+| `headline` | 18 / 24 | 600 | the one line of an empty state or first-run step |
+| `ui-title` | 15 / 20 | 600 | dialog & sheet titles |
+| `ui` | 13 / 18 | 400 | default chrome text — rows, menus, inputs, buttons |
+| `ui-strong` | 13 / 18 | 600 | emphasis inside `ui` (row titles, counts) |
+| `ui-sm` | 12 / 16 | 400 | secondary text, subtitles, tooltips |
+| `caption` | 11 / 14 | 400 | metadata, hints, badges, the status bar |
+| `overline` | 11 / 14 | 700, +0.5 tracking, caps | panel titles and list-group labels — the **only** all-caps style |
+
+Sizes 9–10.5 are retired (badge counts move to `caption`); anything larger
+than `ui-title` in chrome should be questioning why it isn't the editor scale.
+These land as `TextTheme` + named constants in `tokens.dart` (v0.6 stage 1);
+after stage 3, a bare `fontSize:` literal in `lib/ui` is a review flag.
+
 ### 4.3 In-editor Markdown rendering
 
 Rendered Markdown maps to the editor scale: `# `→`h1`, `## `→`h2`, etc.; inline code and code blocks use `mono` with a subtle tinted background (`paper-100`/`night-100`); block quotes get a `ink-300` left border and `graphite-500` text; links use `ink-600`/`ink-400` with underline-on-hover. When the caret enters a span, its Markdown markers reveal in `graphite-400` (dimmed) — visible but quiet.
@@ -184,17 +273,25 @@ Rendered Markdown maps to the editor scale: `# `→`h1`, `## `→`h2`, etc.; inl
 
 `0, 2, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64`. Use tokens (`space-2` = 8px, etc.); avoid arbitrary values. Default control padding: 8×12. Default panel padding: 16. Section rhythm: 24.
 
-### 5.2 Radius
+### 5.2 Radius *(revised 2026-08-05 — operative set)*
 
 | Token | Value | Use |
 |-------|-------|-----|
-| `radius-sm` | 4px | inputs, small chips |
-| `radius-md` | 8px | buttons, cards, containers |
-| `radius-lg` | 12px | panels, popovers, canvas text boxes |
-| `radius-xl` | 16px | modals, large surfaces |
-| `radius-full` | 999px | avatars, toggles, pills |
+| `radius-sm` | 4px | inputs, checkboxes, small chips |
+| `radius-md` | 6px | buttons, menu items, toggles, small controls |
+| `radius-lg` | 8px | menus, popovers, cards, banners |
+| `radius-xl` | 12px | dialogs, large floating surfaces, canvas text boxes |
+| `radius-full` | 999px | avatars, pills |
 
-Text containers on the canvas use `radius-lg` with a near-invisible border until hovered/selected — echoing OneNote's containers but calmer.
+> Revision note: the earlier set (4/8/12/16) never made it into code — the app
+> shipped **thirteen** ad-hoc radii from 1.5 to 14. The operative set is one
+> step tighter than the original because the app's realised character is denser
+> than v0.1 imagined; 16px is retired (it reads consumer-mobile at this
+> density). Stock Material 3 must never show through: un-themed M3 dialogs are
+> 28px and M3 buttons are full stadiums, both of which the component themes
+> (v0.6 stage 2) override.
+
+Text containers on the canvas use `radius-xl` with a near-invisible border until hovered/selected — echoing OneNote's containers but calmer.
 
 ### 5.3 Elevation
 
@@ -227,11 +324,19 @@ Prefer **borders and subtle tints over heavy shadows** (flat, paper-like). Three
 
 ---
 
-## 6. Iconography
+## 6. Iconography *(revised 2026-08-05)*
 
-- **Style:** a single **outline** icon set, 1.75px stroke at 24px, rounded joins/caps — echoing the confident ink line. Filled variants only for active/selected toggle states.
-- **Grid:** 24px with 2px padding; also ship 20px and 16px optically-adjusted sizes (not naive scaling).
-- **Source:** a consistent open icon set (e.g. **Lucide/Feather** family) extended with Openote-specific glyphs (pen, highlighter, lasso, snap-grid, sigma/math, backlink).
+- **Current reality:** the app uses the **Material outline set** throughout —
+  and that stays for v0.6. A swap to a Lucide/Feather-class set (1.75px stroke,
+  rounded joins, closer to the ink line) remains the recorded aspiration, but
+  it is a *content* change the token layer will make cheap later; changing
+  1,000 glyph references mid-revamp would be churn without system gain.
+- **Operative sizes: 16 / 18 / 20 / 32** — 16 default (rows, panel headers,
+  inline), 18 command bar, 20 rail, **32 empty-state art** (the one icon on a
+  surface with nothing else on it; the app had 32, 34 and 44 doing that job). The eleven ad-hoc sizes
+  in use (12–20) migrate to these three; a bare `size:` on an `Icon` in
+  `lib/ui` is a review flag after v0.6 stage 3. Filled variants only for
+  active/selected toggle states.
 - **Tool icons** get an active-state accent (`brass-400` fill or `ink-500` background) so the current tool is unmistakable.
 - Always pair icon-only buttons with a tooltip and an accessible label.
 
@@ -241,25 +346,47 @@ Prefer **borders and subtle tints over heavy shadows** (flat, paper-like). Three
 
 Baseline patterns; a component library/tokens file is a next-pass deliverable.
 
-**Buttons** — Primary (`ink-500` fill, white text), Secondary (border + `graphite-700` text), Ghost (text only, tinted hover), Danger (uses danger semantic). Height 32 (compact) / 36 (default). `radius-md`. Clear hover/pressed/focus/disabled states; visible focus ring (`ink-400`, 2px, offset 2px).
+**Buttons** — Primary (`ink-500` fill, white text), Secondary (border + `graphite-700` text), Ghost (text only, tinted hover), Danger (uses danger semantic). Height 28 (compact) / 32 (default), `radius-md`, `ui` label — **never the Material stadium shape**. Clear hover/pressed/focus/disabled states; visible focus ring (`ink-400`, 2px, offset 2px). Clicks respond with hover/pressed *tints* (the §3.7 named alphas), not the mobile ink ripple — `NoSplash` app-wide.
 
 **Inputs** — 1px `paper-300`/`night-300` border, `radius-sm`, focus → `ink-500` border + ring. Labels above, hint/error below. Error state uses danger color **plus** an icon and message.
 
-**Command bar** *(revised per stakeholder direction, Phase 2)* — a **compact tabbed command bar** (Home · Insert · Draw · View): OneNote's few-clicks accessibility in Openote's calm language. A slim tab row (~32px) over one command row (~44px) of icon buttons in divided groups; never more than two rows, never wrapping (overflow → "more" menu). Tabs organize breadth; the row stays quiet. Right-click **context menus** on blocks and canvas carry the same commands to the pointer — most actions reachable in ≤2 clicks. *(Supersedes v0.1's "contextual toolbar only" stance: the stakeholder explicitly values OneNote's everything-close-at-hand model; we keep the calm, drop the clutter.)*
+**Command bar** *(implemented)* — a **compact tabbed command bar** (Home · Insert · Draw · View): OneNote's few-clicks accessibility in Openote's calm language. A slim tab row (~32px) over one command row (~44px) of icon buttons in divided groups; never more than two rows, never wrapping (overflow → "more" menu). Tabs organize breadth; the row stays quiet. Right-click **context menus** on blocks and canvas carry the same commands to the pointer — most actions reachable in ≤2 clicks. *(Supersedes v0.1's "contextual toolbar only" stance: the stakeholder explicitly values OneNote's everything-close-at-hand model; we keep the calm, drop the clutter.)*
+Two refinements from the 2026-08 review (v0.6 stage 4): with no editor
+focused, formatting groups **collapse to their group heads** instead of
+rendering ~20 disabled glyphs — "disabled ≠ hidden" (§7a.2) holds, but the
+first paint must not read as a wall of grey; and the right-hand cluster groups
+into a panel switcher (§7c) + find + export rather than eight adjacent
+unlabelled icon buttons.
 
 **Navigator (notebooks/sections/pages)** — a tree with clear affordances for the hierarchy: notebooks as top items, section groups collapsible, sections as colored tabs, pages/subpages indented. Drag-to-reorder with a clear drop indicator. Selected item uses `ink-100`/`ink-900` tint, not a heavy bar.
 
 **Tabs** — sections render as OneNote-style colored tabs; the color is user-assignable from the content-ink palette.
 
-**Menus & context menus** — `elevation-1`, `radius-md`, generous hit targets (≥32px rows), keyboard-navigable, with shortcut hints right-aligned. Full behavioural standards in §7a.
+**Menus & context menus** — `elevation-1`, `radius-lg`, `raised` surface (§3.7), generous hit targets (≥32px rows), keyboard-navigable, with shortcut hints right-aligned. Full behavioural standards in §7a. *(Until themed in v0.6 stage 2, stock M3 menus show through at mobile row heights.)*
 
 **Dialogs/modals** — `elevation-2`, `radius-xl`, focus-trapped, escapable, with a clear primary action. Reserve for genuinely modal decisions; prefer inline/non-blocking UI (the "interpret, don't interrupt" principle).
 
-**Toasts** — bottom (desktop) / top (mobile), auto-dismiss, non-blocking; carry sync/save/undo confirmations. Always dismissible; destructive actions offer **Undo** in the toast rather than a confirm dialog where feasible.
+**Toasts** — **desktop spec (operative):** floating, max-width 440px,
+bottom-left (clear of the right panel slot), `radius-lg`, `raised` surface,
+`ui-sm` text; auto-dismiss, non-blocking; destructive actions offer **Undo**
+in the toast rather than a confirm dialog where feasible. *(The app's 52
+`SnackBar` sites currently render the stock full-window-width mobile slab —
+one `SnackBarTheme` in v0.6 stage 2 converts all of them.)* Top on mobile,
+later.
 
 **Empty states** — warm, brief, instructive; a light brand illustration (an open page / ink stroke) + one-line guidance + a primary action ("Create your first notebook").
 
-**Tags/chips** — `radius-full`, subtle fill, small; the built-in tag library (to-do, important, question…) uses distinct icons, not just color. *(**Not implemented** as of 2026-07-27 — no tag model, tag UI, or tag query exists anywhere in the app (**TEXT-5**, and the tag half of ORG-5 / TEXT-1a). OneNote's tag library is a signature feature and a known switcher expectation; the closest shipped equivalent is Markdown checkboxes (`- [ ]`, TEXT-6). The OneNote importer also can't carry tags across, so tagged source notebooks lose that structure on import.)*
+**Tags** — **shipped (TEXT-5, 2026-08)**, and the realised model is stronger
+than the chip spec this section used to carry: a tag is a **per-paragraph
+gutter marker** (OneNote's model — icon per `TagKind`, distinct icons not just
+colour, to-dos with a live checkbox, an optional due date rendered as a quiet
+`caption` chip), applied from the command-bar tag menu, imported from OneNote
+files, rolled up in the find-tags panel, and feeding flashcards and the
+planner. Normative rule the implementation must still meet: **the gutter must
+not shift the tagged line's text** — markers hang in reserved space so a
+tagged bullet aligns exactly with its untagged siblings *(currently violated;
+v0.6 stage 5)*. `radius-full` chips remain the style for tag *pickers/filters*
+if those surfaces appear later.
 
 **Live embeds (transclusion boxes)** — an embed must read as *a window onto another page*, not native content, without shouting: a 1px `ink-200`/`night-300` border with a subtle `ink-50`/`night-100` tint, `radius-lg`, and a compact **source badge** (page icon + page title, `caption` size) pinned to the top edge; the badge and empty areas click through to the source, while links inside the embedded content keep their own behavior. States: **live** (badge normal), **syncing** (badge with subtle progress affordance, snapshot content shown), **source deleted** (content grayed, badge in `danger` tone, actions: remove / detach as copy), **circular** (placeholder chip, never a recursive render). Embedded content is visually read-only — no hover editing affordances inside.
 
@@ -280,7 +407,12 @@ These standardise what every menu, button, and click does, so the UI stays consi
 - **Toggle buttons** (snap, panels, tools) show selected state via `primary` tint + `primary.withValues(.14)` fill — never colour alone; the tooltip states the current state and what a click does ("Snap to grid: ON …").
 - **Split buttons** (e.g. text colour): the main area applies the *current/last* value; the attached arrow (or long-press) opens the full picker. The button displays the current value (colour swatch underline, font name).
 - **Icon-only buttons** always carry a tooltip; tooltips always include the shortcut in the form "Label  (Ctrl+X)".
-- **Disabled ≠ hidden:** commands that could apply but currently don't (formatting with no editor focused) render disabled with a nearby one-line hint, so users learn *how* to enable them.
+- **A label does not change a command's colour** *(added 2026-08-05)*. Icon-only and icon-plus-label commands are the same control at two widths, and both take their foreground from `textPrimary`. This has to be said because Material 3 gives `TextButton` a `primary` foreground by default: the Insert tab, built from `TextButton.icon` because `Icons.functions` does not read as "equation" the way `B` reads as bold, therefore rendered its whole row in the accent while every other tab rendered in ink — so switching tabs changed the toolbar's palette. The accent is reserved for **state** (§3.5); spending it on "this is a button" leaves nothing to say "this one is on". Use the shared `CommandButton` / `CommandTextButton` rather than a bare `TextButton` anywhere in the command bar.
+- **Disabled ≠ hidden, and a command row never changes shape** *(strengthened 2026-08-05)*. Commands that could apply but currently don't (formatting with no editor focused) render **disabled in place**, with a one-line hint appended *after* the last control so it displaces nothing.
+
+  This is stronger than it was, and the earlier version caused a real defect. A previous revision let the Home row collapse to three group heads when nothing was focused, reasoning that ~20 greyed glyphs reads as broken. It traded one problem for a worse one: clicking into a text box made fifteen buttons appear and shoved everything to their right across the toolbar, so the control being reached for moved out from under the pointer at the exact moment the app started being used. **Layout that moves while you aim at it is a harder failure than layout that looks quiet.** A command bar's positions are muscle memory; nothing may take that away to look tidier.
+
+  The permitted way to make a disabled row calm is *contrast* (see §3.7 `textDisabled`), never *absence*.
 
 ### 7a.3 Dialogs & pickers
 - Dialogs are for **choices too rich for a menu** (colour wheel, font list, templates, recycle bin, version history). `radius-xl`, max-height 60% of window, content scrolls — never the chrome.
@@ -301,25 +433,241 @@ These standardise what every menu, button, and click does, so the UI stays consi
 - Every action gives feedback within 100ms (state change, snackbar, or visible result). Long operations (>300ms: exports) show a snackbar on completion with the target path.
 - **Performance budgets (PLAT-4 restated for UI):** page switch < 100ms; notebook switch < 250ms; keystroke-to-paint < 16ms on typical pages. No per-frame JSON decoding or allocation storms on hot paths (decoded content is cached and invalidated by `updatedAt`).
 
-## 7b. The navigator *(added 2026-07-26 after the navigator rework — normative)*
+## 7b. The navigator *(rewritten 2026-08-05 for the two-column redesign — normative)*
 
-The navigator is how users move through notebooks, and it was reworked from a single expand-everything tree to a **stacked two-zone pane** after a stakeholder UX review. That decision is now the standard; the alternative accordion-tree prototype was removed.
+The navigator is how users move through notebooks. It has been through three
+shapes: an expand-everything tree, then a **stacked two-zone pane** (v0.3 of
+this guide), and — after real use showed the two zones fighting over one
+column's height, and the stakeholder asked for OneNote's width flexibility —
+the current **two-column** layout (2026-08-04), which this section now
+describes. The stacked description this section used to carry is superseded.
 
-**Why stacked, not OneNote's layout.** OneNote web uses a "double fold-out" — a ~48px notebook rail plus a sections column plus a pages column, ≈480px of chrome before content. That buys clarity (you always see exactly one section's pages) at a real horizontal cost. Openote takes the clarity and drops the cost by **stacking the two columns vertically inside one ~250px pane**.
+**Shape.** A notebook bar and search box over **two side-by-side columns** —
+sections on the left, the active section's pages on the right — each
+independently scrollable and **independently resizable** (sections 96–220px,
+pages 140–320px), the whole navigator collapsible to a **44px rail** (Ctrl+\)
+holding the notebook, Home, and a chip per section. This is knowingly the
+OneNote shape; what Openote adds is the **Home pane** (favourites · recents ·
+the planner's coming-up summary), a **remembered per-section page** so
+browsing never loses your place, and the rail.
 
 **Anatomy (top to bottom).**
-1. **Notebook bar** — current notebook name + chevron; opens the notebook menu (switch · rename · delete · new · imports · recycle bin). Right-click the bar *or any notebook row in the menu* for that notebook's actions **without switching to it first**.
+1. **Notebook bar** — current notebook name + switcher; opens the notebook menu (switch · rename · delete · new · imports · recycle bin). Right-click the bar *or any notebook row in the menu* for that notebook's actions **without switching to it first**.
 2. **Search / quick-jump** — filters sections and pages by title; a result opens the page (or focuses the section) and clears the query.
-3. **Sections zone** — section groups → sections, each with its colour bar. Clicking a section makes it **active**; it does not dump its pages into the list.
-4. **Resize divider** — drag to trade height between the zones; the ratio persists per workspace (`navSplit`).
-5. **Pages zone** — the **active section's** pages and subpages only, indented by level. This is where users spend their time, so it gets the remaining height.
-6. **Footer** — new section · new page · new section group · recycle bin.
+3. **Columns** — left: **Home**, then section groups → sections (groups indent their sections behind a guide rail; colours user-assignable). Right: the active section's pages and subpages, indented by level, collapsible per branch.
+4. **Footer** — new section · new page/section group · recycle bin.
 
 **Rules.**
 - **One active section** at a time (`AppState.activeSectionId`); it stays in sync with the open page, so navigating by any route (search, page link, backlink) keeps the navigator honest.
+- **Activating a section restores your place there** — the page you were last on, not its first page.
 - **Direct manipulation first:** double-click renames inline (never a dialog); drag reparents (page→section, page→page = subpage, section→group); right-click opens the node menu. Every node kind — group, section, page, **and notebook** — must expose the same interaction vocabulary.
 - **Destructive actions are recoverable:** delete soft-deletes to the recycle bin with an Undo affordance; a notebook delete additionally confirms, keeps its `.onote` file on disk, and can be restored losslessly. The bin auto-purges after **30 days** and shows each item's remaining lifetime.
 - The last notebook cannot be deleted (there is always somewhere to be).
+- **Default widths must not truncate a typical title** ("Week 1 — Propositional
+  logic"); ellipsis is for the outliers, not the norm (v0.6 stage 5 tunes the
+  defaults and minimums).
+
+## 7c. Side panels *(added 2026-08-05 — normative)*
+
+The app grew five right-hand panels (study, planner, find-tags, links/backlinks,
+page outline) that each hand-rolled the same anatomy at four different widths
+(240–320px), and all five could open at once — 1,360px of chrome on a Row,
+which zeroes the canvas on a 1366px laptop. The pattern is now fixed:
+
+- **One slot, one panel.** Right-hand panels share a single **320px** slot;
+  opening one closes the current one. The command bar presents the panel
+  toggles as one segmented group. *(Rationale: no found workflow needs two at
+  once, and OneNote's task-pane model is the familiar shape. If a real
+  two-panel workflow emerges, the slot gains a pin — the Row does not gain a
+  sixth width.)*
+- **Shared scaffold.** Every panel is `SidePanel(title, actions, body,
+  footer?)`: an `overline` title with a 16px leading icon, trailing compact
+  icon actions ending in close; body; optional footer row. Panels do not draw
+  their own outer borders (§3.7) or invent private header styles.
+- **Surface:** `chrome` (§3.7) — in dark mode panels sit *above* the canvas,
+  never on the same black.
+- **Empty states** follow §7: one `ui-strong` line, one short `ui-sm`
+  paragraph, then real actions — never skeleton/placeholder bars, which read
+  as content that failed to load.
+- **Every state offers a next action** (the study-panel rule, adopted
+  app-wide): a panel with nothing to show says what would put something there,
+  with the affordance in reach.
+
+## 7d. The shell's fixed regions *(added 2026-08-05 — normative)*
+
+Four regions frame the canvas. They were each designed independently and
+disagreed on height, type and colour; this fixes their anatomy so the frame
+reads as one frame.
+
+**Status bar** — 24px, `chrome` surface, one `border` hairline above, all text
+`caption` in `textSecondary`. **Left = state, right = teaching.** The left
+cluster reports what the app is doing (save state, sync, engine) with each item
+paired to an icon per §9; the right cluster carries the shortcut cheat-sheet
+(§7a.4). **It never truncates its own labels** — when width runs short, items
+drop from the right (least important first) rather than every label
+ellipsising, because "Sync…" is not a shorter way of saying "Synced 2 min ago",
+it is a different, useless message. A dropped cluster stays reachable from its
+tooltip.
+
+**Breadcrumb** — the notebook ▸ section trail above the page. `caption`,
+`textSecondary`, on `chrome`. It is **context, not navigation duplication**:
+the navigator already shows the tree, so the breadcrumb earns its row only when
+it says something the navigator cannot (a collapsed rail, a page reached by
+search or backlink). When the navigator is expanded and the page is visible in
+it, the row is redundant chrome and should not consume vertical space.
+
+**Find bar** — appears under the command bar, `chrome` surface, one hairline
+below, standard control metrics. Match count in `caption`; Enter/Shift-Enter
+step; Esc closes and restores focus to the canvas. Never a floating overlay
+over the page: find is a mode of the frame, not a thing on the note.
+
+**Empty states of the shell** (no notebook, no page) get the §7 empty-state
+treatment at `lg` icon size, centred, with the primary action as a real button
+— not a link.
+
+**Every fixed region runs to the edge of the region it owns** *(added
+2026-08-05)*. A chrome strip does not get an outer gutter: the first and last
+control's own padding **is** the optical margin. An extra 6–12px of leading or
+trailing space makes the strip read as floating inside the window rather than
+being part of the frame, and it also throws away the one target a pointer can
+be flung at infinitely fast and always hit (Fitts's law — the screen edge). The
+one sanctioned asymmetry is a *text-only* trailing cluster, which sits `x3`
+rather than flush because a bare line of type touching the frame reads as
+clipped where a glyph inside a button does not.
+
+Note "the region it owns", not "the window": the command bar starts after the
+navigator, and that is correct — it is the content column's frame, not the
+application's.
+
+## 7e. Indicators: badges, counters and progress *(added 2026-08-05 — normative)*
+
+**Badges** — a count on a toggle (cards due, items today). `caption` weight
+700, `radius-full`, 4×1 padding, on `primary` fill with `onPrimary` text;
+`danger` when the count means *late*, `brass-500` when it means *waiting for
+you*. **A badge shows only actionable counts** — a number that is permanently
+non-zero stops being read, so badge "due now", never "total". Colour never
+carries the meaning alone (§9): the tooltip says which state it is.
+
+**Inline counts** in list headers ("Question (12)") are plain `caption` in
+`textSecondary`, never badges — a badge in a list header is decoration.
+
+**Progress** — anything over 300ms shows determinate progress where the total
+is known and an indeterminate 3px bar where it is not, in `primary` on a
+`chrome-2` track. Long operations (import, export, repair) report **what** is
+being processed, not just a percentage. On completion, a toast (§7) naming the
+result and, where a file was written, its path.
+
+**Never skeleton placeholders.** Grey bars standing in for text read as content
+that failed to load, and Openote's slow operations are rare and nameable. Say
+what is happening in words.
+
+## 7f. Content chrome on the canvas *(added 2026-08-05 — normative)*
+
+Everything drawn *around* the user's content on the page. The governing rule is
+§1's first principle — the page is the hero — so this chrome is the quietest in
+the app and most of it is invisible until pointed at.
+
+- **Block frame.** Untouched: no border. Hovered: 1px `border`. Selected: 2px
+  `primary` outline plus handles (§8.4). Radius `xl`, matching the canvas text
+  container. Chrome is **reserved inside the block's own bounds**, never drawn
+  at negative offsets — `RenderBox.hitTest` rejects anything outside the box's
+  size, so overflowed chrome is ungrabbable (§8.1).
+- **The move bar** is the only chrome that is always visible on a hovered
+  block, because it is the only affordance that has no other discoverable path.
+- **Media blocks** (image, PDF slide, attachment) carry no frame of their own;
+  the block frame above is the whole treatment. An attachment shows its icon,
+  filename in `ui`, and size in `caption`/`textSecondary`.
+- **Tables** use `border` hairlines, a `chrome-2` header row, `ui` cells, 8×4
+  cell padding. The grid is the structure — no zebra striping, no shadows.
+- **The tag gutter** hangs in reserved space to the left of the line and
+  **must not shift the text it decorates** (§7 Tags).
+- **The in-page title band** is part of the page's layout, not an overlay: it
+  reserves its own height so no block can render through it.
+- **Alignment guides and the snap grid** use `ink-400` at low opacity and
+  appear only during the drag that needs them.
+
+## 7f-2. Alerts and interruptions *(added 2026-08-05 — normative)*
+
+The one surface allowed to appear over the page uninvited. Because it is
+uninvited, the rules are tighter than anywhere else.
+
+**Anatomy.** A stack of cards, bottom-right, max 380px wide, `raised` surface,
+`radius-lg`, one `border` hairline, elevation 6. At most **three** cards; the
+rest collapse into a count in a header strip on `chrome2`. A stack that fills
+the window is a modal dialog wearing a disguise.
+
+**It floats, it never pushes.** An alert that reflows the layout moves the line
+being typed on, which is a worse interruption than the one being delivered. It
+lives in the shell's `Stack`, above everything, and takes no space.
+
+**It never auto-dismisses.** A nudge that vanished while the user was looking at
+the other monitor is precisely the failure the feature exists to prevent. Every
+card is dismissible in one click and ignoring it is a valid outcome — the badge
+and the panel still hold it.
+
+**Every card offers its actions, and the primary one is doing the thing.** Join
+(when there is a link) and Go to the note come before Snooze and Done, because
+the alert's purpose is to get you to the thing, not to get itself off screen.
+An action that appears to work and does not — a Join button opening nothing —
+must say so; silent failure at 9:01 is worse than no button.
+
+**Both dismissals exist and mean different things.** "Finished with it"
+resolves the underlying item; "not now" only hides the display. Never wire a
+button labelled *Done* to the second one — that was a shipped bug, and it read
+as the button being broken because the badge stayed lit behind it.
+
+**Say what the channel cannot do.** An in-app alert cannot reach a user when the
+app is closed. That is stated in the settings dialog, not discovered. Any alert
+channel added later inherits this rule.
+
+## 7g. Study and planner surfaces *(added 2026-08-05 — normative)*
+
+These are the two places where Openote stops being a notebook and becomes a
+study tool, and both were built before this guide covered them.
+
+**The review card** — a single centred column, max 560px, on `raised`. The
+question in the editor's reading size, not chrome type: it is the user's own
+note and should look like it. Reveal is one full-width action; grade buttons
+sit in one row, **each labelled with what it will do** ("Good · 4d") so the
+schedule is previewed rather than hidden. Progress through the sitting is a
+determinate bar (§7e), not a fraction buried in a corner.
+
+**The rule both surfaces obey: never a dead end.** Every state — nothing due,
+session finished, nothing dated — offers the next action in reach. A disabled
+button with no explanation is the failure mode this rule exists to prevent.
+
+**Agenda rows** (planner) are: leading control (checkbox for a task, icon
+otherwise, `sm`), title in `ui`, optional subtitle in `caption`/
+`textSecondary`, trailing relative time in `caption` — `primary` normally,
+`danger` and weight 700 when overdue. Group headings use `overline`. Rows are
+`OnoteSpace.row`.
+
+**Dates read as words, not numbers.** "Friday", "in 3 days", "yesterday" inside
+a fortnight; a date beyond it. A countdown a reader has to do arithmetic on has
+failed.
+
+## 7h. Setup, onboarding and management dialogs *(added 2026-08-05 — normative)*
+
+The dialogs a user meets once (first run, import, sync setup) and the ones they
+return to (notebook manager, recycle bin, version history). They carry more
+copy than any other surface, which is exactly why they need rules.
+
+- **Dialog anatomy:** `ui-title` title, `ui` body, `radius-xl`, max-height 60%
+  of the window with the *content* scrolling (§7a.3). Width is chosen per
+  dialog and stated in one place, not per child.
+- **Prose is `ui` with 1.45 line height**, one idea per paragraph, and it
+  explains *what will happen* before offering the control that does it. The
+  voice rules (§11) are load-bearing here: this is where Openote does most of
+  its talking.
+- **Destructive actions** state what is kept, not only what is lost — "your
+  cards and notes are unchanged" — and prefer an undo toast to a confirm
+  dialog wherever the action is recoverable (§7).
+- **Management lists** (notebooks, mirrors, versions) are rows of: name in
+  `ui-strong`, path or metadata in `caption`/`textSecondary` (paths in `mono`),
+  actions right-aligned as icon buttons with tooltips.
+- **Onboarding never blocks.** The first-run flow offers a way straight to a
+  blank page at every step; nothing it asks for is required to start writing.
+- **Paths are selectable text**, never a `Text` a user cannot copy.
 
 ## 8. Canvas interaction guidelines
 
@@ -401,13 +749,25 @@ Microcopy examples: empty page → "Click anywhere to start writing, or grab the
 
 ## 13. Tokens & next steps
 
-This guide defines the *system*; the next design pass should produce:
+This guide defines the *system*; realising it is now a concrete, staged plan —
+**[v0.6 — the UI revamp](planning/v0.6-ui-revamp.md)** — whose first two
+stages produce the two artifacts this section has asked for since v0.1:
 
-1. A **design-tokens file** (JSON/Style-Dictionary) encoding every value here for light/dark, consumed directly by the app.
-2. A **component library** (Figma + code) realizing §7 with all states.
-3. **Logo & icon assets** (wordmark, app icon, custom glyphs) in SVG.
-4. A **canvas interaction spec** expanding §8 into a per-input gesture map.
-5. **Accessibility test plan** (contrast matrix, keyboard map, screen-reader scripts).
+1. **`app/lib/theme/tokens.dart`** — the operative values of §4.2a, §5.1–5.3,
+   §3.7 and §6 as code (type ramp, spacing, radii, icon sizes, named alphas,
+   motion durations, surface roles as a `ThemeExtension`), consumed directly
+   by widgets. This replaces the earlier "JSON/Style-Dictionary" ambition —
+   one consumer, one language; indirection through JSON bought nothing.
+2. **Component themes** filling `onoteTheme()` so no stock-Material metric or
+   shape is visible anywhere (buttons, menus, dialogs, pickers, toasts,
+   checkboxes, focus, hover, splash).
+
+Still ahead of the app, unchanged: logo & icon assets (wordmark, app icon,
+custom glyphs) in SVG; a canvas interaction spec expanding §8 into a per-input
+gesture map; an accessibility test plan (contrast matrix — first run 2026-08-05,
+see §3.3 — keyboard map, screen-reader scripts). The **UI screenshot harness**
+(`app/test/ui_screenshots_test.dart`) is the standing review instrument: any
+visual change of substance regenerates its set before merging.
 
 ---
 

@@ -2,13 +2,14 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/foundation.dart' show compute, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import '../core/ids.dart';
 import '../core/onote_ffi.dart';
 import '../model/models.dart';
+import '../model/tags.dart';
 import '../state/app_state.dart';
 
 /// Isolate entry points: the Rust parse (LZX + binary decode + base64) can
@@ -283,24 +284,9 @@ Future<int?> importOneNoteFile(AppState app,
   final pages = (result['pages'] as List?) ?? const [];
   if (pages.isEmpty) return 0;
 
-  final nbId = app.notebookId!;
-  final posBase = nowMs();
-  var pos = 0;
-  String next() => 'a${(posBase + pos++).toString().padLeft(15, '0')}';
-
-  // A section named after the imported file.
   final sectionTitle = _titleFromName(p.basenameWithoutExtension(file.name));
-  final section = app.importNode(
-      nbId,
-      TreeNode(
-        kind: NodeKind.section,
-        title: sectionTitle,
-        position: next(),
-      ));
-
-  final firstPageId =
-      _importPagesIntoSection(app, nbId, section.id, pages, next);
-  final imported = pages.length;
+  final (imported, firstPageId) =
+      importParsedSection(app, app.notebookId!, sectionTitle, pages);
 
   app.reloadNodes(); // nbId is the open notebook here
   if (firstPageId != null) {
@@ -381,6 +367,31 @@ List<String> lastSkippedSections = const [];
 /// of pen marks are missing — worth a sentence, not silence.
 int lastDroppedStrokes = 0;
 
+/// Import already-parsed pages as a new section. Returns (page count, first id).
+///
+/// Split out of [importOneNoteFile] so the import half can be driven without a
+/// file picker or a progress dialog — everything after the native parser, which
+/// is where tags, images, ink and layout are actually turned into blocks, and
+/// therefore the half worth testing end to end.
+@visibleForTesting
+(int, String?) importParsedSection(
+    AppState app, String nbId, String sectionTitle, List<dynamic> pages) {
+  final posBase = nowMs();
+  var pos = 0;
+  String next() => 'a${(posBase + pos++).toString().padLeft(15, '0')}';
+
+  final section = app.importNode(
+      nbId,
+      TreeNode(
+        kind: NodeKind.section,
+        title: sectionTitle,
+        position: next(),
+      ));
+  final firstPageId =
+      _importPagesIntoSection(app, nbId, section.id, pages, next);
+  return (pages.length, firstPageId);
+}
+
 /// Clear every last-import counter. One function, because they are reset from
 /// two entry points and the one that forgot was silently wrong.
 void _resetImportReport() {
@@ -388,6 +399,7 @@ void _resetImportReport() {
   lastDroppedStrokes = 0;
   lastImportedImages = 0;
   lastImportedStrokes = 0;
+  lastImportedTags = 0;
   lastImportError = null;
 }
 
@@ -402,6 +414,7 @@ void _resetImportReport() {
 /// costs two integers.
 int lastImportedImages = 0;
 int lastImportedStrokes = 0;
+int lastImportedTags = 0;
 
 /// Why the last import returned 0, when the reason wasn't "nothing usable".
 String? lastImportError;
@@ -626,6 +639,39 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
       // line's position, so our comfortable inset would shift every line in the
       // box down-and-right of the source (see [importedTextPadding]).
       content['inset'] = 0;
+      // Tags OneNote put on these paragraphs (TEXT-5). The parser pins each to
+      // a line index within this box's markdown, which is the same thing our
+      // own tags are keyed on, so they need no translation beyond the kind.
+      //
+      // A tag whose label we don't recognise still arrives, as `custom` with
+      // its name kept — an imported tag we cannot map must be visible, never
+      // silently discarded.
+      final rawTags = (b['tags'] as List?) ?? const [];
+      if (rawTags.isNotEmpty) {
+        final lineCount = text.split('\n').length;
+        final tags = <NoteTag>[];
+        for (final t in rawTags) {
+          final m = (t as Map).cast<String, dynamic>();
+          final line = (m['line'] as num?)?.toInt() ?? -1;
+          final label = (m['label'] as String? ?? '').trim();
+          // The image-placeholder rewrite above can only change text WITHIN a
+          // line, so indices still line up — but a tag pointing outside the
+          // box would mark a sentence that isn't there.
+          if (line < 0 || line >= lineCount || label.isEmpty) continue;
+          final kind = TagKind.fromOneNoteLabel(label);
+          tags.add(NoteTag(
+            kind: kind,
+            line: line,
+            // Unticked: OneNote's completion flag is not decoded, see
+            // `paragraph_tags` in the core. A wrongly-ticked to-do is worse
+            // than an unticked one.
+            checked: kind == TagKind.todo ? false : null,
+            label: kind == TagKind.custom ? label : null,
+          ));
+          lastImportedTags++;
+        }
+        if (tags.isNotEmpty) NoteTag.writeInto(content, tags);
+      }
       blocks.add(Block(
         type: BlockType.text,
         x: x,

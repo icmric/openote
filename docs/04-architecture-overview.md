@@ -1,6 +1,16 @@
 # Architecture Overview
 
-> **Document status:** Draft v0.2 · Planning phase · Last updated 2026-07-22
+> **Document status:** v0.3 · **Implementation phase** · Last updated 2026-08-05
+> **Reality check (2026-08-05):** the layering described here is what the app
+> has, with two deviations worth naming. (1) **Loro is not integrated** — the
+> CRDT-backed model below is the design intent; what ships is the JSON mirror
+> plus the append-only op log of [ADR-0006](adr/ADR-0006-sync-transport-and-text-model.md).
+> (2) The Dart state layer grew a **god object** (`AppState`); the E3 extraction
+> has since split out `StudyState` and `PlannerState`, with `SyncCoordinator`
+> and `TagOps` still to go. A third layer has since appeared that this document
+> does not yet describe: the **UI design system** — see
+> [Style Guide §3.7/§4.2a](05-style-guide.md) for the token/surface layer and
+> [v0.6](planning/v0.6-ui-revamp.md) for how it is being built.
 > **Purpose:** The overview of how Openote is put together — the layers, the data model, the open file format, and the hard subsystems (canvas, text, math, ink, **embeds**) plus sync. The deep specs it previews now exist: [File Format](specs/10-file-format-spec.md) · [Data Model](specs/11-data-model-spec.md) · [Math Input](specs/12-math-input-spec.md) · [Ink Data](specs/13-ink-data-spec.md) · [ADRs](adr/README.md).
 > **Related:** [PRD](02-product-requirements.md) · [Technology Evaluation](03-technology-evaluation.md)
 > **v0.2 status:** the stack is now provisionally decided — **Flutter/Dart UI + Rust core, Loro CRDT, SQLite container** (ADRs 0001–0003) — and this overview is written against it, while the domain model and file format remain deliberately framework-independent (tenet 4). Live embeds (transclusion) added as §4a.

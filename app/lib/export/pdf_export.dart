@@ -27,6 +27,11 @@ Future<String?> exportPagePdf(AppState app) async {
   final oldOffset = c.offset;
   c.fitTo(app.contentBounds().inflate(24));
   await WidgetsBinding.instance.endOfFrame;
+  // The canvas can go away across that frame — the user navigates, or the
+  // notebook closes — and `findRenderObject` on an unmounted element throws
+  // rather than returning null. Nothing was exported at this point, so
+  // abandoning quietly is the right outcome.
+  if (!ctx.mounted) return null;
 
   ui.Image? image;
   try {

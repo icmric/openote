@@ -17,7 +17,7 @@ List<TextSpan> highlightCode(String src, String language, bool dark) {
       TextStyle(color: dark ? const Color(0xFF7FCB98) : OnoteColors.success);
   final numStyle =
       TextStyle(color: dark ? OnoteColors.brass400 : OnoteColors.brass700);
-  final comStyle = TextStyle(
+  const comStyle = TextStyle(
       color: OnoteColors.graphite400, fontStyle: FontStyle.italic);
 
   final spans = <TextSpan>[];

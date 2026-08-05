@@ -80,10 +80,33 @@ jobs:
           Copy-Item rust/onote_core/target/release/onote_core.dll $stage/ -Force
           Compress-Archive -Path $stage -DestinationPath "$stage.zip"
 
+      # The setup .exe — what a non-technical user should be downloading.
+      # The zip stays beside it: it is the answer for a locked-down machine, a
+      # USB stick, or someone who wants to look inside before running anything,
+      # and keeping it costs one line.
+      #
+      # Inno Setup is not preinstalled on the runner. It is pinned rather than
+      # floating, because a packaging tool that silently changes under a release
+      # is the kind of thing you discover from a user.
+      - name: Install Inno Setup
+        run: choco install innosetup --version=6.2.2 --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $stage = "openote-$env:VERSION-windows-x64"
+          & "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe" `
+            "/DAppVersion=$env:VERSION" `
+            "/DStageDir=$(Resolve-Path $stage)" `
+            packaging/windows/openote.iss
+          Move-Item packaging/windows/openote-*-setup.exe . -Force
+
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64
-          path: openote-*.zip
+          path: |
+            openote-*.zip
+            openote-*-setup.exe
           if-no-files-found: error
 
   linux:
@@ -259,14 +282,33 @@ jobs:
             <!-- Draft: review, edit, then publish. -->
 
             ## Downloads
-            - **Windows**: `openote-*-windows-x64.zip` — unzip anywhere, run `openote.exe`.
+            - **Windows**: `openote-*-windows-x64-setup.exe` — the installer.
+              Installs for your user only, so it never asks for an
+              administrator password. (Prefer no installer? The
+              `…-windows-x64.zip` is the same build — unzip anywhere and run
+              `openote.exe`.)
             - **Linux**: `openote-*-linux-x86_64.AppImage` — `chmod +x`, run. Or the `.tar.gz` if AppImage doesn't suit.
             - **macOS**: `openote-*-macos-universal.dmg` — drag Openote to Applications.
 
-            ### macOS: "openote is damaged and can't be opened"
-            These builds are not signed or notarized (that needs an Apple
-            Developer account we don't have yet), so Gatekeeper quarantines the
-            download. After copying to Applications, clear the flag once:
+            ---
+
+            ### Both warnings below are expected. Here is exactly why.
+
+            Openote is not code-signed. Signing certificates cost a few hundred
+            dollars a year each, and while the project is this young that money
+            is better spent on nothing at all. Nothing about the warnings says
+            the software is unsafe — only that we have not paid to tell your
+            operating system who we are. Every build here is produced by the
+            public workflow in this repository, from the tagged commit, and you
+            can read both.
+
+            **Windows: "Windows protected your PC"**
+            Click **More info**, then **Run anyway**. SmartScreen shows this for
+            any installer it has not seen often enough to have an opinion about.
+
+            **macOS: "openote is damaged and can't be opened"**
+            Gatekeeper quarantines unsigned downloads. After copying to
+            Applications, clear the flag once:
 
                 xattr -cr /Applications/openote.app
 

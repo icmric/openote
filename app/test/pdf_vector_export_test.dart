@@ -25,7 +25,7 @@ import 'support/sqlite.dart';
 String readable(Uint8List bytes) {
   final raw = latin1.decode(bytes, allowInvalid: true);
   final out = StringBuffer(raw);
-  final marker = 'stream\n';
+  const marker = 'stream\n';
   var i = 0;
   while (true) {
     final start = raw.indexOf(marker, i);

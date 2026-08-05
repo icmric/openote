@@ -107,7 +107,7 @@ void main() {
 
     // Backdate "Old" past the retention window; "Fresh" stays recent.
     final beyond = DateTime.now().millisecondsSinceEpoch -
-        Duration(days: Repository.recycleRetentionDays + 1).inMilliseconds;
+        const Duration(days: Repository.recycleRetentionDays + 1).inMilliseconds;
     repo.trashedNotebooks.firstWhere((n) => n.id == old.id).deletedAt = beyond;
 
     final purged = await repo.purgeExpiredNotebooks();

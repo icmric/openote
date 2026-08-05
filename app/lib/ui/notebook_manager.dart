@@ -6,6 +6,7 @@ import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'onboarding.dart';
+import '../theme/tokens.dart';
 
 /// The notebook manager (style guide §7b) — the one place notebooks are managed.
 ///
@@ -112,13 +113,13 @@ class _NotebookManagerState extends State<_NotebookManager> {
     final trashed = app.trashedNotebooks;
     return AlertDialog(
       title: Row(children: [
-        Icon(Icons.menu_book_outlined, size: 19, color: scheme.primary),
+        Icon(Icons.menu_book_outlined, size: 18, color: scheme.primary),
         const SizedBox(width: 9),
         const Text('Notebooks'),
         const Spacer(),
         Text('${notebooks.length} open',
-            style: const TextStyle(
-                fontSize: 12, color: OnoteColors.graphite400)),
+            style: TextStyle(
+                fontSize: 12, color: context.surfaces.textSecondary)),
       ]),
       contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       content: SizedBox(
@@ -150,7 +151,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
       actions: [
         Row(children: [
           TextButton.icon(
-            icon: const Icon(Icons.add, size: 17),
+            icon: const Icon(Icons.add, size: 18),
             label: const Text('New'),
             onPressed: () async {
               final title = await _promptNotebookName(context,
@@ -164,12 +165,12 @@ class _NotebookManagerState extends State<_NotebookManager> {
           // would be the second kind of menu this panel exists to remove.
           TextButton.icon(
             icon: Icon(_importOpen ? Icons.expand_less : Icons.download_outlined,
-                size: 17),
+                size: 18),
             label: const Text('Import'),
             onPressed: () => setState(() => _importOpen = !_importOpen),
           ),
           TextButton.icon(
-            icon: const Icon(Icons.healing_outlined, size: 17),
+            icon: const Icon(Icons.healing_outlined, size: 18),
             label: const Text('Repair'),
             onPressed: () => _repairWithProgress(context, app),
           ),
@@ -178,7 +179,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
           // back to — that path matters most on a machine you set up months
           // after the first one.
           TextButton.icon(
-            icon: const Icon(Icons.explore_outlined, size: 17),
+            icon: const Icon(Icons.explore_outlined, size: 18),
             label: const Text('Get started'),
             onPressed: () async {
               Navigator.pop(context);
@@ -201,7 +202,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
           padding: const EdgeInsets.only(right: 6, top: 6),
           child: OutlinedButton.icon(
             icon: Icon(icon, size: 16),
-            label: Text(label, style: const TextStyle(fontSize: 12.5)),
+            label: Text(label, style: const TextStyle(fontSize: 13)),
             onPressed: () async {
               setState(() => _importOpen = false);
               // Close the panel first: import shows its own progress dialog and
@@ -229,11 +230,11 @@ class _NotebookManagerState extends State<_NotebookManager> {
   Widget _sectionLabel(String text) => Padding(
         padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),
         child: Text(text.toUpperCase(),
-            style: const TextStyle(
-                fontSize: 10.5,
+            style: TextStyle(
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: .6,
-                color: OnoteColors.graphite400)),
+                color: context.surfaces.textSecondary)),
       );
 
   Widget _row(NotebookRef nb, ColorScheme scheme) {
@@ -274,14 +275,14 @@ class _NotebookManagerState extends State<_NotebookManager> {
             children: [
               Icon(current ? Icons.menu_book : Icons.menu_book_outlined,
                   size: 18,
-                  color: current ? scheme.primary : OnoteColors.graphite400),
+                  color: current ? scheme.primary : context.surfaces.textSecondary),
               const SizedBox(width: 10),
               Expanded(
                 child: renaming
                     ? TextField(
                         controller: _renameCtl,
                         autofocus: true,
-                        style: const TextStyle(fontSize: 14),
+                        style: const TextStyle(fontSize: 13),
                         decoration: const InputDecoration(
                             isDense: true, border: OutlineInputBorder()),
                         onSubmitted: (_) => _commitRename(nb),
@@ -293,7 +294,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
                           Text(nb.title,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                  fontSize: 14,
+                                  fontSize: 13,
                                   fontWeight: current
                                       ? FontWeight.w600
                                       : FontWeight.w400,
@@ -302,9 +303,9 @@ class _NotebookManagerState extends State<_NotebookManager> {
                               '${counts.sections} section${counts.sections == 1 ? '' : 's'} · '
                               '${counts.pages} page${counts.pages == 1 ? '' : 's'}'
                               '${current ? ' · open' : ''}',
-                              style: const TextStyle(
-                                  fontSize: 11.5,
-                                  color: OnoteColors.graphite400)),
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: context.surfaces.textSecondary)),
                         ],
                       ),
               ),
@@ -343,7 +344,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 const Expanded(
                   child: Text(
                       'Move to the recycle bin? You can restore it from here.',
-                      style: TextStyle(fontSize: 12.5)),
+                      style: TextStyle(fontSize: 13)),
                 ),
                 TextButton(
                     onPressed: () => setState(() => _confirmDeleteId = null),
@@ -370,8 +371,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: Row(children: [
         const SizedBox(width: 10),
-        const Icon(Icons.delete_outline,
-            size: 16, color: OnoteColors.graphite400),
+        Icon(Icons.delete_outline,
+            size: 16, color: context.surfaces.textSecondary),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
@@ -382,8 +383,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
                   style: const TextStyle(
                       fontSize: 13, color: OnoteColors.graphite500)),
               Text(days,
-                  style: const TextStyle(
-                      fontSize: 11, color: OnoteColors.graphite400)),
+                  style: TextStyle(
+                      fontSize: 11, color: context.surfaces.textSecondary)),
             ],
           ),
         ),
@@ -497,11 +498,11 @@ Future<void> importOneNotePackageWithFeedback(
           : "That notebook couldn't be imported: $err";
     } else if (skipped.isEmpty) {
       msg = 'Imported '
-          '${importArrivalNote(count, lastImportedImages, lastImportedStrokes)}'
+          '${importArrivalNote(count, lastImportedImages, lastImportedStrokes, lastImportedTags)}'
           ' from OneNote.${_strokeNote()}';
     } else {
       msg = 'Imported '
-          '${importArrivalNote(count, lastImportedImages, lastImportedStrokes)}'
+          '${importArrivalNote(count, lastImportedImages, lastImportedStrokes, lastImportedTags)}'
           ', but '
           '${skipped.length} section${skipped.length == 1 ? '' : 's'} '
           'could not be read: ${skipped.take(3).join(', ')}'
@@ -527,7 +528,7 @@ Future<void> importOneNoteSectionWithFeedback(
         count == 0
             ? "Couldn't read any content from that .one file."
             : 'Imported '
-                '${importArrivalNote(count, lastImportedImages, lastImportedStrokes)}'
+                '${importArrivalNote(count, lastImportedImages, lastImportedStrokes, lastImportedTags)}'
                 ' from OneNote.${_strokeNote()}');
   } on OneNoteUnavailable {
     if (context.mounted) _snack(context, _coreMissing, seconds: 8);
@@ -564,13 +565,14 @@ const _coreMissing =
 /// Each clause appears only if it is non-zero: a notebook with no ink should
 /// not be told it imported no ink.
 @visibleForTesting
-String importArrivalNote(int pages, int images, int strokes) {
+String importArrivalNote(int pages, int images, int strokes, [int tags = 0]) {
   String n(int v, String one, [String? many]) =>
       '${_grouped(v)} ${v == 1 ? one : (many ?? '${one}s')}';
   final parts = <String>[
     n(pages, 'page'),
     if (images > 0) n(images, 'image'),
     if (strokes > 0) n(strokes, 'ink stroke'),
+    if (tags > 0) n(tags, 'tag'),
   ];
   if (parts.length == 1) return parts.first;
   return '${parts.take(parts.length - 1).join(', ')} and ${parts.last}';

@@ -853,19 +853,38 @@ class Repository {
       // amplification: an INSERT-or-UPDATE per save carrying no information.)
       // Maintain blob_refs projection: image/file blocks plus in-flow images
       // referenced from text markdown (`![alt](sha256:<hash>)`, Data Model §5.1).
+      //
+      // **Only for blobs this container actually holds**, hence the SELECT
+      // rather than VALUES. `blob_refs.hash` is a foreign key onto `blobs`, and
+      // a page referencing bytes we do not have is a legitimate, ordinary
+      // state: a cloud client copies the op log and the content-addressed blob
+      // files independently, so the reference routinely lands first. With a
+      // plain INSERT that raised a constraint violation *inside the sync
+      // pull's transaction* — so one shared notebook with one image in it
+      // stopped that device syncing at all, and not merely for the page with
+      // the picture.
+      //
+      // Under-recording is safe here in a way that over-recording would not
+      // be: this table is a projection of "which stored blobs does this page
+      // reach", and a blob we do not store cannot be reached. Garbage
+      // collection deliberately does not trust it either — ADR-0007 chose
+      // recompute-by-scanning precisely because one missed mutation path in a
+      // maintained count silently deletes someone's content.
       db.execute('DELETE FROM blob_refs WHERE page_id=?', [pageId]);
       for (final b in blocks) {
         final hash = b.content['blob'];
         if (hash is String) {
           db.execute(
-              'INSERT OR IGNORE INTO blob_refs(page_id,hash) VALUES(?,?)',
+              'INSERT OR IGNORE INTO blob_refs(page_id,hash) '
+              'SELECT ?, hash FROM blobs WHERE hash=?',
               [pageId, hash.replaceFirst('sha256:', '')]);
         }
         final text = b.content['text'];
         if (text is String && text.contains('](sha256:')) {
           for (final m in _inlineImgRe.allMatches(text)) {
             db.execute(
-                'INSERT OR IGNORE INTO blob_refs(page_id,hash) VALUES(?,?)',
+                'INSERT OR IGNORE INTO blob_refs(page_id,hash) '
+                'SELECT ?, hash FROM blobs WHERE hash=?',
                 [pageId, m.group(1)!.toLowerCase()]);
           }
         }

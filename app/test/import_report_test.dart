@@ -23,6 +23,13 @@ void main() {
       expect(importArrivalNote(999, 0, 0), '999 pages');
     });
 
+    test('names imported tags too', () {
+      expect(importArrivalNote(12, 0, 0, 40),
+          '12 pages and 40 tags');
+      expect(importArrivalNote(324, 372, 64616, 811),
+          '324 pages, 372 images, 64,616 ink strokes and 811 tags');
+    });
+
     test('singulars', () {
       expect(importArrivalNote(1, 1, 1), '1 page, 1 image and 1 ink stroke');
     });

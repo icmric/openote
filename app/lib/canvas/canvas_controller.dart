@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 /// First-party pan/zoom (Tech Eval §7.3: own transform, no InteractiveViewer).

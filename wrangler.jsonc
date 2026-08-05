@@ -1,0 +1,46 @@
+// openote.org — a Worker with static assets.
+//
+// Deliberately a Worker rather than Cloudflare Pages: Pages would serve the
+// HTML perfectly well, but the page needs one dynamic thing (the newest
+// release), and doing that at the edge instead of in every visitor's browser
+// is the whole justification. See site/worker.js for the reasoning.
+//
+// Deploy:  npx wrangler deploy          (CI does this on push to master)
+// Preview: npx wrangler dev             (serves site/ on localhost:8787)
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "openote-site",
+  "main": "site/worker.js",
+
+  // Pin the runtime date rather than tracking "latest". A Worker whose
+  // runtime semantics can change under it between deploys is a Worker that
+  // can break without anyone touching the code.
+  "compatibility_date": "2026-07-01",
+
+  "assets": {
+    "directory": "./site",
+
+    // The binding the Worker calls for anything that is not /api/latest.
+    "binding": "ASSETS",
+
+    // Requests hit the Worker FIRST, always. The default
+    // ("asset first, Worker only on a miss") would work here too, but it makes
+    // routing depend on which filenames happen to exist in site/ — so adding a
+    // file called `api` would silently take over the API route. Explicit
+    // routing costs one invocation per asset request and removes that class of
+    // surprise entirely.
+    "run_worker_first": true,
+
+    // /about serves about.html; a missing path 404s rather than serving
+    // index.html for everything, which would make a typo look like the home
+    // page.
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+
+  "observability": {
+    // Logs are off by default and are the only way to find out that
+    // /api/latest has been 503ing for a week.
+    "enabled": true
+  }
+}

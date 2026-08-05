@@ -1,0 +1,40 @@
+# Deploy openote.org to Cloudflare Workers.
+#
+# The site is one static HTML file plus a Worker with a single cached API
+# route, so there is no build step — wrangler uploads site/ as static assets
+# and site/worker.js as the script.
+#
+# Deliberately NOT triggered by the release workflow: the page reads the latest
+# release through /api/latest at request time, so a new release appears on the
+# site without redeploying anything.
+name: Site
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'site/**'
+      - 'wrangler.jsonc'
+      - '.github/workflows/site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; never cancel one half-uploaded.
+concurrency:
+  group: site
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          # A scoped API token, not the global key. Needs exactly two
+          # permissions: Workers Scripts:Edit and Account Settings:Read.
+          # Stored as a repository secret; see docs/RELEASING.md §2.
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
