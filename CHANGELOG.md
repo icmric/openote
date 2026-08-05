@@ -4,6 +4,19 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased — 0.2.0] · the first public release
 
+### Added — OneNote tags now import (2026-08-05)
+- **Your OneNote tags come across.** To Do, Important, Question, Remember,
+  Definition, Idea, Critical and Contact arrive as real Openote tags on the
+  lines they marked — so an imported notebook's questions and definitions feed
+  the flashcard deck on day one instead of needing to be re-tagged by hand. A
+  tag we don't recognise (a custom one, or a notebook in another language)
+  arrives as a custom tag keeping its own name rather than being dropped.
+- The import summary counts them: *"Imported 324 pages, 372 images, 64,616 ink
+  strokes and 811 tags"*.
+- **Imported to-dos arrive unticked.** OneNote's completion flag is not decoded
+  yet — the two candidate properties contradict each other on the file we have,
+  and a wrongly-ticked to-do is worse than an unticked one.
+
 ### Changed — navigator polish + storage honesty (2026-08-05)
 - **Sections inside a group are indented, with a guide rail** down their left
   edge, so where a group starts and ends is unambiguous.

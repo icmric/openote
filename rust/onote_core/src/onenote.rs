@@ -33,6 +33,16 @@ use std::collections::{HashMap, HashSet};
 
 // ── MS-ONE property IDs (empirically identified against real files) ────────
 /// Outline/paragraph body text, stored UTF-8 (the main content property).
+// Note tags (TEXT-5). Decoded against a real tagged `.one`; see the
+// property-walk fix that made them readable at all — 0x3489 is an
+// ArrayOfPropertyValues, and until its length was computed properly every
+// property after it was read from the wrong offset.
+const JCID_TAG_DEF: u32 = 0x00120043;
+const PID_TAG_STATES: u32 = 0x003489; // paragraph → array of tag states
+const PID_TAG_DEF_OID: u32 = 0x003488; // state → the tag definition it applies
+const PID_TAG_LABEL: u32 = 0x003468; // definition → "To Do", "Question", …
+const PID_TAG_SHAPE: u32 = 0x003464; // definition → OneNote's icon index
+
 const PID_TEXT_UTF8: u32 = 0x003498;
 /// Secondary rich text, stored UTF-16 (diagram labels, some runs).
 const PID_TEXT_UTF16: u32 = 0x001C22;
@@ -163,6 +173,15 @@ pub struct ImportedImage {
     pub data_base64: String,
 }
 
+/// A tag on one line of a box: [ParaTag] plus where it landed.
+#[derive(Serialize)]
+pub struct BoxTag {
+    /// 0-based line index within the box's markdown.
+    pub line: usize,
+    pub label: String,
+    pub shape: u32,
+}
+
 /// One positioned content box on the page. `kind` is `"text"` (markdown set)
 /// or `"math"` (latex set) — equations become their own box so Openote mounts
 /// a real math block instead of burying `$$…$$` mid-paragraph.
@@ -191,6 +210,12 @@ pub struct PageBox {
     /// the app falls back to equal columns.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub col_w: Vec<f32>,
+    /// Note tags, each pinned to a 0-based line index within [markdown].
+    ///
+    /// Per LINE rather than per box because that is Openote's model (and
+    /// OneNote's): a tag marks a paragraph, and one box holds many.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<BoxTag>,
     /// Boxes that came out of one OneNote container, in document order, share a
     /// flow id (0 = not in a flow).
     ///
@@ -831,7 +856,8 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
                 }
                 let rows = grid.cells.len() as f32;
                 boxes.push(PageBox {
-                    kind: "table".into(),
+                    tags: Vec::new(),
+kind: "table".into(),
                     x: MX,
                     y: stack_y,
                     w: table_width(&grid),
@@ -1197,10 +1223,11 @@ fn emit_boxes(
         if seg.is_empty() {
             return;
         }
-        let md = outline_markdown(seg, img_idx, Some(base_depth));
+        let (md, tags) = outline_markdown_tagged(seg, img_idx, Some(base_depth));
         if !md.trim().is_empty() {
             out.push(PageBox {
                 kind: "text".into(),
+                tags,
                 x,
                 y: *cy,
                 w,
@@ -1221,7 +1248,8 @@ fn emit_boxes(
             flush(&mut seg, x, w, &mut cy, out, img_idx, flow, base_depth);
             let rows = grid.cells.len() as f32;
             out.push(PageBox {
-                kind: "table".into(),
+                tags: Vec::new(),
+kind: "table".into(),
                 x,
                 y: cy,
                 w: table_width(grid),
@@ -1241,7 +1269,8 @@ fn emit_boxes(
         if let Some(latex) = &l.math {
             flush(&mut seg, x, w, &mut cy, out, img_idx, flow, base_depth);
             out.push(PageBox {
-                kind: "math".into(),
+                tags: Vec::new(),
+kind: "math".into(),
                 x: x + 24.0,
                 y: cy,
                 w: None,
@@ -1648,6 +1677,59 @@ fn parse_run_index(v: Option<&PVal>) -> Vec<usize> {
 
 /// Split a paragraph object's text into styled runs, resolving the paragraph
 /// style (0x342C) and per-run formatting (0x1E12 boundaries + 0x1E13 styles).
+/// The note tags OneNote applied to this paragraph.
+///
+/// The chain, decoded against a real tagged `.one`: the paragraph carries
+/// `0x3489`, an array of tag *states*; each state holds `0x3488`, an ObjectID
+/// pointing at a tag *definition* (jcid `0x00120043`); the definition carries
+/// the label (`0x3468`) and OneNote's icon index (`0x3464`).
+///
+/// **The completion state is deliberately not read.** The two candidate
+/// properties disagree on the only fixture available: on a Question the
+/// timestamp-shaped `0x346F` is set and `0x3470` is 1, while on an unticked
+/// To Do both are 0 — so "non-zero means done" would mark a question complete.
+/// A wrongly-ticked to-do is worse than an unticked one, and this file's own
+/// rule is that guessing at property semantics is how working imports get
+/// broken. Imported to-dos arrive unticked until there is a fixture containing
+/// a *completed* one to settle it.
+fn paragraph_tags(r: &Reader, o: &Obj, res: &Resolver) -> Vec<ParaTag> {
+    let ps = read_propset(r, o.stp, o.cb);
+    let Some(PVal::Array(states)) = ps.get(PID_TAG_STATES) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for state in states {
+        for (pid, val) in &state.props {
+            if *pid != PID_TAG_DEF_OID {
+                continue;
+            }
+            let PVal::Oids(oids) = val else { continue };
+            for &oid in oids {
+                let Some(idx) = res.get(oid, o.rev) else { continue };
+                let def = res.obj(idx);
+                if def.jcid != JCID_TAG_DEF {
+                    continue;
+                }
+                let dps = read_propset(r, def.stp, def.cb);
+                let label = dps
+                    .bytes(PID_TAG_LABEL)
+                    .map(|b| decode_utf16(b).trim_end_matches('\0').to_string())
+                    .unwrap_or_default();
+                if label.trim().is_empty() {
+                    continue;
+                }
+                let shape = dps.u32(PID_TAG_SHAPE).unwrap_or(0);
+                // One paragraph can carry the same tag twice in the file; the
+                // note only means it once.
+                if !out.iter().any(|t: &ParaTag| t.label == label) {
+                    out.push(ParaTag { label, shape });
+                }
+            }
+        }
+    }
+    out
+}
+
 fn styled_runs(r: &Reader, o: &Obj, res: &Resolver) -> Vec<SRun> {
     let ps = read_propset(r, o.stp, o.cb);
     let text = match ps.run_text() {
@@ -2526,9 +2608,28 @@ fn run_markdown(run: &SRun) -> String {
 
 /// One rendered paragraph: indent depth, whether OneNote marked it a list item,
 /// its bullet string, the styled runs, and (if it's a math paragraph) LaTeX.
+/// A note tag OneNote applied to one paragraph.
+///
+/// Carries the label and the icon index rather than a mapped kind: the mapping
+/// to Openote's built-ins is the app's business (that is where `TagKind`
+/// lives), and an unrecognised label must survive as a custom tag rather than
+/// being dropped on the way through.
+#[derive(Clone, Debug, Serialize)]
+pub struct ParaTag {
+    /// OneNote's own name for it, e.g. "To Do".
+    pub label: String,
+    /// OneNote's icon index (0x3464). Kept because it is locale-independent
+    /// where the label is not — a German notebook says "Aufgabe" — and a later
+    /// pass can map by shape once there is a fixture to verify the table
+    /// against. Nothing reads it yet.
+    pub shape: u32,
+}
+
 struct Line {
     depth: usize,
     is_list: bool,
+    /// Tags on this paragraph, if OneNote put any there.
+    tags: Vec<ParaTag>,
     bullet: String,
     runs: Vec<SRun>,
     math: Option<String>,
@@ -2734,6 +2835,7 @@ fn collect_inner(
 
     if matches!(o.jcid, JCID_RICHTEXT | JCID_RICHTEXT_RUN) {
         let runs = styled_runs(r, o, res);
+        let tags = paragraph_tags(r, o, res);
         let plain: String = runs.iter().map(|s| s.text.as_str()).collect();
         if !plain.trim().is_empty() {
             // Classify PER RUN, not per paragraph. A paragraph is a display
@@ -2756,6 +2858,7 @@ fn collect_inner(
             if all_math && !latex.trim().is_empty() {
                 out.push(Line {
                     depth,
+                    tags: tags.clone(),
                     is_list: ctx,
                     bullet: bullet.clone(),
                     runs: Vec::new(),
@@ -2768,6 +2871,7 @@ fn collect_inner(
                 // conversion failed — all keep their runs, so nothing is lost.
                 out.push(Line {
                     depth,
+                    tags,
                     is_list: ctx,
                     bullet: bullet.clone(),
                     runs,
@@ -2797,6 +2901,7 @@ fn collect_inner(
                 if !grid.is_empty() {
                     out.push(Line {
                         depth,
+                        tags: Vec::new(),
                         is_list: false,
                         bullet: String::new(),
                         runs: Vec::new(),
@@ -2813,6 +2918,7 @@ fn collect_inner(
                 // splitter can place it and advance the flow by its height.
                 out.push(Line {
                     depth: depth + 1,
+                    tags: Vec::new(),
                     is_list: false,
                     bullet: String::new(),
                     runs: Vec::new(),
@@ -3256,9 +3362,25 @@ fn outline_markdown(
     img_idx: &HashMap<u32, String>,
     base_depth: Option<usize>,
 ) -> String {
+    outline_markdown_tagged(lines, img_idx, base_depth).0
+}
+
+/// The markdown, plus each tag pinned to the line index it actually landed on.
+///
+/// Counted as lines are emitted rather than by position in `lines`, because an
+/// image whose placeholder is missing is skipped — so the two would drift apart
+/// exactly on the pages that have images, and a tag would mark the wrong
+/// sentence.
+fn outline_markdown_tagged(
+    lines: &[&Line],
+    img_idx: &HashMap<u32, String>,
+    base_depth: Option<usize>,
+) -> (String, Vec<BoxTag>) {
     let min_depth = base_depth
         .unwrap_or_else(|| lines.iter().map(|l| l.depth).min().unwrap_or(0));
     let mut out = String::new();
+    let mut tags = Vec::new();
+    let mut emitted = 0usize;
     for l in lines {
         let level = l.depth.saturating_sub(min_depth);
         if let Some(oid) = l.image {
@@ -3266,6 +3388,7 @@ fn outline_markdown(
                 out.push_str(&"  ".repeat(level));
                 out.push_str(placeholder);
                 out.push('\n');
+                emitted += 1;
             }
             continue;
         }
@@ -3276,8 +3399,16 @@ fn outline_markdown(
         }
         out.push_str(&render_runs(&l.runs));
         out.push('\n');
+        for t in &l.tags {
+            tags.push(BoxTag {
+                line: emitted,
+                label: t.label.clone(),
+                shape: t.shape,
+            });
+        }
+        emitted += 1;
     }
-    out.trim_end().to_string()
+    (out.trim_end().to_string(), tags)
 }
 
 /// (property_id, raw_bytes) for each type-7 property. Used for title lookup.
@@ -4525,6 +4656,51 @@ mod tests {
         }
     }
 
+    /// Tags land on the line they marked, counted as lines are EMITTED.
+    ///
+    /// The trap this pins: an image whose placeholder is missing is skipped
+    /// during emission, so counting by position in the input list would drift
+    /// on exactly the pages that have images — and a tag would then mark a
+    /// sentence it was never on.
+    #[test]
+    fn a_tag_lands_on_the_line_it_marked() {
+        let tag = |label: &str| ParaTag { label: label.into(), shape: 0 };
+        let mut first = text_line(0, "This is a question", false);
+        first.tags = vec![tag("Question")];
+        let mut third = text_line(0, "And now a todo", false);
+        third.tags = vec![tag("To Do")];
+        // An image with no stored placeholder sits between them and is skipped.
+        let ghost = Line {
+            depth: 0,
+            tags: Vec::new(),
+            is_list: false,
+            bullet: String::new(),
+            runs: Vec::new(),
+            math: None,
+            table: None,
+            image: Some(999),
+        };
+        let lines = vec![&first, &ghost, &third];
+        let (md, tags) = outline_markdown_tagged(&lines, &HashMap::new(), Some(0));
+
+        assert_eq!(md, "This is a question\nAnd now a todo");
+        assert_eq!(tags.len(), 2);
+        assert_eq!((tags[0].line, tags[0].label.as_str()), (0, "Question"));
+        assert_eq!(
+            (tags[1].line, tags[1].label.as_str()),
+            (1, "To Do"),
+            "the skipped image must not push the tag off its line"
+        );
+    }
+
+    /// A paragraph with no tags costs nothing and reports nothing.
+    #[test]
+    fn an_untagged_paragraph_reports_no_tags() {
+        let l = text_line(0, "just prose", false);
+        let (_, tags) = outline_markdown_tagged(&[&l], &HashMap::new(), Some(0));
+        assert!(tags.is_empty());
+    }
+
     #[test]
     fn rejects_non_one_input() {
         let out = import_one_json(b"not a onenote file at all, padding.......................");
@@ -4534,6 +4710,7 @@ mod tests {
     fn text_line(depth: usize, text: &str, is_list: bool) -> Line {
         Line {
             depth,
+            tags: Vec::new(),
             is_list,
             bullet: if is_list { "-".into() } else { String::new() },
             runs: vec![SRun { text: text.into(), style: Style::default() }],

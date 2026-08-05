@@ -41,6 +41,28 @@ enum TagKind {
   static TagKind parse(String? key) => TagKind.values
       .firstWhere((k) => k.key == key, orElse: () => TagKind.custom);
 
+  /// Map one of OneNote's own tag names onto our set.
+  ///
+  /// Matched on the **label**, because that is what the file actually carries
+  /// in a form we can read. OneNote also records an icon index, which would be
+  /// locale-independent where this is not — a German notebook says "Aufgabe" —
+  /// but there is no verified shape table and inventing one is how working
+  /// imports get broken. A label we don't know becomes [custom] **keeping its
+  /// name**, so a Dutch notebook's tags arrive intact and legible even though
+  /// they aren't mapped; nothing is ever dropped.
+  static TagKind fromOneNoteLabel(String label) {
+    final l = label.trim().toLowerCase();
+    if (l.startsWith('to do')) return TagKind.todo; // incl. "To Do priority 1"
+    if (l.startsWith('important')) return TagKind.important;
+    if (l.startsWith('question')) return TagKind.question;
+    if (l.startsWith('remember')) return TagKind.remember;
+    if (l.startsWith('definition')) return TagKind.definition;
+    if (l.startsWith('idea')) return TagKind.idea;
+    if (l.startsWith('critical')) return TagKind.critical;
+    if (l.startsWith('contact')) return TagKind.contact;
+    return TagKind.custom;
+  }
+
   /// Tags offered in the picker. [custom] is the fallback for imports, not
   /// something a user picks by name.
   static List<TagKind> get pickable =>

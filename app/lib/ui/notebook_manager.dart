@@ -497,11 +497,11 @@ Future<void> importOneNotePackageWithFeedback(
           : "That notebook couldn't be imported: $err";
     } else if (skipped.isEmpty) {
       msg = 'Imported '
-          '${importArrivalNote(count, lastImportedImages, lastImportedStrokes)}'
+          '${importArrivalNote(count, lastImportedImages, lastImportedStrokes, lastImportedTags)}'
           ' from OneNote.${_strokeNote()}';
     } else {
       msg = 'Imported '
-          '${importArrivalNote(count, lastImportedImages, lastImportedStrokes)}'
+          '${importArrivalNote(count, lastImportedImages, lastImportedStrokes, lastImportedTags)}'
           ', but '
           '${skipped.length} section${skipped.length == 1 ? '' : 's'} '
           'could not be read: ${skipped.take(3).join(', ')}'
@@ -527,7 +527,7 @@ Future<void> importOneNoteSectionWithFeedback(
         count == 0
             ? "Couldn't read any content from that .one file."
             : 'Imported '
-                '${importArrivalNote(count, lastImportedImages, lastImportedStrokes)}'
+                '${importArrivalNote(count, lastImportedImages, lastImportedStrokes, lastImportedTags)}'
                 ' from OneNote.${_strokeNote()}');
   } on OneNoteUnavailable {
     if (context.mounted) _snack(context, _coreMissing, seconds: 8);
@@ -564,13 +564,14 @@ const _coreMissing =
 /// Each clause appears only if it is non-zero: a notebook with no ink should
 /// not be told it imported no ink.
 @visibleForTesting
-String importArrivalNote(int pages, int images, int strokes) {
+String importArrivalNote(int pages, int images, int strokes, [int tags = 0]) {
   String n(int v, String one, [String? many]) =>
       '${_grouped(v)} ${v == 1 ? one : (many ?? '${one}s')}';
   final parts = <String>[
     n(pages, 'page'),
     if (images > 0) n(images, 'image'),
     if (strokes > 0) n(strokes, 'ink stroke'),
+    if (tags > 0) n(tags, 'tag'),
   ];
   if (parts.length == 1) return parts.first;
   return '${parts.take(parts.length - 1).join(', ')} and ${parts.last}';
