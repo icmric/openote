@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../model/models.dart';
 import '../state/app_state.dart';
-import '../theme/onote_theme.dart';
+import '../theme/tokens.dart';
 
 /// Right-click menus (style guide: most actions within ≤2 clicks).
 
@@ -17,8 +17,14 @@ PopupMenuItem<String> _item(String v, IconData icon, String label,
       const SizedBox(width: 10),
       Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
       if (shortcut != null)
-        Text(shortcut,
-            style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+        // A Builder because this is a top-level helper with no context of its
+        // own, and the shortcut hint must follow the surface role rather than
+        // hard-code a grey that fails AA in one mode or the other.
+        Builder(
+          builder: (context) => Text(shortcut,
+              style: OnoteType.caption
+                  .copyWith(color: context.surfaces.textSecondary)),
+        ),
     ]),
   );
 }

@@ -21,6 +21,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'notebook_manager.dart';
 import 'sync_dialog.dart';
+import '../theme/tokens.dart';
 
 /// Show the welcome flow if this workspace has never been used.
 ///
@@ -91,7 +92,7 @@ class _OnboardingState extends State<_Onboarding> {
               const Text(
                 'Your notes live in an open, readable file you own. Pick a '
                 'starting point — you can do any of these later too.',
-                style: TextStyle(fontSize: 12.5, height: 1.45),
+                style: TextStyle(fontSize: 13, height: 1.45),
               ),
               const SizedBox(height: 14),
 
@@ -109,7 +110,7 @@ class _OnboardingState extends State<_Onboarding> {
                           style: const TextStyle(
                               fontSize: 13, fontWeight: FontWeight.w600)),
                       subtitle: Text(p.dirname(n.path),
-                          style: const TextStyle(fontSize: 10.5),
+                          style: const TextStyle(fontSize: 11),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis),
                       trailing: FilledButton(
@@ -180,11 +181,11 @@ class _OnboardingState extends State<_Onboarding> {
   Widget _label(String s) => Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: Text(s.toUpperCase(),
-            style: const TextStyle(
-                fontSize: 10,
+            style: TextStyle(
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: .6,
-                color: OnoteColors.graphite400)),
+                color: context.surfaces.textSecondary)),
       );
 
   Widget _choice({
@@ -201,7 +202,7 @@ class _OnboardingState extends State<_Onboarding> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 10, 6),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(icon, size: 19, color: OnoteColors.graphite400),
+            Icon(icon, size: 18, color: context.surfaces.textSecondary),
             const SizedBox(width: 11),
             Expanded(
               child: Column(
@@ -212,7 +213,7 @@ class _OnboardingState extends State<_Onboarding> {
                           fontSize: 13, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
                   Text(body,
-                      style: const TextStyle(fontSize: 11.5, height: 1.4)),
+                      style: const TextStyle(fontSize: 12, height: 1.4)),
                   Row(children: [
                     TextButton(
                         onPressed: onTap,
@@ -239,12 +240,12 @@ class _OnboardingState extends State<_Onboarding> {
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
         decoration: BoxDecoration(
-          color: OnoteColors.graphite400.withValues(alpha: .10),
+          color: context.surfaces.textSecondary.withValues(alpha: .10),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
+          children: [
             Text('Exporting from OneNote',
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
             SizedBox(height: 6),
@@ -256,7 +257,7 @@ class _OnboardingState extends State<_Onboarding> {
               '3. File ▸ Export ▸ Notebook ▸ OneNote Package (*.onepkg), then '
               'Export.\n'
               '4. Come back here and choose that file.',
-              style: TextStyle(fontSize: 11.5, height: 1.55),
+              style: TextStyle(fontSize: 12, height: 1.55),
             ),
             SizedBox(height: 8),
             Text(
@@ -265,7 +266,7 @@ class _OnboardingState extends State<_Onboarding> {
               'Openote never signs into your Microsoft account — it only reads '
               'the file you hand it.',
               style: TextStyle(
-                  fontSize: 11, height: 1.45, color: OnoteColors.graphite400),
+                  fontSize: 11, height: 1.45, color: context.surfaces.textSecondary),
             ),
           ],
         ),

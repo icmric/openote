@@ -66,6 +66,24 @@ enum TouchDrawing {
       };
 }
 
+/// The panels that can occupy the right-hand slot (style guide §7c).
+///
+/// An enum rather than five booleans, so "which panel is open" has exactly one
+/// answer and cannot be five contradictory ones.
+enum SidePanelKind {
+  study('Study'),
+  planner('Planner'),
+  tags('Tags'),
+  outline('Outline'),
+  links('Links');
+
+  const SidePanelKind(this.label);
+
+  /// What the toggle's tooltip and the panel's header both say, so they cannot
+  /// drift apart.
+  final String label;
+}
+
 /// One tagged line, as the rollup and the planner both need it.
 ///
 /// A typedef over a record rather than a class: it carries no behaviour, and
@@ -1134,11 +1152,8 @@ class AppState extends ChangeNotifier
     return out;
   }
 
-  bool showTagsPanel = false;
-  void toggleTagsPanel() {
-    showTagsPanel = !showTagsPanel;
-    notifyListeners();
-  }
+  bool get showTagsPanel => openPanel == SidePanelKind.tags;
+  void toggleTagsPanel() => togglePanel(SidePanelKind.tags);
 
   // ── Study: flashcards, scheduling, stats (E3 — see study_state.dart) ──
 
@@ -1151,11 +1166,8 @@ class AppState extends ChangeNotifier
   late final StudyState study = StudyState(this,
       readSetting: _repo.getSetting, writeSetting: _repo.setSetting);
 
-  bool showStudyPanel = false;
-  void toggleStudyPanel() {
-    showStudyPanel = !showStudyPanel;
-    notifyListeners();
-  }
+  bool get showStudyPanel => openPanel == SidePanelKind.study;
+  void toggleStudyPanel() => togglePanel(SidePanelKind.study);
 
   // ── The planner: dates, reminders, timetable (v0.5) ──────────────────
 
@@ -1169,17 +1181,44 @@ class AppState extends ChangeNotifier
       readSetting: _repo.getSetting, writeSetting: _repo.setSetting)
     ..addListener(notifyListeners);
 
-  bool showPlannerPanel = false;
-  void togglePlannerPanel() {
-    showPlannerPanel = !showPlannerPanel;
+  // ── The right-hand panel slot (style guide §7c) ──────────────────────
+
+  /// Which panel occupies the single right-hand slot, or null for none.
+  ///
+  /// **One slot, one panel** — the five panels were independent booleans, so
+  /// all five could be open at once: 1,360px of chrome on a Row, which leaves
+  /// the canvas nothing on a 1366px laptop. No workflow was found that needs
+  /// two at a time, and one-at-a-time is also the task-pane model a OneNote
+  /// switcher already expects.
+  ///
+  /// The old `show*Panel` fields are now getters over this, so every existing
+  /// call site keeps working and there is only one piece of state to be wrong.
+  SidePanelKind? openPanel;
+
+  /// Open [kind], replacing whatever was there. Idempotent.
+  void showPanel(SidePanelKind kind) {
+    if (openPanel == kind) return;
+    openPanel = kind;
     notifyListeners();
   }
 
+  void closePanel() {
+    if (openPanel == null) return;
+    openPanel = null;
+    notifyListeners();
+  }
+
+  /// Open [kind], or close it if it is already the open one — what a toolbar
+  /// toggle does.
+  void togglePanel(SidePanelKind kind) =>
+      openPanel == kind ? closePanel() : showPanel(kind);
+
+  bool get showPlannerPanel => openPanel == SidePanelKind.planner;
+  void togglePlannerPanel() => togglePanel(SidePanelKind.planner);
+
   /// Open the planner (idempotent) — what a "see all your dates" affordance
   /// elsewhere in the app should call.
-  void openPlanner() {
-    if (!showPlannerPanel) togglePlannerPanel();
-  }
+  void openPlanner() => showPanel(SidePanelKind.planner);
 
   // ── Favourites & recents (ORG-10) ────────────────────────────────────
   //
@@ -2588,11 +2627,8 @@ class AppState extends ChangeNotifier
   // ── Backlinks (TEXT-8) ─────────────────────────────────────────────────
 
   /// Page outline panel (TEXT-10).
-  bool showTocPanel = false;
-  void toggleTocPanel() {
-    showTocPanel = !showTocPanel;
-    notifyListeners();
-  }
+  bool get showTocPanel => openPanel == SidePanelKind.outline;
+  void toggleTocPanel() => togglePanel(SidePanelKind.outline);
 
   /// Headings on the current page, in reading order, for the outline panel.
   ///
@@ -2628,11 +2664,8 @@ class AppState extends ChangeNotifier
     return items;
   }
 
-  bool showLinksPanel = false;
-  void toggleLinksPanel() {
-    showLinksPanel = !showLinksPanel;
-    notifyListeners();
-  }
+  bool get showLinksPanel => openPanel == SidePanelKind.links;
+  void toggleLinksPanel() => togglePanel(SidePanelKind.links);
 
   // The links panel is rebuilt on every notify while it's open, and both of
   // these are expensive: one is a synchronous SQLite query on the UI thread, the

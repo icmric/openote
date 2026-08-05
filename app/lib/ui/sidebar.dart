@@ -11,6 +11,7 @@ import '../theme/onote_theme.dart';
 import 'exam_date.dart';
 import 'notebook_manager.dart';
 import 'planner_format.dart';
+import '../theme/tokens.dart';
 
 Color _sectionColor(String? token, bool dark) => switch (token) {
       'brass-400' => OnoteColors.brass400,
@@ -147,7 +148,7 @@ class _SidebarState extends State<Sidebar> {
                       ? null
                       : InkWell(
                           onTap: _clearSearch,
-                          child: const Icon(Icons.close, size: 15),
+                          child: const Icon(Icons.close, size: 16),
                         ),
                   suffixIconConstraints:
                       const BoxConstraints(minWidth: 30, minHeight: 30),
@@ -188,7 +189,7 @@ class _SidebarState extends State<Sidebar> {
     if (results.isEmpty && contentHits.isEmpty) {
       return Center(
         child: Text('No matches for “${_query.trim()}”',
-            style: const TextStyle(fontSize: 12, color: OnoteColors.graphite400)),
+            style: TextStyle(fontSize: 12, color: context.surfaces.textSecondary)),
       );
     }
     return ListView(
@@ -223,13 +224,13 @@ class _SidebarState extends State<Sidebar> {
             },
           ),
         if (contentHits.isNotEmpty) ...[
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(12, 10, 12, 4),
             child: Text('In page content',
                 style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: OnoteColors.graphite400)),
+                    color: context.surfaces.textSecondary)),
           ),
           for (final h in contentHits)
             ListTile(
@@ -358,7 +359,7 @@ class _SidebarState extends State<Sidebar> {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.add, size: 15),
+                icon: const Icon(Icons.add, size: 16),
                 visualDensity: VisualDensity.compact,
                 tooltip: 'New page in ${section.title}',
                 onPressed: () => app.addPage(sectionId: section.id),
@@ -368,10 +369,10 @@ class _SidebarState extends State<Sidebar> {
         ),
         Expanded(
           child: pages.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text('No pages yet',
                       style: TextStyle(
-                          fontSize: 12, color: OnoteColors.graphite400)),
+                          fontSize: 12, color: context.surfaces.textSecondary)),
                 )
               : ListView(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -501,7 +502,7 @@ class _GroupHeaderState extends State<_GroupHeader> {
       builder: (ctx, cand, rej) {
         final target = cand.isNotEmpty;
         final labelStyle = TextStyle(
-            fontSize: 12.5,
+            fontSize: 13,
             fontWeight: FontWeight.w600,
             fontStyle: target ? FontStyle.italic : FontStyle.normal,
             color: target ? scheme.primary : null);
@@ -524,10 +525,10 @@ class _GroupHeaderState extends State<_GroupHeader> {
             child: Row(
               children: [
                 Icon(collapsed ? Icons.chevron_right : Icons.expand_more,
-                    size: 16, color: OnoteColors.graphite400),
+                    size: 16, color: context.surfaces.textSecondary),
                 const SizedBox(width: 4),
                 const Icon(Icons.topic_outlined,
-                    size: 15, color: OnoteColors.graphite500),
+                    size: 16, color: OnoteColors.graphite500),
                 const SizedBox(width: 6),
                 Expanded(
                   child: _renaming
@@ -605,14 +606,14 @@ class _HomeTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
           child: Row(children: [
             Icon(Icons.star_outline,
-                size: 15,
+                size: 16,
                 color: active ? scheme.primary : OnoteColors.brass400),
             const SizedBox(width: 8),
             Expanded(
               child: Text('Home',
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontSize: 12.5,
+                      fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: active ? scheme.primary : null)),
             ),
@@ -637,11 +638,11 @@ class _HomePane extends StatelessWidget {
     Widget label(String s) => Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
           child: Text(s,
-              style: const TextStyle(
-                  fontSize: 10.5,
+              style: TextStyle(
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: .6,
-                  color: OnoteColors.graphite400)),
+                  color: context.surfaces.textSecondary)),
         );
 
     Widget row(TreeNode page, IconData icon, {Color? iconColor}) => InkWell(
@@ -649,7 +650,7 @@ class _HomePane extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: Row(children: [
-              Icon(icon, size: 14, color: iconColor ?? OnoteColors.graphite400),
+              Icon(icon, size: 16, color: iconColor ?? context.surfaces.textSecondary),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
@@ -657,11 +658,11 @@ class _HomePane extends StatelessWidget {
                   children: [
                     Text(page.title.isEmpty ? 'Untitled' : page.title,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12.5)),
+                        style: const TextStyle(fontSize: 13)),
                     Text(app.node(page.parentId)?.title ?? '',
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontSize: 10.5, color: OnoteColors.graphite400)),
+                        style: TextStyle(
+                            fontSize: 11, color: context.surfaces.textSecondary)),
                   ],
                 ),
               ),
@@ -743,19 +744,19 @@ class _ComingUp extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 6, 4),
           child: Row(children: [
-            const Text('COMING UP',
+            Text('COMING UP',
                 style: TextStyle(
-                    fontSize: 10.5,
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
                     letterSpacing: .6,
-                    color: OnoteColors.graphite400)),
+                    color: context.surfaces.textSecondary)),
             const Spacer(),
             InkWell(
               onTap: app.openPlanner,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 child: Text(total > _max ? 'All $total' : 'Open',
-                    style: TextStyle(fontSize: 10.5, color: scheme.primary)),
+                    style: TextStyle(fontSize: 11, color: scheme.primary)),
               ),
             ),
           ]),
@@ -767,7 +768,7 @@ class _ComingUp extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(12, 3, 12, 3),
               child: Row(children: [
                 Icon(Icons.notifications_active_outlined,
-                    size: 13, color: scheme.primary),
+                    size: 16, color: scheme.primary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -793,7 +794,9 @@ class _ComingUp extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 3, 12, 3),
               child: Row(children: [
-                Icon(_icon(it.kind), size: 13, color: _colour(it.kind, scheme)),
+                Icon(_icon(it.kind),
+                    size: OnoteIcon.sm,
+                    color: _colour(it.kind, scheme, context.surfaces)),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(it.title,
@@ -806,10 +809,10 @@ class _ComingUp extends StatelessWidget {
                 const SizedBox(width: 6),
                 Text(plannerWhen(it, now),
                     style: TextStyle(
-                        fontSize: 10.5,
+                        fontSize: 11,
                         color: bucketFor(it, now) == AgendaBucket.overdue
                             ? OnoteColors.danger
-                            : OnoteColors.graphite400)),
+                            : context.surfaces.textSecondary)),
               ]),
             ),
           ),
@@ -824,11 +827,13 @@ class _ComingUp extends StatelessWidget {
         DatedKind.event => Icons.schedule,
       };
 
-  static Color _colour(DatedKind k, ColorScheme scheme) => switch (k) {
+  static Color _colour(
+          DatedKind k, ColorScheme scheme, OnoteSurfaces s) =>
+      switch (k) {
         DatedKind.exam => OnoteColors.brass500,
         DatedKind.task => scheme.primary,
         DatedKind.reminder => OnoteColors.ink400,
-        DatedKind.event => OnoteColors.graphite400,
+        DatedKind.event => s.textSecondary,
       };
 }
 
@@ -852,7 +857,7 @@ class _NavRail extends StatelessWidget {
         children: [
           const SizedBox(height: 6),
           IconButton(
-            icon: const Icon(Icons.keyboard_double_arrow_right, size: 17),
+            icon: const Icon(Icons.keyboard_double_arrow_right, size: 18),
             tooltip: 'Expand the navigator  (Ctrl+\\)',
             visualDensity: VisualDensity.compact,
             onPressed: app.toggleNavCollapsed,
@@ -1162,9 +1167,9 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
                           padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
                           child: Text(
                               'Items here are permanently deleted after $retention days.',
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 11,
-                                  color: OnoteColors.graphite400)),
+                                  color: context.surfaces.textSecondary)),
                         ),
                         if (notebooks.isNotEmpty) ...[
                           const _BinSectionLabel('Notebooks'),
@@ -1290,11 +1295,11 @@ class _BinSectionLabel extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.fromLTRB(4, 8, 4, 2),
         child: Text(text.toUpperCase(),
-            style: const TextStyle(
-                fontSize: 10.5,
+            style: TextStyle(
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: .6,
-                color: OnoteColors.graphite400)),
+                color: context.surfaces.textSecondary)),
       );
 }
 
@@ -1406,7 +1411,7 @@ Widget dragChip(BuildContext context, String label, IconData icon) {
         ],
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 14, color: Colors.white),
+        Icon(icon, size: 16, color: Colors.white),
         const SizedBox(width: 6),
         Text(label,
             style: const TextStyle(color: Colors.white, fontSize: 12)),
@@ -1555,8 +1560,8 @@ class _PageTileState extends State<_PageTile> {
                             widget.collapsed
                                 ? Icons.chevron_right
                                 : Icons.expand_more,
-                            size: 15,
-                            color: OnoteColors.graphite400),
+                            size: 16,
+                            color: context.surfaces.textSecondary),
                       )
                     : null,
               ),
@@ -1564,8 +1569,8 @@ class _PageTileState extends State<_PageTile> {
                   page.level == 0
                       ? Icons.description_outlined
                       : Icons.subdirectory_arrow_right,
-                  size: 15,
-                  color: selected ? scheme.primary : OnoteColors.graphite400),
+                  size: 16,
+                  color: selected ? scheme.primary : context.surfaces.textSecondary),
               const SizedBox(width: 7),
               Expanded(
                 child: _renaming
@@ -1611,12 +1616,12 @@ class _EmptyHint extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 32, color: OnoteColors.graphite400),
+          Icon(icon, size: 32, color: context.surfaces.textSecondary),
           const SizedBox(height: 8),
           Text(text,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                  fontSize: 12, color: OnoteColors.graphite400)),
+              style: TextStyle(
+                  fontSize: 12, color: context.surfaces.textSecondary)),
           const SizedBox(height: 10),
           FilledButton.tonal(onPressed: onAction, child: Text(actionLabel)),
         ],
@@ -1915,7 +1920,7 @@ class _SectionColorRowState extends State<_SectionColorRow> {
     final current = widget.app.node(widget.section.id)?.color;
     return Row(children: [
       const Text('Colour',
-          style: TextStyle(fontSize: 12.5, color: OnoteColors.graphite500)),
+          style: TextStyle(fontSize: 13, color: OnoteColors.graphite500)),
       const SizedBox(width: 10),
       for (final token in AppState.sectionColorTokens)
         Padding(

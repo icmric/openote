@@ -19,6 +19,7 @@ import '../planner/agenda.dart';
 import '../state/planner_state.dart';
 import '../theme/onote_theme.dart';
 import 'planner_format.dart';
+import '../theme/tokens.dart';
 
 class MonthGrid extends StatefulWidget {
   const MonthGrid({
@@ -95,10 +96,10 @@ class _MonthGridState extends State<MonthGrid> {
               Expanded(
                 child: Center(
                   child: Text(d,
-                      style: const TextStyle(
-                          fontSize: 9.5,
+                      style: TextStyle(
+                          fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: OnoteColors.graphite400)),
+                          color: context.surfaces.textSecondary)),
                 ),
               ),
           ],
@@ -148,7 +149,7 @@ class _MonthGridState extends State<MonthGrid> {
                     // full weight makes the month's own boundary invisible.
                     color: inMonth
                         ? null
-                        : OnoteColors.graphite400.withValues(alpha: .65))),
+                        : context.surfaces.textSecondary.withValues(alpha: .65))),
             const SizedBox(height: 2),
             SizedBox(
               height: 4,
@@ -165,7 +166,7 @@ class _MonthGridState extends State<MonthGrid> {
                         margin: const EdgeInsets.symmetric(horizontal: .8),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: _dotColour(k, scheme),
+                          color: _dotColour(k, scheme, context.surfaces),
                         ),
                       ),
                 ],
@@ -177,11 +178,13 @@ class _MonthGridState extends State<MonthGrid> {
     );
   }
 
-  static Color _dotColour(DatedKind k, ColorScheme scheme) => switch (k) {
+  static Color _dotColour(
+          DatedKind k, ColorScheme scheme, OnoteSurfaces s) =>
+      switch (k) {
         DatedKind.exam => OnoteColors.brass500,
         DatedKind.task => scheme.primary,
         DatedKind.reminder => OnoteColors.ink400,
-        DatedKind.event => OnoteColors.graphite400,
+        DatedKind.event => s.textSecondary,
       };
 
   /// Which kinds fall on each day in the visible range, keyed by `y-m-d`.

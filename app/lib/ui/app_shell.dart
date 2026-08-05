@@ -17,6 +17,7 @@ import 'sidebar.dart';
 import '../export/print_page.dart';
 import 'study_panel.dart';
 import 'sync_dialog.dart';
+import '../theme/tokens.dart';
 
 /// Layout per style guide §5.4: navigator | (toolbar / canvas-as-hero / status).
 ///
@@ -509,7 +510,7 @@ class _FindBarState extends State<_FindBar> {
             app.findMatches.isEmpty
                 ? (app.findQuery.isEmpty ? '' : 'No matches')
                 : '${app.findIndex + 1} of ${app.findMatches.length}',
-            style: TextStyle(fontSize: 12, color: OnoteColors.graphite400),
+            style: TextStyle(fontSize: 12, color: context.surfaces.textSecondary),
           ),
           IconButton(
             icon: const Icon(Icons.keyboard_arrow_up, size: 18),
@@ -524,7 +525,7 @@ class _FindBarState extends State<_FindBar> {
           IconButton(
             icon: Icon(
                 _showReplace ? Icons.find_replace : Icons.find_replace_outlined,
-                size: 17),
+                size: 18),
             visualDensity: VisualDensity.compact,
             isSelected: _showReplace,
             tooltip: 'Replace',
@@ -554,7 +555,7 @@ class _PageHeader extends StatelessWidget {
     final notebook =
         app.notebooks.firstWhere((n) => n.id == app.notebookId);
     final crumbStyle =
-        TextStyle(fontSize: 11.5, color: OnoteColors.graphite400);
+        TextStyle(fontSize: 12, color: context.surfaces.textSecondary);
     return Container(
       height: 26,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -605,18 +606,18 @@ class _TagsPanel extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
             child: Row(children: [
-              const Icon(Icons.label_outline,
-                  size: 14, color: OnoteColors.graphite400),
+              Icon(Icons.label_outline,
+                  size: 16, color: context.surfaces.textSecondary),
               const SizedBox(width: 6),
               Text('TAGS',
                   style: TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: .6,
-                      color: OnoteColors.graphite400)),
+                      color: context.surfaces.textSecondary)),
               const Spacer(),
               IconButton(
-                icon: const Icon(Icons.close, size: 15),
+                icon: const Icon(Icons.close, size: 16),
                 visualDensity: VisualDensity.compact,
                 tooltip: 'Close tags',
                 onPressed: app.toggleTagsPanel,
@@ -624,12 +625,12 @@ class _TagsPanel extends StatelessWidget {
             ]),
           ),
           if (all.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(12, 4, 12, 12),
               child: Text(
                   'No tags in this notebook yet.\nTag a line from the Home tab.',
                   style:
-                      TextStyle(fontSize: 11.5, color: OnoteColors.graphite400)),
+                      TextStyle(fontSize: 12, color: context.surfaces.textSecondary)),
             )
           else
             Expanded(
@@ -643,7 +644,7 @@ class _TagsPanel extends StatelessWidget {
                         Padding(
                           padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
                           child: Row(children: [
-                            Icon(kind.icon, size: 13, color: kind.color),
+                            Icon(kind.icon, size: 16, color: kind.color),
                             const SizedBox(width: 5),
                             Text('${kind.label}  (${byKind[kind]!.length})',
                                 style: const TextStyle(
@@ -670,14 +671,14 @@ class _TagsPanel extends StatelessWidget {
                                                   ? TextDecoration.lineThrough
                                                   : null,
                                           color: (e.tag.checked ?? false)
-                                              ? OnoteColors.graphite400
+                                              ? context.surfaces.textSecondary
                                               : null)),
                                   Text(e.pageTitle,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                          fontSize: 10.5,
-                                          color: OnoteColors.graphite400)),
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: context.surfaces.textSecondary)),
                                 ],
                               ),
                             ),
@@ -715,17 +716,17 @@ class _TocPanel extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
             child: Row(children: [
-              const Icon(Icons.toc, size: 14, color: OnoteColors.graphite400),
+              Icon(Icons.toc, size: 16, color: context.surfaces.textSecondary),
               const SizedBox(width: 6),
               Text('OUTLINE',
                   style: TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: .6,
-                      color: OnoteColors.graphite400)),
+                      color: context.surfaces.textSecondary)),
               const Spacer(),
               IconButton(
-                icon: const Icon(Icons.close, size: 15),
+                icon: const Icon(Icons.close, size: 16),
                 visualDensity: VisualDensity.compact,
                 tooltip: 'Close outline',
                 onPressed: app.toggleTocPanel,
@@ -733,11 +734,11 @@ class _TocPanel extends StatelessWidget {
             ]),
           ),
           if (items.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(12, 4, 12, 12),
               child: Text('No headings on this page.\nStart a line with # to add one.',
                   style:
-                      TextStyle(fontSize: 11.5, color: OnoteColors.graphite400)),
+                      TextStyle(fontSize: 12, color: context.surfaces.textSecondary)),
             )
           else
             Expanded(
@@ -791,18 +792,18 @@ class _LinksPanel extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
             child: Row(children: [
-              Icon(icon, size: 14, color: OnoteColors.graphite400),
+              Icon(icon, size: 16, color: context.surfaces.textSecondary),
               const SizedBox(width: 6),
               Text(label.toUpperCase(),
                   style: TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: .6,
-                      color: OnoteColors.graphite400)),
+                      color: context.surfaces.textSecondary)),
               const Spacer(),
               Text('${pages.length}',
                   style:
-                      TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+                      TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
             ]),
           ),
           if (pages.isEmpty)
@@ -810,7 +811,7 @@ class _LinksPanel extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
               child: Text(empty,
                   style:
-                      TextStyle(fontSize: 12, color: OnoteColors.graphite400)),
+                      TextStyle(fontSize: 12, color: context.surfaces.textSecondary)),
             )
           else
             for (final p in pages)
@@ -821,7 +822,7 @@ class _LinksPanel extends StatelessWidget {
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   child: Row(children: [
                     Icon(Icons.description_outlined,
-                        size: 14, color: Theme.of(context).colorScheme.primary),
+                        size: 16, color: Theme.of(context).colorScheme.primary),
                     const SizedBox(width: 8),
                     Expanded(
                         child: Text(p.title,
@@ -918,12 +919,12 @@ class _StatusBar extends StatelessWidget {
                       : saved
                           ? Icons.check_circle_outline
                           : Icons.sync,
-                  size: 12,
+                  size: 16,
                   color: failed
                       ? OnoteColors.danger
                       : saved
                           ? OnoteColors.success
-                          : OnoteColors.graphite400),
+                          : context.surfaces.textSecondary),
               const SizedBox(width: 5),
               Text(
                   failed
@@ -935,7 +936,7 @@ class _StatusBar extends StatelessWidget {
                       fontSize: 11,
                       color: failed
                           ? OnoteColors.danger
-                          : OnoteColors.graphite400)),
+                          : context.surfaces.textSecondary)),
             ]),
           ),
           const SizedBox(width: 12),
@@ -959,8 +960,8 @@ class _StatusBar extends StatelessWidget {
                     'to link the Rust core.',
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.memory,
-                  size: 12,
-                  color: rust ? OnoteColors.success : OnoteColors.graphite400),
+                  size: 16,
+                  color: rust ? OnoteColors.success : context.surfaces.textSecondary),
               const SizedBox(width: 4),
               Text(
                 rust && hash != null && hash.length >= 8
@@ -968,7 +969,7 @@ class _StatusBar extends StatelessWidget {
                     : app.engineLabel,
                 style: TextStyle(
                     fontSize: 11,
-                    color: rust ? OnoteColors.success : OnoteColors.graphite400),
+                    color: rust ? OnoteColors.success : context.surfaces.textSecondary),
               ),
             ]),
           ),
@@ -976,7 +977,7 @@ class _StatusBar extends StatelessWidget {
           Text(
             'V select · T text · P pen · H highlight · E erase · '
             'Ctrl+Z undo · Ctrl+scroll zoom',
-            style: TextStyle(fontSize: 11, color: OnoteColors.graphite400),
+            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary),
             overflow: TextOverflow.ellipsis,
           ),
         ],
@@ -996,7 +997,7 @@ class _EmptyState extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.auto_stories_outlined,
-              size: 44, color: OnoteColors.graphite400),
+              size: 44, color: context.surfaces.textSecondary),
           const SizedBox(height: 12),
           const Text('An open page awaits',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
@@ -1004,7 +1005,7 @@ class _EmptyState extends StatelessWidget {
           Text(
             'Everything you make here lives on your device,\nin an open format you own.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: OnoteColors.graphite400),
+            style: TextStyle(fontSize: 13, color: context.surfaces.textSecondary),
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
@@ -1036,7 +1037,7 @@ class _SyncChip extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     // Green once it is actually somewhere that syncs; grey when it is only on
     // this machine. The colour is the whole at-a-glance answer.
-    final color = s.isSynced ? OnoteColors.success : OnoteColors.graphite400;
+    final color = s.isSynced ? OnoteColors.success : context.surfaces.textSecondary;
 
     return Tooltip(
       message: _tooltip(s),
@@ -1045,7 +1046,7 @@ class _SyncChip extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(s.icon, size: 12, color: color),
+            Icon(s.icon, size: 16, color: color),
             const SizedBox(width: 5),
             Text(s.label, style: TextStyle(fontSize: 11, color: color)),
             if (s.isSynced && s.hasOtherDevices) ...[
@@ -1059,7 +1060,7 @@ class _SyncChip extends StatelessWidget {
                           ? 'Already up to date.'
                           : 'Pulled $n change${n == 1 ? '' : 's'}.')));
                 },
-                child: Icon(Icons.refresh, size: 12, color: scheme.primary),
+                child: Icon(Icons.refresh, size: 16, color: scheme.primary),
               ),
             ],
           ]),

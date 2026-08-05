@@ -479,6 +479,134 @@ which zeroes the canvas on a 1366px laptop. The pattern is now fixed:
   app-wide): a panel with nothing to show says what would put something there,
   with the affordance in reach.
 
+## 7d. The shell's fixed regions *(added 2026-08-05 — normative)*
+
+Four regions frame the canvas. They were each designed independently and
+disagreed on height, type and colour; this fixes their anatomy so the frame
+reads as one frame.
+
+**Status bar** — 24px, `chrome` surface, one `border` hairline above, all text
+`caption` in `textSecondary`. **Left = state, right = teaching.** The left
+cluster reports what the app is doing (save state, sync, engine) with each item
+paired to an icon per §9; the right cluster carries the shortcut cheat-sheet
+(§7a.4). **It never truncates its own labels** — when width runs short, items
+drop from the right (least important first) rather than every label
+ellipsising, because "Sync…" is not a shorter way of saying "Synced 2 min ago",
+it is a different, useless message. A dropped cluster stays reachable from its
+tooltip.
+
+**Breadcrumb** — the notebook ▸ section trail above the page. `caption`,
+`textSecondary`, on `chrome`. It is **context, not navigation duplication**:
+the navigator already shows the tree, so the breadcrumb earns its row only when
+it says something the navigator cannot (a collapsed rail, a page reached by
+search or backlink). When the navigator is expanded and the page is visible in
+it, the row is redundant chrome and should not consume vertical space.
+
+**Find bar** — appears under the command bar, `chrome` surface, one hairline
+below, standard control metrics. Match count in `caption`; Enter/Shift-Enter
+step; Esc closes and restores focus to the canvas. Never a floating overlay
+over the page: find is a mode of the frame, not a thing on the note.
+
+**Empty states of the shell** (no notebook, no page) get the §7 empty-state
+treatment at `lg` icon size, centred, with the primary action as a real button
+— not a link.
+
+## 7e. Indicators: badges, counters and progress *(added 2026-08-05 — normative)*
+
+**Badges** — a count on a toggle (cards due, items today). `caption` weight
+700, `radius-full`, 4×1 padding, on `primary` fill with `onPrimary` text;
+`danger` when the count means *late*, `brass-500` when it means *waiting for
+you*. **A badge shows only actionable counts** — a number that is permanently
+non-zero stops being read, so badge "due now", never "total". Colour never
+carries the meaning alone (§9): the tooltip says which state it is.
+
+**Inline counts** in list headers ("Question (12)") are plain `caption` in
+`textSecondary`, never badges — a badge in a list header is decoration.
+
+**Progress** — anything over 300ms shows determinate progress where the total
+is known and an indeterminate 3px bar where it is not, in `primary` on a
+`chrome-2` track. Long operations (import, export, repair) report **what** is
+being processed, not just a percentage. On completion, a toast (§7) naming the
+result and, where a file was written, its path.
+
+**Never skeleton placeholders.** Grey bars standing in for text read as content
+that failed to load, and Openote's slow operations are rare and nameable. Say
+what is happening in words.
+
+## 7f. Content chrome on the canvas *(added 2026-08-05 — normative)*
+
+Everything drawn *around* the user's content on the page. The governing rule is
+§1's first principle — the page is the hero — so this chrome is the quietest in
+the app and most of it is invisible until pointed at.
+
+- **Block frame.** Untouched: no border. Hovered: 1px `border`. Selected: 2px
+  `primary` outline plus handles (§8.4). Radius `xl`, matching the canvas text
+  container. Chrome is **reserved inside the block's own bounds**, never drawn
+  at negative offsets — `RenderBox.hitTest` rejects anything outside the box's
+  size, so overflowed chrome is ungrabbable (§8.1).
+- **The move bar** is the only chrome that is always visible on a hovered
+  block, because it is the only affordance that has no other discoverable path.
+- **Media blocks** (image, PDF slide, attachment) carry no frame of their own;
+  the block frame above is the whole treatment. An attachment shows its icon,
+  filename in `ui`, and size in `caption`/`textSecondary`.
+- **Tables** use `border` hairlines, a `chrome-2` header row, `ui` cells, 8×4
+  cell padding. The grid is the structure — no zebra striping, no shadows.
+- **The tag gutter** hangs in reserved space to the left of the line and
+  **must not shift the text it decorates** (§7 Tags).
+- **The in-page title band** is part of the page's layout, not an overlay: it
+  reserves its own height so no block can render through it.
+- **Alignment guides and the snap grid** use `ink-400` at low opacity and
+  appear only during the drag that needs them.
+
+## 7g. Study and planner surfaces *(added 2026-08-05 — normative)*
+
+These are the two places where Openote stops being a notebook and becomes a
+study tool, and both were built before this guide covered them.
+
+**The review card** — a single centred column, max 560px, on `raised`. The
+question in the editor's reading size, not chrome type: it is the user's own
+note and should look like it. Reveal is one full-width action; grade buttons
+sit in one row, **each labelled with what it will do** ("Good · 4d") so the
+schedule is previewed rather than hidden. Progress through the sitting is a
+determinate bar (§7e), not a fraction buried in a corner.
+
+**The rule both surfaces obey: never a dead end.** Every state — nothing due,
+session finished, nothing dated — offers the next action in reach. A disabled
+button with no explanation is the failure mode this rule exists to prevent.
+
+**Agenda rows** (planner) are: leading control (checkbox for a task, icon
+otherwise, `sm`), title in `ui`, optional subtitle in `caption`/
+`textSecondary`, trailing relative time in `caption` — `primary` normally,
+`danger` and weight 700 when overdue. Group headings use `overline`. Rows are
+`OnoteSpace.row`.
+
+**Dates read as words, not numbers.** "Friday", "in 3 days", "yesterday" inside
+a fortnight; a date beyond it. A countdown a reader has to do arithmetic on has
+failed.
+
+## 7h. Setup, onboarding and management dialogs *(added 2026-08-05 — normative)*
+
+The dialogs a user meets once (first run, import, sync setup) and the ones they
+return to (notebook manager, recycle bin, version history). They carry more
+copy than any other surface, which is exactly why they need rules.
+
+- **Dialog anatomy:** `ui-title` title, `ui` body, `radius-xl`, max-height 60%
+  of the window with the *content* scrolling (§7a.3). Width is chosen per
+  dialog and stated in one place, not per child.
+- **Prose is `ui` with 1.45 line height**, one idea per paragraph, and it
+  explains *what will happen* before offering the control that does it. The
+  voice rules (§11) are load-bearing here: this is where Openote does most of
+  its talking.
+- **Destructive actions** state what is kept, not only what is lost — "your
+  cards and notes are unchanged" — and prefer an undo toast to a confirm
+  dialog wherever the action is recoverable (§7).
+- **Management lists** (notebooks, mirrors, versions) are rows of: name in
+  `ui-strong`, path or metadata in `caption`/`textSecondary` (paths in `mono`),
+  actions right-aligned as icon buttons with tooltips.
+- **Onboarding never blocks.** The first-run flow offers a way straight to a
+  blank page at every step; nothing it asks for is required to start writing.
+- **Paths are selectable text**, never a `Text` a user cannot copy.
+
 ## 8. Canvas interaction guidelines
 
 The canvas is the product; its interaction model deserves explicit rules so it stays predictable across platforms and input methods.

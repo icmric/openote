@@ -28,6 +28,7 @@ import '../state/planner_state.dart';
 import '../theme/onote_theme.dart';
 import 'month_grid.dart';
 import 'planner_format.dart';
+import '../theme/tokens.dart';
 
 class PlannerPanel extends StatefulWidget {
   const PlannerPanel({super.key, required this.app});
@@ -93,22 +94,22 @@ class _PlannerPanelState extends State<PlannerPanel> {
   Widget _header(BuildContext context, DateTime now) => Padding(
         padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
         child: Row(children: [
-          const Icon(Icons.event_note_outlined,
-              size: 14, color: OnoteColors.graphite400),
+          Icon(Icons.event_note_outlined,
+              size: 16, color: context.surfaces.textSecondary),
           const SizedBox(width: 6),
-          const Text('PLANNER',
+          Text('PLANNER',
               style: TextStyle(
-                  fontSize: 10.5,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: .6,
-                  color: OnoteColors.graphite400)),
+                  color: context.surfaces.textSecondary)),
           const Spacer(),
           IconButton(
             icon: Icon(
                 _showMonth
                     ? Icons.calendar_view_day_outlined
                     : Icons.calendar_month_outlined,
-                size: 15),
+                size: 16),
             visualDensity: VisualDensity.compact,
             tooltip: _showMonth ? 'Show the list' : 'Show the month',
             onPressed: () => setState(() {
@@ -117,7 +118,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
             }),
           ),
           IconButton(
-            icon: const Icon(Icons.close, size: 15),
+            icon: const Icon(Icons.close, size: 16),
             visualDensity: VisualDensity.compact,
             tooltip: 'Close planner',
             onPressed: app.togglePlannerPanel,
@@ -149,7 +150,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
         children: [
           Row(children: [
             Icon(Icons.notifications_active_outlined,
-                size: 14, color: scheme.primary),
+                size: 16, color: scheme.primary),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
@@ -160,13 +161,13 @@ class _PlannerPanelState extends State<PlannerPanel> {
                         ? 'Reminder'
                         : '${alerts.length} reminders',
                 style: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: scheme.primary),
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.done, size: 15),
+              icon: const Icon(Icons.done, size: 16),
               visualDensity: VisualDensity.compact,
               tooltip: 'Dismiss',
               onPressed: planner.clearAlerts,
@@ -211,8 +212,8 @@ class _PlannerPanelState extends State<PlannerPanel> {
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
             child: Text('Timetable: $err. Showing the last copy.',
-                style: const TextStyle(
-                    fontSize: 10.5, color: OnoteColors.graphite400)),
+                style: TextStyle(
+                    fontSize: 11, color: context.surfaces.textSecondary)),
           ),
         // Surfaced rather than buried in a menu. A lecture shown at the wrong
         // hour, or a monthly seminar appearing once, is the kind of thing a
@@ -228,7 +229,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
                   '${planner.calendarWarnings.length == 1 ? '' : 's'} about '
                   'this calendar',
                   style: TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 11,
                       color: Theme.of(context).colorScheme.primary)),
             ),
           ),
@@ -245,27 +246,27 @@ class _PlannerPanelState extends State<PlannerPanel> {
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
           child: Row(children: [
             Text(formatDayFull(day),
-                style: const TextStyle(
-                    fontSize: 10.5,
+                style: TextStyle(
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
                     letterSpacing: .6,
-                    color: OnoteColors.graphite400)),
+                    color: context.surfaces.textSecondary)),
             const Spacer(),
             InkWell(
               onTap: () => setState(() => _pickedDay = null),
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 child: Text('Show all',
-                    style: TextStyle(fontSize: 10.5, color: OnoteColors.graphite400)),
+                    style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
               ),
             ),
           ]),
         ),
         if (items.isEmpty)
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(12, 8, 12, 8),
             child: Text('Nothing on this day.',
-                style: TextStyle(fontSize: 11.5, color: OnoteColors.graphite400)),
+                style: TextStyle(fontSize: 12, color: context.surfaces.textSecondary)),
           )
         else
           for (final it in items) _row(context, it, now),
@@ -280,19 +281,19 @@ class _PlannerPanelState extends State<PlannerPanel> {
       child: Row(children: [
         Text(bucket.title.toUpperCase(),
             style: TextStyle(
-                fontSize: 10.5,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: .6,
                 color: bucket == AgendaBucket.overdue
                     ? OnoteColors.danger
-                    : OnoteColors.graphite400)),
+                    : context.surfaces.textSecondary)),
         // The date, once, beside TODAY — the one heading where knowing the
         // actual date is worth the pixels.
         if (isToday) ...[
           const Spacer(),
           Text(formatDayFull(now),
-              style: const TextStyle(
-                  fontSize: 10.5, color: OnoteColors.graphite400)),
+              style: TextStyle(
+                  fontSize: 11, color: context.surfaces.textSecondary)),
         ],
       ]),
     );
@@ -317,17 +318,17 @@ class _PlannerPanelState extends State<PlannerPanel> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 12.5,
+                        fontSize: 13,
                         height: 1.3,
                         decoration:
                             it.done ? TextDecoration.lineThrough : null,
-                        color: it.done ? OnoteColors.graphite400 : null)),
+                        color: it.done ? context.surfaces.textSecondary : null)),
                 if (it.subtitle case final s?)
                   Text(s,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 10.5, color: OnoteColors.graphite400)),
+                      style: TextStyle(
+                          fontSize: 11, color: context.surfaces.textSecondary)),
               ],
             ),
           ),
@@ -336,7 +337,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
             padding: const EdgeInsets.only(top: 1),
             child: Text(plannerWhen(it, now),
                 style: TextStyle(
-                    fontSize: 10.5,
+                    fontSize: 11,
                     fontWeight: overdue ? FontWeight.w700 : FontWeight.w400,
                     color: overdue ? OnoteColors.danger : scheme.primary)),
           ),
@@ -374,12 +375,12 @@ class _PlannerPanelState extends State<PlannerPanel> {
     final (icon, colour) = switch (it.kind) {
       DatedKind.exam => (Icons.flag_outlined, OnoteColors.brass500),
       DatedKind.reminder => (Icons.notifications_none, OnoteColors.ink500),
-      DatedKind.event => (Icons.schedule, OnoteColors.graphite400),
-      DatedKind.task => (Icons.check_box_outline_blank, OnoteColors.graphite400),
+      DatedKind.event => (Icons.schedule, context.surfaces.textSecondary),
+      DatedKind.task => (Icons.check_box_outline_blank, context.surfaces.textSecondary),
     };
     return Padding(
       padding: const EdgeInsets.only(top: 1),
-      child: Icon(icon, size: 14, color: colour),
+      child: Icon(icon, size: 16, color: colour),
     );
   }
 
@@ -389,13 +390,13 @@ class _PlannerPanelState extends State<PlannerPanel> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('Nothing dated yet.',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             const Text(
               'Everything with a date shows up here — exam dates, to-dos you '
               'give a deadline, reminders, and your timetable if you subscribe '
               'to one.',
-              style: TextStyle(fontSize: 11.5, height: 1.45),
+              style: TextStyle(fontSize: 12, height: 1.45),
             ),
             const SizedBox(height: 12),
             _link(context, Icons.flag_outlined, 'Set an exam date', _addExam),
@@ -414,7 +415,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 5),
           child: Row(children: [
-            Icon(icon, size: 14, color: Theme.of(context).colorScheme.primary),
+            Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 7),
             // Expanded, not bare: 'Subscribe to a timetable' overflows a 320px
             // panel by 23px otherwise, and an unconstrained Text in a Row is
@@ -454,7 +455,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
           child: const Padding(
             padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.add, size: 15),
+              Icon(Icons.add, size: 16),
               SizedBox(width: 5),
               Text('Add a date…', style: TextStyle(fontSize: 12)),
             ]),
@@ -468,7 +469,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
                     width: 13,
                     height: 13,
                     child: CircularProgressIndicator(strokeWidth: 1.8))
-                : const Icon(Icons.sync, size: 15),
+                : const Icon(Icons.sync, size: 16),
             visualDensity: VisualDensity.compact,
             tooltip: _calendarTooltip(sub, now),
             onPressed:
@@ -476,7 +477,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
           ),
         PopupMenuButton<String>(
           tooltip: 'Planner settings',
-          icon: const Icon(Icons.tune, size: 15),
+          icon: const Icon(Icons.tune, size: 16),
           iconSize: 15,
           position: PopupMenuPosition.over,
           onSelected: _onSettings,
@@ -559,7 +560,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
           const PopupMenuItem(
             enabled: false,
             child: Text('From your calendar — read-only',
-                style: TextStyle(fontSize: 11.5)),
+                style: TextStyle(fontSize: 12)),
           ),
       ],
     );
@@ -644,7 +645,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
                           style: const TextStyle(fontSize: 13))),
                   if (app.study.examDate(s.id) != null)
                     const Icon(Icons.flag_outlined,
-                        size: 13, color: OnoteColors.brass500),
+                        size: 16, color: OnoteColors.brass500),
                 ]),
               ),
           ],
@@ -678,7 +679,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
             SimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, t),
               child: Row(children: [
-                Icon(t.tag.kind.icon, size: 13, color: t.tag.kind.color),
+                Icon(t.tag.kind.icon, size: 16, color: t.tag.kind.color),
                 const SizedBox(width: 7),
                 Expanded(
                     child: Text(t.text.isEmpty ? '(empty line)' : t.text,
@@ -761,7 +762,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 5),
                       child: Text('· $w',
-                          style: const TextStyle(fontSize: 11.5, height: 1.4)),
+                          style: const TextStyle(fontSize: 12, height: 1.4)),
                     ),
                 ],
               ),
@@ -805,7 +806,7 @@ class _SnoozeButton extends StatelessWidget {
         tooltip: 'Snooze',
         padding: EdgeInsets.zero,
         iconSize: 14,
-        icon: const Icon(Icons.snooze, size: 14),
+        icon: const Icon(Icons.snooze, size: 16),
         onSelected: (m) => onSnooze(Duration(minutes: m)),
         itemBuilder: (_) => const [
           PopupMenuItem(value: 10, child: Text('10 minutes')),
@@ -919,13 +920,13 @@ class _ReminderDialogState extends State<_ReminderDialog> {
             const SizedBox(height: 12),
             Row(children: [
               TextButton.icon(
-                icon: const Icon(Icons.event, size: 15),
+                icon: const Icon(Icons.event, size: 16),
                 label: Text(relativeWhen(when, widget.now),
                     style: const TextStyle(fontSize: 12)),
                 onPressed: _pickDate,
               ),
               TextButton.icon(
-                icon: const Icon(Icons.schedule, size: 15),
+                icon: const Icon(Icons.schedule, size: 16),
                 label: Text(formatClock(_at),
                     style: const TextStyle(fontSize: 12)),
                 onPressed: _pickTime,
@@ -935,11 +936,11 @@ class _ReminderDialogState extends State<_ReminderDialog> {
             // Said plainly rather than buried in a help page: a reminder a
             // student wrongly believes will interrupt them is worse than no
             // reminder at all (v0.5 §1).
-            const Text(
+            Text(
               'Openote nudges you while it is open. If it was closed when the '
               'time came, the reminder is waiting when you next open it.',
               style: TextStyle(fontSize: 11, height: 1.4,
-                  color: OnoteColors.graphite400),
+                  color: context.surfaces.textSecondary),
             ),
           ],
         ),
@@ -958,7 +959,7 @@ class _ReminderDialogState extends State<_ReminderDialog> {
   }
 
   Widget _chip(String label, VoidCallback tap) => ActionChip(
-        label: Text(label, style: const TextStyle(fontSize: 11.5)),
+        label: Text(label, style: const TextStyle(fontSize: 12)),
         visualDensity: VisualDensity.compact,
         onPressed: tap,
       );
@@ -1003,7 +1004,7 @@ class _CalendarDialogState extends State<_CalendarDialog> {
               TextField(
                 controller: _url,
                 autofocus: true,
-                style: const TextStyle(fontSize: 12.5),
+                style: const TextStyle(fontSize: 13),
                 decoration: const InputDecoration(
                   hintText: 'https://…/timetable.ics',
                   isDense: true,
@@ -1014,11 +1015,11 @@ class _CalendarDialogState extends State<_CalendarDialog> {
                     : Navigator.pop(context, v.trim()),
               ),
               const SizedBox(height: 10),
-              const Text(
+              Text(
                 'Read-only, one direction: Openote shows your timetable beside '
                 'your notes and never writes anything back to it.',
                 style: TextStyle(
-                    fontSize: 11, height: 1.4, color: OnoteColors.graphite400),
+                    fontSize: 11, height: 1.4, color: context.surfaces.textSecondary),
               ),
             ],
           ),

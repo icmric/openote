@@ -22,6 +22,7 @@ import '../sync/cloud_folders.dart';
 import '../sync/mirrors.dart';
 import '../theme/onote_theme.dart';
 import 'notebook_manager.dart';
+import '../theme/tokens.dart';
 
 Future<void> showSyncDialog(BuildContext context, AppState app) async {
   final nb = app.notebookId;
@@ -104,7 +105,7 @@ class _SyncDialogState extends State<_SyncDialog> {
 
     return AlertDialog(
       title: Row(children: [
-        Icon(status.icon, size: 19, color: status.isSynced ? OnoteColors.success : null),
+        Icon(status.icon, size: 18, color: status.isSynced ? OnoteColors.success : null),
         const SizedBox(width: 8),
         Text(status.isSynced ? 'Syncing' : 'Sync this notebook'),
       ]),
@@ -123,14 +124,14 @@ class _SyncDialogState extends State<_SyncDialog> {
                   'step — no account, no sign-in, and no access to the rest of '
                   'your Drive. Each device only ever writes its own file, so '
                   'your devices can never produce a conflicting copy.',
-                  style: TextStyle(fontSize: 12.5, height: 1.45),
+                  style: TextStyle(fontSize: 13, height: 1.45),
                 ),
               if (showChooser) ...[
                 const Divider(height: 22),
                 if (_changing)
                   const Text('Move it somewhere else',
                       style:
-                          TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 if (_folders.isEmpty)
                   const Padding(
                     padding: EdgeInsets.only(top: 4),
@@ -148,7 +149,7 @@ class _SyncDialogState extends State<_SyncDialog> {
                 Row(children: [
                   OutlinedButton.icon(
                     onPressed: _busy ? null : _chooseFolder,
-                    icon: const Icon(Icons.folder_open, size: 17),
+                    icon: const Icon(Icons.folder_open, size: 18),
                     label: const Text('Choose a folder…'),
                   ),
                   if (_changing) ...[
@@ -183,7 +184,7 @@ class _SyncDialogState extends State<_SyncDialog> {
                         setState(() {});
                       },
                 title: const Text('Pull changes automatically',
-                    style: TextStyle(fontSize: 12.5)),
+                    style: TextStyle(fontSize: 13)),
                 subtitle: const Text(
                     "Watches for other devices' changes and folds them in.",
                     style: TextStyle(fontSize: 11)),
@@ -194,7 +195,7 @@ class _SyncDialogState extends State<_SyncDialog> {
                 'rsync job at the same folder — Openote never talks to a '
                 'server itself, so anything that copies files works and '
                 'nothing is exposed to the network by Openote.',
-                style: TextStyle(fontSize: 11.5, height: 1.4),
+                style: TextStyle(fontSize: 12, height: 1.4),
               ),
             ],
           ),
@@ -208,7 +209,7 @@ class _SyncDialogState extends State<_SyncDialog> {
         // AlertDialog.actions is an OverflowBar and a Spacer there throws.
         Row(children: [
           TextButton.icon(
-            icon: const Icon(Icons.library_add_outlined, size: 17),
+            icon: const Icon(Icons.library_add_outlined, size: 18),
             label: const Text('Add a notebook…'),
             onPressed: _busy
                 ? null
@@ -255,8 +256,8 @@ class _SyncDialogState extends State<_SyncDialog> {
           const SizedBox(height: 4),
           if (path != null)
             SelectableText(path,
-                style: const TextStyle(
-                    fontSize: 11, color: OnoteColors.graphite400)),
+                style: TextStyle(
+                    fontSize: 11, color: context.surfaces.textSecondary)),
           const SizedBox(height: 2),
           Text(
             status.hasOtherDevices
@@ -264,25 +265,25 @@ class _SyncDialogState extends State<_SyncDialog> {
                 : 'No other device has picked it up yet — install Openote '
                     'there and open it from the same folder.',
             style:
-                const TextStyle(fontSize: 11.5, height: 1.35),
+                const TextStyle(fontSize: 12, height: 1.35),
           ),
           if (cloudCaveat(folder.kind) != null) ...[
             const SizedBox(height: 6),
             Text(cloudCaveat(folder.kind)!,
-                style: const TextStyle(
-                    fontSize: 11, height: 1.35, color: OnoteColors.graphite400)),
+                style: TextStyle(
+                    fontSize: 11, height: 1.35, color: context.surfaces.textSecondary)),
           ],
           const SizedBox(height: 6),
           Row(children: [
             if (path != null)
               TextButton.icon(
                 onPressed: () => PlatformOpen.file(p.dirname(path)),
-                icon: const Icon(Icons.folder_open, size: 15),
+                icon: const Icon(Icons.folder_open, size: 16),
                 label: const Text('Open folder', style: TextStyle(fontSize: 12)),
               ),
             TextButton.icon(
               onPressed: _busy ? null : () => setState(() => _changing = true),
-              icon: const Icon(Icons.drive_file_move_outline, size: 15),
+              icon: const Icon(Icons.drive_file_move_outline, size: 16),
               label:
                   const Text('Move elsewhere', style: TextStyle(fontSize: 12)),
             ),
@@ -299,15 +300,15 @@ class _SyncDialogState extends State<_SyncDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text('Extra copies',
-            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
         const SizedBox(height: 2),
-        const Text(
+        Text(
           'A mirror keeps one up-to-date copy somewhere else; a backup keeps '
           'the last ten dated snapshots. Both are one-way and never read back, '
           'so they are safe to point at a second cloud, a NAS or a USB stick '
           'without any risk of two devices fighting over the same file.',
           style: TextStyle(
-              fontSize: 11.5, height: 1.4, color: OnoteColors.graphite400),
+              fontSize: 12, height: 1.4, color: context.surfaces.textSecondary),
         ),
         const SizedBox(height: 6),
         for (final t in targets)
@@ -317,15 +318,15 @@ class _SyncDialogState extends State<_SyncDialog> {
             visualDensity: VisualDensity.compact,
             leading: Icon(t.isBackup ? Icons.history : Icons.copy_all_outlined,
                 size: 18),
-            title: Text(p.basename(t.path), style: const TextStyle(fontSize: 12.5)),
+            title: Text(p.basename(t.path), style: const TextStyle(fontSize: 13)),
             subtitle: Text(
               '${t.isBackup ? 'Backup · keeps ${t.keepVersions}' : 'Mirror'} · ${t.path}',
-              style: const TextStyle(fontSize: 10.5),
+              style: const TextStyle(fontSize: 11),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
             trailing: IconButton(
-              icon: const Icon(Icons.close, size: 15),
+              icon: const Icon(Icons.close, size: 16),
               tooltip: 'Remove',
               visualDensity: VisualDensity.compact,
               onPressed: () {
@@ -337,12 +338,12 @@ class _SyncDialogState extends State<_SyncDialog> {
         Row(children: [
           TextButton.icon(
             onPressed: _busy ? null : () => _addMirror(backup: false),
-            icon: const Icon(Icons.copy_all_outlined, size: 15),
+            icon: const Icon(Icons.copy_all_outlined, size: 16),
             label: const Text('Add a mirror…', style: TextStyle(fontSize: 12)),
           ),
           TextButton.icon(
             onPressed: _busy ? null : () => _addMirror(backup: true),
-            icon: const Icon(Icons.history, size: 15),
+            icon: const Icon(Icons.history, size: 16),
             label: const Text('Add a backup…', style: TextStyle(fontSize: 12)),
           ),
           if (targets.isNotEmpty)
@@ -416,16 +417,16 @@ class _StorageSectionState extends State<_StorageSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text('Where this notebook lives',
-            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
         const SizedBox(height: 6),
         FutureBuilder<NotebookStorage>(
           future: _storage,
           builder: (_, snap) {
             final s = snap.data;
             if (s == null) {
-              return const Text('Measuring…',
+              return Text('Measuring…',
                   style: TextStyle(
-                      fontSize: 11.5, color: OnoteColors.graphite400));
+                      fontSize: 12, color: context.surfaces.textSecondary));
             }
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -448,7 +449,7 @@ class _StorageSectionState extends State<_StorageSection> {
                               '"Move elsewhere" above to put both in place.'
                           : 'Both are on this computer only. Pick a folder '
                               'above to sync this notebook.',
-                  style: const TextStyle(fontSize: 11.5, height: 1.4),
+                  style: const TextStyle(fontSize: 12, height: 1.4),
                 ),
               ],
             );
@@ -459,7 +460,7 @@ class _StorageSectionState extends State<_StorageSection> {
           TextButton.icon(
             onPressed: () => setState(
                 () => _orphans = app.findOrphanFiles()),
-            icon: const Icon(Icons.cleaning_services_outlined, size: 15),
+            icon: const Icon(Icons.cleaning_services_outlined, size: 16),
             label: const Text('Find leftover files…',
                 style: TextStyle(fontSize: 12)),
           )
@@ -475,18 +476,18 @@ class _StorageSectionState extends State<_StorageSection> {
       SizedBox(
         width: 62,
         child: Text(label,
-            style: const TextStyle(
-                fontSize: 10.5,
+            style: TextStyle(
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: .4,
-                color: OnoteColors.graphite400)),
+                color: context.surfaces.textSecondary)),
       ),
       Expanded(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SelectableText(path,
-                style: const TextStyle(fontSize: 10.5, height: 1.3)),
+                style: const TextStyle(fontSize: 11, height: 1.3)),
             Row(children: [
               Icon(
                   missing
@@ -494,24 +495,24 @@ class _StorageSectionState extends State<_StorageSection> {
                       : cloud != null
                           ? Icons.cloud_done_outlined
                           : Icons.computer_outlined,
-                  size: 12,
+                  size: 16,
                   color: cloud != null
                       ? OnoteColors.success
-                      : OnoteColors.graphite400),
+                      : context.surfaces.textSecondary),
               const SizedBox(width: 4),
               Text(
                 missing
                     ? 'not created yet'
                     : '${cloud?.name ?? 'this computer'} · ${_bytes(bytes)}',
-                style: const TextStyle(
-                    fontSize: 10.5, color: OnoteColors.graphite400),
+                style: TextStyle(
+                    fontSize: 11, color: context.surfaces.textSecondary),
               ),
             ]),
           ],
         ),
       ),
       IconButton(
-        icon: const Icon(Icons.folder_open, size: 14),
+        icon: const Icon(Icons.folder_open, size: 16),
         visualDensity: VisualDensity.compact,
         tooltip: 'Open containing folder',
         onPressed: () => PlatformOpen.file(
@@ -525,14 +526,14 @@ class _StorageSectionState extends State<_StorageSection> {
         builder: (_, snap) {
           final list = snap.data;
           if (list == null) {
-            return const Text('Looking…',
+            return Text('Looking…',
                 style:
-                    TextStyle(fontSize: 11.5, color: OnoteColors.graphite400));
+                    TextStyle(fontSize: 12, color: context.surfaces.textSecondary));
           }
           if (list.isEmpty) {
-            return const Text('No leftover notebook files found.',
+            return Text('No leftover notebook files found.',
                 style:
-                    TextStyle(fontSize: 11.5, color: OnoteColors.graphite400));
+                    TextStyle(fontSize: 12, color: context.surfaces.textSecondary));
           }
           final safe = list.where((o) => o.safeToDelete).toList();
           final safeBytes = safe.fold<int>(0, (a, o) => a + o.bytes);
@@ -549,13 +550,13 @@ class _StorageSectionState extends State<_StorageSection> {
                   padding: const EdgeInsets.only(bottom: 3),
                   child: Row(children: [
                     Icon(o.isLog ? Icons.history : Icons.description_outlined,
-                        size: 12, color: OnoteColors.graphite400),
+                        size: 16, color: context.surfaces.textSecondary),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text('${p.basename(o.path)}  ·  ${_bytes(o.bytes)}'
                           '${o.safeToDelete ? '' : '  ·  shared folder'}',
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 10.5)),
+                          style: const TextStyle(fontSize: 11)),
                     ),
                   ]),
                 ),
@@ -564,11 +565,11 @@ class _StorageSectionState extends State<_StorageSection> {
               // a SHARED folder may be another device's notebook this machine
               // has never joined, and removing it would destroy data this
               // device never owned.
-              const Text(
+              Text(
                 'Files in a shared folder are left alone — they may belong to '
                 'another device. Open the folder to review those yourself.',
                 style: TextStyle(
-                    fontSize: 10.5, height: 1.35, color: OnoteColors.graphite400),
+                    fontSize: 11, height: 1.35, color: context.surfaces.textSecondary),
               ),
               if (safe.isNotEmpty)
                 TextButton.icon(
@@ -587,7 +588,7 @@ class _StorageSectionState extends State<_StorageSection> {
                               content:
                                   Text('Reclaimed ${_bytes(freed)}')));
                         },
-                  icon: const Icon(Icons.delete_outline, size: 15),
+                  icon: const Icon(Icons.delete_outline, size: 16),
                   label: Text(
                       'Delete ${safe.length} on this computer '
                       '(${_bytes(safeBytes)})',

@@ -18,6 +18,7 @@ import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'color_picker.dart';
 import 'font_picker.dart';
+import '../theme/tokens.dart';
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
 /// View. OneNote's few-clicks accessibility in Openote's calm language — a
@@ -72,7 +73,7 @@ class _CommandBarState extends State<CommandBar> {
                       child: Text(
                         _tabs[i],
                         style: TextStyle(
-                          fontSize: 12.5,
+                          fontSize: 13,
                           fontWeight:
                               _tab == i ? FontWeight.w600 : FontWeight.w400,
                           color: _tab == i ? scheme.primary : null,
@@ -99,7 +100,7 @@ class _CommandBarState extends State<CommandBar> {
                         Padding(
                           padding: const EdgeInsets.only(right: 4),
                           child: ActionChip(
-                            avatar: Icon(_toolIcon(app.tool), size: 14),
+                            avatar: Icon(_toolIcon(app.tool), size: 16),
                             label: const Text('Done',
                                 style: TextStyle(fontSize: 11)),
                             visualDensity: VisualDensity.compact,
@@ -115,28 +116,28 @@ class _CommandBarState extends State<CommandBar> {
                       // reachable only from places you had to already be in.
                       _PlannerButton(app: app),
                       IconButton(
-                        icon: const Icon(Icons.label_outline, size: 17),
+                        icon: const Icon(Icons.label_outline, size: 18),
                         tooltip: 'Find tags',
                         isSelected: app.showTagsPanel,
                         visualDensity: VisualDensity.compact,
                         onPressed: app.toggleTagsPanel,
                       ),
                       IconButton(
-                        icon: const Icon(Icons.toc, size: 17),
+                        icon: const Icon(Icons.toc, size: 18),
                         tooltip: 'Page outline',
                         isSelected: app.showTocPanel,
                         visualDensity: VisualDensity.compact,
                         onPressed: app.toggleTocPanel,
                       ),
                       IconButton(
-                        icon: const Icon(Icons.account_tree_outlined, size: 17),
+                        icon: const Icon(Icons.account_tree_outlined, size: 18),
                         tooltip: 'Links & backlinks',
                         isSelected: app.showLinksPanel,
                         visualDensity: VisualDensity.compact,
                         onPressed: app.toggleLinksPanel,
                       ),
                       IconButton(
-                        icon: const Icon(Icons.search, size: 17),
+                        icon: const Icon(Icons.search, size: 18),
                         tooltip: 'Find on page  (Ctrl+F)',
                         isSelected: app.findOpen,
                         visualDensity: VisualDensity.compact,
@@ -144,7 +145,7 @@ class _CommandBarState extends State<CommandBar> {
                       ),
                       MenuAnchor(
                         builder: (context, controller, _) => IconButton(
-                          icon: const Icon(Icons.ios_share_outlined, size: 17),
+                          icon: const Icon(Icons.ios_share_outlined, size: 18),
                           tooltip: 'Export page…',
                           visualDensity: VisualDensity.compact,
                           onPressed: () => controller.isOpen
@@ -322,12 +323,12 @@ class _CommandBarState extends State<CommandBar> {
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.format_color_text,
-                  size: 17, color: canFormat ? null : OnoteColors.graphite400),
+                  size: 18, color: canFormat ? null : context.surfaces.textSecondary),
               Container(
                   width: 18,
                   height: 3,
                   margin: const EdgeInsets.only(top: 1),
-                  color: canFormat ? curColor : OnoteColors.graphite400),
+                  color: canFormat ? curColor : context.surfaces.textSecondary),
             ]),
           ),
         ),
@@ -342,7 +343,7 @@ class _CommandBarState extends State<CommandBar> {
               }
             : null,
         child: Icon(Icons.arrow_drop_down,
-            size: 18, color: canFormat ? null : OnoteColors.graphite400),
+            size: 18, color: canFormat ? null : context.surfaces.textSecondary),
       ),
       // Font — opens the searchable system-font picker.
       IconButton(
@@ -364,7 +365,7 @@ class _CommandBarState extends State<CommandBar> {
       if (!canFormat) ...[
         const SizedBox(width: 10),
         Text('Click into a text box to format',
-            style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
       ],
     ]);
   }
@@ -498,13 +499,13 @@ class _CommandBarState extends State<CommandBar> {
             app.eraserMode == EraserMode.area
                 ? 'Splits strokes where you rub'
                 : 'Removes any stroke you touch',
-            style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
       ] else if (app.tool == Tool.lasso)
         Text('Draw a loop around ink to select it — then drag or delete',
-            style: TextStyle(fontSize: 11, color: OnoteColors.graphite400))
+            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary))
       else
         Text('Pick the pen or highlighter to draw',
-            style: TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
       // NO `Spacer` here, and none in any command row. Every row is built
       // inside a horizontal `SingleChildScrollView`, which offers unbounded
       // width — and a flex child (`Spacer` is `Expanded`) under an unbounded
@@ -523,7 +524,7 @@ class _CommandBarState extends State<CommandBar> {
             'Two fingers always pan and zoom.',
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.touch_app_outlined,
-              size: 16, color: OnoteColors.graphite400),
+              size: 16, color: context.surfaces.textSecondary),
           const SizedBox(width: 4),
           DropdownButtonHideUnderline(
             child: DropdownButton<TouchDrawing>(
@@ -766,7 +767,7 @@ class _CommandBarState extends State<CommandBar> {
             SimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, p.id),
               child: Row(children: [
-                const Icon(Icons.description_outlined, size: 15),
+                const Icon(Icons.description_outlined, size: 16),
                 const SizedBox(width: 8),
                 Flexible(child: Text(p.title, overflow: TextOverflow.ellipsis)),
               ]),
@@ -874,9 +875,9 @@ class _FontSizeField extends StatelessWidget {
               Text(label,
                   style: TextStyle(
                       fontSize: 12,
-                      color: enabled ? null : OnoteColors.graphite400)),
+                      color: enabled ? null : context.surfaces.textSecondary)),
               Icon(Icons.arrow_drop_down,
-                  size: 16, color: enabled ? null : OnoteColors.graphite400),
+                  size: 16, color: enabled ? null : context.surfaces.textSecondary),
             ]),
           ),
         ),
@@ -924,14 +925,14 @@ class _TagButton extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               Icon(active.isEmpty ? Icons.label_outline : active.first.icon,
-                  size: 17,
+                  size: 18,
                   color: !enabled
-                      ? OnoteColors.graphite400
+                      ? context.surfaces.textSecondary
                       : active.isEmpty
                           ? null
                           : active.first.color),
               Icon(Icons.arrow_drop_down,
-                  size: 16, color: enabled ? null : OnoteColors.graphite400),
+                  size: 16, color: enabled ? null : context.surfaces.textSecondary),
             ]),
           ),
         ),
@@ -941,7 +942,7 @@ class _TagButton extends StatelessWidget {
           MenuItemButton(
             leadingIcon: Icon(k.icon, size: 16, color: k.color),
             trailingIcon: active.contains(k)
-                ? Icon(Icons.check, size: 15, color: scheme.primary)
+                ? Icon(Icons.check, size: 16, color: scheme.primary)
                 : null,
             onPressed: () => app.toggleTagOnSelection(k),
             child: Text(k.label),
@@ -1057,7 +1058,7 @@ class _MakeCardButton extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
                 child: Icon(Icons.style_outlined,
-                    size: 17, color: enabled ? null : OnoteColors.graphite400),
+                    size: 18, color: enabled ? null : context.surfaces.textSecondary),
               ),
             ),
           ),
@@ -1068,7 +1069,7 @@ class _MakeCardButton extends StatelessWidget {
                     controller.isOpen ? controller.close() : controller.open()
                 : null,
             child: Icon(Icons.arrow_drop_down,
-                size: 16, color: enabled ? null : OnoteColors.graphite400),
+                size: 16, color: enabled ? null : context.surfaces.textSecondary),
           ),
         ],
       ),
@@ -1145,7 +1146,7 @@ class _StudyButton extends StatelessWidget {
               '$countdown',
       child: Stack(clipBehavior: Clip.none, children: [
         IconButton(
-          icon: const Icon(Icons.school_outlined, size: 17),
+          icon: const Icon(Icons.school_outlined, size: 18),
           isSelected: app.showStudyPanel,
           visualDensity: VisualDensity.compact,
           onPressed: app.toggleStudyPanel,
@@ -1168,7 +1169,7 @@ class _StudyButton extends StatelessWidget {
                 ),
                 child: Text('$due',
                     style: TextStyle(
-                        fontSize: 9,
+                        fontSize: 11,
                         height: 1.2,
                         fontWeight: FontWeight.w700,
                         color: urgent
@@ -1217,7 +1218,7 @@ class _PlannerButton extends StatelessWidget {
                   : 'Planner — $count today',
       child: Stack(clipBehavior: Clip.none, children: [
         IconButton(
-          icon: const Icon(Icons.event_note_outlined, size: 17),
+          icon: const Icon(Icons.event_note_outlined, size: 18),
           isSelected: app.showPlannerPanel,
           visualDensity: VisualDensity.compact,
           onPressed: app.togglePlannerPanel,
@@ -1243,7 +1244,7 @@ class _PlannerButton extends StatelessWidget {
                 ),
                 child: Text('${alerts > 0 ? alerts : count}',
                     style: TextStyle(
-                        fontSize: 9,
+                        fontSize: 11,
                         height: 1.2,
                         fontWeight: FontWeight.w700,
                         color: overdue || alerts > 0
