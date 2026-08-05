@@ -16,6 +16,7 @@ import '../state/app_state.dart';
 import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'color_picker.dart';
+import 'command_button.dart';
 import 'font_picker.dart';
 import '../theme/tokens.dart';
 
@@ -52,7 +53,13 @@ class _CommandBarState extends State<CommandBar> {
             height: 32,
             child: Row(
               children: [
-                const SizedBox(width: 6),
+                // **No leading gutter.** A fixed chrome region runs to the edge
+                // of the region it owns (§7d); the first control's own padding
+                // is the optical margin. An extra 6px here made the toolbar
+                // look inset from the window — a floating strip rather than
+                // part of the frame — and cost hit area at the screen edge,
+                // which is the one place a pointer can be thrown at infinitely
+                // fast (Fitts's law) and always land.
                 for (var i = 0; i < _tabs.length; i++)
                   InkWell(
                     borderRadius: BorderRadius.circular(6),
@@ -211,7 +218,6 @@ class _CommandBarState extends State<CommandBar> {
                     ]),
                   ),
                 ),
-                const SizedBox(width: 6),
               ],
             ),
           ),
@@ -220,7 +226,9 @@ class _CommandBarState extends State<CommandBar> {
           // instead of throwing a RenderFlex overflow (style guide §7).
           Container(
             height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            // Flush left for the same reason as the tab row above it, so the
+            // two rows share an edge instead of being inset by different
+            // amounts. `IconButton` brings its own 8px, which is the margin.
             alignment: Alignment.centerLeft,
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -283,42 +291,41 @@ class _CommandBarState extends State<CommandBar> {
         onPressed: app.canRedo ? app.redo : null,
       ),
       const _Div(),
-      // **Collapsed to group heads when nothing is focused** (style guide
-      // §4.5). "Disabled ≠ hidden" (§7a.2) still holds — the commands are
-      // visible, and the hint at the end of the row says how to enable them —
-      // but ~20 greyed glyphs was the app's first impression, and a washed-out
-      // wall reads as broken rather than as "not yet applicable".
-      if (!canFormat) ...[
-        fmt(Icons.format_bold, 'Formatting — click into a text box first',
-            () {}),
-        fmt(Icons.title, 'Headings — click into a text box first', () {}),
-        fmt(Icons.format_list_bulleted,
-            'Lists — click into a text box first', () {}),
-        const _Div(),
-      ] else ...[
-        fmt(Icons.format_bold, 'Bold  (Ctrl+B)', () => app.wrapSelection('**')),
-        fmt(Icons.format_italic, 'Italic  (Ctrl+I)',
-            () => app.wrapSelection('*')),
-        fmt(Icons.format_underlined, 'Underline  (Ctrl+U)',
-            () => app.wrapSelection('++')),
-        fmt(Icons.strikethrough_s, 'Strikethrough',
-            () => app.wrapSelection('~~')),
-        fmt(Icons.code, 'Inline code', () => app.wrapSelection('`')),
-        fmt(Icons.border_color, 'Highlight', () => app.wrapSelection('==')),
-        const _Div(),
-        fmt(Icons.title, 'Heading 1', () => app.toggleLinePrefix('# ')),
-        _TextBtn('H2', canFormat, () => app.toggleLinePrefix('## ')),
-        _TextBtn('H3', canFormat, () => app.toggleLinePrefix('### ')),
-        const _Div(),
-        fmt(Icons.format_list_bulleted, 'Bullet list',
-            () => app.toggleLinePrefix('- ')),
-        fmt(Icons.format_list_numbered, 'Numbered list',
-            () => app.toggleLinePrefix('1. ')),
-        fmt(Icons.check_box_outlined, 'Checkbox',
-            () => app.toggleLinePrefix('- [ ] ')),
-        fmt(Icons.format_quote, 'Quote', () => app.toggleLinePrefix('> ')),
-        const _Div(),
-      ],
+      // **The row never changes shape.** An earlier revision collapsed the
+      // formatting commands to three group heads when nothing was focused, on
+      // the reasoning that a wall of greyed glyphs reads as broken. That traded
+      // one problem for a worse one: clicking into a text box made ~15 buttons
+      // appear and shoved everything to their right across the toolbar, so the
+      // control you were reaching for moved out from under the pointer at the
+      // exact moment you started using the app. Layout that moves while you aim
+      // at it is a harder failure than layout that looks quiet.
+      //
+      // So: "disabled ≠ hidden" (§7a.2) applies without exception here. Every
+      // command holds its position always; the ones that need a caret are
+      // greyed, and the hint at the end of the row — which only ever appears
+      // AFTER the last control, so it displaces nothing — says why.
+      fmt(Icons.format_bold, 'Bold  (Ctrl+B)', () => app.wrapSelection('**')),
+      fmt(Icons.format_italic, 'Italic  (Ctrl+I)',
+          () => app.wrapSelection('*')),
+      fmt(Icons.format_underlined, 'Underline  (Ctrl+U)',
+          () => app.wrapSelection('++')),
+      fmt(Icons.strikethrough_s, 'Strikethrough',
+          () => app.wrapSelection('~~')),
+      fmt(Icons.code, 'Inline code', () => app.wrapSelection('`')),
+      fmt(Icons.border_color, 'Highlight', () => app.wrapSelection('==')),
+      const _Div(),
+      fmt(Icons.title, 'Heading 1', () => app.toggleLinePrefix('# ')),
+      _TextBtn('H2', canFormat, () => app.toggleLinePrefix('## ')),
+      _TextBtn('H3', canFormat, () => app.toggleLinePrefix('### ')),
+      const _Div(),
+      fmt(Icons.format_list_bulleted, 'Bullet list',
+          () => app.toggleLinePrefix('- ')),
+      fmt(Icons.format_list_numbered, 'Numbered list',
+          () => app.toggleLinePrefix('1. ')),
+      fmt(Icons.check_box_outlined, 'Checkbox',
+          () => app.toggleLinePrefix('- [ ] ')),
+      fmt(Icons.format_quote, 'Quote', () => app.toggleLinePrefix('> ')),
+      const _Div(),
       // Tags (TEXT-5). OneNote users organise around these, so they get a
       // first-class place on Home rather than a submenu. The button shows the
       // caret line's active tags, which is why it reads state on every build.
@@ -388,11 +395,7 @@ class _CommandBarState extends State<CommandBar> {
   Widget _insertRow(BuildContext context) {
     Widget ins(IconData icon, String label, VoidCallback fn) => Padding(
           padding: const EdgeInsets.only(right: 4),
-          child: TextButton.icon(
-            icon: Icon(icon, size: 16),
-            label: Text(label, style: const TextStyle(fontSize: 12)),
-            onPressed: fn,
-          ),
+          child: CommandButton(icon: icon, label: label, onPressed: fn),
         );
     return Row(children: [
       ins(Icons.text_fields, 'Text box', _insertText),
@@ -801,6 +804,12 @@ class _CommandBarState extends State<CommandBar> {
   }
 }
 
+/// `H2` / `H3` on the Home row.
+///
+/// Thin wrapper over [CommandTextButton] so the call sites keep their
+/// positional shorthand; the colours and metrics come from the shared control,
+/// which is what stops the two heading buttons rendering in the accent while
+/// the bold/italic icons beside them render in ink.
 class _TextBtn extends StatelessWidget {
   const _TextBtn(this.label, this.enabled, this.onTap);
   final String label;
@@ -808,13 +817,9 @@ class _TextBtn extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => TextButton(
+  Widget build(BuildContext context) => CommandTextButton(
+        label: label,
         onPressed: enabled ? onTap : null,
-        style: TextButton.styleFrom(
-            minimumSize: const Size(30, 32),
-            padding: const EdgeInsets.symmetric(horizontal: 6)),
-        child: Text(label,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
       );
 }
 
@@ -1287,9 +1292,9 @@ class _PdfImportButton extends StatelessWidget {
       builder: (context, controller, _) => Padding(
         padding: const EdgeInsets.only(right: 4),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          TextButton.icon(
-            icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
-            label: const Text('PDF slides', style: TextStyle(fontSize: 12)),
+          CommandButton(
+            icon: Icons.picture_as_pdf_outlined,
+            label: 'PDF slides',
             onPressed: () {
               // Close the menu if it is open: otherwise the file picker opens
               // behind a menu that is still sitting on top of it.

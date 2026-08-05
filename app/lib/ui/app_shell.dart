@@ -10,6 +10,7 @@ import '../model/tags.dart';
 import '../core/onote_ffi.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'alert_popup.dart';
 import 'command_bar.dart';
 import 'onboarding.dart';
 import 'planner_panel.dart';
@@ -353,7 +354,12 @@ class _AppShellState extends State<AppShell> {
       builder: (context, _) {
         final page = app.nodes.where((n) => n.id == app.pageId).firstOrNull;
         return Scaffold(
-          body: Row(
+          // A `Stack`, so a reminder floats OVER the page rather than pushing
+          // it. An alert that reflowed the canvas would move the line you were
+          // typing on, which is a worse interruption than the one it is
+          // delivering.
+          body: Stack(children: [
+            Row(
             children: [
               _navigator(),
               const VerticalDivider(width: 1),
@@ -408,6 +414,8 @@ class _AppShellState extends State<AppShell> {
               ),
             ],
           ),
+            AlertPopup(app: app),
+          ]),
         );
       },
     );
@@ -841,7 +849,13 @@ class _StatusBar extends StatelessWidget {
     final failed = app.saveError != null;
     return Container(
       height: 24,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      // Tighter at the trailing edge than the leading one, on purpose. The
+      // left-hand cluster is a run of icon-and-label pairs whose glyphs need
+      // breathing room from the frame; the right-hand end is the shortcut
+      // cheat-sheet, which is a single line of text and reads as *detached*
+      // when it floats 12px in from the window edge — the "the UI doesn't
+      // reach the sides" complaint. 6px is the optical match.
+      padding: const EdgeInsets.only(left: OnoteSpace.x5, right: OnoteSpace.x3),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
@@ -918,19 +932,29 @@ class _StatusBar extends StatelessWidget {
               ),
             ]),
           ),
-          const Spacer(),
           // The cheat-sheet (§7a.4), dropped whole rather than ellipsised
           // (§7d). Truncating it produces "V select · T text · P pen · H…",
           // which is not a shorter version of the message — it is a different,
           // useless one, and it also drags the state cluster on its left into
           // truncation with it. Below the threshold the shortcuts are still on
           // every button's tooltip, which is where they are actually read.
-          Flexible(
-            child: _DropIfTight(
-              text: 'V select · T text · P pen · H highlight · E erase · '
-                  'Ctrl+Z undo · Ctrl+scroll zoom',
-              style: OnoteType.caption
-                  .copyWith(color: context.surfaces.textSecondary),
+          //
+          // **One flex child, not a `Spacer` plus a `Flexible`.** That pairing
+          // splits the free space evenly between them, so the measurement ran
+          // against half the width the text was then allowed to occupy — the
+          // text passed the fits-whole check and was clipped anyway, which is
+          // precisely the outcome this widget exists to prevent. `Expanded` +
+          // right alignment gives the measurement and the layout the same
+          // number.
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: _DropIfTight(
+                text: 'V select · T text · P pen · H highlight · E erase · '
+                    'Ctrl+Z undo · Ctrl+scroll zoom',
+                style: OnoteType.caption
+                    .copyWith(color: context.surfaces.textSecondary),
+              ),
             ),
           ),
         ],
@@ -961,8 +985,14 @@ class _DropIfTight extends StatelessWidget {
             text: TextSpan(text: text, style: style),
             maxLines: 1,
             textDirection: Directionality.of(context),
+            textScaler: MediaQuery.textScalerOf(context),
           )..layout();
-          if (tp.width > c.maxWidth) return const SizedBox.shrink();
+          // A pixel of slack. `TextPainter` and the `Text` that follows it lay
+          // out the same string with the same style, but they round
+          // independently, and a sub-pixel disagreement at exactly the
+          // threshold is the difference between "dropped cleanly" and "one
+          // glyph sliced off at the window edge".
+          if (tp.width > c.maxWidth - 1) return const SizedBox.shrink();
           return Text(text, style: style, maxLines: 1, softWrap: false);
         },
       );

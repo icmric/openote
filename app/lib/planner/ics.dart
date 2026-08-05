@@ -94,6 +94,15 @@ class IcsEvent {
   /// recoverable by the reader, whereas twelve invented dates are not.
   final bool recurrenceUnsupported;
 
+  /// Unescaped `URL`. Empty when absent.
+  ///
+  /// Read because it is where a timetable system usually puts the thing a
+  /// student actually needs at 9am: the meeting link. Note it is *not* the only
+  /// place — Zoom and Teams invitations routinely put the join link in
+  /// `DESCRIPTION` or even `LOCATION` instead — so `joinLink` in
+  /// `event_kinds.dart` searches all three rather than trusting this one.
+  final String url;
+
   /// The raw `TZID` parameter as written by the producer, when there was one.
   /// Purely informational — no conversion is performed (see the library note).
   /// Useful for a one-line UI caveat: "times shown in your device's zone".
@@ -104,6 +113,7 @@ class IcsEvent {
     required this.summary,
     required this.location,
     required this.description,
+    this.url = '',
     required this.start,
     this.end,
     this.allDay = false,
@@ -529,6 +539,7 @@ const Set<String> _singleValuedProps = <String>{
   'SUMMARY',
   'LOCATION',
   'DESCRIPTION',
+  'URL',
   'RRULE',
   'RECURRENCE-ID',
 };
@@ -993,6 +1004,7 @@ void _buildOccurrences(
       summary: textProp('SUMMARY'),
       location: textProp('LOCATION'),
       description: textProp('DESCRIPTION'),
+      url: textProp('URL'),
       start: _toLocal(s),
       end: span == null ? null : _toLocal(_wallClockEnd(s, span)),
       allDay: allDay,

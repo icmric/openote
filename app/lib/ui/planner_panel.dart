@@ -22,10 +22,16 @@ library;
 import 'package:flutter/material.dart';
 
 import '../model/models.dart';
+import '../core/platform_open.dart';
 import '../planner/agenda.dart';
+import '../planner/alerts.dart';
+import '../planner/event_kinds.dart';
+import '../planner/ics.dart';
 import '../state/app_state.dart';
 import '../state/planner_state.dart';
 import '../theme/onote_theme.dart';
+import 'event_alert_dialog.dart';
+import 'exam_date.dart';
 import 'month_grid.dart';
 import 'side_panel.dart';
 import 'planner_format.dart';
@@ -85,6 +91,10 @@ class _PlannerPanelState extends State<PlannerPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // "What have I got on" answered before the list is read, which is
+          // the whole point of subscribing to a timetable. Costs nothing when
+          // there is no subscription — it renders nothing.
+          _UpNext(app: app, now: now),
           if (_showMonth) ...[
             MonthGrid(
               planner: planner,
@@ -146,27 +156,42 @@ class _PlannerPanelState extends State<PlannerPanel> {
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.done, size: 16),
+              icon: const Icon(Icons.done_all, size: 16),
               visualDensity: VisualDensity.compact,
-              tooltip: 'Dismiss',
-              onPressed: planner.clearAlerts,
+              tooltip: 'Done with all of these',
+              // **Dismisses, rather than merely hiding.** This button used to
+              // call `clearAlerts`, which emptied the on-screen list and left
+              // every reminder live — so the badge stayed lit, the row stayed
+              // in the agenda below, and the button read as broken.
+              onPressed: planner.dismissAllAlerts,
             ),
           ]),
           for (final r in alerts)
             Padding(
               padding: const EdgeInsets.only(top: 4, right: 4),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              child:
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Expanded(
-                  child: Text('${r.text}  ·  ${formatClock(r.at)}',
+                  child: Text('${r.title}  ·  ${formatClock(r.at)}',
                       style: const TextStyle(fontSize: 12, height: 1.35)),
                 ),
-                _SnoozeButton(
-                  // Measured from now, not from the reminder's own time —
-                  // snoozing something that came due yesterday "by ten
-                  // minutes" must land ten minutes from now, or it fires again
-                  // on the next tick and the Snooze button appears broken.
-                  onSnooze: (d) =>
-                      planner.reminders.snooze(r.id, d, DateTime.now()),
+                if (r.source == AlertSource.reminder)
+                  _SnoozeButton(
+                    // Measured from now, not from the reminder's own time —
+                    // snoozing something that came due yesterday "by ten
+                    // minutes" must land ten minutes from now, or it fires
+                    // again on the next tick and Snooze appears broken.
+                    onSnooze: (d) => planner.snoozeAlert(r.id, d),
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.done, size: 16),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                      minWidth: OnoteSize.hitTarget,
+                      minHeight: OnoteSize.hitTarget),
+                  tooltip: 'Done',
+                  onPressed: () => planner.dismissAlert(r.id),
                 ),
               ]),
             ),
@@ -320,6 +345,31 @@ class _PlannerPanelState extends State<PlannerPanel> {
                     fontWeight: overdue ? FontWeight.w700 : FontWeight.w400,
                     color: overdue ? OnoteColors.danger : scheme.primary)),
           ),
+          // A visible way to be finished with a reminder.
+          //
+          // Delete has always been on the right-click menu, and that was not
+          // enough: nobody right-clicks a list they have just been shown, so
+          // the honest report was "there is no way to dismiss one". A task has
+          // its checkbox and an exam has a date you can clear from the section
+          // it belongs to; a reminder had neither, which made it the one row
+          // type you could not get rid of without knowing a secret.
+          if (it.kind == DatedKind.reminder)
+            Padding(
+              padding: const EdgeInsets.only(left: 2),
+              child: IconButton(
+                icon: const Icon(Icons.check, size: OnoteIcon.sm),
+                tooltip: 'Done with this reminder',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                    minWidth: OnoteSize.hitTarget,
+                    minHeight: OnoteSize.hitTarget),
+                onPressed: () {
+                  final id = PlannerState.reminderIdOf(it);
+                  if (id != null) planner.reminders.dismiss(id);
+                },
+              ),
+            ),
         ]),
       ),
     );
@@ -440,9 +490,12 @@ class _PlannerPanelState extends State<PlannerPanel> {
                 child: Text(planner.calendar == null
                     ? 'Subscribe to a timetable…'
                     : 'Change the timetable…')),
-            if (planner.calendar != null)
+            if (planner.calendar != null) ...[
+              const PopupMenuItem(
+                  value: 'alerts', child: Text('Alerts before classes…')),
               const PopupMenuItem(
                   value: 'unsub', child: Text('Remove the timetable')),
+            ],
             if (planner.calendarWarnings.isNotEmpty)
               const PopupMenuItem(
                   value: 'warnings',
@@ -556,6 +609,8 @@ class _PlannerPanelState extends State<PlannerPanel> {
     switch (choice) {
       case 'ics':
         await _subscribe();
+      case 'alerts':
+        await showEventAlertDialog(context, app);
       case 'unsub':
         planner.unsubscribeCalendar();
       case 'warnings':
@@ -573,14 +628,10 @@ class _PlannerPanelState extends State<PlannerPanel> {
         ? sections.single
         : await _pickSection(sections);
     if (chosen == null || !mounted) return;
-    final now = DateTime.now();
-    final d = await _pickDay(
-        initial: app.study.examDate(chosen.id) ??
-            DateTime(now.year, now.month, now.day + 14),
-        now: now,
-        help: 'Exam date — ${chosen.title}');
-    if (d == null) return;
-    app.study.setExamDate(chosen.id, d);
+    // The shared picker, so the planner, the navigator and the study panel all
+    // offer the same thing — including the optional start time, which the
+    // hand-rolled `_pickDay` here could not.
+    await pickExamDate(context, app, chosen.id);
   }
 
   Future<TreeNode?> _pickSection(List<TreeNode> sections) =>
@@ -989,4 +1040,150 @@ class _CalendarDialogState extends State<_CalendarDialog> {
           ),
         ],
       );
+}
+
+/// The "up next" strip (v0.8 §2).
+///
+/// **Why this earns the top of the panel.** The agenda answers "what have I
+/// got on"; it does not answer *"what do I do in the next ten minutes"*, which
+/// is the question a timetable is actually subscribed to for. That answer is one
+/// row long and it changes every hour, so it belongs pinned above the list
+/// rather than found by scrolling to today.
+///
+/// Renders nothing at all without a subscription — a permanent empty box saying
+/// "no upcoming events" would be chrome charging rent.
+class _UpNext extends StatelessWidget {
+  const _UpNext({required this.app, required this.now});
+
+  final AppState app;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    final planner = app.planner;
+    if (planner.calendar == null) return const SizedBox.shrink();
+    final current = planner.currentEvent(now: now);
+    final next = planner.nextEvent(now: now);
+    if (current == null && next == null) return const SizedBox.shrink();
+
+    final s = context.surfaces;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(
+          OnoteSpace.x5, OnoteSpace.x4, OnoteSpace.x4, OnoteSpace.x4),
+      decoration: BoxDecoration(
+        color: s.chrome2,
+        border: Border(bottom: BorderSide(color: s.border)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (current != null)
+            _EventLine(label: 'Now', event: current, now: now, emphasis: true),
+          if (current != null && next != null)
+            const SizedBox(height: OnoteSpace.x3),
+          if (next != null)
+            _EventLine(
+                label: current == null ? 'Next' : 'Then',
+                event: next,
+                now: now,
+                emphasis: current == null),
+        ],
+      ),
+    );
+  }
+}
+
+class _EventLine extends StatelessWidget {
+  const _EventLine({
+    required this.label,
+    required this.event,
+    required this.now,
+    required this.emphasis,
+  });
+
+  final String label;
+  final IcsEvent event;
+  final DateTime now;
+  final bool emphasis;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.surfaces;
+    final scheme = Theme.of(context).colorScheme;
+    final kind = classifyEvent(event);
+    final join = joinLink(event);
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SizedBox(
+        width: 34,
+        child: Text(label,
+            style: OnoteType.overline.copyWith(
+                color: emphasis ? scheme.primary : s.textSecondary)),
+      ),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              event.summary.isEmpty ? '(untitled event)' : event.summary,
+              style: (emphasis ? OnoteType.uiStrong : OnoteType.ui)
+                  .copyWith(color: s.textPrimary),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Text(_detail(kind),
+                style: OnoteType.caption.copyWith(color: s.textSecondary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+          ],
+        ),
+      ),
+      // The Join button is the payoff. A lecture row that tells you the link
+      // exists but makes you hunt for it in the description has done the hard
+      // half of the job and skipped the useful half.
+      if (join != null)
+        Padding(
+          padding: const EdgeInsets.only(left: OnoteSpace.x3),
+          child: Tooltip(
+            message: join.url,
+            child: FilledButton.tonal(
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: OnoteSpace.x4),
+                minimumSize: const Size(0, OnoteSize.buttonCompact),
+                textStyle: OnoteType.small,
+              ),
+              onPressed: () => _join(context, join),
+              child: Text('Join ${join.provider}'),
+            ),
+          ),
+        ),
+    ]);
+  }
+
+  String _detail(EventKind kind) {
+    final parts = <String>[];
+    final mins = event.start.difference(now).inMinutes;
+    if (mins > 0) {
+      parts.add(mins < 60
+          ? 'in $mins min'
+          : 'at ${formatClock(event.start)}');
+    } else if (event.end != null) {
+      parts.add('until ${formatClock(event.end!)}');
+    } else {
+      parts.add(formatClock(event.start));
+    }
+    if (kind != EventKind.other) parts.add(kind.label);
+    if (event.location.isNotEmpty) parts.add(event.location);
+    return parts.join(' · ');
+  }
+
+  Future<void> _join(BuildContext context, JoinLink join) async {
+    final ok = await PlatformOpen.url(join.url);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Couldn't open that link: ${join.url}")));
+    }
+  }
 }

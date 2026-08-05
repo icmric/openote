@@ -190,10 +190,13 @@ void main() {
     await tester.pumpWidget(host(app));
     await settle(tester);
 
-    expect(find.text('Discrete Maths lecture'), findsOneWidget);
+    // Two: the agenda row, and the "up next" strip above it (v0.8 §2). The
+    // strip is not right-clickable, so the row is the LAST of the two — the
+    // strip is rendered above the list.
+    final titles = find.text('Discrete Maths lecture');
+    expect(titles, findsNWidgets(2));
 
-    await tester.tapAt(
-        tester.getCenter(find.text('Discrete Maths lecture')),
+    await tester.tapAt(tester.getCenter(titles.last),
         buttons: 2 /* secondary */);
     await tester.pumpAndSettle();
     expect(find.text('From your calendar — read-only'), findsOneWidget);

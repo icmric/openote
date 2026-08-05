@@ -1,6 +1,6 @@
 # Openote — Style Guide & Design System
 
-> **Document status:** v0.4 · **Implementation phase** · Last updated 2026-08-05
+> **Document status:** v0.5 · **Implementation phase** · Last updated 2026-08-05
 > **Reality check (2026-08-05):** colour tokens (§3) are implemented verbatim in
 > `app/lib/theme/onote_theme.dart`; **fonts are bundled** (§4.1 met — Inter +
 > JetBrains Mono, 2026-08-04); tags (§7) shipped, including OneNote import; the
@@ -407,7 +407,12 @@ These standardise what every menu, button, and click does, so the UI stays consi
 - **Toggle buttons** (snap, panels, tools) show selected state via `primary` tint + `primary.withValues(.14)` fill — never colour alone; the tooltip states the current state and what a click does ("Snap to grid: ON …").
 - **Split buttons** (e.g. text colour): the main area applies the *current/last* value; the attached arrow (or long-press) opens the full picker. The button displays the current value (colour swatch underline, font name).
 - **Icon-only buttons** always carry a tooltip; tooltips always include the shortcut in the form "Label  (Ctrl+X)".
-- **Disabled ≠ hidden:** commands that could apply but currently don't (formatting with no editor focused) render disabled with a nearby one-line hint, so users learn *how* to enable them.
+- **A label does not change a command's colour** *(added 2026-08-05)*. Icon-only and icon-plus-label commands are the same control at two widths, and both take their foreground from `textPrimary`. This has to be said because Material 3 gives `TextButton` a `primary` foreground by default: the Insert tab, built from `TextButton.icon` because `Icons.functions` does not read as "equation" the way `B` reads as bold, therefore rendered its whole row in the accent while every other tab rendered in ink — so switching tabs changed the toolbar's palette. The accent is reserved for **state** (§3.5); spending it on "this is a button" leaves nothing to say "this one is on". Use the shared `CommandButton` / `CommandTextButton` rather than a bare `TextButton` anywhere in the command bar.
+- **Disabled ≠ hidden, and a command row never changes shape** *(strengthened 2026-08-05)*. Commands that could apply but currently don't (formatting with no editor focused) render **disabled in place**, with a one-line hint appended *after* the last control so it displaces nothing.
+
+  This is stronger than it was, and the earlier version caused a real defect. A previous revision let the Home row collapse to three group heads when nothing was focused, reasoning that ~20 greyed glyphs reads as broken. It traded one problem for a worse one: clicking into a text box made fifteen buttons appear and shoved everything to their right across the toolbar, so the control being reached for moved out from under the pointer at the exact moment the app started being used. **Layout that moves while you aim at it is a harder failure than layout that looks quiet.** A command bar's positions are muscle memory; nothing may take that away to look tidier.
+
+  The permitted way to make a disabled row calm is *contrast* (see §3.7 `textDisabled`), never *absence*.
 
 ### 7a.3 Dialogs & pickers
 - Dialogs are for **choices too rich for a menu** (colour wheel, font list, templates, recycle bin, version history). `radius-xl`, max-height 60% of window, content scrolls — never the chrome.
@@ -520,6 +525,20 @@ over the page: find is a mode of the frame, not a thing on the note.
 treatment at `lg` icon size, centred, with the primary action as a real button
 — not a link.
 
+**Every fixed region runs to the edge of the region it owns** *(added
+2026-08-05)*. A chrome strip does not get an outer gutter: the first and last
+control's own padding **is** the optical margin. An extra 6–12px of leading or
+trailing space makes the strip read as floating inside the window rather than
+being part of the frame, and it also throws away the one target a pointer can
+be flung at infinitely fast and always hit (Fitts's law — the screen edge). The
+one sanctioned asymmetry is a *text-only* trailing cluster, which sits `x3`
+rather than flush because a bare line of type touching the frame reads as
+clipped where a glyph inside a button does not.
+
+Note "the region it owns", not "the window": the command bar starts after the
+navigator, and that is correct — it is the content column's frame, not the
+application's.
+
 ## 7e. Indicators: badges, counters and progress *(added 2026-08-05 — normative)*
 
 **Badges** — a count on a toggle (cards due, items today). `caption` weight
@@ -566,6 +585,40 @@ the app and most of it is invisible until pointed at.
   reserves its own height so no block can render through it.
 - **Alignment guides and the snap grid** use `ink-400` at low opacity and
   appear only during the drag that needs them.
+
+## 7f-2. Alerts and interruptions *(added 2026-08-05 — normative)*
+
+The one surface allowed to appear over the page uninvited. Because it is
+uninvited, the rules are tighter than anywhere else.
+
+**Anatomy.** A stack of cards, bottom-right, max 380px wide, `raised` surface,
+`radius-lg`, one `border` hairline, elevation 6. At most **three** cards; the
+rest collapse into a count in a header strip on `chrome2`. A stack that fills
+the window is a modal dialog wearing a disguise.
+
+**It floats, it never pushes.** An alert that reflows the layout moves the line
+being typed on, which is a worse interruption than the one being delivered. It
+lives in the shell's `Stack`, above everything, and takes no space.
+
+**It never auto-dismisses.** A nudge that vanished while the user was looking at
+the other monitor is precisely the failure the feature exists to prevent. Every
+card is dismissible in one click and ignoring it is a valid outcome — the badge
+and the panel still hold it.
+
+**Every card offers its actions, and the primary one is doing the thing.** Join
+(when there is a link) and Go to the note come before Snooze and Done, because
+the alert's purpose is to get you to the thing, not to get itself off screen.
+An action that appears to work and does not — a Join button opening nothing —
+must say so; silent failure at 9:01 is worse than no button.
+
+**Both dismissals exist and mean different things.** "Finished with it"
+resolves the underlying item; "not now" only hides the display. Never wire a
+button labelled *Done* to the second one — that was a shipped bug, and it read
+as the button being broken because the badge stayed lit behind it.
+
+**Say what the channel cannot do.** An in-app alert cannot reach a user when the
+app is closed. That is stated in the settings dialog, not discovered. Any alert
+channel added later inherits this rule.
 
 ## 7g. Study and planner surfaces *(added 2026-08-05 — normative)*
 
