@@ -60,6 +60,7 @@ Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/AD
 - [v0.5 dates, reminders and the planner](planning/v0.5-dates-and-reminders.md) — **built.** Why reminders cannot use the OS scheduler and what Openote does instead, where a due date lives versus a reminder time versus an exam date, why the calendar integration is an ICS subscription rather than an OAuth client, and the brakes that keep a notebook from becoming a to-do app.
 - [v0.3 student plan](planning/v0.3-student-plan.md) — the current plan: OneNote parity for students, plus the differentiators (PDF slide annotation, flashcards from tags, free math evaluation, group notebooks).
 - [v0.2 release plan](planning/v0.2-release-plan.md) — the tiered plan for the first public release: exit checklist, sizes, and open decisions (carries the outstanding verification checklist).
+- [Releasing](RELEASING.md) — how a commit on `master` becomes a download: the three commands, the four manual steps (publishing the draft, turning Pages on, pointing the domain, and the signing decision), what each platform artifact is, and what to do when a job fails.
 - [Contributing](../CONTRIBUTING.md) — how to get involved.
 - [README](../README.md) — project overview.
 
