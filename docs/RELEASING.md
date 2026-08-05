@@ -149,10 +149,17 @@ Until the domain is attached, the Worker is live at
 #### Deploying by hand
 
 ```bash
-npx wrangler deploy          # from the repo root; reads wrangler.jsonc
-npx wrangler dev             # serves site/ on localhost:8787, Worker and all
-npx wrangler tail            # live logs, for when /api/latest starts 503ing
+npx wrangler@4 deploy        # from the repo root; reads wrangler.jsonc
+npx wrangler@4 dev           # serves site/ on localhost:8787, Worker and all
+npx wrangler@4 tail          # live logs, for when /api/latest starts 503ing
 ```
+
+**Say `@4`, or pin it.** Wrangler 3 cannot read `wrangler.jsonc` at all (JSONC
+config landed in 3.91) and does not support static assets, so it reports
+`Missing entry-point` — pointing at a file it is silently ignoring. That is
+exactly how the first CI deploy failed: `cloudflare/wrangler-action@v3` installs
+wrangler **3.90** by default. The workflow now calls a pinned wrangler 4
+directly instead.
 
 ## 3. The warnings, and what to tell people
 
@@ -216,6 +223,7 @@ iscc /DAppVersion=0.3.0 /DStageDir=<path to the Release folder> packaging\window
 | The dmg is tiny | The macOS build produced no app bundle | Check the *Build app* step; it usually fails loudly earlier |
 | Windows app starts and the status bar says "pure-Dart engine" | `onote_core.dll` is not beside the exe | Check the *Package zip* step copied it |
 | Site deploy fails with an auth error | §2a not done, or the token is scoped to the wrong account | Recreate the token from the **Edit Cloudflare Workers** template |
+| Site deploy says `Missing entry-point` | Wrangler 3 is being used; it ignores `wrangler.jsonc` entirely | Use wrangler 4 — the workflow pins it, so this only bites a hand-run `npx wrangler` |
 | `/api/latest` returns 503 | GitHub had no published release, or was unreachable | Expected with no release; the page falls back to calling GitHub directly |
 | The site says "no release yet" | No **published** release — a draft is invisible to the API | Publish the draft |
 
