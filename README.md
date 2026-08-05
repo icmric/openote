@@ -23,7 +23,8 @@
 
 ## Install
 
-Grab the latest build from [**Releases**](https://github.com/icmric/openote/releases).
+Grab the latest build from **[openote.org](https://openote.org)** or the
+[Releases page](https://github.com/icmric/openote/releases).
 
 | | Download | Then |
 |---|---|---|

@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Openote — your notes, your format, every platform</title>
+<meta name="description" content="An open-source, cross-platform alternative to Microsoft OneNote. Freeform canvas, handwriting and maths, an open file format, and a native Linux build. Local-first, no account.">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:title" content="Openote">
+<meta property="og:description" content="An open-source, cross-platform alternative to Microsoft OneNote. Local-first, open format, no account.">
+<meta property="og:type" content="website">
+
+<!--
+  Deliberately one file, no build step, and NO third-party requests — no
+  Google Fonts, no analytics, no CDN. A site for a local-first app that says
+  "nothing is uploaded anywhere" should not phone home to render its own
+  headline. The type is the system UI stack, which is what the app itself used
+  before it bundled Inter.
+-->
+<style>
+  :root {
+    --ink-400:#7B7FEE; --ink-500:#5B5BE6; --ink-600:#4A45D6;
+    --brass-400:#EBB24A;
+    --paper-0:#FFFFFF; --paper-50:#FAF9F7; --paper-100:#F2F1ED; --paper-200:#E7E5DF;
+    --graphite-500:#6E6B63; --graphite-700:#403D38; --graphite-900:#211F1B;
+    --night-0:#17161C; --night-50:#1E1D24; --night-100:#26252E; --night-200:#33313C;
+    --moon-0:#F6F4FA; --moon-100:#E6E3EC; --moon-300:#B8B4C2;
+
+    --bg:var(--paper-50); --surface:var(--paper-0); --raised:var(--paper-0);
+    --border:var(--paper-200); --text:var(--graphite-900);
+    --text-2:var(--graphite-500); --primary:var(--ink-500);
+    --shadow:0 2px 8px rgba(20,18,30,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:var(--night-0); --surface:var(--night-50); --raised:var(--night-100);
+      --border:var(--night-200); --text:var(--moon-0);
+      --text-2:var(--moon-300); --primary:var(--ink-400);
+      --shadow:0 2px 8px rgba(0,0,0,.4);
+    }
+  }
+
+  *,*::before,*::after { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body {
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,
+                "Helvetica Neue",Arial,sans-serif;
+    font-size:17px; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:860px; margin:0 auto; padding:0 24px; }
+  a { color:var(--primary); }
+  code, kbd {
+    font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:.87em; background:var(--raised); border:1px solid var(--border);
+    border-radius:4px; padding:.12em .4em;
+  }
+  pre {
+    background:var(--raised); border:1px solid var(--border); border-radius:8px;
+    padding:12px 14px; overflow-x:auto; margin:12px 0 0;
+  }
+  pre code { background:none; border:0; padding:0; }
+  h1,h2,h3 { line-height:1.25; letter-spacing:-.01em; }
+
+  /* ── Hero ─────────────────────────────────────────────────────────── */
+  header { padding:72px 0 8px; text-align:center; }
+  .mark {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:64px; height:64px; border-radius:16px; margin-bottom:20px;
+    background:var(--ink-500); color:#fff;
+    font-size:34px; font-weight:700; letter-spacing:-.04em;
+    box-shadow:0 6px 20px rgba(91,91,230,.28);
+  }
+  h1 { font-size:46px; margin:0 0 8px; font-weight:700; }
+  .tagline { font-size:20px; color:var(--text-2); margin:0 0 22px; }
+  .lede { font-size:18px; max-width:620px; margin:0 auto; }
+  .badges { margin-top:22px; font-size:14px; color:var(--text-2); }
+  .badges span { white-space:nowrap; }
+  .badges span + span::before { content:"·"; margin:0 10px; opacity:.55; }
+
+  /* ── Downloads ────────────────────────────────────────────────────── */
+  section { padding:44px 0; }
+  h2 { font-size:22px; margin:0 0 6px; }
+  .sub { color:var(--text-2); margin:0 0 22px; font-size:16px; }
+
+  .grid { display:grid; gap:14px; grid-template-columns:repeat(3,1fr); }
+  @media (max-width:720px) { .grid { grid-template-columns:1fr; } }
+
+  .card {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:20px; box-shadow:var(--shadow);
+    display:flex; flex-direction:column;
+  }
+  .card.you { border-color:var(--primary); box-shadow:0 0 0 1px var(--primary), var(--shadow); }
+  .card h3 { margin:0; font-size:17px; display:flex; align-items:center; gap:8px; }
+  .you-tag {
+    font-size:11px; font-weight:700; letter-spacing:.5px; text-transform:uppercase;
+    color:#fff; background:var(--primary); border-radius:999px; padding:2px 8px;
+  }
+  .card p { color:var(--text-2); font-size:14.5px; margin:8px 0 16px; flex:1; }
+
+  .btn {
+    display:block; text-align:center; text-decoration:none;
+    background:var(--primary); color:#fff; font-weight:600; font-size:15px;
+    border-radius:6px; padding:11px 16px; transition:background .1s;
+  }
+  .btn:hover { background:var(--ink-600); }
+  @media (prefers-color-scheme: dark) { .btn { color:var(--night-0); } }
+  .alt { display:block; margin-top:10px; font-size:13.5px; color:var(--text-2); text-align:center; }
+  .alt a { color:var(--text-2); }
+
+  /* ── Notes / warnings ─────────────────────────────────────────────── */
+  .note {
+    background:var(--surface); border:1px solid var(--border);
+    border-left:3px solid var(--brass-400);
+    border-radius:8px; padding:18px 20px; margin-top:18px;
+  }
+  .note h3 { margin:0 0 6px; font-size:16px; }
+  .note p { margin:0 0 10px; font-size:15px; }
+  .note p:last-child { margin-bottom:0; }
+  details { margin-top:10px; }
+  summary { cursor:pointer; font-weight:600; font-size:15px; }
+  details[open] summary { margin-bottom:8px; }
+
+  ul.feat { list-style:none; padding:0; margin:0; display:grid; gap:10px;
+            grid-template-columns:1fr 1fr; }
+  @media (max-width:720px) { ul.feat { grid-template-columns:1fr; } }
+  ul.feat li { font-size:15.5px; padding-left:22px; position:relative; color:var(--text-2); }
+  ul.feat li::before { content:"—"; position:absolute; left:0; color:var(--primary); }
+  ul.feat b { color:var(--text); font-weight:600; }
+
+  footer {
+    border-top:1px solid var(--border); margin-top:32px; padding:26px 0 60px;
+    color:var(--text-2); font-size:14.5px; text-align:center;
+  }
+  footer a { margin:0 10px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="mark" aria-hidden="true">O</div>
+    <h1>Openote</h1>
+    <p class="tagline">Your notes. Your format. Every platform.</p>
+    <p class="lede">
+      An open-source alternative to Microsoft OneNote — a real freeform canvas,
+      handwriting and maths, and a documented file format that stays readable
+      whether or not this project does.
+    </p>
+    <p class="badges">
+      <span>Windows · macOS · Linux</span>
+      <span>No account</span>
+      <span>Notes stay on your machine</span>
+    </p>
+  </div>
+</header>
+
+<section id="download">
+  <div class="wrap">
+    <h2>Download</h2>
+    <p class="sub" id="release-line">Finding the latest release…</p>
+
+    <div class="grid">
+      <div class="card" id="card-windows">
+        <h3>Windows</h3>
+        <p>An installer with the usual wizard. Installs for your user only, so
+           it never asks for an administrator password.</p>
+        <a class="btn" id="dl-windows" href="https://github.com/icmric/openote/releases/latest">Download for Windows</a>
+        <span class="alt" id="alt-windows"></span>
+      </div>
+
+      <div class="card" id="card-macos">
+        <h3>macOS</h3>
+        <p>A universal disk image — Apple Silicon and Intel. Open it and drag
+           Openote to Applications.</p>
+        <a class="btn" id="dl-macos" href="https://github.com/icmric/openote/releases/latest">Download for macOS</a>
+        <span class="alt" id="alt-macos"></span>
+      </div>
+
+      <div class="card" id="card-linux">
+        <h3>Linux</h3>
+        <p>An AppImage: one file, no install, no package manager.
+           <code>chmod +x</code> it and run.</p>
+        <a class="btn" id="dl-linux" href="https://github.com/icmric/openote/releases/latest">Download for Linux</a>
+        <span class="alt" id="alt-linux"></span>
+      </div>
+    </div>
+
+    <div class="note">
+      <h3>Your operating system will warn you. Here's the honest reason.</h3>
+      <p>
+        Openote isn't code-signed. Certificates cost a few hundred dollars a
+        year per platform, and while the project is this young that money buys
+        nothing you'd notice. The warnings don't mean the software is unsafe —
+        only that we haven't paid to tell your OS who we are. Every download
+        here is built by a
+        <a href="https://github.com/icmric/openote/blob/master/.github/workflows/release.yml">public workflow</a>
+        from a tagged commit, and you can read both.
+      </p>
+
+      <details>
+        <summary>Windows — “Windows protected your PC”</summary>
+        <p>Click <b>More info</b>, then <b>Run anyway</b>. SmartScreen shows this
+           for any installer it hasn't seen often enough to have an opinion
+           about.</p>
+      </details>
+
+      <details>
+        <summary>macOS — “openote is damaged and can't be opened”</summary>
+        <p>macOS quarantines unsigned downloads. Copy Openote to Applications,
+           then run this once in Terminal:</p>
+        <pre><code>xattr -cr /Applications/openote.app</code></pre>
+        <p style="margin-top:10px">Or open <b>System Settings ▸ Privacy &amp; Security</b>,
+           scroll down, and click <b>Open Anyway</b> next to Openote.</p>
+      </details>
+
+      <details>
+        <summary>Linux — nothing to do</summary>
+        <p>AppImages just run. If double-clicking does nothing, mark it
+           executable first:</p>
+        <pre><code>chmod +x openote-*.AppImage &amp;&amp; ./openote-*.AppImage</code></pre>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>What it does</h2>
+    <p class="sub">Early, but real — and honest about which parts are which.</p>
+    <ul class="feat">
+      <li><b>A genuine freeform canvas.</b> Click anywhere, put anything there, pan and zoom in every direction.</li>
+      <li><b>The hierarchy you know.</b> Notebooks, section groups, sections, pages, subpages.</li>
+      <li><b>Pen and handwriting</b> with pressure, plus maths that builds into real notation as you type.</li>
+      <li><b>An open file format.</b> Documented, versioned, and readable without us.</li>
+      <li><b>Imports your OneNote notebooks</b> — pages, images, ink, tables and tags, from real <code>.one</code> files.</li>
+      <li><b>Sync through a folder you already have.</b> Dropbox, OneDrive, Drive, Syncthing, a NAS. No account, no server of ours.</li>
+      <li><b>Flashcards from your own notes</b> — tag a line and it becomes a card, on a spaced-repetition schedule.</li>
+      <li><b>A planner</b> for exam dates, deadlines, reminders and your university timetable.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <a href="https://github.com/icmric/openote">Source on GitHub</a>
+    <a href="https://github.com/icmric/openote/blob/master/docs/README.md">Documentation</a>
+    <a href="https://github.com/icmric/openote/releases">All releases</a>
+    <a href="https://github.com/icmric/openote/issues">Report a problem</a>
+    <p style="margin-top:16px">Open source. Your notes are yours.</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var REPO = 'icmric/openote';
+  var RELEASES = 'https://github.com/' + REPO + '/releases';
+
+  // Point the card matching the visitor's OS at itself, so "download" is one
+  // obvious button rather than three equal ones.
+  var ua = navigator.userAgent;
+  var mine = /Win/i.test(ua) ? 'windows'
+           : /Mac/i.test(ua) ? 'macos'
+           : /Linux|X11|CrOS/i.test(ua) ? 'linux' : null;
+  if (mine) {
+    var card = document.getElementById('card-' + mine);
+    card.classList.add('you');
+    var tag = document.createElement('span');
+    tag.className = 'you-tag';
+    tag.textContent = 'You';
+    card.querySelector('h3').appendChild(tag);
+    card.parentNode.insertBefore(card, card.parentNode.firstChild);
+  }
+
+  function bytes(n) {
+    return n > 1048576 ? (n / 1048576).toFixed(0) + ' MB'
+         : n > 1024 ? (n / 1024).toFixed(0) + ' KB' : n + ' B';
+  }
+  function find(assets, re) {
+    for (var i = 0; i < assets.length; i++) if (re.test(assets[i].name)) return assets[i];
+    return null;
+  }
+  function wire(os, asset, altAsset, altLabel) {
+    if (!asset) return;
+    var a = document.getElementById('dl-' + os);
+    a.href = asset.browser_download_url;
+    a.textContent = 'Download for ' +
+      (os === 'macos' ? 'macOS' : os[0].toUpperCase() + os.slice(1));
+    var alt = document.getElementById('alt-' + os);
+    alt.innerHTML = bytes(asset.size) +
+      (altAsset ? ' &nbsp;·&nbsp; <a href="' + altAsset.browser_download_url +
+                  '">' + altLabel + '</a>' : '');
+  }
+
+  // Unauthenticated GitHub API: 60 requests/hour per IP, which is ample for a
+  // download page, and the buttons already point at the releases page if this
+  // fails for any reason.
+  fetch('https://api.github.com/repos/' + REPO + '/releases/latest')
+    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function (rel) {
+      var a = rel.assets || [];
+      wire('windows', find(a, /-setup\.exe$/i), find(a, /windows.*\.zip$/i), 'portable .zip');
+      wire('macos', find(a, /\.dmg$/i), null, null);
+      wire('linux', find(a, /\.AppImage$/i), find(a, /linux.*\.tar\.gz$/i), '.tar.gz');
+
+      var when = rel.published_at ? new Date(rel.published_at)
+        .toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+      document.getElementById('release-line').innerHTML =
+        '<b>' + (rel.name || rel.tag_name) + '</b>' + (when ? ' · released ' + when : '') +
+        ' · <a href="' + rel.html_url + '">release notes</a>';
+    })
+    .catch(function () {
+      // No release yet, or the API is unreachable. Say which is likelier
+      // rather than showing a broken page.
+      document.getElementById('release-line').innerHTML =
+        'Builds are published on the <a href="' + RELEASES + '">releases page</a>. ' +
+        'If it is empty, no version has been tagged yet — you can still ' +
+        '<a href="https://github.com/' + REPO + '/blob/master/app/README.md">build it yourself</a>.';
+    });
+})();
+</script>
+</body>
+</html>
