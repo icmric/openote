@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Openote — your notes, your format, every platform</title>
+<!-- Inline, because a browser requests /favicon.ico unprompted and a page with
+     no icon answers it with a 404 in every visitor's console. A data URI keeps
+     the "no third-party requests, and no requests at all beyond this file"
+     property that the rest of the page is built on. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%235B5BE6'/%3E%3Ctext x='32' y='45' font-family='system-ui,sans-serif' font-size='38' font-weight='700' fill='white' text-anchor='middle'%3EO%3C/text%3E%3C/svg%3E">
 <meta name="description" content="An open-source, cross-platform alternative to Microsoft OneNote. Freeform canvas, handwriting and maths, an open file format, and a native Linux build. Local-first, no account.">
 <meta name="color-scheme" content="light dark">
 
@@ -295,11 +300,30 @@
                   '">' + altLabel + '</a>' : '');
   }
 
-  // Unauthenticated GitHub API: 60 requests/hour per IP, which is ample for a
-  // download page, and the buttons already point at the releases page if this
-  // fails for any reason.
-  fetch('https://api.github.com/repos/' + REPO + '/releases/latest')
-    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+  // Ask our own edge first, GitHub second.
+  //
+  // `/api/latest` is the Worker (site/worker.js): one cached origin request
+  // shared by every visitor, already trimmed to the fields below. Going
+  // straight to GitHub from the browser also works — it is what shipped first
+  // — but the unauthenticated API allows 60 requests an hour **per IP**, so a
+  // building behind one NAT can exhaust it between them.
+  //
+  // The fallback is not belt-and-braces, it is the point: this file must stay
+  // a working page when opened from disk, or served from anywhere at all. A
+  // hosting choice should never be able to break it.
+  function latest() {
+    return fetch('/api/latest')
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .catch(function () {
+        return fetch('https://api.github.com/repos/' + REPO + '/releases/latest')
+          .then(function (r) {
+            if (!r.ok) throw new Error(r.status);
+            return r.json();
+          });
+      });
+  }
+
+  latest()
     .then(function (rel) {
       var a = rel.assets || [];
       wire('windows', find(a, /-setup\.exe$/i), find(a, /windows.*\.zip$/i), 'portable .zip');

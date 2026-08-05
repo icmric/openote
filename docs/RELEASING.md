@@ -93,39 +93,66 @@ Automatic, permanent, and where the files actually live:
 Fine for a developer. Not fine for the friend testing on a Mac, who has to
 scroll past the source-code tarballs and pick the right one of five files.
 
-### 2.2 The website — `site/index.html`
+### 2.2 The website — `site/` on Cloudflare Workers
 
-One self-contained file. It reads the latest release **from the GitHub API at
-page load**, so a newly published release appears on the site with no deploy.
-It also detects the visitor's OS and moves that card to the front, so a single
-link lands each person on the file they want.
+One static HTML file plus a Worker with a single route. Deployed by
+[`.github/workflows/site.yml`](../.github/workflows/site.yml) on any push to
+`master` touching `site/` or `wrangler.jsonc`.
 
-Deployed by [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) on
-any push to `master` touching `site/**`.
+The page detects the visitor's OS and moves that card to the front, so a single
+link lands each person on the file they want. **A newly published release
+appears on the site with no deploy** — the version and the download links are
+read at request time, not baked in.
 
-#### ⚠️ 2a. Turn Pages on — manual, once ever
+#### Why a Worker rather than plain static hosting
 
-**Settings ▸ Pages ▸ Build and deployment ▸ Source → GitHub Actions.**
+Exactly one route justifies it: `/api/latest`. The page needs the newest
+release, and asking GitHub from the *browser* — which is what shipped first —
+costs two real things. The unauthenticated GitHub API allows 60 requests an
+hour **per IP**, so a lecture theatre behind one NAT can exhaust it between
+them; and every visitor pays a cross-origin round trip before the buttons
+resolve. Fetching it in the Worker gives one cached origin request shared by
+everyone, served from the edge, trimmed from ~50 KB to under 500 bytes.
 
-Until this is done the workflow runs and fails at the deploy step. After it,
-the site is live at `https://icmric.github.io/openote` within a minute — which
-works for testing before any domain is bought.
+`site/index.html` still falls back to calling GitHub directly if `/api/latest`
+is unavailable, so the file works opened from disk or served from anywhere. A
+hosting choice must not be able to break the page.
+
+#### ⚠️ 2a. Two repository secrets — manual, once ever
+
+Settings ▸ Secrets and variables ▸ Actions ▸ **New repository secret**:
+
+| Secret | Where it comes from |
+|---|---|
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard ▸ Workers & Pages ▸ right-hand sidebar |
+| `CLOUDFLARE_API_TOKEN` | My Profile ▸ API Tokens ▸ Create Token ▸ **Edit Cloudflare Workers** template |
+
+Scope the token to this account and nothing else. It needs two permissions —
+**Workers Scripts: Edit** and **Account Settings: Read** — and no zone access
+at all unless you let wrangler manage the DNS route for you, which the config
+here deliberately does not.
 
 #### ⚠️ 2b. Point the domain — manual, once ever
 
-`site/CNAME` already contains `openote.org`. At the registrar:
+Add `openote.org` to Cloudflare as a zone (this changes the nameservers at your
+registrar), then in the dashboard: **Workers & Pages ▸ openote-site ▸ Settings
+▸ Domains & Routes ▸ Add ▸ Custom domain** → `openote.org`, and again for
+`www.openote.org` if you want it.
 
-| Type | Host | Value |
-|---|---|---|
-| `ALIAS`/`ANAME` (preferred) | `@` | `icmric.github.io` |
-| or four `A` records | `@` | `185.199.108.153`, `.109.153`, `.110.153`, `.111.153` |
-| `CNAME` | `www` | `icmric.github.io` |
+A custom domain creates the DNS record and the certificate itself; there is no
+CNAME file and no A records to add by hand. The old `site/CNAME` was a GitHub
+Pages artefact and has been deleted.
 
-Then **Settings ▸ Pages ▸ Custom domain** → `openote.org`, wait for the check
-to pass, and tick **Enforce HTTPS**. The certificate is issued automatically
-and takes a few minutes.
+Until the domain is attached, the Worker is live at
+`openote-site.<your-subdomain>.workers.dev`, which is enough to test with.
 
----
+#### Deploying by hand
+
+```bash
+npx wrangler deploy          # from the repo root; reads wrangler.jsonc
+npx wrangler dev             # serves site/ on localhost:8787, Worker and all
+npx wrangler tail            # live logs, for when /api/latest starts 503ing
+```
 
 ## 3. The warnings, and what to tell people
 
@@ -188,7 +215,8 @@ iscc /DAppVersion=0.3.0 /DStageDir=<path to the Release folder> packaging\window
 | A platform job fails but others pass | No draft is created — the release job needs all three | Fix, delete the tag, re-tag. Re-running the single job also works |
 | The dmg is tiny | The macOS build produced no app bundle | Check the *Build app* step; it usually fails loudly earlier |
 | Windows app starts and the status bar says "pure-Dart engine" | `onote_core.dll` is not beside the exe | Check the *Package zip* step copied it |
-| Pages workflow fails at deploy | §2a not done | Settings ▸ Pages ▸ Source → GitHub Actions |
+| Site deploy fails with an auth error | §2a not done, or the token is scoped to the wrong account | Recreate the token from the **Edit Cloudflare Workers** template |
+| `/api/latest` returns 503 | GitHub had no published release, or was unreachable | Expected with no release; the page falls back to calling GitHub directly |
 | The site says "no release yet" | No **published** release — a draft is invisible to the API | Publish the draft |
 
 **Deleting a tag** is safe before the release is published, and the usual fix

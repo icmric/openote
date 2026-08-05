@@ -14,3 +14,8 @@
 # method that no longer existed), so the tests never ran at all. A convention
 # that only holds while everyone remembers it is not a convention.
 app/test/zz*_test.dart
+
+# wrangler's local state (dev-server caches, build output). Regenerated on
+# every `wrangler dev`; nothing in it is worth a commit.
+.wrangler/
+node_modules/
