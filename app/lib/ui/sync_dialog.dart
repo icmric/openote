@@ -61,6 +61,11 @@ class _SyncDialogState extends State<_SyncDialog> {
     });
     try {
       final target = subfolder == null ? dir : p.join(dir, subfolder);
+      // Remember what the user actually PICKED, before the move records the
+      // subfolder it created inside it. Both work for "is this synced?", but
+      // the pick is the one with a name worth showing — "Nextcloud", not
+      // "Openote".
+      app.rememberSyncRoot(dir);
       final path = await app.moveNotebookToFolder(nb, target);
       if (!mounted) return;
       setState(() {

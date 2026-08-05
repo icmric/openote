@@ -36,6 +36,22 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **Notes can't hide under the page title any more.** Imported pages with
   content up there are moved down when you open them.
 
+### Fixed — the sync button going grey (2026-08-05)
+- **A notebook you put in your own sync folder now says so** — and keeps
+  saying so after you restart. Openote was working out "is this syncing?" by
+  guessing: it checked whether the notebook sat inside one of about fifteen
+  well-known paths (`~/Dropbox`, `~/OneDrive`, Google Drive's usual drive
+  letters…). So a self-hosted Nextcloud anywhere else, a moved OneDrive, or
+  any folder you picked yourself was reported as "not syncing" even though it
+  was — and the chip's tooltip invited you to set up the sync you already had.
+- **It also stops flickering on startup.** Cloud clients mount their folders a
+  few seconds after login, so the check could run before the folder existed
+  and get a wrong answer that then sat there for the whole session. Openote
+  now remembers the folder *you chose* instead of re-deriving it, and
+  re-checks in the background so a change reaches the screen on its own.
+- The chip now names the folder — "Nextcloud", "OneDrive (work)" — instead of
+  a generic label.
+
 ### Fixed — a font bug found while doing the above (2026-08-05)
 - **Every button in the app was using the wrong font.** Openote bundles Inter
   so it looks the same on Windows, macOS and Linux — but button labels were

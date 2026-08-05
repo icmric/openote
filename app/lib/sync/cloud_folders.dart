@@ -76,11 +76,42 @@ String? get _home =>
 /// answers "no" for the whole period between setting sync up and a second
 /// device actually appearing — exactly when a user most wants confirmation
 /// that it worked.
-CloudFolder? cloudFolderContaining(String path) {
-  for (final f in detectCloudFolders()) {
+/// [also] carries folders the **user told us about** — the one they picked in
+/// "Choose a folder…", or the shared folder they joined a notebook from. Those
+/// are checked first, and they are the reason this function can be trusted.
+///
+/// Detection alone cannot be: it is a list of ~15 well-known paths probed with
+/// `existsSync`, so it answers "no" for a perfectly good sync folder that
+/// simply is not on the list (a self-hosted Nextcloud anywhere but `~/Nextcloud`,
+/// a relocated OneDrive, a Google Drive on a letter outside G–Q), **and** it
+/// answers "no" for a folder that is on the list but has not mounted yet.
+/// That second case is why the chip could go grey after a restart and stay
+/// grey: cloud clients mount asynchronously, so a probe made two seconds after
+/// launch fails where the same probe a minute later succeeds. A remembered
+/// folder does not have that failure mode, because it is a fact the user gave
+/// us rather than a guess we re-derive on every paint.
+CloudFolder? cloudFolderContaining(String path,
+    {List<CloudFolder> also = const []}) {
+  for (final f in [...also, ...detectCloudFolders()]) {
     if (p.isWithin(f.path, path) || p.equals(f.path, path)) return f;
   }
   return null;
+}
+
+/// A folder the user chose, described the way the UI wants to name it.
+///
+/// Recognised as a known provider when it *is* one (so "Choose a folder…" onto
+/// your OneDrive still says OneDrive and shows OneDrive's caveat); otherwise
+/// named after the folder itself, which is what the user will recognise.
+CloudFolder describeChosenFolder(String path) {
+  for (final f in detectCloudFolders()) {
+    if (p.equals(f.path, path) || p.isWithin(f.path, path)) {
+      return CloudFolder(name: f.name, path: path, kind: f.kind);
+    }
+  }
+  final base = p.basename(p.normalize(path));
+  return CloudFolder(
+      name: base.isEmpty ? path : base, path: path, kind: CloudKind.other);
 }
 
 List<CloudFolder> detectCloudFolders() {

@@ -371,6 +371,10 @@ class AppState extends ChangeNotifier
     _recorders.remove(nb);
     _stopWatching();
     final path = await _repo.moveNotebookTo(nb, targetDir);
+    // The user just told us this folder is where their notes sync. Remember
+    // it, rather than re-guessing later from a list of well-known provider
+    // paths that will not contain it.
+    rememberSyncRoot(targetDir);
     _invalidateSyncStatus();
     if (nb == notebookId) {
       await _loadNotebook();
@@ -504,6 +508,48 @@ class AppState extends ChangeNotifier
 
   final Map<String, ({int count, int at})> _deviceCountCache = {};
 
+  /// Re-check sync status periodically, and notify only when it CHANGES.
+  ///
+  /// The second half of the grey-chip bug. Even with a folder remembered, the
+  /// answer depends on the filesystem — a mirror target appears, a provider
+  /// finishes mounting, a network share comes back — and none of those tell
+  /// the app anything. The status was only ever recomputed as a side effect of
+  /// something else calling `notifyListeners`, so a wrong answer could sit on
+  /// screen for a whole session.
+  ///
+  /// Cheap because it notifies on *change*: the common case is one directory
+  /// probe every 20 seconds that finds nothing new and repaints nothing. It
+  /// also means this is not a substitute for [_invalidateSyncStatus] — user
+  /// actions still update immediately; this is only for changes nobody told us
+  /// about.
+  Timer? _syncStatusPoll;
+
+  void _startSyncStatusPolling() {
+    _syncStatusPoll?.cancel();
+    _syncStatusPoll =
+        Timer.periodic(const Duration(seconds: 20), (_) => _pollSyncStatus());
+  }
+
+  /// Run one poll now — what the timer does, exposed so a test can drive it
+  /// without waiting twenty seconds.
+  @visibleForTesting
+  void debugPollSyncStatus() => _pollSyncStatus();
+
+  void _pollSyncStatus() {
+    final nb = notebookId;
+    if (nb == null) return;
+    final before = syncStatus(nb);
+    _invalidateSyncStatus();
+    final after = syncStatus(nb);
+    if (before.isSynced == after.isSynced &&
+        before.devices == after.devices &&
+        before.mirrors == after.mirrors &&
+        before.folder?.path == after.folder?.path) {
+      return;
+    }
+    notifyListeners();
+  }
+
   /// Drop the cached count after something that can change it.
   void _invalidateSyncStatus() {
     _deviceCountCache.clear();
@@ -511,6 +557,68 @@ class AppState extends ChangeNotifier
   }
 
   final Map<String, ({SyncStatus status, int at})> _syncStatusCache = {};
+
+  // ── Remembered sync folders ──────────────────────────────────────────
+
+  /// Folders the user has told us are sync locations, by choosing one in
+  /// "Choose a folder…" or by joining a notebook from one.
+  ///
+  /// **Why this is stored rather than detected.** `detectCloudFolders` probes
+  /// ~15 well-known paths, which is a fine way to *offer* somewhere to sync and
+  /// a bad way to *report* whether syncing is on. It says no to any folder not
+  /// on the list — a self-hosted Nextcloud somewhere else, a relocated
+  /// OneDrive, a Google Drive on an unexpected drive letter — and it also says
+  /// no to a folder on the list that has not mounted yet, which is why the
+  /// chip could come up grey after a restart and stay grey for the session.
+  /// What the user chose is a fact; where a provider happens to have mounted
+  /// two seconds after launch is a guess.
+  final List<CloudFolder> _syncRoots = [];
+
+  List<CloudFolder> get syncRoots => List.unmodifiable(_syncRoots);
+
+  /// Record [dir] as a sync location. Idempotent.
+  void rememberSyncRoot(String dir) {
+    if (dir.trim().isEmpty) return;
+    if (_syncRoots.any((f) => p.equals(f.path, dir))) return;
+    _syncRoots.add(describeChosenFolder(dir));
+    _persistSyncRoots();
+    _invalidateSyncStatus();
+    notifyListeners();
+  }
+
+  /// Forget a remembered root — used when a notebook moves back out.
+  void forgetSyncRoot(String dir) {
+    final before = _syncRoots.length;
+    _syncRoots.removeWhere((f) => p.equals(f.path, dir));
+    if (_syncRoots.length == before) return;
+    _persistSyncRoots();
+    _invalidateSyncStatus();
+    notifyListeners();
+  }
+
+  void _persistSyncRoots() => _repo.setSetting('syncRoots', [
+        for (final f in _syncRoots)
+          {'path': f.path, 'name': f.name, 'kind': f.kind.name}
+      ]);
+
+  /// Restore the remembered roots. Public and standalone, like `study.load()`
+  /// and `planner.load()` — `init()` needs a widgets binding, and a test of
+  /// what survives a restart should not need a whole application to ask.
+  void loadSyncRoots() {
+    final raw = _repo.getSetting('syncRoots');
+    if (raw is! List) return;
+    for (final e in raw) {
+      if (e is! Map) continue;
+      final path = e['path'];
+      if (path is! String || path.isEmpty) continue;
+      if (_syncRoots.any((f) => p.equals(f.path, path))) continue;
+      _syncRoots.add(CloudFolder(
+        name: e['name'] as String? ?? p.basename(path),
+        path: path,
+        kind: CloudKind.values.asNameMap()[e['kind']] ?? CloudKind.other,
+      ));
+    }
+  }
 
   /// What to show the user about this notebook's sync state.
   ///
@@ -527,7 +635,8 @@ class AppState extends ChangeNotifier
     // notebook keeps its container in the local workspace, so asking where the
     // container is told that device it wasn't syncing — while it was.
     final path = notebookLogDir(nb);
-    final folder = path == null ? null : cloudFolderContaining(path);
+    final folder =
+        path == null ? null : cloudFolderContaining(path, also: _syncRoots);
     final devices = syncDeviceCount(nb);
     final status = SyncStatus(
       folder: folder,
@@ -560,8 +669,8 @@ class AppState extends ChangeNotifier
       logPath: logPath,
       logBytes: await _dirBytes(logDir),
       logExists: logDir.existsSync(),
-      containerCloud: cloudFolderContaining(ref.file),
-      logCloud: cloudFolderContaining(logPath),
+      containerCloud: cloudFolderContaining(ref.file, also: _syncRoots),
+      logCloud: cloudFolderContaining(logPath, also: _syncRoots),
     );
   }
 
@@ -1895,6 +2004,8 @@ class AppState extends ChangeNotifier
         ];
       });
     }
+    loadSyncRoots();
+    _startSyncStatusPolling();
     study.load();
     planner.load();
     // Armed only once state is restored: the scheduler's first act is to catch
@@ -1994,6 +2105,10 @@ class AppState extends ChangeNotifier
   Future<void> openExistingNotebook(String path) async {
     await flushSave();
     final ref = await _repo.openExistingNotebook(path);
+    // Joining a notebook from a folder is the other moment the user tells us
+    // where their sync lives — this device's logs go into that folder, so it
+    // is a sync root by definition.
+    rememberSyncRoot(p.dirname(path));
     await selectNotebook(ref.id);
   }
 
@@ -3263,6 +3378,7 @@ class AppState extends ChangeNotifier
   @override
   void dispose() {
     _stopWatching();
+    _syncStatusPoll?.cancel();
     _saveDebounce?.cancel();
     // The planner owns a Timer. A `late final` touched here is constructed
     // just to be torn down, which costs nothing; a live timer left behind
@@ -3354,10 +3470,16 @@ class SyncStatus {
   bool get hasOtherDevices => devices > 1;
 
   /// The chip label.
+  ///
+  /// The folder's own **name**, not its kind: for a detected provider the two
+  /// are the same, but "OneDrive (work)" and a folder the user chose
+  /// themselves both lose their identity if this reports the kind — the second
+  /// would read "Folder", which tells the user nothing about where their notes
+  /// went.
   String get label {
     if (!isSynced) return mirrors > 0 ? 'Backed up' : 'Sync…';
     if (hasOtherDevices) return '$devices devices';
-    return folder!.kind.label;
+    return folder!.name;
   }
 
   IconData get icon {
