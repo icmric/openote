@@ -121,7 +121,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
       padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
       decoration: BoxDecoration(
         color: scheme.primary.withValues(alpha: .10),
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: scheme.primary.withValues(alpha: .35)),
       ),
       child: Column(

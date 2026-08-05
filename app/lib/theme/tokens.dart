@@ -45,6 +45,24 @@ abstract final class OnoteType {
   /// Any widget using these styles directly gets the same guarantee.
   static const family = 'Inter';
 
+  /// A number or word that IS the message — a due count, a session score.
+  /// Rare by design: two per app, not two per panel.
+  static const display = TextStyle(
+      fontFamily: family,
+      fontFamilyFallback: onoteFontFallback,
+      fontSize: 22,
+      height: 28 / 22,
+      fontWeight: FontWeight.w700);
+
+  /// The headline of an empty state or a first-run step — the one line that
+  /// has to be read before anything else on the surface.
+  static const headline = TextStyle(
+      fontFamily: family,
+      fontFamilyFallback: onoteFontFallback,
+      fontSize: 18,
+      height: 24 / 18,
+      fontWeight: FontWeight.w600);
+
   /// Dialog and sheet titles. The largest size chrome is allowed.
   static const title = TextStyle(
       fontFamily: family,
@@ -117,8 +135,12 @@ abstract final class OnoteIcon {
   /// Command bar and other primary tool surfaces.
   static const md = 18.0;
 
-  /// The navigator rail, empty states, anywhere an icon carries meaning alone.
+  /// The navigator rail, anywhere an icon carries meaning alone.
   static const lg = 20.0;
+
+  /// Empty-state art — the one icon on a surface with nothing else on it.
+  /// The app had 32, 34 and 44 doing this job in three places.
+  static const xl = 32.0;
 }
 
 /// Corner radii (style guide §5.2).

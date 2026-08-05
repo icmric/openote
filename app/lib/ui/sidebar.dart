@@ -91,7 +91,7 @@ class _SidebarState extends State<Sidebar> {
       children: [
         Container(
           width: app.navSectionsW + app.navPagesW,
-          color: dark ? OnoteColors.night100 : OnoteColors.paper100,
+          color: context.surfaces.chrome2,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -280,7 +280,6 @@ class _SidebarState extends State<Sidebar> {
   // thing that makes OneNote's navigator effortless to scan.
 
   Widget _twoColumnBody(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final sections =
         app.nodes.where((n) => n.kind == NodeKind.section).toList();
     if (sections.isEmpty) {
@@ -316,7 +315,7 @@ class _SidebarState extends State<Sidebar> {
         // two-tone depth cue the canvas already uses, no new tokens.
         Expanded(
           child: Container(
-            color: dark ? OnoteColors.night50 : OnoteColors.paper50,
+            color: context.surfaces.chrome,
             child: app.navHome
                 ? _HomePane(app: app)
                 : _pagesZone(context, active),
@@ -341,7 +340,7 @@ class _SidebarState extends State<Sidebar> {
                 width: 3.5,
                 height: 14,
                 decoration: BoxDecoration(
-                    color: color, borderRadius: BorderRadius.circular(2)),
+                    color: color, borderRadius: BorderRadius.circular(4)),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -852,7 +851,7 @@ class _NavRail extends StatelessWidget {
         app.nodes.where((n) => n.kind == NodeKind.section).toList();
     return Container(
       width: 44,
-      color: dark ? OnoteColors.night100 : OnoteColors.paper100,
+      color: context.surfaces.chrome2,
       child: Column(
         children: [
           const SizedBox(height: 6),
@@ -865,7 +864,7 @@ class _NavRail extends StatelessWidget {
           Tooltip(
             message: current.title,
             child: InkWell(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
               onTap: () => showNotebookManager(context, app),
               child: Container(
                 width: 26,
@@ -1098,7 +1097,7 @@ class _SectionHeaderState extends State<_SectionHeader> {
               width: 3.5,
               height: 16,
               decoration: BoxDecoration(
-                  color: color, borderRadius: BorderRadius.circular(2)),
+                  color: color, borderRadius: BorderRadius.circular(4)),
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -1384,11 +1383,11 @@ class _InlineRenameState extends State<_InlineRename> {
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(5),
+          borderRadius: BorderRadius.circular(6),
           borderSide: BorderSide(color: scheme.primary),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(5),
+          borderRadius: BorderRadius.circular(6),
           borderSide: BorderSide(color: scheme.primary, width: 1.4),
         ),
       ),
@@ -1616,7 +1615,7 @@ class _EmptyHint extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 32, color: context.surfaces.textSecondary),
+          Icon(icon, size: OnoteIcon.xl, color: context.surfaces.textSecondary),
           const SizedBox(height: 8),
           Text(text,
               textAlign: TextAlign.center,
@@ -1928,7 +1927,7 @@ class _SectionColorRowState extends State<_SectionColorRow> {
           child: Tooltip(
             message: token ?? 'Default',
             child: InkWell(
-              borderRadius: BorderRadius.circular(11),
+              borderRadius: BorderRadius.circular(12),
               onTap: () {
                 widget.app.setNodeColor(widget.section.id, token);
                 Navigator.of(context).pop();

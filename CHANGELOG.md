@@ -4,6 +4,44 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased — 0.2.0] · the first public release
 
+### Changed — the interface, made one thing (2026-08-05)
+- **The app looked like two apps.** Openote had a colour palette and it had
+  hand-built panels, and nothing in between — so every stock Flutter control
+  came out looking like a phone app sitting next to them. Every message
+  Openote showed you was a full-window-width bar; every dialog button was a
+  lozenge; the date picker was a mobile calendar. All of it now matches the
+  rest of the app.
+- **Text is bigger and more consistent.** Seventeen slightly-different text
+  sizes (some a half-pixel apart) became five, and eleven icon sizes became
+  three. Nothing new is on screen — it just lines up now, which is most of
+  what "looking finished" is.
+- **Grey text was too faint to read**, and failed the accessibility contrast
+  standard the project holds itself to. Every caption, hint and subtitle is
+  now readable — in dark mode too, where the naive fix would have made it
+  worse.
+- **Dark mode has depth.** Panels used to sit on the same black as the page,
+  so they merged into one rectangle. The page is now the darkest surface and
+  everything else sits above it.
+- **One side panel at a time.** Study, Planner, Tags, Outline and Links could
+  all be open at once — over 1,300px of panels, which left no room for your
+  notes on a laptop screen.
+- **The toolbar no longer opens as a wall of grey.** With nothing selected it
+  shows three group icons instead of twenty disabled ones; the full set is
+  there the moment you click into a text box.
+- **The status bar stops cutting itself off** mid-sentence, and the
+  breadcrumb no longer spends a whole row repeating what the navigator is
+  already showing.
+- **Your to-dos read as words in the Planner and Tags panels** — a task
+  written as a bullet used to show up as "- Finish tutorial 4", dash and all.
+- **Notes can't hide under the page title any more.** Imported pages with
+  content up there are moved down when you open them.
+
+### Fixed — a font bug found while doing the above (2026-08-05)
+- **Every button in the app was using the wrong font.** Openote bundles Inter
+  so it looks the same on Windows, macOS and Linux — but button labels were
+  quietly falling back to the system default, so they never quite matched the
+  text beside them.
+
 ### Added — the Planner: dates, reminders and your timetable (2026-08-05)
 - **Every date you have, in one place.** Exam dates, to-dos you have given a
   deadline, reminders and your university timetable all appear in one panel,

@@ -979,10 +979,10 @@ class _EmptyState extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.auto_stories_outlined,
-              size: 44, color: context.surfaces.textSecondary),
+              size: OnoteIcon.xl, color: context.surfaces.textSecondary),
           const SizedBox(height: 12),
           const Text('An open page awaits',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+              style: OnoteType.headline),
           const SizedBox(height: 6),
           Text(
             'Everything you make here lives on your device,\nin an open format you own.',

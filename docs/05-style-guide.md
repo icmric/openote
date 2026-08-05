@@ -182,6 +182,12 @@ in dark mode the page reads as the deepest layer and chrome sits visibly above
 it — "the page is the hero" holds at night too; adjacent regions of the same
 role share one border, drawn by the shell, not one each.
 
+**The one sanctioned reason to branch on brightness** is *alpha*, not colour: a
+tint laid over a dark surface needs more opacity than the same tint on paper to
+read as the same strength. Those few sites (a card tint, a drop shadow) may ask
+the theme which mode it is. Asking in order to pick a **colour** is the thing
+this section exists to stop — that is what a role is for.
+
 **Interaction tints (operative).** State overlays are the *named* alphas of the
 role's foreground colour — `hover .05` · `selected .10` · `selected-strong .14`
 · `drag .18` · `border-on-tint .35` — replacing the twelve ad-hoc opacity
@@ -241,6 +247,8 @@ read as one system:
 
 | Token | Size / line | Weight | Use |
 |---|---|---|---|
+| `display` | 22 / 28 | 700 | a number or word that IS the message (a due count) — rare by design |
+| `headline` | 18 / 24 | 600 | the one line of an empty state or first-run step |
 | `ui-title` | 15 / 20 | 600 | dialog & sheet titles |
 | `ui` | 13 / 18 | 400 | default chrome text — rows, menus, inputs, buttons |
 | `ui-strong` | 13 / 18 | 600 | emphasis inside `ui` (row titles, counts) |
@@ -323,8 +331,9 @@ Prefer **borders and subtle tints over heavy shadows** (flat, paper-like). Three
   rounded joins, closer to the ink line) remains the recorded aspiration, but
   it is a *content* change the token layer will make cheap later; changing
   1,000 glyph references mid-revamp would be churn without system gain.
-- **Operative sizes: 16 / 18 / 20** — 16 default (rows, panel headers,
-  inline), 18 command bar, 20 rail and empty states. The eleven ad-hoc sizes
+- **Operative sizes: 16 / 18 / 20 / 32** — 16 default (rows, panel headers,
+  inline), 18 command bar, 20 rail, **32 empty-state art** (the one icon on a
+  surface with nothing else on it; the app had 32, 34 and 44 doing that job). The eleven ad-hoc sizes
   in use (12–20) migrate to these three; a bare `size:` on an `Icon` in
   `lib/ui` is a review flag after v0.6 stage 3. Filled variants only for
   active/selected toggle states.

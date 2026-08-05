@@ -126,12 +126,12 @@ class _MonthGridState extends State<MonthGrid> {
 
     return InkWell(
       onTap: () => widget.onPick(day),
-      borderRadius: BorderRadius.circular(5),
+      borderRadius: BorderRadius.circular(6),
       child: Container(
         height: 32,
         margin: const EdgeInsets.all(1),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(5),
+          borderRadius: BorderRadius.circular(6),
           color: isPicked ? scheme.primary.withValues(alpha: .16) : null,
           border: isToday
               ? Border.all(color: scheme.primary.withValues(alpha: .7))

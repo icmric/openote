@@ -570,11 +570,11 @@ class _StudyPanelState extends State<StudyPanel> {
         ]),
         const SizedBox(height: 6),
         ClipRRect(
-          borderRadius: BorderRadius.circular(2),
+          borderRadius: BorderRadius.circular(4),
           child: LinearProgressIndicator(
             value: s.total == 0 ? 0 : seen / s.total,
             minHeight: 4,
-            backgroundColor: dark ? OnoteColors.night200 : OnoteColors.paper200,
+            backgroundColor: context.surfaces.border,
           ),
         ),
         if (app.study.hasStudyHistory) ...[
@@ -636,7 +636,7 @@ class _StudyPanelState extends State<StudyPanel> {
   /// from the left.
   Widget _activityStrip(List<int> bars, bool dark) {
     final peak = bars.fold<int>(0, (m, v) => v > m ? v : m);
-    final idle = dark ? OnoteColors.night200 : OnoteColors.paper200;
+    final idle = context.surfaces.border;
     final primary = Theme.of(context).colorScheme.primary;
     return Tooltip(
       message: 'Reviews in the last ${bars.length} days',
@@ -655,7 +655,7 @@ class _StudyPanelState extends State<StudyPanel> {
                         ? idle
                         : primary.withValues(
                             alpha: i == bars.length - 1 ? 1.0 : 0.5),
-                    borderRadius: BorderRadius.circular(1.5),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
               ),
@@ -762,7 +762,8 @@ class _StudyPanelState extends State<StudyPanel> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Icon(Icons.task_alt, size: 34, color: OnoteColors.success),
+            const Icon(Icons.task_alt,
+                size: OnoteIcon.xl, color: OnoteColors.success),
             const SizedBox(height: 10),
             Text('Reviewed $done card${done == 1 ? '' : 's'}',
                 textAlign: TextAlign.center,
@@ -850,12 +851,12 @@ class _StudyPanelState extends State<StudyPanel> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(2),
+            borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: total == 0 ? 0 : _index / total,
               minHeight: 3,
               backgroundColor:
-                  dark ? OnoteColors.night200 : OnoteColors.paper200,
+                  context.surfaces.border,
             ),
           ),
           const SizedBox(height: 6),
@@ -917,9 +918,9 @@ class _StudyPanelState extends State<StudyPanel> {
     final label = c.isCloze ? 'FILL IN THE BLANK' : kind.label.toUpperCase();
     return Container(
       decoration: BoxDecoration(
-        color: dark ? OnoteColors.night50 : OnoteColors.paper0,
+        color: context.surfaces.raised,
         border: Border.all(
-            color: dark ? OnoteColors.night200 : OnoteColors.paper200),
+            color: context.surfaces.border),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -1007,7 +1008,7 @@ class _StudyPanelState extends State<StudyPanel> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-              color: (dark ? OnoteColors.night200 : OnoteColors.paper200)),
+              color: (context.surfaces.border)),
         ),
         child: Text('Answer hidden',
             textAlign: TextAlign.center,
