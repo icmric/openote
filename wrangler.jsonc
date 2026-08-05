@@ -3,20 +3,25 @@
 // Deliberately a Worker rather than Cloudflare Pages: Pages would serve the
 // HTML perfectly well, but the page needs one dynamic thing (the newest
 // release), and doing that at the edge instead of in every visitor's browser
-// is the whole justification. See site/worker.js for the reasoning.
+// is the whole justification. See worker/index.js for the reasoning.
 //
 // Deploy:  npx wrangler deploy          (CI does this on push to master)
 // Preview: npx wrangler dev             (serves site/ on localhost:8787)
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "openote-site",
-  "main": "site/worker.js",
+  "main": "worker/index.js",
 
   // Pin the runtime date rather than tracking "latest". A Worker whose
   // runtime semantics can change under it between deploys is a Worker that
   // can break without anyone touching the code.
   "compatibility_date": "2026-07-01",
 
+  // The asset directory holds ONLY what should be publicly served. The Worker
+  // script lived in site/ at first and was therefore uploaded as an asset too
+  // — openote.org/worker.js would have served its own source. Harmless, since
+  // the repository is public, but a directory whose contents are "the website"
+  // should not also contain the thing serving it.
   "assets": {
     "directory": "./site",
 

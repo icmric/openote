@@ -2,7 +2,7 @@
 #
 # The site is one static HTML file plus a Worker with a single cached API
 # route, so there is no build step — wrangler uploads site/ as static assets
-# and site/worker.js as the script.
+# and worker/index.js as the script.
 #
 # Deliberately NOT triggered by the release workflow: the page reads the latest
 # release through /api/latest at request time, so a new release appears on the
@@ -14,6 +14,7 @@ on:
     branches: [master]
     paths:
       - 'site/**'
+      - 'worker/**'
       - 'wrangler.jsonc'
       - '.github/workflows/site.yml'
   workflow_dispatch:
@@ -31,10 +32,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: cloudflare/wrangler-action@v3
-        with:
-          # A scoped API token, not the global key. Needs exactly two
-          # permissions: Workers Scripts:Edit and Account Settings:Read.
-          # Stored as a repository secret; see docs/RELEASING.md §2.
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # `npx wrangler@<pinned>` rather than `cloudflare/wrangler-action`, for
+      # one concrete reason: the action installs **wrangler 3.90** by default,
+      # and wrangler 3 cannot read `wrangler.jsonc` at all (JSONC config landed
+      # in 3.91), nor the static-assets config this project uses (a v4
+      # feature). The first deploy therefore failed with a baffling "Missing
+      # entry-point" — baffling because the entry point is right there, in a
+      # file wrangler was silently ignoring.
+      #
+      # The action's `wranglerVersion` input would fix that too, but calling
+      # wrangler directly removes the layer that chose the wrong version in the
+      # first place, and drops a Node-20 deprecation warning with it. Two
+      # environment variables is the whole of what the action was doing here.
+      #
+      # PINNED, not floating. This is the version the Worker's routing,
+      # caching and asset handling were actually verified against; a deploy
+      # tool that changes underneath a release is the kind of thing you find
+      # out about from a user. Bump it deliberately.
+      - name: Deploy
+        run: npx --yes wrangler@4.118.0 deploy
+        env:
+          # A scoped API token, not the global key: Workers Scripts:Edit plus
+          # Account Settings:Read. See docs/RELEASING.md §2a.
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
