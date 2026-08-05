@@ -24,7 +24,7 @@ The "with what." The evaluation of Flutter, Compose Multiplatform, Tauri, Electr
 The "how." Layered architecture (written against the decided Flutter + Rust stack, with a framework-independent domain model), the CRDT-backed document model, the open file-format strategy, and the hard subsystems — canvas, text, math, ink, **live embeds (§4a)** — plus sync. Links down into the technical specs below.
 
 ### [05 — Style Guide & Design System](05-style-guide.md)
-The "how it looks and feels." Brand and voice, a full color system (light/dark), typography, spacing, iconography, component patterns, canvas interaction guidelines, motion, and accessibility.
+The "how it looks and feels." Brand and voice, a full color system (light/dark), typography, spacing, iconography, component patterns, canvas interaction guidelines, motion, and accessibility. **v0.4 (2026-08-05)** folds in the operative values decided by the UI review — the chrome type ramp (§4.2a), surface roles (§3.7), the radius/icon sets, the side-panel pattern (§7c) — and rewrites §7b to match the shipped two-column navigator.
 
 ## Technical specifications (build-ready layer)
 
@@ -54,6 +54,7 @@ Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/AD
 ## Supporting documents
 
 - [Roadmap](../ROADMAP.md) — phased plan from MVP to collaboration.
+- [v0.6 UI revamp](planning/v0.6-ui-revamp.md) — the answer to "the UI feels a bit off and unprofessional": a screenshot-driven review that names the causes (two design languages in one window, no token layer, 17 font sizes, an AA-failing default text colour), and a five-stage plan — tokens → component themes → migration → chrome architecture → defect burn-down.
 - [v0.5 dates, reminders and the planner](planning/v0.5-dates-and-reminders.md) — **built.** Why reminders cannot use the OS scheduler and what Openote does instead, where a due date lives versus a reminder time versus an exam date, why the calendar integration is an ICS subscription rather than an OAuth client, and the brakes that keep a notebook from becoming a to-do app.
 - [v0.3 student plan](planning/v0.3-student-plan.md) — the current plan: OneNote parity for students, plus the differentiators (PDF slide annotation, flashcards from tags, free math evaluation, group notebooks).
 - [v0.2 release plan](planning/v0.2-release-plan.md) — the tiered plan for the first public release: exit checklist, sizes, and open decisions (carries the outstanding verification checklist).
@@ -67,7 +68,7 @@ Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/AD
 
 ## Document conventions
 
-- Each document carries a status header (all currently **Draft v0.1**).
+- Each document carries a status header with its own revision and date — they no longer move in lockstep.
 - Requirements are identified (e.g. `CANVAS-3`) and prioritized (Must / Should / Could / Won't-now).
 - Claims are grounded in research; figures flagged as single-source should be primary-source-confirmed before any public use.
 - These are **living documents** — expected to evolve as decisions and prototypes firm them up. The core commitments (open format, local-first, freeform canvas, cross-platform parity) are the fixed points.
