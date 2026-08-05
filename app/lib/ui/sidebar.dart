@@ -4,11 +4,13 @@ import 'package:flutter/services.dart';
 import '../export/pdf_vector_export.dart';
 import '../export/print_page.dart';
 import '../model/models.dart';
+import '../planner/agenda.dart';
 import '../state/app_state.dart';
 import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'exam_date.dart';
 import 'notebook_manager.dart';
+import 'planner_format.dart';
 
 Color _sectionColor(String? token, bool dark) => switch (token) {
       'brass-400' => OnoteColors.brass400,
@@ -681,6 +683,7 @@ class _HomePane extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.only(bottom: 12),
       children: [
+        _ComingUp(app: app),
         if (favourites.isNotEmpty) ...[
           label('FAVOURITES'),
           for (final p in favourites)
@@ -693,6 +696,140 @@ class _HomePane extends StatelessWidget {
       ],
     );
   }
+}
+
+/// The planner, in the Home pane (v0.5 §3).
+///
+/// **A summary, not the planner.** The navigator is 96–320px wide and is a
+/// place you pass through; the planner is a working surface where dates get
+/// re-dated. So Home answers "have I got anything on" in three rows and hands
+/// off. That split is also what let the exam countdown stop hiding: this is the
+/// first surface in the app where a date is visible without having navigated to
+/// the thing it belongs to.
+///
+/// Hidden entirely when there is nothing dated — an empty heading over an empty
+/// list is the "row of zeroes" the study stats deliberately avoid.
+class _ComingUp extends StatelessWidget {
+  const _ComingUp({required this.app});
+  final AppState app;
+
+  /// Rows before it defers to the panel. Three fits above the fold beside
+  /// favourites and recents, and "what's next" is a shorter question than
+  /// "what have I got".
+  static const _max = 3;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final now = DateTime.now();
+    final sections = app.planner.sections(now: now);
+    // Overdue and today first, then whatever is next — the same order the
+    // panel shows, truncated rather than re-sorted so the two never disagree.
+    final rows = <DatedItem>[];
+    var total = 0;
+    for (final s in sections) {
+      if (s.bucket == AgendaBucket.done) continue;
+      total += s.items.length;
+      for (final it in s.items) {
+        if (rows.length < _max) rows.add(it);
+      }
+    }
+    final alerts = app.planner.pendingAlerts.length;
+    if (rows.isEmpty && alerts == 0) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 6, 4),
+          child: Row(children: [
+            const Text('COMING UP',
+                style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: .6,
+                    color: OnoteColors.graphite400)),
+            const Spacer(),
+            InkWell(
+              onTap: app.openPlanner,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Text(total > _max ? 'All $total' : 'Open',
+                    style: TextStyle(fontSize: 10.5, color: scheme.primary)),
+              ),
+            ),
+          ]),
+        ),
+        if (alerts > 0)
+          InkWell(
+            onTap: app.openPlanner,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 3, 12, 3),
+              child: Row(children: [
+                Icon(Icons.notifications_active_outlined,
+                    size: 13, color: scheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                      '$alerts reminder${alerts == 1 ? '' : 's'} waiting',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.primary)),
+                ),
+              ]),
+            ),
+          ),
+        for (final it in rows)
+          InkWell(
+            onTap: () {
+              if (it.pageId != null) {
+                app.selectPage(it.pageId!);
+              } else {
+                app.openPlanner();
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 3, 12, 3),
+              child: Row(children: [
+                Icon(_icon(it.kind), size: 13, color: _colour(it.kind, scheme)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(it.title,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 12,
+                          decoration:
+                              it.done ? TextDecoration.lineThrough : null)),
+                ),
+                const SizedBox(width: 6),
+                Text(plannerWhen(it, now),
+                    style: TextStyle(
+                        fontSize: 10.5,
+                        color: bucketFor(it, now) == AgendaBucket.overdue
+                            ? OnoteColors.danger
+                            : OnoteColors.graphite400)),
+              ]),
+            ),
+          ),
+      ],
+    );
+  }
+
+  static IconData _icon(DatedKind k) => switch (k) {
+        DatedKind.exam => Icons.flag_outlined,
+        DatedKind.task => Icons.check_box_outline_blank,
+        DatedKind.reminder => Icons.notifications_none,
+        DatedKind.event => Icons.schedule,
+      };
+
+  static Color _colour(DatedKind k, ColorScheme scheme) => switch (k) {
+        DatedKind.exam => OnoteColors.brass500,
+        DatedKind.task => scheme.primary,
+        DatedKind.reminder => OnoteColors.ink400,
+        DatedKind.event => OnoteColors.graphite400,
+      };
 }
 
 /// The collapsed navigator: a 44px rail that keeps every destination one

@@ -12,6 +12,7 @@ import '../export/pdf_import.dart';
 import '../export/print_page.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
+import '../planner/agenda.dart';
 import '../state/app_state.dart';
 import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
@@ -108,6 +109,11 @@ class _CommandBarState extends State<CommandBar> {
                       // Study: the due count is the whole nudge, so it's on the
                       // badge rather than hidden behind the panel.
                       _StudyButton(app: app),
+                      // The planner sits beside Study rather than in a menu:
+                      // it is the other half of the same daily question, and
+                      // the whole complaint it answers was that dates were
+                      // reachable only from places you had to already be in.
+                      _PlannerButton(app: app),
                       IconButton(
                         icon: const Icon(Icons.label_outline, size: 17),
                         tooltip: 'Find tags',
@@ -940,8 +946,80 @@ class _TagButton extends StatelessWidget {
             onPressed: () => app.toggleTagOnSelection(k),
             child: Text(k.label),
           ),
+        // Dating a tag belongs here, beside applying one — a deadline you could
+        // only set from a separate panel would be a feature most people never
+        // found, and the line you want to date is the line you are on.
+        if (active.isNotEmpty) ...[
+          const Divider(height: 1),
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.event_outlined, size: 16),
+            onPressed: () => _setDue(context),
+            child: Text(_dueOfCaret() == null ? 'Due date…' : 'Change due date…'),
+          ),
+          if (_dueOfCaret() != null)
+            MenuItemButton(
+              leadingIcon: const Icon(Icons.event_busy_outlined, size: 16),
+              onPressed: _clearDue,
+              child: const Text('Clear the due date'),
+            ),
+        ],
       ],
     );
+  }
+
+  /// The dated tag on the caret's line, if any. One date per line rather than
+  /// one per tag: a line tagged both To Do and Important has one deadline, and
+  /// asking which of the two icons owns it is a question nobody wants.
+  NoteTag? _dueOfCaret() {
+    final b = app.caretBlock();
+    if (b == null) return null;
+    final line = app.caretLineIndex();
+    for (final t in NoteTag.listFrom(b.content)) {
+      if (t.line == line && t.due != null) return t;
+    }
+    return null;
+  }
+
+  Future<void> _setDue(BuildContext context) async {
+    final b = app.caretBlock();
+    if (b == null) return;
+    final line = app.caretLineIndex();
+    final tags = [
+      for (final t in NoteTag.listFrom(b.content))
+        if (t.line == line) t
+    ];
+    if (tags.isEmpty) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final existing = _dueOfCaret()?.dueDate;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: existing != null && !existing.isBefore(today)
+          ? existing
+          : DateTime(today.year, today.month, today.day + 7),
+      firstDate: DateTime(today.year, today.month, today.day - 365),
+      lastDate: DateTime(today.year + 5, today.month, today.day),
+      helpText: 'Due date',
+      confirmText: 'Set',
+    );
+    if (picked == null) return;
+    // Onto the first tag on the line, and any other dated tag there is cleared,
+    // so the line keeps exactly one deadline however it was tagged.
+    app.setTagDue(b.id, line, tags.first.kind, picked);
+    for (final t in tags.skip(1)) {
+      if (t.due != null) app.setTagDue(b.id, line, t.kind, null);
+    }
+  }
+
+  void _clearDue() {
+    final b = app.caretBlock();
+    if (b == null) return;
+    final line = app.caretLineIndex();
+    for (final t in NoteTag.listFrom(b.content)) {
+      if (t.line == line && t.due != null) {
+        app.setTagDue(b.id, line, t.kind, null);
+      }
+    }
   }
 }
 
@@ -1094,6 +1172,81 @@ class _StudyButton extends StatelessWidget {
                         height: 1.2,
                         fontWeight: FontWeight.w700,
                         color: urgent
+                            ? Colors.white
+                            : Theme.of(context).colorScheme.onPrimary)),
+              ),
+            ),
+          ),
+      ]),
+    );
+  }
+}
+
+/// Opens the planner, and says what is on today without opening it.
+///
+/// The badge counts **today's and overdue** rows, not everything dated. A
+/// number that included next month's exam would be permanently non-zero, and a
+/// badge that is always lit stops being read — the same reasoning that keeps
+/// the study badge on cards *due* rather than on the whole deck.
+class _PlannerButton extends StatelessWidget {
+  const _PlannerButton({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final sections = app.planner.sections(now: now);
+    var count = 0;
+    var overdue = false;
+    for (final s in sections) {
+      if (s.bucket == AgendaBucket.overdue) {
+        overdue = true;
+        count += s.items.length;
+      } else if (s.bucket == AgendaBucket.today) {
+        count += s.items.length;
+      }
+    }
+    final alerts = app.planner.pendingAlerts.length;
+    return Tooltip(
+      message: alerts > 0
+          ? '$alerts reminder${alerts == 1 ? '' : 's'} waiting'
+          : count == 0
+              ? 'Planner — every date you have, in one place'
+              : overdue
+                  ? 'Planner — $count today or overdue'
+                  : 'Planner — $count today',
+      child: Stack(clipBehavior: Clip.none, children: [
+        IconButton(
+          icon: const Icon(Icons.event_note_outlined, size: 17),
+          isSelected: app.showPlannerPanel,
+          visualDensity: VisualDensity.compact,
+          onPressed: app.togglePlannerPanel,
+        ),
+        if (count > 0 || alerts > 0)
+          Positioned(
+            right: 2,
+            top: 2,
+            child: IgnorePointer(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  // Red only for something already late; a waiting reminder is
+                  // brass, and an ordinary "3 today" is the primary accent.
+                  // Colour never carries this alone (style guide §3.5) — the
+                  // tooltip says which it is.
+                  color: overdue
+                      ? OnoteColors.danger
+                      : alerts > 0
+                          ? OnoteColors.brass500
+                          : Theme.of(context).colorScheme.primary,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text('${alerts > 0 ? alerts : count}',
+                    style: TextStyle(
+                        fontSize: 9,
+                        height: 1.2,
+                        fontWeight: FontWeight.w700,
+                        color: overdue || alerts > 0
                             ? Colors.white
                             : Theme.of(context).colorScheme.onPrimary)),
               ),

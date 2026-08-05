@@ -140,6 +140,59 @@ void main() {
     });
   });
 
+  group('the planner agenda is cached', () {
+    // The planner panel, the command bar's badge and the navigator's Home pane
+    // all read the agenda, and all three rebuild on every notify. Building it
+    // walks the tag rollup and — for the soonest exam — a whole section's deck
+    // out of SQLite, so this is squarely on the hot path the group above
+    // exists for.
+    test('repeated calls do not re-read the notebook', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp, app, section) =
+          await notebookWithPages('onote_perf_plan_', 12);
+      addTearDown(() {
+        repo.dispose();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      final now = DateTime.now();
+      // An exam date is the expensive case: it is what pulls a deck build into
+      // the agenda at all.
+      app.study.setExamDate(section, now.add(const Duration(days: 10)));
+      expect(app.planner.agenda(now: now), isNotEmpty);
+
+      final sw = Stopwatch()..start();
+      for (var i = 0; i < 200; i++) {
+        app.planner.sections(now: now);
+      }
+      sw.stop();
+      expect(sw.elapsedMilliseconds, lessThan(80),
+          reason: '200 agenda builds took ${sw.elapsedMilliseconds}ms');
+    });
+
+    test('but it notices when a date changes', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp, app, section) =
+          await notebookWithPages('onote_perf_planinv_', 4);
+      addTearDown(() {
+        repo.dispose();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      final now = DateTime.now();
+      expect(app.planner.agenda(now: now), isEmpty);
+      // A cache that never invalidates is worse than none: this exact case
+      // shipped broken once, because `setExamDate` notified without moving any
+      // revision the agenda's key was built from.
+      app.study.setExamDate(section, now.add(const Duration(days: 10)));
+      expect(app.planner.agenda(now: now), hasLength(1));
+    });
+  });
+
   group('sync status is cached', () {
     test('repeated calls do not re-list the ops directory', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');

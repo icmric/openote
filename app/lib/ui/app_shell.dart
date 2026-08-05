@@ -12,6 +12,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'command_bar.dart';
 import 'onboarding.dart';
+import 'planner_panel.dart';
 import 'sidebar.dart';
 import '../export/print_page.dart';
 import 'study_panel.dart';
@@ -373,6 +374,10 @@ class _AppShellState extends State<AppShell> {
                             const VerticalDivider(width: 1),
                             StudyPanel(app: app),
                           ],
+                          if (app.showPlannerPanel) ...[
+                            const VerticalDivider(width: 1),
+                            PlannerPanel(app: app),
+                          ],
                           if (app.showTagsPanel) ...[
                             const VerticalDivider(width: 1),
                             _TagsPanel(app: app),
@@ -587,7 +592,7 @@ class _TagsPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final all = app.allTags();
-    final byKind = <TagKind, List<({String pageId, String pageTitle, NoteTag tag, String text})>>{};
+    final byKind = <TagKind, List<TaggedLine>>{};
     for (final e in all) {
       byKind.putIfAbsent(e.tag.kind, () => []).add(e);
     }

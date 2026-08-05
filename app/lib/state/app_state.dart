@@ -20,6 +20,7 @@ import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../study/flashcards.dart';
 import 'builtin_templates.dart';
+import 'planner_state.dart';
 import 'study_state.dart';
 import '../sync/folder_watch.dart';
 import '../sync/op.dart';
@@ -65,9 +66,24 @@ enum TouchDrawing {
       };
 }
 
+/// One tagged line, as the rollup and the planner both need it.
+///
+/// A typedef over a record rather than a class: it carries no behaviour, and
+/// three call sites had already written the field list out by hand — which is
+/// how [blockId] came to be missing from it for as long as nothing needed to
+/// write back to the tag. Naming it means adding a field is one edit.
+typedef TaggedLine = ({
+  String pageId,
+  String pageTitle,
+  String blockId,
+  NoteTag tag,
+  String text,
+});
+
 /// App-wide state. Deliberately simple (ChangeNotifier) for the MVP; the
 /// domain layer beneath it is what carries forward.
-class AppState extends ChangeNotifier implements StudyDocument {
+class AppState extends ChangeNotifier
+    implements StudyDocument, PlannerDocument {
   AppState(this._repo) : engine = _selectEngine(_repo) {
     // Forwarded, not replaced. Every surface listens to `AppState`, so the
     // extraction must not change who wakes up when a card is graded — the
@@ -911,6 +927,73 @@ class AppState extends ChangeNotifier implements StudyDocument {
     notifyListeners();
   }
 
+  /// Change one tag, on any page of the open notebook.
+  ///
+  /// **Not open-page-only, and that is the point.** The planner lists tasks
+  /// from the whole notebook, so ticking one or re-dating it must not depend on
+  /// which page happens to be loaded. Routing it through `selectPage` instead
+  /// was the first attempt and it is worse twice over: it yanks the reader to
+  /// another page for a checkbox, and — because `selectPage` reloads the block
+  /// list from storage — an edit made in the same turn is thrown away by the
+  /// load that follows it.
+  ///
+  /// [change] is given the matching tag and returns its replacement, so the
+  /// caller says *what* changes and this says *where*. Returns whether anything
+  /// did.
+  bool _updateTag(String pageId_, String blockId, int line, TagKind kind,
+      NoteTag Function(NoteTag) change) {
+    final nb = notebookId;
+    if (nb == null) return false;
+
+    List<NoteTag>? apply(Block b) {
+      final tags = NoteTag.listFrom(b.content);
+      if (!tags.any((t) => t.line == line && t.kind == kind)) return null;
+      return [
+        for (final t in tags)
+          if (t.line == line && t.kind == kind) change(t) else t
+      ];
+    }
+
+    if (pageId_ == pageId) {
+      final b = blocks.where((x) => x.id == blockId).firstOrNull;
+      if (b == null) return false;
+      final next = apply(b);
+      if (next == null) return false;
+      pushUndo();
+      NoteTag.writeInto(b.content, next);
+      updateBlock(b);
+      docRevision++;
+      notifyListeners();
+      return true;
+    }
+
+    // A closed page: read it, change it, write it back through the bulk path —
+    // the same route `repairWholeNotebook` takes. No undo entry, because undo
+    // is scoped to the open page and pushing one here would make Ctrl+Z restore
+    // a page the user is not looking at.
+    final data = readPage(pageId_);
+    final b = data.blocks.where((x) => x.id == blockId).firstOrNull;
+    if (b == null) return false;
+    final next = apply(b);
+    if (next == null) return false;
+    NoteTag.writeInto(b.content, next);
+    importBatch(nb, () => importPage(nb, pageId_, data.blocks, data.props));
+    docRevision++;
+    notifyListeners();
+    return true;
+  }
+
+  /// Give a tag a due day, or (with null) take it away (v0.5 stage 2).
+  bool setTagDue(String blockId, int line, TagKind kind, DateTime? day,
+          {String? pageId}) =>
+      _updateTag(pageId ?? this.pageId ?? '', blockId, line, kind,
+          (t) => t.withDue(day));
+
+  /// Tick a to-do off, wherever in the notebook it lives.
+  bool setTagCheckedOn(String pageId_, String blockId, int line, bool checked) =>
+      _updateTag(pageId_, blockId, line, TagKind.todo,
+          (t) => t.copyWith(checked: checked));
+
   /// Tags on the caret's line, so the toolbar can show which are active.
   Set<TagKind> tagsAtCaret() {
     final b = blocks
@@ -922,6 +1005,24 @@ class AppState extends ChangeNotifier implements StudyDocument {
       for (final t in NoteTag.listFrom(b.content))
         if (t.line == idx) t.kind
     };
+  }
+
+  /// The text block a tag action applies to: the one being edited, else the
+  /// one selected. Public because the tag menu needs to ask what is under the
+  /// caret before it can offer to change it — the same block [tagsAtCaret]
+  /// already answers about.
+  Block? caretBlock() {
+    final b = blocks
+        .where((x) => x.id == (editingBlockId ?? selectedBlockId))
+        .firstOrNull;
+    return b != null && b.type == BlockType.text ? b : null;
+  }
+
+  /// Which line of [caretBlock] the caret is on. 0 when nothing is being
+  /// edited, matching where a tag would land.
+  int caretLineIndex() {
+    final b = caretBlock();
+    return b == null ? 0 : _caretLine(b);
   }
 
   /// Which line the caret sits on, so a tag lands where the user is looking.
@@ -1000,21 +1101,16 @@ class AppState extends ChangeNotifier implements StudyDocument {
   /// Scans page mirrors rather than a maintained index: same reasoning as
   /// notebook-wide search — one source of truth beats an index that can drift,
   /// until it measurably hurts.
-  ({
-    String key,
-    List<({String pageId, String pageTitle, NoteTag tag, String text})> tags
-  })? _allTagsCache;
+  ({String key, List<TaggedLine> tags})? _allTagsCache;
 
-  List<({String pageId, String pageTitle, NoteTag tag, String text})>
-      allTags() {
+  List<TaggedLine> allTags() {
     if (notebookId == null) return const [];
     // Same reasoning as [deck]: this reads every page in the notebook, and the
     // panel that shows it rebuilds on every notify.
     final key = '$notebookId#$docRevision#$nodesRevision#$pageId';
     final cached = _allTagsCache;
     if (cached != null && cached.key == key) return cached.tags;
-    final out =
-        <({String pageId, String pageTitle, NoteTag tag, String text})>[];
+    final out = <TaggedLine>[];
     for (final n in nodes.where((n) => n.kind == NodeKind.page)) {
       // The open page's in-memory blocks are fresher than the container.
       final blocksOf = n.id == pageId ? blocks : readPage(n.id).blocks;
@@ -1027,6 +1123,7 @@ class AppState extends ChangeNotifier implements StudyDocument {
           out.add((
             pageId: n.id,
             pageTitle: n.title,
+            blockId: b.id,
             tag: t,
             text: t.line < lines.length ? lines[t.line].trim() : '',
           ));
@@ -1058,6 +1155,30 @@ class AppState extends ChangeNotifier implements StudyDocument {
   void toggleStudyPanel() {
     showStudyPanel = !showStudyPanel;
     notifyListeners();
+  }
+
+  // ── The planner: dates, reminders, timetable (v0.5) ──────────────────
+
+  /// Everything you have a date for, in one place.
+  ///
+  /// Owns the reminder store and the calendar subscription; **borrows**
+  /// everything else. Exam dates stay in [study] and a task's deadline stays on
+  /// its tag, because the agenda is a lens rather than a second store — see
+  /// `planner_state.dart`.
+  late final PlannerState planner = PlannerState(this, study,
+      readSetting: _repo.getSetting, writeSetting: _repo.setSetting)
+    ..addListener(notifyListeners);
+
+  bool showPlannerPanel = false;
+  void togglePlannerPanel() {
+    showPlannerPanel = !showPlannerPanel;
+    notifyListeners();
+  }
+
+  /// Open the planner (idempotent) — what a "see all your dates" affordance
+  /// elsewhere in the app should call.
+  void openPlanner() {
+    if (!showPlannerPanel) togglePlannerPanel();
   }
 
   // ── Favourites & recents (ORG-10) ────────────────────────────────────
@@ -1731,6 +1852,11 @@ class AppState extends ChangeNotifier implements StudyDocument {
       });
     }
     study.load();
+    planner.load();
+    // Armed only once state is restored: the scheduler's first act is to catch
+    // up on what came due while Openote was closed, and it can only know that
+    // after the reminders have been read.
+    planner.startScheduler();
     final fav = _repo.getSetting('favourites');
     if (fav is List) _favourites.addAll(fav.cast<String>());
     final rec = _repo.getSetting('recentPages');
@@ -3063,6 +3189,10 @@ class AppState extends ChangeNotifier implements StudyDocument {
   void dispose() {
     _stopWatching();
     _saveDebounce?.cancel();
+    // The planner owns a Timer. A `late final` touched here is constructed
+    // just to be torn down, which costs nothing; a live timer left behind
+    // keeps the isolate awake, which does.
+    planner.dispose();
     canvas.dispose();
     _repo.dispose();
     super.dispose();

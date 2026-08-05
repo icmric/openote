@@ -140,7 +140,13 @@ class StudyState extends ChangeNotifier {
   /// deck rebuilds — once per edit, not once per widget rebuild.
   int _contentRevision = 0;
 
-  /// Bumped whenever a card's schedule changes, so study surfaces refresh.
+  /// Bumped whenever anything this object owns changes — a card's schedule, an
+  /// exam date — so surfaces built on it can key a cache off it.
+  ///
+  /// Exam dates count, and that is not cosmetic: the planner's agenda is cached
+  /// on this counter, so a `setExamDate` that only notified would repaint a
+  /// panel that then rebuilt the *same cached agenda* and showed no date at
+  /// all.
   int studyRevision = 0;
 
   /// The open page was edited.
@@ -453,6 +459,7 @@ class StudyState extends ChangeNotifier {
       _examDates[key] = v;
     }
     _write('examDates', _examDates);
+    studyRevision++;
     notifyListeners();
   }
 
