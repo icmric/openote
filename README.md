@@ -12,7 +12,41 @@
 
 ---
 
-> 🚧 **Status: MVP in progress.** The planning/design docs are complete (see the [documentation index](docs/README.md)) and the **walking-skeleton MVP lives in [`app/`](app/README.md)** — a runnable pure-Dart Flutter app writing real `.onote` files (mirror-write mode; the Rust/Loro core slots in behind a stubbed interface later). See [`app/README.md`](app/README.md) for build/run instructions.
+> 🚧 **Status: early, but real.** Openote is a working Flutter + Rust desktop
+> app — freeform canvas, ink, math, Markdown, an open `.onote` format, sync
+> through any folder you already have, a OneNote importer that handles real
+> notebooks, flashcards from your own notes, and a planner. It is **not yet
+> 1.0**: expect rough edges, and see [TESTING.md](TESTING.md) for what is
+> currently unverified. Design and specification documents are in the
+> [documentation index](docs/README.md); build instructions in
+> [`app/README.md`](app/README.md).
+
+## Install
+
+Grab the latest build from [**Releases**](https://github.com/icmric/openote/releases).
+
+| | Download | Then |
+|---|---|---|
+| **Windows** | `openote-*-windows-x64-setup.exe` | Run it. Installs for your user only, so it never asks for an administrator password. *(Prefer no installer? The `.zip` is the same build — unzip anywhere and run `openote.exe`.)* |
+| **macOS** | `openote-*-macos-universal.dmg` | Open it, drag Openote to Applications. |
+| **Linux** | `openote-*-linux-x86_64.AppImage` | `chmod +x` it and run. A `.tar.gz` is there if AppImage doesn't suit. |
+
+Your notes are written to your own machine in an open, documented format. There
+is no account, and nothing is uploaded anywhere.
+
+### Your operating system will warn you. Here's why, honestly.
+
+Openote isn't code-signed. Certificates cost a few hundred dollars a year per
+platform, and while the project is this young that money buys nothing a user
+would notice. The warnings don't mean the software is unsafe — only that we
+haven't paid to tell your OS who we are. Every release is built by the
+[public workflow](.github/workflows/release.yml) in this repository, from the
+tagged commit; you can read both.
+
+- **Windows** — *"Windows protected your PC"*: click **More info** ▸ **Run anyway**.
+- **macOS** — *"openote is damaged and can't be opened"*: after copying to
+  Applications, run `xattr -cr /Applications/openote.app` once.
+- **Linux** — no warning; AppImages just run.
 
 ## What is Openote?
 

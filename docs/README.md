@@ -54,6 +54,7 @@ Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/AD
 ## Supporting documents
 
 - [Roadmap](../ROADMAP.md) — phased plan from MVP to collaboration.
+- [v0.7 packaging](planning/v0.7-packaging.md) — how a non-technical user actually installs this: why Inno Setup and a per-user Windows install, why the Linux AppImage and macOS dmg were already the answer, and the honest cost of code signing.
 - [v0.6 UI revamp](planning/v0.6-ui-revamp.md) — the answer to "the UI feels a bit off and unprofessional": a screenshot-driven review that names the causes (two design languages in one window, no token layer, 17 font sizes, an AA-failing default text colour), and a five-stage plan — tokens → component themes → migration → chrome architecture → defect burn-down.
 - [v0.5 dates, reminders and the planner](planning/v0.5-dates-and-reminders.md) — **built.** Why reminders cannot use the OS scheduler and what Openote does instead, where a due date lives versus a reminder time versus an exam date, why the calendar integration is an ICS subscription rather than an OAuth client, and the brakes that keep a notebook from becoming a to-do app.
 - [v0.3 student plan](planning/v0.3-student-plan.md) — the current plan: OneNote parity for students, plus the differentiators (PDF slide annotation, flashcards from tags, free math evaluation, group notebooks).
