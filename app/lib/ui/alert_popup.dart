@@ -58,7 +58,11 @@ class AlertPopup extends StatelessWidget {
 
     return Positioned(
       right: OnoteSpace.x6,
-      bottom: OnoteSpace.x6,
+      // Clear of the status bar rather than on top of it. The stack covers the
+      // whole shell, so a plain 16px inset parked the card over the save/sync
+      // state — hiding the one strip whose entire job is telling you the app
+      // is fine while something new demands attention.
+      bottom: OnoteSize.statusBar + OnoteSpace.x4,
       child: ConstrainedBox(
         // Wide enough for a lecture title and a room, narrow enough that it
         // never reads as a panel. Matches the snackbar width set in the theme,

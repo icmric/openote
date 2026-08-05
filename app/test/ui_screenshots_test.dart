@@ -175,4 +175,43 @@ void main() {
       (t) => run(t, 'shell_planner', arrange: (a) => a.togglePlannerPanel()));
   testWidgets('tags panel',
       (t) => run(t, 'shell_tags', arrange: (a) => a.toggleTagsPanel()));
+
+  // The Insert tab is rendered on its own because it is the one tab that used
+  // a different control family, and so the one tab where "does this look like
+  // the same app" can only be answered by looking (§7a.2 — a label does not
+  // change a command's colour).
+  testWidgets('insert tab', (t) async {
+    if (!_enabled) return markTestSkipped('set ONOTE_SCREENSHOTS=1 to render');
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await seed(t);
+    t.view.physicalSize = const Size(1440, 900);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    final key = GlobalKey();
+    await t.pumpWidget(MaterialApp(
+      theme: onoteTheme(Brightness.light),
+      debugShowCheckedModeBanner: false,
+      home: RepaintBoundary(key: key, child: AppShell(app: app)),
+    ));
+    for (var i = 0; i < 2; i++) {
+      await t.pump(const Duration(milliseconds: 800));
+      await t.pumpAndSettle();
+    }
+    await t.tap(find.text('Insert'));
+    await t.pumpAndSettle();
+    await expectLater(find.byKey(key), matchesGoldenFile('goldens/insert_tab.png'));
+  });
+
+  // The alert popup, which has no other way to be reviewed: it only appears
+  // when a reminder comes due, and it appears over whatever you were doing.
+  testWidgets('alert popup', (t) async {
+    if (!_enabled) return markTestSkipped('set ONOTE_SCREENSHOTS=1 to render');
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await seed(t);
+    app.planner.reminders.add(
+        text: 'Send the group the week 3 notes',
+        at: DateTime.now().subtract(const Duration(minutes: 3)));
+    app.planner.startScheduler();
+    await shot(t, app, Brightness.light, 'alert_popup');
+  });
 }
