@@ -10,6 +10,11 @@
 ## The short version
 
 ```bash
+# 0. OPTIONAL BUT RECOMMENDED — a dry run, no tag involved.
+#    Actions ▸ Release ▸ Run workflow ▸ version = 0.3.0
+#    Builds and packages all three platforms, uploads the artifacts to the run
+#    page, and creates NO release. Use it whenever the packaging has changed.
+
 # 1. bump the version (must match the tag exactly)
 #    app/pubspec.yaml:  version: 0.3.0+3
 git commit -am "Release 0.3.0"
@@ -22,8 +27,30 @@ git push origin v0.3.0
 # 3. wait ~15 min, then publish the draft on GitHub
 ```
 
-That is it. Everything below is what those three commands set off, and what to
-do when one of them does not work.
+That is it. Everything below is what those commands set off, and what to do
+when one of them does not work.
+
+### Re-tagging after a failed attempt
+
+A tag deleted on GitHub is **still in your local clone**, and `git push origin
+v0.3.0` will happily push the stale copy straight back. A plain `git fetch
+--prune` does not remove it either — tags need `--prune-tags`. So delete it in
+both places, explicitly:
+
+```bash
+git push --delete origin v0.3.0     # remote
+git tag -d v0.3.0                   # local  ← the one that gets forgotten
+git fetch --prune --prune-tags origin
+
+git checkout master && git pull
+git log --oneline -1                # note this SHA
+git tag v0.3.0
+git rev-parse v0.3.0                # must equal the SHA above
+git push origin v0.3.0
+```
+
+Delete the empty source-only release GitHub made for the failed tag as well, or
+the new draft will sit beside it.
 
 ---
 
@@ -239,9 +266,38 @@ git push --delete origin vX.Y.Z
 
 ## 6. Not yet true
 
-Stated plainly because it is the most likely source of a surprise: **neither
-the Windows installer nor the Pages workflow has ever executed.** Both were
-added on 2026-08-05 and fire for the first time on the next tag / next push to
-`master`. They have been read carefully and the Inno Setup script is
-conventional, but reviewed is not the same as ran. Expect the first tag to
-shake out something dull, most likely a path.
+Stated plainly, because this is where the surprises come from.
+
+**The three platform jobs have never run to completion.** Two tag attempts both
+stopped at the version guard, so everything after it was skipped. An audit of
+that never-executed path found two independent faults in the Windows job, both
+now fixed, and neither of which any amount of reading had caught before:
+
+- `"$env:ProgramFiles(x86)\..."` expands to `C:\Program Files(x86)\...` —
+  without the space. PowerShell ends an unbraced variable name at `(`, so the
+  braced `${env:ProgramFiles(x86)}` is required. Confirmed by running the exact
+  expression under pwsh.
+- The Inno Setup pin was 6.2.2 while `openote.iss` uses
+  `ArchitecturesAllowed=x64compatible`, which needs 6.3+. A pin that cannot
+  compile the script it is pinned for is not caution. The install is now
+  unpinned and the step **asserts** the floor with a message saying what to do.
+
+**Still unchecked from a Linux machine:** whether ISCC accepts `app_icon.ico`,
+whose entries are all PNG-compressed rather than BMP. The `workflow_dispatch`
+dry run settles this — that is what it is for. If ISCC rejects it, regenerate
+the icon with BMP entries at 16/32/48.
+
+**macOS has never been run by a human at all**, and the audit found a
+consequence worth knowing about. `Release.entitlements` enabled the App Sandbox
+with neither network nor file-access keys — and Openote fetches an `.ics` feed
+over HTTPS and opens notebooks at remembered arbitrary paths, so a
+locally-built macOS app most likely could do neither. The shipped `.dmg`
+escaped it only because `codesign --deep` silently stripped the entitlements.
+That is now an explicit decision rather than an accident (see the comment in
+`app/macos/Runner/Release.entitlements`), but it is reasoned, not measured.
+**Someone still has to run the dmg.**
+
+**The Linux runner pin expires.** `ubuntu-22.04` is deliberate — the AppImage
+inherits the build host's glibc floor — but GitHub begins deprecating that
+image on **2026-09-17**, with brownouts that fail jobs using the label. Revisit
+before then; the options are in the comment above the pin.

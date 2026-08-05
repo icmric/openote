@@ -11,6 +11,18 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # A dry run: build and package everything, upload the artifacts, and create
+  # NO release. Added because the platform jobs went un-run for their whole
+  # existence — the only way to exercise them was to cut a real tag, and a tag
+  # that fails leaves a half-made release and a name that has to be deleted in
+  # two places before it can be reused. Now the expensive, breakable half can
+  # be tried on demand.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, e.g. 0.3.0 (must match app/pubspec.yaml). Builds artifacts only — no release is created.'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -31,11 +43,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="${INPUT_VERSION#v}"     # a dry run names its own version
+          else
+            VERSION="${GITHUB_REF_NAME#v}"   # a tag IS the version
+          fi
           PUBSPEC="$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' app/pubspec.yaml)"
           if [ "$VERSION" != "$PUBSPEC" ]; then
-            echo "::error::tag v${VERSION} does not match app/pubspec.yaml version ${PUBSPEC} — bump pubspec, commit, re-tag"
+            echo "::error::version ${VERSION} does not match app/pubspec.yaml version ${PUBSPEC}."
+            echo "::error::Bump app/pubspec.yaml, commit and PUSH, then delete the tag in BOTH places (git tag -d v${VERSION} AND git push --delete origin v${VERSION}) before re-tagging — a stale local tag is the usual cause."
             exit 1
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
@@ -85,20 +104,45 @@ jobs:
       # USB stick, or someone who wants to look inside before running anything,
       # and keeping it costs one line.
       #
-      # Inno Setup is not preinstalled on the runner. It is pinned rather than
-      # floating, because a packaging tool that silently changes under a release
-      # is the kind of thing you discover from a user.
+      # Inno Setup is not preinstalled on the runner.
+      #
+      # NOT pinned to an exact version, which reverses an earlier decision, and
+      # the reversal has a reason. The pin was 6.2.2 — and openote.iss uses
+      # `ArchitecturesAllowed=x64compatible`, which Inno Setup only understands
+      # from 6.3. A pin that cannot compile the script it is pinned for is not
+      # caution, it is a guaranteed failure. Verifying the floor is the part
+      # that was actually worth having, so that is what the next step does.
       - name: Install Inno Setup
-        run: choco install innosetup --version=6.2.2 --no-progress -y
+        run: choco install innosetup --no-progress -y
 
       - name: Build installer
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          # ${env:ProgramFiles(x86)} — the BRACES are load-bearing. PowerShell
+          # ends an unbraced variable name at the first character that cannot
+          # appear in one, and `(` is one of those: "$env:ProgramFiles(x86)\..."
+          # expands to "C:\Program Files(x86)\...", a path that does not exist.
+          # The step then failed on a directory nobody had ever typed.
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) {
+            throw "ISCC.exe not found at $iscc — did the Inno Setup install step succeed?"
+          }
+          # Assert the floor the .iss actually needs, rather than pinning a
+          # version and hoping. A clear message here beats `Unknown value` from
+          # a compiler most people have never run.
+          $v = [version](Get-Item $iscc).VersionInfo.ProductVersion
+          Write-Host "ISCC $v at $iscc"
+          if ($v -lt [version]'6.3') {
+            throw "Inno Setup $v is too old: openote.iss uses ArchitecturesAllowed=x64compatible, which needs 6.3+."
+          }
+
           $stage = "openote-$env:VERSION-windows-x64"
-          & "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe" `
+          & $iscc `
             "/DAppVersion=$env:VERSION" `
             "/DStageDir=$(Resolve-Path $stage)" `
             packaging/windows/openote.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
           Move-Item packaging/windows/openote-*-setup.exe . -Force
 
       - uses: actions/upload-artifact@v4
@@ -114,6 +158,14 @@ jobs:
     needs: version
     # Pinned older than CI's ubuntu-latest on purpose: the AppImage inherits
     # the build host's glibc floor, so an older base runs on more distros.
+    #
+    # REVISIT BEFORE 2026-09-17. GitHub begins deprecating Ubuntu 22 images on
+    # that date, with brownout windows that deliberately fail jobs using the
+    # label, and full removal by 2027-04-17. When it goes, the choice is
+    # `ubuntu-24.04` (accepting glibc 2.39 as the floor) or building the
+    # AppImage inside a `container: ubuntu:22.04` on a newer runner, which
+    # decouples the floor from the runner image's lifecycle entirely. The
+    # second is more work and the right answer if Linux users matter.
     runs-on: ubuntu-22.04
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -239,11 +291,24 @@ jobs:
       # Loader contract: dylib next to the exe = Contents/MacOS/. Inserting it
       # breaks Flutter's ad-hoc signature seal, so re-sign ad-hoc or the app
       # is killed on launch.
+      # Ad-hoc signing is REQUIRED, not cosmetic: an unsigned binary will not
+      # launch at all on Apple Silicon. It is not notarisation — see the
+      # release notes below for what the user still has to do.
+      #
+      # `--deep` is deprecated by Apple and was also doing something nobody
+      # intended: it re-signed the bundle with NO entitlements, silently
+      # dropping the app-sandbox flag that Release.entitlements used to set.
+      # The shipped app therefore worked by accident. Signing the inserted
+      # dylib first and then the bundle WITH its entitlements makes the result
+      # deliberate and identical to a local `flutter build macos`.
       - name: Bundle dylib and re-sign (ad-hoc)
         run: |
           APP=app/build/macos/Build/Products/Release/openote.app
           cp rust/onote_core/libonote_core.dylib "$APP/Contents/MacOS/"
-          codesign --force --deep --sign - "$APP"
+          codesign --force --sign - "$APP/Contents/MacOS/libonote_core.dylib"
+          codesign --force --sign - \
+            --entitlements app/macos/Runner/Release.entitlements "$APP"
+          codesign --verify --strict --verbose=2 "$APP"
 
       - name: Package dmg (unsigned)
         run: |
@@ -263,6 +328,9 @@ jobs:
   release:
     name: draft release
     needs: [version, windows, linux, macos]
+    # A dry run stops here: the artifacts are on the run page for inspection
+    # and nothing reaches the Releases tab.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the draft release + upload assets
@@ -285,8 +353,8 @@ jobs:
             - **Windows**: `openote-*-windows-x64-setup.exe` — the installer.
               Installs for your user only, so it never asks for an
               administrator password. (Prefer no installer? The
-              `…-windows-x64.zip` is the same build — unzip anywhere and run
-              `openote.exe`.)
+              `…-windows-x64.zip` is the same build — unzip it anywhere and run
+              `openote.exe` from inside the folder it extracts.)
             - **Linux**: `openote-*-linux-x86_64.AppImage` — `chmod +x`, run. Or the `.tar.gz` if AppImage doesn't suit.
             - **macOS**: `openote-*-macos-universal.dmg` — drag Openote to Applications.
 

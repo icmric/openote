@@ -19,3 +19,12 @@ app/test/zz*_test.dart
 # every `wrangler dev`; nothing in it is worth a commit.
 .wrangler/
 node_modules/
+
+# Release artifacts, when the packaging steps are reproduced locally. CI
+# uploads these from the runner; they have no business in the tree.
+/openote-*.AppImage
+/openote-*.tar.gz
+/openote-*.zip
+/openote-*-setup.exe
+/AppDir/
+/appimagetool

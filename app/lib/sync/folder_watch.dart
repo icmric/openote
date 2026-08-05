@@ -59,10 +59,20 @@ class OpFolderWatcher {
     _debounce = Timer(settle, onForeignChange);
   }
 
-  void stop() {
+  /// Stop watching. **Await this before deleting the directory being watched.**
+  ///
+  /// `StreamSubscription.cancel()` is asynchronous, and on Windows the
+  /// underlying `ReadDirectoryChangesW` handle is only released once it
+  /// completes — so a fire-and-forget `stop()` followed by a delete of that
+  /// same directory races the release and fails with "the process cannot
+  /// access the file". `moveNotebookToFolder` does exactly that sequence.
+  /// `Repository` already disposes the SQLite handle for this reason; the
+  /// watcher was the handle it missed.
+  Future<void> stop() async {
     _debounce?.cancel();
     _debounce = null;
-    _sub?.cancel();
+    final sub = _sub;
     _sub = null;
+    await sub?.cancel();
   }
 }

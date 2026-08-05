@@ -41,7 +41,24 @@ void main() {
       } catch (_) {}
     });
     final repo = await Repository.openAt(tmp);
-    addTearDown(repo.dispose);
+    // **Flush before dispose, and before the directory above is deleted.**
+    //
+    // `selectPage` below marks the session dirty, which arms a 400 ms
+    // debounced write of `workspace.json`. `dispose()` cancels that timer, but
+    // if it has already FIRED the write is mid-flight and nobody awaits it —
+    // so on a slow runner it lands after the temp directory is gone and
+    // raises an unhandled `PathNotFoundException`, which `flutter test`
+    // charges to whichever test is running at that moment.
+    //
+    // That is the whole of the intermittent Windows failure in this file: not
+    // a filesystem-semantics difference like the previous two, just a machine
+    // slow enough to lose a race that Linux and macOS happened to win.
+    // `repository.dart` no longer lets that error escape either — belt and
+    // braces, because the same shape exists in ten other test files.
+    addTearDown(() async {
+      await repo.flushWorkspace();
+      repo.dispose();
+    });
     final nb = await repo.createNotebook('Shared');
     final app = AppState(repo)..notebookId = nb.id;
     app.reloadNodes();
@@ -55,10 +72,18 @@ void main() {
   /// rather than trusting a caller, so a made-up hash would name a different
   /// blob and prove nothing.
   Future<String> hashOf(Uint8List bytes) async {
-    final probe =
-        await Repository.openAt(Directory.systemTemp.createTempSync('h_'));
+    final dir = Directory.systemTemp.createTempSync('h_');
+    // Cleaned up like every other temp directory here. Four calls per run were
+    // leaving ~76 KB each behind for the life of the machine.
+    addTearDown(() {
+      try {
+        dir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    final probe = await Repository.openAt(dir);
     final nb = await probe.createNotebook('probe');
     final h = probe.putBlob(nb.id, bytes, 'image/png');
+    await probe.flushWorkspace();
     probe.dispose();
     return 'sha256:$h';
   }

@@ -83,7 +83,13 @@ class Repository {
         final decoded = jsonDecode(await candidate.readAsString());
         if (decoded is Map<String, dynamic>) {
           j = decoded;
-          if (candidate != _workspaceFile) {
+          // `.path`, not the `File` objects. `_workspaceFile` is a getter that
+          // returns a NEW `File` each call, and `dart:io`'s File does not
+          // override `==` — so comparing the objects was always true, and the
+          // "recovered from the backup" note was shown on every single launch,
+          // including every successful one. A recovery notice that appears
+          // when nothing was recovered is worse than none.
+          if (candidate.path != _workspaceFile.path) {
             workspaceRecoveryNote =
                 'workspace.json was unreadable; recovered from the backup.';
           }
@@ -151,21 +157,69 @@ class Repository {
   Timer? _writeDebounce;
   bool _writePending = false;
 
+  /// The last workspace-write failure, if there has been one.
+  ///
+  /// Recorded rather than thrown, because the debounced path has nobody to
+  /// throw to. `AppState` already surfaces `saveError` for page saves; this is
+  /// the registry's equivalent and exists so a swallowed failure is still
+  /// *discoverable*.
+  Object? lastWorkspaceWriteError;
+
+  /// Put one workspace write on the shared chain.
+  ///
+  /// **Returns a future that reports failure; leaves behind one that cannot.**
+  /// That split is the whole point, and it fixes two distinct faults:
+  ///
+  /// *A failed write used to poison every later one.* `_writeChain.then(...)`
+  /// on an already-errored future skips the callback entirely and
+  /// re-propagates the old error for ever — so a single transient failure
+  /// (antivirus holding the file, a redirected folder, a full disk) meant
+  /// `workspace.json` was never written again for the lifetime of the process,
+  /// and every subsequent `createNotebook` / `trashNotebook` threw someone
+  /// else's stale exception. `_writeChain` is now the *recovered* future, so
+  /// ordering is still guaranteed but failure does not accumulate.
+  ///
+  /// *A failed write used to escape into nowhere.* The debounced path awaits
+  /// nothing, so an error there becomes an unhandled async error — which
+  /// `flutter test` charges to whichever test happens to be running when it
+  /// lands. That is precisely how a 400 ms registry write racing a temp
+  /// directory's teardown produced an intermittent failure in an *unrelated*
+  /// test, on the slowest CI runner and only there.
+  Future<void> _enqueueWorkspaceWrite() {
+    final result = _writeChain.then((_) => _saveWorkspace());
+    _writeChain = result.catchError((Object e) {
+      lastWorkspaceWriteError = e;
+    });
+    return result;
+  }
+
   /// Queue an atomic workspace write. Coalesces bursts; returns immediately.
   void _scheduleSaveWorkspace() {
     _writePending = true;
     _writeDebounce?.cancel();
     _writeDebounce = Timer(const Duration(milliseconds: 400), () {
-      _writeChain = _writeChain.then((_) => _saveWorkspace());
+      // `.ignore()` rather than a bare call: it marks the future handled, so a
+      // failure is recorded in `lastWorkspaceWriteError` and goes no further.
+      // Dropping the future on the floor instead is what made this an
+      // unhandled error.
+      _enqueueWorkspaceWrite().ignore();
     });
   }
 
-  /// Write any pending workspace state now and wait for it (called on shutdown).
+  /// Write any pending workspace state now and wait for it (called on
+  /// shutdown, and by any test that is about to delete the directory it lives
+  /// in).
+  ///
+  /// **This one throws**, unlike the debounced path — a caller that asked to
+  /// wait has somewhere to put the answer.
   Future<void> flushWorkspace() async {
     _writeDebounce?.cancel();
     if (_writePending) {
-      _writeChain = _writeChain.then((_) => _saveWorkspace());
+      await _enqueueWorkspaceWrite();
+      return;
     }
+    // Nothing pending: still wait for anything already in flight, but do not
+    // resurrect an old failure that `_enqueueWorkspaceWrite` already recorded.
     await _writeChain;
   }
 
@@ -176,8 +230,7 @@ class Repository {
   Future<void> _saveNow() {
     _writeDebounce?.cancel();
     _writePending = true;
-    _writeChain = _writeChain.then((_) => _saveWorkspace());
-    return _writeChain;
+    return _enqueueWorkspaceWrite();
   }
 
   Future<void> _saveWorkspace() async {
@@ -246,6 +299,18 @@ class Repository {
         try {
           await target.copy('${target.path}.bak');
         } catch (_) {/* a missing backup must never block the real write */}
+      }
+      // Re-checked here, not only at the top of `_saveWorkspace`. Every line
+      // above this one is an `await`, and the workspace can be disposed — or,
+      // in a test, have its whole directory deleted — during any of them. The
+      // top-of-function guard cannot see that; it already ran. Bailing quietly
+      // is right because a disposed repository has, by definition, nobody left
+      // who wants this file.
+      if (_disposed) {
+        try {
+          if (tmp.existsSync()) await tmp.delete();
+        } catch (_) {/* best effort */}
+        return;
       }
       await tmp.rename(target.path);
     } catch (_) {

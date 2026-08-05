@@ -9,6 +9,7 @@
 //  * restoring a page from the bin left it orphaned under a still-deleted
 //    section;
 //  * `workspace.json` could be torn by concurrent writes.
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -57,6 +58,86 @@ void main() {
     final repo = await Repository.openAt(tmp);
     return (repo, tmp);
   }
+
+  // The workspace registry's own write path, which is separate from the page
+  // save path above and failed differently.
+  group('the workspace registry write chain', () {
+    test('one failed write does not poison every later one', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp) = await freshRepo('onote_chain_');
+      addTearDown(() {
+        repo.dispose();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      await repo.createNotebook('One');
+      expect(repo.lastWorkspaceWriteError, isNull);
+
+      // Make the next write fail the way a real one does — antivirus holding
+      // the file, a redirected folder, a full disk — by putting a DIRECTORY
+      // where the registry expects to rename its temp file.
+      final target = File(p.join(tmp.path, 'workspace.json'));
+      target.deleteSync();
+      Directory(target.path).createSync();
+
+      await expectLater(repo.createNotebook('Two'), throwsA(anything),
+          reason: 'a caller that awaited the write must learn it failed');
+
+      // Clear the obstruction. The next write must succeed — this is the
+      // assertion that fails without the fix. The shared chain stayed
+      // permanently errored, so `workspace.json` was never written again for
+      // the life of the process and every subsequent createNotebook rethrew
+      // the FIRST failure's exception for ever.
+      Directory(target.path).deleteSync();
+
+      await repo.createNotebook('Three');
+      expect(target.existsSync(), isTrue,
+          reason: 'the registry must recover once the cause is gone');
+      final written = jsonDecode(target.readAsStringSync()) as Map;
+      final names = [
+        for (final n in written['notebooks'] as List) (n as Map)['title']
+      ];
+      expect(names, contains('Three'));
+    });
+
+    test('a swallowed write failure is still discoverable', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp) = await freshRepo('onote_chain_note_');
+      addTearDown(() {
+        repo.dispose();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+      await repo.createNotebook('One');
+      expect(repo.lastWorkspaceWriteError, isNull);
+
+      final target = File(p.join(tmp.path, 'workspace.json'));
+      target.deleteSync();
+      Directory(target.path).createSync();
+      await expectLater(repo.createNotebook('Two'), throwsA(anything));
+
+      // The debounced path has nobody to throw to, so the failure has to be
+      // recorded somewhere rather than vanishing.
+      expect(repo.lastWorkspaceWriteError, isNotNull);
+    });
+
+    test('flushing after dispose does not throw', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp) = await freshRepo('onote_chain_disp_');
+      addTearDown(() {
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+      await repo.createNotebook('One');
+      repo.dispose();
+      // `AppState.shutdown` awaits this unguarded; it must be safe.
+      await expectLater(repo.flushWorkspace(), completes);
+    });
+  });
 
   group('save path', () {
     test('a failed save stays dirty and reports the error', () async {

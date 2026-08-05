@@ -428,7 +428,12 @@ class AppState extends ChangeNotifier
     // Drop the recorder: it holds the OLD path, and a stale log location would
     // silently write this device's ops somewhere nobody is looking.
     _recorders.remove(nb);
-    _stopWatching();
+    // AWAITED, unlike everywhere else this is called: `moveNotebookTo` deletes
+    // the old log directory, and on Windows that fails while the watcher still
+    // holds a handle on it. The failure is swallowed there, which would leave
+    // an orphaned `.onotebook` behind to collide with the next free-name
+    // search — a silent, cumulative mess rather than an error.
+    await _stopWatching();
     final path = await _repo.moveNotebookTo(nb, targetDir);
     // The user just told us this folder is where their notes sync. Remember
     // it, rather than re-guessing later from a list of well-known provider
@@ -539,9 +544,17 @@ class AppState extends ChangeNotifier
     )..start();
   }
 
-  void _stopWatching() {
-    _watcher?.stop();
+  /// Stop the folder watcher, and hand back the future that says when its
+  /// handle is actually released.
+  ///
+  /// Most callers do not care and drop it — a watcher that stops a few
+  /// milliseconds later is harmless when nothing is about to touch the
+  /// directory. The one caller that MUST wait is `moveNotebookToFolder`, which
+  /// goes on to delete the old log directory; see `FolderWatch.stop`.
+  Future<void> _stopWatching() {
+    final w = _watcher;
     _watcher = null;
+    return w?.stop() ?? Future<void>.value();
   }
 
   /// Where this notebook lives, for the sync surface.

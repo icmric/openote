@@ -273,13 +273,19 @@ void main() {
       // walking the source alone could never pick it up — which meant a
       // "backup" held no notebook at all, only the logs it would have to be
       // rebuilt from. It has to be passed in explicitly.
-      final container = '${dest.parent.path}/Notes.onote';
-      File(container).writeAsStringSync('sqlite');
+      // In a directory this test OWNS, not in the shared temp root.
+      // `dest.parent` is systemTemp itself, so the old path was a fixed
+      // `<systemTemp>/Notes.onote` — two concurrent `flutter test` runs on one
+      // machine would fight over it, and the loser fails on the existsSync
+      // below with nothing to suggest why.
+      final holder = Directory.systemTemp.createTempSync('onote_mirror_ctr_');
       addTearDown(() {
         try {
-          File(container).deleteSync();
+          holder.deleteSync(recursive: true);
         } catch (_) {}
       });
+      final container = p.join(holder.path, 'Notes.onote');
+      File(container).writeAsStringSync('sqlite');
 
       final out = await mirrorNotebook(
           src.path, MirrorTarget(path: dest.path, keepVersions: 0),
