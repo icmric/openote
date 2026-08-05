@@ -284,6 +284,47 @@ class AppState extends ChangeNotifier
     }
   }
 
+  /// Copy the bytes of every blob these ops mention into this device's
+  /// container, from the shared folder's content-addressed store.
+  ///
+  /// Returns how many were copied. Skips ones already held (blobs are immutable
+  /// and content-addressed, so "same hash" really is "same bytes") and ones
+  /// whose file has not arrived yet — a cloud client syncs the log and the
+  /// blobs independently, so a reference can legitimately land first. That case
+  /// is not an error and must not fail the pull; the page renders without the
+  /// image until the file turns up, and `SyncRecorder.missingBlobs` is how the
+  /// UI can say so.
+  int _ingestForeignBlobs(String nb, SyncRecorder r, List<Op> pending) {
+    var copied = 0;
+    for (final op in pending) {
+      if (op.kind != OpKind.blobPut) continue;
+      // `Op.data` is Object? — a hand-edited or future log can put anything
+      // here, and a malformed op must be skipped rather than crash the pull.
+      final d = op.data;
+      if (d is! Map) continue;
+      final hash = d['hash'];
+      if (hash is! String || hash.isEmpty) continue;
+      if (_repo.getBlob(nb, hash) != null) continue;
+      final bytes = r.store.readBlob(hash);
+      if (bytes == null) continue; // not arrived yet — not an error
+      // `putBlob` re-derives the hash from the bytes rather than trusting the
+      // op, which is the point of content-addressing — but it also means a file
+      // that does not match its claimed name would be stored under a DIFFERENT
+      // hash, leaving the page still referencing nothing and the FK still
+      // failing. Check rather than discover that later: a mismatch means a
+      // truncated or corrupted download, so skip it and say so.
+      final actual = _repo.putBlob(
+          nb, bytes, d['mime'] as String? ?? 'application/octet-stream');
+      if ('sha256:$actual' != hash && actual != hash) {
+        debugPrint('[openote/sync] blob $hash does not match its bytes '
+            '(got $actual) — skipping; the file is probably still copying');
+        continue;
+      }
+      copied++;
+    }
+    return copied;
+  }
+
   Future<int> _syncPullLocked(
       String nb, SyncRecorder r, List<Op> pending) async {
     // Flush first: a local edit still sitting in the debounce would otherwise
@@ -291,6 +332,20 @@ class AppState extends ChangeNotifier
     await flushSave();
 
     final changed = r.applyForeign(pending);
+
+    // **Bring the bytes across before the pages that reference them.**
+    //
+    // A blob op carries only hash/mime/size; the bytes travel as a
+    // content-addressed file in the shared folder. Nothing was reading them
+    // back, so an image made on another device arrived as a reference to
+    // nothing — and not merely as a broken picture: `blob_refs.hash` is a
+    // foreign key onto `blobs`, so `writePage` threw a constraint violation and
+    // took the WHOLE pull down with it. One shared notebook with one image in
+    // it stopped that device syncing at all.
+    //
+    // Inside the same transaction as the pages, and before them, so a crash
+    // can never leave a page referencing bytes that are not there.
+    final pulledBlobs = _ingestForeignBlobs(nb, r, pending);
 
     _repo.runInTransaction(nb, () {
       for (final pageId in changed.pages) {
@@ -328,6 +383,10 @@ class AppState extends ChangeNotifier
         }
       }
     });
+
+    if (pulledBlobs > 0) {
+      debugPrint('[openote/sync] pulled $pulledBlobs blob(s) into the container');
+    }
 
     // Watermark per device, only after the writes landed — a crash mid-pull
     // must re-apply rather than skip.
