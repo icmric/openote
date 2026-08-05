@@ -1695,8 +1695,7 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         _nodeItem('printsection', Icons.print_outlined, 'Print section…'),
         if (app.study.examDate(node.id) case final exam?) ...[
           _nodeItem('exam', Icons.flag_outlined,
-              'Exam ${formatExamDate(exam, DateTime.now())}'
-              ' · ${formatCountdown(daysBetween(DateTime.now(), exam))}…'),
+              _examMenuLabel(context, app, node.id, exam)),
           _nodeItem('examclear', Icons.event_busy_outlined, 'Remove exam date'),
         ] else
           _nodeItem('exam', Icons.event_outlined, 'Set exam date…'),
@@ -1948,4 +1947,19 @@ class _SectionColorRowState extends State<_SectionColorRow> {
         ),
     ]);
   }
+}
+
+/// "Exam 12 Nov, 9:00 am · in 3 weeks…" — the section menu's exam row.
+///
+/// A function rather than an inline interpolation because the optional time
+/// makes it a two-branch string, and a two-branch string inside a list literal
+/// is where a `?:` chain stops being readable.
+String _examMenuLabel(
+    BuildContext context, AppState app, String sectionId, DateTime exam) {
+  final now = DateTime.now();
+  final minute = app.study.examMinuteOfDay(sectionId);
+  final when = minute == null
+      ? formatExamDate(exam, now)
+      : '${formatExamDate(exam, now)}, ${examTimeLabel(context, minute)}';
+  return 'Exam $when · ${formatCountdown(daysBetween(now, exam))}…';
 }

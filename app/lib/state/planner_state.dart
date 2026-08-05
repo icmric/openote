@@ -34,6 +34,9 @@ import 'package:flutter/foundation.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
+import '../planner/alerts.dart';
+import '../planner/calendar_fetch.dart';
+import '../planner/event_kinds.dart';
 import '../planner/ics.dart';
 import '../planner/reminders.dart';
 import '../study/study_stats.dart';
@@ -237,6 +240,13 @@ class PlannerState extends ChangeNotifier {
       _calendarBody = body;
       _calendarRevision++;
     }
+    _eventAlerts = EventAlertRules.fromJson(_read('plannerEventAlerts'));
+    final fired = _read('plannerFiredEvents');
+    if (fired is List) {
+      for (final k in fired) {
+        if (k is String && k.isNotEmpty) _firedEvents.add(k);
+      }
+    }
   }
 
   /// Subscribe to a calendar, replacing any current one, and fetch it.
@@ -282,7 +292,7 @@ class PlannerState extends ChangeNotifier {
     _refreshing = true;
     notifyListeners();
     try {
-      final body = await _fetch(sub.url);
+      final body = await fetchCalendar(sub.url);
       if (body.length > plannerCalendarCacheMax) {
         throw Exception('Calendar is larger than '
             '${plannerCalendarCacheMax ~/ (1024 * 1024)} MB');
@@ -304,37 +314,17 @@ class PlannerState extends ChangeNotifier {
     } finally {
       _refreshing = false;
       _persistCalendar();
+      // A new or refreshed timetable moves the next event alert, so the timer
+      // has to be re-armed. Without this, subscribing to a calendar armed
+      // nothing until the *next* unrelated change — so the first day's alerts
+      // simply did not happen.
+      _arm(DateTime.now());
       notifyListeners();
     }
   }
 
   void _persistCalendar() =>
       _write('plannerCalendar', _calendar?.toJson());
-
-  /// A plain GET, or a file read. No OAuth, no SDK, no account — which is the
-  /// whole reason ICS was chosen over a calendar API (ADR-0006 §8).
-  Future<String> _fetch(String url) async {
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      // `webcal://` is the scheme calendar apps register; it is plain HTTPS.
-      if (url.startsWith('webcal://')) {
-        return _fetch('https://${url.substring('webcal://'.length)}');
-      }
-      return File(url).readAsString();
-    }
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 20);
-    try {
-      final req = await client.getUrl(Uri.parse(url));
-      req.headers.set(HttpHeaders.acceptHeader, 'text/calendar, text/plain');
-      final res = await req.close().timeout(const Duration(seconds: 30));
-      if (res.statusCode != 200) {
-        throw Exception('The server answered ${res.statusCode}');
-      }
-      return res.transform(utf8.decoder).join();
-    } finally {
-      client.close(force: true);
-    }
-  }
 
   /// Cheap sanity check before a download is trusted enough to cache. A login
   /// page returns 200 and HTML, and caching that would show an empty timetable
@@ -360,6 +350,10 @@ class PlannerState extends ChangeNotifier {
   /// `SocketException: Failed host lookup: 'x' (OS Error: …, errno = -2)`.
   /// A student reading that learns nothing they can act on.
   static String _readableError(Object e) {
+    // `fetchCalendar` has already done this work, and done it with more
+    // context than is available here — it knows which rung of the retry ladder
+    // failed and whether the server answered at all.
+    if (e is CalendarFetchException) return e.message;
     if (e is SocketException) return 'Could not reach that address';
     if (e is TimeoutException) return 'The server took too long to answer';
     if (e is FormatException) return 'That address is not a valid URL';
@@ -446,12 +440,17 @@ class PlannerState extends ChangeNotifier {
               : '${plan.total} cards · all seen';
         }
       }
+      // An exam with a stated start time is not an all-day row: "9am" is the
+      // single most useful thing to know on the morning of it, and bucketing
+      // it as all-day would also sort it before every timed thing that day.
+      final at = _study.examAt(n.id) ?? date;
+      final timed = _study.examMinuteOfDay(n.id) != null;
       out.add(DatedItem(
         id: examItemId(n.id),
         kind: DatedKind.exam,
         title: n.title.isEmpty ? 'Untitled section' : n.title,
-        when: date,
-        allDay: true,
+        when: at,
+        allDay: !timed,
         notebookId: _doc.notebookId,
         subtitle: subtitle,
       ));
@@ -515,17 +514,53 @@ class PlannerState extends ChangeNotifier {
     return n.title.isEmpty ? 'Untitled' : n.title;
   }
 
-  List<DatedItem> _eventItems(DateTime today) {
+  /// The subscribed calendar, parsed and cached for the current window.
+  ///
+  /// One place, because three callers now need it — the agenda, the alert
+  /// scheduler and "what's next" — and three copies of the cache key is three
+  /// chances for one of them to parse a year of a timetable per rebuild.
+  List<IcsEvent> _parsedEvents(DateTime today) {
     if (_calendarBody.isEmpty) return const [];
     final from = DateTime(today.year, today.month, today.day - plannerPastDays);
     final to = DateTime(today.year, today.month, today.day + plannerFutureDays);
     final key = '$_calendarRevision#${dayKey(today)}';
-    var events = _icsCache?.key == key ? _icsCache!.events : null;
-    if (events == null) {
-      final r = parseIcs(_calendarBody, windowStart: from, windowEnd: to);
-      _calendarWarnings = r.warnings;
-      _icsCache = (key: key, events: events = r.events);
+    final cached = _icsCache;
+    if (cached != null && cached.key == key) return cached.events;
+    final r = parseIcs(_calendarBody, windowStart: from, windowEnd: to);
+    _calendarWarnings = r.warnings;
+    _icsCache = (key: key, events: r.events);
+    return r.events;
+  }
+
+  /// The next timed event that has not started yet, for the "up next" strip.
+  ///
+  /// Null when there is no subscription, or nothing left today-and-onwards
+  /// inside the parsed window. All-day rows are skipped: "up next: Week 6" is
+  /// not an answer to "what have I got on".
+  IcsEvent? nextEvent({DateTime? now}) {
+    final at = now ?? DateTime.now();
+    for (final e in _parsedEvents(at)) {
+      if (e.allDay || !e.start.isAfter(at)) continue;
+      return e; // parseIcs returns chronological order
     }
+    return null;
+  }
+
+  /// The event happening right now, if one is. Shown beside [nextEvent] so the
+  /// strip says "in this until 11" rather than jumping to the next thing while
+  /// you are still sitting in a lecture.
+  IcsEvent? currentEvent({DateTime? now}) {
+    final at = now ?? DateTime.now();
+    for (final e in _parsedEvents(at)) {
+      if (e.allDay || e.end == null) continue;
+      if (!e.start.isAfter(at) && e.end!.isAfter(at)) return e;
+    }
+    return null;
+  }
+
+  List<DatedItem> _eventItems(DateTime today) {
+    final events = _parsedEvents(today);
+    if (events.isEmpty) return const [];
     return [
       for (final e in events)
         DatedItem(
@@ -644,12 +679,40 @@ class PlannerState extends ChangeNotifier {
 
   Timer? _timer;
 
-  /// Reminders that have come due and not yet been shown. The UI drains this.
-  final List<Reminder> pendingAlerts = [];
+  /// Alerts that have come due and not yet been dealt with. The popup and the
+  /// panel banner both read this; nothing else may mutate it.
+  final List<PlannerAlert> pendingAlerts = [];
 
   /// True when [pendingAlerts] built up while the app was closed, so the UI can
   /// say "3 while you were away" rather than pretending they just fired.
   bool alertsWereMissed = false;
+
+  /// Event occurrences already alerted on, as [firedEventKey] strings.
+  ///
+  /// Persisted, for the same reason `Reminder.fired` is: without it, every
+  /// restart during a lecture pops the same alert again. Pruned in [_pruneFired]
+  /// rather than allowed to grow — a year of a timetable is ~1500 keys, which is
+  /// not enormous but is unbounded, and unbounded state in a settings file is
+  /// how settings files become slow.
+  final Set<String> _firedEvents = <String>{};
+
+  /// Which kinds of event get an alert, and how far ahead. Off by default; see
+  /// [EventAlertRules].
+  EventAlertRules _eventAlerts = EventAlertRules.none;
+  EventAlertRules get eventAlerts => _eventAlerts;
+
+  set eventAlerts(EventAlertRules rules) {
+    _eventAlerts = rules;
+    _write('plannerEventAlerts', rules.toJson());
+    // Turning a rule ON must not immediately fire for everything already in
+    // progress this morning — those moments have passed, and a burst of six
+    // popups is exactly the experience that gets alerts switched off again.
+    // Marking the current window as already-seen is the honest reading of
+    // "from now on".
+    _markCurrentWindowSeen(DateTime.now());
+    _arm(DateTime.now());
+    notifyListeners();
+  }
 
   /// Start the scheduler. Called once the app is up, from `AppState.init`.
   ///
@@ -662,14 +725,20 @@ class PlannerState extends ChangeNotifier {
   /// unfired *cannot* have been shown by this session — the age heuristic the
   /// default exists for has nothing to add, and using it would file a reminder
   /// that came due ninety seconds before launch under the wrong heading.
+  ///
+  /// **Missed *event* alerts are not replayed.** A reminder you set for 2pm is
+  /// still worth telling you about at 4pm; "your lecture was starting soon,
+  /// four hours ago" is noise, and worse, it is noise on every single launch
+  /// for the rest of the day. Anything already started is marked seen instead.
   void startScheduler({DateTime? now}) {
     final at = now ?? DateTime.now();
     final missed = reminders.missedWhileAway(at, staleAfter: Duration.zero);
     if (missed.isNotEmpty) {
-      pendingAlerts.addAll(missed);
+      pendingAlerts.addAll(missed.map(_alertForReminder));
       alertsWereMissed = true;
       reminders.markFired([for (final r in missed) r.id], at);
     }
+    _markPastEventsSeen(at);
     _arm(at);
     if (missed.isNotEmpty) notifyListeners();
   }
@@ -684,11 +753,13 @@ class PlannerState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Re-arm the timer for the next reminder, whenever that is.
+  /// Re-arm the timer for the next thing that needs saying, whenever that is.
   void _arm(DateTime now) {
     _timer?.cancel();
     _timer = null;
-    final next = reminders.nextDueAt(now);
+    var next = reminders.nextDueAt(now);
+    final event = _nextEventAlertAt(now);
+    if (event != null && (next == null || event.isBefore(next))) next = event;
     if (next == null) return;
     // Clamped: a `Timer` with a multi-week duration is a long time to trust a
     // suspended laptop's clock, and re-checking hourly costs nothing. The
@@ -701,9 +772,11 @@ class PlannerState extends ChangeNotifier {
 
   void _tick() {
     final now = DateTime.now();
+    var fired = false;
+
     final due = reminders.due(now);
     if (due.isNotEmpty) {
-      pendingAlerts.addAll(due);
+      pendingAlerts.addAll(due.map(_alertForReminder));
       // Fired while we were watching, so it is a nudge and not a catch-up —
       // even if an older one is still sitting in the list beside it.
       alertsWereMissed = false;
@@ -712,12 +785,204 @@ class PlannerState extends ChangeNotifier {
       // swallow it silently; not marking what was shown would leave `nextDueAt`
       // pinned at `now` and re-tick forever.
       reminders.markFired([for (final r in due) r.id], now);
+      fired = true;
     }
+
+    for (final a in dueEventAlerts(now)) {
+      pendingAlerts.add(a);
+      _firedEvents.add(a.id);
+      alertsWereMissed = false;
+      fired = true;
+    }
+    if (fired) _persistFired(now);
+
     _arm(now);
-    if (due.isNotEmpty) notifyListeners();
+    if (fired) notifyListeners();
   }
 
-  /// The UI has shown the alerts.
+  // ── Event alerts ─────────────────────────────────────────────────────
+
+  /// Event alerts that should be showing right now and have not been shown.
+  ///
+  /// Public because the test suite drives it directly: the alternative is a
+  /// test that waits for a real `Timer`, which is a test that is either slow or
+  /// flaky and usually both.
+  List<PlannerAlert> dueEventAlerts(DateTime now) {
+    if (_eventAlerts.isEmpty || _calendarBody.isEmpty) return const [];
+    final out = <PlannerAlert>[];
+    for (final e in _alertableEvents(now)) {
+      final lead = _eventAlerts.leadFor(classifyEvent(e));
+      if (lead == null) continue;
+      final at = e.start.subtract(Duration(minutes: lead));
+      // Only the window between "the alert is due" and "the event has started".
+      // Past the start it is not a warning any more, and firing one is the
+      // "your 9am was starting soon" nonsense that made this feature annoying
+      // in the first place.
+      if (at.isAfter(now) || !e.start.isAfter(now)) continue;
+      final key = firedEventKey(e.uid, e.start);
+      if (_firedEvents.contains(key)) continue;
+      out.add(_alertForEvent(e, key));
+    }
+    return out;
+  }
+
+  /// When the next event alert is due, or null if none is.
+  DateTime? _nextEventAlertAt(DateTime now) {
+    if (_eventAlerts.isEmpty || _calendarBody.isEmpty) return null;
+    DateTime? soonest;
+    for (final e in _alertableEvents(now)) {
+      final lead = _eventAlerts.leadFor(classifyEvent(e));
+      if (lead == null) continue;
+      if (_firedEvents.contains(firedEventKey(e.uid, e.start))) continue;
+      final at = e.start.subtract(Duration(minutes: lead));
+      if (!at.isAfter(now)) {
+        // Already due — the tick will pick it up; ask for it immediately.
+        return now;
+      }
+      if (soonest == null || at.isBefore(soonest)) soonest = at;
+    }
+    return soonest;
+  }
+
+  /// Timed events near enough to now to be worth considering.
+  ///
+  /// All-day events are excluded outright: "your all-day event starts in ten
+  /// minutes" is meaningless, and an all-day row is exactly the kind of thing
+  /// that would fire a 00:00 alert every single night.
+  Iterable<IcsEvent> _alertableEvents(DateTime now) sync* {
+    final horizon = now.add(Duration(minutes: (_eventAlerts.maxLead ?? 0) + 1));
+    for (final e in _parsedEvents(now)) {
+      if (e.allDay) continue;
+      if (e.start.isBefore(now)) continue;
+      if (e.start.isAfter(horizon)) continue;
+      yield e;
+    }
+  }
+
+  PlannerAlert _alertForEvent(IcsEvent e, String key) => PlannerAlert(
+        id: key,
+        source: AlertSource.event,
+        title: e.summary.isEmpty ? '(untitled event)' : e.summary,
+        at: e.start,
+        subtitle: _eventSubtitle(e),
+        kind: classifyEvent(e),
+        join: joinLink(e),
+      );
+
+  PlannerAlert _alertForReminder(Reminder r) => PlannerAlert(
+        id: r.id,
+        source: AlertSource.reminder,
+        title: r.text.isEmpty ? 'Reminder' : r.text,
+        at: r.at,
+        subtitle: _pageTitle(r.pageId),
+        notebookId: r.notebookId,
+        pageId: r.pageId,
+        blockId: r.blockId,
+        line: r.line,
+      );
+
+  /// Mark everything that has already started as seen, without showing it.
+  void _markPastEventsSeen(DateTime now) {
+    if (_eventAlerts.isEmpty || _calendarBody.isEmpty) return;
+    var changed = false;
+    for (final e in _parsedEvents(now)) {
+      if (e.allDay || !e.start.isBefore(now)) continue;
+      changed |= _firedEvents.add(firedEventKey(e.uid, e.start));
+    }
+    if (_pruneFired(now) || changed) _persistFired(now);
+  }
+
+  /// Mark everything currently inside its alert window as seen. Used when a
+  /// rule is switched on, so enabling alerts is not itself an interruption.
+  void _markCurrentWindowSeen(DateTime now) {
+    if (_eventAlerts.isEmpty || _calendarBody.isEmpty) return;
+    var changed = false;
+    for (final e in _alertableEvents(now)) {
+      final lead = _eventAlerts.leadFor(classifyEvent(e));
+      if (lead == null) continue;
+      if (e.start.subtract(Duration(minutes: lead)).isAfter(now)) continue;
+      changed |= _firedEvents.add(firedEventKey(e.uid, e.start));
+    }
+    if (changed) _persistFired(now);
+  }
+
+  /// Forget keys for occurrences that are comfortably in the past.
+  ///
+  /// Two days rather than one: a laptop shut on Friday and opened on Monday
+  /// must not replay Friday afternoon, and the key is cheap to keep.
+  bool _pruneFired(DateTime now) {
+    final cutoff =
+        now.subtract(const Duration(days: 2)).millisecondsSinceEpoch;
+    final gone = <String>[];
+    for (final k in _firedEvents) {
+      final parts = k.split(':');
+      if (parts.length < 3) continue;
+      final ms = int.tryParse(parts[1]);
+      if (ms != null && ms < cutoff) gone.add(k);
+    }
+    _firedEvents.removeAll(gone);
+    return gone.isNotEmpty;
+  }
+
+  void _persistFired(DateTime now) {
+    _pruneFired(now);
+    _write('plannerFiredEvents', _firedEvents.toList());
+  }
+
+  // ── Acting on an alert ───────────────────────────────────────────────
+
+  /// Deal with one alert: it stops being shown, for good.
+  ///
+  /// For a reminder that means dismissing it in the store — which is the bug
+  /// this replaced. "Done" used to clear the on-screen list only, so the badge
+  /// stayed lit, the row stayed in the agenda, and the button read as broken.
+  /// For an event it means only "shown"; Openote never writes to a calendar.
+  void dismissAlert(String id) {
+    final i = pendingAlerts.indexWhere((a) => a.id == id);
+    if (i < 0) return;
+    final alert = pendingAlerts.removeAt(i);
+    if (alert.source == AlertSource.reminder) {
+      // Dismisses AND persists, and notifies through `_onRemindersChanged`.
+      reminders.dismiss(alert.id);
+    }
+    if (pendingAlerts.isEmpty) alertsWereMissed = false;
+    notifyListeners();
+  }
+
+  /// Deal with every showing alert at once.
+  void dismissAllAlerts() {
+    if (pendingAlerts.isEmpty) return;
+    for (final a in pendingAlerts.toList()) {
+      if (a.source == AlertSource.reminder) reminders.dismiss(a.id);
+    }
+    pendingAlerts.clear();
+    alertsWereMissed = false;
+    notifyListeners();
+  }
+
+  /// Put an alert off. Reminders only — an event's time is not ours to move,
+  /// so snoozing one just takes it off the screen.
+  void snoozeAlert(String id, Duration by, [DateTime? now]) {
+    final at = now ?? DateTime.now();
+    final i = pendingAlerts.indexWhere((a) => a.id == id);
+    if (i < 0) return;
+    final alert = pendingAlerts.removeAt(i);
+    if (alert.source == AlertSource.reminder) {
+      // Measured from now, not from the reminder's own time — snoozing
+      // something that came due yesterday "by ten minutes" must land ten
+      // minutes from now, or it fires again on the next tick and Snooze
+      // appears broken.
+      reminders.snooze(alert.id, by, at);
+    }
+    if (pendingAlerts.isEmpty) alertsWereMissed = false;
+    notifyListeners();
+  }
+
+  /// Stop showing the alerts without resolving them.
+  ///
+  /// Kept separate from [dismissAllAlerts] because they are genuinely different
+  /// promises: this one is "not now, I am reading it in the panel", and the
+  /// reminder stays live in the agenda.
   void clearAlerts() {
     if (pendingAlerts.isEmpty) return;
     pendingAlerts.clear();

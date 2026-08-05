@@ -10,6 +10,7 @@ import '../model/tags.dart';
 import '../core/onote_ffi.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'alert_popup.dart';
 import 'command_bar.dart';
 import 'onboarding.dart';
 import 'planner_panel.dart';
@@ -353,7 +354,12 @@ class _AppShellState extends State<AppShell> {
       builder: (context, _) {
         final page = app.nodes.where((n) => n.id == app.pageId).firstOrNull;
         return Scaffold(
-          body: Row(
+          // A `Stack`, so a reminder floats OVER the page rather than pushing
+          // it. An alert that reflowed the canvas would move the line you were
+          // typing on, which is a worse interruption than the one it is
+          // delivering.
+          body: Stack(children: [
+            Row(
             children: [
               _navigator(),
               const VerticalDivider(width: 1),
@@ -408,6 +414,8 @@ class _AppShellState extends State<AppShell> {
               ),
             ],
           ),
+            AlertPopup(app: app),
+          ]),
         );
       },
     );
@@ -841,7 +849,13 @@ class _StatusBar extends StatelessWidget {
     final failed = app.saveError != null;
     return Container(
       height: 24,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      // Tighter at the trailing edge than the leading one, on purpose. The
+      // left-hand cluster is a run of icon-and-label pairs whose glyphs need
+      // breathing room from the frame; the right-hand end is the shortcut
+      // cheat-sheet, which is a single line of text and reads as *detached*
+      // when it floats 12px in from the window edge — the "the UI doesn't
+      // reach the sides" complaint. 6px is the optical match.
+      padding: const EdgeInsets.only(left: OnoteSpace.x5, right: OnoteSpace.x3),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
