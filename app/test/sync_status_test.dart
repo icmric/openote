@@ -22,8 +22,10 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:openote/state/app_state.dart';
+import 'package:openote/sync/cloud_folders.dart';
 import 'package:openote/store/repository.dart';
 
 import 'support/sqlite.dart';
@@ -139,12 +141,31 @@ void main() {
     final nb = await repo.createNotebook('Discrete Maths');
     final app = AppState(repo)..notebookId = nb.id;
     await app.moveNotebookToFolder(nb.id, cloud.path);
+
+    // This assertion alone carries most of cause (1): `cloud` is a temp
+    // directory, so `detectCloudFolders()` can never return it. The only way
+    // this can be true is if the folder the user *chose* is what is consulted.
+    expect(app.syncStatus(nb.id).isSynced, isTrue);
+    app.debugPollSyncStatus();
     expect(app.syncStatus(nb.id).isSynced, isTrue);
 
-    // The provider goes away — the same shape as "has not mounted yet".
-    cloud.deleteSync(recursive: true);
-    app.debugPollSyncStatus();
-    expect(app.syncStatus(nb.id).isSynced, isTrue,
+    // Cause (2), the unmounted provider — asserted against a path that has
+    // **never existed**, which is a stronger statement than deleting a real
+    // folder would be: nothing on disk can make this pass by accident.
+    //
+    // It is also the only portable way to say it. The obvious version of this
+    // test deleted `cloud` and re-polled, which passes on Linux and macOS and
+    // fails on Windows — Windows will not remove a directory holding an open
+    // file, and by this point the moved notebook is open with a directory
+    // watcher on it besides. The deletion was never the point; the point is
+    // that a remembered root is matched by PATH and never probed.
+    final ghost = p.join(cloud.path, 'ProviderNotMountedYet');
+    expect(Directory(ghost).existsSync(), isFalse);
+    app.rememberSyncRoot(ghost);
+    expect(
+        cloudFolderContaining(p.join(ghost, 'Notes.onotebook'),
+            also: app.syncRoots),
+        isNotNull,
         reason: 'a remembered root is a fact about the user, not a probe — it '
             'must not flicker with the mount state');
 

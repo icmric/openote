@@ -177,7 +177,14 @@ void main() {
   test('a local file path is read rather than fetched', () async {
     await serve((req) async => req.response.close());
     final tmp = Directory.systemTemp.createTempSync('onote_cal_');
-    addTearDown(() => tmp.deleteSync(recursive: true));
+    // Guarded, like every other temp-dir teardown in this suite: Windows
+    // refuses to remove a directory holding a handle anything still owns, and
+    // a cleanup that throws fails an otherwise passing test.
+    addTearDown(() {
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
     final f = File('${tmp.path}/t.ics')..writeAsStringSync(_ics);
     expect(await fetchCalendar(f.path), _ics);
   });
