@@ -3,3 +3,14 @@
 # not come back as a plain directory either: it is licence-incompatible
 # reference material, not part of the build.
 /rust/onote_core/onenote-ref/
+
+# Throwaway investigation probes. Every file matching this is a scratch test
+# written to answer one question and then deleted — they call debug-only
+# methods, print freely, and are expected to go stale within the hour.
+#
+# Ignored rather than merely discouraged, because that is exactly what
+# happened: a "stage all changes" swept eight of them into a release commit,
+# and CI went red on the whole PR at the ANALYZE step (one of them called a
+# method that no longer existed), so the tests never ran at all. A convention
+# that only holds while everyone remembers it is not a convention.
+app/test/zz*_test.dart
