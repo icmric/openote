@@ -85,3 +85,58 @@ String tableToMarkdown(dynamic cells) {
   }
   return buf.toString().trimRight();
 }
+
+/// One line of stored text as a human would read it — markers gone.
+///
+/// For **UI summaries**: the planner's agenda rows, the find-tags rollup, and
+/// anywhere else a line of a note is quoted outside the renderer that
+/// understands it. Those surfaces were showing raw source — a to-do written as
+/// a bullet appeared in the planner as `- Conjunction: p ∧ q`, dash and all,
+/// and an emphasised phrase carried its asterisks.
+///
+/// Deliberately **not** a Markdown parser. It strips the leading block marker
+/// (list bullet, ordered number, task box, heading hashes, block quote) and the
+/// paired inline emphasis runs, and leaves everything else alone. A summary
+/// line does not need a syntax tree, and a half-parser that tried to be one
+/// would mangle the maths and code these notes are full of.
+///
+/// Inline stripping is conservative: a marker only comes off when it is
+/// genuinely paired, so `2 * 3 * 4` keeps its asterisks and `a_1` keeps its
+/// underscore.
+String plainLine(String line) {
+  var s = line.trim();
+
+  // Leading block markers, in the order they can nest: quote, then list, then
+  // heading. Only one round — `>> - # x` is not a shape any of these produce.
+  s = s.replaceFirst(RegExp(r'^>\s*'), '');
+  // `\s+|$` so a line that is ONLY a marker ("- ") reduces to empty rather
+  // than to a stray dash.
+  s = s.replaceFirst(RegExp(r'^(?:[-*+]|\d+[.)])(?:\s+|$)'), '');
+  s = s.replaceFirst(RegExp(r'^\[[ xX]\]\s*'), ''); // task box after a bullet
+  s = s.replaceFirst(RegExp(r'^#{1,6}\s+'), '');
+
+  // Paired inline runs, longest marker first so `**bold**` is not seen as two
+  // `*italic*` edges.
+  //
+  // `_` additionally requires a word boundary on the outside, which is
+  // CommonMark's own intraword rule and the reason `a_1 and b_2` survives —
+  // subscripts are everywhere in the notes this feature exists for.
+  for (final marker in const ['***', '**', '~~', '==', '++', '`', '*']) {
+    final m = RegExp.escape(marker);
+    s = s.replaceAllMapped(
+        RegExp('$m(?!\\s)(.+?)(?<!\\s)$m', dotAll: true), (x) => x.group(1)!);
+  }
+  s = s.replaceAllMapped(
+      RegExp(r'(?<![\w])_(?!\s)(.+?)(?<!\s)_(?![\w])', dotAll: true),
+      (x) => x.group(1)!);
+
+  // The colour extension and wiki-links degrade to their visible text, the
+  // same way `markdownInline` degrades them for export.
+  s = s.replaceAllMapped(
+      RegExp(r'\{\{#[0-9a-fA-F]{6}\s+(.+?)\}\}', dotAll: true),
+      (m) => m.group(1)!);
+  s = s.replaceAllMapped(
+      RegExp(r'\[\[([^\]|]+)(?:\|[^\]]*)?\]\]'), (m) => m.group(1)!);
+
+  return s.trim();
+}

@@ -27,6 +27,7 @@ import '../state/app_state.dart';
 import '../state/planner_state.dart';
 import '../theme/onote_theme.dart';
 import 'month_grid.dart';
+import 'side_panel.dart';
 import 'planner_format.dart';
 import '../theme/tokens.dart';
 
@@ -55,18 +56,35 @@ class _PlannerPanelState extends State<PlannerPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final now = DateTime.now();
     final sections = planner.sections(now: now);
 
-    return Container(
-      width: 320,
-      color: dark ? OnoteColors.night0 : OnoteColors.paper50,
+    return SidePanel(
+      title: SidePanelKind.planner.label,
+      icon: Icons.event_note_outlined,
+      onClose: app.closePanel,
+      actions: [
+        IconButton(
+          icon: Icon(
+              _showMonth
+                  ? Icons.calendar_view_day_outlined
+                  : Icons.calendar_month_outlined,
+              size: OnoteIcon.sm),
+          visualDensity: VisualDensity.compact,
+          tooltip: _showMonth ? 'Show the list' : 'Show the month',
+          onPressed: () => setState(() {
+            _showMonth = !_showMonth;
+            if (!_showMonth) _pickedDay = null;
+          }),
+        ),
+      ],
+      // The alerts sit in the banner slot, above the scroll region, because a
+      // reminder you have to scroll to find has not reminded you.
+      banner: planner.pendingAlerts.isNotEmpty ? _alerts(context) : null,
+      footer: _footer(context, now),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _header(context, now),
-          if (planner.pendingAlerts.isNotEmpty) _alerts(context),
           if (_showMonth) ...[
             MonthGrid(
               planner: planner,
@@ -82,49 +100,10 @@ class _PlannerPanelState extends State<PlannerPanel> {
                 ? _dayList(context, _pickedDay!, now)
                 : _agendaList(context, sections, now),
           ),
-          const Divider(height: 1),
-          _footer(context, now),
         ],
       ),
     );
   }
-
-  // ── Header ───────────────────────────────────────────────────────────
-
-  Widget _header(BuildContext context, DateTime now) => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
-        child: Row(children: [
-          Icon(Icons.event_note_outlined,
-              size: 16, color: context.surfaces.textSecondary),
-          const SizedBox(width: 6),
-          Text('PLANNER',
-              style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: .6,
-                  color: context.surfaces.textSecondary)),
-          const Spacer(),
-          IconButton(
-            icon: Icon(
-                _showMonth
-                    ? Icons.calendar_view_day_outlined
-                    : Icons.calendar_month_outlined,
-                size: 16),
-            visualDensity: VisualDensity.compact,
-            tooltip: _showMonth ? 'Show the list' : 'Show the month',
-            onPressed: () => setState(() {
-              _showMonth = !_showMonth;
-              if (!_showMonth) _pickedDay = null;
-            }),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 16),
-            visualDensity: VisualDensity.compact,
-            tooltip: 'Close planner',
-            onPressed: app.togglePlannerPanel,
-          ),
-        ]),
-      );
 
   // ── The catch-up list (v0.5 §1) ──────────────────────────────────────
   //
@@ -384,51 +363,25 @@ class _PlannerPanelState extends State<PlannerPanel> {
     );
   }
 
-  Widget _empty(BuildContext context, DateTime now) => Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Nothing dated yet.',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            const Text(
-              'Everything with a date shows up here — exam dates, to-dos you '
-              'give a deadline, reminders, and your timetable if you subscribe '
-              'to one.',
-              style: TextStyle(fontSize: 12, height: 1.45),
-            ),
-            const SizedBox(height: 12),
-            _link(context, Icons.flag_outlined, 'Set an exam date', _addExam),
-            _link(context, Icons.notifications_none, 'Add a reminder',
-                () => _addReminder(now)),
-            _link(context, Icons.calendar_month_outlined,
-                'Subscribe to a timetable', _subscribe),
-          ],
-        ),
-      );
-
-  Widget _link(
-          BuildContext context, IconData icon, String label, VoidCallback tap) =>
-      InkWell(
-        onTap: tap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
-          child: Row(children: [
-            Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 7),
-            // Expanded, not bare: 'Subscribe to a timetable' overflows a 320px
-            // panel by 23px otherwise, and an unconstrained Text in a Row is
-            // the exact shape of the two layout bugs that shipped in the
-            // command bar.
-            Expanded(
-              child: Text(label,
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.primary)),
-            ),
-          ]),
-        ),
+  Widget _empty(BuildContext context, DateTime now) => PanelEmpty(
+        headline: 'Nothing dated yet.',
+        body: 'Everything with a date shows up here — exam dates, to-dos you '
+            'give a deadline, reminders, and your timetable if you subscribe '
+            'to one.',
+        actions: [
+          PanelAction(
+              icon: Icons.flag_outlined,
+              label: 'Set an exam date',
+              onTap: _addExam),
+          PanelAction(
+              icon: Icons.notifications_none,
+              label: 'Add a reminder',
+              onTap: () => _addReminder(now)),
+          PanelAction(
+              icon: Icons.calendar_month_outlined,
+              label: 'Subscribe to a timetable',
+              onTap: _subscribe),
+        ],
       );
 
   // ── Footer ───────────────────────────────────────────────────────────

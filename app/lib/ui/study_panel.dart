@@ -27,6 +27,7 @@ import '../study/flashcards.dart';
 import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'exam_date.dart';
+import 'side_panel.dart';
 import '../theme/tokens.dart';
 
 /// Which pages a session draws from. Pages ARE the deck structure — a lecture
@@ -214,42 +215,26 @@ class _StudyPanelState extends State<StudyPanel> {
     final session = _session;
     final inSession = session != null && _index < session.length;
 
-    return Container(
-      width: 300,
-      color: dark ? OnoteColors.night0 : OnoteColors.paper50,
+    return SidePanel(
+      title: SidePanelKind.study.label,
+      icon: Icons.school_outlined,
+      onClose: app.closePanel,
+      actions: _actions(inSession),
       child: Focus(
         focusNode: _keys,
         onKeyEvent: _onKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _header(inSession),
-            Expanded(
-              child: inSession
-                  ? _card(session[_index], dark)
-                  : session != null
-                      ? _summary(dark)
-                      : _overview(stats, dark),
-            ),
-          ],
-        ),
+        child: inSession
+            ? _card(session[_index], dark)
+            : session != null
+                ? _summary(dark)
+                : _overview(stats, dark),
       ),
     );
   }
 
-  Widget _header(bool inSession) => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 4, 2),
-        child: Row(children: [
-          Icon(Icons.school_outlined,
-              size: 16, color: context.surfaces.textSecondary),
-          const SizedBox(width: 6),
-          Text('STUDY',
-              style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: .6,
-                  color: context.surfaces.textSecondary)),
-          const Spacer(),
+  /// Header actions. The panel supplies the title, icon and close button
+  /// (style guide §7c); this is only what is specific to studying.
+  List<Widget> _actions(bool inSession) => [
           if (inSession)
             TextButton(
               onPressed: _end,
@@ -310,14 +295,7 @@ class _StudyPanelState extends State<StudyPanel> {
                 ];
               },
             ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 16),
-            visualDensity: VisualDensity.compact,
-            tooltip: 'Close study',
-            onPressed: app.toggleStudyPanel,
-          ),
-        ]),
-      );
+      ];
 
   // ── Overview ──────────────────────────────────────────────────────────
 

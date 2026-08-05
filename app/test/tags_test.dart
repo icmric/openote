@@ -11,6 +11,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/model/models.dart';
+import 'package:openote/export/md_common.dart';
 import 'package:openote/model/tags.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -245,6 +246,43 @@ void main() {
       app.blocks = [b];
 
       expect(app.allTags().single.text, '');
+    });
+  });
+
+  group('a rollup line reads as prose, not as source', () {
+    // The planner and the find-tags panel both quote a line of a note without
+    // running the renderer that understands it, so a to-do written as a bullet
+    // showed up as "- Finish tutorial 4" and an emphasised phrase carried its
+    // asterisks.
+    test('leading block markers come off', () {
+      expect(plainLine('- Finish tutorial 4'), 'Finish tutorial 4');
+      expect(plainLine('* Finish tutorial 4'), 'Finish tutorial 4');
+      expect(plainLine('1. Finish tutorial 4'), 'Finish tutorial 4');
+      expect(plainLine('  ## Propositional logic'), 'Propositional logic');
+      expect(plainLine('> quoted'), 'quoted');
+      expect(plainLine('- [ ] a task'), 'a task');
+      expect(plainLine('- [x] a done task'), 'a done task');
+    });
+
+    test('paired emphasis comes off, unpaired punctuation does not', () {
+      expect(plainLine('**bold** and *italic*'), 'bold and italic');
+      expect(plainLine('~~struck~~ and ==marked=='), 'struck and marked');
+      expect(plainLine('`code`'), 'code');
+      // The reason this is not a Markdown parser: notes are full of maths.
+      expect(plainLine('2 * 3 * 4'), '2 * 3 * 4');
+      expect(plainLine('a_1 and b_2'), 'a_1 and b_2');
+      expect(plainLine('5 - 3'), '5 - 3');
+    });
+
+    test('links and colour spans degrade to what they show', () {
+      expect(plainLine('see [[Week 1|abc-123]] first'), 'see Week 1 first');
+      expect(plainLine('see [[Week 1]]'), 'see Week 1');
+      expect(plainLine('{{#FF0000 urgent}}'), 'urgent');
+    });
+
+    test('a line that is only a marker survives as empty, not as junk', () {
+      expect(plainLine('- '), '');
+      expect(plainLine('   '), '');
     });
   });
 }

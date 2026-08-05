@@ -14,9 +14,12 @@
 //
 //     ONOTE_SCREENSHOTS=1 flutter test test/ui_screenshots_test.dart --update-goldens
 //
-// Known harness artifact: math symbols (∧ ∨) render as boxes here because the
-// OS fallback fonts (`onoteFontFallback`) are not loadable in the test
-// environment. That is not an app bug — do not "fix" it.
+// **Load every bundled face here.** A face the harness does not load renders
+// as tofu, and tofu is easy to misread as a UI defect — the first review of
+// these images recorded the study panel's mono keyboard hints ("Ctrl+3") as
+// skeleton placeholder bars, which they never were. Math symbols (∧ ∨) still
+// box because they come from the *OS* fallback chain (`onoteFontFallback`),
+// which no test environment has. That one is a known artifact, not an app bug.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -48,6 +51,10 @@ Future<void> _loadFonts() async {
     'assets/fonts/inter/Inter-Medium.ttf',
     'assets/fonts/inter/Inter-SemiBold.ttf',
     'assets/fonts/inter/Inter-Bold.ttf',
+  ]);
+  await load('JetBrains Mono', [
+    'assets/fonts/jetbrains-mono/JetBrainsMono-Regular.ttf',
+    'assets/fonts/jetbrains-mono/JetBrainsMono-Bold.ttf',
   ]);
   // Material icons ship in the SDK, not the app bundle.
   final root = Platform.environment['FLUTTER_ROOT'];

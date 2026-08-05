@@ -13,6 +13,7 @@ import '../core/engine.dart';
 import '../core/ids.dart';
 import '../core/onote_ffi.dart';
 import '../editor/onote_text_editor.dart';
+import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
 import '../store/repository.dart';
@@ -1143,7 +1144,11 @@ class AppState extends ChangeNotifier
             pageTitle: n.title,
             blockId: b.id,
             tag: t,
-            text: t.line < lines.length ? lines[t.line].trim() : '',
+            // Plain, not raw: every consumer of this is a SUMMARY — the
+            // tags rollup and the planner's agenda — and neither runs the
+            // Markdown renderer, so a to-do written as a bullet showed up
+            // as "- Finish tutorial 4", dash included.
+            text: t.line < lines.length ? plainLine(lines[t.line]) : '',
           ));
         }
       }
@@ -2065,6 +2070,10 @@ class AppState extends ChangeNotifier
       blocks = data.blocks;
       pageProps = data.props;
       _repairImportedFieldCodes();
+      // Heal a page whose content sits under the title band (§7f). Marked
+      // dirty only when something actually moved, so merely opening pages
+      // does not rewrite the notebook.
+      if (repairTitleBandOverlap() > 0) markDirty();
       // Keep the navigator's focused section in sync with the open page, and
       // remember it as the section's place so activateSection can come back
       // here. Selecting a page also leaves Home — the pane shows the
@@ -2409,10 +2418,43 @@ class AppState extends ChangeNotifier
     return r;
   }
 
-  /// Content never above/left of the page origin (CANVAS-1 v0.3).
+  /// Content never above/left of the page origin (CANVAS-1 v0.3), and never
+  /// underneath the title band (style guide §7f).
+  ///
+  /// The band is drawn as a `Positioned` overlay in the same coordinate space
+  /// as the blocks, so a block placed above [contentTop] renders *through* the
+  /// page title — the two strike each other out and neither is readable. The
+  /// band already declared its height ([titleBandHeight]); nothing enforced it.
+  /// The title is part of the page's layout, so the layout is where it is
+  /// reserved.
   void clampBlockToPage(Block b) {
     if (b.x < 0) b.x = 0;
-    if (b.y < 0) b.y = 0;
+    if (b.y < contentTop) b.y = contentTop;
+  }
+
+  /// Push imported or legacy blocks out from under the title band.
+  ///
+  /// [clampBlockToPage] only runs on blocks the user moves. A page that
+  /// arrived from the OneNote importer — or that was written before the band
+  /// reserved its space — can already have content up there, and healing it on
+  /// open is the same shape as `_repairImportedFieldCodes`.
+  ///
+  /// Returns how many blocks moved, so the caller can decide whether the page
+  /// is dirty. The whole page shifts **together** when anything is above the
+  /// band, rather than each stray block being clamped onto the same line: a
+  /// note's blocks are positioned relative to each other, and collapsing two of
+  /// them onto one y would destroy that.
+  int repairTitleBandOverlap() {
+    var top = double.infinity;
+    for (final b in blocks) {
+      if (b.y < top) top = b.y;
+    }
+    if (top == double.infinity || top >= contentTop) return 0;
+    final shift = contentTop - top;
+    for (final b in blocks) {
+      b.y += shift;
+    }
+    return blocks.length;
   }
 
   // ── Tree ops ───────────────────────────────────────────────────────────

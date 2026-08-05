@@ -13,6 +13,7 @@ import '../theme/onote_theme.dart';
 import 'command_bar.dart';
 import 'onboarding.dart';
 import 'planner_panel.dart';
+import 'side_panel.dart';
 import 'sidebar.dart';
 import '../export/print_page.dart';
 import 'study_panel.dart';
@@ -361,7 +362,14 @@ class _AppShellState extends State<AppShell> {
                   children: [
                     CommandBar(app: app),
                     if (app.findOpen) _FindBar(app: app),
-                    if (page != null) _PageHeader(app: app, page: page),
+                    // The breadcrumb is CONTEXT, not a second navigator
+                    // (§7d). With the navigator expanded it repeats what is
+                    // already on screen two inches to the left, so it spends a
+                    // full-width row saying nothing. Collapsed — or on the
+                    // rail — it is the only place the notebook and section are
+                    // named, and it earns the row.
+                    if (page != null && app.navCollapsed)
+                      _PageHeader(app: app, page: page),
                     Expanded(
                       child: Row(
                         children: [
@@ -591,50 +599,29 @@ class _TagsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final all = app.allTags();
     final byKind = <TagKind, List<TaggedLine>>{};
     for (final e in all) {
       byKind.putIfAbsent(e.tag.kind, () => []).add(e);
     }
-    return Container(
-      width: 260,
-      color: dark ? OnoteColors.night0 : OnoteColors.paper50,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
-            child: Row(children: [
-              Icon(Icons.label_outline,
-                  size: 16, color: context.surfaces.textSecondary),
-              const SizedBox(width: 6),
-              Text('TAGS',
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: .6,
-                      color: context.surfaces.textSecondary)),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.close, size: 16),
-                visualDensity: VisualDensity.compact,
-                tooltip: 'Close tags',
-                onPressed: app.toggleTagsPanel,
-              ),
-            ]),
-          ),
-          if (all.isEmpty)
-            Padding(
-              padding: EdgeInsets.fromLTRB(12, 4, 12, 12),
-              child: Text(
-                  'No tags in this notebook yet.\nTag a line from the Home tab.',
-                  style:
-                      TextStyle(fontSize: 12, color: context.surfaces.textSecondary)),
+    return SidePanel(
+      title: SidePanelKind.tags.label,
+      icon: Icons.label_outline,
+      onClose: app.closePanel,
+      child: all.isEmpty
+          ? PanelEmpty(
+              headline: 'No tags in this notebook yet.',
+              body: 'Tags mark a line — to do, important, question, '
+                  'definition — so you can find it again, revise from it, or '
+                  'give it a deadline.',
+              actions: [
+                PanelAction(
+                    icon: Icons.label_outline,
+                    label: 'Tag the line you are on',
+                    onTap: () => app.toggleTagOnSelection(TagKind.todo)),
+              ],
             )
-          else
-            Expanded(
-              child: ListView(
+          : ListView(
                 padding: const EdgeInsets.only(bottom: 8),
                 children: [
                   for (final kind in byKind.keys)
@@ -687,9 +674,6 @@ class _TagsPanel extends StatelessWidget {
                     ),
                 ],
               ),
-            ),
-        ],
-      ),
     );
   }
 }
@@ -705,44 +689,19 @@ class _TocPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final items = app.pageOutline();
-    return Container(
-      width: 240,
-      color: dark ? OnoteColors.night0 : OnoteColors.paper50,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
-            child: Row(children: [
-              Icon(Icons.toc, size: 16, color: context.surfaces.textSecondary),
-              const SizedBox(width: 6),
-              Text('OUTLINE',
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: .6,
-                      color: context.surfaces.textSecondary)),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.close, size: 16),
-                visualDensity: VisualDensity.compact,
-                tooltip: 'Close outline',
-                onPressed: app.toggleTocPanel,
-              ),
-            ]),
-          ),
-          if (items.isEmpty)
-            Padding(
-              padding: EdgeInsets.fromLTRB(12, 4, 12, 12),
-              child: Text('No headings on this page.\nStart a line with # to add one.',
-                  style:
-                      TextStyle(fontSize: 12, color: context.surfaces.textSecondary)),
+    return SidePanel(
+      title: SidePanelKind.outline.label,
+      icon: Icons.toc,
+      onClose: app.closePanel,
+      child: items.isEmpty
+          ? const PanelEmpty(
+              headline: 'No headings on this page.',
+              body: 'Start a line with # to make a heading — the outline '
+                  'follows the page, so there is nothing separate to keep up '
+                  'to date.',
             )
-          else
-            Expanded(
-              child: ListView.builder(
+          : ListView.builder(
                 padding: const EdgeInsets.only(bottom: 8),
                 itemCount: items.length,
                 itemBuilder: (_, i) {
@@ -767,9 +726,6 @@ class _TocPanel extends StatelessWidget {
                   );
                 },
               ),
-            ),
-        ],
-      ),
     );
   }
 }
@@ -780,7 +736,6 @@ class _LinksPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final backlinks = app.backlinksForCurrent();
     final outgoing = app.outgoingLinksForCurrent();
 
@@ -790,20 +745,22 @@ class _LinksPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+            padding: const EdgeInsets.fromLTRB(
+                OnoteSpace.x5, OnoteSpace.x5, OnoteSpace.x5, OnoteSpace.x1),
             child: Row(children: [
-              Icon(icon, size: 16, color: context.surfaces.textSecondary),
-              const SizedBox(width: 6),
-              Text(label.toUpperCase(),
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: .6,
-                      color: context.surfaces.textSecondary)),
-              const Spacer(),
+              Icon(icon,
+                  size: OnoteIcon.sm, color: context.surfaces.textSecondary),
+              const SizedBox(width: OnoteSpace.x3),
+              Expanded(
+                child: Text(label.toUpperCase(),
+                    style: OnoteType.overline
+                        .copyWith(color: context.surfaces.textSecondary)),
+              ),
+              // A plain count, not a badge: a badge in a list header is
+              // decoration, and this number is never actionable (§7e).
               Text('${pages.length}',
-                  style:
-                      TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
+                  style: OnoteType.caption
+                      .copyWith(color: context.surfaces.textSecondary)),
             ]),
           ),
           if (pages.isEmpty)
@@ -835,27 +792,15 @@ class _LinksPanel extends StatelessWidget {
       );
     }
 
-    return Container(
-      width: 240,
-      color: dark ? OnoteColors.night100 : OnoteColors.paper100,
+    return SidePanel(
+      title: SidePanelKind.links.label,
+      icon: Icons.account_tree_outlined,
+      onClose: app.closePanel,
       child: ListView(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 6, 4),
-            child: Row(children: [
-              const Text('Links',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.close, size: 16),
-                visualDensity: VisualDensity.compact,
-                onPressed: app.toggleLinksPanel,
-              ),
-            ]),
-          ),
           section('Linked from', Icons.call_received, backlinks,
               'No pages link here yet.'),
-          const SizedBox(height: 8),
+          const SizedBox(height: OnoteSpace.x4),
           section('Links to', Icons.call_made, outgoing,
               'This page links nowhere yet.'),
         ],
@@ -919,7 +864,7 @@ class _StatusBar extends StatelessWidget {
                       : saved
                           ? Icons.check_circle_outline
                           : Icons.sync,
-                  size: 16,
+                  size: OnoteIcon.sm,
                   color: failed
                       ? OnoteColors.danger
                       : saved
@@ -974,16 +919,53 @@ class _StatusBar extends StatelessWidget {
             ]),
           ),
           const Spacer(),
-          Text(
-            'V select · T text · P pen · H highlight · E erase · '
-            'Ctrl+Z undo · Ctrl+scroll zoom',
-            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary),
-            overflow: TextOverflow.ellipsis,
+          // The cheat-sheet (§7a.4), dropped whole rather than ellipsised
+          // (§7d). Truncating it produces "V select · T text · P pen · H…",
+          // which is not a shorter version of the message — it is a different,
+          // useless one, and it also drags the state cluster on its left into
+          // truncation with it. Below the threshold the shortcuts are still on
+          // every button's tooltip, which is where they are actually read.
+          Flexible(
+            child: _DropIfTight(
+              text: 'V select · T text · P pen · H highlight · E erase · '
+                  'Ctrl+Z undo · Ctrl+scroll zoom',
+              style: OnoteType.caption
+                  .copyWith(color: context.surfaces.textSecondary),
+            ),
           ),
         ],
       ),
     );
   }
+}
+
+/// Renders [text] only when it fits whole, and nothing at all when it doesn't.
+///
+/// The status bar's rule (§7d): **drop, never truncate.** "V select · T text ·
+/// P pen · H…" is not a shorter version of the cheat-sheet, it is a different
+/// and useless message — and letting it ellipsise also drags the state cluster
+/// beside it into competing for the same pixels.
+///
+/// Measured against the constraints this actually receives rather than against
+/// the window width: the right-hand panel slot takes 320px out of the row, so
+/// a window-width threshold is wrong exactly when a panel is open.
+class _DropIfTight extends StatelessWidget {
+  const _DropIfTight({required this.text, required this.style});
+  final String text;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, c) {
+          final tp = TextPainter(
+            text: TextSpan(text: text, style: style),
+            maxLines: 1,
+            textDirection: Directionality.of(context),
+          )..layout();
+          if (tp.width > c.maxWidth) return const SizedBox.shrink();
+          return Text(text, style: style, maxLines: 1, softWrap: false);
+        },
+      );
 }
 
 class _EmptyState extends StatelessWidget {
