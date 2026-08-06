@@ -13,6 +13,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 
@@ -76,6 +77,12 @@ class SyncRecorder {
   int _written = 0;
 
   /// Open (or create) the log for a notebook and replay it into memory.
+  ///
+  /// **Synchronous, and priced accordingly.** The replay reads and JSON-decodes
+  /// every op ever written — measured at ~0.5 s for a 2000-page imported
+  /// notebook's 14 MB log, on a fast machine. On the UI thread that is a
+  /// visible freeze, which is why interactive callers go through [openAsync]
+  /// and this stays for mutation paths that cannot wait and for tests.
   static SyncRecorder open({
     required String notebookId,
     required String notebookPath,
@@ -130,6 +137,91 @@ class SyncRecorder {
     return recorder;
   }
 
+  /// [open], with the heavy half — reading and replaying every op — in a
+  /// background isolate.
+  ///
+  /// The UI thread's share of this is milliseconds regardless of log size: the
+  /// manifest touch, the identity check (against seq maxima the replay already
+  /// computed, not a re-read), and receiving the replayed state — which
+  /// `Isolate.run` hands over via `Isolate.exit`, ownership transfer rather
+  /// than copy, so the multi-megabyte materialised state does not repeat the
+  /// mistake the import's layout request made.
+  ///
+  /// **Does NOT seed the title op, deliberately.** The caller decides whether
+  /// this recorder is actually installed — a synchronous open may have won the
+  /// race while the replay ran, and the loser must be discardable without ever
+  /// having written anything. Call [seedTitle] after installing.
+  static Future<SyncRecorder> openAsync({
+    required String notebookId,
+    required String notebookPath,
+    required String title,
+    String? logDir,
+    required Object? Function(String key) readSetting,
+    required void Function(String key, Object? value) writeSetting,
+    bool materialiseBlobs = true,
+  }) async {
+    final store = OpLogStore.forNotebook(notebookPath, logDir: logDir);
+    store.ensureInitialised(notebookId: notebookId, title: title);
+
+    // One pass over the logs, off-thread. Everything it produces is plain
+    // data (maps, sets, lists of ops), which is what makes the O(1) handoff
+    // possible.
+    final (state, seqByDevice, lamport) =
+        await _replayInIsolate(notebookPath, logDir);
+
+    final device = DeviceIdentity.resolve(
+      store: store,
+      notebookId: notebookId,
+      readSetting: readSetting,
+      writeSetting: writeSetting,
+      lastSeqOf: (id) => seqByDevice[id] ?? 0,
+    );
+    if (device.forked) {
+      debugPrint('[openote/sync] device id forked to ${device.id} — another '
+          'installation had written to the previous id\'s log');
+    }
+    store.announceDevice(device.id);
+
+    return SyncRecorder._(
+      notebookId: notebookId,
+      store: store,
+      device: device,
+      state: state,
+      lamport: lamport,
+      seq: seqByDevice[device.id] ?? 0,
+      onSeq: (s) => writeSetting(DeviceIdentity.seqKey(notebookId), s),
+      materialiseBlobs: materialiseBlobs,
+    );
+  }
+
+  /// The title seeding [open] does inline — split out so [openAsync] callers
+  /// can defer it until the recorder is definitely the installed one.
+  void seedTitle(String title) => notebookMeta({'title': title});
+
+  /// The replay, in its own function so the `Isolate.run` closure's scope
+  /// holds exactly two strings and nothing else.
+  ///
+  /// **Not an inline lambda in [openAsync], and it cannot become one.** A Dart
+  /// closure captures its enclosing *context*, not just the variables it
+  /// names — inlined, it dragged `writeSetting` along, which is a tearoff of
+  /// `Repository.setSetting`, which holds the workspace write-debounce
+  /// `Timer`, which is unsendable. The failure is a runtime throw on spawn,
+  /// found by test, not by the compiler.
+  static Future<(Materializer, Map<String, int>, int)> _replayInIsolate(
+      String notebookPath, String? logDir) {
+    return Isolate.run(() {
+      final store = OpLogStore.forNotebook(notebookPath, logDir: logDir);
+      final all = store.readAll();
+      var lamport = 0;
+      final seqs = <String, int>{};
+      for (final op in all) {
+        if (op.lamport > lamport) lamport = op.lamport;
+        if (op.seq > (seqs[op.device] ?? 0)) seqs[op.device] = op.seq;
+      }
+      return (Materializer()..applyAll(all), seqs, lamport);
+    });
+  }
+
   Op _op(OpKind kind, Map<String, dynamic> data) => Op(
         device: device.id,
         seq: ++_seq,
@@ -167,13 +259,17 @@ class SyncRecorder {
         })
       ]);
 
-  void nodeDeleted(String id, {int? at}) =>
-      _commit([_op(OpKind.nodeDelete, {'id': id, 'deletedAt': at ?? nowMs()})]);
+  void nodeDeleted(String id, {int? at}) => _commit([
+        _op(OpKind.nodeDelete, {'id': id, 'deletedAt': at ?? nowMs()})
+      ]);
 
-  void nodeRestored(String id) =>
-      _commit([_op(OpKind.nodeRestore, {'id': id})]);
+  void nodeRestored(String id) => _commit([
+        _op(OpKind.nodeRestore, {'id': id})
+      ]);
 
-  void nodePurged(String id) => _commit([_op(OpKind.nodePurge, {'id': id})]);
+  void nodePurged(String id) => _commit([
+        _op(OpKind.nodePurge, {'id': id})
+      ]);
 
   /// Notebook-level properties (title today).
   ///
@@ -206,8 +302,11 @@ class SyncRecorder {
   /// turning sync on never has to synthesise history it did not record.
   void blob(String hash, String mime, int size, Uint8List bytes) {
     if (materialiseBlobs) store.writeBlob(hash, bytes);
-    if (state.blobs.contains(hash)) return; // already recorded; bytes are immutable
-    _commit([_op(OpKind.blobPut, {'hash': hash, 'mime': mime, 'size': size})]);
+    if (state.blobs.contains(hash))
+      return; // already recorded; bytes are immutable
+    _commit([
+      _op(OpKind.blobPut, {'hash': hash, 'mime': mime, 'size': size})
+    ]);
   }
 
   /// Copy blobs that exist only in the container into `blobs/`.
@@ -257,8 +356,7 @@ class SyncRecorder {
   /// The watermark is per foreign device, stored locally. It is not "what
   /// exists" but "what I have folded into my container" — those differ exactly
   /// when another device has synced a log in, which is the whole point.
-  List<Op> pendingForeignOps(
-      Object? Function(String key) readSetting) {
+  List<Op> pendingForeignOps(Object? Function(String key) readSetting) {
     final out = <Op>[];
     for (final dev in store.deviceIds()) {
       if (dev == device.id) continue;
@@ -390,8 +488,7 @@ class SyncRecorder {
     }
     for (final goneId in (prev?.blocks.keys.toList() ?? const <String>[])) {
       if (!seen.contains(goneId)) {
-        ops.add(_op(
-            OpKind.blockRemove, {'pageId': pageId, 'blockId': goneId}));
+        ops.add(_op(OpKind.blockRemove, {'pageId': pageId, 'blockId': goneId}));
       }
     }
     final propsCanon = canonicalJson(props.toJson());
@@ -416,8 +513,8 @@ class SyncRecorder {
   ///   be BIGGER than the block. The guard uses size as a proxy for intent —
   ///   do not "optimize" it away; erasing most of a huge block in one gesture
   ///   correctly lands on `block.set`.
-  Op? _diffInk(String pageId, Map<String, dynamic> before,
-      Map<String, dynamic> after) {
+  Op? _diffInk(
+      String pageId, Map<String, dynamic> before, Map<String, dynamic> after) {
     final beforeStrokes =
         ((before['content'] as Map?)?['strokes'] as List?) ?? const [];
     final afterStrokes =

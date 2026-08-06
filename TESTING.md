@@ -31,16 +31,19 @@ event. So the import moved off the app's thread entirely: a second process
 reads the file, parses it and writes the notebook.
 
 Then you wrote: *"still locks up when it starts displaying all the pages in the
-popup."* Also right, and the timing named it. There is one job the app's thread
-can't hand off — measuring text, to lay out imported pages properly — and the
-first version asked for the whole notebook's worth in a single request, before
-writing anything. That request was one huge chunk the app had to unpack without
-interruption, and it meant nothing was written until all of it was done. Now
-it's four pages at a time, just before those pages are written, carrying only
-the nine fields the measurement actually reads.
+popup"* — and later added that the app is **locked up for the first few seconds
+after launching**. The launch clue cracked it: both freezes were the same bug,
+and it wasn't the import itself. To show sync status, the app was reading and
+replaying the notebook's **entire change log** — every op the import wrote, one
+per block — synchronously, before it would draw anything. At launch that ran
+for the open notebook; at the end of an import it ran the moment the new
+notebook's backup dot first painted, which is exactly when the popup shows the
+result. Half a second for a synthetic 2000-page notebook on fast hardware;
+seconds for a real one on Windows.
 
-Measured on a 2000-page notebook: the app is never blocked for longer than one
-frame's worth of work, and the import got *faster* (11 s, down from 13 s).
+Now status reads cost a directory listing (~3 ms), and the log replay happens
+on a background thread, started at launch and at import completion — so the
+first edit finds it already done.
 
 - [ ] Fresh-start test: delete your workspace folder (or use a VM), launch,
       and pick **Bring my notes over from OneNote** in the welcome dialog.
@@ -52,15 +55,18 @@ frame's worth of work, and the import got *faster* (11 s, down from 13 s).
       round trip to the database, not just a repaint. They should feel exactly
       as they do when nothing is importing. If you feel a stutter, note what
       the card said at that moment.
-- [ ] **The moment the page count appears.** That is where you said it locked
-      up last time, and it was a real bug: the card showed the total, and the
-      import then asked the app to lay out *every page at once* — one enormous
-      message the app had to unpack in a single go, and nothing written until it
-      finished. Layout now happens four pages at a time, just before those pages
-      are written. So the counts should start moving **immediately** after the
-      total appears, and the app should stay usable right through it. If it
-      still hitches here, tell me what the card said and roughly how big the
-      notebook is.
+- [ ] **Launch, first.** Close Openote with your big imported notebook open,
+      then relaunch. The first few seconds used to be frozen — that was the
+      log replay. It should now be usable immediately; the replay happens in
+      the background and you shouldn't be able to tell.
+- [ ] **The moment the import finishes.** The popup announcing the result used
+      to be exactly when the app locked up (the new notebook's backup dot
+      triggered the same replay). It should now stay smooth straight through
+      the "Imported N pages" card, and clicking into the imported notebook
+      right away should work without a pause.
+- [ ] The counts should start moving **immediately** after the total appears
+      (the earlier one-giant-message layout bug, also fixed). If anything still
+      hitches, tell me what the card said and roughly how big the notebook is.
 - [ ] The progress popup that had vanished is back (as the card). Watch for
       the counts moving — "118 of 324 pages".
 - [ ] **Cancel** mid-import. It should stop within a moment and the

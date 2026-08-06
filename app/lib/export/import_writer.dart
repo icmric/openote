@@ -517,23 +517,28 @@ ImportWriterHandle startImportWriter(
   Future<void> answerMeasure(List<Object?> boxesPerPage) async {
     final ys = <List<double>>[];
     final sw = Stopwatch()..start();
+    // Give a frame back whenever the running chunk overruns the budget —
+    // checked between BOXES, because a page is only as cheap as its worst box
+    // and a single lecture page can carry one enormous text box. Never yield
+    // gratuitously: [frameYield] waits for a real frame in the app, so every
+    // avoidable yield puts a ~16 ms floor under a batch — a wall-clock tax of
+    // seconds over a large notebook.
+    Future<void> giveFrameBack() async {
+      await frameYield();
+      sw.reset();
+    }
+
     for (var i = 0; i < boxesPerPage.length; i++) {
       final boxes = (boxesPerPage[i] as List?) ?? const [];
       // Mutates `y` in place, so read it back afterwards.
-      restackFlows(boxes);
+      await restackFlowsPaced(
+        boxes,
+        shouldYield: () =>
+            sw.elapsedMicroseconds >= measureBudget.inMicroseconds,
+        onYield: giveFrameBack,
+      );
       ys.add(
           [for (final b in boxes) ((b as Map)['y'] as num?)?.toDouble() ?? 0]);
-      // Give a frame back only if this request is running long AND there is
-      // more of it to do. Never after the last page: [frameYield] waits for a
-      // real frame in the app, and a batch is only a handful of pages, so
-      // yielding at the end would put a ~16 ms floor under every batch — a
-      // wall-clock tax of seconds on a large notebook, paid to hand back a
-      // frame we are about to hand back anyway by replying.
-      if (i < boxesPerPage.length - 1 &&
-          sw.elapsedMicroseconds >= measureBudget.inMicroseconds) {
-        await frameYield();
-        sw.reset();
-      }
     }
     toWriter?.send({'t': 'measured', 'ys': ys});
   }

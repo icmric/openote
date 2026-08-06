@@ -206,6 +206,48 @@ const double _tableRowChrome = 13.0;
 ///
 /// Mutates `y` in the box maps in place. Exposed for testing.
 void restackFlows(List<dynamic> boxes) {
+  for (final group in _flowGroups(boxes)) {
+    var cy = (group.first['y'] as num?)?.toDouble() ?? 0;
+    for (final b in group) {
+      b['y'] = cy;
+      cy += _measuredFlowHeight(b);
+    }
+  }
+}
+
+/// [restackFlows], yielding **between boxes** when [shouldYield] says so.
+///
+/// The synchronous version treats a page as atomic, which is right for the
+/// import translation (it runs inside a transaction) and wrong on the UI
+/// thread: a page is only as cheap as its worst box, and a lecture page can
+/// carry a single hundreds-of-lines text box whose one TextPainter layout
+/// costs tens of milliseconds. Pacing between pages cannot split that page.
+/// Between boxes is as fine as pacing can get — a single box's layout is one
+/// TextPainter call and genuinely atomic.
+///
+/// The accumulation is identical to [restackFlows] — same groups, same
+/// heights, same order — so the result is byte-for-byte the same; only the
+/// awaits differ.
+Future<void> restackFlowsPaced(
+  List<dynamic> boxes, {
+  required bool Function() shouldYield,
+  required Future<void> Function() onYield,
+}) async {
+  for (final group in _flowGroups(boxes)) {
+    var cy = (group.first['y'] as num?)?.toDouble() ?? 0;
+    for (final b in group) {
+      b['y'] = cy;
+      cy += _measuredFlowHeight(b);
+      if (shouldYield()) await onYield();
+    }
+  }
+}
+
+/// Boxes grouped by flow, in input order, groups of one dropped — the shape
+/// both restack variants walk. The FIRST box of a flow keeps its parsed
+/// position (OneNote's own recorded offset, already right); only boxes after
+/// it move.
+List<List<Map<String, dynamic>>> _flowGroups(List<dynamic> boxes) {
   final byFlow = <int, List<Map<String, dynamic>>>{};
   for (final raw in boxes) {
     if (raw is! Map) continue;
@@ -214,14 +256,10 @@ void restackFlows(List<dynamic> boxes) {
     if (flow == 0) continue;
     byFlow.putIfAbsent(flow, () => []).add(b);
   }
-  for (final group in byFlow.values) {
-    if (group.length < 2) continue; // nothing below the anchor to correct
-    var cy = (group.first['y'] as num?)?.toDouble() ?? 0;
-    for (final b in group) {
-      b['y'] = cy;
-      cy += _measuredFlowHeight(b);
-    }
-  }
+  return [
+    for (final g in byFlow.values)
+      if (g.length >= 2) g // nothing below a lone anchor to correct
+  ];
 }
 
 /// The fields [restackFlows] reads, and nothing else.

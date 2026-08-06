@@ -205,7 +205,7 @@ class ImportJob extends ChangeNotifier {
           notebookId: ref.id,
           title: ref.title,
           logDir: ref.logDir,
-          deviceId: app.deviceIdForImport(),
+          deviceId: app.localDeviceId(),
           materialiseBlobs: app.notebookIsShared(nb),
           batchPages: _batchPages,
           syncLogEnabled: AppState.syncLogEnabled,

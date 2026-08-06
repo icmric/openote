@@ -71,7 +71,8 @@ void main() {
     ];
     restackFlows(withImage);
     restackFlows(withoutImage);
-    final delta = (withImage[1]['y'] as double) - (withoutImage[1]['y'] as double);
+    final delta =
+        (withImage[1]['y'] as double) - (withoutImage[1]['y'] as double);
     expect(delta, closeTo(198.0, 1.0),
         reason: 'a 198px picture must cost 198px, not one 22px line');
   });
@@ -86,7 +87,8 @@ void main() {
     expect(boxes[1]['y'], 120.0);
   });
 
-  test('a single-box flow is untouched — there is nothing below to correct', () {
+  test('a single-box flow is untouched — there is nothing below to correct',
+      () {
     // This is the common case for imported tables: each sits in its own
     // container with its own recorded offset.
     final boxes = <dynamic>[table(3, 270.2)];
@@ -107,5 +109,47 @@ void main() {
     expect(boxes[2]['y'], greaterThan(100.0));
     expect(boxes[2]['y'], lessThan(900.0));
     expect(boxes[3]['y'], greaterThan(900.0));
+  });
+
+  test('the paced variant lands every box exactly where the sync one does',
+      () async {
+    // The writer isolate cannot run the restack (TextPainter is root-isolate
+    // only), so the main isolate runs it in paced form, yielding between
+    // boxes. Same groups, same heights, same accumulation — so the ONLY
+    // acceptable difference is the awaits. A paced restack that drifted would
+    // misplace imported content depending on which path measured it.
+    final make = () => <dynamic>[
+          text(
+              1,
+              100.0,
+              'A paragraph long enough to wrap at this width and '
+              'occupy several visual lines rather than the one the parser '
+              'assumed for it.'),
+          table(1, 140.0),
+          text(1, 180.0, 'And another wrapping paragraph below the table.'),
+          text(2, 90.0, 'A second, separate flow.'),
+          text(2, 130.0, 'Whose boxes must move independently.'),
+          text(0, 400.0, 'A floating box no flow may touch.'),
+        ];
+
+    final sync = make();
+    restackFlows(sync);
+
+    var yields = 0;
+    final paced = make();
+    await restackFlowsPaced(
+      paced,
+      shouldYield: () => true, // yield after EVERY box — the worst case
+      onYield: () async {
+        yields++;
+        await Future<void>.delayed(Duration.zero);
+      },
+    );
+
+    expect(yields, greaterThan(0), reason: 'the pacing must actually engage');
+    for (var i = 0; i < sync.length; i++) {
+      expect(paced[i]['y'], sync[i]['y'],
+          reason: 'box $i moved differently under pacing');
+    }
   });
 }
