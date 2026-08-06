@@ -13,6 +13,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/export/import_job.dart';
+import 'package:openote/export/import_sink.dart';
 import 'package:openote/export/onenote_import.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -78,7 +79,7 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, _, app, nb) = await fixture('onote_job_counts_');
 
-      final r = await writePackageInBatches(app, nb, [
+      final r = await writePackageInBatches(AppStateImportSink(app, nb), [
         section('Week 1', [page('Mon'), page('Tue', tagged: true)]),
         section('Week 2', [page('Wed')], group: 'Semester 1'),
       ]);
@@ -110,8 +111,7 @@ void main() {
       addTearDown(timer.cancel);
 
       await writePackageInBatches(
-        app,
-        nb,
+        AppStateImportSink(app, nb),
         [
           section('Big', [for (var i = 0; i < 40; i++) page('P$i', boxes: 3)])
         ],
@@ -130,8 +130,7 @@ void main() {
       var written = 0;
       var cancelled = false;
       final r = await writePackageInBatches(
-        app,
-        nb,
+        AppStateImportSink(app, nb),
         [
           section('Big', [for (var i = 0; i < 40; i++) page('P$i')])
         ],
@@ -152,8 +151,7 @@ void main() {
       final (_, _, app, nb) = await fixture('onote_job_progress_');
       final seen = <(int, int)>[];
       await writePackageInBatches(
-        app,
-        nb,
+        AppStateImportSink(app, nb),
         [
           section('A', [for (var i = 0; i < 5; i++) page('A$i')]),
           section('B', [for (var i = 0; i < 3; i++) page('B$i')]),
@@ -199,7 +197,7 @@ void main() {
         {'data_base64': base64Encode(png), 'in_flow': false, 'x': 10.0, 'y': 120.0}
       ];
 
-      final r = await writePackageInBatches(app, nb, [
+      final r = await writePackageInBatches(AppStateImportSink(app, nb), [
         section('S', [withBytes, withB64])
       ]);
       expect(r.pages, 2);

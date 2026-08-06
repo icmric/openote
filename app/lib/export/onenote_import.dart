@@ -11,6 +11,7 @@ import '../core/onote_ffi.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart';
+import 'import_sink.dart';
 
 /// Isolate entry points: the Rust parse (LZX + binary decode + base64) can
 /// take seconds on a big notebook and must not freeze the UI thread. Each
@@ -374,15 +375,13 @@ int lastDroppedStrokes = 0;
   var pos = 0;
   String next() => 'a${(posBase + pos++).toString().padLeft(15, '0')}';
 
-  final section = app.importNode(
-      nbId,
-      TreeNode(
-        kind: NodeKind.section,
-        title: sectionTitle,
-        position: next(),
-      ));
-  final firstPageId =
-      _importPagesIntoSection(app, nbId, section.id, pages, next);
+  final sink = AppStateImportSink(app, nbId);
+  final section = sink.node(TreeNode(
+    kind: NodeKind.section,
+    title: sectionTitle,
+    position: next(),
+  ));
+  final firstPageId = _importPagesIntoSection(sink, section.id, pages, next);
   return (pages.length, firstPageId);
 }
 
@@ -419,11 +418,11 @@ String? lastImportError;
 /// tests/tools against a real repository. [onSection] (optional) is awaited
 /// before each section, for progress UI. Returns the number of pages imported.
 Future<int> buildNotebookFromPackage(
-    AppState app, String nbId, List<dynamic> sections,
+    ImportSink sink, List<dynamic> sections,
     {Future<void> Function(int index, String name)? onSection}) async {
   // createNotebook seeds a starter section+page; remember them so the
   // scaffolding can be removed once real content has landed.
-  final seeded = app.importNodes(nbId);
+  final seeded = sink.nodes();
   final posBase = nowMs();
   var pos = 0;
   String next() => 'a${(posBase + pos++).toString().padLeft(15, '0')}';
@@ -444,27 +443,23 @@ Future<int> buildNotebookFromPackage(
     if (group != null && group.isNotEmpty) {
       groupId = groupIds.putIfAbsent(
           group,
-          () => app
-                  .importNode(
-                  nbId,
-                  TreeNode(
-                      kind: NodeKind.sectionGroup,
-                      title: group.replaceAll('/', ' › '),
-                      position: next()))
+          () => sink
+              .node(TreeNode(
+                  kind: NodeKind.sectionGroup,
+                  title: group.replaceAll('/', ' › '),
+                  position: next()))
               .id);
     }
-    final section = app.importNode(
-        nbId,
-        TreeNode(
-          kind: NodeKind.section,
-          parentId: groupId,
-          title: name,
-          position: next(),
-        ));
+    final section = sink.node(TreeNode(
+      kind: NodeKind.section,
+      parentId: groupId,
+      title: name,
+      position: next(),
+    ));
     // NOTE: must not be `firstPageId ??= _import…` — `??=` short-circuits its
     // right-hand side once non-null, which would silently skip importing every
     // section after the first (the "only the first group had content" bug).
-    final first = _importPagesIntoSection(app, nbId, section.id, pages, next);
+    final first = _importPagesIntoSection(sink, section.id, pages, next);
     firstPageId ??= first;
     imported += pages.length;
   }
@@ -472,7 +467,7 @@ Future<int> buildNotebookFromPackage(
   if (imported > 0) {
     // Drop the seeded starter section — the notebook has real content now.
     for (final n in seeded.where((n) => n.kind == NodeKind.section)) {
-      app.importPurgeNode(nbId, n.id);
+      sink.purgeNode(n.id);
     }
   }
   return imported;
@@ -481,17 +476,16 @@ Future<int> buildNotebookFromPackage(
 /// Import parsed pages into [sectionId]. Returns the first created page id.
 /// The whole section runs in ONE transaction — per-page commits measurably
 /// dominated large imports.
-String? _importPagesIntoSection(AppState app, String nbId, String sectionId,
+String? _importPagesIntoSection(ImportSink sink, String sectionId,
         List<dynamic> pages, String Function() next) =>
-    app.importBatch(
-        nbId, () => _importPagesLocked(app, nbId, sectionId, pages, next));
+    sink.batch(() => _importPagesLocked(sink, sectionId, pages, next));
 
-String? _importPagesLocked(AppState app, String nbId, String sectionId,
+String? _importPagesLocked(ImportSink sink, String sectionId,
     List<dynamic> pages, String Function() next) {
   String? firstPageId;
   for (final raw in pages) {
     final id = importOneParsedPage(
-        app, nbId, sectionId, (raw as Map).cast<String, dynamic>(), next);
+        sink, sectionId, (raw as Map).cast<String, dynamic>(), next);
     firstPageId ??= id;
   }
   return firstPageId;
@@ -504,7 +498,7 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
 /// small enough that a batch of a few stays comfortably inside one frame
 /// budget's worth of work between yields. Extracted from the loop above so
 /// both callers share every byte of the translation logic.
-String importOneParsedPage(AppState app, String nbId, String sectionId,
+String importOneParsedPage(ImportSink sink, String sectionId,
     Map<String, dynamic> page, String Function() next) {
   {
     final title = (page['title'] as String?)?.trim();
@@ -519,9 +513,7 @@ String importOneParsedPage(AppState app, String nbId, String sectionId,
     // since Openote's page title band already shows the title and date).
     final createdMs = _parseOneNoteDate(page['date_text'] as String? ?? '');
 
-    final node = app.importNode(
-        nbId,
-        TreeNode(
+    final node = sink.node(TreeNode(
           kind: NodeKind.page,
           parentId: sectionId,
           title: (title == null || title.isEmpty) ? 'Imported page' : title,
@@ -553,7 +545,7 @@ String importOneParsedPage(AppState app, String nbId, String sectionId,
           continue;
         }
       }
-      final hash = app.importBlob(nbId, png, 'image/png');
+      final hash = sink.blob(png, 'image/png');
       hashByIndex[i] = hash;
       lastImportedImages++;
       if (img['in_flow'] == true) continue; // rides a text box's flow
@@ -754,7 +746,7 @@ String importOneParsedPage(AppState app, String nbId, String sectionId,
       }
     }
 
-    app.importPage(nbId, node.id, blocks, PageProps());
+    sink.page(node.id, blocks, PageProps());
     return node.id;
   }
 }

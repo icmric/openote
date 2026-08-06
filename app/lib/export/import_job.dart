@@ -45,6 +45,7 @@ import 'package:flutter/foundation.dart';
 import '../core/onote_ffi.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
+import 'import_sink.dart';
 import 'onenote_import.dart';
 
 enum ImportJobState { parsing, writing, done, failed, cancelled }
@@ -192,8 +193,7 @@ class ImportJob extends ChangeNotifier {
       notebookId = ref.id;
 
       final counts = await writePackageInBatches(
-        app,
-        ref.id,
+        AppStateImportSink(app, ref.id),
         sections,
         batchPages: _batchPages,
         shouldCancel: () => _cancelRequested,
@@ -261,14 +261,13 @@ class ImportJob extends ChangeNotifier {
 /// batch boundaries and the cancel check. Kept as a top-level function so it
 /// is drivable headlessly in tests, exactly as its predecessor is.
 Future<({int pages, String? firstPageId})> writePackageInBatches(
-  AppState app,
-  String nbId,
+  ImportSink sink,
   List<dynamic> sections, {
   int batchPages = 4,
   bool Function()? shouldCancel,
   void Function(String sectionName, int pagesDone, int pagesTotal)? onProgress,
 }) async {
-  final seeded = app.importNodes(nbId);
+  final seeded = sink.nodes();
   final posBase = nowMs();
   var pos = 0;
   String next() => 'a${(posBase + pos++).toString().padLeft(15, '0')}';
@@ -294,32 +293,28 @@ Future<({int pages, String? firstPageId})> writePackageInBatches(
     if (group != null && group.isNotEmpty) {
       groupId = groupIds.putIfAbsent(
           group,
-          () => app
-              .importNode(
-                  nbId,
-                  TreeNode(
-                      kind: NodeKind.sectionGroup,
-                      title: group.replaceAll('/', ' › '),
-                      position: next()))
+          () => sink
+              .node(TreeNode(
+                  kind: NodeKind.sectionGroup,
+                  title: group.replaceAll('/', ' › '),
+                  position: next()))
               .id);
     }
-    final section = app.importNode(
-        nbId,
-        TreeNode(
-          kind: NodeKind.section,
-          parentId: groupId,
-          title: name,
-          position: next(),
-        ));
+    final section = sink.node(TreeNode(
+      kind: NodeKind.section,
+      parentId: groupId,
+      title: name,
+      position: next(),
+    ));
 
     for (var start = 0; start < pages.length; start += batchPages) {
       if (shouldCancel?.call() ?? false) break;
       final end =
           (start + batchPages) > pages.length ? pages.length : start + batchPages;
-      final first = app.importBatch(nbId, () {
+      final first = sink.batch(() {
         String? firstInBatch;
         for (var i = start; i < end; i++) {
-          final id = importOneParsedPage(app, nbId, section.id,
+          final id = importOneParsedPage(sink, section.id,
               (pages[i] as Map).cast<String, dynamic>(), next);
           firstInBatch ??= id;
         }
@@ -337,7 +332,7 @@ Future<({int pages, String? firstPageId})> writePackageInBatches(
 
   if (written > 0 && !(shouldCancel?.call() ?? false)) {
     for (final n in seeded.where((n) => n.kind == NodeKind.section)) {
-      app.importPurgeNode(nbId, n.id);
+      sink.purgeNode(n.id);
     }
   }
   return (pages: written, firstPageId: firstPageId);
