@@ -212,7 +212,7 @@ class ImportJob extends ChangeNotifier {
           sqliteLibrary: o?.sqliteLibrary,
           preparsedJson: o?.preparsedJson,
         ),
-        frameYield: o?.frameYield ?? _endOfFrame,
+        frameYield: o?.frameYield ?? appFrameYield,
         onParsed: (pages) {
           state = ImportJobState.writing;
           pagesTotal = pages;
@@ -280,8 +280,33 @@ class ImportJob extends ChangeNotifier {
     }
   }
 
-  /// Give the frame back during the layout pass — see [startImportWriter].
-  static Future<void> _endOfFrame() => SchedulerBinding.instance.endOfFrame;
+  /// Give the frame back during the layout pass, then go **idle** — see
+  /// [startImportWriter] for the pass itself.
+  ///
+  /// The idle gap is the load-bearing half, and it was missing. `endOfFrame`
+  /// alone resumes the layout straight off the frame pipeline, so the loop is
+  /// chunk → frame → chunk with the queue never empty — and on Windows, where
+  /// the UI isolate lives on the Win32 message loop, **posted messages are
+  /// dispatched ahead of hardware input messages**. A queue that is never
+  /// empty of posted work starves mouse and keyboard indefinitely while frames
+  /// keep flowing. Which is the report, verbatim, for the fourth time: *"the
+  /// popup still updates (although slowly), however any inputs I give aren't
+  /// executed until after the import is complete."*
+  ///
+  /// A zero-delay timer would not fix it — a zero timer is itself posted work,
+  /// due immediately, so the queue still never goes idle. It takes a real
+  /// deadline: the message loop then *waits*, and Win32 delivers the queued
+  /// input during the wait. Two milliseconds per chunk against a ~16 ms frame
+  /// is noise for the import and the whole difference for the user.
+  ///
+  /// (This is also why every headless test passed while the app locked: the
+  /// test VM has no Win32 queue, and the tests' injected yield was a timer —
+  /// which drains their event queue anyway.)
+  @visibleForTesting
+  static Future<void> appFrameYield() async {
+    await SchedulerBinding.instance.endOfFrame;
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+  }
 
   /// Remove the partly-built notebook after a cancel or a crash. Everything
   /// or nothing: the notes still exist in OneNote, so nothing is lost by

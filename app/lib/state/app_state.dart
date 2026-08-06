@@ -2766,7 +2766,9 @@ class AppState extends ChangeNotifier
       });
       done = end;
       onProgress?.call(done, pages.length);
-      await Future<void>.delayed(Duration.zero);
+      // Real delay: UI-isolate loop; a zero timer never lets the Windows
+      // message loop go idle, and idle is when input gets through.
+      await Future<void>.delayed(const Duration(milliseconds: 2));
     }
 
     // The open page's blocks may have been rewritten in place above.

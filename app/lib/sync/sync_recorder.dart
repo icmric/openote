@@ -339,8 +339,14 @@ class SyncRecorder {
       if (bytes == null) continue; // referenced but missing; nothing to copy
       blob(b.hash, b.mime, b.size, bytes);
       copied++;
-      // Yield so a 372-image notebook doesn't block a frame.
-      await Future<void>.delayed(Duration.zero);
+      // A REAL delay, not Duration.zero. This loop runs on the UI isolate
+      // (fsync per blob, hundreds of blobs), and on Windows the UI isolate
+      // lives on the Win32 message loop, where posted messages outrank
+      // hardware input — a zero timer is itself posted work due immediately,
+      // so the queue never goes idle and mouse/keyboard starve for the whole
+      // backfill. One millisecond per blob lets the loop actually wait, which
+      // is when Win32 delivers input.
+      await Future<void>.delayed(const Duration(milliseconds: 1));
     }
     if (copied > 0) {
       debugPrint('[openote/sync] backfilled $copied blob(s) into '

@@ -67,8 +67,7 @@ void main() {
   var haveSqlite = false;
   setUpAll(() => haveSqlite = initSqliteForTests());
 
-  Future<(Repository, Directory, AppState, String)> fixture(
-      String name) async {
+  Future<(Repository, Directory, AppState, String)> fixture(String name) async {
     final tmp = Directory.systemTemp.createTempSync(name);
     final repo = await Repository.openAt(tmp);
     addTearDown(() async {
@@ -170,8 +169,9 @@ void main() {
       expect(seen.last, (8, 8));
       expect(seen.every((e) => e.$2 == 8), isTrue,
           reason: 'the denominator must be the whole package, not the section');
-      expect(seen.map((e) => e.$1).toList(), List.of(seen.map((e) => e.$1))
-        ..sort(), reason: 'progress never goes backwards');
+      expect(seen.map((e) => e.$1).toList(),
+          List.of(seen.map((e) => e.$1))..sort(),
+          reason: 'progress never goes backwards');
     });
   });
 
@@ -202,7 +202,12 @@ void main() {
       ];
       final withB64 = page('B64');
       withB64['images'] = [
-        {'data_base64': base64Encode(png), 'in_flow': false, 'x': 10.0, 'y': 120.0}
+        {
+          'data_base64': base64Encode(png),
+          'in_flow': false,
+          'x': 10.0,
+          'y': 120.0
+        }
       ];
 
       final r = await writePackageInBatches(AppStateImportSink(app, nb), [
@@ -241,10 +246,11 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, _, app, _) = await fixture('onote_jobrun_ok_');
 
-      final job = ImportJob.start(app, 'Discrete Maths.onepkg', 'ignored.onepkg',
-          debugOverrides: overrides(packageJson([
-            section('Week 1', [page('Mon'), page('Tue')]),
-          ])));
+      final job =
+          ImportJob.start(app, 'Discrete Maths.onepkg', 'ignored.onepkg',
+              debugOverrides: overrides(packageJson([
+                section('Week 1', [page('Mon'), page('Tue')]),
+              ])));
       expect(job, isNotNull);
       await settle(job!);
 
@@ -269,7 +275,9 @@ void main() {
       final job = ImportJob.start(app, 'Notes.onepkg', 'ignored.onepkg',
           debugOverrides: overrides(packageJson([
             section('Good', [page('P')])
-          ], failed: ['Broken.one'])));
+          ], failed: [
+            'Broken.one'
+          ])));
       await settle(job!);
 
       expect(job.state, ImportJobState.done);
@@ -316,6 +324,85 @@ void main() {
       expect(ImportJob.start(app, 'Second.onepkg', 'x.onepkg'), isNull,
           reason: 'two imports interleaving would confuse every progress '
               'surface and halve each other\'s throughput');
+    });
+  });
+
+  group('the app frame yield', () {
+    testWidgets('waits for a frame AND an idle gap, in that order',
+        (tester) async {
+      // The gap is the load-bearing half. On Windows the UI isolate lives on
+      // the Win32 message loop, where posted messages outrank hardware input —
+      // so a layout loop that resumes straight off the frame pipeline keeps
+      // the queue non-empty forever and mouse/keyboard starve while frames
+      // keep flowing. That was "any inputs I give aren't executed until after
+      // the import is complete", four reports in. A regression to plain
+      // `endOfFrame` completes without the second pump and fails here.
+      var done = false;
+      unawaited(ImportJob.appFrameYield().then((_) => done = true));
+
+      await tester.pump(); // produce the frame endOfFrame is waiting for
+      expect(done, isFalse,
+          reason: 'resuming straight off the frame pipeline is the Windows '
+              'input-starvation bug — there must be an idle gap');
+
+      await tester.pump(const Duration(milliseconds: 2));
+      expect(done, isTrue);
+    });
+
+    test('a yield with no event-loop turn starves timers — the mechanism',
+        () async {
+      // Not a test of app code: a demonstration pinning WHY the yield must
+      // relinquish the event loop. A paced layout whose yields only await
+      // microtasks never lets a timer fire, no matter how many chunks it
+      // splits into — the starvation is total until the work ends. This is
+      // the desktop failure in miniature, reproducible even on the Linux CI
+      // VM that cannot reproduce the Win32 half.
+      var ticks = 0;
+      final timer =
+          Timer.periodic(const Duration(milliseconds: 1), (_) => ticks++);
+
+      final giant = <dynamic>[
+        {
+          'kind': 'text',
+          'markdown': List.generate(
+              2000,
+              (l) => 'Line \$l long enough to wrap at this width, twice '
+                  'over with room to spare.').join('\n'),
+          'x': 60.0,
+          'y': 100.0,
+          'w': 300.0,
+          'flow': 1,
+        },
+        {
+          'kind': 'text',
+          'markdown': 'the box below',
+          'x': 60.0,
+          'y': 140.0,
+          'w': 300.0,
+          'flow': 1,
+        },
+      ];
+
+      await restackFlowsPaced(
+        giant,
+        shouldYield: () => true,
+        onYield: () => Future<void>.microtask(() {}), // frame-pipeline-like
+      );
+      final starved = ticks;
+
+      await restackFlowsPaced(
+        giant,
+        shouldYield: () => true,
+        onYield: () => Future<void>.delayed(const Duration(milliseconds: 1)),
+      );
+      timer.cancel();
+
+      expect(starved, 0,
+          reason: 'microtask-only yields never give the event loop a turn — '
+              'this passing non-zero would mean the mechanism analysis is '
+              'wrong and the fix is built on sand');
+      expect(ticks, greaterThan(0),
+          reason: 'a real delay must let timers (and on Windows, input) run');
     });
   });
 }

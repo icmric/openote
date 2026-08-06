@@ -5,11 +5,13 @@
 > Everything below is either **built but never seen by a human**, or **blocked
 > on something only you can do**. Tick things off as you go; tell me what breaks.
 >
-> **Changes since the last round** — found the import stall that survived your
-> release-exe test: a page whose text is one enormous box was being measured in
-> one indivisible 200–600 ms call on the app's thread, several times per real
-> notebook. Now measured in small chunks with a frame between each (§1.0).
-> Launch you've confirmed clean ✅. The import is the one to re-test.
+> **Changes since the last round** — your "inputs execute after the import
+> completes" report named the real mechanism at last: Windows dispatches an
+> app's own queued work ahead of mouse/keyboard, so a loop that never goes
+> idle starves input entirely while frames keep flowing. Every yield in the
+> import (and the PDF import) now goes genuinely idle for 2 ms per chunk.
+> This is a Windows-only failure no Linux test could reproduce, which is why
+> four rounds of fixes measured clean here and still stalled for you — §1.0.
 
 ---
 
@@ -21,7 +23,7 @@ The whole flow changed shape: importing a `.onepkg` now runs in the
 **background** with a floating progress card, and the app stays fully usable
 while it works.
 
-**What changed in v0.10, over three rounds.** You first wrote: *"Visually it
+**What changed in v0.10, over four rounds.** You first wrote: *"Visually it
 updates with the popup, however interactions with the page aren't completed
 until the import is finished."* That was one bug wearing a disguise — painting
 and interacting have different appetites. The import gave the app just enough
@@ -45,15 +47,17 @@ Now status reads cost a directory listing (~3 ms), and the log replay happens
 on a background thread, started at launch and at import completion — so the
 first edit finds it already done.
 
-Then, with the release exe, you confirmed launch was clean but *"the stall
-during import though was still very much there."* Found it, by measuring what
-none of my synthetic notebooks had: a page whose text is **one enormous box**.
-Laying out imported text happens on the app's thread (nothing else can measure
-text), and one box was measured in one indivisible call — **216 ms for a
-2000-line box, 613 ms for 5000**, several times per real lecture notebook. It
-is now measured in 64-line chunks with a frame given back between chunks —
-worst pause ~14 ms regardless of box size, verified identical layout to the
-bit.
+Then, with the release exe, you confirmed launch was clean but the import
+still stalled — and your description ("popup updates slowly, inputs execute
+after the import completes") finally named the platform. **Windows dispatches
+an app's own queued work ahead of mouse and keyboard input.** The import's
+layout loop — the one job that must run on the app's thread — never went
+idle, so Windows never delivered your clicks, while frames (which are queued
+work) kept trickling through. That, it turns out, has been the mechanism
+under every round of this bug. Two things fixed it: giant text boxes are now
+measured in small chunks (one 2000-line box was a single indivisible 216 ms
+call), and every chunk is followed by a real 2 ms idle so Windows can deliver
+input. The same idle was added to the PDF import's loop.
 
 - [ ] Fresh-start test: delete your workspace folder (or use a VM), launch,
       and pick **Bring my notes over from OneNote** in the welcome dialog.
