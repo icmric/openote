@@ -43,6 +43,12 @@ bool _findSqlite() {
     'build/linux/x64/debug/bundle/lib/libsqlite3.so',
     'build/linux/x64/release/bundle/lib/libsqlite3.so',
     'build/macos/Build/Products/Debug/sqlite3.framework/sqlite3',
+    // Release, not just Debug. CI builds `flutter build macos --release`, so
+    // the Debug path never existed there and macOS silently fell through to
+    // the system `libsqlite3.dylib` below — testing Apple's SQLite instead of
+    // the one the app actually ships. Windows and Linux both list their
+    // release path; macOS was the odd one out.
+    'build/macos/Build/Products/Release/sqlite3.framework/sqlite3',
   ]) {
     final f = File(rel);
     if (f.existsSync()) {

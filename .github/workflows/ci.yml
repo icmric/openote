@@ -1,10 +1,17 @@
 name: CI
 
 on:
+  # EVERY branch, not just master and release/**. The narrow filter meant a
+  # branch that never opened a PR was never verified at all: eight commits
+  # touching 3,700 lines of Dart landed on `claude/performance`, were merged to
+  # master, and the FIRST time they ran on macOS or Windows was after the merge
+  # — where two of the four runners promptly failed. CI that only watches the
+  # branch you have already merged into is CI that reports history.
+  #
+  # The cost is runner minutes on feature branches; the concurrency group below
+  # already cancels superseded runs, and a wasted build is much cheaper than
+  # discovering a break once it is on master.
   push:
-    # release/** so a release branch gets CI's full three-OS verification on
-    # every push, without needing a PR to exist yet.
-    branches: [master, 'release/**']
   pull_request:
   workflow_dispatch:
 
