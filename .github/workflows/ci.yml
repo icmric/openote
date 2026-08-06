@@ -58,6 +58,29 @@ jobs:
         with:
           workspaces: rust/onote_core
 
+      # macOS is the ONLY platform where `flutter build` does not build the Rust
+      # core. app/windows/CMakeLists.txt and app/linux/CMakeLists.txt both
+      # invoke cargo; the Xcode project has no equivalent, which is why
+      # release.yml carries an explicit cargo step for macOS and not for the
+      # others.
+      #
+      # Without it `OnoteCore.instance` is null here, and every test that
+      # reaches `ImportJob.start` dies on the `OneNoteUnavailable` throw at
+      # import_job.dart:110 — four tests, on macOS only, passing everywhere
+      # else. ("one at a time" survived because it returns one line earlier, at
+      # the already-running check, which is precisely why that ordering was
+      # chosen.) The loader picks the library up from
+      # `../rust/onote_core/target/release/` relative to `app/`.
+      #
+      # The real gap is that macOS lacks the build hook at all — a developer
+      # running `flutter build macos` gets an app with no core. Fixing that
+      # needs an Xcode build phase and a Mac to verify it on; this makes CI
+      # honest in the meantime.
+      - name: Build Rust core (macOS has no build hook)
+        if: runner.os == 'macOS'
+        working-directory: rust/onote_core
+        run: cargo build --release
+
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
