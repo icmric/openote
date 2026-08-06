@@ -156,6 +156,17 @@ class AppState extends ChangeNotifier
   @override
   PageData readPage(String id) => _repo.readPage(notebookId!, id);
 
+  @override
+  PageData readPageShared(String id) => _repo.readPageShared(notebookId!, id);
+
+  @override
+  Set<String> pageIdsWithTags() =>
+      notebookId == null ? const {} : _repo.pageIdsWithTags(notebookId!).toSet();
+
+  @override
+  Set<String> allBlockIds() =>
+      notebookId == null ? const {} : _repo.allBlockIds(notebookId!);
+
   /// Pages in this notebook whose *content* matches [query] (TEXT-7).
   /// The navigator searches titles itself; this is the other half.
   List<({String pageId, String snippet})> searchContent(String query) =>
@@ -1290,22 +1301,29 @@ class AppState extends ChangeNotifier
   /// Every tagged line in the notebook, for the find-tags rollup.
   ///
   /// Scans page mirrors rather than a maintained index: same reasoning as
-  /// notebook-wide search — one source of truth beats an index that can drift,
-  /// until it measurably hurts.
+  /// notebook-wide search — one source of truth beats an index that can drift.
+  /// "Until it measurably hurts" arrived, though, with the first big imported
+  /// notebook — so the scan is now narrowed twice *without* becoming an index:
+  /// a SQL prefilter finds the pages that can possibly carry a tag (most
+  /// cannot), and a decoded-page cache in the repository means a rebuild
+  /// re-decodes only pages that changed. See `Repository.readPageShared`.
   ({String key, List<TaggedLine> tags})? _allTagsCache;
 
   @override
   List<TaggedLine> allTags() {
     if (notebookId == null) return const [];
-    // Same reasoning as [deck]: this reads every page in the notebook, and the
-    // panel that shows it rebuilds on every notify.
     final key = '$notebookId#$docRevision#$nodesRevision#$pageId';
     final cached = _allTagsCache;
     if (cached != null && cached.key == key) return cached.tags;
+    final tagged = _repo.pageIdsWithTags(notebookId!).toSet();
     final out = <TaggedLine>[];
     for (final n in nodes.where((n) => n.kind == NodeKind.page)) {
-      // The open page's in-memory blocks are fresher than the container.
-      final blocksOf = n.id == pageId ? blocks : readPage(n.id).blocks;
+      // The open page's in-memory blocks are fresher than the container — and
+      // it is also the one page the prefilter must not exclude, since its
+      // unsaved edits may carry tags the stored JSON does not.
+      if (n.id != pageId && !tagged.contains(n.id)) continue;
+      final blocksOf =
+          n.id == pageId ? blocks : _repo.readPageShared(notebookId!, n.id).blocks;
       for (final b in blocksOf) {
         if (b.type != BlockType.text) continue;
         final tags = NoteTag.listFrom(b.content);

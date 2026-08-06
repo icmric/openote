@@ -1,5 +1,8 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
+import '../export/import_job.dart';
 import '../export/md_import.dart';
 import '../export/onenote_import.dart';
 import '../model/models.dart';
@@ -483,37 +486,33 @@ Future<String?> _promptNotebookName(BuildContext context,
 // These live here because the notebook manager is the single surface that owns
 // notebook-level actions, importing included.
 
-/// Import a `.onepkg` as a new notebook, reporting partial imports honestly.
+/// Import a `.onepkg` as a new notebook — as a background job.
+///
+/// This used to be a modal that owned the app for the whole import; the job
+/// (see `import_job.dart`) is the same work, chunked, with a floating card
+/// for progress and honesty about partial imports at the end. The completion
+/// message lives on the card now, so nothing here waits for anything.
 Future<void> importOneNotePackageWithFeedback(
     BuildContext context, AppState app) async {
+  final file = await openFile(acceptedTypeGroups: const [
+    XTypeGroup(label: 'OneNote notebook package', extensions: ['onepkg'])
+  ]);
+  if (file == null || !context.mounted) return;
   try {
-    final count = await importOneNotePackage(app, progressContext: context);
-    if (count == null || !context.mounted) return;
-    final skipped = lastSkippedSections;
-    final err = lastImportError;
-    final String msg;
-    if (count == 0) {
-      msg = err == null
-          ? "Couldn't read any sections from that .onepkg file."
-          : "That notebook couldn't be imported: $err";
-    } else if (skipped.isEmpty) {
-      msg = 'Imported '
-          '${importArrivalNote(count, lastImportedImages, lastImportedStrokes, lastImportedTags)}'
-          ' from OneNote.${_strokeNote()}';
-    } else {
-      msg = 'Imported '
-          '${importArrivalNote(count, lastImportedImages, lastImportedStrokes, lastImportedTags)}'
-          ', but '
-          '${skipped.length} section${skipped.length == 1 ? '' : 's'} '
-          'could not be read: ${skipped.take(3).join(', ')}'
-          '${skipped.length > 3 ? '…' : ''}'
-          '${_strokeNote()}';
+    final bytes = await file.readAsBytes();
+    if (!context.mounted) return;
+    final job = ImportJob.start(app, p.basename(file.name), bytes);
+    if (job == null) {
+      _snack(context, 'An import is already running — one at a time.');
+      return;
     }
-    _snack(context, msg,
-        seconds:
-            skipped.isEmpty && count > 0 && lastDroppedStrokes == 0 ? 4 : 9);
+    _snack(context,
+        'Importing in the background — keep working, the card in the corner '
+        'will say when it\'s done.');
   } on OneNoteUnavailable {
     if (context.mounted) _snack(context, _coreMissing, seconds: 8);
+  } catch (e) {
+    if (context.mounted) _snack(context, "Couldn't read that file: $e");
   }
 }
 
@@ -555,41 +554,6 @@ const _coreMissing =
 /// the reference notebook). The notes LOOK complete when a stroke vanishes,
 /// which is exactly why it has to be said out loud.
 /// What arrived, in the switcher's own terms (P5).
-///
-/// "324 pages, 372 images, 64,616 strokes" is the sentence that converts
-/// someone who has just handed over five years of notes. Until now the import
-/// said only what it could not read, so a clean import was reported as a bare
-/// page count and a silence — and silence, after a migration, reads as "it
-/// probably lost something".
-///
-/// Each clause appears only if it is non-zero: a notebook with no ink should
-/// not be told it imported no ink.
-@visibleForTesting
-String importArrivalNote(int pages, int images, int strokes, [int tags = 0]) {
-  String n(int v, String one, [String? many]) =>
-      '${_grouped(v)} ${v == 1 ? one : (many ?? '${one}s')}';
-  final parts = <String>[
-    n(pages, 'page'),
-    if (images > 0) n(images, 'image'),
-    if (strokes > 0) n(strokes, 'ink stroke'),
-    if (tags > 0) n(tags, 'tag'),
-  ];
-  if (parts.length == 1) return parts.first;
-  return '${parts.take(parts.length - 1).join(', ')} and ${parts.last}';
-}
-
-/// Thousands separators, because 64616 is a number you have to count digits on
-/// and 64,616 is one you read.
-String _grouped(int v) {
-  final digits = v.toString();
-  final out = StringBuffer();
-  for (var i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 == 0) out.write(',');
-    out.write(digits[i]);
-  }
-  return out.toString();
-}
-
 String _strokeNote() => lastDroppedStrokes == 0
     ? ''
     : ' $lastDroppedStrokes ink stroke'

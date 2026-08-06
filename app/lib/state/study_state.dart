@@ -50,8 +50,27 @@ abstract interface class StudyDocument {
   /// The open page's blocks, live in memory.
   List<Block> get blocks;
 
-  /// Read a *closed* page from storage.
+  /// Read a *closed* page from storage. Editors use this; it hands out fresh
+  /// objects that are safe to mutate.
   PageData readPage(String id);
+
+  /// Read a *closed* page through the repository's shared decoded cache.
+  /// **Read-only** — the result is shared with every other caller. The deck
+  /// build is exactly the kind of caller this exists for: it revisits the
+  /// same unchanged pages on every rebuild.
+  PageData readPageShared(String id);
+
+  /// Ids of pages whose stored content can carry tags — a cheap SQL prefilter,
+  /// not a maintained index (see `Repository.pageIdsWithTags`). Cards only
+  /// ever come from tagged lines, so pages outside this set need not be read
+  /// at all, which is most of them.
+  Set<String> pageIdsWithTags();
+
+  /// Every block id in the notebook, from a raw scan of the stored JSON.
+  /// May over-collect (a lookalike string in note text); must never miss a
+  /// real block. Exists so [StudyState]'s prune guard does not force a full
+  /// decode of every page.
+  Set<String> allBlockIds();
 
   /// Bumped when a page's stored content is replaced wholesale (undo, version
   /// restore, sync pull).
@@ -243,18 +262,28 @@ class StudyState extends ChangeNotifier {
       // A revision bumped: every entry keyed on the old one is dead weight.
       if (_deckCache.length >= _deckCacheMax) _deckCache.clear();
       final out = <Flashcard>[];
-      final seen = <String>{};
+      // The prefilter is what makes opening the study tab on a big notebook
+      // instant instead of a multi-second decode of every page: cards come
+      // only from tagged lines, so an untagged page cannot contribute one,
+      // and most pages of a real notebook are untagged.
+      final tagged = _doc.pageIdsWithTags();
       for (final n in _doc.nodes.where(inScope)) {
         if (n.id == openId) continue; // the live half, below
-        for (final b in _doc.readPage(n.id).blocks) {
-          seen.add(b.id);
+        if (!tagged.contains(n.id)) continue;
+        for (final b in _doc.readPageShared(n.id).blocks) {
           out.addAll(cardsFromBlock(b, n.id, n.title));
         }
       }
       // Only the unscoped build sees the whole notebook, so only it may
-      // answer "does this block belong to us?".
+      // answer "does this block belong to us?". The id set comes from a raw
+      // scan rather than from the decode loop above — which no longer visits
+      // untagged pages — and a scan can only OVER-collect (a lookalike string
+      // in someone's notes), which errs in the safe direction: an extra id
+      // keeps a dead card's schedule a little longer, a missing one deletes a
+      // living card's history.
       if (sectionId == null && pageId == null) {
-        _notebookBlockIds = seen..addAll(_doc.blocks.map((b) => b.id));
+        _notebookBlockIds = _doc.allBlockIds()
+          ..addAll(_doc.blocks.map((b) => b.id));
       }
       _deckCache[key] = stored = out;
     }

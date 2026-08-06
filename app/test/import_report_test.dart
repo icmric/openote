@@ -8,7 +8,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:openote/ui/notebook_manager.dart';
+import 'package:openote/export/onenote_import.dart';
 
 void main() {
   group('the arrival note', () {

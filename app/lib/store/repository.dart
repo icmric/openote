@@ -423,6 +423,7 @@ class Repository {
     // Close our handle first: SQLite must not be mid-write while the file is
     // copied, and on Windows an open handle blocks the delete outright.
     _open.remove(notebookId)?.dispose();
+    _decodedPages.remove(notebookId);
 
     await src.copy(destFile);
     if (File(destFile).lengthSync() != src.lengthSync()) {
@@ -610,6 +611,7 @@ class Repository {
     ref.deletedAt = nowMs();
     trashedNotebooks.add(ref);
     _open.remove(id)?.dispose();
+    _decodedPages.remove(id);
     await _saveNow();
   }
 
@@ -639,6 +641,7 @@ class Repository {
     if (i < 0) return;
     final ref = trashedNotebooks.removeAt(i);
     _open.remove(id)?.dispose();
+    _decodedPages.remove(id);
     try {
       final f = File(ref.file);
       if (f.existsSync()) f.deleteSync();
@@ -782,6 +785,10 @@ class Repository {
   /// Permanently delete a node and its subtree (FK cascade clears page data).
   void purgeNode(String notebookId, String nodeId) {
     _db(notebookId).execute('DELETE FROM nodes WHERE id=?', [nodeId]);
+    // A purged page must not survive in the decoded cache: a page recreated
+    // later under the same id (a restore, a sync replay) would read as its
+    // dead predecessor.
+    _decodedPages[notebookId]?.remove(nodeId);
   }
 
   List<({String id, String kind, String title, int deletedAt})> loadDeletedNodes(
@@ -860,7 +867,11 @@ class Repository {
     final rows = _db(notebookId)
         .select('SELECT json FROM page_mirror WHERE page_id=?', [pageId]);
     if (rows.isEmpty) return PageData([], PageProps());
-    final j = jsonDecode(rows.first['json'] as String) as Map<String, dynamic>;
+    return _decodePage(rows.first['json'] as String);
+  }
+
+  static PageData _decodePage(String json) {
+    final j = jsonDecode(json) as Map<String, dynamic>;
     return PageData(
       [
         for (final b in (j['blocks'] as List? ?? const []))
@@ -869,6 +880,72 @@ class Repository {
       PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>()),
     );
   }
+
+  // ── Read-only page access for the summary surfaces ────────────────────
+  //
+  // The tags rollup, the planner's agenda and the flashcard deck all derive
+  // from "every tagged line in the notebook". Deriving that by decoding every
+  // page's JSON on the UI thread is what made opening the study tab on a big
+  // imported notebook a multi-second freeze — reported directly: "opening the
+  // tab is very slow… there has to be a more efficient way".
+  //
+  // Two layers fix it without introducing a maintained index that could
+  // drift (the reasoning at `allTags` still holds — one source of truth):
+  //
+  //  1. **A SQL prefilter.** Tags live in block content as a `"tags"` key, so
+  //     `json LIKE '%"tags":%'` finds every page that could possibly matter —
+  //     inside SQLite, in C, without decoding anything. False positives (a
+  //     page whose *text* contains the literal string) merely get decoded and
+  //     contribute nothing; false negatives are impossible because
+  //     `NoteTag.writeInto` writes exactly that key. Most pages carry no tags,
+  //     so this alone cuts the work by an order of magnitude.
+  //  2. **A decoded-page cache**, invalidated per page on write. `docRevision`
+  //     bumps on ANY page save, so the callers' own memos rebuild from scratch
+  //     after every keystroke-debounce — with this cache a rebuild re-decodes
+  //     only the pages that actually changed.
+
+  final Map<String, Map<String, PageData>> _decodedPages = {};
+  static const _decodedPagesMax = 600;
+
+  /// [readPage], through the cache. **The result is shared and must be
+  /// treated as read-only** — mutating a block from it would corrupt what
+  /// every later caller sees. Editors go through [readPage], which hands out
+  /// fresh objects.
+  PageData readPageShared(String notebookId, String pageId) {
+    final perNb = _decodedPages.putIfAbsent(notebookId, () => {});
+    final hit = perNb[pageId];
+    if (hit != null) return hit;
+    if (perNb.length >= _decodedPagesMax) perNb.clear();
+    return perNb[pageId] = readPage(notebookId, pageId);
+  }
+
+  /// Ids of pages whose stored JSON can contain tags, cheaply.
+  List<String> pageIdsWithTags(String notebookId) => [
+        for (final r in _db(notebookId).select(
+            'SELECT page_id FROM page_mirror WHERE json LIKE ?',
+            const ['%"tags":%']))
+          r['page_id'] as String
+      ];
+
+  /// Every block id in [notebookId], from the raw JSON, without decoding it.
+  ///
+  /// `jsonEncode` writes a block's identity as exactly `"id":"<uuid>"`, so a
+  /// string scan recovers all of them at a fraction of the cost of
+  /// materialising every page. It can also pick up a lookalike from note
+  /// *text* — accepted, because the one consumer (card-state pruning) treats
+  /// membership as "do not prune", where an extra id is harmless and a missing
+  /// one destroys review history.
+  Set<String> allBlockIds(String notebookId) {
+    final out = <String>{};
+    for (final r in _db(notebookId).select('SELECT json FROM page_mirror')) {
+      for (final m in _blockIdRe.allMatches(r['json'] as String)) {
+        out.add(m.group(1)!);
+      }
+    }
+    return out;
+  }
+
+  static final _blockIdRe = RegExp(r'"id":"([0-9a-f-]{36})"');
 
   /// Run [fn] in ONE transaction on [notebookId]'s database. [writePage] uses
   /// savepoints so it nests; imports batch hundreds of page writes into a
@@ -902,6 +979,10 @@ class Repository {
       'page': props.toJson(),
       'blocks': [for (final b in blocks) b.toJson()],
     });
+    // The write is the single funnel every page change goes through — saves,
+    // imports, sync pulls, restores — so evicting here is what makes the
+    // shared cache above trustworthy.
+    _decodedPages[notebookId]?.remove(pageId);
     // SAVEPOINT (not BEGIN) so this works standalone AND inside
     // [runInTransaction] — BEGIN can't nest.
     db.execute('SAVEPOINT write_page');

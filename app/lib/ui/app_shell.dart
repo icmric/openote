@@ -11,6 +11,7 @@ import '../core/onote_ffi.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'alert_popup.dart';
+import 'import_progress.dart';
 import 'command_bar.dart';
 import 'onboarding.dart';
 import 'planner_panel.dart';
@@ -415,6 +416,7 @@ class _AppShellState extends State<AppShell> {
             ],
           ),
             AlertPopup(app: app),
+            ImportProgressCard(app: app),
           ]),
         );
       },

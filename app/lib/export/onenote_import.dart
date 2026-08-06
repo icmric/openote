@@ -15,12 +15,64 @@ import '../state/app_state.dart';
 /// Isolate entry points: the Rust parse (LZX + binary decode + base64) can
 /// take seconds on a big notebook and must not freeze the UI thread. Each
 /// isolate loads its own copy of the native library on first use.
-String _parseOneInIsolate(Uint8List bytes) =>
-    (OnoteCore.instance ?? (throw StateError('core unavailable')))
-        .importOne(bytes);
-String _parseOnepkgInIsolate(Uint8List bytes) =>
-    (OnoteCore.instance ?? (throw StateError('core unavailable')))
-        .importOnepkg(bytes);
+/// Parse a package AND finish every CPU-heavy byte of post-processing before
+/// returning: `jsonDecode` of the (potentially hundreds of MB) result string,
+/// and base64 → bytes for every image.
+///
+/// **Why this exists when `compute(_parseOnepkg…)` already ran the parse off
+/// the UI thread.** The old shape returned the JSON *string*, so the decode of
+/// that string — seconds, for a big notebook — happened on the UI isolate, and
+/// so did a `base64Decode` per image during the write phase. That was most of
+/// "the whole app completely locks up while importing". Both now happen here.
+/// Returning the decoded *structure* is effectively free: `compute` uses
+/// `Isolate.exit`, which hands the result to the caller in O(1) rather than
+/// copying it.
+///
+/// Images are rewritten in place: `data_base64` (String) becomes `bytes`
+/// (Uint8List). Consumers accept either spelling, so the old string path —
+/// still used by tests driving [buildNotebookFromPackage] directly — keeps
+/// working.
+Map<String, dynamic> parseOnepkgStructured(Uint8List bytes) {
+  final core = OnoteCore.instance;
+  if (core == null) throw StateError('core unavailable');
+  final result = jsonDecode(core.importOnepkg(bytes)) as Map<String, dynamic>;
+  if (result['ok'] == true) {
+    for (final s in (result['sections'] as List? ?? const [])) {
+      final pages =
+          (((s as Map)['section'] as Map?)?['pages'] as List?) ?? const [];
+      for (final page in pages) {
+        decodePageImagesInPlace((page as Map).cast<String, dynamic>());
+      }
+    }
+  }
+  return result;
+}
+
+/// Same, for a single `.one` section.
+Map<String, dynamic> parseOneStructured(Uint8List bytes) {
+  final core = OnoteCore.instance;
+  if (core == null) throw StateError('core unavailable');
+  final result = jsonDecode(core.importOne(bytes)) as Map<String, dynamic>;
+  if (result['ok'] == true) {
+    for (final page in (result['pages'] as List? ?? const [])) {
+      decodePageImagesInPlace((page as Map).cast<String, dynamic>());
+    }
+  }
+  return result;
+}
+
+/// base64 → bytes for every image of one parsed page, in place.
+@visibleForTesting
+void decodePageImagesInPlace(Map<String, dynamic> page) {
+  for (final imgRaw in (page['images'] as List? ?? const [])) {
+    final img = imgRaw as Map;
+    final b64 = img.remove('data_base64') as String?;
+    if (b64 == null || b64.isEmpty) continue;
+    try {
+      img['bytes'] = base64Decode(b64);
+    } catch (_) {/* an undecodable image degrades to absent, as before */}
+  }
+}
 
 /// Show a busy dialog while [work] runs (import feedback for large notebooks).
 /// The dialog text tracks [message] live, so multi-phase imports can narrate
@@ -268,14 +320,16 @@ Future<int?> importOneNoteFile(AppState app,
   // section imported after a package reported the package's numbers — which
   // matters more now that the report says what ARRIVED and not only what did
   // not.
-  _resetImportReport();
+  resetImportReport();
   Map<String, dynamic> result;
   try {
-    final json = await _withBusyDialog(
+    // Structured: the isolate does the jsonDecode and the image base64 too.
+    // The old shape returned the JSON string, whose decode — seconds on a big
+    // section — then ran right here on the UI thread.
+    result = await _withBusyDialog(
         progressContext,
         ValueNotifier('Importing OneNote section…'),
-        () => compute(_parseOneInIsolate, bytes));
-    result = jsonDecode(json) as Map<String, dynamic>;
+        () => compute(parseOneStructured, bytes));
   } catch (_) {
     return 0; // parser returned malformed/empty output — nothing to import
   }
@@ -284,7 +338,7 @@ Future<int?> importOneNoteFile(AppState app,
   final pages = (result['pages'] as List?) ?? const [];
   if (pages.isEmpty) return 0;
 
-  final sectionTitle = _titleFromName(p.basenameWithoutExtension(file.name));
+  final sectionTitle = importTitleFromName(p.basenameWithoutExtension(file.name));
   final (imported, firstPageId) =
       importParsedSection(app, app.notebookId!, sectionTitle, pages);
 
@@ -295,66 +349,6 @@ Future<int?> importOneNoteFile(AppState app,
     app.refresh();
   }
   return imported;
-}
-
-/// Import a `.onepkg` notebook package as a NEW notebook: one Openote section
-/// per packaged `.one` (grouped into section groups when the package nests
-/// them in folders), named after the package file. Pass [progressContext] to
-/// show a busy dialog while parsing.
-Future<int?> importOneNotePackage(AppState app,
-    {BuildContext? progressContext}) async {
-  final core = OnoteCore.instance;
-  if (core == null) throw OneNoteUnavailable();
-
-  final file = await openFile(acceptedTypeGroups: const [
-    XTypeGroup(label: 'OneNote notebook package', extensions: ['onepkg'])
-  ]);
-  if (file == null) return null;
-
-  final Uint8List bytes = await file.readAsBytes();
-  // One dialog spans both phases: the native parse (single isolate call) and
-  // the per-section database writes, which narrate progress as they go.
-  _resetImportReport();
-  final progress = ValueNotifier(
-      'Reading notebook… this can take a while for large notebooks.');
-  return _withBusyDialog(progressContext, progress, () async {
-    Map<String, dynamic> result;
-    try {
-      final json = await compute(_parseOnepkgInIsolate, bytes);
-      result = jsonDecode(json) as Map<String, dynamic>;
-    } on FormatException {
-      // The parser answered, but not with JSON — treat as unreadable input.
-      return 0;
-    } catch (e) {
-      // A crashed isolate, an OOM, or a native fault is NOT "unsupported file";
-      // collapsing them all into 0 told the user their notebook was unreadable
-      // when in fact we broke.
-      lastImportError = '$e';
-      return 0;
-    }
-    if (result['ok'] != true) {
-      lastImportError = result['error'] as String?;
-      return 0;
-    }
-    // Sections the parser could not read. These used to vanish silently.
-    lastSkippedSections =
-        ((result['failed'] as List?) ?? const []).cast<String>().toList();
-    final sections = (result['sections'] as List?) ?? const [];
-    if (sections.isEmpty) return 0;
-
-    // The package is a whole notebook → create a fresh one named after it.
-    final nbTitle = _titleFromName(p.basenameWithoutExtension(file.name));
-    final ref = await app.importCreateNotebook(nbTitle);
-    final built = buildNotebookFromPackage(app, ref.id, sections,
-        onSection: (i, name) {
-      progress.value = 'Importing "$name" (${i + 1} of ${sections.length})…';
-      return Future<void>.delayed(Duration.zero); // let the dialog repaint
-    });
-    final imported = await built;
-    await app.selectNotebook(ref.id);
-    if (_firstImportedPageId != null) await app.selectPage(_firstImportedPageId!);
-    return imported;
-  });
 }
 
 /// Sections the last import could not read, by name. Empty on a clean import.
@@ -393,8 +387,9 @@ int lastDroppedStrokes = 0;
 }
 
 /// Clear every last-import counter. One function, because they are reset from
-/// two entry points and the one that forgot was silently wrong.
-void _resetImportReport() {
+/// two entry points and the one that forgot was silently wrong. Public because
+/// the background job (import_job.dart) is one of those entry points now.
+void resetImportReport() {
   lastSkippedSections = const [];
   lastDroppedStrokes = 0;
   lastImportedImages = 0;
@@ -419,10 +414,6 @@ int lastImportedTags = 0;
 /// Why the last import returned 0, when the reason wasn't "nothing usable".
 String? lastImportError;
 
-/// Last page created by [buildNotebookFromPackage] (so callers can navigate to
-/// it). Set as a side effect to keep the return value a simple count.
-String? _firstImportedPageId;
-
 /// Create the sections/groups/pages of a parsed `.onepkg` into notebook [nbId].
 /// Extracted from [importOneNotePackage] so it can be driven headlessly by
 /// tests/tools against a real repository. [onSection] (optional) is awaited
@@ -444,7 +435,7 @@ Future<int> buildNotebookFromPackage(
     final s = (sections[si] as Map).cast<String, dynamic>();
     final pages = ((s['section'] as Map?)?['pages'] as List?) ?? const [];
     if (pages.isEmpty) continue;
-    final name = _titleFromName(s['name'] as String? ?? 'Section');
+    final name = importTitleFromName(s['name'] as String? ?? 'Section');
     if (onSection != null) await onSection(si, name);
     // Section group from the package's folder path (single level in the UI;
     // nested paths keep their full name).
@@ -484,7 +475,6 @@ Future<int> buildNotebookFromPackage(
       app.importPurgeNode(nbId, n.id);
     }
   }
-  _firstImportedPageId = firstPageId;
   return imported;
 }
 
@@ -500,7 +490,23 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
     List<dynamic> pages, String Function() next) {
   String? firstPageId;
   for (final raw in pages) {
-    final page = (raw as Map).cast<String, dynamic>();
+    final id = importOneParsedPage(
+        app, nbId, sectionId, (raw as Map).cast<String, dynamic>(), next);
+    firstPageId ??= id;
+  }
+  return firstPageId;
+}
+
+/// Write ONE parsed page into [sectionId]. Returns the created page id.
+///
+/// The unit the background import job batches on: a page is big enough that
+/// per-page transactions would cost real time over hundreds of pages, and
+/// small enough that a batch of a few stays comfortably inside one frame
+/// budget's worth of work between yields. Extracted from the loop above so
+/// both callers share every byte of the translation logic.
+String importOneParsedPage(AppState app, String nbId, String sectionId,
+    Map<String, dynamic> page, String Function() next) {
+  {
     final title = (page['title'] as String?)?.trim();
     final boxes = (page['boxes'] as List?) ?? const [];
     final images = (page['images'] as List?) ?? const [];
@@ -533,13 +539,19 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
     final hashByIndex = <int, String>{};
     for (var i = 0; i < images.length; i++) {
       final img = (images[i] as Map).cast<String, dynamic>();
-      final b64 = img['data_base64'] as String?;
-      if (b64 == null || b64.isEmpty) continue;
-      final Uint8List png;
-      try {
-        png = base64Decode(b64);
-      } catch (_) {
-        continue;
+      // Bytes when the structured isolate already decoded them (the fast
+      // path); base64 when a caller fed this parser output verbatim. Decoding
+      // here is the compatibility spelling, not the intended one — on the UI
+      // thread it is exactly the work the isolate exists to keep off it.
+      Uint8List? png = img['bytes'] as Uint8List?;
+      if (png == null) {
+        final b64 = img['data_base64'] as String?;
+        if (b64 == null || b64.isEmpty) continue;
+        try {
+          png = base64Decode(b64);
+        } catch (_) {
+          continue;
+        }
       }
       final hash = app.importBlob(nbId, png, 'image/png');
       hashByIndex[i] = hash;
@@ -743,12 +755,47 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
     }
 
     app.importPage(nbId, node.id, blocks, PageProps());
-    firstPageId ??= node.id;
+    return node.id;
   }
-  return firstPageId;
 }
 
-String _titleFromName(String name) {
+///
+/// "324 pages, 372 images, 64,616 strokes" is the sentence that converts
+/// someone who has just handed over five years of notes. Until now the import
+/// said only what it could not read, so a clean import was reported as a bare
+/// page count and a silence — and silence, after a migration, reads as "it
+/// probably lost something".
+///
+/// Each clause appears only if it is non-zero: a notebook with no ink should
+/// not be told it imported no ink.
+String importArrivalNote(int pages, int images, int strokes, [int tags = 0]) {
+  String n(int v, String one, [String? many]) =>
+      '${_grouped(v)} ${v == 1 ? one : (many ?? '${one}s')}';
+  final parts = <String>[
+    n(pages, 'page'),
+    if (images > 0) n(images, 'image'),
+    if (strokes > 0) n(strokes, 'ink stroke'),
+    if (tags > 0) n(tags, 'tag'),
+  ];
+  if (parts.length == 1) return parts.first;
+  return '${parts.take(parts.length - 1).join(', ')} and ${parts.last}';
+}
+
+/// Thousands separators, because 64616 is a number you have to count digits on
+/// and 64,616 is one you read.
+String _grouped(int v) {
+  final digits = v.toString();
+  final out = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) out.write(',');
+    out.write(digits[i]);
+  }
+  return out.toString();
+}
+
+/// A section/notebook title from a file or folder name. Public because the
+/// background job (import_job.dart) names its notebook with it too.
+String importTitleFromName(String name) {
   final t = name.replaceAll('_', ' ').trim();
   return t.isEmpty ? 'OneNote import' : t;
 }
