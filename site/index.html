@@ -289,12 +289,25 @@
     return null;
   }
   function wire(os, asset, altAsset, altLabel) {
-    if (!asset) return;
     var a = document.getElementById('dl-' + os);
+    var alt = document.getElementById('alt-' + os);
+    // A platform missing from the release must LOOK missing. Returning early
+    // here left the button with its hard-coded href pointing at
+    // /releases/latest — so a release whose macOS job failed rendered a
+    // confident "Download for macOS" next to two working ones, and a release
+    // with no assets at all (which is what openote.org served after the first
+    // tag failed to build) rendered three of them.
+    if (!asset) {
+      a.href = RELEASES;
+      a.textContent = 'Not in this release';
+      a.setAttribute('aria-disabled', 'true');
+      a.style.opacity = '.55';
+      alt.textContent = '';
+      return;
+    }
     a.href = asset.browser_download_url;
     a.textContent = 'Download for ' +
       (os === 'macos' ? 'macOS' : os[0].toUpperCase() + os.slice(1));
-    var alt = document.getElementById('alt-' + os);
     alt.innerHTML = bytes(asset.size) +
       (altAsset ? ' &nbsp;·&nbsp; <a href="' + altAsset.browser_download_url +
                   '">' + altLabel + '</a>' : '');
@@ -302,7 +315,7 @@
 
   // Ask our own edge first, GitHub second.
   //
-  // `/api/latest` is the Worker (site/worker.js): one cached origin request
+  // `/api/latest` is the Worker (worker/index.js): one cached origin request
   // shared by every visitor, already trimmed to the fields below. Going
   // straight to GitHub from the browser also works — it is what shipped first
   // — but the unauthenticated API allows 60 requests an hour **per IP**, so a
@@ -326,14 +339,30 @@
   latest()
     .then(function (rel) {
       var a = rel.assets || [];
-      wire('windows', find(a, /-setup\.exe$/i), find(a, /windows.*\.zip$/i), 'portable .zip');
-      wire('macos', find(a, /\.dmg$/i), null, null);
-      wire('linux', find(a, /\.AppImage$/i), find(a, /linux.*\.tar\.gz$/i), '.tar.gz');
+      var win = find(a, /-setup\.exe$/i);
+      var mac = find(a, /\.dmg$/i);
+      var lin = find(a, /\.AppImage$/i);
+
+      // A release can exist and carry nothing — a tag whose build failed, or
+      // one published by hand. `.then` still resolves, so the honest `.catch`
+      // below never ran and the page looked healthy. Say it plainly instead.
+      if (!win && !mac && !lin) throw new Error('release has no downloads');
+
+      wire('windows', win, find(a, /windows.*\.zip$/i), 'portable .zip');
+      wire('macos', mac, null, null);
+      wire('linux', lin, find(a, /linux.*\.tar\.gz$/i), '.tar.gz');
 
       var when = rel.published_at ? new Date(rel.published_at)
         .toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+      // The tag is the version. `rel.name` is free text — the first release
+      // was called "first release", which told a visitor nothing about which
+      // build they were getting.
+      var label = rel.tag_name
+        ? (rel.name && rel.name !== rel.tag_name
+            ? rel.tag_name + ' · ' + rel.name : rel.tag_name)
+        : (rel.name || 'Latest release');
       document.getElementById('release-line').innerHTML =
-        '<b>' + (rel.name || rel.tag_name) + '</b>' + (when ? ' · released ' + when : '') +
+        '<b>' + label + '</b>' + (when ? ' · released ' + when : '') +
         ' · <a href="' + rel.html_url + '">release notes</a>';
     })
     .catch(function () {
@@ -343,6 +372,10 @@
         'Builds are published on the <a href="' + RELEASES + '">releases page</a>. ' +
         'If it is empty, no version has been tagged yet — you can still ' +
         '<a href="https://github.com/' + REPO + '/blob/master/app/README.md">build it yourself</a>.';
+      // And the buttons must stop claiming otherwise.
+      wire('windows', null, null, null);
+      wire('macos', null, null, null);
+      wire('linux', null, null, null);
     });
 })();
 </script>

@@ -59,6 +59,33 @@ jobs:
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
+      # Refuse to run against a tag that ALREADY has a release.
+      #
+      # `draft: true` in the release job is not the safety net it looks like.
+      # softprops/action-gh-release only honours it on the CREATE path; when a
+      # release already exists for the tag it takes the update path and passes
+      # `draft: existingRelease.draft` verbatim. So re-running a tag whose
+      # release was published would attach every installer to a LIVE public
+      # release, overwrite its title and body with the draft text — comment
+      # marker and all — and never once pause for the human review this
+      # workflow's own header promises.
+      #
+      # This is the exact shape of the 0.3.0 incident: the first tag failed the
+      # guard above, a release was created by hand to compensate, and the tag
+      # was then a loaded gun. Fail in eight seconds instead of at minute forty.
+      - name: Refuse to overwrite an existing release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::A release already exists for ${TAG}."
+            echo "::error::Publishing into it would bypass the draft review step entirely."
+            echo "::error::Delete that release (and this tag) first, or ship the next patch version."
+            exit 1
+          fi
+
   windows:
     name: windows x64
     needs: version
@@ -124,14 +151,28 @@ jobs:
           # appear in one, and `(` is one of those: "$env:ProgramFiles(x86)\..."
           # expands to "C:\Program Files(x86)\...", a path that does not exist.
           # The step then failed on a directory nobody had ever typed.
-          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-          if (-not (Test-Path $iscc)) {
-            throw "ISCC.exe not found at $iscc — did the Inno Setup install step succeed?"
+          # Find ISCC rather than hardcoding 'Inno Setup 6': the install step
+          # above is deliberately unpinned, so a future chocolatey package that
+          # ships 7.x would land in a directory this path does not name — and
+          # the failure would arrive after the whole Rust + Flutter build.
+          $iscc = Get-ChildItem -Path ${env:ProgramFiles(x86)}, $env:ProgramFiles `
+              -Filter ISCC.exe -Recurse -ErrorAction SilentlyContinue |
+            Sort-Object { $_.VersionInfo.FileMajorPart * 1000 + $_.VersionInfo.FileMinorPart } |
+            Select-Object -Last 1 -ExpandProperty FullName
+          if (-not $iscc) {
+            throw "ISCC.exe not found under Program Files — did the Inno Setup install step succeed?"
           }
           # Assert the floor the .iss actually needs, rather than pinning a
           # version and hoping. A clear message here beats `Unknown value` from
           # a compiler most people have never run.
-          $v = [version](Get-Item $iscc).VersionInfo.ProductVersion
+          #
+          # Read the integer parts, NOT ProductVersion: that field is a
+          # free-form display string (git.exe reports '2.48.1.windows.1'), and
+          # casting it to [version] throws — which under the
+          # $ErrorActionPreference='Stop' above would fail the release for a
+          # compiler that was perfectly capable.
+          $fi = (Get-Item $iscc).VersionInfo
+          $v = [version]::new($fi.FileMajorPart, $fi.FileMinorPart)
           Write-Host "ISCC $v at $iscc"
           if ($v -lt [version]'6.3') {
             throw "Inno Setup $v is too old: openote.iss uses ArchitecturesAllowed=x64compatible, which needs 6.3+."

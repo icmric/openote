@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Not found — Openote</title>
+<meta name="robots" content="noindex">
+<!--
+  This file exists because wrangler.jsonc sets `not_found_handling: "404-page"`,
+  which serves site/404.html for any unmatched path — and there wasn't one. The
+  Worker answered every 404 with a ZERO-BYTE body, which renders as a blank
+  white page: indistinguishable, to a visitor, from the site being down.
+
+  Same rules as index.html: one file, no build step, no third-party requests.
+-->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%235B5BE6'/%3E%3Ctext x='32' y='45' font-family='system-ui,sans-serif' font-size='38' font-weight='700' fill='white' text-anchor='middle'%3EO%3C/text%3E%3C/svg%3E">
+<meta name="color-scheme" content="light dark">
+<style>
+  :root {
+    --ink-500:#5B5BE6; --ink-400:#7B7FEE;
+    --paper-50:#FAF9F7; --paper-200:#E7E5DF;
+    --graphite-900:#1C1B1A; --graphite-500:#6B6862;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper-50:#171716; --paper-200:#2E2D2B;
+      --graphite-900:#F2F1ED; --graphite-500:#A6A29B;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: var(--paper-50);
+    color: var(--graphite-900);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    text-align: center;
+  }
+  .wrap { max-width: 34rem; }
+  .code {
+    font-size: .8rem; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--graphite-500); margin: 0 0 .75rem;
+  }
+  h1 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 .75rem; }
+  p { color: var(--graphite-500); margin: 0 0 1.5rem; }
+  a.btn {
+    display: inline-block; padding: .7rem 1.3rem; border-radius: 10px;
+    background: var(--ink-500); color: #fff; text-decoration: none;
+    font-weight: 600;
+  }
+  a.btn:hover { background: var(--ink-400); }
+  .alt { margin-top: 1.5rem; font-size: .92rem; }
+  .alt a { color: var(--ink-500); }
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <p class="code">404</p>
+    <h1>That page isn&rsquo;t here</h1>
+    <p>The link may be out of date, or the address slightly off.</p>
+    <a class="btn" href="/">Go to the download page</a>
+    <p class="alt">
+      Looking for a build? Try the
+      <a href="https://github.com/icmric/openote/releases">releases page</a>,
+      or the <a href="https://github.com/icmric/openote">source on GitHub</a>.
+    </p>
+  </main>
+</body>
+</html>

@@ -2,7 +2,17 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
-## [Unreleased] · since v0.3.0
+## [0.3.1] · the first release you can actually download
+
+<!--
+0.3.1, not 0.3.0. The v0.3.0 tag was cut against a commit whose pubspec still
+read 0.2.0, so the release workflow's version guard failed before any platform
+job ran, and the tag shipped nothing — the release published under it has zero
+assets, and openote.org served it for two days. Reusing the number would make
+one version string mean two different things: a release with no downloads and a
+release with five installers. Cheaper to spend a patch number than to overload
+one. See docs/RELEASING.md.
+-->
 
 ### Fixed — the app no longer freezes while it works (2026-08-06)
 
@@ -55,7 +65,8 @@ Four reports, one thread. Full reasoning and every measurement in
 Two tags four days apart, one set of notes: the work was written up as a single
 pass and splitting it after the fact would invent a boundary that was never
 there. `v0.2.0` was the first public release; `v0.3.0` added the student
-features (planner, events and reminders, the UI revamp, installers).
+features (planner, events and reminders, the UI revamp, installers) — though
+neither tag ever produced a downloadable build; see the note under 0.3.1.
 
 ### Changed — the interface, made one thing (2026-08-05)
 - **The app looked like two apps.** Openote had a colour palette and it had

@@ -60,6 +60,16 @@ git commit -s -m "your message"
 
 That adds a `Signed-off-by:` line certifying you have the right to submit the work under the project's licence — AGPL-3.0-or-later for the app, Apache-2.0 for `onote_core`, CC0-1.0 for `docs/specs/` ([ADR-0005](docs/adr/ADR-0005-licensing.md), [LICENSING.md](LICENSING.md)). There is deliberately no CLA: it would buy the project an option to relicense that we are not preserving. Contributors will be credited.
 
+## Releasing
+
+Full runbook: [docs/RELEASING.md](docs/RELEASING.md). The one rule that has
+already broken two releases, stated here so it is findable:
+
+**Bump `app/pubspec.yaml`, commit, and _push to master_ — then tag.** The
+release workflow compares the tag against the pubspec version on the tagged
+commit and refuses to build if they disagree. Tagging first, or committing the
+bump on a feature branch, fails the run before any platform job starts.
+
 ---
 
 *Openote is being built in the open, deliberately and carefully, so that it's worth trusting with your notes. Thanks for helping make that real.*
