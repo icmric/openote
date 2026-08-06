@@ -92,14 +92,19 @@ void main() {
   Future<(Repository, AppState, NotebookRef)> fixture(String name) async {
     final tmp = Directory.systemTemp.createTempSync(name);
     final repo = await Repository.openAt(tmp);
+    late AppState created;
     addTearDown(() async {
+      // Background log replays and blob backfills are fire-and-forget. Join
+      // them before the fixture's directory goes, or one lands afterwards and
+      // its file I/O is charged to whichever test runs next.
+      await created.settleBackgroundWork();
       await repo.flushWorkspace();
       repo.dispose();
       try {
         tmp.deleteSync(recursive: true);
       } catch (_) {}
     });
-    final app = AppState(repo);
+    final app = created = AppState(repo);
     final ref = await app.importCreateNotebook('Imported');
     app.beginExclusiveImport(ref.id);
     return (repo, app, ref);
@@ -185,6 +190,46 @@ void main() {
     expect(ys[1] - ys[0], greaterThan(60),
         reason: 'the second box must be pushed down by real text measurement');
     expect(ys[2] - ys[1], greaterThan(60));
+  });
+
+  test('a box the parser gave no position keeps its default, not y=0',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, app, ref) = await fixture('onote_writer_noy_');
+
+    // The parser omits `y` when it cannot recover a box's position, and
+    // `importOneParsedPage` defaults those to the top of the content area.
+    // The layout round trip must not quietly fill that hole in: reporting a
+    // missing y as 0 sent the box to the very top of the page, under the title
+    // band, which looks like a layout bug and is really a protocol one.
+    final orphan = {
+      'kind': 'text',
+      'markdown': 'A box whose position the parser could not recover.',
+      'x': 60.0,
+      'flow': 0, // not in a flow, so the restack has nothing to say about it
+    };
+    await startImportWriter(
+      config(
+          ref,
+          packageJson([
+            section('S', [
+              {
+                'title': 'P',
+                'boxes': [orphan],
+                'images': const [],
+                'ink': const [],
+              }
+            ])
+          ])),
+      frameYield: tick,
+    ).result;
+
+    app.endExclusiveImport(ref.id);
+    final pageId =
+        repo.loadNodes(ref.id).firstWhere((n) => n.kind == NodeKind.page).id;
+    final block = repo.readPage(ref.id, pageId).blocks.single;
+    expect(block.y, AppState.contentTop,
+        reason: 'the importer default must survive the round trip');
   });
 
   test('images are stored and referenced', () async {
@@ -327,7 +372,7 @@ void main() {
     // The clean part: the isolate disposed its SQLite handle on the way out, so
     // the file can still be deleted. On Windows an open handle is precisely why
     // teardown would otherwise leave a half-imported notebook nothing claims.
-    app.endExclusiveImport(ref.id);
+    app.abandonExclusiveImport(ref.id);
     await app.discardImportedNotebook(ref.id);
     expect(File(ref.file).existsSync(), isFalse);
     expect(repo.notebooks.where((n) => n.id == ref.id), isEmpty);
@@ -426,6 +471,36 @@ void main() {
         reason: 'the first batch reported after '
             '${(100 * firstProgressAt! / doneAt).round()}% of the import — '
             'layout is being done up front again');
+  });
+
+  test('a discarded import leaves nothing behind, not even a log directory',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, app, ref) = await fixture('onote_writer_orphan_');
+    final logDir = Directory(ref.logDirPath);
+
+    await startImportWriter(
+      config(
+          ref,
+          packageJson([
+            section('S', [page('P')])
+          ])),
+      frameYield: tick,
+    ).result;
+
+    // The failure/cancel path. It must NOT start a background replay: the
+    // replay rewrites `.onotebook/manifest.json` on its way through, so one
+    // landing after the purge recreates the directory it just deleted — an
+    // orphaned `.onotebook` no registry entry claims, which is what the
+    // free-name search downstream then trips over.
+    app.abandonExclusiveImport(ref.id);
+    await app.discardImportedNotebook(ref.id);
+    await app.settleBackgroundWork();
+
+    expect(File(ref.file).existsSync(), isFalse);
+    expect(logDir.existsSync(), isFalse,
+        reason: 'a discarded import must not leave an orphaned .onotebook');
+    expect(repo.notebooks.where((n) => n.id == ref.id), isEmpty);
   });
 
   test('a package with nothing readable fails with the reason', () async {

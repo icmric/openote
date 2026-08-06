@@ -36,7 +36,12 @@ void main() {
   Future<(Repository, AppState, String, Directory)> fixture(String name) async {
     final tmp = Directory.systemTemp.createTempSync(name);
     final repo = await Repository.openAt(tmp);
+    late AppState created;
     addTearDown(() async {
+      // Background log replays and blob backfills are fire-and-forget. Join
+      // them before the fixture's directory goes, or one lands afterwards and
+      // its file I/O is charged to whichever test runs next.
+      await created.settleBackgroundWork();
       await repo.flushWorkspace();
       repo.dispose();
       try {
@@ -44,7 +49,7 @@ void main() {
       } catch (_) {}
     });
     final nb = await repo.createNotebook('Warm');
-    final app = AppState(repo)..notebookId = nb.id;
+    final app = created = AppState(repo)..notebookId = nb.id;
     app.reloadNodes();
     return (repo, app, nb.id, tmp);
   }

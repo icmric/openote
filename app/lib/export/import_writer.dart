@@ -341,7 +341,10 @@ void importWriterMain((SendPort, Map<Object?, Object?>) message) {
             final pageYs = (ys[i] as List?) ?? const [];
             for (var b = 0; b < boxes.length && b < pageYs.length; b++) {
               final box = boxes[b];
-              if (box is Map) box['y'] = pageYs[b];
+              final y = pageYs[b];
+              // A null means the restack left this box's position alone AND it
+              // never had one. Writing anything here would invent a position.
+              if (box is Map && y != null) box['y'] = y;
             }
           }
         },
@@ -515,7 +518,12 @@ ImportWriterHandle startImportWriter(
 
   /// Lay out every page's flows, a frame's worth at a time.
   Future<void> answerMeasure(List<Object?> boxesPerPage) async {
-    final ys = <List<double>>[];
+    // `num?`, and the nulls are load-bearing. The parser omits `y` on a box
+    // whose position it could not recover, and `importOneParsedPage` defaults
+    // those to `AppState.contentTop`. Reporting a missing y as 0 would defeat
+    // that default and drop the box on the page's title band — a silent
+    // misplacement of exactly the kind the restack exists to prevent.
+    final ys = <List<num?>>[];
     final sw = Stopwatch()..start();
     // Give a frame back whenever the running chunk overruns the budget —
     // checked between BOXES, because a page is only as cheap as its worst box
@@ -537,8 +545,7 @@ ImportWriterHandle startImportWriter(
             sw.elapsedMicroseconds >= measureBudget.inMicroseconds,
         onYield: giveFrameBack,
       );
-      ys.add(
-          [for (final b in boxes) ((b as Map)['y'] as num?)?.toDouble() ?? 0]);
+      ys.add([for (final b in boxes) (b as Map)['y'] as num?]);
     }
     toWriter?.send({'t': 'measured', 'ys': ys});
   }

@@ -229,14 +229,22 @@ class ImportJob extends ChangeNotifier {
       if (_cancelRequested) handle.cancel();
 
       final result = await handle.result;
-      app.endExclusiveImport(nb);
 
       if (result == null) {
+        app.abandonExclusiveImport(nb);
         await _teardown();
         return _finish(ImportJobState.cancelled);
       }
 
+      // BEFORE handing the notebook back. `endExclusiveImport` starts a
+      // background replay of the log the writer just wrote, and the replay's
+      // identity check compares the log's highest seq against this setting. A
+      // log running ahead of it reads as "another installation has been writing
+      // as us" and forks the device id — on every imported notebook. The
+      // ordering held by luck before (nothing awaited in between); now it holds
+      // because it is written down.
       app.rememberImportedSeq(nb, result.lastSeq);
+      app.endExclusiveImport(nb);
       app.reloadNodes();
       app.refresh();
 
@@ -253,7 +261,7 @@ class ImportJob extends ChangeNotifier {
                   'section${skippedSections.length == 1 ? '' : 's'} could not '
                   'be read.');
     } on ImportWriterException catch (e) {
-      if (nb.isNotEmpty) app.endExclusiveImport(nb);
+      if (nb.isNotEmpty) app.abandonExclusiveImport(nb);
       skippedSections = e.skippedSections;
       error = e.message;
       await _teardown();
@@ -265,7 +273,7 @@ class ImportJob extends ChangeNotifier {
       // A crashed isolate, an OOM, a native fault. Never silent: the user
       // handed us five years of notes and must not have to guess what
       // happened to them.
-      if (nb.isNotEmpty) app.endExclusiveImport(nb);
+      if (nb.isNotEmpty) app.abandonExclusiveImport(nb);
       error = '$e';
       await _teardown();
       _finish(ImportJobState.failed, message: "The import failed: $e");

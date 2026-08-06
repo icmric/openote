@@ -221,8 +221,9 @@ class AppState extends ChangeNotifier
     _repo.closeNotebook(nb);
   }
 
-  /// Take them back. The next read reopens the container; the log the writer
-  /// wrote replays in the background so the first edit doesn't pay for it.
+  /// Take them back after a **successful** import. The next read reopens the
+  /// container; the log the writer wrote replays in the background so the first
+  /// edit doesn't pay for it.
   void endExclusiveImport(String nb) {
     _importingNotebooks.remove(nb);
     _repo.closeNotebook(nb);
@@ -232,6 +233,20 @@ class AppState extends ChangeNotifier
     // before the user's first edit — the alternative is a multi-second hitch
     // on the first keystroke into their freshly imported notes.
     unawaited(warmRecorder(nb));
+  }
+
+  /// Take them back after a **cancelled or failed** import, where the notebook
+  /// is about to be discarded.
+  ///
+  /// Identical to [endExclusiveImport] except that it does not start a replay.
+  /// Warming here raced the teardown: the replay's `announceDevice` rewrites
+  /// `.onotebook/manifest.json`, and landing after the purge had deleted the
+  /// directory recreated it — an orphaned `.onotebook` that no registry entry
+  /// claims, which is exactly what the free-name search downstream trips over.
+  void abandonExclusiveImport(String nb) {
+    _importingNotebooks.remove(nb);
+    _repo.closeNotebook(nb);
+    _invalidateSyncStatus();
   }
 
   /// This installation's device id, minted on first use.
@@ -329,7 +344,7 @@ class AppState extends ChangeNotifier
   /// [SyncRecorder.openAsync] guarantees a discarded recorder has written
   /// nothing (its title seeding is deferred to the installer).
   Future<SyncRecorder?> warmRecorder(String nb) {
-    if (!syncLogEnabled || _importingNotebooks.contains(nb)) {
+    if (_disposed || !syncLogEnabled || _importingNotebooks.contains(nb)) {
       return Future.value(null);
     }
     final existing = _recorders[nb];
@@ -354,20 +369,28 @@ class AppState extends ChangeNotifier
         writeSetting: _repo.setSetting,
         materialiseBlobs: notebookIsShared(nb),
       );
-      if (_recorders.containsKey(nb) ||
+      final lostTheRace = _disposed ||
+          _recorders.containsKey(nb) ||
           _importingNotebooks.contains(nb) ||
-          !syncLogEnabled) {
-        return _recorders[nb]; // lost the race; discard the unwritten warm
+          !syncLogEnabled;
+      final SyncRecorder? winner;
+      if (lostTheRace) {
+        winner = _recorders[nb]; // discard the unwritten warm
+      } else {
+        winner = r;
+        _recorders[nb] = r;
+        r.seedTitle(ref.title);
+        _startBlobBackfill(nb, r);
       }
-      _recorders[nb] = r;
-      r.seedTitle(ref.title);
-      _startBlobBackfill(nb, r);
-      // A brand-new notebook had no ops directory when `_startWatching` ran,
-      // so the watcher declined to start; this open created it. Retry, or a
+      // Either way: a notebook with no ops directory when `_startWatching` ran
+      // left the watcher unstarted, and opening a recorder — this one or the
+      // synchronous one that beat it — created that directory. Retry, or a
       // notebook shared in its first session would not auto-pull until the
       // next launch.
-      if (nb == notebookId && _watcher == null) _startWatching();
-      return r;
+      if (winner != null && nb == notebookId && _watcher == null) {
+        _startWatching();
+      }
+      return winner;
     } catch (e) {
       debugPrint('[openote/sync] background log open for $nb failed: $e');
       return null;
@@ -426,7 +449,7 @@ class AppState extends ChangeNotifier
   }
 
   void _startBlobBackfill(String nb, SyncRecorder r) {
-    if (!r.materialiseBlobs) return;
+    if (_disposed || !r.materialiseBlobs) return;
     final f = r
         .backfillBlobs(
       index: _repo.blobIndex(nb),
@@ -752,6 +775,28 @@ class AppState extends ChangeNotifier
   Future<void> awaitMirrorRun(String nb) async {
     final f = _mirrorRuns[nb];
     if (f != null) await f;
+  }
+
+  /// Wait for every background job this state has started — log replays, blob
+  /// materialisations, mirror runs — to finish.
+  ///
+  /// These are all fire-and-forget by design: the UI must never wait on them.
+  /// But "nobody waits" and "nobody can wait" are different, and the second is
+  /// how late file I/O ends up landing after the directory it wants is gone —
+  /// a log line at shutdown in the app, and in tests a failure charged to
+  /// whichever test runs next.
+  Future<void> settleBackgroundWork() async {
+    // Each pass can start more work (a warm installs, which starts a
+    // backfill), so drain until a pass finds nothing.
+    for (var pass = 0; pass < 8; pass++) {
+      final pending = <Future<void>>[
+        ..._recorderWarms.values,
+        ..._blobBackfills.values,
+        ..._mirrorRuns.values,
+      ];
+      if (pending.isEmpty) return;
+      await Future.wait(pending).catchError((_) => const <void>[]);
+    }
   }
 
   Future<void> _runMirrors(String nb, {bool force = false}) async {
@@ -1135,6 +1180,9 @@ class AppState extends ChangeNotifier
   /// Empty means a rebuild from the log could reconstruct this notebook's
   /// content in full, not merely its structure — the distinction that decides
   /// whether the container is safe to demote to a cache.
+  /// **Forces a synchronous log replay** if no recorder is open — this is a
+  /// diagnostic, not a paint-path read. Nothing that runs during a build may
+  /// call it; see [_recorderFor].
   Set<String> syncMissingBlobs(String nb) =>
       _recorderFor(nb)?.missingBlobs() ?? const {};
 
@@ -2563,6 +2611,15 @@ class AppState extends ChangeNotifier
   /// [Repository.discardNotebook].
   Future<void> discardImportedNotebook(String id) async {
     _importingNotebooks.remove(id);
+    // Settle any background replay FIRST. It writes the manifest on its way
+    // through, so deleting the directory out from under one leaves the
+    // recreated husk behind.
+    final warm = _recorderWarms[id];
+    if (warm != null) {
+      try {
+        await warm;
+      } catch (_) {/* a failed warm is not this operation's problem */}
+    }
     _recorders.remove(id);
     await _repo.discardNotebook(id);
     _invalidateSyncStatus();
@@ -3781,8 +3838,16 @@ class AppState extends ChangeNotifier
   @visibleForTesting
   void cancelPendingSave() => _saveDebounce?.cancel();
 
+  /// Set by [dispose]. Background work started before disposal checks this
+  /// before touching anything, because a replay or a backfill can land after
+  /// the repository it wants is closed — in the app that is a harmless log
+  /// line at shutdown, in tests it is late I/O charged to whichever test runs
+  /// next, which is the shape of an intermittent CI failure already fixed once.
+  bool _disposed = false;
+
   @override
   void dispose() {
+    _disposed = true;
     _stopWatching();
     _syncStatusPoll?.cancel();
     _saveDebounce?.cancel();
