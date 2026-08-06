@@ -166,6 +166,11 @@ void main() {
     final app = AppState(repo);
     app.notebookId = nb.id;
     app.reloadNodes();
+    // A SHARED notebook, because since v0.10 the bytes are only materialised
+    // when something other than this device is going to read them. Everything
+    // in this fixture lives under `tmp`, so calling that a sync location makes
+    // the notebook shared without moving a single file.
+    app.rememberSyncRoot(tmp.path);
 
     final bytes = Uint8List.fromList(List.generate(64, (i) => i));
     final hash = app.addBlob(bytes, 'image/png');
@@ -197,6 +202,9 @@ void main() {
     expect(app.syncMissingBlobs(nb.id), isEmpty);
   });
 
+  // Since v0.10 this is not only the migration path: every local-only notebook
+  // defers its blob bytes, so this is also what runs the moment one is prepared
+  // for sync. Same mechanism, now the normal one.
   test('blobs written before the log existed are backfilled', () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (repo, tmp) = await freshRepo('onote_shadow_backfill_');

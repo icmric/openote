@@ -71,6 +71,10 @@ void main() {
     final (app, cloud) = await fixture('mirrored');
     final nb = app.notebookId!;
     app.addMirror(nb, MirrorTarget(path: cloud.path, keepVersions: 3));
+    // `addMirror` fires a run and doesn't wait for it. Join it, or it lands
+    // after this test's temp directories are gone and throws a PathNotFound
+    // that gets charged to whichever test happens to be running then.
+    await app.awaitMirrorRun(nb);
 
     expect(syncStateOf(app, nb), SyncState.mirrored,
         reason: 'a scheduled copy is not the same promise as live sync');

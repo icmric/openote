@@ -327,9 +327,38 @@ Three decisions were forced by writing it, all recorded in the code:
   that is not the open one — the single most likely place for the log to end up
   quietly incomplete.
 
-Not yet built: **blob bytes are not copied into `blobs/`** (only the hash, mime
-and size are recorded), the container is not yet demoted to `cache.onote`, the
-`nodes` migration, Loro, and every transport.
+Not yet built: the container is not yet demoted to `cache.onote`, the `nodes`
+migration, Loro, and every transport.
+
+### Amended 2026-08-06 — blob bytes are materialised on demand
+
+Blob bytes *are* written into `blobs/`, but **only for notebooks that are
+shared** — in a sync folder, or mirrored. The op is always recorded; the bytes
+wait.
+
+This was forced by measurement, not by taste. Shadow mode stores every image
+twice, once in the container's `blobs` table and once as `blobs/<sha256>`, and a
+synthetic imported notebook came to 17.39 MB for 7.81 MB of media — a 2.23×
+overhead, paid by every notebook including the majority that never leave the
+machine. Deferring the bytes for those took the same notebook to 9.57 MB.
+
+Two things make it safe rather than a hole in §7's completeness property:
+
+1. **The container is still authoritative and still holds every byte.**
+   Deferred is not lost. `SyncRecorder.backfillBlobs` — which already existed,
+   to migrate notebooks created before the log — materialises the whole set from
+   the container the moment a notebook becomes shared. What used to be the
+   migration path is now the normal one.
+2. **The op stream is identical either way.** Turning sync on never has to
+   synthesise history it did not record, because hash, mime and size were
+   written all along.
+
+What it costs: rebuild-from-log verification loses its shadow *content* for
+local-only notebooks (structure still verifies; `sync_shadow_test.dart` covers
+the shared case). A log that will never leave the machine verifies nothing an
+enabled one wouldn't. Wave 2's demotion of the container supersedes this
+entirely — at that point `blobs/` is the only home and single-copy falls out
+structurally for shared notebooks too.
 
 ## 8. Cloud transports — decided 2026-08-03: folders, not APIs
 

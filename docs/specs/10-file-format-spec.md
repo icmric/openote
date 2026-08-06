@@ -254,6 +254,8 @@ Two consequences matter to third-party implementers:
 
 Until that lands, `.onote` as specified above is the format, and notebooks written today remain readable: the migration path is "rebuild the cache from a log seeded by the existing container", which loses nothing.
 
+**One caveat for anyone reading a `.onotebook` today.** Until the demotion lands, the container is authoritative and `blobs/` is a shadow copy — so it is written **only for notebooks that are shared** (in a sync folder, or mirrored). A local-only notebook has a complete `ops/` and an absent or sparse `blobs/`: the `blob.put` ops name every image, the bytes live in the container's `blobs` table, and Openote copies them out the moment the notebook starts syncing. Concretely: *a `.onotebook` you were given by another device is complete; a `.onotebook` sitting beside its `.onote` on the machine that made it may not be, and the `.onote` beside it is why that is not data loss.* This is a property of shadow mode, not of the format — after the demotion, `blobs/` is the only home and is always complete.
+
 ## 12. Compatibility promise and changelog
 
 **From v0.2.0 onward, format v1 is frozen.** Notebooks created by any Openote release open in every later release. A future change that cannot be made compatibly bumps the format major version and migrates one-way-forward, with the migration documented here.

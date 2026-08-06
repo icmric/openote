@@ -31,12 +31,36 @@ class SyncRecorder {
     required int lamport,
     required int seq,
     required this.onSeq,
+    required this.materialiseBlobs,
   })  : _lamport = lamport,
         _seq = seq;
 
   final String notebookId;
   final OpLogStore store;
   final DeviceIdentity device;
+
+  /// Whether blob **bytes** are written into `blobs/` as well as the container.
+  ///
+  /// **Why this is optional.** Shadow mode means every image is stored twice —
+  /// once in the container's `blobs` table, once as `blobs/<sha256>` — which
+  /// measured at a 2.13× disk overhead on an imported notebook, paid by every
+  /// notebook including the majority that never leave the machine. The op
+  /// *stream* is cheap and always written; the bytes are the expensive half, and
+  /// they only earn their cost when something other than this device is going to
+  /// read them.
+  ///
+  /// So the bytes are written when the notebook is shared (in a sync folder, or
+  /// mirrored) and deferred otherwise. Deferred, not lost: the container is
+  /// authoritative and still holds every byte, so [backfillBlobs] can
+  /// materialise the whole set later — which is exactly what it already did for
+  /// notebooks created before the log existed. Turning sync on makes the normal
+  /// path out of what used to be the migration path.
+  ///
+  /// Mutable because the answer changes under the app's feet: a notebook moved
+  /// into Drive, or given a mirror, must materialise from that moment on. Set it
+  /// through `AppState.materialiseBlobsIfShared`, which also runs the backfill —
+  /// flipping this alone would write future blobs and leave past ones behind.
+  bool materialiseBlobs;
 
   /// The log replayed into state, kept live so a page save can be diffed into
   /// block-level ops instead of one whole-page write.
@@ -59,6 +83,7 @@ class SyncRecorder {
     String? logDir,
     required Object? Function(String key) readSetting,
     required void Function(String key, Object? value) writeSetting,
+    bool materialiseBlobs = true,
   }) {
     final store = OpLogStore.forNotebook(notebookPath, logDir: logDir);
     store.ensureInitialised(notebookId: notebookId, title: title);
@@ -96,6 +121,7 @@ class SyncRecorder {
       lamport: lamport,
       seq: seq,
       onSeq: (s) => writeSetting(DeviceIdentity.seqKey(notebookId), s),
+      materialiseBlobs: materialiseBlobs,
     );
     // Seed the title so a notebook that has never been renamed still carries
     // one in the log. `notebookMeta` diffs, so this writes once and is a no-op
@@ -172,18 +198,30 @@ class SyncRecorder {
   /// would make it unbounded and unreadable, and defeats the property that
   /// makes blobs easy: identical content produces an identical filename on
   /// every device, so blobs need no merge and can be fetched lazily.
+  ///
+  /// The **op** is recorded either way; only the bytes wait on
+  /// [materialiseBlobs]. Deliberately: hash, mime and size are ~100 bytes, they
+  /// are what a later materialisation needs in order to know what to fetch, and
+  /// keeping the op stream identical whether or not a notebook syncs means
+  /// turning sync on never has to synthesise history it did not record.
   void blob(String hash, String mime, int size, Uint8List bytes) {
-    store.writeBlob(hash, bytes);
+    if (materialiseBlobs) store.writeBlob(hash, bytes);
     if (state.blobs.contains(hash)) return; // already recorded; bytes are immutable
     _commit([_op(OpKind.blobPut, {'hash': hash, 'mime': mime, 'size': size})]);
   }
 
   /// Copy blobs that exist only in the container into `blobs/`.
   ///
-  /// Needed because notebooks created before the log existed hold every image
-  /// in SQLite alone — so a rebuild-from-log would reconstruct page structure
-  /// referencing bytes it cannot supply. That is the difference between a log
-  /// that *looks* complete and one that is.
+  /// Two callers, one mechanism. Notebooks created before the log existed hold
+  /// every image in SQLite alone — so a rebuild-from-log would reconstruct page
+  /// structure referencing bytes it cannot supply, the difference between a log
+  /// that *looks* complete and one that is. And since [materialiseBlobs] made
+  /// byte-writing conditional, every local-only notebook is in that same state
+  /// by design, so this is also what runs the moment one starts syncing.
+  ///
+  /// Returns 0 without reading anything when [materialiseBlobs] is false —
+  /// otherwise it would pull the whole `blobs` table out of SQLite and throw the
+  /// bytes away. Set the flag first (see `AppState.materialiseBlobsIfShared`).
   ///
   /// Deliberately incremental and awaitable: a real imported notebook has
   /// hundreds of images totalling tens of megabytes, and doing that
@@ -194,6 +232,7 @@ class SyncRecorder {
     required List<({String hash, String mime, int size})> index,
     required Uint8List? Function(String hash) read,
   }) async {
+    if (!materialiseBlobs) return 0;
     var copied = 0;
     for (final b in index) {
       if (store.hasBlob(b.hash) && state.blobs.contains(b.hash)) continue;
@@ -294,6 +333,11 @@ class SyncRecorder {
 
   /// Blobs referenced by ops whose bytes are not in `blobs/`. Empty means a
   /// rebuild from this log could reconstruct the notebook's content in full.
+  ///
+  /// A notebook with [materialiseBlobs] off reports **all** of them, and that is
+  /// the honest answer rather than a bug: its log genuinely cannot supply those
+  /// bytes yet. It is also the list a "prepare this for sync" action wants —
+  /// though the backfill works from the container's index, which is the superset.
   Set<String> missingBlobs() {
     final have = store.blobHashes();
     return {

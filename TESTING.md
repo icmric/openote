@@ -75,6 +75,31 @@ without doing anything. My fault, introduced with the background-job rework.
       open notebook, with the folder name spelled out.
 - [ ] Move a notebook into a sync folder and check both surfaces turn green.
 
+### 1.0d The disk-space diet — NEW, and the dot now means something on disk
+
+Openote was storing every image **twice**: once inside the `.onote` file and
+once again in the `.onotebook` folder beside it, so that syncing could copy the
+folder. That second copy is now written only for notebooks that actually go
+somewhere. Measured on a synthetic 40-page notebook with 20 images: **17.4 MB →
+9.6 MB**.
+
+The rule, in one line: **a hollow ring on the dot means one copy on disk.**
+
+- [ ] Right-click a **local-only** notebook ▸ *Storage* (or find its files).
+      The `.onotebook` folder should have `ops/` and `manifest.json` but **no
+      `blobs/` folder at all**. Your big imported notebook is the one to check —
+      it should be roughly half the size it was.
+- [ ] **The important one.** Now move that notebook into a sync folder. Within a
+      few seconds `blobs/` should appear and fill with the images that were
+      already in it. Nothing should be missing — the images are still all in the
+      `.onote`, and this copies them out.
+- [ ] Same again with a **mirror/backup** target instead of a sync folder
+      (notebook manager ▸ backup icon). Then look inside the mirror: it must
+      contain the images. A backup with no pictures in it is the failure this
+      needs to not have.
+- [ ] Sanity: open a synced notebook, paste a new image, and check it lands in
+      `blobs/` straight away rather than waiting for anything.
+
 ### 1.1 The Planner (v0.5) — biggest surface, least tested
 
 Open it from the command bar (calendar icon beside Study), or read the

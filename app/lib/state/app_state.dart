@@ -214,22 +214,16 @@ class AppState extends ChangeNotifier
         logDir: ref.logDir,
         readSetting: _repo.getSetting,
         writeSetting: _repo.setSetting,
+        // The 2× disk cost of shadow mode is only worth paying when something
+        // other than this device will read the bytes. See [notebookIsShared].
+        materialiseBlobs: notebookIsShared(nb),
       );
       _recorders[nb] = r;
-      // Notebooks created before the log existed hold every image in SQLite
-      // alone, so a rebuild from the log would reconstruct page structure
-      // referencing bytes it cannot supply — a log that looks complete and
-      // isn't. Backfill in the background: on a real imported notebook this is
-      // hundreds of images, and doing it inline would stall the open.
-      unawaited(r
-          .backfillBlobs(
-        index: _repo.blobIndex(nb),
-        read: (h) => _repo.getBlob(nb, h),
-      )
-          .catchError((Object e) {
-        debugPrint('[openote/sync] blob backfill for $nb stopped: $e');
-        return 0;
-      }));
+      // Copy the container's blobs into `blobs/` — for a shared notebook that
+      // is the whole point, and it is a no-op for a local-only one. In the
+      // background either way: on a real imported notebook this is hundreds of
+      // images, and doing it inline would stall the open.
+      _startBlobBackfill(nb, r);
       return r;
     } catch (e) {
       // Shadow mode must never be able to break saving. The container is still
@@ -239,6 +233,82 @@ class AppState extends ChangeNotifier
       debugPrint('[openote/sync] log unavailable for $nb: $e');
       return null;
     }
+  }
+
+  /// Whether this notebook's bytes need to exist anywhere but the container.
+  ///
+  /// True when it lives in a folder something else keeps in step, or when it has
+  /// a mirror. Mirrors count because a plain mirror (`keepVersions == 0`) copies
+  /// the `.onotebook` directory and **not** the container — so a mirror of a
+  /// notebook with an empty `blobs/` would be a backup of a notebook with no
+  /// images in it, which is worse than no backup because it looks like one.
+  ///
+  /// This is deliberately the same rule the sync dot draws, minus the device
+  /// count — `SyncState.local` on screen means exactly "stored once on disk",
+  /// so the user has a way to see which notebooks are paying for sync. It is
+  /// recomputed rather than read from [syncStatus] because `syncStatus` asks how
+  /// many devices have written here, which opens a recorder, which asks this.
+  bool notebookIsShared(String nb) {
+    if (mirrorsFor(nb).isNotEmpty) return true;
+    final path = notebookLogDir(nb);
+    if (path == null) return false;
+    return cloudFolderContaining(path, also: _syncRoots) != null;
+  }
+
+  /// Materialise this notebook's blob bytes into `blobs/` if it has become
+  /// shared since its recorder was opened.
+  ///
+  /// Call after anything that can change [notebookIsShared] — moving a notebook
+  /// into a sync folder, adding a mirror, remembering a sync root. Without it a
+  /// notebook that starts syncing mid-session keeps deferring its bytes until
+  /// the next launch, and the other device sees a notebook whose images are all
+  /// missing.
+  ///
+  /// The reverse transition is deliberately not handled: nothing here deletes
+  /// bytes. Moving a notebook back out of a sync folder stops *new* blobs being
+  /// written on the next open and leaves the existing ones, which is wave 1b's
+  /// job (blob GC) and not something to do as a side effect of a move.
+  void materialiseBlobsIfShared(String nb) {
+    if (!syncLogEnabled || !notebookIsShared(nb)) return;
+    final existing = _recorders[nb];
+    if (existing == null) {
+      // No recorder yet — opening one now reads the new state and backfills.
+      _recorderFor(nb);
+      return;
+    }
+    if (existing.materialiseBlobs) return;
+    existing.materialiseBlobs = true;
+    _startBlobBackfill(nb, existing);
+  }
+
+  void _startBlobBackfill(String nb, SyncRecorder r) {
+    if (!r.materialiseBlobs) return;
+    final f = r
+        .backfillBlobs(
+      index: _repo.blobIndex(nb),
+      read: (h) => _repo.getBlob(nb, h),
+    )
+        .catchError((Object e) {
+      debugPrint('[openote/sync] blob backfill for $nb stopped: $e');
+      return 0;
+    });
+    // Kept so a mirror run can wait for it. Without that, configuring a backup
+    // on a notebook whose blobs have never been materialised would copy out a
+    // `blobs/` that is still filling — a backup with most of the images missing,
+    // taken at the exact moment the user is watching to see that it worked.
+    _blobBackfills[nb] = f;
+    unawaited(f.whenComplete(() {
+      if (identical(_blobBackfills[nb], f)) _blobBackfills.remove(nb);
+    }));
+  }
+
+  final Map<String, Future<int>> _blobBackfills = {};
+
+  /// Wait for any in-flight blob materialisation for [nb]. Cheap when there is
+  /// none, which is the common case.
+  Future<void> awaitBlobBackfill(String nb) async {
+    final f = _blobBackfills[nb];
+    if (f != null) await f;
   }
 
   /// Pull another device's changes into this notebook (ADR-0006 step 3).
@@ -451,6 +521,10 @@ class AppState extends ChangeNotifier
     // paths that will not contain it.
     rememberSyncRoot(targetDir);
     _invalidateSyncStatus();
+    // This notebook's images have been living only in the container. They are
+    // about to be someone else's only copy, so write them out now rather than
+    // whenever this notebook next happens to be opened.
+    materialiseBlobsIfShared(nb);
     if (nb == notebookId) {
       await _loadNotebook();
       _startWatching();
@@ -470,6 +544,11 @@ class AppState extends ChangeNotifier
     _mirrors.putIfAbsent(nb, () => []).add(t);
     _saveMirrors();
     _invalidateSyncStatus();
+    // BEFORE the first run: a mirror copies `.onotebook/`, so mirroring a
+    // notebook whose blobs were never materialised would produce a copy with no
+    // images in it. The backfill is async, so the first run can still beat it —
+    // mirrors are incremental and the next run picks up what landed late.
+    materialiseBlobsIfShared(nb);
     // Run once immediately: a mirror you have to wait for is one you don't
     // trust yet.
     unawaited(runMirrors(nb));
@@ -494,12 +573,39 @@ class AppState extends ChangeNotifier
   static const _mirrorMinGapMs = 60000;
 
   /// Copy [nb] out to its mirrors, at most once a minute.
-  Future<void> runMirrors(String nb, {bool force = false}) async {
+  ///
+  /// Callers usually fire and forget, so the run is also parked in
+  /// [_mirrorRuns] where [awaitMirrorRun] can find it. Not bookkeeping for its
+  /// own sake: a mirror run is file I/O against two directories, and one still
+  /// in flight when a test's fixture is torn down throws a `PathNotFound` that
+  /// gets charged to whichever test is running next. That exact shape produced
+  /// an intermittent Windows CI failure once already.
+  Future<void> runMirrors(String nb, {bool force = false}) {
+    final f = _runMirrors(nb, force: force);
+    _mirrorRuns[nb] = f;
+    unawaited(f.whenComplete(() {
+      if (identical(_mirrorRuns[nb], f)) _mirrorRuns.remove(nb);
+    }));
+    return f;
+  }
+
+  final Map<String, Future<void>> _mirrorRuns = {};
+
+  /// Wait for any mirror run in flight for [nb]. Cheap when there is none.
+  Future<void> awaitMirrorRun(String nb) async {
+    final f = _mirrorRuns[nb];
+    if (f != null) await f;
+  }
+
+  Future<void> _runMirrors(String nb, {bool force = false}) async {
     final targets = mirrorsFor(nb);
     if (targets.isEmpty) return;
     final now = nowMs();
     if (!force && now - (_lastMirrorRun[nb] ?? 0) < _mirrorMinGapMs) return;
     _lastMirrorRun[nb] = now;
+    // A mirror copies `.onotebook/`, so it must not start while that directory
+    // is still being filled with the notebook's images.
+    await awaitBlobBackfill(nb);
     final src = notebookLogDir(nb);
     if (src == null) return;
     for (final t in targets) {
@@ -666,6 +772,13 @@ class AppState extends ChangeNotifier
     _syncRoots.add(describeChosenFolder(dir));
     _persistSyncRoots();
     _invalidateSyncStatus();
+    // Calling a folder a sync location can make notebooks already inside it
+    // shared. Only the ones with a recorder open are re-checked here — the rest
+    // get the right answer when theirs is opened, which the notebook list does
+    // for all of them the moment it draws their sync dots.
+    for (final nb in _recorders.keys.toList()) {
+      materialiseBlobsIfShared(nb);
+    }
     notifyListeners();
   }
 
@@ -847,15 +960,22 @@ class AppState extends ChangeNotifier
   Set<String> syncMissingBlobs(String nb) =>
       _recorderFor(nb)?.missingBlobs() ?? const {};
 
-  /// Run the blob backfill to completion. Normally it runs in the background
-  /// when a notebook's log is opened; this is for tests and for a future
-  /// "prepare this notebook for sync" action.
-  Future<int> syncBackfillBlobs(String nb) async =>
-      await _recorderFor(nb)?.backfillBlobs(
-        index: _repo.blobIndex(nb),
-        read: (h) => _repo.getBlob(nb, h),
-      ) ??
-      0;
+  /// Materialise this notebook's blob bytes into `blobs/`, and wait for it.
+  ///
+  /// This is "prepare this notebook for sync", stated outright: it turns
+  /// [SyncRecorder.materialiseBlobs] on whether or not the notebook looks
+  /// shared, because asking for it *is* the intent. The automatic paths
+  /// ([materialiseBlobsIfShared] and the recorder's own open) go through the
+  /// same machinery without the override.
+  Future<int> syncBackfillBlobs(String nb) async {
+    final r = _recorderFor(nb);
+    if (r == null) return 0;
+    r.materialiseBlobs = true;
+    return r.backfillBlobs(
+      index: _repo.blobIndex(nb),
+      read: (h) => _repo.getBlob(nb, h),
+    );
+  }
 
   /// Upsert a node and record it. Every tree mutation funnels through here.
   TreeNode _putNode(String nb, TreeNode n) {
