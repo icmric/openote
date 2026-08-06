@@ -14,6 +14,40 @@
 
 ## 1. Built but unverified — please try these
 
+### 1.0 The import rework (v0.9) — NEW, and the one to try first
+
+The whole flow changed shape: importing a `.onepkg` now runs in the
+**background** with a floating progress card, and the app stays fully usable
+while it works.
+
+- [ ] Fresh-start test: delete your workspace folder (or use a VM), launch,
+      and pick **Bring my notes over from OneNote** in the welcome dialog.
+      The dialog should STAY OPEN with a progress row, and a card should
+      appear bottom-left with live page counts.
+- [ ] **Type, scroll and draw while it imports.** This is the headline claim:
+      the app must not lock up at any point. If you feel a stutter, note what
+      the card said at that moment.
+- [ ] The progress popup that had vanished is back (as the card). Watch for
+      the counts moving — "118 of 324 pages".
+- [ ] **Cancel** mid-import. It should stop within a moment and the
+      half-imported notebook should be gone from the manager.
+- [ ] Let one finish: the card should say what arrived ("324 pages, 372
+      images…") and offer **Open notebook** — and it must NOT yank you there
+      by itself.
+- [ ] Import from the notebook manager too (Import ▸ OneNote notebook) — same
+      card, plus a snackbar saying it runs in the background.
+- [ ] **Time it.** The wall-clock should be similar or better than before —
+      the work is the same, chunked — but the app being alive is the point.
+
+### 1.0b The study tab on your big notebook
+
+- [ ] Open the flashcards/study tab on the imported notebook. This was your
+      "opening the tab is very slow" report — it should now be instant, since
+      only tagged pages are read.
+- [ ] The tags rollup and the planner should feel the same.
+- [ ] Check the deck contents are unchanged: same cards as before the update.
+
+
 ### 1.1 The Planner (v0.5) — biggest surface, least tested
 
 Open it from the command bar (calendar icon beside Study), or read the
@@ -227,3 +261,6 @@ notebook containing a to-do you have actually checked off would settle it.
 | "The UI doesn't fully extend to the edges" | **Fixed** — §1.5 |
 | "Lots of layout shift on the Home tab" | **Fixed** — §1.5. This reverses a decision you were asked to judge last round; the question is withdrawn |
 | "Being able to set a time for an exam would be awesome" | **Built** — §1.1 |
+| "The app locks up during import / imports are slow" | **Reworked** — background job, §1.0 |
+| "We lost the popup when importing" | **Found and fixed** — a context bug ate it; it's a card now, §1.0 |
+| "Opening the flashcards tab is very slow" | **Fixed** — SQL prefilter + page cache, §1.0b |

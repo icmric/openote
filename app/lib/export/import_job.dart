@@ -136,6 +136,16 @@ class ImportJob extends ChangeNotifier {
     dismiss();
   }
 
+  /// A job that never runs, for screenshot/widget tests of the card. The real
+  /// entry point needs the native core and a file; the card needs neither.
+  @visibleForTesting
+  static ImportJob debugCreate(AppState app, String fileName) =>
+      ImportJob._(app, fileName);
+
+  /// Test-only: fire the notifier after mutating fields directly.
+  @visibleForTesting
+  void debugNotify() => notifyListeners();
+
   /// Pages per transaction. Small enough that the stall between yields stays
   /// well under a frame budget even for image-heavy pages; big enough that
   /// transaction overhead stays amortised across a large notebook.

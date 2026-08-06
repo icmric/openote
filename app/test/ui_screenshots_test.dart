@@ -28,6 +28,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/model/models.dart';
 import 'package:openote/model/tags.dart';
+import 'package:openote/export/import_job.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/theme/onote_theme.dart';
@@ -200,6 +201,48 @@ void main() {
     await t.tap(find.text('Insert'));
     await t.pumpAndSettle();
     await expectLater(find.byKey(key), matchesGoldenFile('goldens/insert_tab.png'));
+  });
+
+  // The import progress card, mid-import and completed — states that only
+  // exist while a real .onepkg is streaming in, so a screenshot is the only
+  // way to review them.
+  testWidgets('import progress card', (t) async {
+    if (!_enabled) return markTestSkipped('set ONOTE_SCREENSHOTS=1 to render');
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await seed(t);
+    final job = ImportJob.debugCreate(app, 'Discrete Maths.onepkg')
+      ..state = ImportJobState.writing
+      ..message = 'Importing "Week 6 — Graphs"…'
+      ..pagesDone = 118
+      ..pagesTotal = 324;
+    ImportJob.current = job;
+    addTearDown(() => ImportJob.current = null);
+    // Not `shot`: its pumpAndSettle never settles while the card's progress
+    // indicators animate — which they do for as long as the import runs, by
+    // design. Pump fixed frames instead.
+    t.view.physicalSize = const Size(1440, 900);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    final key = GlobalKey();
+    await t.pumpWidget(MaterialApp(
+      theme: onoteTheme(Brightness.light),
+      debugShowCheckedModeBanner: false,
+      home: RepaintBoundary(key: key, child: AppShell(app: app)),
+    ));
+    for (var i = 0; i < 2; i++) {
+      await t.pump(const Duration(milliseconds: 800));
+    }
+    await expectLater(
+        find.byKey(key), matchesGoldenFile('goldens/import_running.png'));
+
+    job
+      ..state = ImportJobState.done
+      ..message = 'Imported 324 pages, 372 images and 64,616 ink strokes.';
+    job.debugNotify();
+    await t.pump(const Duration(milliseconds: 400));
+    await t.pumpAndSettle();
+    await expectLater(
+        find.byKey(key), matchesGoldenFile('goldens/import_done.png'));
   });
 
   // The alert popup, which has no other way to be reviewed: it only appears
