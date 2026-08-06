@@ -235,11 +235,21 @@ void main() {
         jsonEncode({'ok': true, 'sections': sections, 'failed': failed});
 
     /// Wait for the job to reach a terminal state.
+    ///
+    /// The budget is deliberately far larger than the work: these tests spawn a
+    /// real writer isolate, and `flutter test` runs several such files at once.
+    /// On GitHub's macOS runners — three cores against four for Linux and
+    /// Windows — that contention was enough to blow a ten-second ceiling, and
+    /// the whole group failed there while passing everywhere else. A generous
+    /// ceiling costs nothing on a fast machine, because it stops the moment the
+    /// job finishes; it only decides how long a genuinely stuck job hangs
+    /// before it is reported.
     Future<void> settle(ImportJob job) async {
-      for (var i = 0; i < 2000 && !job.isFinished; i++) {
+      for (var i = 0; i < 12000 && !job.isFinished; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 5));
       }
-      expect(job.isFinished, isTrue, reason: 'the job never finished');
+      expect(job.isFinished, isTrue,
+          reason: 'the job never reached a terminal state within 60s');
     }
 
     test('an import lands, and the card can say what arrived', () async {
