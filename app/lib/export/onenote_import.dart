@@ -224,6 +224,35 @@ void restackFlows(List<dynamic> boxes) {
   }
 }
 
+/// The fields [restackFlows] reads, and nothing else.
+///
+/// **Why a projection rather than sending the boxes.** The restack happens on
+/// the main isolate (TextPainter is root-isolate-only) while the import runs in
+/// the writer isolate, so every box has to cross an isolate boundary — and a
+/// message is copied in one uninterruptible go by the receiver, which is the UI
+/// thread. A parsed box carries tag lists, style runs, geometry and whatever
+/// else the parser recovered; the restack reads nine fields. Measured on a
+/// synthetic 3000-page notebook, projecting took the worst interaction stall
+/// during the layout pass from **48 ms to 4 ms**.
+///
+/// Keep this in step with [_measuredFlowHeight] and the grouping in
+/// [restackFlows]. `flow_projection_test.dart` fails if it drifts: a projected
+/// box that measured differently from the whole one would misplace imported
+/// content silently, which is the exact failure restackFlows exists to fix.
+Map<String, dynamic> flowMeasurementInput(Map<String, dynamic> b) => {
+      // Grouping and the anchor position.
+      'flow': b['flow'],
+      'y': b['y'],
+      // Everything _measuredFlowHeight reads.
+      'kind': b['kind'],
+      if (b['markdown'] != null) 'markdown': b['markdown'],
+      if (b['w'] != null) 'w': b['w'],
+      if (b['font'] != null) 'font': b['font'],
+      if (b['font_size_pt'] != null) 'font_size_pt': b['font_size_pt'],
+      if (b['cells'] != null) 'cells': b['cells'],
+      if (b['col_w'] != null) 'col_w': b['col_w'],
+    };
+
 /// The vertical space one flow item occupies, including the gap after it.
 double _measuredFlowHeight(Map<String, dynamic> b) {
   switch (b['kind'] as String?) {
@@ -239,8 +268,10 @@ double _measuredFlowHeight(Map<String, dynamic> b) {
           // Unknown column widths → measure unconstrained; the row height is
           // then a floor rather than an estimate, which errs towards spacing
           // things apart instead of overlapping them.
-          final w = c < rawW.length ? (rawW[c] as num).toDouble() : double.infinity;
-          final h = _textHeight(row[c]?.toString() ?? '', width: w, fontSizePx: 15);
+          final w =
+              c < rawW.length ? (rawW[c] as num).toDouble() : double.infinity;
+          final h =
+              _textHeight(row[c]?.toString() ?? '', width: w, fontSizePx: 15);
           if (h > tallest) tallest = h;
         }
         total += tallest + _tableRowChrome;
@@ -254,7 +285,8 @@ double _measuredFlowHeight(Map<String, dynamic> b) {
       final md = b['markdown'] as String? ?? '';
       if (md.trim().isEmpty) return 0;
       final sizePt = (b['font_size_pt'] as num?)?.toDouble();
-      final fontSizePx = (sizePt != null && sizePt > 4) ? sizePt * 120.0 / 72.0 : 15.0;
+      final fontSizePx =
+          (sizePt != null && sizePt > 4) ? sizePt * 120.0 / 72.0 : 15.0;
       final w = (b['w'] as num?)?.toDouble();
       // An in-flow image occupies its declared display height, not a text
       // line — measuring the placeholder as text would undercount a 200px
@@ -281,11 +313,11 @@ double _measuredFlowHeight(Map<String, dynamic> b) {
 
 /// A flow line that is nothing but an image placeholder, capturing its declared
 /// display height: `![alt](onote-img://3 =264x198)`.
-final _flowImageLine =
-    RegExp(r'^\s*!\[[^\]]*\]\([^)\s]+\s+=\d+x(\d+)\)\s*$');
+final _flowImageLine = RegExp(r'^\s*!\[[^\]]*\]\([^)\s]+\s+=\d+x(\d+)\)\s*$');
 
 /// Lay [text] out exactly as the canvas will and return its height.
-double _textHeight(String text, {
+double _textHeight(
+  String text, {
   required double width,
   required double fontSizePx,
   String? family,
@@ -344,7 +376,8 @@ Future<int?> importOneNoteFile(AppState app,
   final pages = (result['pages'] as List?) ?? const [];
   if (pages.isEmpty) return 0;
 
-  final sectionTitle = importTitleFromName(p.basenameWithoutExtension(file.name));
+  final sectionTitle =
+      importTitleFromName(p.basenameWithoutExtension(file.name));
   final (imported, firstPageId) =
       importParsedSection(app, app.notebookId!, sectionTitle, pages);
 
@@ -422,8 +455,7 @@ String? lastImportError;
 /// Extracted from [importOneNotePackage] so it can be driven headlessly by
 /// tests/tools against a real repository. [onSection] (optional) is awaited
 /// before each section, for progress UI. Returns the number of pages imported.
-Future<int> buildNotebookFromPackage(
-    ImportSink sink, List<dynamic> sections,
+Future<int> buildNotebookFromPackage(ImportSink sink, List<dynamic> sections,
     {Future<void> Function(int index, String name)? onSection}) async {
   // createNotebook seeds a starter section+page; remember them so the
   // scaffolding can be removed once real content has landed.
@@ -491,6 +523,7 @@ Future<({int pages, String? firstPageId})> writePackageInBatches(
   List<dynamic> sections, {
   int batchPages = 4,
   bool restack = true,
+  Future<void> Function(List<dynamic> pagesInBatch)? prepareBatch,
   bool Function()? shouldCancel,
   void Function(String sectionName, int pagesDone, int pagesTotal)? onProgress,
 }) async {
@@ -534,15 +567,45 @@ Future<({int pages, String? firstPageId})> writePackageInBatches(
       position: next(),
     ));
 
+    // The preparation for the batch after the one being written, already in
+    // flight. See the fire below for why.
+    Future<void>? prepped;
+    List<dynamic> batchAt(int start) => pages.sublist(
+        start,
+        (start + batchPages) > pages.length
+            ? pages.length
+            : start + batchPages);
+
     for (var start = 0; start < pages.length; start += batchPages) {
       if (shouldCancel?.call() ?? false) break;
-      final end =
-          (start + batchPages) > pages.length ? pages.length : start + batchPages;
+      final end = (start + batchPages) > pages.length
+          ? pages.length
+          : start + batchPages;
+      // Anything that has to happen elsewhere before these pages can be
+      // written. The writer isolate uses it to have the main isolate lay out
+      // this batch's flows — see [flowMeasurementInput]. Per batch, not per
+      // notebook: a single up-front pass meant nothing was written until every
+      // page had been measured, and meant one enormous message crossing the
+      // isolate boundary in one uninterruptible copy.
+      if (prepareBatch != null) {
+        await (prepped ?? prepareBatch(batchAt(start)));
+        prepped = null;
+      }
+      if (shouldCancel?.call() ?? false) break;
+      // Fire the NEXT batch's preparation before writing this one, so it
+      // overlaps instead of queueing behind it. This is what keeps the
+      // preparation off the critical path: it happens in another isolate, and
+      // waiting for it turned a 2000-page import from 13.4 s into 23.2 s
+      // because the pacing that keeps that isolate responsive — a real frame
+      // between chunks — was being paid for serially, once per batch.
+      if (prepareBatch != null && end < pages.length) {
+        prepped = prepareBatch(batchAt(end));
+      }
       final first = sink.batch(() {
         String? firstInBatch;
         for (var i = start; i < end; i++) {
-          final id = importOneParsedPage(sink, section.id,
-              (pages[i] as Map).cast<String, dynamic>(), next,
+          final id = importOneParsedPage(
+              sink, section.id, (pages[i] as Map).cast<String, dynamic>(), next,
               restack: restack);
           firstInBatch ??= id;
         }
@@ -551,10 +614,19 @@ Future<({int pages, String? firstPageId})> writePackageInBatches(
       firstPageId ??= first;
       written += end - start;
       onProgress?.call(name, written, total);
-      // The whole point: let input, paint and everything else queued behind
-      // this import actually run. `Duration.zero` yields to the event loop,
-      // which is where frames live.
+      // Let anything else queued in this isolate run — the cancel message, in
+      // particular, which is delivered as an event and can only be seen at a
+      // boundary like this one.
       await Future<void>.delayed(Duration.zero);
+    }
+    // A batch prepared for a page we then decided not to write (cancel, or the
+    // section ending mid-flight). Settle it rather than abandoning it: the
+    // future is live, and dropping it leaves an unawaited error waiting to be
+    // reported against whatever runs next.
+    if (prepped != null) {
+      try {
+        await prepped;
+      } catch (_) {/* the run is ending anyway */}
     }
   }
 
@@ -611,14 +683,14 @@ String importOneParsedPage(ImportSink sink, String sectionId,
     final createdMs = _parseOneNoteDate(page['date_text'] as String? ?? '');
 
     final node = sink.node(TreeNode(
-          kind: NodeKind.page,
-          parentId: sectionId,
-          title: (title == null || title.isEmpty) ? 'Imported page' : title,
-          position: next(),
-          createdAt: createdMs,
-          // Subpage indent straight from OneNote's page level (ORG-6).
-          level: ((page['level'] as num?)?.toInt() ?? 0).clamp(0, 2),
-        ));
+      kind: NodeKind.page,
+      parentId: sectionId,
+      title: (title == null || title.isEmpty) ? 'Imported page' : title,
+      position: next(),
+      createdAt: createdMs,
+      // Subpage indent straight from OneNote's page level (ORG-6).
+      level: ((page['level'] as num?)?.toInt() ?? 0).clamp(0, 2),
+    ));
 
     // Store image blobs FIRST: box markdown references in-flow images by index
     // (`![image](onote-img://N)`), which we rewrite to the stored blob hash so

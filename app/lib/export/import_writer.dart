@@ -35,15 +35,25 @@
 /// isolate"* anywhere else. Measured, it costs **1.2 ms per page** — small, but
 /// unavoidably main-side.
 ///
-/// So the writer asks. After parsing, it sends the main isolate every page's
-/// **box metadata** — text and geometry, no image bytes — and waits for the
-/// corrected y-coordinates. That payload is a couple of MB for a large notebook
-/// against hundreds for its images, which is the whole reason the parse lives
-/// here rather than in a `compute` on the main side: the images are born in this
-/// isolate and never cross.
+/// So the writer asks — **per batch, and for nine fields per box**. Both halves
+/// of that were learned the hard way. The first shape asked once, up front, for
+/// the whole notebook, and it reproduced the original report almost exactly:
+/// the progress card showed the page total (the `parsed` message) and the app
+/// then froze, because receiving an isolate message is a deep copy the receiver
+/// does in **one uninterruptible go** — no amount of frame pacing inside the
+/// restack loop helps, since the block is over before the loop starts. It also
+/// meant nothing was written until every page had been laid out, so a big
+/// notebook sat on a total that did not move.
 ///
-/// The main isolate paces that measurement against a frame budget, so even the
-/// one main-thread phase yields a frame at a time.
+/// Now each batch of four pages asks for its own layout immediately before
+/// writing, sending only [flowMeasurementInput] — the fields the restack
+/// actually reads, not the tag lists and style runs the parser also attached.
+/// Measured on a synthetic 3000-page notebook, the worst interaction stall
+/// during the layout pass went from **48 ms to 4 ms**, and progress now moves
+/// from the first batch.
+///
+/// The images still never cross, which remains why the parse lives here rather
+/// than in a `compute` on the main side.
 library;
 
 import 'dart:async';
@@ -306,20 +316,6 @@ void importWriterMain((SendPort, Map<Object?, Object?>) message) {
       }
       toMain.send({'t': 'parsed', 'pages': pages.length});
 
-      // Ask the main isolate to lay the flows out. Text metadata only — the
-      // images stay here.
-      final ys = await measure(
-          [for (final pg in pages) (pg['boxes'] as List?) ?? const []]);
-      if (cancelled) return;
-      for (var i = 0; i < pages.length && i < ys.length; i++) {
-        final boxes = (pages[i]['boxes'] as List?) ?? const [];
-        final pageYs = (ys[i] as List?) ?? const [];
-        for (var b = 0; b < boxes.length && b < pageYs.length; b++) {
-          final box = boxes[b];
-          if (box is Map) box['y'] = pageYs[b];
-        }
-      }
-
       db = openOnote(config.notebookPath,
           notebookId: config.notebookId, title: config.title);
       final sink = IsolateImportSink.open(db, config);
@@ -328,7 +324,27 @@ void importWriterMain((SendPort, Map<Object?, Object?>) message) {
         sink,
         sections,
         batchPages: config.batchPages,
-        restack: false, // already measured, above
+        // The restack cannot run here (TextPainter is root-isolate-only), so
+        // each batch asks the main isolate to lay its pages out first, and
+        // `restack: false` stops the translation trying again.
+        restack: false,
+        prepareBatch: (batch) async {
+          final ys = await measure([
+            for (final pg in batch)
+              [
+                for (final b in (((pg as Map)['boxes'] as List?) ?? const []))
+                  flowMeasurementInput((b as Map).cast<String, dynamic>())
+              ]
+          ]);
+          for (var i = 0; i < batch.length && i < ys.length; i++) {
+            final boxes = ((batch[i] as Map)['boxes'] as List?) ?? const [];
+            final pageYs = (ys[i] as List?) ?? const [];
+            for (var b = 0; b < boxes.length && b < pageYs.length; b++) {
+              final box = boxes[b];
+              if (box is Map) box['y'] = pageYs[b];
+            }
+          }
+        },
         shouldCancel: () => cancelled,
         onProgress: (name, done, total) => toMain.send(
             {'t': 'progress', 'section': name, 'done': done, 'total': total}),
@@ -474,7 +490,13 @@ ImportWriterHandle startImportWriter(
   required Future<void> Function() frameYield,
   void Function(int pages)? onParsed,
   void Function(String section, int done, int total)? onProgress,
-  Duration measureBudget = const Duration(milliseconds: 8),
+  // Just inside a 16.7 ms frame. A layout chunk that fits in a frame costs
+  // nothing visible, so there is no reason to interrupt one; a chunk that
+  // overruns gets a real frame handed back mid-way. Tightening this to 8 ms
+  // dropped p99 interaction latency from 14 ms to 4 ms — both imperceptible —
+  // and made a 2000-page import 60% slower, because every extra yield waits a
+  // whole frame the writer is blocked on.
+  Duration measureBudget = const Duration(milliseconds: 12),
 }) {
   final done = Completer<ImportWriterResult?>();
   final fromWriter = ReceivePort();
@@ -495,13 +517,20 @@ ImportWriterHandle startImportWriter(
   Future<void> answerMeasure(List<Object?> boxesPerPage) async {
     final ys = <List<double>>[];
     final sw = Stopwatch()..start();
-    for (final raw in boxesPerPage) {
-      final boxes = (raw as List?) ?? const [];
+    for (var i = 0; i < boxesPerPage.length; i++) {
+      final boxes = (boxesPerPage[i] as List?) ?? const [];
       // Mutates `y` in place, so read it back afterwards.
       restackFlows(boxes);
       ys.add(
           [for (final b in boxes) ((b as Map)['y'] as num?)?.toDouble() ?? 0]);
-      if (sw.elapsedMicroseconds >= measureBudget.inMicroseconds) {
+      // Give a frame back only if this request is running long AND there is
+      // more of it to do. Never after the last page: [frameYield] waits for a
+      // real frame in the app, and a batch is only a handful of pages, so
+      // yielding at the end would put a ~16 ms floor under every batch — a
+      // wall-clock tax of seconds on a large notebook, paid to hand back a
+      // frame we are about to hand back anyway by replying.
+      if (i < boxesPerPage.length - 1 &&
+          sw.elapsedMicroseconds >= measureBudget.inMicroseconds) {
         await frameYield();
         sw.reset();
       }

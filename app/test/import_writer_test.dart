@@ -386,6 +386,48 @@ void main() {
             'time means the write phase is back on this thread.');
   });
 
+  // The regression pin for the shape this replaced. The first version asked the
+  // main isolate to lay out the WHOLE notebook before writing anything, which
+  // meant two bad things at once: one enormous message copied in a single
+  // uninterruptible go, and a progress card that showed a page total and then
+  // sat on it. The report was "still locks up when it starts displaying all the
+  // pages in the popup" — which is precisely the moment the total appeared and
+  // the layout request went out.
+  //
+  // Layout is per batch now, so the first pages are written almost immediately.
+  test(
+      'pages start landing straight away, not after the whole notebook is '
+      'laid out', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (_, app, ref) = await fixture('onote_writer_early_');
+
+    final sw = Stopwatch()..start();
+    int? firstProgressAt;
+    int? doneAt;
+    final handle = startImportWriter(
+      config(
+          ref,
+          packageJson([
+            section('Big', [for (var i = 0; i < 300; i++) page('P$i')])
+          ]),
+          batchPages: 4),
+      frameYield: tick,
+      onProgress: (_, __, ___) => firstProgressAt ??= sw.elapsedMicroseconds,
+    );
+    await handle.result;
+    doneAt = sw.elapsedMicroseconds;
+    app.endExclusiveImport(ref.id);
+
+    expect(firstProgressAt, isNotNull);
+    // A quarter of the run is a generous bar that the old shape could not clear
+    // at any notebook size: it did every page's text layout before the first
+    // write, so the first progress necessarily landed past the halfway mark.
+    expect(firstProgressAt! / doneAt, lessThan(0.25),
+        reason: 'the first batch reported after '
+            '${(100 * firstProgressAt! / doneAt).round()}% of the import — '
+            'layout is being done up front again');
+  });
+
   test('a package with nothing readable fails with the reason', () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (_, app, ref) = await fixture('onote_writer_empty_');

@@ -216,7 +216,7 @@ class ImportJob extends ChangeNotifier {
         onParsed: (pages) {
           state = ImportJobState.writing;
           pagesTotal = pages;
-          message = 'Laying out $pages pages…';
+          message = 'Importing $pages pages…';
           notifyListeners();
         },
         onProgress: (sectionName, done, total) {
