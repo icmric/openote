@@ -63,7 +63,12 @@ Map<String, dynamic> parseOneStructured(Uint8List bytes) {
 }
 
 /// base64 → bytes for every image of one parsed page, in place.
-@visibleForTesting
+///
+/// Part of the parse-side contract, not an internal: both parse entry points
+/// above run it, and so does the writer isolate when it is handed an
+/// already-parsed package. Doing it here rather than at write time is the point
+/// — a `base64Decode` per image on the UI thread was a measurable slice of the
+/// old lockup.
 void decodePageImagesInPlace(Map<String, dynamic> page) {
   for (final imgRaw in (page['images'] as List? ?? const [])) {
     final img = imgRaw as Map;
@@ -473,6 +478,94 @@ Future<int> buildNotebookFromPackage(
   return imported;
 }
 
+/// Write a parsed package into the notebook behind [sink] a few pages at a
+/// time,
+/// yielding to the event loop between batches.
+///
+/// This is [buildNotebookFromPackage]'s responsive sibling and shares its
+/// per-page translation via [importOneParsedPage]; the differences are the
+/// batch boundaries and the cancel check. Kept as a top-level function so it
+/// is drivable headlessly in tests, exactly as its predecessor is.
+Future<({int pages, String? firstPageId})> writePackageInBatches(
+  ImportSink sink,
+  List<dynamic> sections, {
+  int batchPages = 4,
+  bool restack = true,
+  bool Function()? shouldCancel,
+  void Function(String sectionName, int pagesDone, int pagesTotal)? onProgress,
+}) async {
+  final seeded = sink.nodes();
+  final posBase = nowMs();
+  var pos = 0;
+  String next() => 'a${(posBase + pos++).toString().padLeft(15, '0')}';
+
+  var total = 0;
+  for (final s in sections) {
+    total += ((((s as Map)['section'] as Map?)?['pages'] as List?) ?? const [])
+        .length;
+  }
+
+  var written = 0;
+  String? firstPageId;
+  final groupIds = <String, String>{};
+  for (final sRaw in sections) {
+    if (shouldCancel?.call() ?? false) break;
+    final s = (sRaw as Map).cast<String, dynamic>();
+    final pages = ((s['section'] as Map?)?['pages'] as List?) ?? const [];
+    if (pages.isEmpty) continue;
+    final name = importTitleFromName(s['name'] as String? ?? 'Section');
+
+    String? groupId;
+    final group = (s['group'] as String?)?.trim();
+    if (group != null && group.isNotEmpty) {
+      groupId = groupIds.putIfAbsent(
+          group,
+          () => sink
+              .node(TreeNode(
+                  kind: NodeKind.sectionGroup,
+                  title: group.replaceAll('/', ' › '),
+                  position: next()))
+              .id);
+    }
+    final section = sink.node(TreeNode(
+      kind: NodeKind.section,
+      parentId: groupId,
+      title: name,
+      position: next(),
+    ));
+
+    for (var start = 0; start < pages.length; start += batchPages) {
+      if (shouldCancel?.call() ?? false) break;
+      final end =
+          (start + batchPages) > pages.length ? pages.length : start + batchPages;
+      final first = sink.batch(() {
+        String? firstInBatch;
+        for (var i = start; i < end; i++) {
+          final id = importOneParsedPage(sink, section.id,
+              (pages[i] as Map).cast<String, dynamic>(), next,
+              restack: restack);
+          firstInBatch ??= id;
+        }
+        return firstInBatch;
+      });
+      firstPageId ??= first;
+      written += end - start;
+      onProgress?.call(name, written, total);
+      // The whole point: let input, paint and everything else queued behind
+      // this import actually run. `Duration.zero` yields to the event loop,
+      // which is where frames live.
+      await Future<void>.delayed(Duration.zero);
+    }
+  }
+
+  if (written > 0 && !(shouldCancel?.call() ?? false)) {
+    for (final n in seeded.where((n) => n.kind == NodeKind.section)) {
+      sink.purgeNode(n.id);
+    }
+  }
+  return (pages: written, firstPageId: firstPageId);
+}
+
 /// Import parsed pages into [sectionId]. Returns the first created page id.
 /// The whole section runs in ONE transaction — per-page commits measurably
 /// dominated large imports.
@@ -498,8 +591,12 @@ String? _importPagesLocked(ImportSink sink, String sectionId,
 /// small enough that a batch of a few stays comfortably inside one frame
 /// budget's worth of work between yields. Extracted from the loop above so
 /// both callers share every byte of the translation logic.
+/// Set [restack] false when the flow y-coordinates have already been corrected
+/// — the writer isolate does that, because [restackFlows] needs `TextPainter`
+/// and text layout is only available on the root isolate.
 String importOneParsedPage(ImportSink sink, String sectionId,
-    Map<String, dynamic> page, String Function() next) {
+    Map<String, dynamic> page, String Function() next,
+    {bool restack = true}) {
   {
     final title = (page['title'] as String?)?.trim();
     final boxes = (page['boxes'] as List?) ?? const [];
@@ -563,7 +660,7 @@ String importOneParsedPage(ImportSink sink, String sectionId,
       ));
     }
 
-    restackFlows(boxes);
+    if (restack) restackFlows(boxes);
 
     // Each OneNote box becomes its own block at the coordinates the parser
     // recovered: text boxes keep their original width (autoWidth off) so a

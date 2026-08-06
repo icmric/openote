@@ -1,9 +1,16 @@
-// The background import (v0.9 §1): the batched writer, its cancel point, and
-// the "the app stays alive" property itself.
+// The background import: the batched writer, its cancel point, and the job
+// that drives it.
 //
 // The Rust parser is not exercised here — these tests feed the writer the
 // structure the parse isolate produces, which is exactly the seam the job was
 // split at. The parser has its own e2e tests against real .one fixtures.
+//
+// Note on where `writePackageInBatches` runs since v0.10: it is the writer
+// ISOLATE's loop now, not the app's. Its batching still matters — it is what
+// bounds how long a cancel takes to land and how often progress is reported —
+// but the app's responsiveness is no longer downstream of it. That property is
+// pinned in `import_writer_test.dart`, which measures the gaps a real
+// interaction has to fit into rather than whether a timer fires at all.
 
 import 'dart:async';
 import 'dart:convert';
@@ -18,6 +25,8 @@ import 'package:openote/export/onenote_import.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
+
+import 'package:openote/export/import_writer.dart';
 
 import 'support/sqlite.dart';
 
@@ -96,15 +105,14 @@ void main() {
       expect(repo.pageIdsWithTags(nb), hasLength(1));
     });
 
-    test('keeps the app responsive: the event loop runs between batches',
-        () async {
+    test('yields between batches, so cancel and progress can land', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (_, _, app, nb) = await fixture('onote_job_yield_');
 
-      // A 40-page section. The old writer put the whole section in one
-      // synchronous transaction, so a timer armed before it could not fire
-      // until every page was written — which, scaled to a real notebook, was
-      // the reported "the whole app completely locks up".
+      // A 40-page section. An earlier writer put the whole section in ONE
+      // synchronous transaction, so nothing else in its isolate ran until
+      // every page was written — no cancel check, no progress callback, and
+      // (back when this ran on the UI thread) no frames either.
       var ticks = 0;
       final timer =
           Timer.periodic(const Duration(milliseconds: 1), (_) => ticks++);
@@ -119,8 +127,8 @@ void main() {
       );
 
       expect(ticks, greaterThan(0),
-          reason: 'nothing else ran during the entire import — that is the '
-              'lockup this feature exists to remove');
+          reason: 'nothing else ran during the entire write — a cancel could '
+              'not be seen and no progress could be reported');
     });
 
     test('cancel stops at a batch boundary, not at the end', () async {
@@ -203,6 +211,111 @@ void main() {
       expect(r.pages, 2);
       // One blob, stored once — identical bytes share a hash by design.
       expect(repo.blobIndex(nb).length, 1);
+    });
+  });
+
+  group('ImportJob — the state machine over the writer isolate', () {
+    tearDown(() => ImportJob.current = null);
+
+    ImportWriterOverrides overrides(String json) => ImportWriterOverrides(
+          preparsedJson: json,
+          sqliteLibrary: sqliteLibraryPathForTests,
+          // The app passes `SchedulerBinding.instance.endOfFrame`; nothing
+          // pumps here, so that would never complete.
+          frameYield: () => Future<void>.delayed(Duration.zero),
+        );
+
+    String packageJson(List<Map<String, dynamic>> sections,
+            {List<String> failed = const []}) =>
+        jsonEncode({'ok': true, 'sections': sections, 'failed': failed});
+
+    /// Wait for the job to reach a terminal state.
+    Future<void> settle(ImportJob job) async {
+      for (var i = 0; i < 2000 && !job.isFinished; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(job.isFinished, isTrue, reason: 'the job never finished');
+    }
+
+    test('an import lands, and the card can say what arrived', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, _, app, _) = await fixture('onote_jobrun_ok_');
+
+      final job = ImportJob.start(app, 'Discrete Maths.onepkg', 'ignored.onepkg',
+          debugOverrides: overrides(packageJson([
+            section('Week 1', [page('Mon'), page('Tue')]),
+          ])));
+      expect(job, isNotNull);
+      await settle(job!);
+
+      expect(job.state, ImportJobState.done);
+      expect(job.importedPages, 2);
+      expect(job.firstPageId, isNotNull);
+      expect(job.message, contains('Imported'));
+      // The notebook is named after the file, and it is really there.
+      final imported =
+          repo.notebooks.firstWhere((n) => n.title == 'Discrete Maths');
+      expect(repo.loadNodes(imported.id).where((n) => n.kind == NodeKind.page),
+          hasLength(2));
+      // And the seq the isolate reached was persisted here — without it the
+      // next open forks this device's id.
+      expect(repo.getSetting('deviceSeq:${imported.id}'), isNotNull);
+    });
+
+    test('a partial import says which sections did not make it', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (_, _, app, _) = await fixture('onote_jobrun_partial_');
+
+      final job = ImportJob.start(app, 'Notes.onepkg', 'ignored.onepkg',
+          debugOverrides: overrides(packageJson([
+            section('Good', [page('P')])
+          ], failed: ['Broken.one'])));
+      await settle(job!);
+
+      expect(job.state, ImportJobState.done);
+      expect(job.skippedSections, ['Broken.one']);
+      expect(job.message, contains('1 section could not be read'));
+    });
+
+    test('an unreadable package fails, and the half-built notebook is gone',
+        () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, _, app, _) = await fixture('onote_jobrun_bad_');
+      final before = repo.notebooks.length;
+
+      final job = ImportJob.start(app, 'Broken.onepkg', 'ignored.onepkg',
+          debugOverrides:
+              overrides(jsonEncode({'ok': false, 'error': 'not a package'})));
+      await settle(job!);
+
+      expect(job.state, ImportJobState.failed);
+      expect(job.message, contains('not a package'));
+      // Everything or nothing. The notes still exist in OneNote, so a half
+      // notebook in the list would be worse than none — and it must not be in
+      // the recycle bin either, offering to restore half of something.
+      expect(repo.notebooks, hasLength(before));
+      expect(repo.trashedNotebooks, isEmpty);
+    });
+
+    test('a file with no path on disk is refused with a sentence', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (_, _, app, _) = await fixture('onote_jobrun_nopath_');
+
+      final job = ImportJob.start(app, 'Ghost.onepkg', '');
+      await settle(job!);
+
+      expect(job.state, ImportJobState.failed);
+      expect(job.message, contains('no location on disk'));
+    });
+
+    test('one at a time', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (_, _, app, _) = await fixture('onote_jobrun_one_');
+      ImportJob.current = ImportJob.debugCreate(app, 'First.onepkg');
+
+      expect(ImportJob.start(app, 'Second.onepkg', 'x.onepkg'), isNull,
+          reason: 'two imports interleaving would confuse every progress '
+              'surface and halve each other\'s throughput');
     });
   });
 }

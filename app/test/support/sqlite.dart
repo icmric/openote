@@ -17,6 +17,13 @@ import 'package:sqlite3/open.dart';
 /// confidence CI exists to prevent. The workflow builds the app before running
 /// tests so the bundled library is present; if that ever stops being true, this
 /// fails loudly instead of going green.
+/// Where the library was found, for handing to a spawned isolate.
+///
+/// `open.overrideForAll` is a static and statics are **per isolate**, so the
+/// override [initSqliteForTests] installs applies only to the isolate that
+/// called it. Anything spawned has to be told the path.
+String? sqliteLibraryPathForTests;
+
 bool initSqliteForTests() {
   final found = _findSqlite();
   if (!found && Platform.environment['CI'] == 'true') {
@@ -39,6 +46,7 @@ bool _findSqlite() {
   ]) {
     final f = File(rel);
     if (f.existsSync()) {
+      sqliteLibraryPathForTests = f.absolute.path;
       open.overrideForAll(() => DynamicLibrary.open(f.absolute.path));
       return true;
     }
@@ -47,11 +55,13 @@ bool _findSqlite() {
   try {
     if (Platform.isLinux) {
       DynamicLibrary.open('libsqlite3.so.0');
+      sqliteLibraryPathForTests = 'libsqlite3.so.0';
       open.overrideForAll(() => DynamicLibrary.open('libsqlite3.so.0'));
       return true;
     }
     if (Platform.isMacOS) {
       DynamicLibrary.open('libsqlite3.dylib');
+      sqliteLibraryPathForTests = 'libsqlite3.dylib';
       open.overrideForAll(() => DynamicLibrary.open('libsqlite3.dylib'));
       return true;
     }

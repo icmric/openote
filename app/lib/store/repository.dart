@@ -345,6 +345,20 @@ class Repository {
   /// handle, so a second cache to keep in step would be pure risk.
   NotebookWriter _writer(String notebookId) => NotebookWriter(_db(notebookId));
 
+  /// Release this process's handle on a notebook's container.
+  ///
+  /// For handing the file to something else that will open it — today, the
+  /// import writer isolate. Two connections to one WAL database is legal, but
+  /// this one would sit on a stale page cache for the whole import and its
+  /// decoded pages would describe a notebook that no longer exists. Closing is
+  /// cheaper than reasoning about that, and the next read reopens.
+  ///
+  /// Safe to call for a notebook that was never opened.
+  void closeNotebook(String notebookId) {
+    _open.remove(notebookId)?.dispose();
+    _decodedPages.remove(notebookId);
+  }
+
   /// Write a **consistent** copy of a notebook's container to [destPath].
   ///
   /// Not `File.copy`. The container is open in WAL mode, so recent commits
@@ -659,6 +673,20 @@ class Repository {
       }
     } catch (_) {/* a lock or a permission must not fail the purge */}
     await _saveNow();
+  }
+
+  /// Remove a live notebook and its files outright, bypassing the recycle bin.
+  ///
+  /// For a notebook that was never the user's — the half-built target of a
+  /// cancelled or crashed import. The recycle-bin route is wrong for it twice
+  /// over: it would offer to restore half a notebook, and `deleteNotebook`
+  /// refuses the *last* notebook (there is always somewhere to be), so on a
+  /// workspace with nothing else in it a cancelled import was silently kept.
+  Future<void> discardNotebook(String id) async {
+    final i = notebooks.indexWhere((n) => n.id == id);
+    if (i < 0) return;
+    trashedNotebooks.add(notebooks.removeAt(i));
+    await purgeNotebook(id);
   }
 
   /// Does any OTHER registry entry (live or trashed) use this notebook's log

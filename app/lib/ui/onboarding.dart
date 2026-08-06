@@ -85,9 +85,7 @@ class _OnboardingState extends State<_Onboarding> {
     ]);
     if (file == null || !mounted) return;
     try {
-      final bytes = await file.readAsBytes();
-      if (!mounted) return;
-      final job = ImportJob.start(app, p.basename(file.name), bytes);
+      final job = ImportJob.start(app, p.basename(file.name), file.path);
       if (job != null) setState(() => _importing = true);
     } on OneNoteUnavailable {
       setState(() => _error =

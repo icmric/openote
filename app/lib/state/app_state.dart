@@ -23,6 +23,7 @@ import '../study/flashcards.dart';
 import 'builtin_templates.dart';
 import 'planner_state.dart';
 import 'study_state.dart';
+import '../sync/device_identity.dart';
 import '../sync/folder_watch.dart';
 import '../sync/op.dart';
 import '../sync/cloud_folders.dart';
@@ -200,8 +201,61 @@ class AppState extends ChangeNotifier
   /// Set false by tests that don't want log files written beside their fixture.
   static bool syncLogEnabled = true;
 
+  /// Notebooks whose files another isolate currently owns.
+  ///
+  /// While the import writer isolate is running, it holds the notebook's
+  /// container **and** appends to this device's op log inside its `.onotebook`.
+  /// A recorder opened here would be a second writer on that same log file —
+  /// which is the one thing ADR-0006's whole correctness argument forbids, and
+  /// it is not hypothetical: the notebook manager draws a sync dot per row, and
+  /// a sync dot asks for the device count, and the device count opens a
+  /// recorder. Merely *listing* notebooks during an import would have done it.
+  final Set<String> _importingNotebooks = {};
+
+  /// Hand [nb]'s files to another isolate. Idempotent.
+  void beginExclusiveImport(String nb) {
+    _importingNotebooks.add(nb);
+    _recorders.remove(nb);
+    _repo.closeNotebook(nb);
+  }
+
+  /// Take them back. The next read reopens the container and replays the log
+  /// the writer wrote.
+  void endExclusiveImport(String nb) {
+    _importingNotebooks.remove(nb);
+    _repo.closeNotebook(nb);
+    _invalidateSyncStatus();
+  }
+
+  /// This installation's device id, minted on first use.
+  ///
+  /// The same value `DeviceIdentity.resolve` would settle on for a notebook with
+  /// no log — which a brand-new import target always is, so the fork check has
+  /// nothing to compare against and cannot fire. Exposed because the writer
+  /// isolate has no access to workspace settings and must be told.
+  String deviceIdForImport() {
+    final existing = _repo.getSetting(DeviceIdentity.settingsKey) as String?;
+    if (existing != null && existing.isNotEmpty) return existing;
+    final id = newId();
+    _repo.setSetting(DeviceIdentity.settingsKey, id);
+    return id;
+  }
+
+  /// Record how far the writer isolate got in [nb]'s log.
+  ///
+  /// Not optional. The seq lives in workspace settings, the isolate cannot write
+  /// there, and a log that runs ahead of the remembered seq is precisely the
+  /// signal `DeviceIdentity.resolve` reads as "another installation has been
+  /// writing as us" — so skipping this would fork the device id on the next
+  /// open of every imported notebook.
+  void rememberImportedSeq(String nb, int seq) {
+    if (seq <= 0) return;
+    _repo.setSetting(DeviceIdentity.seqKey(nb), seq);
+  }
+
   SyncRecorder? _recorderFor(String nb) {
     if (!syncLogEnabled) return null;
+    if (_importingNotebooks.contains(nb)) return null;
     final existing = _recorders[nb];
     if (existing != null) return existing;
     final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull;
@@ -2366,6 +2420,17 @@ class AppState extends ChangeNotifier
 
   Future<void> purgeNotebook(String id) async {
     await _repo.purgeNotebook(id);
+    notifyListeners();
+  }
+
+  /// Throw away a notebook that was never the user's — the half-built target of
+  /// a cancelled or crashed import. Not the recycle bin: see
+  /// [Repository.discardNotebook].
+  Future<void> discardImportedNotebook(String id) async {
+    _importingNotebooks.remove(id);
+    _recorders.remove(id);
+    await _repo.discardNotebook(id);
+    _invalidateSyncStatus();
     notifyListeners();
   }
 

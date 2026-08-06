@@ -1,43 +1,69 @@
 # What needs testing, and what I need from you
 
-> Working document · last updated 2026-08-05 · branch `claude/tag-import-and-storage`
+> Working document · last updated 2026-08-06 · branch `claude/performance`
 >
 > Everything below is either **built but never seen by a human**, or **blocked
 > on something only you can do**. Tick things off as you go; tell me what breaks.
 >
-> **Changes since the last round** — three things you reported are fixed and
-> want re-testing (§1.5); the sync-restart case you confirmed has been removed;
-> the toolbar item you were asked to judge has been decided against and the
-> question withdrawn.
+> **Changes since the last round** — the import lockup you reported again is
+> fixed properly this time, by moving the whole import off the app's thread
+> (§1.0); every image is now stored once instead of twice, which roughly halves
+> a notebook on disk (§1.0d). Both want testing before anything else here.
 
 ---
 
 ## 1. Built but unverified — please try these
 
-### 1.0 The import rework (v0.9) — NEW, and the one to try first
+### 1.0 The import rework (v0.9 + v0.10) — NEW, and the one to try first
 
 The whole flow changed shape: importing a `.onepkg` now runs in the
 **background** with a floating progress card, and the app stays fully usable
 while it works.
 
+**What changed again in v0.10, because your last report said it hadn't.** You
+wrote: *"Visually it updates with the popup, however interactions with the page
+aren't completed until the import is finished."* That was exactly right, and it
+was one bug wearing a disguise — painting and interacting have different
+appetites. The import yielded just long enough between batches for a frame to
+be drawn (so it *looked* alive) and nowhere near long enough for a click, which
+is a whole conversation of steps rather than one event.
+
+So the import no longer runs on the app's thread at all. A second isolate reads
+the file, parses it and writes the notebook; the app's only job is a text-layout
+pass it can't delegate, paced one frame at a time. Measured on a 200-page
+notebook: the number of interaction steps that complete *during* an import went
+from 50 to 2349, and the median wait from 12.8 ms to 0.1 ms.
+
 - [ ] Fresh-start test: delete your workspace folder (or use a VM), launch,
       and pick **Bring my notes over from OneNote** in the welcome dialog.
       The dialog should STAY OPEN with a progress row, and a card should
       appear bottom-left with live page counts.
-- [ ] **Type, scroll and draw while it imports.** This is the headline claim:
-      the app must not lock up at any point. If you feel a stutter, note what
+- [ ] **Type, scroll, draw AND click into text boxes while it imports.** This
+      is the headline claim, and the clicking is the part that was broken:
+      switching pages, opening panels, selecting a box — the things that need a
+      round trip to the database, not just a repaint. They should feel exactly
+      as they do when nothing is importing. If you feel a stutter, note what
       the card said at that moment.
+- [ ] Watch for one brief phase early on where the card says **"Laying out N
+      pages…"**. That is the one part still running on the app's thread (text
+      measurement can only happen there). It should still stay responsive — it
+      is paced to give a frame back — but it is the place to look hardest.
 - [ ] The progress popup that had vanished is back (as the card). Watch for
       the counts moving — "118 of 324 pages".
 - [ ] **Cancel** mid-import. It should stop within a moment and the
-      half-imported notebook should be gone from the manager.
+      half-imported notebook should be gone from the manager — *and* not sitting
+      in the recycle bin. Try this once in a workspace with **no other
+      notebooks**: that case used to keep it, silently.
 - [ ] Let one finish: the card should say what arrived ("324 pages, 372
       images…") and offer **Open notebook** — and it must NOT yank you there
       by itself.
 - [ ] Import from the notebook manager too (Import ▸ OneNote notebook) — same
       card, plus a snackbar saying it runs in the background.
-- [ ] **Time it.** The wall-clock should be similar or better than before —
-      the work is the same, chunked — but the app being alive is the point.
+- [ ] **Time it.** The wall-clock should be *better* than before, not merely
+      similar: half the disk writes are gone (see §1.0d) and the writes no
+      longer wait for frames. But the app being alive is still the point.
+- [ ] Check the notebook's **name**: importing `Uni Notes.onepkg` should give
+      you a notebook called "Uni Notes", not "Uni Notes.onepkg".
 
 ### 1.0a The import entry points — the bug you just hit
 

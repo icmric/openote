@@ -41,11 +41,12 @@
 library;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:path/path.dart' as p;
 
 import '../core/onote_ffi.dart';
-import '../model/models.dart';
 import '../state/app_state.dart';
-import 'import_sink.dart';
+import 'import_writer.dart';
 import 'onenote_import.dart';
 
 enum ImportJobState { parsing, writing, done, failed, cancelled }
@@ -88,12 +89,18 @@ class ImportJob extends ChangeNotifier {
   /// navigations away from wherever the import was started.
   static ImportJob? current;
 
-  /// Begin importing [bytes] (a `.onepkg`) as a new notebook. Returns the job,
-  /// or null if one is already running.
+  /// Begin importing the `.onepkg` at [sourcePath] as a new notebook. Returns
+  /// the job, or null if one is already running.
+  ///
+  /// A **path**, not bytes. The writer isolate reads the file itself, so a
+  /// five-year notebook's hundreds of megabytes never pass through the UI
+  /// isolate's heap — and the read, which is itself seconds of I/O, is not done
+  /// on the thread the user is typing on.
   ///
   /// Throws [OneNoteUnavailable] before doing anything visible when the Rust
   /// core is not linked — same contract as the modal path it replaces.
-  static ImportJob? start(AppState app, String fileName, Uint8List bytes) {
+  static ImportJob? start(AppState app, String fileName, String sourcePath,
+      {@visibleForTesting ImportWriterOverrides? debugOverrides}) {
     // "Already running" is checked FIRST: it is the cheaper question, and it
     // is the one whose answer must not depend on whether this build has the
     // native core linked. Refusing a second import is a scheduling fact; the
@@ -104,7 +111,7 @@ class ImportJob extends ChangeNotifier {
     final job = ImportJob._(app, fileName);
     current = job;
     app.refresh(); // the shell mounts the card by watching AppState
-    job._run(bytes);
+    job._run(sourcePath, debugOverrides);
     return job;
   }
 
@@ -121,6 +128,11 @@ class ImportJob extends ChangeNotifier {
     if (isFinished) return;
     _cancelRequested = true;
     message = 'Stopping…';
+    // The writer finishes the batch it is in — a few pages — then shuts down
+    // cleanly. Killing the isolate outright would leave its SQLite handle open,
+    // and on Windows an open handle is exactly why the teardown's delete would
+    // then fail, stranding a half-imported notebook nothing claims.
+    _writer?.cancel();
     notifyListeners();
   }
 
@@ -157,88 +169,126 @@ class ImportJob extends ChangeNotifier {
   /// transaction overhead stays amortised across a large notebook.
   static const _batchPages = 4;
 
-  Future<void> _run(Uint8List bytes) async {
+  /// The running writer, so [cancel] has something to ask.
+  ImportWriterHandle? _writer;
+
+  Future<void> _run(String sourcePath, ImportWriterOverrides? o) async {
+    var nb = '';
     try {
+      if (sourcePath.isEmpty) {
+        return _finish(ImportJobState.failed,
+            message: "Couldn't read that file — it has no location on disk.");
+      }
       // The arrival counters are process globals accumulated during the page
       // writes; without this, a second import would report the first one's
-      // images and strokes on top of its own.
+      // images and strokes on top of its own. The writer isolate has its own
+      // copy of them (globals are per isolate) and carries its totals home in
+      // the result — this reset is for the counters the UI reads.
       resetImportReport();
-      final result = await compute(parseOnepkgStructured, bytes);
-      if (_cancelRequested) return _finish(ImportJobState.cancelled);
-      if (result['ok'] != true) {
-        error = result['error'] as String?;
-        return _finish(ImportJobState.failed,
-            message: error == null
-                ? "Couldn't read any sections from that file."
-                : "Couldn't import: $error");
-      }
-      skippedSections =
-          ((result['failed'] as List?) ?? const []).cast<String>().toList();
-      final sections = (result['sections'] as List?) ?? const [];
-      if (sections.isEmpty) {
-        return _finish(ImportJobState.failed,
-            message: "Couldn't read any sections from that file.");
-      }
 
-      state = ImportJobState.writing;
-      pagesTotal = 0;
-      for (final s in sections) {
-        pagesTotal +=
-            ((((s as Map)['section'] as Map?)?['pages'] as List?) ?? const [])
-                .length;
-      }
+      // The notebook is created HERE, before the isolate starts, because
+      // creating it is a workspace-registry change and the registry is
+      // Repository's alone. From this point until the writer finishes, its
+      // files belong to the isolate.
+      // `basenameWithoutExtension`, like the single-section path above it —
+      // without it, importing "Discrete Maths.onepkg" produced a notebook
+      // called, verbatim, "Discrete Maths.onepkg".
+      final ref = await app.importCreateNotebook(
+          importTitleFromName(p.basenameWithoutExtension(fileName)));
+      notebookId = nb = ref.id;
+      app.beginExclusiveImport(nb);
 
-      final nbTitle = importTitleFromName(fileName);
-      final ref = await app.importCreateNotebook(nbTitle);
-      notebookId = ref.id;
-
-      final counts = await writePackageInBatches(
-        AppStateImportSink(app, ref.id),
-        sections,
-        batchPages: _batchPages,
-        shouldCancel: () => _cancelRequested,
+      final handle = startImportWriter(
+        ImportWriterConfig(
+          sourcePath: sourcePath,
+          notebookPath: ref.file,
+          notebookId: ref.id,
+          title: ref.title,
+          logDir: ref.logDir,
+          deviceId: app.deviceIdForImport(),
+          materialiseBlobs: app.notebookIsShared(nb),
+          batchPages: _batchPages,
+          syncLogEnabled: AppState.syncLogEnabled,
+          sqliteLibrary: o?.sqliteLibrary,
+          preparsedJson: o?.preparsedJson,
+        ),
+        frameYield: o?.frameYield ?? _endOfFrame,
+        onParsed: (pages) {
+          state = ImportJobState.writing;
+          pagesTotal = pages;
+          message = 'Laying out $pages pages…';
+          notifyListeners();
+        },
         onProgress: (sectionName, done, total) {
           pagesDone = done;
           message = 'Importing "$sectionName"…';
           notifyListeners();
         },
       );
+      _writer = handle;
+      if (_cancelRequested) handle.cancel();
 
-      if (_cancelRequested) {
+      final result = await handle.result;
+      app.endExclusiveImport(nb);
+
+      if (result == null) {
         await _teardown();
         return _finish(ImportJobState.cancelled);
       }
 
-      importedPages = counts.pages;
-      firstPageId = counts.firstPageId;
-      droppedStrokes = lastDroppedStrokes;
+      app.rememberImportedSeq(nb, result.lastSeq);
+      app.reloadNodes();
+      app.refresh();
+
+      importedPages = result.pages;
+      firstPageId = result.firstPageId;
+      droppedStrokes = result.droppedStrokes;
+      skippedSections = result.skippedSections;
+      final note = importArrivalNote(
+          result.pages, result.images, result.strokes, result.tags);
       _finish(ImportJobState.done,
           message: skippedSections.isEmpty
-              ? 'Imported ${importArrivalNote(counts.pages, lastImportedImages, lastImportedStrokes, lastImportedTags)}.'
-              : 'Imported ${importArrivalNote(counts.pages, lastImportedImages, lastImportedStrokes, lastImportedTags)} '
-                  '— ${skippedSections.length} '
+              ? 'Imported $note.'
+              : 'Imported $note — ${skippedSections.length} '
                   'section${skippedSections.length == 1 ? '' : 's'} could not '
                   'be read.');
+    } on ImportWriterException catch (e) {
+      if (nb.isNotEmpty) app.endExclusiveImport(nb);
+      skippedSections = e.skippedSections;
+      error = e.message;
+      await _teardown();
+      _finish(ImportJobState.failed,
+          message: e.message == null
+              ? "Couldn't read any sections from that file."
+              : "Couldn't import: ${e.message}");
     } catch (e) {
       // A crashed isolate, an OOM, a native fault. Never silent: the user
       // handed us five years of notes and must not have to guess what
       // happened to them.
+      if (nb.isNotEmpty) app.endExclusiveImport(nb);
       error = '$e';
       await _teardown();
       _finish(ImportJobState.failed, message: "The import failed: $e");
     }
   }
 
+  /// Give the frame back during the layout pass — see [startImportWriter].
+  static Future<void> _endOfFrame() => SchedulerBinding.instance.endOfFrame;
+
   /// Remove the partly-built notebook after a cancel or a crash. Everything
   /// or nothing: the notes still exist in OneNote, so nothing is lost by
   /// discarding a half.
+  ///
+  /// Deliberately NOT the recycle bin. This used to soft-delete and then purge,
+  /// which failed silently whenever the import target was the only notebook in
+  /// the workspace — `deleteNotebook` refuses the last one — so cancelling an
+  /// import could leave the half-built notebook sitting in the list.
   Future<void> _teardown() async {
     final nb = notebookId;
     notebookId = null;
     if (nb == null) return;
     try {
-      await app.deleteNotebook(nb);
-      await app.purgeNotebook(nb);
+      await app.discardImportedNotebook(nb);
     } catch (_) {/* a leftover notebook beats a crash during cleanup */}
   }
 
@@ -251,89 +301,4 @@ class ImportJob extends ChangeNotifier {
     // exist at all is AppState-level (the shell checks ImportJob.current).
     app.refresh();
   }
-}
-
-/// Write a parsed package into notebook [nbId] a few pages at a time,
-/// yielding to the event loop between batches.
-///
-/// This is [buildNotebookFromPackage]'s responsive sibling and shares its
-/// per-page translation via [importOneParsedPage]; the differences are the
-/// batch boundaries and the cancel check. Kept as a top-level function so it
-/// is drivable headlessly in tests, exactly as its predecessor is.
-Future<({int pages, String? firstPageId})> writePackageInBatches(
-  ImportSink sink,
-  List<dynamic> sections, {
-  int batchPages = 4,
-  bool Function()? shouldCancel,
-  void Function(String sectionName, int pagesDone, int pagesTotal)? onProgress,
-}) async {
-  final seeded = sink.nodes();
-  final posBase = nowMs();
-  var pos = 0;
-  String next() => 'a${(posBase + pos++).toString().padLeft(15, '0')}';
-
-  var total = 0;
-  for (final s in sections) {
-    total += ((((s as Map)['section'] as Map?)?['pages'] as List?) ?? const [])
-        .length;
-  }
-
-  var written = 0;
-  String? firstPageId;
-  final groupIds = <String, String>{};
-  for (final sRaw in sections) {
-    if (shouldCancel?.call() ?? false) break;
-    final s = (sRaw as Map).cast<String, dynamic>();
-    final pages = ((s['section'] as Map?)?['pages'] as List?) ?? const [];
-    if (pages.isEmpty) continue;
-    final name = importTitleFromName(s['name'] as String? ?? 'Section');
-
-    String? groupId;
-    final group = (s['group'] as String?)?.trim();
-    if (group != null && group.isNotEmpty) {
-      groupId = groupIds.putIfAbsent(
-          group,
-          () => sink
-              .node(TreeNode(
-                  kind: NodeKind.sectionGroup,
-                  title: group.replaceAll('/', ' › '),
-                  position: next()))
-              .id);
-    }
-    final section = sink.node(TreeNode(
-      kind: NodeKind.section,
-      parentId: groupId,
-      title: name,
-      position: next(),
-    ));
-
-    for (var start = 0; start < pages.length; start += batchPages) {
-      if (shouldCancel?.call() ?? false) break;
-      final end =
-          (start + batchPages) > pages.length ? pages.length : start + batchPages;
-      final first = sink.batch(() {
-        String? firstInBatch;
-        for (var i = start; i < end; i++) {
-          final id = importOneParsedPage(sink, section.id,
-              (pages[i] as Map).cast<String, dynamic>(), next);
-          firstInBatch ??= id;
-        }
-        return firstInBatch;
-      });
-      firstPageId ??= first;
-      written += end - start;
-      onProgress?.call(name, written, total);
-      // The whole point: let input, paint and everything else queued behind
-      // this import actually run. `Duration.zero` yields to the event loop,
-      // which is where frames live.
-      await Future<void>.delayed(Duration.zero);
-    }
-  }
-
-  if (written > 0 && !(shouldCancel?.call() ?? false)) {
-    for (final n in seeded.where((n) => n.kind == NodeKind.section)) {
-      sink.purgeNode(n.id);
-    }
-  }
-  return (pages: written, firstPageId: firstPageId);
 }

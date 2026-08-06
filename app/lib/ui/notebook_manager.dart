@@ -529,8 +529,7 @@ Future<void> importOneNotePackageWithFeedback(
       ]));
   if (file == null) return;
   try {
-    final bytes = await file.readAsBytes();
-    final job = ImportJob.start(app, p.basename(file.name), bytes);
+    final job = ImportJob.start(app, p.basename(file.name), file.path);
     _say(
         messenger,
         job == null
