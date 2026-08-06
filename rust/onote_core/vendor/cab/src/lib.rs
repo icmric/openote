@@ -90,6 +90,15 @@
 //! println!("Cabinet size: {} B", cab_file.metadata().unwrap().len());
 //! ```
 
+// Vendored note (Openote): newer rustc lints elided-elsewhere lifetimes
+// (`FolderEntries` vs `FolderEntries<'_>`) throughout this crate's original
+// code. Style only — no soundness or behaviour impact — and rewriting the
+// signatures would grow our diff from upstream for nothing, so the lint is
+// allowed at the crate root instead. `unknown_lints` first, so a toolchain
+// old enough to predate the lint doesn't warn about the allow itself.
+#![allow(unknown_lints)]
+#![allow(mismatched_lifetime_syntaxes)]
+
 #![warn(missing_docs)]
 
 pub use lzxd::WindowSize;
