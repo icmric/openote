@@ -323,11 +323,13 @@ notebook containing a to-do you have actually checked off would settle it.
    out: the gutter exists only in the read renderer, so fixing one side alone
    makes the jumping worse. The real fix changes both renderers together, with
    `edit_view_metrics_test` driving it.
-2. **Disk space (E1/E2, ADR-0007).** A 60-slide deck costs ~240 MB because
-   every image is stored twice and nothing is ever deleted. Garbage collection
-   is unblocked; the *de-duplication* half may or may not be blocked by the
-   join path in §3 — I want to prove which with a two-device test rather than
-   argue it from the ADR.
+2. **Disk space, part two.** The double-store half is **done** (§1.0d above:
+   2.23× → 1.23× for local-only notebooks). What is left is the bigger absolute
+   win: a 60-slide deck still costs ~240 MB because every PDF page is stored as
+   a full-page raster image. Storing the PDF once and rendering pages on demand
+   fixes that *and* gives you selectable text in imported PDFs *and* the
+   thumbnail element — three of your asks, one change. Then blob garbage
+   collection (ADR-0007), which is designed and unbuilt.
 3. **Notes attached to a timetable event** — "open my notes for this lecture".
    The obvious next step for v0.8, deliberately parked until the two-machine
    sync testing is done, because it is per-workspace state of exactly the kind
