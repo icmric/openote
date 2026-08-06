@@ -54,6 +54,8 @@ Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/AD
 ## Supporting documents
 
 - [Roadmap](../ROADMAP.md) — phased plan from MVP to collaboration.
+- [v0.10 import latency](planning/v0.10-import-latency.md) — **plan.** Why interactions still starve during a background import (paint survives the yields, conversations don't), measured batch costs, and three options ending in a writer isolate.
+- [v0.10 storage](planning/v0.10-storage.md) — **plan.** Measured: 2.13× overhead, images stored twice by design, PDF decks rasterised page-by-page. Wave 1 (single-copy blobs, PDFs stored as PDFs, GC, vacuum) and wave 2 (the container demotion ADR-0006 already names, as format 1.1).
 - [v0.9 performance](planning/v0.9-performance.md) — the import rework (background job, batched writes, the lost-popup bug) and why the study tab stopped decoding every page: a SQL tag prefilter and a shared decoded-page cache instead of a maintainable index.
 - [v0.8 events](planning/v0.8-events.md) — why a subscribed timetable felt like an afterthought and what makes it worth having: events classified into kinds, per-kind alert lead times, a Join button, an "up next" strip, the in-app alert popup, and the retry ladder that fixed a university feed which would not load at all.
 - [v0.7 packaging](planning/v0.7-packaging.md) — how a non-technical user actually installs this: why Inno Setup and a per-user Windows install, why the Linux AppImage and macOS dmg were already the answer, and the honest cost of code signing.
