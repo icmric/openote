@@ -5,6 +5,8 @@
 // rides up — which is why an imported table sat too high and consecutive items
 // collided. Font metrics only exist in the renderer's process, so the correction
 // happens here.
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/export/onenote_import.dart';
@@ -150,6 +152,77 @@ void main() {
     for (var i = 0; i < sync.length; i++) {
       expect(paced[i]['y'], sync[i]['y'],
           reason: 'box $i moved differently under pacing');
+    }
+  });
+
+  test('chunked measurement is exact: fuzz sync vs paced over nasty content',
+      () async {
+    // The paced path measures a giant box in 64-line chunks and SUMS — the
+    // stall fix for the one atomic TextPainter call pacing couldn't split
+    // (216 ms for a 2000-line box). The sum must equal the whole to the bit,
+    // or imported content lands differently depending on which path measured
+    // it. Seeded, so a failure reproduces.
+    final rng = Random(42);
+    String randomLine(int i) {
+      switch (rng.nextInt(6)) {
+        case 0:
+          return ''; // empty interior/trailing lines — the probed edge case
+        case 1:
+          return 'word ' * (1 + rng.nextInt(40)); // wraps a random amount
+        case 2:
+          return 'x' * (1 + rng.nextInt(300)); // unbreakable long word
+        case 3:
+          return '![img](onote-img://\$i =264x\${100 + rng.nextInt(200)})';
+        case 4:
+          return '日本語のテキスト \$i と ελληνικά';
+        default:
+          return 'Line \$i of ordinary lecture text, medium length.';
+      }
+    }
+
+    for (var round = 0; round < 20; round++) {
+      final lines = rng.nextInt(300) + 1; // includes tiny and giant boxes
+      final boxes = <dynamic>[
+        {
+          'kind': 'text',
+          'markdown': List.generate(lines, randomLine).join('\n'),
+          'x': 60.0,
+          'y': 100.0,
+          'w': rng.nextBool() ? 480.0 : 220.0,
+          'flow': 1,
+          if (rng.nextBool()) 'font_size_pt': 8.0 + rng.nextInt(16),
+        },
+        {
+          'kind': 'table',
+          'x': 60.0,
+          'y': 140.0,
+          'flow': 1,
+          'cells': [
+            for (var r = 0; r < 1 + rng.nextInt(8); r++)
+              ['cell ' * (1 + rng.nextInt(10)), 'word ' * (1 + rng.nextInt(6))]
+          ],
+          'col_w': [120.0, 220.0],
+        },
+        text(1, 180.0, 'a plain closing box'),
+      ];
+
+      final syncBoxes = [
+        for (final b in boxes) Map<String, dynamic>.from(b as Map)
+      ];
+      restackFlows(syncBoxes);
+
+      final pacedBoxes = [for (final b in boxes) Map<String, dynamic>.from(b)];
+      await restackFlowsPaced(
+        pacedBoxes,
+        shouldYield: () => true, // yield at every opportunity — worst case
+        onYield: () => Future<void>.delayed(Duration.zero),
+      );
+
+      for (var i = 0; i < syncBoxes.length; i++) {
+        expect(pacedBoxes[i]['y'], syncBoxes[i]['y'],
+            reason: 'round \$round box \$i (\$lines-line box): paced '
+                'measurement diverged from the atomic one');
+      }
     }
   });
 }

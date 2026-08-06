@@ -394,11 +394,48 @@ void main() {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (_, app, ref) = await fixture('onote_writer_responsive_');
 
+    // A page whose single text box is enormous. Real lecture pages have these,
+    // no synthetic probe did, and it is why the import stall survived three
+    // rounds of fixes: one TextPainter.layout of a 2000-line box is 216 ms of
+    // atomic main-isolate work that pacing between boxes cannot split. The
+    // paced path now measures it in 64-line chunks (probed: exactly additive)
+    // — so these pages are in the responsiveness test's diet permanently.
+    Map<String, dynamic> giantPage(String title) => {
+          'title': title,
+          'boxes': [
+            {
+              'kind': 'text',
+              'markdown': List.generate(
+                  1500,
+                  (l) => 'Line $l of one enormous lecture box, with enough '
+                      'words on it that it wraps at the recorded width at '
+                      'least once and often twice over.').join('\n'),
+              'x': 60.0,
+              'y': 120.0,
+              'w': 480.0,
+              'flow': 1,
+            },
+            {
+              'kind': 'text',
+              'markdown': 'A second box the giant one must push down.',
+              'x': 60.0,
+              'y': 160.0,
+              'w': 480.0,
+              'flow': 1,
+            },
+          ],
+          'images': const [],
+          'ink': const [],
+        };
+
     final handle = startImportWriter(
       config(
           ref,
           packageJson([
-            section('Big', [for (var i = 0; i < 200; i++) page('P$i')])
+            section('Big', [
+              for (var i = 0; i < 200; i++)
+                if (i % 25 == 0) giantPage('G$i') else page('P$i')
+            ])
           ]),
           batchPages: 4),
       frameYield: tick,
@@ -429,6 +466,13 @@ void main() {
         reason: 'p99 leg was ${p99.toStringAsFixed(1)} ms (worst '
             '${worst.toStringAsFixed(1)} ms). Anything approaching a batch '
             'time means the write phase is back on this thread.');
+    // Generous against CI noise, but discriminating: with the chunked
+    // measurement the worst observed leg is ~14 ms, while a giant box measured
+    // atomically blocks for ~90 ms even on a fast machine — and this suite's
+    // pages carry eight of them. Verified to fail against the atomic code.
+    expect(worst, lessThan(60),
+        reason: 'worst leg ${worst.toStringAsFixed(1)} ms — a giant box is '
+            'being measured atomically again');
   });
 
   // The regression pin for the shape this replaced. The first version asked the

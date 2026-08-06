@@ -215,19 +215,23 @@ void restackFlows(List<dynamic> boxes) {
   }
 }
 
-/// [restackFlows], yielding **between boxes** when [shouldYield] says so.
+/// [restackFlows], yielding when [shouldYield] says so — between boxes, and
+/// **inside** a box's measurement.
 ///
 /// The synchronous version treats a page as atomic, which is right for the
 /// import translation (it runs inside a transaction) and wrong on the UI
-/// thread: a page is only as cheap as its worst box, and a lecture page can
-/// carry a single hundreds-of-lines text box whose one TextPainter layout
-/// costs tens of milliseconds. Pacing between pages cannot split that page.
-/// Between boxes is as fine as pacing can get — a single box's layout is one
-/// TextPainter call and genuinely atomic.
+/// thread. Pacing between pages could not split a page; pacing between boxes
+/// could not split a box — and a real lecture page routinely carries one
+/// full-page text box whose single `TextPainter.layout` measured at **216 ms
+/// for 2000 lines, 613 ms for 5000**. That atomic call was the import stall
+/// that survived every earlier fix, because none of my synthetic pages had a
+/// giant box.
 ///
-/// The accumulation is identical to [restackFlows] — same groups, same
-/// heights, same order — so the result is byte-for-byte the same; only the
-/// awaits differ.
+/// So the measurement itself is chunked (see [_measuredFlowHeightPaced]), and
+/// the accumulation stays identical to [restackFlows] — same groups, same
+/// heights to the last bit, same order. `flow_restack_test.dart` fuzzes the
+/// equality, because a paced height that drifted from the sync one would
+/// misplace imported content depending on which path measured it.
 Future<void> restackFlowsPaced(
   List<dynamic> boxes, {
   required bool Function() shouldYield,
@@ -237,9 +241,100 @@ Future<void> restackFlowsPaced(
     var cy = (group.first['y'] as num?)?.toDouble() ?? 0;
     for (final b in group) {
       b['y'] = cy;
-      cy += _measuredFlowHeight(b);
+      cy += await _measuredFlowHeightPaced(b,
+          shouldYield: shouldYield, onYield: onYield);
       if (shouldYield()) await onYield();
     }
+  }
+}
+
+/// How many hard lines of a text box are measured per chunk in the paced
+/// path. Measured at ~0.12 ms per wrapped line, 64 lines ≈ 8 ms — inside a
+/// frame with room to spare.
+const int _measureChunkLines = 64;
+
+/// [_measuredFlowHeight], yielding between chunks of work.
+///
+/// **Why the sum is exact.** With one uniform style per box (true of every
+/// parsed box) and an explicit `height` multiplier, every line box — wrapped
+/// or hard — is exactly `fontSize × height` tall, so hard-broken lines lay
+/// out independently and measuring them in runs and summing gives the same
+/// answer to the bit. Probed across wrapping, interior empty lines, unicode
+/// and unbreakable words before this was built.
+///
+/// **The one exception**, also probed: a chunk that is exactly ONE empty line
+/// joins to the empty string, and an empty `TextPainter` reports the font's
+/// natural height instead of the multiplier'd line box. Any chunk of two or
+/// more lines contains a `\n` and cannot be empty, so the chunker only has to
+/// avoid stranding a final lone empty line — it absorbs it into the previous
+/// chunk.
+Future<double> _measuredFlowHeightPaced(
+  Map<String, dynamic> b, {
+  required bool Function() shouldYield,
+  required Future<void> Function() onYield,
+}) async {
+  Future<void> maybeYield() async {
+    if (shouldYield()) await onYield();
+  }
+
+  switch (b['kind'] as String?) {
+    case 'table':
+      // Same arithmetic as the sync path, yielding between rows — a row is
+      // cells of ordinary length, so per-row is fine granularity.
+      final rows = (b['cells'] as List?) ?? const [];
+      if (rows.isEmpty) return _flowGapAfterTable;
+      final rawW = (b['col_w'] as List?) ?? const [];
+      var total = 0.0;
+      for (final rowRaw in rows) {
+        final row = (rowRaw as List?) ?? const [];
+        var tallest = 0.0;
+        for (var c = 0; c < row.length; c++) {
+          final w =
+              c < rawW.length ? (rawW[c] as num).toDouble() : double.infinity;
+          final h =
+              _textHeight(row[c]?.toString() ?? '', width: w, fontSizePx: 15);
+          if (h > tallest) tallest = h;
+        }
+        total += tallest + _tableRowChrome;
+        await maybeYield();
+      }
+      return total + _flowGapAfterTable;
+    case 'math':
+      return 48.0;
+    default:
+      final md = b['markdown'] as String? ?? '';
+      if (md.trim().isEmpty) return 0;
+      final sizePt = (b['font_size_pt'] as num?)?.toDouble();
+      final fontSizePx =
+          (sizePt != null && sizePt > 4) ? sizePt * 120.0 / 72.0 : 15.0;
+      final w = (b['w'] as num?)?.toDouble();
+      final width = (w != null && w > 1) ? w : double.infinity;
+      final family = b['font'] as String?;
+      var imagesH = 0.0;
+      final textLines = <String>[];
+      for (final line in md.split('\n')) {
+        final m = _flowImageLine.firstMatch(line);
+        if (m != null) {
+          imagesH += double.tryParse(m.group(1)!) ?? 0;
+        } else {
+          textLines.add(line);
+        }
+      }
+
+      var textH = 0.0;
+      final n = textLines.length;
+      var i = 0;
+      while (i < n) {
+        var j = i + _measureChunkLines;
+        if (j > n) j = n;
+        // Don't strand a final lone empty line — see the doc comment.
+        if (n - j == 1 && textLines[n - 1].isEmpty) j = n;
+        textH += _textHeight(textLines.sublist(i, j).join('\n'),
+            width: width, fontSizePx: fontSizePx, family: family);
+        i = j;
+        if (i < n) await maybeYield();
+      }
+      return textH + imagesH + _flowGapAfterText;
   }
 }
 

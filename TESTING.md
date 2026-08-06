@@ -5,11 +5,11 @@
 > Everything below is either **built but never seen by a human**, or **blocked
 > on something only you can do**. Tick things off as you go; tell me what breaks.
 >
-> **Changes since the last round** — the import lockup is fixed in two places
-> now: the write phase moved off the app's thread, and then the layout request
-> that replaced it stopped arriving as one enormous message (§1.0). Every image
-> is stored once instead of twice, roughly halving a notebook on disk (§1.0d).
-> Both want testing before anything else here.
+> **Changes since the last round** — found the import stall that survived your
+> release-exe test: a page whose text is one enormous box was being measured in
+> one indivisible 200–600 ms call on the app's thread, several times per real
+> notebook. Now measured in small chunks with a frame between each (§1.0).
+> Launch you've confirmed clean ✅. The import is the one to re-test.
 
 ---
 
@@ -21,7 +21,7 @@ The whole flow changed shape: importing a `.onepkg` now runs in the
 **background** with a floating progress card, and the app stays fully usable
 while it works.
 
-**What changed in v0.10, over two rounds.** You first wrote: *"Visually it
+**What changed in v0.10, over three rounds.** You first wrote: *"Visually it
 updates with the popup, however interactions with the page aren't completed
 until the import is finished."* That was one bug wearing a disguise — painting
 and interacting have different appetites. The import gave the app just enough
@@ -45,6 +45,16 @@ Now status reads cost a directory listing (~3 ms), and the log replay happens
 on a background thread, started at launch and at import completion — so the
 first edit finds it already done.
 
+Then, with the release exe, you confirmed launch was clean but *"the stall
+during import though was still very much there."* Found it, by measuring what
+none of my synthetic notebooks had: a page whose text is **one enormous box**.
+Laying out imported text happens on the app's thread (nothing else can measure
+text), and one box was measured in one indivisible call — **216 ms for a
+2000-line box, 613 ms for 5000**, several times per real lecture notebook. It
+is now measured in 64-line chunks with a frame given back between chunks —
+worst pause ~14 ms regardless of box size, verified identical layout to the
+bit.
+
 - [ ] Fresh-start test: delete your workspace folder (or use a VM), launch,
       and pick **Bring my notes over from OneNote** in the welcome dialog.
       The dialog should STAY OPEN with a progress row, and a card should
@@ -55,10 +65,9 @@ first edit finds it already done.
       round trip to the database, not just a repaint. They should feel exactly
       as they do when nothing is importing. If you feel a stutter, note what
       the card said at that moment.
-- [ ] **Launch, first.** Close Openote with your big imported notebook open,
-      then relaunch. The first few seconds used to be frozen — that was the
-      log replay. It should now be usable immediately; the replay happens in
-      the background and you shouldn't be able to tell.
+- [x] **Launch.** You confirmed the release exe launches with no stall — and
+      that the stall you saw was debug-only. (The background-replay fix stands
+      regardless: debug is where development happens.)
 - [ ] **The moment the import finishes.** The popup announcing the result used
       to be exactly when the app locked up (the new notebook's backup dot
       triggered the same replay). It should now stay smooth straight through
