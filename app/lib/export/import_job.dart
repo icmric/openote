@@ -93,8 +93,13 @@ class ImportJob extends ChangeNotifier {
   /// Throws [OneNoteUnavailable] before doing anything visible when the Rust
   /// core is not linked — same contract as the modal path it replaces.
   static ImportJob? start(AppState app, String fileName, Uint8List bytes) {
-    if (OnoteCore.instance == null) throw OneNoteUnavailable();
+    // "Already running" is checked FIRST: it is the cheaper question, and it
+    // is the one whose answer must not depend on whether this build has the
+    // native core linked. Refusing a second import is a scheduling fact; the
+    // core being absent is an environment fact, and conflating their order
+    // made the refusal untestable without a core.
     if (current != null && !current!.isFinished) return null;
+    if (OnoteCore.instance == null) throw OneNoteUnavailable();
     final job = ImportJob._(app, fileName);
     current = job;
     app.refresh(); // the shell mounts the card by watching AppState

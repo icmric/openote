@@ -39,6 +39,23 @@ while it works.
 - [ ] **Time it.** The wall-clock should be similar or better than before —
       the work is the same, chunked — but the app being alive is the point.
 
+### 1.0a The import entry points — the bug you just hit
+
+The `.onepkg` import from the **notebook manager** was completely dead: the
+file picker opened, you chose a notebook, and the very next line returned
+without doing anything. My fault, introduced with the background-job rework.
+
+- [ ] Notebook manager ▸ **Import** ▸ *OneNote notebook (.onepkg)*. A snackbar
+      should say it is importing in the background, and the card should appear
+      bottom-left.
+- [ ] The same from the **welcome dialog** (that path was already working, but
+      it now shares the fix).
+- [ ] Notebook manager ▸ **Get started** — this had the identical bug one line
+      above and should now open the welcome dialog properly.
+- [ ] Start an import, then try to start a second one: it should refuse with
+      "an import is already running", not queue or interleave.
+- [ ] Cancel the file picker: nothing at all should happen, no error.
+
 ### 1.0b The study tab on your big notebook
 
 - [ ] Open the flashcards/study tab on the imported notebook. This was your
@@ -47,6 +64,16 @@ while it works.
 - [ ] The tags rollup and the planner should feel the same.
 - [ ] Check the deck contents are unchanged: same cards as before the update.
 
+
+### 1.0c The backup dot — NEW
+
+- [ ] Open the notebook manager: every notebook row now has a dot after its
+      icon. **Green** = in a sync folder, **amber** = backed up by a mirror but
+      not syncing, **hollow ring** = this computer only.
+- [ ] Hover each one — the tooltip says it in words, and names the folder.
+- [ ] The navigator header (above the search box) shows the same thing for the
+      open notebook, with the folder name spelled out.
+- [ ] Move a notebook into a sync folder and check both surfaces turn green.
 
 ### 1.1 The Planner (v0.5) — biggest surface, least tested
 
@@ -264,3 +291,5 @@ notebook containing a to-do you have actually checked off would settle it.
 | "The app locks up during import / imports are slow" | **Reworked** — background job, §1.0 |
 | "We lost the popup when importing" | **Found and fixed** — a context bug ate it; it's a card now, §1.0 |
 | "Opening the flashcards tab is very slow" | **Fixed** — SQL prefilter + page cache, §1.0b |
+| "Notebook import doesn't work — no popup, never appears" | **Fixed** — my regression; the entry point was handed a dead dialog context, §1.0a |
+| "A dot showing which notebooks are backed up" | **Built** — §1.0c |

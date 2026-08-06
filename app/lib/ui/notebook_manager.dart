@@ -9,6 +9,7 @@ import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'onboarding.dart';
+import 'sync_dot.dart';
 import '../theme/tokens.dart';
 
 /// The notebook manager (style guide §7b) — the one place notebooks are managed.
@@ -185,8 +186,12 @@ class _NotebookManagerState extends State<_NotebookManager> {
             icon: const Icon(Icons.explore_outlined, size: 18),
             label: const Text('Get started'),
             onPressed: () async {
+              // Root navigator's context, captured before the pop — the same
+              // trap as the import row below: `showDialog` on a route that has
+              // just been popped has no live Navigator to attach to.
+              final root = Navigator.of(context, rootNavigator: true).context;
               Navigator.pop(context);
-              await showOnboarding(context, app);
+              await showOnboarding(root, app);
             },
           ),
           const Spacer(),
@@ -199,19 +204,33 @@ class _NotebookManagerState extends State<_NotebookManager> {
   }
 
   /// The inline import choices, shown under the list when Import is expanded.
+  ///
+  /// **Everything an import needs is captured BEFORE this dialog is popped.**
+  /// The obvious spelling — pop, then call `importX(context, app)` — hands the
+  /// import the context of a route that no longer exists, so every
+  /// `context.mounted` guard inside it is false and the import silently does
+  /// nothing at all. That is precisely how the `.onepkg` import stopped
+  /// working: the file picker opened, the user chose their notebook, and the
+  /// very next line returned.
+  ///
+  /// A `ScaffoldMessengerState` and the ROOT navigator's context both outlive
+  /// this route, so neither can go stale under an import that takes a minute.
   Widget _importRow() {
-    Widget choice(IconData icon, String label, Future<void> Function() run) =>
+    Widget choice(IconData icon, String label,
+            Future<void> Function(ScaffoldMessengerState, BuildContext) run) =>
         Padding(
           padding: const EdgeInsets.only(right: 6, top: 6),
           child: OutlinedButton.icon(
             icon: Icon(icon, size: 16),
             label: Text(label, style: const TextStyle(fontSize: 13)),
             onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final rootContext = Navigator.of(context, rootNavigator: true).context;
               setState(() => _importOpen = false);
-              // Close the panel first: import shows its own progress dialog and
-              // then navigates to the imported notebook.
+              // Close the panel first: the imports that still show a modal put
+              // it over the shell, not over a list the user has finished with.
               Navigator.pop(context);
-              await run();
+              await run(messenger, rootContext);
             },
           ),
         );
@@ -219,11 +238,11 @@ class _NotebookManagerState extends State<_NotebookManager> {
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
       child: Wrap(children: [
         choice(Icons.library_books_outlined, 'OneNote notebook (.onepkg)',
-            () => importOneNotePackageWithFeedback(context, app)),
+            (m, _) => importOneNotePackageWithFeedback(m, app)),
         choice(Icons.upload_file_outlined, 'OneNote section (.one)',
-            () => importOneNoteSectionWithFeedback(context, app)),
+            (m, c) => importOneNoteSectionWithFeedback(c, app, messenger: m)),
         choice(Icons.drive_folder_upload_outlined, 'Markdown folder',
-            () => importMarkdownWithFeedback(context, app)),
+            (m, _) => importMarkdownWithFeedback(m, app)),
       ]),
     );
   }
@@ -279,7 +298,11 @@ class _NotebookManagerState extends State<_NotebookManager> {
               Icon(current ? Icons.menu_book : Icons.menu_book_outlined,
                   size: 18,
                   color: current ? scheme.primary : context.surfaces.textSecondary),
-              const SizedBox(width: 10),
+              const SizedBox(width: 6),
+              // Which of these is safe if this laptop dies — answerable by
+              // scanning the list, rather than by opening each one in turn.
+              SyncDot(app: app, notebookId: nb.id),
+              const SizedBox(width: 6),
               Expanded(
                 child: renaming
                     ? TextField(
@@ -492,59 +515,76 @@ Future<String?> _promptNotebookName(BuildContext context,
 /// (see `import_job.dart`) is the same work, chunked, with a floating card
 /// for progress and honesty about partial imports at the end. The completion
 /// message lives on the card now, so nothing here waits for anything.
+/// **Takes a messenger, not a `BuildContext`, on purpose.** The background job
+/// needs no context, so there is nothing here that a dead route can stop —
+/// which is the structural half of the fix for the import that silently did
+/// nothing. `ScaffoldMessengerState` lives above the navigator, so it is still
+/// good long after whichever dialog started the import has gone.
 Future<void> importOneNotePackageWithFeedback(
-    BuildContext context, AppState app) async {
-  final file = await openFile(acceptedTypeGroups: const [
-    XTypeGroup(label: 'OneNote notebook package', extensions: ['onepkg'])
-  ]);
-  if (file == null || !context.mounted) return;
+    ScaffoldMessengerState messenger, AppState app,
+    {Future<XFile?> Function()? pickFile}) async {
+  final file = await (pickFile?.call() ??
+      openFile(acceptedTypeGroups: const [
+        XTypeGroup(label: 'OneNote notebook package', extensions: ['onepkg'])
+      ]));
+  if (file == null) return;
   try {
     final bytes = await file.readAsBytes();
-    if (!context.mounted) return;
     final job = ImportJob.start(app, p.basename(file.name), bytes);
-    if (job == null) {
-      _snack(context, 'An import is already running — one at a time.');
-      return;
-    }
-    _snack(context,
-        'Importing in the background — keep working, the card in the corner '
-        'will say when it\'s done.');
+    _say(
+        messenger,
+        job == null
+            ? 'An import is already running — one at a time.'
+            : 'Importing in the background — keep working, the card in the '
+                "corner will say when it's done.");
   } on OneNoteUnavailable {
-    if (context.mounted) _snack(context, _coreMissing, seconds: 8);
+    _say(messenger, _coreMissing, seconds: 8);
   } catch (e) {
-    if (context.mounted) _snack(context, "Couldn't read that file: $e");
+    _say(messenger, "Couldn't read that file: $e");
   }
 }
 
 /// Import a single `.one` section into the current notebook.
-Future<void> importOneNoteSectionWithFeedback(
-    BuildContext context, AppState app) async {
+///
+/// Still modal: a section is small, and its parse now happens in an isolate
+/// with the decode work, so the dialog is short-lived. [context] must be one
+/// that outlives the caller — the root navigator's, not a dialog's — or the
+/// progress dialog silently does not appear. [messenger] carries the result
+/// even if that context has gone by the time the import finishes.
+Future<void> importOneNoteSectionWithFeedback(BuildContext context, AppState app,
+    {ScaffoldMessengerState? messenger}) async {
+  final m = messenger ?? ScaffoldMessenger.of(context);
   try {
     final count = await importOneNoteFile(app, progressContext: context);
-    if (count == null || !context.mounted) return;
-    _snack(
-        context,
+    if (count == null) return;
+    _say(
+        m,
         count == 0
             ? "Couldn't read any content from that .one file."
             : 'Imported '
                 '${importArrivalNote(count, lastImportedImages, lastImportedStrokes, lastImportedTags)}'
                 ' from OneNote.${_strokeNote()}');
   } on OneNoteUnavailable {
-    if (context.mounted) _snack(context, _coreMissing, seconds: 8);
+    _say(m, _coreMissing, seconds: 8);
   }
 }
 
 /// Import a folder of Markdown (Obsidian-style) as a new section.
 Future<void> importMarkdownWithFeedback(
-    BuildContext context, AppState app) async {
+    ScaffoldMessengerState messenger, AppState app) async {
   final count = await importMarkdownFolder(app);
-  if (count == null || !context.mounted) return;
-  _snack(
-      context,
+  if (count == null) return;
+  _say(
+      messenger,
       count == 0
           ? 'No Markdown files found in that folder.'
           : 'Imported $count page${count == 1 ? '' : 's'}.');
 }
+
+/// Show a snackbar through a messenger that cannot go stale.
+void _say(ScaffoldMessengerState m, String msg, {int seconds = 4}) =>
+    m.showSnackBar(
+        SnackBar(content: Text(msg), duration: Duration(seconds: seconds)));
 
 const _coreMissing =
     'OneNote import needs the Rust core — build onote_core.dll '
@@ -559,10 +599,6 @@ String _strokeNote() => lastDroppedStrokes == 0
     : ' $lastDroppedStrokes ink stroke'
         '${lastDroppedStrokes == 1 ? '' : 's'} could not be decoded and '
         '${lastDroppedStrokes == 1 ? 'was' : 'were'} left out.';
-
-void _snack(BuildContext context, String msg, {int seconds = 4}) =>
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), duration: Duration(seconds: seconds)));
 
 /// "Repair" — heal every page of the open notebook at once.
 ///
