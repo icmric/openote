@@ -10,20 +10,76 @@
 ## The short version
 
 ```bash
-# 1. bump the version (must match the tag exactly)
-#    app/pubspec.yaml:  version: 0.3.0+3
-git commit -am "Release 0.3.0"
+# 0. BE ON MASTER. Every step below assumes it, and the failure is silent:
+#    committing the bump on a feature branch makes step 1's push print
+#    "Everything up-to-date" and exit 0, after which step 2 tags a commit
+#    whose pubspec was never bumped — which is exactly how 0.3.0 died.
+git checkout master && git pull
+
+# 1. OPTIONAL BUT RECOMMENDED — a dry run, no tag involved.
+#    Actions ▸ Release ▸ Run workflow ▸ Branch: master ▸ version = 0.3.1
+#    Builds and packages all three platforms and uploads the artifacts to the
+#    run page. It creates NO release — and note that it therefore does NOT
+#    exercise the release job at all (see §"What the dry run cannot tell you").
+#    The version guard still applies, so do this AFTER step 2's push.
+
+# 2. bump the version (must match the tag exactly), commit, PUSH
+#    app/pubspec.yaml:  version: 0.3.1+4
+#    CHANGELOG.md:      heading says 0.3.1
+git commit -am "Release 0.3.1"
 git push origin master
 
-# 2. tag it
-git tag v0.3.0
-git push origin v0.3.0
+# 3. tag it — only once the bump is actually on the remote
+git tag v0.3.1
+git push origin v0.3.1
 
-# 3. wait ~15 min, then publish the draft on GitHub
+# 4. wait ~15 min, then REVIEW and publish the draft on GitHub
 ```
 
-That is it. Everything below is what those three commands set off, and what to
-do when one of them does not work.
+That is it. Everything below is what those commands set off, and what to do
+when one of them does not work.
+
+### Re-tagging after a failed attempt
+
+A tag deleted on GitHub is **still in your local clone**, and `git push origin
+v0.3.0` will happily push the stale copy straight back. A plain `git fetch
+--prune` does not remove it either — tags need `--prune-tags`. So delete it in
+both places, explicitly:
+
+```bash
+git push --delete origin v0.3.0     # remote
+git tag -d v0.3.0                   # local  ← the one that gets forgotten
+git fetch --prune --prune-tags origin
+
+git checkout master && git pull
+git log --oneline -1                # note this SHA
+git tag v0.3.0
+git rev-parse v0.3.0                # must equal the SHA above
+git push origin v0.3.0
+```
+
+**Delete the release for the failed tag FIRST — this is a numbered step, not a
+tidy-up.** It does not "sit beside" the new draft; there is no second release.
+`softprops/action-gh-release` finds the release by tag and, on that update
+path, passes `draft: existingRelease.draft` straight through. Only the *create*
+path honours `draft: true`. So re-tagging into an existing **published** release
+attaches every installer to it live, overwrites its title and body with the
+draft text, and never pauses for review.
+
+The `version` job now refuses outright when a release already exists for the
+tag, so this cannot happen silently any more — but the refusal is the backstop,
+not the plan.
+
+```bash
+# Releases ▸ the old release ▸ ⋯ ▸ Delete release   (deleting a release does
+#                                                    NOT delete its tag)
+git push --delete origin v0.3.1
+git tag -d v0.3.1
+```
+
+**Or just ship the next patch number.** One line in `pubspec.yaml` against four
+coupled destructive steps that each have to happen in the right order. That is
+what 0.3.0 → 0.3.1 was.
 
 ---
 
@@ -34,6 +90,9 @@ do when one of them does not work.
 | CI is green on `master` | The release workflow **does not run tests**. It builds and packages. A red master produces a broken release quite happily. |
 | `app/pubspec.yaml` version matches the tag | The workflow fails fast if they disagree. `version: 0.3.0+3` ↔ tag `v0.3.0` — only `M.m.p` is compared, the `+build` is ignored. |
 | The version is bumped **and pushed** before the tag | Tagging a commit whose pubspec still says the old version fails the `derive version` job in about eight seconds. |
+| You are on `master`, not a feature branch | The bump has to be on the commit the tag points at. Committing it elsewhere makes `git push origin master` a silent no-op. |
+| `CHANGELOG.md` names this version | Nothing checks it, and the auto-generated notes are a list of merged PRs — not a description of what changed for a user. |
+| No release already exists for the tag | The `version` job now refuses if one does, because publishing into an existing release bypasses the draft review entirely. |
 
 **Version numbers.** `M.m.p` on both sides; increment the `+build` counter too,
 because some platforms care about it even though this workflow does not.
@@ -77,7 +136,11 @@ the macOS job silently produced a 4 MB dmg.
    merged PRs since the last tag
 4. **Publish release**
 
-The website picks it up on its next page load; nothing needs republishing.
+The website picks it up within about ten minutes; nothing needs republishing.
+Not on the next page load — `worker/index.js` caches for 600 s, and Cloudflare's
+Browser Cache TTL can override that on cache hits (measured: `max-age=14400`
+unless the zone is set to *Respect Existing Headers*). To see it immediately:
+Cloudflare ▸ Caching ▸ Purge, `https://openote.org/api/latest`.
 
 ---
 
@@ -225,7 +288,8 @@ iscc /DAppVersion=0.3.0 /DStageDir=<path to the Release folder> packaging\window
 | Site deploy fails with an auth error | §2a not done, or the token is scoped to the wrong account | Recreate the token from the **Edit Cloudflare Workers** template |
 | Site deploy says `Missing entry-point` | Wrangler 3 is being used; it ignores `wrangler.jsonc` entirely | Use wrangler 4 — the workflow pins it, so this only bites a hand-run `npx wrangler` |
 | `/api/latest` returns 503 | GitHub had no published release, or was unreachable | Expected with no release; the page falls back to calling GitHub directly |
-| The site says "no release yet" | No **published** release — a draft is invisible to the API | Publish the draft |
+| The site says "no release yet" | No **published** release: `/releases/latest` excludes drafts | Publish the draft |
+| The site shows "Not in this release" on a platform | That platform's build job failed, so its installer is genuinely not attached | Check the run; re-cut with the next patch number once fixed |
 
 **Deleting a tag** is safe before the release is published, and the usual fix
 for everything above:
@@ -239,9 +303,60 @@ git push --delete origin vX.Y.Z
 
 ## 6. Not yet true
 
-Stated plainly because it is the most likely source of a surprise: **neither
-the Windows installer nor the Pages workflow has ever executed.** Both were
-added on 2026-08-05 and fire for the first time on the next tag / next push to
-`master`. They have been read carefully and the Inno Setup script is
-conventional, but reviewed is not the same as ran. Expect the first tag to
-shake out something dull, most likely a path.
+Stated plainly, because this is where the surprises come from.
+
+**The three platform jobs have never run to completion.** Two tag attempts both
+stopped at the version guard, so everything after it was skipped. An audit of
+that never-executed path found two independent faults in the Windows job, both
+now fixed, and neither of which any amount of reading had caught before:
+
+- `"$env:ProgramFiles(x86)\..."` expands to `C:\Program Files(x86)\...` —
+  without the space. PowerShell ends an unbraced variable name at `(`, so the
+  braced `${env:ProgramFiles(x86)}` is required. Confirmed by running the exact
+  expression under pwsh.
+- The Inno Setup pin was 6.2.2 while `openote.iss` uses
+  `ArchitecturesAllowed=x64compatible`, which needs 6.3+. A pin that cannot
+  compile the script it is pinned for is not caution. The install is now
+  unpinned and the step **asserts** the floor with a message saying what to do.
+
+**Still unchecked from a Linux machine:** whether ISCC accepts `app_icon.ico`,
+whose entries are all PNG-compressed rather than BMP. The `workflow_dispatch`
+dry run settles this — that is what it is for. If ISCC rejects it, regenerate
+the icon with BMP entries at 16/32/48.
+
+### What the dry run cannot tell you
+
+The `release` job is gated `if: github.event_name == 'push'`, so a
+`workflow_dispatch` run **skips it entirely**. The dry run proves the three
+platform jobs — roughly 90% of the runner time and 100% of the packaging code —
+and nothing about:
+
+- `actions/download-artifact` with `merge-multiple: true`, and whether
+  `files: dist/*` resolves to all five artifacts
+- `generate_release_notes: true`
+- **`contents: write`** — the top level of this workflow is `contents: read` and
+  only the release job elevates. No workflow in this repository has ever asked
+  for write. If **Settings ▸ Actions ▸ General ▸ Workflow permissions** is set
+  to read-only, that is a ceiling the job cannot raise, and it 403s at the end
+  of an otherwise perfect forty-minute build. Check the setting; the dry run
+  will never tell you.
+
+If you want the release job proven too, tag a prerelease: set the version to
+something like `0.3.1-rc1`, tag `v0.3.1-rc1`, push. The guard captures
+`[^+ ]*`, so it matches; the full chain runs; the output is a draft, invisible
+to `/releases/latest`, which you inspect and then delete.
+
+**macOS has never been run by a human at all**, and the audit found a
+consequence worth knowing about. `Release.entitlements` enabled the App Sandbox
+with neither network nor file-access keys — and Openote fetches an `.ics` feed
+over HTTPS and opens notebooks at remembered arbitrary paths, so a
+locally-built macOS app most likely could do neither. The shipped `.dmg`
+escaped it only because `codesign --deep` silently stripped the entitlements.
+That is now an explicit decision rather than an accident (see the comment in
+`app/macos/Runner/Release.entitlements`), but it is reasoned, not measured.
+**Someone still has to run the dmg.**
+
+**The Linux runner pin expires.** `ubuntu-22.04` is deliberate — the AppImage
+inherits the build host's glibc floor — but GitHub begins deprecating that
+image on **2026-09-17**, with brownouts that fail jobs using the label. Revisit
+before then; the options are in the comment above the pin.

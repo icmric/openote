@@ -15,6 +15,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/open.dart';
 
 import 'package:openote/core/onote_ffi.dart';
+import 'package:openote/export/import_sink.dart';
 import 'package:openote/export/onenote_import.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -69,7 +70,7 @@ void main() {
     });
     final nb = await repo.createNotebook('E2E Import');
     final app = AppState(repo);
-    final count = await buildNotebookFromPackage(app, nb.id, sections);
+    final count = await buildNotebookFromPackage(AppStateImportSink(app, nb.id), sections);
     expect(count, greaterThan(100), reason: 'a full notebook of pages');
 
     // 3) Reconstruct the persisted tree exactly as the sidebar reads it

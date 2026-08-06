@@ -1,18 +1,162 @@
 # What needs testing, and what I need from you
 
-> Working document · last updated 2026-08-05 · branch `claude/tag-import-and-storage`
+> Working document · last updated 2026-08-06 · branch `claude/performance`
 >
 > Everything below is either **built but never seen by a human**, or **blocked
 > on something only you can do**. Tick things off as you go; tell me what breaks.
 >
-> **Changes since the last round** — three things you reported are fixed and
-> want re-testing (§1.5); the sync-restart case you confirmed has been removed;
-> the toolbar item you were asked to judge has been decided against and the
-> question withdrawn.
+> **Changes since the last round** — your "inputs execute after the import
+> completes" report named the real mechanism at last: Windows dispatches an
+> app's own queued work ahead of mouse/keyboard, so a loop that never goes
+> idle starves input entirely while frames keep flowing. Every yield in the
+> import (and the PDF import) now goes genuinely idle for 2 ms per chunk.
+> This is a Windows-only failure no Linux test could reproduce, which is why
+> four rounds of fixes measured clean here and still stalled for you — §1.0.
 
 ---
 
 ## 1. Built but unverified — please try these
+
+### 1.0 The import rework (v0.9 + v0.10) — NEW, and the one to try first
+
+The whole flow changed shape: importing a `.onepkg` now runs in the
+**background** with a floating progress card, and the app stays fully usable
+while it works.
+
+**What changed in v0.10, over four rounds.** You first wrote: *"Visually it
+updates with the popup, however interactions with the page aren't completed
+until the import is finished."* That was one bug wearing a disguise — painting
+and interacting have different appetites. The import gave the app just enough
+time between batches to draw a frame (so it *looked* alive) and nowhere near
+enough for a click, which is a whole conversation of steps rather than one
+event. So the import moved off the app's thread entirely: a second process
+reads the file, parses it and writes the notebook.
+
+Then you wrote: *"still locks up when it starts displaying all the pages in the
+popup"* — and later added that the app is **locked up for the first few seconds
+after launching**. The launch clue cracked it: both freezes were the same bug,
+and it wasn't the import itself. To show sync status, the app was reading and
+replaying the notebook's **entire change log** — every op the import wrote, one
+per block — synchronously, before it would draw anything. At launch that ran
+for the open notebook; at the end of an import it ran the moment the new
+notebook's backup dot first painted, which is exactly when the popup shows the
+result. Half a second for a synthetic 2000-page notebook on fast hardware;
+seconds for a real one on Windows.
+
+Now status reads cost a directory listing (~3 ms), and the log replay happens
+on a background thread, started at launch and at import completion — so the
+first edit finds it already done.
+
+Then, with the release exe, you confirmed launch was clean but the import
+still stalled — and your description ("popup updates slowly, inputs execute
+after the import completes") finally named the platform. **Windows dispatches
+an app's own queued work ahead of mouse and keyboard input.** The import's
+layout loop — the one job that must run on the app's thread — never went
+idle, so Windows never delivered your clicks, while frames (which are queued
+work) kept trickling through. That, it turns out, has been the mechanism
+under every round of this bug. Two things fixed it: giant text boxes are now
+measured in small chunks (one 2000-line box was a single indivisible 216 ms
+call), and every chunk is followed by a real 2 ms idle so Windows can deliver
+input. The same idle was added to the PDF import's loop.
+
+- [ ] Fresh-start test: delete your workspace folder (or use a VM), launch,
+      and pick **Bring my notes over from OneNote** in the welcome dialog.
+      The dialog should STAY OPEN with a progress row, and a card should
+      appear bottom-left with live page counts.
+- [ ] **Type, scroll, draw AND click into text boxes while it imports.** This
+      is the headline claim, and the clicking is the part that was broken:
+      switching pages, opening panels, selecting a box — the things that need a
+      round trip to the database, not just a repaint. They should feel exactly
+      as they do when nothing is importing. If you feel a stutter, note what
+      the card said at that moment.
+- [x] **Launch.** You confirmed the release exe launches with no stall — and
+      that the stall you saw was debug-only. (The background-replay fix stands
+      regardless: debug is where development happens.)
+- [ ] **The moment the import finishes.** The popup announcing the result used
+      to be exactly when the app locked up (the new notebook's backup dot
+      triggered the same replay). It should now stay smooth straight through
+      the "Imported N pages" card, and clicking into the imported notebook
+      right away should work without a pause.
+- [ ] The counts should start moving **immediately** after the total appears
+      (the earlier one-giant-message layout bug, also fixed). If anything still
+      hitches, tell me what the card said and roughly how big the notebook is.
+- [ ] The progress popup that had vanished is back (as the card). Watch for
+      the counts moving — "118 of 324 pages".
+- [ ] **Cancel** mid-import. It should stop within a moment and the
+      half-imported notebook should be gone from the manager — *and* not sitting
+      in the recycle bin. Try this once in a workspace with **no other
+      notebooks**: that case used to keep it, silently.
+- [ ] Let one finish: the card should say what arrived ("324 pages, 372
+      images…") and offer **Open notebook** — and it must NOT yank you there
+      by itself.
+- [ ] Import from the notebook manager too (Import ▸ OneNote notebook) — same
+      card, plus a snackbar saying it runs in the background.
+- [ ] **Time it.** The wall-clock should be *better* than before, not merely
+      similar: half the disk writes are gone (see §1.0d) and the writes no
+      longer wait for frames. But the app being alive is still the point.
+- [ ] Check the notebook's **name**: importing `Uni Notes.onepkg` should give
+      you a notebook called "Uni Notes", not "Uni Notes.onepkg".
+
+### 1.0a The import entry points — the bug you just hit
+
+The `.onepkg` import from the **notebook manager** was completely dead: the
+file picker opened, you chose a notebook, and the very next line returned
+without doing anything. My fault, introduced with the background-job rework.
+
+- [ ] Notebook manager ▸ **Import** ▸ *OneNote notebook (.onepkg)*. A snackbar
+      should say it is importing in the background, and the card should appear
+      bottom-left.
+- [ ] The same from the **welcome dialog** (that path was already working, but
+      it now shares the fix).
+- [ ] Notebook manager ▸ **Get started** — this had the identical bug one line
+      above and should now open the welcome dialog properly.
+- [ ] Start an import, then try to start a second one: it should refuse with
+      "an import is already running", not queue or interleave.
+- [ ] Cancel the file picker: nothing at all should happen, no error.
+
+### 1.0b The study tab on your big notebook
+
+- [ ] Open the flashcards/study tab on the imported notebook. This was your
+      "opening the tab is very slow" report — it should now be instant, since
+      only tagged pages are read.
+- [ ] The tags rollup and the planner should feel the same.
+- [ ] Check the deck contents are unchanged: same cards as before the update.
+
+
+### 1.0c The backup dot — NEW
+
+- [ ] Open the notebook manager: every notebook row now has a dot after its
+      icon. **Green** = in a sync folder, **amber** = backed up by a mirror but
+      not syncing, **hollow ring** = this computer only.
+- [ ] Hover each one — the tooltip says it in words, and names the folder.
+- [ ] The navigator header (above the search box) shows the same thing for the
+      open notebook, with the folder name spelled out.
+- [ ] Move a notebook into a sync folder and check both surfaces turn green.
+
+### 1.0d The disk-space diet — NEW, and the dot now means something on disk
+
+Openote was storing every image **twice**: once inside the `.onote` file and
+once again in the `.onotebook` folder beside it, so that syncing could copy the
+folder. That second copy is now written only for notebooks that actually go
+somewhere. Measured on a synthetic 40-page notebook with 20 images: **17.4 MB →
+9.6 MB**.
+
+The rule, in one line: **a hollow ring on the dot means one copy on disk.**
+
+- [ ] Right-click a **local-only** notebook ▸ *Storage* (or find its files).
+      The `.onotebook` folder should have `ops/` and `manifest.json` but **no
+      `blobs/` folder at all**. Your big imported notebook is the one to check —
+      it should be roughly half the size it was.
+- [ ] **The important one.** Now move that notebook into a sync folder. Within a
+      few seconds `blobs/` should appear and fill with the images that were
+      already in it. Nothing should be missing — the images are still all in the
+      `.onote`, and this copies them out.
+- [ ] Same again with a **mirror/backup** target instead of a sync folder
+      (notebook manager ▸ backup icon). Then look inside the mirror: it must
+      contain the images. A backup with no pictures in it is the failure this
+      needs to not have.
+- [ ] Sanity: open a synced notebook, paste a new image, and check it lands in
+      `blobs/` straight away rather than waiting for anything.
 
 ### 1.1 The Planner (v0.5) — biggest surface, least tested
 
@@ -192,11 +336,13 @@ notebook containing a to-do you have actually checked off would settle it.
    out: the gutter exists only in the read renderer, so fixing one side alone
    makes the jumping worse. The real fix changes both renderers together, with
    `edit_view_metrics_test` driving it.
-2. **Disk space (E1/E2, ADR-0007).** A 60-slide deck costs ~240 MB because
-   every image is stored twice and nothing is ever deleted. Garbage collection
-   is unblocked; the *de-duplication* half may or may not be blocked by the
-   join path in §3 — I want to prove which with a two-device test rather than
-   argue it from the ADR.
+2. **Disk space, part two.** The double-store half is **done** (§1.0d above:
+   2.23× → 1.23× for local-only notebooks). What is left is the bigger absolute
+   win: a 60-slide deck still costs ~240 MB because every PDF page is stored as
+   a full-page raster image. Storing the PDF once and rendering pages on demand
+   fixes that *and* gives you selectable text in imported PDFs *and* the
+   thumbnail element — three of your asks, one change. Then blob garbage
+   collection (ADR-0007), which is designed and unbuilt.
 3. **Notes attached to a timetable event** — "open my notes for this lecture".
    The obvious next step for v0.8, deliberately parked until the two-machine
    sync testing is done, because it is per-workspace state of exactly the kind
@@ -227,3 +373,8 @@ notebook containing a to-do you have actually checked off would settle it.
 | "The UI doesn't fully extend to the edges" | **Fixed** — §1.5 |
 | "Lots of layout shift on the Home tab" | **Fixed** — §1.5. This reverses a decision you were asked to judge last round; the question is withdrawn |
 | "Being able to set a time for an exam would be awesome" | **Built** — §1.1 |
+| "The app locks up during import / imports are slow" | **Reworked** — background job, §1.0 |
+| "We lost the popup when importing" | **Found and fixed** — a context bug ate it; it's a card now, §1.0 |
+| "Opening the flashcards tab is very slow" | **Fixed** — SQL prefilter + page cache, §1.0b |
+| "Notebook import doesn't work — no popup, never appears" | **Fixed** — my regression; the entry point was handed a dead dialog context, §1.0a |
+| "A dot showing which notebooks are backed up" | **Built** — §1.0c |

@@ -33,7 +33,7 @@ const CACHE_SECONDS = 600;
  * background — so a GitHub outage degrades to "slightly old version number"
  * rather than to a page with no download links.
  */
-const STALE_SECONDS = 86_400;
+const STALE_SECONDS = 3_600;
 
 const REPO = 'icmric/openote';
 

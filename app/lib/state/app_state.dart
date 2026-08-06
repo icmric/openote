@@ -23,8 +23,10 @@ import '../study/flashcards.dart';
 import 'builtin_templates.dart';
 import 'planner_state.dart';
 import 'study_state.dart';
+import '../sync/device_identity.dart';
 import '../sync/folder_watch.dart';
 import '../sync/op.dart';
+import '../sync/op_log.dart';
 import '../sync/cloud_folders.dart';
 import '../sync/mirrors.dart';
 import '../sync/sync_recorder.dart';
@@ -156,6 +158,18 @@ class AppState extends ChangeNotifier
   @override
   PageData readPage(String id) => _repo.readPage(notebookId!, id);
 
+  @override
+  PageData readPageShared(String id) => _repo.readPageShared(notebookId!, id);
+
+  @override
+  Set<String> pageIdsWithTags() => notebookId == null
+      ? const {}
+      : _repo.pageIdsWithTags(notebookId!).toSet();
+
+  @override
+  Set<String> allBlockIds() =>
+      notebookId == null ? const {} : _repo.allBlockIds(notebookId!);
+
   /// Pages in this notebook whose *content* matches [query] (TEXT-7).
   /// The navigator searches titles itself; this is the other half.
   List<({String pageId, String snippet})> searchContent(String query) =>
@@ -189,8 +203,97 @@ class AppState extends ChangeNotifier
   /// Set false by tests that don't want log files written beside their fixture.
   static bool syncLogEnabled = true;
 
+  /// Notebooks whose files another isolate currently owns.
+  ///
+  /// While the import writer isolate is running, it holds the notebook's
+  /// container **and** appends to this device's op log inside its `.onotebook`.
+  /// A recorder opened here would be a second writer on that same log file —
+  /// which is the one thing ADR-0006's whole correctness argument forbids, and
+  /// it is not hypothetical: the notebook manager draws a sync dot per row, and
+  /// a sync dot asks for the device count, and the device count opens a
+  /// recorder. Merely *listing* notebooks during an import would have done it.
+  final Set<String> _importingNotebooks = {};
+
+  /// Hand [nb]'s files to another isolate. Idempotent.
+  void beginExclusiveImport(String nb) {
+    _importingNotebooks.add(nb);
+    _recorders.remove(nb);
+    _repo.closeNotebook(nb);
+  }
+
+  /// Take them back after a **successful** import. The next read reopens the
+  /// container; the log the writer wrote replays in the background so the first
+  /// edit doesn't pay for it.
+  void endExclusiveImport(String nb) {
+    _importingNotebooks.remove(nb);
+    _repo.closeNotebook(nb);
+    _invalidateSyncStatus();
+    // The import just wrote the biggest log this notebook will ever gain in
+    // one sitting. Start its replay now, off-thread, so the recorder is ready
+    // before the user's first edit — the alternative is a multi-second hitch
+    // on the first keystroke into their freshly imported notes.
+    unawaited(warmRecorder(nb));
+  }
+
+  /// Take them back after a **cancelled or failed** import, where the notebook
+  /// is about to be discarded.
+  ///
+  /// Identical to [endExclusiveImport] except that it does not start a replay.
+  /// Warming here raced the teardown: the replay's `announceDevice` rewrites
+  /// `.onotebook/manifest.json`, and landing after the purge had deleted the
+  /// directory recreated it — an orphaned `.onotebook` that no registry entry
+  /// claims, which is exactly what the free-name search downstream trips over.
+  void abandonExclusiveImport(String nb) {
+    _importingNotebooks.remove(nb);
+    _repo.closeNotebook(nb);
+    _invalidateSyncStatus();
+  }
+
+  /// This installation's device id, minted on first use.
+  ///
+  /// The same value `DeviceIdentity.resolve` would settle on for a notebook with
+  /// no log — which a brand-new import target always is, so the fork check has
+  /// nothing to compare against and cannot fire. Public because the import
+  /// writer isolate has no access to workspace settings and must be told, and
+  /// because the folder watcher needs to know which log is its own without
+  /// opening a recorder to ask.
+  String localDeviceId() {
+    final existing = _repo.getSetting(DeviceIdentity.settingsKey) as String?;
+    if (existing != null && existing.isNotEmpty) return existing;
+    final id = newId();
+    _repo.setSetting(DeviceIdentity.settingsKey, id);
+    return id;
+  }
+
+  /// Record how far the writer isolate got in [nb]'s log.
+  ///
+  /// Not optional. The seq lives in workspace settings, the isolate cannot write
+  /// there, and a log that runs ahead of the remembered seq is precisely the
+  /// signal `DeviceIdentity.resolve` reads as "another installation has been
+  /// writing as us" — so skipping this would fork the device id on the next
+  /// open of every imported notebook.
+  void rememberImportedSeq(String nb, int seq) {
+    if (seq <= 0) return;
+    _repo.setSetting(DeviceIdentity.seqKey(nb), seq);
+  }
+
+  /// The recorder for [nb], opening one **synchronously** if none exists.
+  ///
+  /// The synchronous open replays the whole log on the calling thread — half a
+  /// second for a big imported notebook, and that is what froze the app at
+  /// launch and at the end of every import. So the rules are now:
+  ///
+  /// - **Mutations** call this. They cannot wait, and an op that isn't recorded
+  ///   is a hole in the log, so the hitch is the price of correctness — paid
+  ///   almost never, because [warmRecorder] runs the replay in a background
+  ///   isolate the moment a notebook is opened, imported or selected, and a
+  ///   cache hit here is free.
+  /// - **Status reads never call this.** [syncDeviceCount] lists log files with
+  ///   a bare [OpLogStore]; the watcher takes paths, not a recorder. A read
+  ///   that opened a recorder was the launch freeze.
   SyncRecorder? _recorderFor(String nb) {
     if (!syncLogEnabled) return null;
+    if (_importingNotebooks.contains(nb)) return null;
     final existing = _recorders[nb];
     if (existing != null) return existing;
     final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull;
@@ -203,22 +306,16 @@ class AppState extends ChangeNotifier
         logDir: ref.logDir,
         readSetting: _repo.getSetting,
         writeSetting: _repo.setSetting,
+        // The 2× disk cost of shadow mode is only worth paying when something
+        // other than this device will read the bytes. See [notebookIsShared].
+        materialiseBlobs: notebookIsShared(nb),
       );
       _recorders[nb] = r;
-      // Notebooks created before the log existed hold every image in SQLite
-      // alone, so a rebuild from the log would reconstruct page structure
-      // referencing bytes it cannot supply — a log that looks complete and
-      // isn't. Backfill in the background: on a real imported notebook this is
-      // hundreds of images, and doing it inline would stall the open.
-      unawaited(r
-          .backfillBlobs(
-        index: _repo.blobIndex(nb),
-        read: (h) => _repo.getBlob(nb, h),
-      )
-          .catchError((Object e) {
-        debugPrint('[openote/sync] blob backfill for $nb stopped: $e');
-        return 0;
-      }));
+      // Copy the container's blobs into `blobs/` — for a shared notebook that
+      // is the whole point, and it is a no-op for a local-only one. In the
+      // background either way: on a real imported notebook this is hundreds of
+      // images, and doing it inline would stall the open.
+      _startBlobBackfill(nb, r);
       return r;
     } catch (e) {
       // Shadow mode must never be able to break saving. The container is still
@@ -228,6 +325,165 @@ class AppState extends ChangeNotifier
       debugPrint('[openote/sync] log unavailable for $nb: $e');
       return null;
     }
+  }
+
+  /// In-flight background opens, so two callers don't replay the same log
+  /// twice.
+  final Map<String, Future<SyncRecorder?>> _recorderWarms = {};
+
+  /// Open [nb]'s recorder with the replay in a background isolate, and install
+  /// it when it lands. Safe to call eagerly and repeatedly.
+  ///
+  /// **The race, and why the loser is discarded.** A mutation can arrive while
+  /// the background replay runs; `_recorderFor` then opens synchronously and
+  /// *writes* (a seq, maybe ops). The warmed recorder's replayed state predates
+  /// those writes, so installing it over the live one would re-issue sequence
+  /// numbers the log already contains — two ops claiming one (device, seq) is
+  /// the corruption the whole one-writer design exists to prevent. Hence: if a
+  /// recorder exists by the time the warm lands, the warm is thrown away, and
+  /// [SyncRecorder.openAsync] guarantees a discarded recorder has written
+  /// nothing (its title seeding is deferred to the installer).
+  Future<SyncRecorder?> warmRecorder(String nb) {
+    if (_disposed || !syncLogEnabled || _importingNotebooks.contains(nb)) {
+      return Future.value(null);
+    }
+    final existing = _recorders[nb];
+    if (existing != null) return Future.value(existing);
+    final inFlight = _recorderWarms[nb];
+    if (inFlight != null) return inFlight;
+    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull;
+    if (ref == null) return Future.value(null);
+    final f = _warmAndInstall(nb, ref);
+    _recorderWarms[nb] = f;
+    return f;
+  }
+
+  Future<SyncRecorder?> _warmAndInstall(String nb, NotebookRef ref) async {
+    try {
+      final r = await SyncRecorder.openAsync(
+        notebookId: nb,
+        notebookPath: ref.file,
+        title: ref.title,
+        logDir: ref.logDir,
+        readSetting: _repo.getSetting,
+        writeSetting: _repo.setSetting,
+        materialiseBlobs: notebookIsShared(nb),
+      );
+      final lostTheRace = _disposed ||
+          _recorders.containsKey(nb) ||
+          _importingNotebooks.contains(nb) ||
+          !syncLogEnabled;
+      final SyncRecorder? winner;
+      if (lostTheRace) {
+        winner = _recorders[nb]; // discard the unwritten warm
+      } else {
+        winner = r;
+        _recorders[nb] = r;
+        r.seedTitle(ref.title);
+        _startBlobBackfill(nb, r);
+      }
+      // Either way: a notebook with no ops directory when `_startWatching` ran
+      // left the watcher unstarted, and opening a recorder — this one or the
+      // synchronous one that beat it — created that directory. Retry, or a
+      // notebook shared in its first session would not auto-pull until the
+      // next launch.
+      if (winner != null && nb == notebookId && _watcher == null) {
+        _startWatching();
+      }
+      return winner;
+    } catch (e) {
+      debugPrint('[openote/sync] background log open for $nb failed: $e');
+      return null;
+    } finally {
+      _recorderWarms.remove(nb);
+    }
+  }
+
+  /// Whether this notebook's bytes need to exist anywhere but the container.
+  ///
+  /// True when it lives in a folder something else keeps in step, or when it has
+  /// a mirror. Mirrors count because a plain mirror (`keepVersions == 0`) copies
+  /// the `.onotebook` directory and **not** the container — so a mirror of a
+  /// notebook with an empty `blobs/` would be a backup of a notebook with no
+  /// images in it, which is worse than no backup because it looks like one.
+  ///
+  /// This is deliberately the same rule the sync dot draws, minus the device
+  /// count — `SyncState.local` on screen means exactly "stored once on disk",
+  /// so the user has a way to see which notebooks are paying for sync. It is
+  /// recomputed rather than read from [syncStatus] because `syncStatus` asks how
+  /// many devices have written here, which opens a recorder, which asks this.
+  bool notebookIsShared(String nb) {
+    if (mirrorsFor(nb).isNotEmpty) return true;
+    final path = notebookLogDir(nb);
+    if (path == null) return false;
+    return cloudFolderContaining(path, also: _syncRoots) != null;
+  }
+
+  /// Materialise this notebook's blob bytes into `blobs/` if it has become
+  /// shared since its recorder was opened.
+  ///
+  /// Call after anything that can change [notebookIsShared] — moving a notebook
+  /// into a sync folder, adding a mirror, remembering a sync root. Without it a
+  /// notebook that starts syncing mid-session keeps deferring its bytes until
+  /// the next launch, and the other device sees a notebook whose images are all
+  /// missing.
+  ///
+  /// The reverse transition is deliberately not handled: nothing here deletes
+  /// bytes. Moving a notebook back out of a sync folder stops *new* blobs being
+  /// written on the next open and leaves the existing ones, which is wave 1b's
+  /// job (blob GC) and not something to do as a side effect of a move.
+  void materialiseBlobsIfShared(String nb) {
+    if (!syncLogEnabled || !notebookIsShared(nb)) return;
+    final existing = _recorders[nb];
+    if (existing == null) {
+      // No recorder yet — a background open reads the new shared state and
+      // backfills on install. Background, because this is called from sync
+      // *UI actions* (add a mirror, choose a folder) and a synchronous open
+      // of a big notebook's log would freeze the click that asked for it.
+      unawaited(warmRecorder(nb));
+      return;
+    }
+    if (existing.materialiseBlobs) return;
+    existing.materialiseBlobs = true;
+    _startBlobBackfill(nb, existing);
+  }
+
+  void _startBlobBackfill(String nb, SyncRecorder r) {
+    if (_disposed || !r.materialiseBlobs) return;
+    final f = r
+        .backfillBlobs(
+      index: _repo.blobIndex(nb),
+      read: (h) => _repo.getBlob(nb, h),
+    )
+        .catchError((Object e) {
+      debugPrint('[openote/sync] blob backfill for $nb stopped: $e');
+      return 0;
+    });
+    // Kept so a mirror run can wait for it. Without that, configuring a backup
+    // on a notebook whose blobs have never been materialised would copy out a
+    // `blobs/` that is still filling — a backup with most of the images missing,
+    // taken at the exact moment the user is watching to see that it worked.
+    _blobBackfills[nb] = f;
+    unawaited(f.whenComplete(() {
+      if (identical(_blobBackfills[nb], f)) _blobBackfills.remove(nb);
+    }));
+  }
+
+  final Map<String, Future<int>> _blobBackfills = {};
+
+  /// Wait for any in-flight blob materialisation for [nb]. Cheap when there is
+  /// none, which is the common case.
+  ///
+  /// Waits through a recorder warm first: since materialisation rides the
+  /// background open, the backfill a caller is asking about may not have
+  /// STARTED yet — it starts when the warm installs. Without this, a mirror
+  /// run right after "move to sync folder" saw nothing in flight and copied
+  /// out a `blobs/` that was still empty.
+  Future<void> awaitBlobBackfill(String nb) async {
+    final w = _recorderWarms[nb];
+    if (w != null) await w;
+    final f = _blobBackfills[nb];
+    if (f != null) await f;
   }
 
   /// Pull another device's changes into this notebook (ADR-0006 step 3).
@@ -272,7 +528,11 @@ class AppState extends ChangeNotifier
       // the previous one.
       do {
         _pullAgain = false;
-        final r = _recorderFor(nb);
+        // Warmed, not opened inline: a pull fires from the folder watcher on
+        // the UI thread's event loop, and the first pull for a big notebook
+        // would otherwise pay the whole replay right there. This path is
+        // already async, so it can simply wait for the background open.
+        final r = await warmRecorder(nb);
         if (r == null) break;
         final pending = r.pendingForeignOps(_repo.getSetting);
         if (pending.isEmpty) continue;
@@ -385,7 +645,8 @@ class AppState extends ChangeNotifier
     });
 
     if (pulledBlobs > 0) {
-      debugPrint('[openote/sync] pulled $pulledBlobs blob(s) into the container');
+      debugPrint(
+          '[openote/sync] pulled $pulledBlobs blob(s) into the container');
     }
 
     // Watermark per device, only after the writes landed — a crash mid-pull
@@ -428,13 +689,22 @@ class AppState extends ChangeNotifier
     // Drop the recorder: it holds the OLD path, and a stale log location would
     // silently write this device's ops somewhere nobody is looking.
     _recorders.remove(nb);
-    _stopWatching();
+    // AWAITED, unlike everywhere else this is called: `moveNotebookTo` deletes
+    // the old log directory, and on Windows that fails while the watcher still
+    // holds a handle on it. The failure is swallowed there, which would leave
+    // an orphaned `.onotebook` behind to collide with the next free-name
+    // search — a silent, cumulative mess rather than an error.
+    await _stopWatching();
     final path = await _repo.moveNotebookTo(nb, targetDir);
     // The user just told us this folder is where their notes sync. Remember
     // it, rather than re-guessing later from a list of well-known provider
     // paths that will not contain it.
     rememberSyncRoot(targetDir);
     _invalidateSyncStatus();
+    // This notebook's images have been living only in the container. They are
+    // about to be someone else's only copy, so write them out now rather than
+    // whenever this notebook next happens to be opened.
+    materialiseBlobsIfShared(nb);
     if (nb == notebookId) {
       await _loadNotebook();
       _startWatching();
@@ -454,6 +724,11 @@ class AppState extends ChangeNotifier
     _mirrors.putIfAbsent(nb, () => []).add(t);
     _saveMirrors();
     _invalidateSyncStatus();
+    // BEFORE the first run: a mirror copies `.onotebook/`, so mirroring a
+    // notebook whose blobs were never materialised would produce a copy with no
+    // images in it. The backfill is async, so the first run can still beat it —
+    // mirrors are incremental and the next run picks up what landed late.
+    materialiseBlobsIfShared(nb);
     // Run once immediately: a mirror you have to wait for is one you don't
     // trust yet.
     unawaited(runMirrors(nb));
@@ -478,12 +753,61 @@ class AppState extends ChangeNotifier
   static const _mirrorMinGapMs = 60000;
 
   /// Copy [nb] out to its mirrors, at most once a minute.
-  Future<void> runMirrors(String nb, {bool force = false}) async {
+  ///
+  /// Callers usually fire and forget, so the run is also parked in
+  /// [_mirrorRuns] where [awaitMirrorRun] can find it. Not bookkeeping for its
+  /// own sake: a mirror run is file I/O against two directories, and one still
+  /// in flight when a test's fixture is torn down throws a `PathNotFound` that
+  /// gets charged to whichever test is running next. That exact shape produced
+  /// an intermittent Windows CI failure once already.
+  Future<void> runMirrors(String nb, {bool force = false}) {
+    final f = _runMirrors(nb, force: force);
+    _mirrorRuns[nb] = f;
+    unawaited(f.whenComplete(() {
+      if (identical(_mirrorRuns[nb], f)) _mirrorRuns.remove(nb);
+    }));
+    return f;
+  }
+
+  final Map<String, Future<void>> _mirrorRuns = {};
+
+  /// Wait for any mirror run in flight for [nb]. Cheap when there is none.
+  Future<void> awaitMirrorRun(String nb) async {
+    final f = _mirrorRuns[nb];
+    if (f != null) await f;
+  }
+
+  /// Wait for every background job this state has started — log replays, blob
+  /// materialisations, mirror runs — to finish.
+  ///
+  /// These are all fire-and-forget by design: the UI must never wait on them.
+  /// But "nobody waits" and "nobody can wait" are different, and the second is
+  /// how late file I/O ends up landing after the directory it wants is gone —
+  /// a log line at shutdown in the app, and in tests a failure charged to
+  /// whichever test runs next.
+  Future<void> settleBackgroundWork() async {
+    // Each pass can start more work (a warm installs, which starts a
+    // backfill), so drain until a pass finds nothing.
+    for (var pass = 0; pass < 8; pass++) {
+      final pending = <Future<void>>[
+        ..._recorderWarms.values,
+        ..._blobBackfills.values,
+        ..._mirrorRuns.values,
+      ];
+      if (pending.isEmpty) return;
+      await Future.wait(pending).catchError((_) => const <void>[]);
+    }
+  }
+
+  Future<void> _runMirrors(String nb, {bool force = false}) async {
     final targets = mirrorsFor(nb);
     if (targets.isEmpty) return;
     final now = nowMs();
     if (!force && now - (_lastMirrorRun[nb] ?? 0) < _mirrorMinGapMs) return;
     _lastMirrorRun[nb] = now;
+    // A mirror copies `.onotebook/`, so it must not start while that directory
+    // is still being filled with the notebook's images.
+    await awaitBlobBackfill(nb);
     final src = notebookLogDir(nb);
     if (src == null) return;
     for (final t in targets) {
@@ -522,12 +846,19 @@ class AppState extends ChangeNotifier
 
   void _startWatching() {
     _stopWatching();
-    if (!autoSync || notebookId == null) return;
-    final r = _recorderFor(notebookId!);
-    if (r == null) return;
+    if (!autoSync || notebookId == null || !syncLogEnabled) return;
+    // Paths and a device id — NOT a recorder. Opening a recorder here replayed
+    // the whole log on the UI thread during startup's first frame, which was
+    // most of "the app is locked up for the first few seconds after
+    // launching". The watcher only needs to know where the logs live and which
+    // one is ours; the recorder is opened (in the background) when a foreign
+    // change actually arrives, which is the earliest moment its replayed state
+    // is needed.
+    final store = _bareLog(notebookId!);
+    if (store == null || !store.opsDir.existsSync()) return;
     _watcher = OpFolderWatcher(
-      opsDir: r.store.opsDir,
-      ownDevice: r.device.id,
+      opsDir: store.opsDir,
+      ownDevice: localDeviceId(),
       onForeignChange: () {
         // Fire-and-forget: a failed pull must not take down the watcher, and
         // the next change (or the manual button) retries anyway.
@@ -539,9 +870,17 @@ class AppState extends ChangeNotifier
     )..start();
   }
 
-  void _stopWatching() {
-    _watcher?.stop();
+  /// Stop the folder watcher, and hand back the future that says when its
+  /// handle is actually released.
+  ///
+  /// Most callers do not care and drop it — a watcher that stops a few
+  /// milliseconds later is harmless when nothing is about to touch the
+  /// directory. The one caller that MUST wait is `moveNotebookToFolder`, which
+  /// goes on to delete the old log directory; see `FolderWatch.stop`.
+  Future<void> _stopWatching() {
+    final w = _watcher;
     _watcher = null;
+    return w?.stop() ?? Future<void>.value();
   }
 
   /// Where this notebook lives, for the sync surface.
@@ -560,9 +899,24 @@ class AppState extends ChangeNotifier
     final now = nowMs();
     final hit = _deviceCountCache[nb];
     if (hit != null && now - hit.at < 5000) return hit.count;
-    final n = _recorderFor(nb)?.store.deviceIds().length ?? 0;
+    // A bare store, NOT `_recorderFor`. The count is a directory listing
+    // (0.24 ms); a recorder open replays the whole log (~0.5 s for a big
+    // imported notebook) — and this is called from every sync dot's first
+    // paint, which made launching the app and finishing an import freeze for
+    // as long as the replay took. A status read must never pay a writer's
+    // setup cost. (A side effect goes with it: painting a dot no longer
+    // *creates* `.onotebook` directories for notebooks that had none.)
+    final n = _bareLog(nb)?.deviceIds().length ?? 0;
     _deviceCountCache[nb] = (count: n, at: now);
     return n;
+  }
+
+  /// Read-only view of a notebook's log directory. No replay, no directory
+  /// creation, no identity check — safe to call from paint.
+  OpLogStore? _bareLog(String nb) {
+    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull;
+    if (ref == null) return null;
+    return OpLogStore.forNotebook(ref.file, logDir: ref.logDir);
   }
 
   final Map<String, ({int count, int at})> _deviceCountCache = {};
@@ -642,6 +996,13 @@ class AppState extends ChangeNotifier
     _syncRoots.add(describeChosenFolder(dir));
     _persistSyncRoots();
     _invalidateSyncStatus();
+    // Calling a folder a sync location can make notebooks already inside it
+    // shared. Only the ones with a recorder open are re-checked here — the rest
+    // get the right answer when theirs is opened, which the notebook list does
+    // for all of them the moment it draws their sync dots.
+    for (final nb in _recorders.keys.toList()) {
+      materialiseBlobsIfShared(nb);
+    }
     notifyListeners();
   }
 
@@ -758,9 +1119,8 @@ class AppState extends ChangeNotifier
           if (claimed.contains(canon) || !seen.add(canon)) continue;
           out.add(OrphanFile(
             path: e.path,
-            bytes: isLog
-                ? await _dirBytes(Directory(e.path))
-                : _fileBytes(e.path),
+            bytes:
+                isLog ? await _dirBytes(Directory(e.path)) : _fileBytes(e.path),
             isLog: isLog,
             safeToDelete: isWorkspace,
           ));
@@ -820,18 +1180,28 @@ class AppState extends ChangeNotifier
   /// Empty means a rebuild from the log could reconstruct this notebook's
   /// content in full, not merely its structure — the distinction that decides
   /// whether the container is safe to demote to a cache.
+  /// **Forces a synchronous log replay** if no recorder is open — this is a
+  /// diagnostic, not a paint-path read. Nothing that runs during a build may
+  /// call it; see [_recorderFor].
   Set<String> syncMissingBlobs(String nb) =>
       _recorderFor(nb)?.missingBlobs() ?? const {};
 
-  /// Run the blob backfill to completion. Normally it runs in the background
-  /// when a notebook's log is opened; this is for tests and for a future
-  /// "prepare this notebook for sync" action.
-  Future<int> syncBackfillBlobs(String nb) async =>
-      await _recorderFor(nb)?.backfillBlobs(
-        index: _repo.blobIndex(nb),
-        read: (h) => _repo.getBlob(nb, h),
-      ) ??
-      0;
+  /// Materialise this notebook's blob bytes into `blobs/`, and wait for it.
+  ///
+  /// This is "prepare this notebook for sync", stated outright: it turns
+  /// [SyncRecorder.materialiseBlobs] on whether or not the notebook looks
+  /// shared, because asking for it *is* the intent. The automatic paths
+  /// ([materialiseBlobsIfShared] and the recorder's own open) go through the
+  /// same machinery without the override.
+  Future<int> syncBackfillBlobs(String nb) async {
+    final r = _recorderFor(nb);
+    if (r == null) return 0;
+    r.materialiseBlobs = true;
+    return r.backfillBlobs(
+      index: _repo.blobIndex(nb),
+      read: (h) => _repo.getBlob(nb, h),
+    );
+  }
 
   /// Upsert a node and record it. Every tree mutation funnels through here.
   TreeNode _putNode(String nb, TreeNode n) {
@@ -1168,7 +1538,8 @@ class AppState extends ChangeNotifier
           (t) => t.withDue(day));
 
   /// Tick a to-do off, wherever in the notebook it lives.
-  bool setTagCheckedOn(String pageId_, String blockId, int line, bool checked) =>
+  bool setTagCheckedOn(
+          String pageId_, String blockId, int line, bool checked) =>
       _updateTag(pageId_, blockId, line, TagKind.todo,
           (t) => t.copyWith(checked: checked));
 
@@ -1277,22 +1648,30 @@ class AppState extends ChangeNotifier
   /// Every tagged line in the notebook, for the find-tags rollup.
   ///
   /// Scans page mirrors rather than a maintained index: same reasoning as
-  /// notebook-wide search — one source of truth beats an index that can drift,
-  /// until it measurably hurts.
+  /// notebook-wide search — one source of truth beats an index that can drift.
+  /// "Until it measurably hurts" arrived, though, with the first big imported
+  /// notebook — so the scan is now narrowed twice *without* becoming an index:
+  /// a SQL prefilter finds the pages that can possibly carry a tag (most
+  /// cannot), and a decoded-page cache in the repository means a rebuild
+  /// re-decodes only pages that changed. See `Repository.readPageShared`.
   ({String key, List<TaggedLine> tags})? _allTagsCache;
 
   @override
   List<TaggedLine> allTags() {
     if (notebookId == null) return const [];
-    // Same reasoning as [deck]: this reads every page in the notebook, and the
-    // panel that shows it rebuilds on every notify.
     final key = '$notebookId#$docRevision#$nodesRevision#$pageId';
     final cached = _allTagsCache;
     if (cached != null && cached.key == key) return cached.tags;
+    final tagged = _repo.pageIdsWithTags(notebookId!).toSet();
     final out = <TaggedLine>[];
     for (final n in nodes.where((n) => n.kind == NodeKind.page)) {
-      // The open page's in-memory blocks are fresher than the container.
-      final blocksOf = n.id == pageId ? blocks : readPage(n.id).blocks;
+      // The open page's in-memory blocks are fresher than the container — and
+      // it is also the one page the prefilter must not exclude, since its
+      // unsaved edits may carry tags the stored JSON does not.
+      if (n.id != pageId && !tagged.contains(n.id)) continue;
+      final blocksOf = n.id == pageId
+          ? blocks
+          : _repo.readPageShared(notebookId!, n.id).blocks;
       for (final b in blocksOf) {
         if (b.type != BlockType.text) continue;
         final tags = NoteTag.listFrom(b.content);
@@ -2094,6 +2473,12 @@ class AppState extends ChangeNotifier
     await _repo.purgeExpiredNotebooks();
     _repo.purgeExpiredNodes(notebookId!);
     reloadNodes();
+    // Replay the open notebook's log in a background isolate, starting now.
+    // This used to happen synchronously inside `_startWatching` on the first
+    // frame — for a freshly imported notebook that is a multi-megabyte log,
+    // and it was most of "the app is locked up for the first few seconds
+    // after launching".
+    unawaited(warmRecorder(notebookId!));
     // Watch for other devices once the notebook is open.
     WidgetsBinding.instance.addPostFrameCallback((_) => _startWatching());
     final lastPage = _repo.getSetting('lastPage') as String?;
@@ -2134,6 +2519,9 @@ class AppState extends ChangeNotifier
   Future<void> selectNotebook(String id) async {
     await flushSave();
     notebookId = id;
+    // Replay this notebook's log in the background now, so the first edit
+    // finds a ready recorder instead of paying the replay synchronously.
+    unawaited(warmRecorder(id));
     await _loadNotebook();
     notifyListeners();
   }
@@ -2215,6 +2603,26 @@ class AppState extends ChangeNotifier
 
   Future<void> purgeNotebook(String id) async {
     await _repo.purgeNotebook(id);
+    notifyListeners();
+  }
+
+  /// Throw away a notebook that was never the user's — the half-built target of
+  /// a cancelled or crashed import. Not the recycle bin: see
+  /// [Repository.discardNotebook].
+  Future<void> discardImportedNotebook(String id) async {
+    _importingNotebooks.remove(id);
+    // Settle any background replay FIRST. It writes the manifest on its way
+    // through, so deleting the directory out from under one leaves the
+    // recreated husk behind.
+    final warm = _recorderWarms[id];
+    if (warm != null) {
+      try {
+        await warm;
+      } catch (_) {/* a failed warm is not this operation's problem */}
+    }
+    _recorders.remove(id);
+    await _repo.discardNotebook(id);
+    _invalidateSyncStatus();
     notifyListeners();
   }
 
@@ -2347,9 +2755,8 @@ class AppState extends ChangeNotifier
         for (var i = start; i < end; i++) {
           final n = pages[i];
           // The open page is already in memory and owns unsaved edits.
-          final data = n.id == pageId
-              ? PageData(blocks, pageProps)
-              : readPage(n.id);
+          final data =
+              n.id == pageId ? PageData(blocks, pageProps) : readPage(n.id);
           final changed = _healBlocks(data.blocks, core);
           if (changed == 0) continue;
           healedPages++;
@@ -2359,7 +2766,9 @@ class AppState extends ChangeNotifier
       });
       done = end;
       onProgress?.call(done, pages.length);
-      await Future<void>.delayed(Duration.zero);
+      // Real delay: UI-isolate loop; a zero timer never lets the Windows
+      // message loop go idle, and idle is when input gets through.
+      await Future<void>.delayed(const Duration(milliseconds: 2));
     }
 
     // The open page's blocks may have been rewritten in place above.
@@ -2689,7 +3098,12 @@ class AppState extends ChangeNotifier
   /// The colour tokens a section can be given, in picker order. `null` is the
   /// unset default, which renders in the app's own ink.
   static const List<String?> sectionColorTokens = [
-    null, 'brass-400', 'green', 'blue', 'violet', 'red',
+    null,
+    'brass-400',
+    'green',
+    'blue',
+    'violet',
+    'red',
   ];
 
   /// Recolour a section.
@@ -3426,8 +3840,16 @@ class AppState extends ChangeNotifier
   @visibleForTesting
   void cancelPendingSave() => _saveDebounce?.cancel();
 
+  /// Set by [dispose]. Background work started before disposal checks this
+  /// before touching anything, because a replay or a backfill can land after
+  /// the repository it wants is closed — in the app that is a harmless log
+  /// line at shutdown, in tests it is late I/O charged to whichever test runs
+  /// next, which is the shape of an intermittent CI failure already fixed once.
+  bool _disposed = false;
+
   @override
   void dispose() {
+    _disposed = true;
     _stopWatching();
     _syncStatusPoll?.cancel();
     _saveDebounce?.cancel();

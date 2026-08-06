@@ -10,6 +10,7 @@ import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'exam_date.dart';
 import 'notebook_manager.dart';
+import 'sync_dot.dart';
 import 'planner_format.dart';
 import '../theme/tokens.dart';
 
@@ -988,9 +989,19 @@ class _NotebookHeader extends StatelessWidget {
                 Icon(Icons.menu_book_outlined, size: 18, color: scheme.primary),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(current.title,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(current.title,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis),
+                      // Where the open notebook lives, said once where the
+                      // notebook is named. The status bar's chip answers the
+                      // same question but is easy to never look at.
+                      SyncDotWithLabel(app: app, notebookId: current.id),
+                    ],
+                  ),
                 ),
                 const Icon(Icons.unfold_more, size: 16),
                 IconButton(

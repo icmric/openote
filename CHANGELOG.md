@@ -2,7 +2,71 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
-## [Unreleased — 0.2.0] · the first public release
+## [0.3.1] · the first release you can actually download
+
+<!--
+0.3.1, not 0.3.0. The v0.3.0 tag was cut against a commit whose pubspec still
+read 0.2.0, so the release workflow's version guard failed before any platform
+job ran, and the tag shipped nothing — the release published under it has zero
+assets, and openote.org served it for two days. Reusing the number would make
+one version string mean two different things: a release with no downloads and a
+release with five installers. Cheaper to spend a patch number than to overload
+one. See docs/RELEASING.md.
+-->
+
+### Fixed — the app no longer freezes while it works (2026-08-06)
+
+Four reports, one thread. Full reasoning and every measurement in
+[the v0.10 plan](docs/planning/v0.10-responsiveness-and-storage.md).
+
+- **Importing a notebook no longer locks the app up.** The whole import — read,
+  parse, write — moved to a second isolate. Measured on a 200-page notebook:
+  the number of interaction steps that complete *during* an import went from
+  **50 to 2349**, and the median wait from **12.8 ms to 0.1 ms**.
+- **Launching no longer freezes for the first few seconds.** Showing a
+  notebook's sync status was replaying its entire change log on the UI thread —
+  **489 ms** for the log a 2000-page import leaves behind, and worse on a real
+  notebook. Status reads now cost a directory listing (0.24 ms) and the replay
+  happens in the background. The same bug was why the app froze the moment an
+  import announced its result.
+- **Progress starts moving immediately.** The import used to lay out every page
+  before writing any of them, sending the layout request across the isolate
+  boundary as one uninterruptible copy. It is now four pages at a time,
+  immediately before those pages are written — and the import got *faster*
+  (11.0 s where it had been 13.4 s on the same synthetic notebook).
+- **Cancelling an import removes the half-built notebook.** It could keep it, in
+  a workspace that had no other notebooks, because the teardown went through the
+  recycle bin and that refuses to delete your last notebook.
+- **Imported notebooks are named `Uni Notes`, not `Uni Notes.onepkg`.**
+- A box the OneNote parser could not place now falls back to the top of the
+  content area rather than being written under the page title.
+
+### Changed — notebooks take about half the disk space (2026-08-06)
+
+- **Every image was stored twice**: once in the `.onote` container and again in
+  the `.onotebook` folder beside it, so that syncing could copy the folder. That
+  second copy is now written only for notebooks that are actually in a sync
+  folder or mirrored. Measured on a synthetic 40-page notebook with 20 images:
+  **17.4 MB → 9.6 MB**, a 2.23× overhead down to 1.23×.
+- Nothing is lost by the change: the container still holds every byte, so the
+  moment a notebook starts syncing its images are copied out. The rule, visible
+  on screen: **a hollow ring on a notebook's backup dot means one copy on disk.**
+
+### Added
+
+- **A backup dot per notebook** in the notebook manager and the navigator
+  header — green for a sync folder, amber for a mirror, a hollow ring for
+  this-computer-only — with the answer spelled out in words on hover.
+
+---
+
+## [0.2.0 · 0.3.0] — 2026-08-04 / 2026-08-05 · the first public release and the student release
+
+Two tags four days apart, one set of notes: the work was written up as a single
+pass and splitting it after the fact would invent a boundary that was never
+there. `v0.2.0` was the first public release; `v0.3.0` added the student
+features (planner, events and reminders, the UI revamp, installers) — though
+neither tag ever produced a downloadable build; see the note under 0.3.1.
 
 ### Changed — the interface, made one thing (2026-08-05)
 - **The app looked like two apps.** Openote had a colour palette and it had

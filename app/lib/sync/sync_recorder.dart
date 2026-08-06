@@ -13,6 +13,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 
@@ -31,12 +32,36 @@ class SyncRecorder {
     required int lamport,
     required int seq,
     required this.onSeq,
+    required this.materialiseBlobs,
   })  : _lamport = lamport,
         _seq = seq;
 
   final String notebookId;
   final OpLogStore store;
   final DeviceIdentity device;
+
+  /// Whether blob **bytes** are written into `blobs/` as well as the container.
+  ///
+  /// **Why this is optional.** Shadow mode means every image is stored twice —
+  /// once in the container's `blobs` table, once as `blobs/<sha256>` — which
+  /// measured at a 2.13× disk overhead on an imported notebook, paid by every
+  /// notebook including the majority that never leave the machine. The op
+  /// *stream* is cheap and always written; the bytes are the expensive half, and
+  /// they only earn their cost when something other than this device is going to
+  /// read them.
+  ///
+  /// So the bytes are written when the notebook is shared (in a sync folder, or
+  /// mirrored) and deferred otherwise. Deferred, not lost: the container is
+  /// authoritative and still holds every byte, so [backfillBlobs] can
+  /// materialise the whole set later — which is exactly what it already did for
+  /// notebooks created before the log existed. Turning sync on makes the normal
+  /// path out of what used to be the migration path.
+  ///
+  /// Mutable because the answer changes under the app's feet: a notebook moved
+  /// into Drive, or given a mirror, must materialise from that moment on. Set it
+  /// through `AppState.materialiseBlobsIfShared`, which also runs the backfill —
+  /// flipping this alone would write future blobs and leave past ones behind.
+  bool materialiseBlobs;
 
   /// The log replayed into state, kept live so a page save can be diffed into
   /// block-level ops instead of one whole-page write.
@@ -52,6 +77,12 @@ class SyncRecorder {
   int _written = 0;
 
   /// Open (or create) the log for a notebook and replay it into memory.
+  ///
+  /// **Synchronous, and priced accordingly.** The replay reads and JSON-decodes
+  /// every op ever written — measured at ~0.5 s for a 2000-page imported
+  /// notebook's 14 MB log, on a fast machine. On the UI thread that is a
+  /// visible freeze, which is why interactive callers go through [openAsync]
+  /// and this stays for mutation paths that cannot wait and for tests.
   static SyncRecorder open({
     required String notebookId,
     required String notebookPath,
@@ -59,6 +90,7 @@ class SyncRecorder {
     String? logDir,
     required Object? Function(String key) readSetting,
     required void Function(String key, Object? value) writeSetting,
+    bool materialiseBlobs = true,
   }) {
     final store = OpLogStore.forNotebook(notebookPath, logDir: logDir);
     store.ensureInitialised(notebookId: notebookId, title: title);
@@ -96,12 +128,98 @@ class SyncRecorder {
       lamport: lamport,
       seq: seq,
       onSeq: (s) => writeSetting(DeviceIdentity.seqKey(notebookId), s),
+      materialiseBlobs: materialiseBlobs,
     );
     // Seed the title so a notebook that has never been renamed still carries
     // one in the log. `notebookMeta` diffs, so this writes once and is a no-op
     // on every subsequent open.
     recorder.notebookMeta({'title': title});
     return recorder;
+  }
+
+  /// [open], with the heavy half — reading and replaying every op — in a
+  /// background isolate.
+  ///
+  /// The UI thread's share of this is milliseconds regardless of log size: the
+  /// manifest touch, the identity check (against seq maxima the replay already
+  /// computed, not a re-read), and receiving the replayed state — which
+  /// `Isolate.run` hands over via `Isolate.exit`, ownership transfer rather
+  /// than copy, so the multi-megabyte materialised state does not repeat the
+  /// mistake the import's layout request made.
+  ///
+  /// **Does NOT seed the title op, deliberately.** The caller decides whether
+  /// this recorder is actually installed — a synchronous open may have won the
+  /// race while the replay ran, and the loser must be discardable without ever
+  /// having written anything. Call [seedTitle] after installing.
+  static Future<SyncRecorder> openAsync({
+    required String notebookId,
+    required String notebookPath,
+    required String title,
+    String? logDir,
+    required Object? Function(String key) readSetting,
+    required void Function(String key, Object? value) writeSetting,
+    bool materialiseBlobs = true,
+  }) async {
+    final store = OpLogStore.forNotebook(notebookPath, logDir: logDir);
+    store.ensureInitialised(notebookId: notebookId, title: title);
+
+    // One pass over the logs, off-thread. Everything it produces is plain
+    // data (maps, sets, lists of ops), which is what makes the O(1) handoff
+    // possible.
+    final (state, seqByDevice, lamport) =
+        await _replayInIsolate(notebookPath, logDir);
+
+    final device = DeviceIdentity.resolve(
+      store: store,
+      notebookId: notebookId,
+      readSetting: readSetting,
+      writeSetting: writeSetting,
+      lastSeqOf: (id) => seqByDevice[id] ?? 0,
+    );
+    if (device.forked) {
+      debugPrint('[openote/sync] device id forked to ${device.id} — another '
+          'installation had written to the previous id\'s log');
+    }
+    store.announceDevice(device.id);
+
+    return SyncRecorder._(
+      notebookId: notebookId,
+      store: store,
+      device: device,
+      state: state,
+      lamport: lamport,
+      seq: seqByDevice[device.id] ?? 0,
+      onSeq: (s) => writeSetting(DeviceIdentity.seqKey(notebookId), s),
+      materialiseBlobs: materialiseBlobs,
+    );
+  }
+
+  /// The title seeding [open] does inline — split out so [openAsync] callers
+  /// can defer it until the recorder is definitely the installed one.
+  void seedTitle(String title) => notebookMeta({'title': title});
+
+  /// The replay, in its own function so the `Isolate.run` closure's scope
+  /// holds exactly two strings and nothing else.
+  ///
+  /// **Not an inline lambda in [openAsync], and it cannot become one.** A Dart
+  /// closure captures its enclosing *context*, not just the variables it
+  /// names — inlined, it dragged `writeSetting` along, which is a tearoff of
+  /// `Repository.setSetting`, which holds the workspace write-debounce
+  /// `Timer`, which is unsendable. The failure is a runtime throw on spawn,
+  /// found by test, not by the compiler.
+  static Future<(Materializer, Map<String, int>, int)> _replayInIsolate(
+      String notebookPath, String? logDir) {
+    return Isolate.run(() {
+      final store = OpLogStore.forNotebook(notebookPath, logDir: logDir);
+      final all = store.readAll();
+      var lamport = 0;
+      final seqs = <String, int>{};
+      for (final op in all) {
+        if (op.lamport > lamport) lamport = op.lamport;
+        if (op.seq > (seqs[op.device] ?? 0)) seqs[op.device] = op.seq;
+      }
+      return (Materializer()..applyAll(all), seqs, lamport);
+    });
   }
 
   Op _op(OpKind kind, Map<String, dynamic> data) => Op(
@@ -141,13 +259,17 @@ class SyncRecorder {
         })
       ]);
 
-  void nodeDeleted(String id, {int? at}) =>
-      _commit([_op(OpKind.nodeDelete, {'id': id, 'deletedAt': at ?? nowMs()})]);
+  void nodeDeleted(String id, {int? at}) => _commit([
+        _op(OpKind.nodeDelete, {'id': id, 'deletedAt': at ?? nowMs()})
+      ]);
 
-  void nodeRestored(String id) =>
-      _commit([_op(OpKind.nodeRestore, {'id': id})]);
+  void nodeRestored(String id) => _commit([
+        _op(OpKind.nodeRestore, {'id': id})
+      ]);
 
-  void nodePurged(String id) => _commit([_op(OpKind.nodePurge, {'id': id})]);
+  void nodePurged(String id) => _commit([
+        _op(OpKind.nodePurge, {'id': id})
+      ]);
 
   /// Notebook-level properties (title today).
   ///
@@ -172,18 +294,33 @@ class SyncRecorder {
   /// would make it unbounded and unreadable, and defeats the property that
   /// makes blobs easy: identical content produces an identical filename on
   /// every device, so blobs need no merge and can be fetched lazily.
+  ///
+  /// The **op** is recorded either way; only the bytes wait on
+  /// [materialiseBlobs]. Deliberately: hash, mime and size are ~100 bytes, they
+  /// are what a later materialisation needs in order to know what to fetch, and
+  /// keeping the op stream identical whether or not a notebook syncs means
+  /// turning sync on never has to synthesise history it did not record.
   void blob(String hash, String mime, int size, Uint8List bytes) {
-    store.writeBlob(hash, bytes);
-    if (state.blobs.contains(hash)) return; // already recorded; bytes are immutable
-    _commit([_op(OpKind.blobPut, {'hash': hash, 'mime': mime, 'size': size})]);
+    if (materialiseBlobs) store.writeBlob(hash, bytes);
+    if (state.blobs.contains(hash))
+      return; // already recorded; bytes are immutable
+    _commit([
+      _op(OpKind.blobPut, {'hash': hash, 'mime': mime, 'size': size})
+    ]);
   }
 
   /// Copy blobs that exist only in the container into `blobs/`.
   ///
-  /// Needed because notebooks created before the log existed hold every image
-  /// in SQLite alone — so a rebuild-from-log would reconstruct page structure
-  /// referencing bytes it cannot supply. That is the difference between a log
-  /// that *looks* complete and one that is.
+  /// Two callers, one mechanism. Notebooks created before the log existed hold
+  /// every image in SQLite alone — so a rebuild-from-log would reconstruct page
+  /// structure referencing bytes it cannot supply, the difference between a log
+  /// that *looks* complete and one that is. And since [materialiseBlobs] made
+  /// byte-writing conditional, every local-only notebook is in that same state
+  /// by design, so this is also what runs the moment one starts syncing.
+  ///
+  /// Returns 0 without reading anything when [materialiseBlobs] is false —
+  /// otherwise it would pull the whole `blobs` table out of SQLite and throw the
+  /// bytes away. Set the flag first (see `AppState.materialiseBlobsIfShared`).
   ///
   /// Deliberately incremental and awaitable: a real imported notebook has
   /// hundreds of images totalling tens of megabytes, and doing that
@@ -194,6 +331,7 @@ class SyncRecorder {
     required List<({String hash, String mime, int size})> index,
     required Uint8List? Function(String hash) read,
   }) async {
+    if (!materialiseBlobs) return 0;
     var copied = 0;
     for (final b in index) {
       if (store.hasBlob(b.hash) && state.blobs.contains(b.hash)) continue;
@@ -201,8 +339,14 @@ class SyncRecorder {
       if (bytes == null) continue; // referenced but missing; nothing to copy
       blob(b.hash, b.mime, b.size, bytes);
       copied++;
-      // Yield so a 372-image notebook doesn't block a frame.
-      await Future<void>.delayed(Duration.zero);
+      // A REAL delay, not Duration.zero. This loop runs on the UI isolate
+      // (fsync per blob, hundreds of blobs), and on Windows the UI isolate
+      // lives on the Win32 message loop, where posted messages outrank
+      // hardware input — a zero timer is itself posted work due immediately,
+      // so the queue never goes idle and mouse/keyboard starve for the whole
+      // backfill. One millisecond per blob lets the loop actually wait, which
+      // is when Win32 delivers input.
+      await Future<void>.delayed(const Duration(milliseconds: 1));
     }
     if (copied > 0) {
       debugPrint('[openote/sync] backfilled $copied blob(s) into '
@@ -218,8 +362,7 @@ class SyncRecorder {
   /// The watermark is per foreign device, stored locally. It is not "what
   /// exists" but "what I have folded into my container" — those differ exactly
   /// when another device has synced a log in, which is the whole point.
-  List<Op> pendingForeignOps(
-      Object? Function(String key) readSetting) {
+  List<Op> pendingForeignOps(Object? Function(String key) readSetting) {
     final out = <Op>[];
     for (final dev in store.deviceIds()) {
       if (dev == device.id) continue;
@@ -294,6 +437,11 @@ class SyncRecorder {
 
   /// Blobs referenced by ops whose bytes are not in `blobs/`. Empty means a
   /// rebuild from this log could reconstruct the notebook's content in full.
+  ///
+  /// A notebook with [materialiseBlobs] off reports **all** of them, and that is
+  /// the honest answer rather than a bug: its log genuinely cannot supply those
+  /// bytes yet. It is also the list a "prepare this for sync" action wants —
+  /// though the backfill works from the container's index, which is the superset.
   Set<String> missingBlobs() {
     final have = store.blobHashes();
     return {
@@ -346,8 +494,7 @@ class SyncRecorder {
     }
     for (final goneId in (prev?.blocks.keys.toList() ?? const <String>[])) {
       if (!seen.contains(goneId)) {
-        ops.add(_op(
-            OpKind.blockRemove, {'pageId': pageId, 'blockId': goneId}));
+        ops.add(_op(OpKind.blockRemove, {'pageId': pageId, 'blockId': goneId}));
       }
     }
     final propsCanon = canonicalJson(props.toJson());
@@ -372,8 +519,8 @@ class SyncRecorder {
   ///   be BIGGER than the block. The guard uses size as a proxy for intent —
   ///   do not "optimize" it away; erasing most of a huge block in one gesture
   ///   correctly lands on `block.set`.
-  Op? _diffInk(String pageId, Map<String, dynamic> before,
-      Map<String, dynamic> after) {
+  Op? _diffInk(
+      String pageId, Map<String, dynamic> before, Map<String, dynamic> after) {
     final beforeStrokes =
         ((before['content'] as Map?)?['strokes'] as List?) ?? const [];
     final afterStrokes =

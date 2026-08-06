@@ -46,11 +46,16 @@ class DeviceIdentity {
   /// [readSetting]/[writeSetting] are injected rather than taking a Repository
   /// so this is testable without a database, and so it cannot accidentally grow
   /// a dependency on notebook state — the id must not live there.
+  /// [lastSeqOf] overrides how the on-disk seq for an id is found. The async
+  /// recorder open passes the per-device maxima its background replay already
+  /// computed, so the fork check costs a map lookup instead of re-reading the
+  /// device's whole log on the UI thread.
   static DeviceIdentity resolve({
     required OpLogStore store,
     required String notebookId,
     required Object? Function(String key) readSetting,
     required void Function(String key, Object? value) writeSetting,
+    int Function(String id)? lastSeqOf,
   }) {
     var id = readSetting(settingsKey) as String?;
     if (id == null || id.isEmpty) {
@@ -62,7 +67,7 @@ class DeviceIdentity {
     }
 
     final remembered = (readSetting(seqKey(notebookId)) as num?)?.toInt() ?? 0;
-    final onDisk = store.lastSeq(id);
+    final onDisk = (lastSeqOf ?? store.lastSeq)(id);
 
     if (onDisk > remembered) {
       // Someone else wrote as us. We cannot tell which ops were theirs, and

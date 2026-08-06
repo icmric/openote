@@ -200,8 +200,10 @@ Future<PdfImportResult> importPdfFile(
         }
       });
       onProgress?.call(made, total);
-      // Yield so a long import doesn't freeze the window between chunks.
-      await Future<void>.delayed(Duration.zero);
+      // A real delay, not Duration.zero: this loop runs on the UI isolate, and
+      // on Windows posted work outranks hardware input, so a queue that never
+      // goes idle starves the mouse and keyboard for the whole import.
+      await Future<void>.delayed(const Duration(milliseconds: 2));
     }
 
     app.reloadNodes();
@@ -289,9 +291,10 @@ Future<PdfImportResult> _importOntoCurrentPage(
     }
     made++;
     onProgress?.call(made, total);
-    // Yield so the window keeps painting — this is what makes the slides
-    // appear one by one rather than all at the end.
-    await Future<void>.delayed(Duration.zero);
+    // A real delay — it keeps the window painting (the slides appear one by
+    // one), and unlike Duration.zero it lets the message loop go idle, which
+    // on Windows is the only time hardware input is dispatched.
+    await Future<void>.delayed(const Duration(milliseconds: 2));
   }
   // Bring the result into view. The slides land BELOW everything already on
   // the page, which on a page with any content at all means off screen — so

@@ -325,7 +325,14 @@ void main() {
   group('log store', () {
     late Directory tmp;
     setUp(() => tmp = Directory.systemTemp.createTempSync('onote_oplog'));
-    tearDown(() => tmp.deleteSync(recursive: true));
+    // Guarded like the other ~90 delete sites in this suite. `tmp` is `late`,
+    // so an unguarded teardown after a throwing setUp reports a
+    // LateInitializationError and hides the real cause.
+    tearDown(() {
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
 
     OpLogStore store() =>
         OpLogStore.forNotebook(p.join(tmp.path, 'Book.onote'));
@@ -359,7 +366,14 @@ void main() {
       tmp = Directory.systemTemp.createTempSync('onote_dev');
       settings = {};
     });
-    tearDown(() => tmp.deleteSync(recursive: true));
+    // Guarded like the other ~90 delete sites in this suite. `tmp` is `late`,
+    // so an unguarded teardown after a throwing setUp reports a
+    // LateInitializationError and hides the real cause.
+    tearDown(() {
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
 
     DeviceIdentity resolve(OpLogStore s) => DeviceIdentity.resolve(
           store: s,

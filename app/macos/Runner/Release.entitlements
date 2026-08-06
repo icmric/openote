@@ -1,8 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The App Sandbox is OFF for this distribution, and that is a decision rather
+  than an oversight.
+
+  Openote ships as a directly-downloaded .dmg, not through the App Store, so
+  the sandbox is optional here. Two things the app does are incompatible with
+  it as this file was configured:
+
+    * It opens notebooks at arbitrary paths the user chose — a Dropbox folder,
+      a NAS mount, a self-hosted Nextcloud directory — and REMEMBERS them
+      across launches. A sandboxed app can only reach a path the user picked in
+      an open panel during that session unless it holds a security-scoped
+      bookmark for it. That is a feature to build, not a plist key.
+    * It fetches a subscribed .ics timetable over HTTPS, which needs
+      com.apple.security.network.client. That key was not here either.
+
+  Flutter's template ships app-sandbox = true and this file inherited it. The
+  released .dmg has nonetheless worked, because the release workflow's ad-hoc
+  `codesign --force --deep` re-sign silently DROPPED the entitlements — so the
+  shipped app has always been unsandboxed by accident, while a locally-built
+  one was sandboxed and most likely could not reach the user's notebooks or
+  their timetable at all. macOS has never been run by a human on this project
+  (see TESTING.md), which is why nobody had hit it.
+
+  Stating the intent here makes a local build and a CI build behave the same
+  way, and stops the workflow depending on a side effect of `--deep`.
+
+  If Openote is ever submitted to the App Store the sandbox comes back on, and
+  brings security-scoped bookmarks with it. That is the migration; nothing here
+  forecloses it.
+-->
 <plist version="1.0">
 <dict>
 	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<!-- The subscribed timetable is an outbound HTTPS GET (ADR-0006 §8). -->
+	<key>com.apple.security.network.client</key>
 	<true/>
 </dict>
 </plist>

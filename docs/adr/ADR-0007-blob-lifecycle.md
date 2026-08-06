@@ -1,8 +1,18 @@
 # ADR-0007 — Blob storage and garbage collection
 
-> **Status:** Proposed · 2026-08-05
+> **Status:** Proposed · 2026-08-05 · **amended 2026-08-06**
 > **Supersedes nothing.** Refines [ADR-0006](ADR-0006-sync-transport-and-text-model.md) §3.
-> **Related:** E1/E2 in [v0.4-and-beyond](../planning/v0.4-and-beyond.md)
+> **Related:** E1/E2 in [v0.4-and-beyond](../planning/v0.4-and-beyond.md) ·
+> [v0.10 storage wave 1a](../planning/v0.10-responsiveness-and-storage.md#1a-single-copy-blobs--shipped-2026-08-06)
+>
+> **Amendment (2026-08-06).** The double-store below is **no longer universal**:
+> storage wave 1a made `.onotebook/blobs/` materialise only for notebooks that
+> are in a sync folder or mirrored, taking a measured 2.23× overhead to 1.23×
+> for everything else. Two consequences for the GC designed here, both
+> simplifying: the sweep must treat an **absent or sparse `blobs/` as normal**
+> rather than as damage, and for a local-only notebook there is only the
+> container's `blobs` table to sweep. The grace-period reasoning is unchanged
+> and still unbuilt.
 
 ## Context
 

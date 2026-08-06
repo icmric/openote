@@ -45,7 +45,12 @@ VersionInfoVersion={#AppVersion}
 ; software — asking for the whole machine buys nothing and can block the
 ; install outright. See v0.7 §2.
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
+; No `PrivilegesRequiredOverridesAllowed=dialog`. It made Inno open with an
+; install-mode page offering a UAC-shielded "for all users" option as the very
+; FIRST thing the user saw — directly contradicting the release notes, which
+; promise the installer never asks for an administrator password. Per-machine
+; install is not a supported configuration yet (v0.7 §2), so offering it was
+; offering a path nobody had tested.
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes

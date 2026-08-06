@@ -11,16 +11,74 @@ import '../core/onote_ffi.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart';
+import 'import_sink.dart';
 
 /// Isolate entry points: the Rust parse (LZX + binary decode + base64) can
 /// take seconds on a big notebook and must not freeze the UI thread. Each
 /// isolate loads its own copy of the native library on first use.
-String _parseOneInIsolate(Uint8List bytes) =>
-    (OnoteCore.instance ?? (throw StateError('core unavailable')))
-        .importOne(bytes);
-String _parseOnepkgInIsolate(Uint8List bytes) =>
-    (OnoteCore.instance ?? (throw StateError('core unavailable')))
-        .importOnepkg(bytes);
+/// Parse a package AND finish every CPU-heavy byte of post-processing before
+/// returning: `jsonDecode` of the (potentially hundreds of MB) result string,
+/// and base64 → bytes for every image.
+///
+/// **Why this exists when `compute(_parseOnepkg…)` already ran the parse off
+/// the UI thread.** The old shape returned the JSON *string*, so the decode of
+/// that string — seconds, for a big notebook — happened on the UI isolate, and
+/// so did a `base64Decode` per image during the write phase. That was most of
+/// "the whole app completely locks up while importing". Both now happen here.
+/// Returning the decoded *structure* is effectively free: `compute` uses
+/// `Isolate.exit`, which hands the result to the caller in O(1) rather than
+/// copying it.
+///
+/// Images are rewritten in place: `data_base64` (String) becomes `bytes`
+/// (Uint8List). Consumers accept either spelling, so the old string path —
+/// still used by tests driving [buildNotebookFromPackage] directly — keeps
+/// working.
+Map<String, dynamic> parseOnepkgStructured(Uint8List bytes) {
+  final core = OnoteCore.instance;
+  if (core == null) throw StateError('core unavailable');
+  final result = jsonDecode(core.importOnepkg(bytes)) as Map<String, dynamic>;
+  if (result['ok'] == true) {
+    for (final s in (result['sections'] as List? ?? const [])) {
+      final pages =
+          (((s as Map)['section'] as Map?)?['pages'] as List?) ?? const [];
+      for (final page in pages) {
+        decodePageImagesInPlace((page as Map).cast<String, dynamic>());
+      }
+    }
+  }
+  return result;
+}
+
+/// Same, for a single `.one` section.
+Map<String, dynamic> parseOneStructured(Uint8List bytes) {
+  final core = OnoteCore.instance;
+  if (core == null) throw StateError('core unavailable');
+  final result = jsonDecode(core.importOne(bytes)) as Map<String, dynamic>;
+  if (result['ok'] == true) {
+    for (final page in (result['pages'] as List? ?? const [])) {
+      decodePageImagesInPlace((page as Map).cast<String, dynamic>());
+    }
+  }
+  return result;
+}
+
+/// base64 → bytes for every image of one parsed page, in place.
+///
+/// Part of the parse-side contract, not an internal: both parse entry points
+/// above run it, and so does the writer isolate when it is handed an
+/// already-parsed package. Doing it here rather than at write time is the point
+/// — a `base64Decode` per image on the UI thread was a measurable slice of the
+/// old lockup.
+void decodePageImagesInPlace(Map<String, dynamic> page) {
+  for (final imgRaw in (page['images'] as List? ?? const [])) {
+    final img = imgRaw as Map;
+    final b64 = img.remove('data_base64') as String?;
+    if (b64 == null || b64.isEmpty) continue;
+    try {
+      img['bytes'] = base64Decode(b64);
+    } catch (_) {/* an undecodable image degrades to absent, as before */}
+  }
+}
 
 /// Show a busy dialog while [work] runs (import feedback for large notebooks).
 /// The dialog text tracks [message] live, so multi-phase imports can narrate
@@ -148,6 +206,143 @@ const double _tableRowChrome = 13.0;
 ///
 /// Mutates `y` in the box maps in place. Exposed for testing.
 void restackFlows(List<dynamic> boxes) {
+  for (final group in _flowGroups(boxes)) {
+    var cy = (group.first['y'] as num?)?.toDouble() ?? 0;
+    for (final b in group) {
+      b['y'] = cy;
+      cy += _measuredFlowHeight(b);
+    }
+  }
+}
+
+/// [restackFlows], yielding when [shouldYield] says so — between boxes, and
+/// **inside** a box's measurement.
+///
+/// The synchronous version treats a page as atomic, which is right for the
+/// import translation (it runs inside a transaction) and wrong on the UI
+/// thread. Pacing between pages could not split a page; pacing between boxes
+/// could not split a box — and a real lecture page routinely carries one
+/// full-page text box whose single `TextPainter.layout` measured at **216 ms
+/// for 2000 lines, 613 ms for 5000**. That atomic call was the import stall
+/// that survived every earlier fix, because none of my synthetic pages had a
+/// giant box.
+///
+/// So the measurement itself is chunked (see [_measuredFlowHeightPaced]), and
+/// the accumulation stays identical to [restackFlows] — same groups, same
+/// heights to the last bit, same order. `flow_restack_test.dart` fuzzes the
+/// equality, because a paced height that drifted from the sync one would
+/// misplace imported content depending on which path measured it.
+Future<void> restackFlowsPaced(
+  List<dynamic> boxes, {
+  required bool Function() shouldYield,
+  required Future<void> Function() onYield,
+}) async {
+  for (final group in _flowGroups(boxes)) {
+    var cy = (group.first['y'] as num?)?.toDouble() ?? 0;
+    for (final b in group) {
+      b['y'] = cy;
+      cy += await _measuredFlowHeightPaced(b,
+          shouldYield: shouldYield, onYield: onYield);
+      if (shouldYield()) await onYield();
+    }
+  }
+}
+
+/// How many hard lines of a text box are measured per chunk in the paced
+/// path. Measured at ~0.12 ms per wrapped line, 64 lines ≈ 8 ms — inside a
+/// frame with room to spare.
+const int _measureChunkLines = 64;
+
+/// [_measuredFlowHeight], yielding between chunks of work.
+///
+/// **Why the sum is exact.** With one uniform style per box (true of every
+/// parsed box) and an explicit `height` multiplier, every line box — wrapped
+/// or hard — is exactly `fontSize × height` tall, so hard-broken lines lay
+/// out independently and measuring them in runs and summing gives the same
+/// answer to the bit. Probed across wrapping, interior empty lines, unicode
+/// and unbreakable words before this was built.
+///
+/// **The one exception**, also probed: a chunk that is exactly ONE empty line
+/// joins to the empty string, and an empty `TextPainter` reports the font's
+/// natural height instead of the multiplier'd line box. Any chunk of two or
+/// more lines contains a `\n` and cannot be empty, so the chunker only has to
+/// avoid stranding a final lone empty line — it absorbs it into the previous
+/// chunk.
+Future<double> _measuredFlowHeightPaced(
+  Map<String, dynamic> b, {
+  required bool Function() shouldYield,
+  required Future<void> Function() onYield,
+}) async {
+  Future<void> maybeYield() async {
+    if (shouldYield()) await onYield();
+  }
+
+  switch (b['kind'] as String?) {
+    case 'table':
+      // Same arithmetic as the sync path, yielding between rows — a row is
+      // cells of ordinary length, so per-row is fine granularity.
+      final rows = (b['cells'] as List?) ?? const [];
+      if (rows.isEmpty) return _flowGapAfterTable;
+      final rawW = (b['col_w'] as List?) ?? const [];
+      var total = 0.0;
+      for (final rowRaw in rows) {
+        final row = (rowRaw as List?) ?? const [];
+        var tallest = 0.0;
+        for (var c = 0; c < row.length; c++) {
+          final w =
+              c < rawW.length ? (rawW[c] as num).toDouble() : double.infinity;
+          final h =
+              _textHeight(row[c]?.toString() ?? '', width: w, fontSizePx: 15);
+          if (h > tallest) tallest = h;
+        }
+        total += tallest + _tableRowChrome;
+        await maybeYield();
+      }
+      return total + _flowGapAfterTable;
+    case 'math':
+      return 48.0;
+    default:
+      final md = b['markdown'] as String? ?? '';
+      if (md.trim().isEmpty) return 0;
+      final sizePt = (b['font_size_pt'] as num?)?.toDouble();
+      final fontSizePx =
+          (sizePt != null && sizePt > 4) ? sizePt * 120.0 / 72.0 : 15.0;
+      final w = (b['w'] as num?)?.toDouble();
+      final width = (w != null && w > 1) ? w : double.infinity;
+      final family = b['font'] as String?;
+      var imagesH = 0.0;
+      final textLines = <String>[];
+      for (final line in md.split('\n')) {
+        final m = _flowImageLine.firstMatch(line);
+        if (m != null) {
+          imagesH += double.tryParse(m.group(1)!) ?? 0;
+        } else {
+          textLines.add(line);
+        }
+      }
+
+      var textH = 0.0;
+      final n = textLines.length;
+      var i = 0;
+      while (i < n) {
+        var j = i + _measureChunkLines;
+        if (j > n) j = n;
+        // Don't strand a final lone empty line — see the doc comment.
+        if (n - j == 1 && textLines[n - 1].isEmpty) j = n;
+        textH += _textHeight(textLines.sublist(i, j).join('\n'),
+            width: width, fontSizePx: fontSizePx, family: family);
+        i = j;
+        if (i < n) await maybeYield();
+      }
+      return textH + imagesH + _flowGapAfterText;
+  }
+}
+
+/// Boxes grouped by flow, in input order, groups of one dropped — the shape
+/// both restack variants walk. The FIRST box of a flow keeps its parsed
+/// position (OneNote's own recorded offset, already right); only boxes after
+/// it move.
+List<List<Map<String, dynamic>>> _flowGroups(List<dynamic> boxes) {
   final byFlow = <int, List<Map<String, dynamic>>>{};
   for (final raw in boxes) {
     if (raw is! Map) continue;
@@ -156,15 +351,40 @@ void restackFlows(List<dynamic> boxes) {
     if (flow == 0) continue;
     byFlow.putIfAbsent(flow, () => []).add(b);
   }
-  for (final group in byFlow.values) {
-    if (group.length < 2) continue; // nothing below the anchor to correct
-    var cy = (group.first['y'] as num?)?.toDouble() ?? 0;
-    for (final b in group) {
-      b['y'] = cy;
-      cy += _measuredFlowHeight(b);
-    }
-  }
+  return [
+    for (final g in byFlow.values)
+      if (g.length >= 2) g // nothing below a lone anchor to correct
+  ];
 }
+
+/// The fields [restackFlows] reads, and nothing else.
+///
+/// **Why a projection rather than sending the boxes.** The restack happens on
+/// the main isolate (TextPainter is root-isolate-only) while the import runs in
+/// the writer isolate, so every box has to cross an isolate boundary — and a
+/// message is copied in one uninterruptible go by the receiver, which is the UI
+/// thread. A parsed box carries tag lists, style runs, geometry and whatever
+/// else the parser recovered; the restack reads nine fields. Measured on a
+/// synthetic 3000-page notebook, projecting took the worst interaction stall
+/// during the layout pass from **48 ms to 4 ms**.
+///
+/// Keep this in step with [_measuredFlowHeight] and the grouping in
+/// [restackFlows]. `flow_projection_test.dart` fails if it drifts: a projected
+/// box that measured differently from the whole one would misplace imported
+/// content silently, which is the exact failure restackFlows exists to fix.
+Map<String, dynamic> flowMeasurementInput(Map<String, dynamic> b) => {
+      // Grouping and the anchor position.
+      'flow': b['flow'],
+      'y': b['y'],
+      // Everything _measuredFlowHeight reads.
+      'kind': b['kind'],
+      if (b['markdown'] != null) 'markdown': b['markdown'],
+      if (b['w'] != null) 'w': b['w'],
+      if (b['font'] != null) 'font': b['font'],
+      if (b['font_size_pt'] != null) 'font_size_pt': b['font_size_pt'],
+      if (b['cells'] != null) 'cells': b['cells'],
+      if (b['col_w'] != null) 'col_w': b['col_w'],
+    };
 
 /// The vertical space one flow item occupies, including the gap after it.
 double _measuredFlowHeight(Map<String, dynamic> b) {
@@ -181,8 +401,10 @@ double _measuredFlowHeight(Map<String, dynamic> b) {
           // Unknown column widths → measure unconstrained; the row height is
           // then a floor rather than an estimate, which errs towards spacing
           // things apart instead of overlapping them.
-          final w = c < rawW.length ? (rawW[c] as num).toDouble() : double.infinity;
-          final h = _textHeight(row[c]?.toString() ?? '', width: w, fontSizePx: 15);
+          final w =
+              c < rawW.length ? (rawW[c] as num).toDouble() : double.infinity;
+          final h =
+              _textHeight(row[c]?.toString() ?? '', width: w, fontSizePx: 15);
           if (h > tallest) tallest = h;
         }
         total += tallest + _tableRowChrome;
@@ -196,7 +418,8 @@ double _measuredFlowHeight(Map<String, dynamic> b) {
       final md = b['markdown'] as String? ?? '';
       if (md.trim().isEmpty) return 0;
       final sizePt = (b['font_size_pt'] as num?)?.toDouble();
-      final fontSizePx = (sizePt != null && sizePt > 4) ? sizePt * 120.0 / 72.0 : 15.0;
+      final fontSizePx =
+          (sizePt != null && sizePt > 4) ? sizePt * 120.0 / 72.0 : 15.0;
       final w = (b['w'] as num?)?.toDouble();
       // An in-flow image occupies its declared display height, not a text
       // line — measuring the placeholder as text would undercount a 200px
@@ -223,11 +446,11 @@ double _measuredFlowHeight(Map<String, dynamic> b) {
 
 /// A flow line that is nothing but an image placeholder, capturing its declared
 /// display height: `![alt](onote-img://3 =264x198)`.
-final _flowImageLine =
-    RegExp(r'^\s*!\[[^\]]*\]\([^)\s]+\s+=\d+x(\d+)\)\s*$');
+final _flowImageLine = RegExp(r'^\s*!\[[^\]]*\]\([^)\s]+\s+=\d+x(\d+)\)\s*$');
 
 /// Lay [text] out exactly as the canvas will and return its height.
-double _textHeight(String text, {
+double _textHeight(
+  String text, {
   required double width,
   required double fontSizePx,
   String? family,
@@ -268,14 +491,16 @@ Future<int?> importOneNoteFile(AppState app,
   // section imported after a package reported the package's numbers — which
   // matters more now that the report says what ARRIVED and not only what did
   // not.
-  _resetImportReport();
+  resetImportReport();
   Map<String, dynamic> result;
   try {
-    final json = await _withBusyDialog(
+    // Structured: the isolate does the jsonDecode and the image base64 too.
+    // The old shape returned the JSON string, whose decode — seconds on a big
+    // section — then ran right here on the UI thread.
+    result = await _withBusyDialog(
         progressContext,
         ValueNotifier('Importing OneNote section…'),
-        () => compute(_parseOneInIsolate, bytes));
-    result = jsonDecode(json) as Map<String, dynamic>;
+        () => compute(parseOneStructured, bytes));
   } catch (_) {
     return 0; // parser returned malformed/empty output — nothing to import
   }
@@ -284,7 +509,8 @@ Future<int?> importOneNoteFile(AppState app,
   final pages = (result['pages'] as List?) ?? const [];
   if (pages.isEmpty) return 0;
 
-  final sectionTitle = _titleFromName(p.basenameWithoutExtension(file.name));
+  final sectionTitle =
+      importTitleFromName(p.basenameWithoutExtension(file.name));
   final (imported, firstPageId) =
       importParsedSection(app, app.notebookId!, sectionTitle, pages);
 
@@ -295,66 +521,6 @@ Future<int?> importOneNoteFile(AppState app,
     app.refresh();
   }
   return imported;
-}
-
-/// Import a `.onepkg` notebook package as a NEW notebook: one Openote section
-/// per packaged `.one` (grouped into section groups when the package nests
-/// them in folders), named after the package file. Pass [progressContext] to
-/// show a busy dialog while parsing.
-Future<int?> importOneNotePackage(AppState app,
-    {BuildContext? progressContext}) async {
-  final core = OnoteCore.instance;
-  if (core == null) throw OneNoteUnavailable();
-
-  final file = await openFile(acceptedTypeGroups: const [
-    XTypeGroup(label: 'OneNote notebook package', extensions: ['onepkg'])
-  ]);
-  if (file == null) return null;
-
-  final Uint8List bytes = await file.readAsBytes();
-  // One dialog spans both phases: the native parse (single isolate call) and
-  // the per-section database writes, which narrate progress as they go.
-  _resetImportReport();
-  final progress = ValueNotifier(
-      'Reading notebook… this can take a while for large notebooks.');
-  return _withBusyDialog(progressContext, progress, () async {
-    Map<String, dynamic> result;
-    try {
-      final json = await compute(_parseOnepkgInIsolate, bytes);
-      result = jsonDecode(json) as Map<String, dynamic>;
-    } on FormatException {
-      // The parser answered, but not with JSON — treat as unreadable input.
-      return 0;
-    } catch (e) {
-      // A crashed isolate, an OOM, or a native fault is NOT "unsupported file";
-      // collapsing them all into 0 told the user their notebook was unreadable
-      // when in fact we broke.
-      lastImportError = '$e';
-      return 0;
-    }
-    if (result['ok'] != true) {
-      lastImportError = result['error'] as String?;
-      return 0;
-    }
-    // Sections the parser could not read. These used to vanish silently.
-    lastSkippedSections =
-        ((result['failed'] as List?) ?? const []).cast<String>().toList();
-    final sections = (result['sections'] as List?) ?? const [];
-    if (sections.isEmpty) return 0;
-
-    // The package is a whole notebook → create a fresh one named after it.
-    final nbTitle = _titleFromName(p.basenameWithoutExtension(file.name));
-    final ref = await app.importCreateNotebook(nbTitle);
-    final built = buildNotebookFromPackage(app, ref.id, sections,
-        onSection: (i, name) {
-      progress.value = 'Importing "$name" (${i + 1} of ${sections.length})…';
-      return Future<void>.delayed(Duration.zero); // let the dialog repaint
-    });
-    final imported = await built;
-    await app.selectNotebook(ref.id);
-    if (_firstImportedPageId != null) await app.selectPage(_firstImportedPageId!);
-    return imported;
-  });
 }
 
 /// Sections the last import could not read, by name. Empty on a clean import.
@@ -380,21 +546,20 @@ int lastDroppedStrokes = 0;
   var pos = 0;
   String next() => 'a${(posBase + pos++).toString().padLeft(15, '0')}';
 
-  final section = app.importNode(
-      nbId,
-      TreeNode(
-        kind: NodeKind.section,
-        title: sectionTitle,
-        position: next(),
-      ));
-  final firstPageId =
-      _importPagesIntoSection(app, nbId, section.id, pages, next);
+  final sink = AppStateImportSink(app, nbId);
+  final section = sink.node(TreeNode(
+    kind: NodeKind.section,
+    title: sectionTitle,
+    position: next(),
+  ));
+  final firstPageId = _importPagesIntoSection(sink, section.id, pages, next);
   return (pages.length, firstPageId);
 }
 
 /// Clear every last-import counter. One function, because they are reset from
-/// two entry points and the one that forgot was silently wrong.
-void _resetImportReport() {
+/// two entry points and the one that forgot was silently wrong. Public because
+/// the background job (import_job.dart) is one of those entry points now.
+void resetImportReport() {
   lastSkippedSections = const [];
   lastDroppedStrokes = 0;
   lastImportedImages = 0;
@@ -419,20 +584,15 @@ int lastImportedTags = 0;
 /// Why the last import returned 0, when the reason wasn't "nothing usable".
 String? lastImportError;
 
-/// Last page created by [buildNotebookFromPackage] (so callers can navigate to
-/// it). Set as a side effect to keep the return value a simple count.
-String? _firstImportedPageId;
-
 /// Create the sections/groups/pages of a parsed `.onepkg` into notebook [nbId].
 /// Extracted from [importOneNotePackage] so it can be driven headlessly by
 /// tests/tools against a real repository. [onSection] (optional) is awaited
 /// before each section, for progress UI. Returns the number of pages imported.
-Future<int> buildNotebookFromPackage(
-    AppState app, String nbId, List<dynamic> sections,
+Future<int> buildNotebookFromPackage(ImportSink sink, List<dynamic> sections,
     {Future<void> Function(int index, String name)? onSection}) async {
   // createNotebook seeds a starter section+page; remember them so the
   // scaffolding can be removed once real content has landed.
-  final seeded = app.importNodes(nbId);
+  final seeded = sink.nodes();
   final posBase = nowMs();
   var pos = 0;
   String next() => 'a${(posBase + pos++).toString().padLeft(15, '0')}';
@@ -444,7 +604,7 @@ Future<int> buildNotebookFromPackage(
     final s = (sections[si] as Map).cast<String, dynamic>();
     final pages = ((s['section'] as Map?)?['pages'] as List?) ?? const [];
     if (pages.isEmpty) continue;
-    final name = _titleFromName(s['name'] as String? ?? 'Section');
+    final name = importTitleFromName(s['name'] as String? ?? 'Section');
     if (onSection != null) await onSection(si, name);
     // Section group from the package's folder path (single level in the UI;
     // nested paths keep their full name).
@@ -453,27 +613,23 @@ Future<int> buildNotebookFromPackage(
     if (group != null && group.isNotEmpty) {
       groupId = groupIds.putIfAbsent(
           group,
-          () => app
-                  .importNode(
-                  nbId,
-                  TreeNode(
-                      kind: NodeKind.sectionGroup,
-                      title: group.replaceAll('/', ' › '),
-                      position: next()))
+          () => sink
+              .node(TreeNode(
+                  kind: NodeKind.sectionGroup,
+                  title: group.replaceAll('/', ' › '),
+                  position: next()))
               .id);
     }
-    final section = app.importNode(
-        nbId,
-        TreeNode(
-          kind: NodeKind.section,
-          parentId: groupId,
-          title: name,
-          position: next(),
-        ));
+    final section = sink.node(TreeNode(
+      kind: NodeKind.section,
+      parentId: groupId,
+      title: name,
+      position: next(),
+    ));
     // NOTE: must not be `firstPageId ??= _import…` — `??=` short-circuits its
     // right-hand side once non-null, which would silently skip importing every
     // section after the first (the "only the first group had content" bug).
-    final first = _importPagesIntoSection(app, nbId, section.id, pages, next);
+    final first = _importPagesIntoSection(sink, section.id, pages, next);
     firstPageId ??= first;
     imported += pages.length;
   }
@@ -481,26 +637,172 @@ Future<int> buildNotebookFromPackage(
   if (imported > 0) {
     // Drop the seeded starter section — the notebook has real content now.
     for (final n in seeded.where((n) => n.kind == NodeKind.section)) {
-      app.importPurgeNode(nbId, n.id);
+      sink.purgeNode(n.id);
     }
   }
-  _firstImportedPageId = firstPageId;
   return imported;
+}
+
+/// Write a parsed package into the notebook behind [sink] a few pages at a
+/// time,
+/// yielding to the event loop between batches.
+///
+/// This is [buildNotebookFromPackage]'s responsive sibling and shares its
+/// per-page translation via [importOneParsedPage]; the differences are the
+/// batch boundaries and the cancel check. Kept as a top-level function so it
+/// is drivable headlessly in tests, exactly as its predecessor is.
+Future<({int pages, String? firstPageId})> writePackageInBatches(
+  ImportSink sink,
+  List<dynamic> sections, {
+  int batchPages = 4,
+  bool restack = true,
+  Future<void> Function(List<dynamic> pagesInBatch)? prepareBatch,
+  bool Function()? shouldCancel,
+  void Function(String sectionName, int pagesDone, int pagesTotal)? onProgress,
+}) async {
+  final seeded = sink.nodes();
+  final posBase = nowMs();
+  var pos = 0;
+  String next() => 'a${(posBase + pos++).toString().padLeft(15, '0')}';
+
+  var total = 0;
+  for (final s in sections) {
+    total += ((((s as Map)['section'] as Map?)?['pages'] as List?) ?? const [])
+        .length;
+  }
+
+  var written = 0;
+  String? firstPageId;
+  final groupIds = <String, String>{};
+  for (final sRaw in sections) {
+    if (shouldCancel?.call() ?? false) break;
+    final s = (sRaw as Map).cast<String, dynamic>();
+    final pages = ((s['section'] as Map?)?['pages'] as List?) ?? const [];
+    if (pages.isEmpty) continue;
+    final name = importTitleFromName(s['name'] as String? ?? 'Section');
+
+    String? groupId;
+    final group = (s['group'] as String?)?.trim();
+    if (group != null && group.isNotEmpty) {
+      groupId = groupIds.putIfAbsent(
+          group,
+          () => sink
+              .node(TreeNode(
+                  kind: NodeKind.sectionGroup,
+                  title: group.replaceAll('/', ' › '),
+                  position: next()))
+              .id);
+    }
+    final section = sink.node(TreeNode(
+      kind: NodeKind.section,
+      parentId: groupId,
+      title: name,
+      position: next(),
+    ));
+
+    // The preparation for the batch after the one being written, already in
+    // flight. See the fire below for why.
+    Future<void>? prepped;
+    List<dynamic> batchAt(int start) => pages.sublist(
+        start,
+        (start + batchPages) > pages.length
+            ? pages.length
+            : start + batchPages);
+
+    for (var start = 0; start < pages.length; start += batchPages) {
+      if (shouldCancel?.call() ?? false) break;
+      final end = (start + batchPages) > pages.length
+          ? pages.length
+          : start + batchPages;
+      // Anything that has to happen elsewhere before these pages can be
+      // written. The writer isolate uses it to have the main isolate lay out
+      // this batch's flows — see [flowMeasurementInput]. Per batch, not per
+      // notebook: a single up-front pass meant nothing was written until every
+      // page had been measured, and meant one enormous message crossing the
+      // isolate boundary in one uninterruptible copy.
+      if (prepareBatch != null) {
+        await (prepped ?? prepareBatch(batchAt(start)));
+        prepped = null;
+      }
+      if (shouldCancel?.call() ?? false) break;
+      // Fire the NEXT batch's preparation before writing this one, so it
+      // overlaps instead of queueing behind it. This is what keeps the
+      // preparation off the critical path: it happens in another isolate, and
+      // waiting for it turned a 2000-page import from 13.4 s into 23.2 s
+      // because the pacing that keeps that isolate responsive — a real frame
+      // between chunks — was being paid for serially, once per batch.
+      if (prepareBatch != null && end < pages.length) {
+        prepped = prepareBatch(batchAt(end));
+      }
+      final first = sink.batch(() {
+        String? firstInBatch;
+        for (var i = start; i < end; i++) {
+          final id = importOneParsedPage(
+              sink, section.id, (pages[i] as Map).cast<String, dynamic>(), next,
+              restack: restack);
+          firstInBatch ??= id;
+        }
+        return firstInBatch;
+      });
+      firstPageId ??= first;
+      written += end - start;
+      onProgress?.call(name, written, total);
+      // Let anything else queued in this isolate run — the cancel message, in
+      // particular, which is delivered as an event and can only be seen at a
+      // boundary like this one.
+      await Future<void>.delayed(Duration.zero);
+    }
+    // A batch prepared for a page we then decided not to write (cancel, or the
+    // section ending mid-flight). Settle it rather than abandoning it: the
+    // future is live, and dropping it leaves an unawaited error waiting to be
+    // reported against whatever runs next.
+    if (prepped != null) {
+      try {
+        await prepped;
+      } catch (_) {/* the run is ending anyway */}
+    }
+  }
+
+  if (written > 0 && !(shouldCancel?.call() ?? false)) {
+    for (final n in seeded.where((n) => n.kind == NodeKind.section)) {
+      sink.purgeNode(n.id);
+    }
+  }
+  return (pages: written, firstPageId: firstPageId);
 }
 
 /// Import parsed pages into [sectionId]. Returns the first created page id.
 /// The whole section runs in ONE transaction — per-page commits measurably
 /// dominated large imports.
-String? _importPagesIntoSection(AppState app, String nbId, String sectionId,
+String? _importPagesIntoSection(ImportSink sink, String sectionId,
         List<dynamic> pages, String Function() next) =>
-    app.importBatch(
-        nbId, () => _importPagesLocked(app, nbId, sectionId, pages, next));
+    sink.batch(() => _importPagesLocked(sink, sectionId, pages, next));
 
-String? _importPagesLocked(AppState app, String nbId, String sectionId,
+String? _importPagesLocked(ImportSink sink, String sectionId,
     List<dynamic> pages, String Function() next) {
   String? firstPageId;
   for (final raw in pages) {
-    final page = (raw as Map).cast<String, dynamic>();
+    final id = importOneParsedPage(
+        sink, sectionId, (raw as Map).cast<String, dynamic>(), next);
+    firstPageId ??= id;
+  }
+  return firstPageId;
+}
+
+/// Write ONE parsed page into [sectionId]. Returns the created page id.
+///
+/// The unit the background import job batches on: a page is big enough that
+/// per-page transactions would cost real time over hundreds of pages, and
+/// small enough that a batch of a few stays comfortably inside one frame
+/// budget's worth of work between yields. Extracted from the loop above so
+/// both callers share every byte of the translation logic.
+/// Set [restack] false when the flow y-coordinates have already been corrected
+/// — the writer isolate does that, because [restackFlows] needs `TextPainter`
+/// and text layout is only available on the root isolate.
+String importOneParsedPage(ImportSink sink, String sectionId,
+    Map<String, dynamic> page, String Function() next,
+    {bool restack = true}) {
+  {
     final title = (page['title'] as String?)?.trim();
     final boxes = (page['boxes'] as List?) ?? const [];
     final images = (page['images'] as List?) ?? const [];
@@ -513,17 +815,15 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
     // since Openote's page title band already shows the title and date).
     final createdMs = _parseOneNoteDate(page['date_text'] as String? ?? '');
 
-    final node = app.importNode(
-        nbId,
-        TreeNode(
-          kind: NodeKind.page,
-          parentId: sectionId,
-          title: (title == null || title.isEmpty) ? 'Imported page' : title,
-          position: next(),
-          createdAt: createdMs,
-          // Subpage indent straight from OneNote's page level (ORG-6).
-          level: ((page['level'] as num?)?.toInt() ?? 0).clamp(0, 2),
-        ));
+    final node = sink.node(TreeNode(
+      kind: NodeKind.page,
+      parentId: sectionId,
+      title: (title == null || title.isEmpty) ? 'Imported page' : title,
+      position: next(),
+      createdAt: createdMs,
+      // Subpage indent straight from OneNote's page level (ORG-6).
+      level: ((page['level'] as num?)?.toInt() ?? 0).clamp(0, 2),
+    ));
 
     // Store image blobs FIRST: box markdown references in-flow images by index
     // (`![image](onote-img://N)`), which we rewrite to the stored blob hash so
@@ -533,15 +833,21 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
     final hashByIndex = <int, String>{};
     for (var i = 0; i < images.length; i++) {
       final img = (images[i] as Map).cast<String, dynamic>();
-      final b64 = img['data_base64'] as String?;
-      if (b64 == null || b64.isEmpty) continue;
-      final Uint8List png;
-      try {
-        png = base64Decode(b64);
-      } catch (_) {
-        continue;
+      // Bytes when the structured isolate already decoded them (the fast
+      // path); base64 when a caller fed this parser output verbatim. Decoding
+      // here is the compatibility spelling, not the intended one — on the UI
+      // thread it is exactly the work the isolate exists to keep off it.
+      Uint8List? png = img['bytes'] as Uint8List?;
+      if (png == null) {
+        final b64 = img['data_base64'] as String?;
+        if (b64 == null || b64.isEmpty) continue;
+        try {
+          png = base64Decode(b64);
+        } catch (_) {
+          continue;
+        }
       }
-      final hash = app.importBlob(nbId, png, 'image/png');
+      final hash = sink.blob(png, 'image/png');
       hashByIndex[i] = hash;
       lastImportedImages++;
       if (img['in_flow'] == true) continue; // rides a text box's flow
@@ -559,7 +865,7 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
       ));
     }
 
-    restackFlows(boxes);
+    if (restack) restackFlows(boxes);
 
     // Each OneNote box becomes its own block at the coordinates the parser
     // recovered: text boxes keep their original width (autoWidth off) so a
@@ -742,13 +1048,48 @@ String? _importPagesLocked(AppState app, String nbId, String sectionId,
       }
     }
 
-    app.importPage(nbId, node.id, blocks, PageProps());
-    firstPageId ??= node.id;
+    sink.page(node.id, blocks, PageProps());
+    return node.id;
   }
-  return firstPageId;
 }
 
-String _titleFromName(String name) {
+///
+/// "324 pages, 372 images, 64,616 strokes" is the sentence that converts
+/// someone who has just handed over five years of notes. Until now the import
+/// said only what it could not read, so a clean import was reported as a bare
+/// page count and a silence — and silence, after a migration, reads as "it
+/// probably lost something".
+///
+/// Each clause appears only if it is non-zero: a notebook with no ink should
+/// not be told it imported no ink.
+String importArrivalNote(int pages, int images, int strokes, [int tags = 0]) {
+  String n(int v, String one, [String? many]) =>
+      '${_grouped(v)} ${v == 1 ? one : (many ?? '${one}s')}';
+  final parts = <String>[
+    n(pages, 'page'),
+    if (images > 0) n(images, 'image'),
+    if (strokes > 0) n(strokes, 'ink stroke'),
+    if (tags > 0) n(tags, 'tag'),
+  ];
+  if (parts.length == 1) return parts.first;
+  return '${parts.take(parts.length - 1).join(', ')} and ${parts.last}';
+}
+
+/// Thousands separators, because 64616 is a number you have to count digits on
+/// and 64,616 is one you read.
+String _grouped(int v) {
+  final digits = v.toString();
+  final out = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) out.write(',');
+    out.write(digits[i]);
+  }
+  return out.toString();
+}
+
+/// A section/notebook title from a file or folder name. Public because the
+/// background job (import_job.dart) names its notebook with it too.
+String importTitleFromName(String name) {
   final t = name.replaceAll('_', ' ').trim();
   return t.isEmpty ? 'OneNote import' : t;
 }

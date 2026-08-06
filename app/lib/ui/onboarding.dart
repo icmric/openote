@@ -13,13 +13,15 @@
 /// between sync working and sync being a thing you gave up on.
 library;
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
+import '../export/import_job.dart';
+import '../export/onenote_import.dart' show OneNoteUnavailable;
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
-import 'notebook_manager.dart';
 import 'sync_dialog.dart';
 import '../theme/tokens.dart';
 
@@ -62,6 +64,7 @@ class _OnboardingState extends State<_Onboarding> {
           .toList();
 
   bool _oneNoteHelp = false;
+  bool _importing = false;
   String? _error;
 
   Future<void> _open(String path) async {
@@ -72,6 +75,91 @@ class _OnboardingState extends State<_Onboarding> {
       if (mounted) setState(() => _error = '$e');
     }
   }
+
+  /// Pick a `.onepkg` and hand it to the background job. The dialog stays
+  /// open: the whole point of importing first is doing the rest of this while
+  /// it works.
+  Future<void> _startImport() async {
+    final file = await openFile(acceptedTypeGroups: const [
+      XTypeGroup(label: 'OneNote notebook package', extensions: ['onepkg'])
+    ]);
+    if (file == null || !mounted) return;
+    try {
+      final job = ImportJob.start(app, p.basename(file.name), file.path);
+      if (job != null) setState(() => _importing = true);
+    } on OneNoteUnavailable {
+      setState(() => _error =
+          'OneNote import needs the native core, which this build does not '
+          'include.');
+    } catch (e) {
+      setState(() => _error = "Couldn't read that file: $e");
+    }
+  }
+
+  /// The in-dialog echo of the floating progress card, so starting the import
+  /// visibly *did something* right here — and so the dialog can say the one
+  /// sentence that explains the new shape: you don't have to wait.
+  Widget _importRow() => ListenableBuilder(
+        listenable: ImportJob.current ?? Listenable.merge(const []),
+        builder: (context, _) {
+          final job = ImportJob.current;
+          final s = context.surfaces;
+          if (job == null) return const SizedBox.shrink();
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: s.chrome2,
+              borderRadius: OnoteRadius.mdAll,
+            ),
+            child: Row(children: [
+              if (!job.isFinished)
+                const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2.2))
+              else
+                Icon(
+                    job.state == ImportJobState.done
+                        ? Icons.check_circle_outline
+                        : Icons.error_outline,
+                    size: 16,
+                    color: job.state == ImportJobState.done
+                        ? OnoteColors.success
+                        : OnoteColors.danger),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          job.state == ImportJobState.done
+                              ? 'Your notebook is ready'
+                              : 'Importing ${job.fileName}',
+                          style: OnoteType.uiStrong
+                              .copyWith(color: s.textPrimary)),
+                      Text(
+                          job.isFinished
+                              ? job.message
+                              : 'Keep going — this runs in the background, '
+                                  'and the card in the corner will say when '
+                                  "it's done.",
+                          style: OnoteType.caption
+                              .copyWith(color: s.textSecondary)),
+                    ]),
+              ),
+              if (job.state == ImportJobState.done)
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    job.open();
+                  },
+                  child: const Text('Open'),
+                ),
+            ]),
+          );
+        },
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -137,19 +225,29 @@ class _OnboardingState extends State<_Onboarding> {
                   await showSyncDialog(context, app);
                 },
               ),
-              _choice(
-                icon: Icons.library_books_outlined,
-                title: 'Bring my notes over from OneNote',
-                body: 'Imports pages, formatting, images, ink and tags from a '
-                    '.onepkg notebook or a .one section.',
-                action: _oneNoteHelp ? 'Hide steps' : 'How do I export?',
-                onTap: () => setState(() => _oneNoteHelp = !_oneNoteHelp),
-                secondaryAction: 'Choose file…',
-                onSecondary: () async {
-                  Navigator.of(context).pop();
-                  await importOneNotePackageWithFeedback(context, app);
-                },
-              ),
+              // The import runs in the BACKGROUND, and that is the design:
+              // picking the .onepkg is the first thing a switcher should do,
+              // so that five years of notes stream in while they finish this
+              // dialog and poke around — instead of the app freezing for a
+              // minute the moment they arrive. (The old wiring here was also
+              // the bug that lost the progress dialog entirely: it popped this
+              // dialog and then passed the popped dialog's context as the
+              // progress dialog's parent, which failed the mounted check and
+              // showed nothing at all.)
+              if (_importing)
+                _importRow()
+              else
+                _choice(
+                  icon: Icons.library_books_outlined,
+                  title: 'Bring my notes over from OneNote',
+                  body: 'Imports pages, formatting, images, ink and tags from '
+                      'a .onepkg notebook. It runs in the background — keep '
+                      'going while it works.',
+                  action: _oneNoteHelp ? 'Hide steps' : 'How do I export?',
+                  onTap: () => setState(() => _oneNoteHelp = !_oneNoteHelp),
+                  secondaryAction: 'Choose file…',
+                  onSecondary: _startImport,
+                ),
               if (_oneNoteHelp) _oneNoteSteps(),
               _choice(
                 icon: Icons.note_add_outlined,

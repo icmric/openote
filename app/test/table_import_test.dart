@@ -9,6 +9,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/export/import_sink.dart';
 import 'package:openote/export/onenote_import.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -43,7 +44,7 @@ void main() {
     });
     final nb = await repo.createNotebook('Tables');
     final app = AppState(repo);
-    await buildNotebookFromPackage(app, nb.id, _sections(boxes));
+    await buildNotebookFromPackage(AppStateImportSink(app, nb.id), _sections(boxes));
     final page = repo
         .loadNodes(nb.id)
         .firstWhere((n) => n.kind == NodeKind.page && n.title == 'Truth Tables');
