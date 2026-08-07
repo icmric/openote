@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../canvas/media_drop.dart';
+import '../core/platform_open.dart';
 import '../export/markdown_export.dart';
 import '../export/open_export.dart';
 import '../export/pdf_export.dart';
@@ -410,6 +411,8 @@ class _CommandBarState extends State<CommandBar> {
       // in the navigator.
       _PdfImportButton(app: app),
       ins(Icons.attach_file, 'File', () => _insertFile(context)),
+      ins(Icons.play_circle_outline, 'Video or link…',
+          () => _insertMediaLink(context)),
       ins(Icons.link, 'Page link', () => _insertPageLink(context)),
       ins(Icons.dashboard_customize_outlined, 'Template',
           () => _applyTemplate(context)),
@@ -731,6 +734,46 @@ class _CommandBarState extends State<CommandBar> {
         w: 320,
         content: {'blob': 'sha256:$hash', 'mime': mime}));
     app.select(b.id);
+  }
+
+  /// MEDIA-7: embed a lecture recording (or any link) as a card in the page.
+  ///
+  /// A link, not a copy. A lecture video is hundreds of megabytes, and blobs
+  /// live in the container AND — once a notebook is shared — in
+  /// `.onotebook/blobs/`; putting one in would undo the storage work of v0.10
+  /// in a single drag. A URL is a few dozen bytes and is machine-independent,
+  /// so it syncs to another device and still resolves there.
+  Future<void> _insertMediaLink(BuildContext context) async {
+    final result = await showDialog<({String url, String name})>(
+      context: context,
+      builder: (_) => const _MediaLinkDialog(),
+    );
+    if (result == null) return;
+    final c = _center();
+    final b = app.addBlock(Block(
+      type: BlockType.file,
+      x: c.dx - 170,
+      y: c.dy - 28,
+      w: 340,
+      content: {
+        'url': result.url,
+        'name': result.name,
+        // A hint for the icon, never load-bearing: an older build ignores it,
+        // and a card whose `kind` is wrong is still a working link.
+        'kind': _looksLikeVideo(result.url) ? 'video' : 'link',
+      },
+    ));
+    app.select(b.id);
+  }
+
+  static bool _looksLikeVideo(String url) {
+    final u = url.toLowerCase();
+    return u.contains('youtube.com') ||
+        u.contains('youtu.be') ||
+        u.contains('vimeo.com') ||
+        u.contains('echo360') ||
+        u.contains('panopto') ||
+        RegExp(r'\.(mp4|mov|mkv|webm|m4v)(\?|$)').hasMatch(u);
   }
 
   Future<void> _insertFile(BuildContext context) async {
@@ -1419,5 +1462,98 @@ Future<void> _importPdfWithProgress(BuildContext context, AppState app,
     }
   } finally {
     progress.dispose();
+  }
+}
+
+/// Ask for a URL and a label for a media-link card.
+///
+/// Validates with the same allow-list that will later be asked to open it
+/// (`PlatformOpen.isOpenableUrl`), so a link that cannot be opened is refused
+/// at the point of typing rather than becoming a dead card in the page.
+class _MediaLinkDialog extends StatefulWidget {
+  const _MediaLinkDialog();
+
+  @override
+  State<_MediaLinkDialog> createState() => _MediaLinkDialogState();
+}
+
+class _MediaLinkDialogState extends State<_MediaLinkDialog> {
+  final _url = TextEditingController();
+  final _name = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _url.dispose();
+    _name.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final raw = _url.text.trim();
+    // A bare "youtube.com/..." is what people paste out of a browser bar.
+    final candidate =
+        raw.contains('://') || raw.isEmpty ? raw : 'https://$raw';
+    if (!PlatformOpen.isOpenableUrl(candidate)) {
+      setState(() => _error = 'That needs to be an http or https link.');
+      return;
+    }
+    final label = _name.text.trim();
+    Navigator.of(context).pop((
+      url: candidate,
+      name: label.isEmpty ? (Uri.tryParse(candidate)?.host ?? candidate) : label,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Embed a video or link'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'The page gets a card that opens this in your browser. The video '
+              'is not copied into the notebook — a lecture recording would be '
+              'hundreds of megabytes, and it would be copied again every time '
+              'the notebook synced.',
+              style: TextStyle(fontSize: 12.5, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _url,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Link',
+                hintText: 'https://…',
+                errorText: _error,
+              ),
+              onChanged: (_) {
+                if (_error != null) setState(() => _error = null);
+              },
+              onSubmitted: (_) => _submit(),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _name,
+              decoration: const InputDecoration(
+                labelText: 'Label (optional)',
+                hintText: 'Lecture 7 — Truth Tables',
+              ),
+              onSubmitted: (_) => _submit(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel')),
+        FilledButton(onPressed: _submit, child: const Text('Add')),
+      ],
+    );
   }
 }

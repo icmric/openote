@@ -14,6 +14,27 @@ import '../theme/tokens.dart';
 /// File attachment block (MEDIA-2): the file lives in the notebook's
 /// content-addressed blob store; "Save a copy…" extracts it back out.
 /// content: { blob: "sha256:…", name, mime, size }
+///
+/// **Also the media LINK block (MEDIA-7).** A block with a `url` and no `blob`
+/// is a link card — a lecture recording embedded in the page so it can be
+/// reached from the notes rather than hunted for in a browser. It rides this
+/// block type on purpose rather than taking a new one:
+///
+///   * `BlockType.embed` looks free but is not — the data-model spec and the
+///     PRD reserve it for live page transclusion, which is the "read-only
+///     version of one page visible inside another" ask sitting a few lines
+///     further down PLANNING.md. Taking it for video would collide head-on.
+///   * A brand-new enum value would be the honest choice, and it is now safe
+///     to add one (see `Block.rawType`) — but it is still not free: every
+///     build older than that fix renders it as "Unsupported block". A `file`
+///     block degrades far better, because every shipped build already knows
+///     the type.
+///
+/// What an OLD build does with a link card, exactly: it mounts this widget,
+/// shows the icon and the correct name, and both buttons return early because
+/// `content['blob']` is null. An inert, correctly-labelled card — and `url`
+/// rides along untouched in `content`, so opening the same page in a current
+/// build restores the feature completely.
 class FileBlockView extends StatelessWidget {
   const FileBlockView({super.key, required this.block, required this.app});
   final Block block;
@@ -21,6 +42,8 @@ class FileBlockView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final url = (block.content['url'] as String?)?.trim();
+    if (url != null && url.isNotEmpty) return _linkCard(context, url);
     final name = block.content['name'] as String? ?? 'file';
     final size = (block.content['size'] as num?)?.toInt() ?? 0;
     return Padding(
@@ -62,6 +85,77 @@ class FileBlockView extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// A link to something that lives outside the notebook — a lecture
+  /// recording, a video, a page worth coming back to.
+  ///
+  /// Deliberately a link and NOT an inline player. Inline playback would mean
+  /// a media engine on three desktop platforms, and the Linux story is the one
+  /// that decides it: `video_player` has no endorsed Linux desktop
+  /// implementation, and `media_kit` expects a system libmpv — a dependency the
+  /// AppImage exists specifically to avoid needing. Handing the URL to the
+  /// browser costs nothing, works identically everywhere, and is what the ask
+  /// actually described: reaching the lecture from the notes instead of
+  /// flicking between two windows.
+  Widget _linkCard(BuildContext context, String url) {
+    final scheme = Theme.of(context).colorScheme;
+    final name = (block.content['name'] as String?)?.trim();
+    final kind = block.content['kind'] as String?;
+    final openable = PlatformOpen.isOpenableUrl(url);
+    final host = Uri.tryParse(url)?.host ?? '';
+
+    return InkWell(
+      // Only wire the tap when the scheme is one we will actually hand to the
+      // OS. A card that looks clickable and silently does nothing is worse
+      // than one that plainly is not.
+      onTap: openable ? () => _openLink(context, url) : null,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+                kind == 'video'
+                    ? Icons.play_circle_outline
+                    : Icons.link_outlined,
+                size: 22,
+                color: openable ? scheme.primary : OnoteColors.graphite400),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(name == null || name.isEmpty ? url : name,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w500)),
+                  Text(
+                      openable
+                          ? (host.isEmpty ? url : host)
+                          : 'Not a link this can open',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 11, color: OnoteColors.graphite400)),
+                ],
+              ),
+            ),
+            if (openable) ...[
+              const SizedBox(width: 8),
+              const Icon(Icons.open_in_new,
+                  size: 14, color: OnoteColors.graphite400),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openLink(BuildContext context, String url) async {
+    final ok = await PlatformOpen.url(url);
+    if (!ok && context.mounted) _toast(context, "That link couldn't be opened.");
   }
 
   /// MEDIA-2: open the attachment in whatever application owns its type.
