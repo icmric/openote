@@ -2,6 +2,47 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
+## [0.4.0] — 2026-08-07
+
+### Fixed — the move bar behaves like a move bar
+
+- **The bar is reachable directly.** It only appeared once you had hovered the
+  box itself, so moving a box meant putting the cursor inside it and then coming
+  back out to the bar. Hovering the strip now works on its own.
+- **Dragging the bar no longer puts a caret in the box.** A box that was not
+  being edited stays that way through a move — which is the whole reason the bar
+  exists. The same bug meant dragging a **resize handle** on a text box opened
+  the editor too; both are fixed by the same change.
+
+### Added — pictures where you are typing, and links to your lectures
+
+- **Insert ▸ Image puts the picture in the box you are working in**, in the flow
+  of the writing, instead of dropping a separate picture over the page. Pasting
+  and dragging already did this; the menu — the route most people reach for —
+  was the only one that could not. Text, images, maths and tables can now all
+  live in one box together.
+- **Insert ▸ Video or link…** adds a card that opens a recording in your
+  browser. A link, not a copy: a lecture video is hundreds of megabytes, and
+  copying one into the notebook would bloat every synced device. Openote checks
+  the link is one it can actually open before adding it.
+
+### Fixed — your notebooks survive being opened by an older Openote
+
+- **An older version no longer destroys content it does not recognise.** Openote
+  is supposed to hand back anything from a newer release untouched; instead, a
+  block type it had never seen came back permanently renamed to "unknown". The
+  content survived, but nothing could ever identify it again — and one save from
+  an older copy was enough. **This matters most if you already run 0.3.1**,
+  which still has the bug: the fix only protects notebooks opened by builds that
+  have it, so the sooner everything is on 0.4.0, the smaller the window.
+
+### Documentation
+
+- [ADR-0008](docs/adr/ADR-0008-page-protection.md) settles how password
+  protection will work: encryption at rest, not a dialog in front of the page.
+  A dialog would be bypassed by Openote's own search box, which reads every
+  page's content directly.
+
 ## [0.3.1] — 2026-08-07 · the first release you can actually download
 
 <!--
