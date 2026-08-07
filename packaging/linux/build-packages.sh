@@ -12,11 +12,17 @@
 # program. On Linux that is a distro package.
 #
 # Both packages install the same way:
-#   /opt/openote/                              the bundle, verbatim
-#   /usr/bin/openote                           symlink onto PATH
-#   /usr/share/applications/openote.desktop    the menu entry + icon
-#   /usr/share/icons/hicolor/512x512/apps/     the icon itself
-#   /usr/share/mime/packages/openote.xml       so a .onote opens on double-click
+#   /opt/openote/                                        the bundle, verbatim
+#   /usr/bin/openote                                     symlink onto PATH
+#   /usr/share/applications/org.openote.openote.desktop  the menu entry + icon
+#   /usr/share/icons/hicolor/512x512/apps/               the icon itself
+#   /usr/share/mime/packages/openote.xml                 describes a .onote
+#
+# The desktop entry is named for the GTK application id, not "openote". Modern
+# desktops — Wayland in particular — match a running window to its entry by
+# that basename, and app/linux/runner/my_application.cc:138 sets the prgname to
+# APPLICATION_ID ("org.openote.openote"). Named "openote", the launcher shows a
+# second generic icon beside the real one rather than highlighting it.
 #
 # Runnable on any Debian-ish machine with `dpkg-deb` and `rpmbuild` (the latter
 # from the `rpm` package). Deliberately a script and not inline YAML so it can
@@ -57,7 +63,8 @@ install -d "$ROOT/opt/openote" \
 cp -r "$BUNDLE"/. "$ROOT/opt/openote/"
 chmod 755 "$ROOT/opt/openote/openote"
 ln -s /opt/openote/openote "$ROOT/usr/bin/openote"
-install -m644 "$HERE/openote.desktop" "$ROOT/usr/share/applications/openote.desktop"
+install -m644 "$HERE/org.openote.openote.desktop" \
+  "$ROOT/usr/share/applications/org.openote.openote.desktop"
 install -m644 "$HERE/openote.xml" "$ROOT/usr/share/mime/packages/openote.xml"
 install -m644 "$ICON" "$ROOT/usr/share/icons/hicolor/512x512/apps/openote.png"
 install -m644 "$REPO/LICENSE" "$ROOT/usr/share/doc/openote/copyright"
@@ -147,7 +154,7 @@ cp -r ${ROOT}/. %{buildroot}/
 %files
 /opt/openote
 /usr/bin/openote
-/usr/share/applications/openote.desktop
+/usr/share/applications/org.openote.openote.desktop
 /usr/share/icons/hicolor/512x512/apps/openote.png
 /usr/share/mime/packages/openote.xml
 /usr/share/doc/openote/copyright

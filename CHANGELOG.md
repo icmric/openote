@@ -10,13 +10,16 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   file you had to mark executable and launch from a terminal, every time —
   AppImages deliberately touch nothing, so there was never a menu entry or an
   icon. Now you double-click the package your distro uses, Openote installs
-  like any other program and appears in your applications menu, and `.onote`
-  files open when you double-click them.
+  like any other program and appears in your applications menu.
   - `openote-*-linux-amd64.deb` — Ubuntu, Debian, Mint
   - `openote-*-linux-x86_64.rpm` — Fedora, RHEL, openSUSE
   - The `.tar.gz` stays for everything else: extract anywhere and run
     `./openote`. No install and no root, so dropping the AppImage costs
     convenience on those distros, not access.
+  - `.onote` files are described and iconed correctly in the file manager, but
+    double-clicking one does **not** open it yet — Openote cannot be handed a
+    file on startup, so claiming the association would launch the app showing
+    a different notebook. Declared honestly rather than half-wired.
 
 ## [0.4.0] — 2026-08-07
 

@@ -327,9 +327,15 @@ jobs:
           for f in "$deb" "$rpm"; do
             [ -f "$f" ] || { echo "::error::$f was not produced"; exit 1; }
           done
-          echo "--- deb ---"; dpkg-deb -c "$deb" | awk '{print $NF}' > deb.list
+          # `dpkg-deb -c` prints ls -l style, and a SYMLINK line ends with its
+          # target: "... ./usr/bin/openote -> /opt/openote/openote". Taking the
+          # last field would therefore record the target and never the link, so
+          # /usr/bin/openote would be reported missing from a package that has
+          # it. Strip the " -> ..." tail first, then take the path.
+          echo "--- deb ---"
+          dpkg-deb -c "$deb" | sed 's/ -> .*$//' | awk '{print $NF}' > deb.list
           echo "--- rpm ---"; rpm -qlp "$rpm" > rpm.list
-          for want in /opt/openote/openote                       /opt/openote/libonote_core.so                       /usr/bin/openote                       /usr/share/applications/openote.desktop                       /usr/share/icons/hicolor/512x512/apps/openote.png; do
+          for want in /opt/openote/openote                       /opt/openote/libonote_core.so                       /opt/openote/data/flutter_assets                       /usr/bin/openote                       /usr/share/applications/org.openote.openote.desktop                       /usr/share/icons/hicolor/512x512/apps/openote.png; do
             grep -q -- "$want" deb.list || { echo "::error::deb is missing $want"; exit 1; }
             grep -q -- "$want" rpm.list || { echo "::error::rpm is missing $want"; exit 1; }
           done
