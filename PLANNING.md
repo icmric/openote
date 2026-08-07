@@ -21,10 +21,21 @@ Page Format
 
 Flashcards
     Currently not intuitive how to use them, rather than using the tags, maybe we instead create a new thing in insert, so it inserts a flashcard element onto the page. This can be edited and used in place on the page without having to use the seperate tab, but still maintiang the option to see them all in the one place.
-    Opening the tab is very slow, i belive this is likely because its scanning through the entire notebook to find an up to date list of all the questions? There has to be a more efficient way of doing this.
-    ✅ The slow tab is fixed (v0.9): a SQL prefilter finds the tagged pages
-      without decoding every page, plus a shared decoded-page cache. The
-      in-page flashcard element is still open.
 
 Calander and tasks
     It works currently, however is very limited. This would need a fairly significant UI rework as it would probaly need to replace the page entirley, but having the ability to have a trello like task board would be incredibly helpful for both students and product managers
+
+Box movement
+    The bar only shows up when i hover over the box itself, so if i want to move it i need to move my cursor into the box then back up to the bar
+    Moving the bar should not select the box in an editing sense, it should remain not in editing mode if it wasnt previously in it. 
+
+Content
+    Would like to be able to embed videos into the page
+    Still unable to have multiple types of media in a single box (i.e. both text and an image)
+    Would like the ability to password protect a page (which includes sub pages if applicable), a section, or a section group. Also being able to configure if the password is required for every time its opened, if it lasts for 10 minutes, 1 hour, or until app is closed. 
+
+Templates
+    clicking on the button brings up a series of options, however clicking on any of these does nothing, even on a totally fresh page.
+
+Page Linking
+    We curerntly have a basic link system in place to link between pages which is fine, i would however like the ability to have a read-only version of one page visible inside another. I cant edit the other page through this, however edits made to this other page are visible later. 
