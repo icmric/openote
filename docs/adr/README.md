@@ -11,5 +11,6 @@ Each ADR captures one significant, hard-to-reverse decision: the context, the op
 | [0005](ADR-0005-licensing.md) | Licensing: **AGPL-3.0 app / Apache-2.0 libs / CC0-MIT spec** | Proposed |
 | [0006](ADR-0006-sync-transport-and-text-model.md) | Sync: **append-only per-device op log in a `.onotebook` directory**; SQLite becomes a local cache. Forces the structured-`nodes` text model | Proposed |
 | [0007](ADR-0007-blob-lifecycle.md) | Blob storage & garbage collection: a grace period, not a handshake | Proposed (partly built) |
+| [0008](ADR-0008-page-protection.md) | Password-protecting a page/section/group: **encryption, not a locked door** — a dialog is bypassed by the app's own search | Proposed |
 
 Convention: new ADRs are numbered sequentially, never edited destructively — a superseding ADR links back and flips the old one to *Superseded*.
