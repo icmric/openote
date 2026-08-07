@@ -187,8 +187,9 @@
 
       <div class="card" id="card-linux">
         <h3>Linux</h3>
-        <p>An AppImage: one file, no install, no package manager.
-           <code>chmod +x</code> it and run.</p>
+        <p>A package your system installs, so Openote lands in your
+           applications menu — <code>.deb</code> for Ubuntu, Debian and Mint,
+           <code>.rpm</code> for Fedora and openSUSE.</p>
         <a class="btn" id="dl-linux" href="https://github.com/icmric/openote/releases/latest">Download for Linux</a>
         <span class="alt" id="alt-linux"></span>
       </div>
@@ -224,9 +225,15 @@
 
       <details>
         <summary>Linux — nothing to do</summary>
-        <p>AppImages just run. If double-clicking does nothing, mark it
-           executable first:</p>
-        <pre><code>chmod +x openote-*.AppImage &amp;&amp; ./openote-*.AppImage</code></pre>
+        <p>Double-click the package your system uses and it installs like any
+           other program: Openote appears in your applications menu, and
+           <code>.onote</code> files open when you double-click them. From a
+           terminal instead, if you prefer:</p>
+        <pre><code>sudo apt install ./openote-*-linux-amd64.deb   # Ubuntu, Debian, Mint
+sudo dnf install ./openote-*-linux-x86_64.rpm  # Fedora, RHEL, openSUSE</code></pre>
+        <p style="margin-top:10px">On a distro that uses neither, take the
+           <code>.tar.gz</code>: extract it anywhere and run
+           <code>./openote</code> inside. No install, no root, no menu entry.</p>
       </details>
     </div>
   </div>
@@ -341,7 +348,13 @@
       var a = rel.assets || [];
       var win = find(a, /-setup\.exe$/i);
       var mac = find(a, /\.dmg$/i);
-      var lin = find(a, /\.AppImage$/i);
+      // Linux is the one platform where the primary download is a guess: .deb
+      // and .rpm are equally "the installer", and nothing in the user agent
+      // says which. Debian/Ubuntu is the larger desktop share so it leads, and
+      // the .rpm sits beside it as a named alternative rather than being
+      // buried — a Fedora user must not have to go to the releases page.
+      var lin = find(a, /\.deb$/i);
+      var linAlt = find(a, /\.rpm$/i);
 
       // A release can exist and carry nothing — a tag whose build failed, or
       // one published by hand. `.then` still resolves, so the honest `.catch`
@@ -350,7 +363,7 @@
 
       wire('windows', win, find(a, /windows.*\.zip$/i), 'portable .zip');
       wire('macos', mac, null, null);
-      wire('linux', lin, find(a, /linux.*\.tar\.gz$/i), '.tar.gz');
+      wire('linux', lin, linAlt, '.rpm for Fedora');
 
       var when = rel.published_at ? new Date(rel.published_at)
         .toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';

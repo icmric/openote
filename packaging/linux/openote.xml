@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The `.onote` container, declared to the desktop so a double-click opens it and
+  the file manager shows the Openote icon rather than a blank page.
+
+  The magic bytes are the container's own identity: a `.onote` is a SQLite
+  database whose `application_id` pragma is 0x4F4E4F54 ("ONOT", see
+  app/lib/store/database.dart). SQLite writes that field at byte offset 68, so
+  matching "SQLite format 3" at 0 AND "ONOT" at 68 identifies an Openote
+  notebook specifically rather than any SQLite file on the machine.
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-onote">
+    <comment>Openote notebook</comment>
+    <icon name="openote"/>
+    <glob pattern="*.onote"/>
+    <magic priority="60">
+      <match type="string" value="SQLite format 3" offset="0">
+        <match type="string" value="ONOT" offset="68"/>
+      </match>
+    </magic>
+  </mime-type>
+</mime-info>

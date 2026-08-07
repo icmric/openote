@@ -235,16 +235,20 @@ jobs:
   linux:
     name: linux x64
     needs: version
-    # Pinned older than CI's ubuntu-latest on purpose: the AppImage inherits
-    # the build host's glibc floor, so an older base runs on more distros.
+    # Pinned older than CI's ubuntu-latest on purpose: a binary inherits the
+    # build host's glibc floor, so an older base runs on more distros. That is
+    # why the packages declare their dependencies by hand — see
+    # packaging/linux/build-packages.sh; auto-generated ones would pin THIS
+    # machine's library versions and be unsatisfiable on the distros the floor
+    # exists to reach.
     #
     # REVISIT BEFORE 2026-09-17. GitHub begins deprecating Ubuntu 22 images on
     # that date, with brownout windows that deliberately fail jobs using the
     # label, and full removal by 2027-04-17. When it goes, the choice is
-    # `ubuntu-24.04` (accepting glibc 2.39 as the floor) or building the
-    # AppImage inside a `container: ubuntu:22.04` on a newer runner, which
-    # decouples the floor from the runner image's lifecycle entirely. The
-    # second is more work and the right answer if Linux users matter.
+    # `ubuntu-24.04` (accepting glibc 2.39 as the floor) or building inside a
+    # `container: ubuntu:22.04` on a newer runner, which decouples the floor
+    # from the runner image's lifecycle entirely. The second is more work and
+    # the right answer if Linux users matter.
     runs-on: ubuntu-22.04
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -287,45 +291,57 @@ jobs:
           cp -r app/build/linux/x64/release/bundle "openote-${VERSION}-linux-x64"
           tar czf "openote-${VERSION}-linux-x64.tar.gz" "openote-${VERSION}-linux-x64"
 
-      # AppImage needs: (1) an AppRun entrypoint, (2) exactly one .desktop at
-      # AppDir root, (3) a root-level icon whose basename matches Icon=. No
-      # .desktop exists in the repo, so both are generated here.
-      - name: Package AppImage
+      # A .deb and an .rpm, replacing the AppImage.
+      #
+      # The AppImage was one file you chmod +x and ran, and it stayed that way
+      # forever: AppImages deliberately touch nothing, so there was no menu
+      # entry and no icon. The ask was "the equivalent of an .exe I download" —
+      # something you double-click, that installs, and that then shows up in
+      # the applications menu. On Linux that is a distro package, and it takes
+      # two to cover the desktop: .deb for Debian/Ubuntu/Mint, .rpm for
+      # Fedora/RHEL/openSUSE.
+      #
+      # The .tar.gz above stays as the universal fallback for everything else
+      # (Arch, NixOS, a locked-down machine), so dropping the AppImage narrows
+      # convenience, not reach.
+      #
+      # `rpm` provides rpmbuild; it is not on the runner by default. Both
+      # packages are built from ONE staged tree by the script, so they cannot
+      # drift apart.
+      - name: Install packaging tools
+        run: sudo apt-get install -y rpm
+
+      - name: Package .deb and .rpm
         run: |
-          mkdir -p AppDir/usr/bin
-          cp -r app/build/linux/x64/release/bundle/. AppDir/usr/bin/
-          cat > AppDir/AppRun <<'EOF'
-          #!/bin/sh
-          HERE="$(dirname "$(readlink -f "$0")")"
-          exec "$HERE/usr/bin/openote" "$@"
-          EOF
-          chmod +x AppDir/AppRun
-          cat > AppDir/openote.desktop <<'EOF'
-          [Desktop Entry]
-          Type=Application
-          Name=Openote
-          Comment=Open-source, natively cross-platform alternative to OneNote
-          Exec=openote
-          Icon=openote
-          Categories=Office;
-          Terminal=false
-          EOF
-          cp app/assets/icon/openote_icon.png AppDir/openote.png
-          cp app/assets/icon/openote_icon.png AppDir/.DirIcon
-          curl -fsSL -o appimagetool \
-            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x appimagetool
-          # --appimage-extract-and-run: GitHub runners lack FUSE2, so run the
-          # tool unpacked instead of mounting it.
-          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir \
-            "openote-${VERSION}-linux-x86_64.AppImage"
+          chmod +x packaging/linux/build-packages.sh
+          packaging/linux/build-packages.sh             "$VERSION"             "app/build/linux/x64/release/bundle"             "$PWD"
+
+      # Prove the packages actually contain what they promise, here rather than
+      # on a user's machine. `dpkg-deb -c` and `rpm -qlp` list the payload
+      # without installing it.
+      - name: Verify package contents
+        run: |
+          set -euo pipefail
+          deb="openote-${VERSION}-linux-amd64.deb"
+          rpm="openote-${VERSION}-linux-x86_64.rpm"
+          for f in "$deb" "$rpm"; do
+            [ -f "$f" ] || { echo "::error::$f was not produced"; exit 1; }
+          done
+          echo "--- deb ---"; dpkg-deb -c "$deb" | awk '{print $NF}' > deb.list
+          echo "--- rpm ---"; rpm -qlp "$rpm" > rpm.list
+          for want in /opt/openote/openote                       /opt/openote/libonote_core.so                       /usr/bin/openote                       /usr/share/applications/openote.desktop                       /usr/share/icons/hicolor/512x512/apps/openote.png; do
+            grep -q -- "$want" deb.list || { echo "::error::deb is missing $want"; exit 1; }
+            grep -q -- "$want" rpm.list || { echo "::error::rpm is missing $want"; exit 1; }
+          done
+          echo "both packages carry the binary, the Rust core, the launcher and the icon"
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux-x64
           path: |
             openote-*.tar.gz
-            openote-*.AppImage
+            openote-*.deb
+            openote-*.rpm
           if-no-files-found: error
 
   macos:
@@ -434,7 +450,12 @@ jobs:
               administrator password. (Prefer no installer? The
               `…-windows-x64.zip` is the same build — unzip it anywhere and run
               `openote.exe` from inside the folder it extracts.)
-            - **Linux**: `openote-*-linux-x86_64.AppImage` — `chmod +x`, run. Or the `.tar.gz` if AppImage doesn't suit.
+            - **Linux**: `openote-*-linux-amd64.deb` on Ubuntu/Debian/Mint, or
+              `openote-*-linux-x86_64.rpm` on Fedora/RHEL/openSUSE. Double-click
+              it, or install from a terminal — then Openote is in your
+              applications menu like any other program, and `.onote` files open
+              on double-click. (Neither fits? The `.tar.gz` runs from anywhere:
+              extract it and run `./openote` inside.)
             - **macOS**: `openote-*-macos-universal.dmg` — drag Openote to Applications.
 
             ---

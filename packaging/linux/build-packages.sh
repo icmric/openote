@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# Build the Linux desktop packages — a .deb and an .rpm — from a finished
+# `flutter build linux --release` bundle.
+#
+#   usage: packaging/linux/build-packages.sh <version> <bundle-dir> [out-dir]
+#
+# Why packages at all, when there was an AppImage: an AppImage is deliberately
+# self-contained and touches nothing, which is exactly why it leaves no menu
+# entry and no icon — you chmod +x it and run it from a terminal, forever. The
+# ask was "the equivalent of an .exe I download": something you double-click,
+# that installs, and that then appears in the applications menu like any other
+# program. On Linux that is a distro package.
+#
+# Both packages install the same way:
+#   /opt/openote/                              the bundle, verbatim
+#   /usr/bin/openote                           symlink onto PATH
+#   /usr/share/applications/openote.desktop    the menu entry + icon
+#   /usr/share/icons/hicolor/512x512/apps/     the icon itself
+#   /usr/share/mime/packages/openote.xml       so a .onote opens on double-click
+#
+# Runnable on any Debian-ish machine with `dpkg-deb` and `rpmbuild` (the latter
+# from the `rpm` package). Deliberately a script and not inline YAML so it can
+# be run and debugged locally, exactly like packaging/windows/openote.iss.
+set -euo pipefail
+
+VERSION="${1:?usage: build-packages.sh <version> <bundle-dir> [out-dir]}"
+BUNDLE="${2:?usage: build-packages.sh <version> <bundle-dir> [out-dir]}"
+OUT="${3:-$PWD}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$HERE/../.." && pwd)"
+ICON="$REPO/app/assets/icon/openote_icon.png"
+
+[ -x "$BUNDLE/openote" ] || { echo "no openote binary in $BUNDLE" >&2; exit 1; }
+[ -f "$ICON" ] || { echo "no icon at $ICON" >&2; exit 1; }
+
+# The loader contract, asserted here rather than discovered by a user whose app
+# silently loses OneNote import: app/lib/core/onote_ffi.dart looks for the core
+# next to the executable first.
+[ -f "$BUNDLE/libonote_core.so" ] || {
+  echo "libonote_core.so is missing from the bundle — the packaged app would" >&2
+  echo "start but have no OneNote import and no text engine." >&2
+  exit 1
+}
+
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+ROOT="$STAGE/root"
+
+echo "==> staging package tree"
+install -d "$ROOT/opt/openote" \
+           "$ROOT/usr/bin" \
+           "$ROOT/usr/share/applications" \
+           "$ROOT/usr/share/icons/hicolor/512x512/apps" \
+           "$ROOT/usr/share/mime/packages" \
+           "$ROOT/usr/share/doc/openote"
+
+cp -r "$BUNDLE"/. "$ROOT/opt/openote/"
+chmod 755 "$ROOT/opt/openote/openote"
+ln -s /opt/openote/openote "$ROOT/usr/bin/openote"
+install -m644 "$HERE/openote.desktop" "$ROOT/usr/share/applications/openote.desktop"
+install -m644 "$HERE/openote.xml" "$ROOT/usr/share/mime/packages/openote.xml"
+install -m644 "$ICON" "$ROOT/usr/share/icons/hicolor/512x512/apps/openote.png"
+install -m644 "$REPO/LICENSE" "$ROOT/usr/share/doc/openote/copyright"
+
+# ── .deb ────────────────────────────────────────────────────────────────────
+# Depends is hand-written rather than auto-generated. `dpkg-shlibdeps` would
+# pin the exact library versions present on the BUILD machine, which is an
+# older Ubuntu chosen deliberately for its glibc floor — those versions would
+# then be unsatisfiable on the very distros the floor exists to support.
+echo "==> building .deb"
+install -d "$ROOT/DEBIAN"
+cat > "$ROOT/DEBIAN/control" <<EOF
+Package: openote
+Version: ${VERSION}
+Section: office
+Priority: optional
+Architecture: amd64
+Maintainer: Openote <noreply@openote.org>
+Depends: libgtk-3-0, libglib2.0-0, libstdc++6
+Homepage: https://openote.org
+Description: Open-source alternative to Microsoft OneNote
+ A freeform notebook with handwriting, maths and an open file format.
+ Notes are stored locally in a documented SQLite container; syncing is
+ done through a folder your cloud already keeps in step, with no account
+ and no sign-in.
+EOF
+
+cat > "$ROOT/DEBIAN/postinst" <<'EOF'
+#!/bin/sh
+set -e
+# Refresh the caches that make the menu entry and the .onote association
+# appear without a logout. Each is guarded: a minimal desktop may not ship
+# every tool, and a missing cache updater must not fail the install.
+[ -x "$(command -v update-desktop-database)" ] && update-desktop-database -q /usr/share/applications || true
+[ -x "$(command -v update-mime-database)" ] && update-mime-database /usr/share/mime || true
+[ -x "$(command -v gtk-update-icon-cache)" ] && gtk-update-icon-cache -qtf /usr/share/icons/hicolor || true
+exit 0
+EOF
+cp "$ROOT/DEBIAN/postinst" "$ROOT/DEBIAN/postrm"
+chmod 755 "$ROOT/DEBIAN/postinst" "$ROOT/DEBIAN/postrm"
+
+dpkg-deb --root-owner-group --build "$ROOT" \
+  "$OUT/openote-${VERSION}-linux-amd64.deb"
+
+# ── .rpm ────────────────────────────────────────────────────────────────────
+# Built from the SAME staged tree, so the two packages cannot drift.
+#
+# `AutoReqProv: no` for the same reason Depends is hand-written: rpmbuild would
+# scan every bundled .so and emit requires naming the build machine's exact
+# soname set, which a different distro will not provide under those names. The
+# real runtime needs are declared by hand below.
+echo "==> building .rpm"
+install -d "$STAGE/rpm"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+cat > "$STAGE/rpm/SPECS/openote.spec" <<EOF
+Name:           openote
+Version:        ${VERSION}
+Release:        1
+Summary:        Open-source alternative to Microsoft OneNote
+License:        AGPL-3.0-or-later
+URL:            https://openote.org
+BuildArch:      x86_64
+AutoReqProv:    no
+Requires:       gtk3
+Requires:       glib2
+Requires:       libstdc++
+
+%description
+A freeform notebook with handwriting, maths and an open file format.
+Notes are stored locally in a documented SQLite container; syncing is
+done through a folder your cloud already keeps in step, with no account
+and no sign-in.
+
+%install
+cp -r ${ROOT}/. %{buildroot}/
+
+%files
+/opt/openote
+/usr/bin/openote
+/usr/share/applications/openote.desktop
+/usr/share/icons/hicolor/512x512/apps/openote.png
+/usr/share/mime/packages/openote.xml
+/usr/share/doc/openote/copyright
+
+%post
+update-desktop-database -q /usr/share/applications 2>/dev/null || :
+update-mime-database /usr/share/mime 2>/dev/null || :
+gtk-update-icon-cache -qtf /usr/share/icons/hicolor 2>/dev/null || :
+
+%postun
+update-desktop-database -q /usr/share/applications 2>/dev/null || :
+update-mime-database /usr/share/mime 2>/dev/null || :
+gtk-update-icon-cache -qtf /usr/share/icons/hicolor 2>/dev/null || :
+EOF
+
+rpmbuild --define "_topdir $STAGE/rpm" \
+         --define "_build_id_links none" \
+         -bb "$STAGE/rpm/SPECS/openote.spec"
+mv "$STAGE/rpm/RPMS/x86_64/openote-${VERSION}-1.x86_64.rpm" \
+   "$OUT/openote-${VERSION}-linux-x86_64.rpm"
+
+echo "==> done"
+ls -la "$OUT"/openote-"${VERSION}"-linux-*.deb "$OUT"/openote-"${VERSION}"-linux-*.rpm

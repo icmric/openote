@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Name=Openote
+GenericName=Notebook
+Comment=Open-source, natively cross-platform alternative to OneNote
+# Absolute, not a bare name: the package installs the app under /opt and only
+# symlinks it onto PATH. A bare `Exec=openote` works from a terminal but some
+# launchers resolve the entry without the user's PATH, and the failure is a
+# menu icon that does nothing when clicked.
+Exec=/opt/openote/openote %F
+Icon=openote
+Categories=Office;Utility;
+# The `.onote` container is the whole point of the project being open, so the
+# desktop knows how to open one. The MIME type itself is registered by
+# openote.xml alongside this file.
+MimeType=application/x-onote;
+Terminal=false
+StartupWMClass=openote
+Keywords=notes;notebook;onenote;handwriting;ink;

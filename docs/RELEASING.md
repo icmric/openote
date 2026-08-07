@@ -119,8 +119,9 @@ packages. Roughly 12–18 minutes end to end, most of it macOS.
 |---|---|---|
 | Windows | `openote-X.Y.Z-windows-x64-setup.exe` | Runs it. Wizard, Start-menu entry, uninstaller. **No administrator password** — it installs per-user into `%LOCALAPPDATA%`. |
 | Windows | `openote-X.Y.Z-windows-x64.zip` | Unzips it, runs `openote.exe`. Kept for locked-down machines, USB sticks, and people who want to look inside first. |
-| Linux | `openote-X.Y.Z-linux-x86_64.AppImage` | `chmod +x`, double-click. |
-| Linux | `openote-X.Y.Z-linux-x64.tar.gz` | Extracts, runs `openote`. Fallback for anywhere AppImage does not suit. |
+| Linux | `openote-X.Y.Z-linux-amd64.deb` | Double-click on Ubuntu/Debian/Mint. Installs to `/opt`, adds a menu entry and the `.onote` association. |
+| Linux | `openote-X.Y.Z-linux-x86_64.rpm` | Same, for Fedora/RHEL/openSUSE. |
+| Linux | `openote-X.Y.Z-linux-x64.tar.gz` | Extracts, runs `openote`. The fallback for distros that use neither package format. |
 | macOS | `openote-X.Y.Z-macos-universal.dmg` | Opens, drags to Applications. Universal — one file for Intel and Apple Silicon. |
 
 ### ⚠️ 1a. Publishing the draft — manual
@@ -239,7 +240,9 @@ The release notes already explain both warnings; the short version:
   Applications: `xattr -cr /Applications/openote.app`. Or **System Settings ▸
   Privacy & Security ▸ Open Anyway** — note the old right-click ▸ Open trick
   was removed in macOS 15, so most advice online is stale.
-- **Linux.** No equivalent. AppImage just runs.
+- **Linux.** No equivalent — neither package is signed, and neither format
+  warns about it. `dpkg`/`rpm` will note the package is not from a configured
+  repository, which is expected.
 
 **Tell people about the warning before they see it.** A user who was warned
 treats it as expected; a user who was not treats it as malware.
@@ -356,7 +359,7 @@ That is now an explicit decision rather than an accident (see the comment in
 `app/macos/Runner/Release.entitlements`), but it is reasoned, not measured.
 **Someone still has to run the dmg.**
 
-**The Linux runner pin expires.** `ubuntu-22.04` is deliberate — the AppImage
+**The Linux runner pin expires.** `ubuntu-22.04` is deliberate — the build
 inherits the build host's glibc floor — but GitHub begins deprecating that
 image on **2026-09-17**, with brownouts that fail jobs using the label. Revisit
 before then; the options are in the comment above the pin.
