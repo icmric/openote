@@ -102,6 +102,17 @@ chmod 755 "$ROOT/DEBIAN/postinst" "$ROOT/DEBIAN/postrm"
 dpkg-deb --root-owner-group --build "$ROOT" \
   "$OUT/openote-${VERSION}-linux-amd64.deb"
 
+# Take DEBIAN/ back out before the rpm runs. The rpm below installs by copying
+# this same tree wholesale into its buildroot, and DEBIAN/ is not in its
+# %files list — rpmbuild fails the build on unpackaged files by default
+# (`%_unpackaged_files_terminate_build` is 1), so leaving it here is a
+# guaranteed "Installed (but unpackaged) file(s) found: /DEBIAN/control".
+#
+# Removing it beats raising the rpm's tolerance: that flag exists to catch
+# exactly the mistake of shipping something you did not mean to, and turning
+# it off to paper over one known stray would blind it to the next real one.
+rm -rf "$ROOT/DEBIAN"
+
 # ── .rpm ────────────────────────────────────────────────────────────────────
 # Built from the SAME staged tree, so the two packages cannot drift.
 #
