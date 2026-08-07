@@ -10,6 +10,7 @@ import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'exam_date.dart';
 import 'notebook_manager.dart';
+import 'protect_dialog.dart';
 import 'sync_dot.dart';
 import 'planner_format.dart';
 import '../theme/tokens.dart';
@@ -1731,11 +1732,35 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         _nodeItem('template', Icons.bookmark_add_outlined, 'Save as template…'),
       ],
       const PopupMenuDivider(),
+      // Available on every kind, because the ask was "a page ... a section, or
+      // a section group" and protection is resolved by walking up from a page
+      // to whichever of those carries it.
+      if (app.protectionFor(node.id) != null)
+        _nodeItem('unprotect', Icons.lock_open_outlined, 'Remove passcode…')
+      else
+        _nodeItem('protect', Icons.lock_outline, 'Lock with a passcode…'),
+      const PopupMenuDivider(),
       _nodeItem('delete', Icons.delete_outline, 'Delete', danger: true),
     ],
   );
   if (!context.mounted) return;
   switch (action) {
+    case 'protect':
+      final set = await askNewPasscode(context, node.title);
+      if (set == null) return;
+      app.protectNode(node.id, set.passcode, set.policy);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('“${node.title}” is locked. It is hidden inside '
+                'Openote, not encrypted in the file.')));
+      }
+    case 'unprotect':
+      final ok = await askToUnlock(
+          context, node.title, (pw) => app.unprotectNode(node.id, pw));
+      if (ok && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Passcode removed from “${node.title}”.')));
+      }
     case 'up':
       app.moveNode(node.id, -1);
     case 'down':

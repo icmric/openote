@@ -194,6 +194,16 @@ void main() {
       expect(fresh.unlockNode(page.id, 'pw'), isTrue);
     });
 
+    test('reloadProtection sees what a previous session set', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The gate is only as good as its rehydration: a restart that forgot
+      // which nodes were protected would open every locked page.
+      app.protectNode(section.id, 'pw', UnlockPolicy.session);
+      app.reloadProtection();
+      expect(app.protectionFor(section.id), isNotNull);
+      expect(app.isLocked(page.id), isTrue);
+    });
+
     test('a locked page is not findable by searching its own words', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       // The gate makes no claim about the FILE, but it has to be coherent

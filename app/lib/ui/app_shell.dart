@@ -16,6 +16,7 @@ import 'command_bar.dart';
 import 'onboarding.dart';
 import 'planner_panel.dart';
 import 'side_panel.dart';
+import 'protect_dialog.dart';
 import 'sidebar.dart';
 import '../export/print_page.dart';
 import 'study_panel.dart';
@@ -381,10 +382,18 @@ class _AppShellState extends State<AppShell> {
                       child: Row(
                         children: [
                           Expanded(
+                            // The gate is HERE, at the point the canvas would
+                            // be built, rather than only on the click that
+                            // opened the page. A page can become locked while
+                            // it is on screen — the policy expires, or "Lock
+                            // now" is pressed — and gating only the click
+                            // would leave the content sitting there.
                             child: page == null
                                 ? _EmptyState(app: app)
-                                : PageCanvas(
-                                    key: ValueKey(app.pageId), state: app),
+                                : app.isLocked(page.id)
+                                    ? _LockedPage(app: app, page: page)
+                                    : PageCanvas(
+                                        key: ValueKey(app.pageId), state: app),
                           ),
                           if (app.showStudyPanel) ...[
                             const VerticalDivider(width: 1),
@@ -1098,5 +1107,55 @@ class _SyncChip extends StatelessWidget {
       b.write('\n${s.mirrors} backup destination${s.mirrors == 1 ? '' : 's'}.');
     }
     return b.toString();
+  }
+}
+
+/// What stands in for a locked page's content.
+///
+/// Deliberately says what the lock is and is not, in one line, where someone
+/// who set it a month ago will read it — the setting dialog's fuller warning
+/// is long gone by then. A lock screen that implies more protection than
+/// exists is the same lie told later.
+class _LockedPage extends StatelessWidget {
+  const _LockedPage({required this.app, required this.page});
+
+  final AppState app;
+  final TreeNode page;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final root = app.governingNode(page.id);
+    final rootTitle =
+        app.nodes.where((n) => n.id == root).firstOrNull?.title ?? page.title;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.lock_outline, size: 40, color: scheme.primary),
+            const SizedBox(height: 14),
+            Text('“$rootTitle” is locked',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            const Text(
+              'Enter the passcode to read it. This hides the page inside '
+              'Openote — it is not encrypted, so anyone with the notebook '
+              'file can still read it.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, height: 1.45),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              icon: const Icon(Icons.lock_open_outlined, size: 18),
+              label: const Text('Unlock'),
+              onPressed: () => promptUnlock(context, app, page.id),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
