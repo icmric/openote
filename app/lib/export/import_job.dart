@@ -98,7 +98,9 @@ class ImportJob extends ChangeNotifier {
   /// on the thread the user is typing on.
   ///
   /// Throws [OneNoteUnavailable] before doing anything visible when the Rust
-  /// core is not linked — same contract as the modal path it replaces.
+  /// core is not linked — same contract as the modal path it replaces. The
+  /// exception is a test supplying an already-parsed package, which needs no
+  /// parser; see the check itself.
   static ImportJob? start(AppState app, String fileName, String sourcePath,
       {@visibleForTesting ImportWriterOverrides? debugOverrides}) {
     // "Already running" is checked FIRST: it is the cheaper question, and it
@@ -107,7 +109,17 @@ class ImportJob extends ChangeNotifier {
     // core being absent is an environment fact, and conflating their order
     // made the refusal untestable without a core.
     if (current != null && !current!.isFinished) return null;
-    if (OnoteCore.instance == null) throw OneNoteUnavailable();
+    // The core is needed to PARSE, so ask for it only when there is something
+    // to parse: not when the caller handed us no path (a caller fact — "you
+    // gave me nothing" must not masquerade as "this build has no importer"),
+    // and not when a test supplied an already-parsed package. Demanding it
+    // regardless made four tests depend on a native library they never call,
+    // and macOS is the one platform where `flutter build` does not build the
+    // Rust core — so they died there and passed everywhere else. A stub that
+    // still requires the thing it stubs is not a stub.
+    final willParse =
+        sourcePath.isNotEmpty && debugOverrides?.preparsedJson == null;
+    if (willParse && OnoteCore.instance == null) throw OneNoteUnavailable();
     final job = ImportJob._(app, fileName);
     current = job;
     app.refresh(); // the shell mounts the card by watching AppState
