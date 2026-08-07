@@ -137,16 +137,24 @@ class _SetPasscodeDialogState extends State<_SetPasscodeDialog> {
               const Text('Ask for it again…',
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
-              for (final p in UnlockPolicy.values)
-                RadioListTile<UnlockPolicy>(
-                  value: p,
-                  groupValue: _policy,
-                  onChanged: (v) => setState(() => _policy = v ?? _policy),
-                  title: Text(p.label, style: const TextStyle(fontSize: 13.5)),
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
+              RadioGroup<UnlockPolicy>(
+                groupValue: _policy,
+                onChanged: (v) => setState(() => _policy = v ?? _policy),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final p in UnlockPolicy.values)
+                      RadioListTile<UnlockPolicy>(
+                        value: p,
+                        title: Text(p.label,
+                            style: const TextStyle(fontSize: 13.5)),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                  ],
                 ),
+              ),
             ],
           ),
         ),

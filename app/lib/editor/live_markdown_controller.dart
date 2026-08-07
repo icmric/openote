@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../markdown/md_render.dart' show indentPx;
 import '../theme/onote_theme.dart';
 
 /// A [TextEditingController] that renders Markdown **as you type** (TEXT-2/4):
@@ -19,6 +21,64 @@ class LiveMarkdownController extends TextEditingController {
   LiveMarkdownController({super.text, required this.dark});
   bool dark;
 
+  /// Resolves an in-flow image reference (`sha256:<hash>`) to bytes, so the
+  /// picture is shown WHILE the block is being edited and not only after the
+  /// caret leaves it. Null, or a reference this cannot resolve, falls back to
+  /// the dimmed source text — which is all this editor used to do.
+  Uint8List? Function(String src)? imageResolver;
+
+  /// Called after the controller has rewritten its own text, which only an
+  /// image resize does. A programmatic edit never fires `TextField.onChanged`,
+  /// so without this the new size would draw correctly and then never be saved.
+  VoidCallback? onSelfEdit;
+
+  /// Resolved blobs, so a repaint per keystroke is not a SQLite read per
+  /// keystroke. A miss is never cached: the bytes may still be arriving from a
+  /// sync, and a notebook the user never leaves would remember the gap forever.
+  final Map<String, Uint8List> _blobCache = {};
+
+  Uint8List? _resolveImage(String src) {
+    final hit = _blobCache[src];
+    if (hit != null) return hit;
+    final bytes = imageResolver?.call(src);
+    if (bytes != null) _blobCache[src] = bytes;
+    return bytes;
+  }
+
+  /// Rewrite the ` =WxH` suffix of the image reference occupying
+  /// [lineStart]..[lineEnd]. [was] is the line as it read when the drag began.
+  ///
+  /// The offsets are captured at span-build time and used at drag-end, so they
+  /// can be stale — another block's save, an undo, a paste. Rather than trust
+  /// them, this re-reads the range and does nothing at all unless it still
+  /// holds the same line. A resize that quietly lands on the wrong text would
+  /// be a corruption; a resize that quietly does nothing is a lost drag.
+  void resizeImageLine(
+      int lineStart, int lineEnd, String was, double w, double h) {
+    if (lineStart < 0 || lineEnd > text.length || lineStart > lineEnd) return;
+    if (text.substring(lineStart, lineEnd) != was) return;
+    final m = _imageLineRe.firstMatch(was);
+    if (m == null) return;
+    final next = '${m.group(1)}![${m.group(2)}](${m.group(3)} '
+        '=${w.round()}x${h.round()})';
+    if (next == was) return;
+
+    final delta = next.length - was.length;
+    int adj(int o) => o <= lineStart
+        ? o
+        : (o >= lineEnd ? o + delta : lineStart + next.length);
+    final sel = selection;
+    value = TextEditingValue(
+      text: text.replaceRange(lineStart, lineEnd, next),
+      selection: sel.isValid
+          ? TextSelection(
+              baseOffset: adj(sel.baseOffset), extentOffset: adj(sel.extentOffset))
+          : sel,
+      composing: TextRange.empty,
+    );
+    onSelfEdit?.call();
+  }
+
   // Inline: **b** __b__ *i* _i_ `c` ~~s~~ ==h== ++u++ {{#hex text}}
   // `++u++` is appended LAST so the group numbers the dispatch below relies on
   // are unchanged.
@@ -34,8 +94,10 @@ class LiveMarkdownController extends TextEditingController {
 
   /// A whole line that is nothing but an image reference — the in-flow form
   /// (Data Model §5.1). Line-anchored to match the renderer exactly, so what
-  /// the editor dims is precisely what read mode turns into a picture.
-  static final _imageLineRe = RegExp(r'^\s*!\[[^\]]*\]\([^)\s]+(?:\s+=\d+x\d+)?\)\s*$');
+  /// the editor draws is precisely what read mode turns into a picture.
+  /// Groups: 1 indent, 2 alt, 3 src, 4 width, 5 height.
+  static final _imageLineRe =
+      RegExp(r'^(\s*)!\[([^\]]*)\]\(([^)\s]+)(?:\s+=(\d+)x(\d+))?\)\s*$');
   static final _prefixRe = RegExp(r'^(\s*)(- \[[ xX]\] |[-*] |\d+\. |> )');
 
   @override
@@ -70,7 +132,12 @@ class LiveMarkdownController extends TextEditingController {
       // Safety net: verify exact text coverage.
       final buf = StringBuffer();
       void collect(InlineSpan s) {
-        if (s is TextSpan) {
+        // A placeholder is asked what source text it stands for, so a picture
+        // drawn in place of its reference is still proven — character for
+        // character — to be the reference and nothing else.
+        if (s is _SourceSpan) {
+          buf.write(s.source);
+        } else if (s is TextSpan) {
           if (s.text != null) buf.write(s.text);
           final ch = s.children;
           if (ch != null) ch.forEach(collect);
@@ -120,13 +187,23 @@ class LiveMarkdownController extends TextEditingController {
     if (ranges.isEmpty) return root;
 
     var offset = 0;
-    TextSpan walk(TextSpan span) {
+    InlineSpan walk(InlineSpan span) {
+      // Placeholders pass through untouched — but their SOURCE length still
+      // has to be counted, or every misspelling after a picture would be
+      // underlined some characters to the left of the word it belongs to.
+      // (Filtering these out instead, which is what this did, deleted the
+      // picture from the tree the moment the block contained a typo.)
+      if (span is _SourceSpan) {
+        offset += span.source.length;
+        return span;
+      }
+      if (span is! TextSpan) return span;
       final text = span.text;
       final children = span.children;
       if (text == null) {
         return TextSpan(
           style: span.style,
-          children: children?.whereType<TextSpan>().map(walk).toList(),
+          children: children?.map(walk).toList(),
         );
       }
       final start = offset;
@@ -143,7 +220,7 @@ class LiveMarkdownController extends TextEditingController {
         return TextSpan(
             text: text,
             style: span.style,
-            children: children?.whereType<TextSpan>().map(walk).toList());
+            children: children?.map(walk).toList());
       }
       // Cut points inside this span, in order.
       final cuts = <int>{0, text.length};
@@ -167,11 +244,11 @@ class LiveMarkdownController extends TextEditingController {
       }
       return TextSpan(
         style: span.style,
-        children: [...pieces, ...?children?.whereType<TextSpan>().map(walk)],
+        children: [...pieces, ...?children?.map(walk)],
       );
     }
 
-    return walk(root);
+    return walk(root) as TextSpan;
   }
 
   bool _touches(int a, int b, int lo, int hi) =>
@@ -187,20 +264,56 @@ class LiveMarkdownController extends TextEditingController {
     final lineEnd = lineStart + line.length;
     final onLine = lo >= 0 && hi >= lineStart && lo <= lineEnd;
 
-    // An in-flow image reference. Styled dim and monospace so it reads as a
-    // placeholder rather than as writing, and NOT replaced by the picture: a
-    // WidgetSpan would swap N characters for one U+FFFC placeholder and desync
-    // every selection offset from the raw text, which the coverage check above
-    // exists to prevent. Keeping it as text is also what makes it selectable
-    // and cuttable — the "highlight it, cut it, paste it lower down" flow.
-    if (_imageLineRe.hasMatch(line)) {
-      out.add(TextSpan(
-        text: line,
-        style: _dim(base).copyWith(
-            fontFamily: 'JetBrains Mono',
-            fontFamilyFallback: onoteFontFallback,
-            fontSize: (base.fontSize ?? 14) * 0.85),
-      ));
+    // An in-flow image reference, drawn as the picture itself.
+    //
+    // The obvious way to do this — swap the line for a WidgetSpan — desyncs
+    // every selection offset, because N characters of raw text become the one
+    // U+FFFC code unit a placeholder occupies. So the line keeps its length:
+    // its first N-1 characters are emitted at a hairline size and the last one
+    // is what the placeholder stands for. N code units of source, N code units
+    // laid out, and the coverage check above proves it on every keystroke.
+    //
+    // What this costs: the reference is no longer legible or comfortably
+    // selectable while editing. That was the complaint — a hash where a
+    // picture should be — and the caret still walks the line, so backspacing
+    // into it breaks the reference and the source reappears, which is its own
+    // explanation of what just happened.
+    final img = _imageLineRe.firstMatch(line);
+    if (img != null) {
+      // Dim and monospace, so a reference standing in for a picture reads as a
+      // placeholder rather than as writing. Used both when there are no bytes
+      // and when the bytes turn out not to be an image.
+      final refStyle = _dim(base).copyWith(
+          fontFamily: 'JetBrains Mono',
+          fontFamilyFallback: onoteFontFallback,
+          fontSize: (base.fontSize ?? 14) * 0.85);
+      final bytes = _resolveImage(img.group(3)!);
+      if (bytes != null && line.isNotEmpty) {
+        out.add(TextSpan(
+            text: line.substring(0, line.length - 1),
+            style: _hidden(base)));
+        out.add(_SourceSpan(
+          source: line.substring(line.length - 1),
+          alignment: PlaceholderAlignment.top,
+          child: _EditImage(
+            // Keyed by line so the drag state belongs to THIS picture, and is
+            // dropped if the text above it moves and the offsets go stale.
+            key: ValueKey('${img.group(3)}@$lineStart'),
+            bytes: bytes,
+            width: double.tryParse(img.group(4) ?? ''),
+            height: double.tryParse(img.group(5) ?? ''),
+            indent: indentPx(img.group(1)!.length, base.fontSize),
+            selected: onLine,
+            label: line,
+            labelStyle: refStyle,
+            onResize: (w, h) => resizeImageLine(lineStart, lineEnd, line, w, h),
+          ),
+        ));
+        return;
+      }
+      // No bytes — a blob still syncing, or one that never arrived. The
+      // reference stays as text so it can be read, fixed or cut out.
+      out.add(TextSpan(text: line, style: refStyle));
       return;
     }
 
@@ -323,6 +436,237 @@ class LiveMarkdownController extends TextEditingController {
       out.add(TextSpan(text: sub.substring(last), style: cBase));
     }
   }
+}
+
+/// A [WidgetSpan] that remembers the source text it stands in for.
+///
+/// The whole reason a picture can appear inside a live-editing TextField at
+/// all: the coverage check and the misspelling pass both need to know how many
+/// characters of the raw buffer this one placeholder accounts for, and a plain
+/// WidgetSpan cannot tell them.
+class _SourceSpan extends WidgetSpan {
+  const _SourceSpan({
+    required this.source,
+    required super.child,
+    super.alignment,
+  });
+
+  /// The raw text this placeholder was emitted in place of.
+  final String source;
+}
+
+/// The smallest a picture may be dragged. Below this the handle is most of the
+/// image and there is no way back out.
+const double _kMinImageWidth = 48;
+
+/// An in-flow image as it appears WHILE the block is being edited: the picture,
+/// a corner handle to resize it, and an outline when the caret is on its line.
+///
+/// Sizing deliberately mirrors `md_render._renderLine` exactly — the same
+/// `BoxFit.contain`, the same top-left anchor, the same 4px of vertical room
+/// only when there is no explicit size, the same 640px cap only when there is
+/// not. The two renderers are one text box to the user, so a picture that
+/// moved or resized on entering edit mode would be the bug this feature was
+/// meant to remove.
+///
+/// One gap survives, knowingly: `PlaceholderAlignment.top` aligns the picture
+/// with the top of the FONT, and the line's half-leading sits above that, so
+/// edit mode is a few pixels taller than read mode per image line. The only
+/// lever that removes it is the field-wide strut, and flattening that would
+/// break the parity of every other line shape. Pinned in
+/// inline_image_edit_test.dart so it cannot quietly grow.
+class _EditImage extends StatefulWidget {
+  const _EditImage({
+    super.key,
+    required this.bytes,
+    required this.width,
+    required this.height,
+    required this.indent,
+    required this.selected,
+    required this.label,
+    required this.labelStyle,
+    required this.onResize,
+  });
+
+  final Uint8List bytes;
+
+  /// The ` =WxH` suffix, if the reference carries one.
+  final double? width, height;
+  final double indent;
+  final bool selected;
+
+  /// The raw reference, shown if the bytes turn out not to be an image.
+  final String label;
+  final TextStyle labelStyle;
+  final void Function(double w, double h) onResize;
+
+  @override
+  State<_EditImage> createState() => _EditImageState();
+}
+
+class _EditImageState extends State<_EditImage> {
+  final _imgKey = GlobalKey();
+
+  /// Live size during a drag. Held here rather than written to the buffer on
+  /// every pointer move so the drag is one edit, not a hundred — a hundred
+  /// would be a hundred undo entries and a hundred saves.
+  double? _dragW, _dragH;
+  double _aspect = 1;
+
+  /// The widest this picture may be dragged: the text box itself, minus any
+  /// indent. Read from our own incoming constraints rather than through a
+  /// LayoutBuilder, because a placeholder inside an editable paragraph is also
+  /// laid out during intrinsic-size passes, where a LayoutBuilder cannot go.
+  double _maxWidth() {
+    final box = context.findRenderObject() as RenderBox?;
+    final c = box?.constraints;
+    if (c == null || !c.maxWidth.isFinite) return 640;
+    final avail = c.maxWidth - widget.indent;
+    return avail > _kMinImageWidth ? avail : 640;
+  }
+
+  void _startDrag() {
+    // The current size is read off the render tree rather than computed from
+    // the image's natural dimensions, which would need an async decode. What
+    // is on screen is what the user grabbed.
+    final box = _imgKey.currentContext?.findRenderObject() as RenderBox?;
+    final size = (box != null && box.hasSize) ? box.size : null;
+    if (size == null || size.width <= 0 || size.height <= 0) return;
+    final w = widget.width, h = widget.height;
+    _aspect = (w != null && h != null && h > 0) ? w / h : size.width / size.height;
+    setState(() {
+      _dragW = size.width;
+      _dragH = size.width / _aspect;
+    });
+  }
+
+  void _updateDrag(Offset delta) {
+    final from = _dragW;
+    if (from == null) return;
+    final next = (from + delta.dx).clamp(_kMinImageWidth, _maxWidth());
+    setState(() {
+      _dragW = next;
+      _dragH = next / _aspect;
+    });
+  }
+
+  void _endDrag() {
+    final w = _dragW, h = _dragH;
+    // Cleared and committed in the same frame: the rebuild the commit causes
+    // carries the new size, so the picture never flashes back to the old one.
+    setState(() => _dragW = _dragH = null);
+    if (w != null && h != null && h > 0) widget.onResize(w, h);
+  }
+
+  /// Set when the bytes are not a picture at all — a truncated sync, a bad
+  /// import, a reference to something that was never an image.
+  bool _undecodable = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_undecodable) {
+      // Same answer as a blob that is missing entirely: show the reference, so
+      // there is something to see, fix or cut out rather than a blank gap.
+      return Padding(
+        padding: EdgeInsets.only(left: widget.indent),
+        child: Text(widget.label, style: widget.labelStyle),
+      );
+    }
+    final w = _dragW ?? widget.width;
+    final h = _dragH ?? widget.height;
+    final sized = w != null || h != null;
+    final image = Image.memory(widget.bytes,
+        key: _imgKey,
+        width: w,
+        height: h,
+        fit: BoxFit.contain,
+        alignment: Alignment.topLeft,
+        gaplessPlayback: true,
+        // The decode fails asynchronously, so the swap has to wait for the
+        // frame that is already building.
+        errorBuilder: (_, __, ___) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _undecodable = true);
+          });
+          return const SizedBox.shrink();
+        });
+    return Padding(
+      padding: EdgeInsets.only(
+          left: widget.indent, top: sized ? 0 : 4, bottom: sized ? 0 : 4),
+      child: Stack(
+        children: [
+          Container(
+            // A foreground decoration, so the outline costs no layout: with a
+            // real border the picture would shift a pixel every time the caret
+            // entered its line.
+            foregroundDecoration: widget.selected
+                ? BoxDecoration(
+                    border: Border.all(
+                        color: OnoteColors.brass400.withValues(alpha: .85)))
+                : null,
+            child: sized
+                ? image
+                : ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 640),
+                    child: image,
+                  ),
+          ),
+          Positioned(right: 0, bottom: 0, child: _handle()),
+        ],
+      ),
+    );
+  }
+
+  /// The corner grip.
+  ///
+  /// It claims the pointer on the FIRST movement rather than after a pan's
+  /// 36px slop, because the field's own selection drag settles at 18px and
+  /// would otherwise win the arena on every slow drag — the handle worked when
+  /// yanked and did nothing when eased, which is the worst of both. A grip that
+  /// exists for one purpose and is 18px across can afford to be certain.
+  Widget _handle() => MouseRegion(
+        cursor: SystemMouseCursors.resizeUpLeftDownRight,
+        child: RawGestureDetector(
+          behavior: HitTestBehavior.opaque,
+          gestures: {
+            ImmediateMultiDragGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<
+                    ImmediateMultiDragGestureRecognizer>(
+              ImmediateMultiDragGestureRecognizer.new,
+              (r) => r.onStart = (_) {
+                _startDrag();
+                return _ResizeDrag(onMove: _updateDrag, onDone: _endDrag);
+              },
+            ),
+          },
+          child: Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: OnoteColors.brass400.withValues(alpha: .92),
+              borderRadius: const BorderRadius.only(topLeft: Radius.circular(6)),
+            ),
+            child: const Icon(Icons.south_east, size: 12, color: Colors.white),
+          ),
+        ),
+      );
+}
+
+class _ResizeDrag extends Drag {
+  _ResizeDrag({required this.onMove, required this.onDone});
+  final ValueChanged<Offset> onMove;
+  final VoidCallback onDone;
+
+  @override
+  void update(DragUpdateDetails details) => onMove(details.delta);
+
+  @override
+  void end(DragEndDetails details) => onDone();
+
+  /// A cancelled drag still commits what was dragged so far. The alternative —
+  /// snapping back — loses work for no reason the user can see.
+  @override
+  void cancel() => onDone();
 }
 
 /// Wraps the current selection with a matching pair when a wrapping character

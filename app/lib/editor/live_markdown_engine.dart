@@ -64,7 +64,14 @@ class LiveMarkdownEngine extends OnoteTextEditor {
   }) =>
       _LiveMarkdownSession(
         controller: LiveMarkdownController(
-            text: deserialize(block.content), dark: false),
+            text: deserialize(block.content), dark: false)
+          // The same resolver the read view gets, so an in-flow image is a
+          // picture in both — see the note in live_markdown_controller.dart on
+          // how it stays there without desyncing a single caret offset.
+          ..imageResolver = (src) {
+            if (app.notebookId == null || !src.startsWith('sha256:')) return null;
+            return app.blob(src);
+          },
         onChanged: onChanged,
       )
         ..spellCheckEnabled = app.spellCheckEnabled
@@ -85,7 +92,12 @@ class LiveMarkdownEngine extends OnoteTextEditor {
 }
 
 class _LiveMarkdownSession extends OnoteEditSession {
-  _LiveMarkdownSession({required this.controller, required this.onChanged});
+  _LiveMarkdownSession({required this.controller, required this.onChanged}) {
+    // Resizing a picture rewrites the buffer from inside the controller, and a
+    // programmatic edit never fires TextField.onChanged — without this the new
+    // size would draw perfectly and then be gone on the next open.
+    controller.onSelfEdit = () => onChanged(controller.text);
+  }
 
   final LiveMarkdownController controller;
   final ValueChanged<String> onChanged;
