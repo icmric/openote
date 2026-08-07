@@ -2,6 +2,56 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
+## [Unreleased]
+
+### Added — videos you keep, and watch, in your notes
+
+- **Copy a video or recording into the notebook and play it in the page.**
+  Insert ▸ Video or link… now offers "Use a file on this computer…" beside the
+  link box. The file is copied in and kept, so it plays whether or not you are
+  online and whether or not the original is still where you left it.
+  - It genuinely does use the disk: a term of lectures is however many
+    gigabytes those lectures are. The copy shows its progress and can be
+    cancelled, and Notebook ▸ Sync now breaks the total out on its own line so
+    you can see what the videos are costing you.
+  - Recordings are stored as files beside the notes file rather than inside
+    it, which is what lets playback start immediately on a two-hour recording
+    instead of loading the whole thing first. They travel with the notebook
+    when you move or duplicate it.
+  - **Linux needs one package**: `mpv-libs` on Fedora, `libmpv2` on Ubuntu and
+    Debian. The `.deb` and `.rpm` ask for it automatically. If you installed
+    from the `.tar.gz` and it is missing, the card says so and which package
+    to install, and "Open in your usual player" still works.
+  - Links are unchanged and still open in your browser — a Panopto or YouTube
+    page is a web application, not a file anything here can decode.
+
+### Added — the picture is there while you are typing
+
+- **In-flow images now show as pictures in edit mode**, not as their reference.
+  Clicking into a box used to replace every picture with a line of
+  `![](sha256:…)`; now the picture stays put and the writing flows around it
+  exactly as it does when you are not editing.
+- **Drag the corner to resize a picture.** The box width is the maximum and you
+  can go as small as you like from there; the aspect ratio is kept.
+
+### Added — passcodes on pages, sections and section groups
+
+- **Right-click any page, section or section group ▸ "Lock with a passcode…".**
+  Locked pages will not open, and will not turn up in search, until the
+  passcode is entered. Choose how long an unlock lasts: every time, ten
+  minutes, an hour, or until Openote closes.
+- **It is a lock on Openote's doors, not on the file**, and the dialog says so
+  before you set one: anyone with your notebook file can still read the page.
+  Real encryption is a separate piece of work (ADR-0008) — this is the part
+  that stops someone reading over your shoulder or picking up your laptop.
+- A forgotten passcode cannot be recovered, but the notes are not lost either:
+  they are still in the file.
+
+### Known gaps
+
+- Exporting a notebook to Markdown does not carry copied-in videos yet.
+- Space used by videos whose block you deleted is not reclaimed automatically.
+
 ## [0.4.1] — 2026-08-07
 
 ### Changed — Linux gets a real installer

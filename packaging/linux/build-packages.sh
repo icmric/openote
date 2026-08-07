@@ -74,6 +74,14 @@ install -m644 "$REPO/LICENSE" "$ROOT/usr/share/doc/openote/copyright"
 # pin the exact library versions present on the BUILD machine, which is an
 # older Ubuntu chosen deliberately for its glibc floor — those versions would
 # then be unsatisfiable on the very distros the floor exists to support.
+#
+# libmpv is how video plays inside the app. It is loaded at RUNTIME with
+# dlopen and never linked against, so no dependency scanner would ever find
+# it — it has to be named here or not at all. A machine without it gets an
+# Openote that shows an "install this package" card where the player goes. `libmpv2 | libmpv1` because the soname changed between Ubuntu
+# 22.04 and 24.04 and both are still in use; an alternation is satisfied by
+# either, where naming one would make the .deb refuse to install on half the
+# machines it targets.
 echo "==> building .deb"
 install -d "$ROOT/DEBIAN"
 cat > "$ROOT/DEBIAN/control" <<EOF
@@ -83,7 +91,7 @@ Section: office
 Priority: optional
 Architecture: amd64
 Maintainer: Openote <noreply@openote.org>
-Depends: libgtk-3-0, libglib2.0-0, libstdc++6
+Depends: libgtk-3-0, libglib2.0-0, libstdc++6, libmpv2 | libmpv1
 Homepage: https://openote.org
 Description: Open-source alternative to Microsoft OneNote
  A freeform notebook with handwriting, maths and an open file format.
@@ -127,6 +135,10 @@ rm -rf "$ROOT/DEBIAN"
 # scan every bundled .so and emit requires naming the build machine's exact
 # soname set, which a different distro will not provide under those names. The
 # real runtime needs are declared by hand below.
+#
+# `mpv-libs` is Fedora's and RHEL's name for libmpv — the same dependency the
+# .deb spells `libmpv2 | libmpv1` — and it is in the default repositories, so
+# this does not quietly require RPM Fusion to be enabled.
 echo "==> building .rpm"
 install -d "$STAGE/rpm"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 cat > "$STAGE/rpm/SPECS/openote.spec" <<EOF
@@ -141,6 +153,7 @@ AutoReqProv:    no
 Requires:       gtk3
 Requires:       glib2
 Requires:       libstdc++
+Requires:       mpv-libs
 
 %description
 A freeform notebook with handwriting, maths and an open file format.

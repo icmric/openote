@@ -441,6 +441,20 @@ class _StorageSectionState extends State<_StorageSection> {
                 const SizedBox(height: 6),
                 _row('Sync log', s.logPath, s.logBytes, s.logCloud,
                     missing: !s.logExists),
+                // Said separately because it is the number that can be
+                // gigabytes: a video copied into the notebook lives in the
+                // sync log directory, so without this line three hours of
+                // lectures read as "sync log · 4.1 GB".
+                if (s.mediaBytes > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 92, top: 2),
+                    child: Text(
+                        'including ${_bytes(s.mediaBytes)} of video and '
+                        'recordings you copied in',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: context.surfaces.textSecondary)),
+                  ),
                 const SizedBox(height: 8),
                 Text(
                   s.syncs

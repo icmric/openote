@@ -611,6 +611,15 @@ class Repository {
         'ON CONFLICT(key) DO UPDATE SET value=excluded.value',
         [jsonEncode(newTitle)]);
     _open[newId0] = db;
+    // Videos are files beside the container, not rows inside it, so copying
+    // the container alone would give you a duplicate whose recordings had
+    // silently vanished. Only `media/` — the op logs belong to the notebook
+    // they were written for and must not be inherited by a new id.
+    final srcMedia = Directory(p.join(src.logDirPath, 'media'));
+    if (srcMedia.existsSync()) {
+      await _copyDirectory(
+          srcMedia, Directory(p.join(ref.logDirPath, 'media')));
+    }
     await _saveNow();
     return ref;
   }

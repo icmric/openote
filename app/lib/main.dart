@@ -3,6 +3,7 @@ import 'dart:ui' show AppExitResponse;
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 
+import 'media/video_playback.dart';
 import 'state/app_state.dart';
 import 'store/repository.dart';
 import 'theme/onote_theme.dart';
@@ -17,6 +18,11 @@ void main() {
   // "Pdfrx.getCacheDirectory is not set" before pdfium is even touched.
   // Must run on the root isolate, before any PDF work.
   pdfrxFlutterInitialize();
+  // Resolve libmpv once, here, rather than the first time a block tries to
+  // play something: on a Linux box without it, `MediaKit.ensureInitialized`
+  // throws, and a throw inside a widget build is a red screen where a "you
+  // need to install mpv-libs" card belongs. See media/video_playback.dart.
+  VideoPlayback.probe();
   // Paint a window IMMEDIATELY; open the workspace behind it. Blocking runApp
   // on Repository.open + init left the window invisible until SQLite and the
   // restored page were fully loaded ("the app takes ages to appear").

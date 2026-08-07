@@ -16,6 +16,7 @@ import '../editor/onote_text_editor.dart';
 import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
+import '../store/media_store.dart';
 import '../store/repository.dart';
 import 'page_protection.dart';
 import '../model/tags.dart';
@@ -1181,6 +1182,7 @@ class AppState extends ChangeNotifier
           containerBytes: 0,
           logPath: '',
           logBytes: 0,
+          mediaBytes: 0,
           logExists: false,
           containerCloud: null,
           logCloud: null);
@@ -1192,6 +1194,7 @@ class AppState extends ChangeNotifier
       containerBytes: _fileBytes(ref.file),
       logPath: logPath,
       logBytes: await _dirBytes(logDir),
+      mediaBytes: MediaStore.totalBytes(ref),
       logExists: logDir.existsSync(),
       containerCloud: cloudFolderContaining(ref.file, also: _syncRoots),
       logCloud: cloudFolderContaining(logPath, also: _syncRoots),
@@ -3990,6 +3993,7 @@ class NotebookStorage {
     required this.containerBytes,
     required this.logPath,
     required this.logBytes,
+    required this.mediaBytes,
     required this.logExists,
     required this.containerCloud,
     required this.logCloud,
@@ -3999,6 +4003,11 @@ class NotebookStorage {
   final int containerBytes;
   final String logPath;
   final int logBytes;
+
+  /// The part of [logBytes] that is video and recordings. Broken out because
+  /// it is the part that can be gigabytes, and a line labelled "sync log"
+  /// carrying three of them would be actively misleading.
+  final int mediaBytes;
   final bool logExists;
 
   /// The detected cloud folder each half lives in, if any.

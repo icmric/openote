@@ -10,6 +10,7 @@ import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
+import 'video_block_view.dart';
 
 /// File attachment block (MEDIA-2): the file lives in the notebook's
 /// content-addressed blob store; "Save a copy…" extracts it back out.
@@ -42,6 +43,14 @@ class FileBlockView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A recording kept in the notebook, played in the page. Checked before the
+    // url and blob branches because it is neither: the bytes are a file beside
+    // the container (store/media_store.dart), and an older build that knows
+    // about neither still shows the right name on an inert card.
+    final media = (block.content['media'] as String?)?.trim();
+    if (media != null && media.isNotEmpty) {
+      return VideoBlockView(block: block, app: app);
+    }
     final url = (block.content['url'] as String?)?.trim();
     if (url != null && url.isNotEmpty) return _linkCard(context, url);
     final name = block.content['name'] as String? ?? 'file';
@@ -88,16 +97,16 @@ class FileBlockView extends StatelessWidget {
   }
 
   /// A link to something that lives outside the notebook — a lecture
-  /// recording, a video, a page worth coming back to.
+  /// recording on a university site, a video, a page worth coming back to.
   ///
-  /// Deliberately a link and NOT an inline player. Inline playback would mean
-  /// a media engine on three desktop platforms, and the Linux story is the one
-  /// that decides it: `video_player` has no endorsed Linux desktop
-  /// implementation, and `media_kit` expects a system libmpv — a dependency the
-  /// AppImage exists specifically to avoid needing. Handing the URL to the
-  /// browser costs nothing, works identically everywhere, and is what the ask
-  /// actually described: reaching the lecture from the notes instead of
-  /// flicking between two windows.
+  /// Still a link and not a player, but for a narrower reason than it used to
+  /// be. The old reason was that inline playback meant a media engine on three
+  /// desktop platforms and the AppImage could not declare a system libmpv;
+  /// Openote now ships a .deb and an .rpm, which can, so a video the user
+  /// copies IN does play in the page (see video_block_view.dart). What stays
+  /// true is that a URL is not a file: a YouTube or Panopto page is a web
+  /// application, not a stream we can hand to a decoder, and pretending
+  /// otherwise would mean embedding a browser. Those go to the browser.
   Widget _linkCard(BuildContext context, String url) {
     final scheme = Theme.of(context).colorScheme;
     final name = (block.content['name'] as String?)?.trim();
