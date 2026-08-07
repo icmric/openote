@@ -69,6 +69,18 @@ class _BlockViewState extends State<BlockView> {
   int? _selectBase;
   bool _textDragging = false;
 
+  /// Whether the press that started this gesture landed on CHROME — the move
+  /// bar, a resize handle, or the hit-padding — rather than on the block's own
+  /// content.
+  ///
+  /// The raw [Listener] below wraps the whole stack, chrome included, so
+  /// [_pointerMove] fired for a drag of the move bar just as it does for a drag
+  /// across the text. On an editable block it took that for "start selecting
+  /// text", opened the editor, and left the box in edit mode — so moving a text
+  /// box by its bar put a caret in it, which is precisely what the bar exists
+  /// to avoid. Resizing did the same thing, for the same reason.
+  bool _pressOnChrome = false;
+
   Block get b => widget.block;
   AppState get app => widget.app;
   bool get selected => app.selectedIds.contains(b.id);
@@ -107,9 +119,28 @@ class _BlockViewState extends State<BlockView> {
   // route is pinned at down: it keeps arriving even once the widget tree under
   // the cursor has been replaced by the editing view.
 
+  /// Is [global] over the chrome ring rather than the block's content?
+  ///
+  /// The content sits inside the same padding the build method applies —
+  /// `fromLTRB(_kChromePad, _kBarH, _kChromePad, _kChromePad)` — so anything
+  /// outside that rectangle is the bar, a handle, or hit-padding. Derived from
+  /// the geometry rather than tracked with a flag per control, so a chrome
+  /// element added later is covered without anyone remembering to.
+  bool _isChromeAt(Offset global) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return false;
+    final local = box.globalToLocal(global);
+    final s = box.size;
+    return local.dy < _kBarH ||
+        local.dx < _kChromePad ||
+        local.dx > s.width - _kChromePad ||
+        local.dy > s.height - _kChromePad;
+  }
+
   void _pointerDown(PointerDownEvent e) {
     app.claimedPointers.add(e.pointer);
     _pressGlobal = e.position;
+    _pressOnChrome = _isChromeAt(e.position);
     _selectBase = null;
     _textDragging = false;
   }
@@ -117,6 +148,9 @@ class _BlockViewState extends State<BlockView> {
   void _pointerMove(PointerMoveEvent e) {
     final from = _pressGlobal;
     if (from == null || !_editableType || _locked) return;
+    // A drag that began on the bar or a handle is a move or a resize. It must
+    // never open the editor: the box keeps whatever edit state it already had.
+    if (_pressOnChrome) return;
     if (!_textDragging && (e.position - from).distance < 4) return;
     if (HardwareKeyboard.instance.isAltPressed) return; // Alt-drag moves
     if (!_textDragging) {
@@ -551,13 +585,35 @@ class _BlockViewState extends State<BlockView> {
                   child: touchable,
                 ),
               ),
-              if (showChrome)
+              // The bar strip is ALWAYS hover-sensing, and only sometimes
+              // drawn. It used to be mounted only when `showChrome` was already
+              // true — but `showChrome` needs `_hover`, and the only thing that
+              // could set `_hover` was the body, because the bar's own
+              // MouseRegion did not exist yet. So the bar was unreachable
+              // except by first moving the cursor INTO the box and back up to
+              // it: "if i want to move it i need to move my cursor into the box
+              // then back up to the bar".
+              //
+              // When the bar is not shown this is a bare MouseRegion. It tracks
+              // the mouse but has no GestureDetector, so it absorbs no taps —
+              // a click on the strip still falls through to the canvas and
+              // creates a new text box, which is the behaviour just outside a
+              // block. Suppressed entirely for the ink tools and for locked
+              // blocks, matching `showChrome`, so hovering never competes with
+              // the pen.
+              if (!inkToolActive && !_locked)
                 Positioned(
                   left: 0,
                   right: 0,
                   top: 0,
                   height: _kBarH,
-                  child: _moveBar(context, primaryColor, dark),
+                  child: showChrome
+                      ? _moveBar(context, primaryColor, dark)
+                      : MouseRegion(
+                          onEnter: (_) => setState(() => _hoverChrome = true),
+                          onExit: (_) => setState(() => _hoverChrome = false),
+                          child: const SizedBox.expand(),
+                        ),
                 ),
               // Resize handles. Now that the chrome sits INSIDE the render
               // box, each handle's full visual extent is grabbable instead of

@@ -15,6 +15,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -261,12 +262,108 @@ void main() {
       app.cancelPendingSave();
     }
 
+    /// The BlockView's own rect, chrome included — the bar strip is the top
+    /// `_kBarH` of it and the handles live in its padding, so tests aim at
+    /// points relative to this rather than at the content.
+    Rect tester_findBlockBox(WidgetTester t) =>
+        t.getRect(find.byType(BlockView).first);
+
     /// The offset the live editor's caret currently sits at, or null if no
     /// editor is open.
     int? caret(AppState a) {
       final s = a.activeEditor?.controller.selection;
       return s != null && s.isValid ? s.baseOffset : null;
     }
+
+    testWidgets('the bar is reachable without entering the box first',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The reported symptom: "The bar only shows up when i hover over the box
+      // itself, so if i want to move it i need to move my cursor into the box
+      // then back up to the bar."
+      //
+      // The strip was mounted only once `showChrome` was true, and `showChrome`
+      // needed `_hover`, which only the BODY could set — the bar's own
+      // MouseRegion did not exist yet to set it. A hover straight onto the
+      // strip therefore did nothing at all.
+      await pump(t);
+      await t.pump();
+
+      final box = tester_findBlockBox(t);
+      // A point inside the bar strip, above the content — the place a user
+      // aims for when they want to drag the container.
+      final onBar = Offset(box.center.dx, box.top + 4);
+
+      final mouse = await t.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(0, 0));
+      addTearDown(mouse.removePointer);
+      await t.pump();
+
+      // Straight onto the strip, never touching the body.
+      await mouse.moveTo(onBar);
+      await t.pumpAndSettle();
+
+      expect(find.byIcon(Icons.drag_indicator), findsOneWidget,
+          reason: 'hovering the bar strip must reveal the bar, without the '
+              'cursor ever having been inside the box');
+    });
+
+    testWidgets('dragging the bar never puts the box into edit mode',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // "Moving the bar should not select the box in an editing sense, it
+      // should remain not in editing mode if it wasnt previously in it."
+      //
+      // The raw Listener that drives text drag-selection wraps the WHOLE stack,
+      // chrome included. On an editable block it read a drag of the move bar as
+      // "start selecting text", opened the editor and left a caret in the box.
+      await pump(t);
+      await t.pump();
+      expect(app.editingBlockId, isNull, reason: 'precondition');
+
+      final box = tester_findBlockBox(t);
+      await dragBy(t, Offset(box.center.dx, box.top + 4), const Offset(12, 8));
+
+      expect(app.editingBlockId, isNull,
+          reason: 'dragging the bar opened the editor');
+      expect(block.x, greaterThan(60), reason: 'the drag should still move it');
+    });
+
+    testWidgets('dragging a resize handle does not open the editor either',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // Same root cause as the bar: the handle is chrome, and a drag on it was
+      // reaching the text-selection path. Found while fixing the bar rather
+      // than reported — the guard is geometric, so it covers both.
+      await pump(t);
+      app.select(block.id); // handles only render for the primary selection
+      await t.pump();
+      await t.pump();
+
+      final box = tester_findBlockBox(t);
+      // The right-edge handle sits inside the chrome padding.
+      await dragBy(
+          t, Offset(box.right - 3, box.center.dy), const Offset(10, 0));
+
+      expect(app.editingBlockId, isNull,
+          reason: 'resizing opened the editor');
+    });
+
+    testWidgets('a drag across the text still selects text', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The guard above must not cost the thing it sits next to: a drag that
+      // starts on the CONTENT is still a text selection, and still opens the
+      // editor to make one.
+      await pump(t);
+      await t.pump();
+
+      final box = tester_findBlockBox(t);
+      await dragBy(
+          t, Offset(box.left + 30, box.center.dy), const Offset(20, 0));
+
+      expect(app.editingBlockId, block.id,
+          reason: 'a body drag must still open the editor to select text');
+    });
 
     testWidgets('a box does not change width when you edit it', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
