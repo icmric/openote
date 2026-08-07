@@ -18,14 +18,21 @@
 
   Flutter's template ships app-sandbox = true and this file inherited it. The
   released .dmg has nonetheless worked, because the release workflow's ad-hoc
-  `codesign --force --deep` re-sign silently DROPPED the entitlements — so the
-  shipped app has always been unsandboxed by accident, while a locally-built
+  re-sign passed the `deep` flag, which silently DROPPED the entitlements — so
+  the shipped app has always been unsandboxed by accident, while a locally-built
   one was sandboxed and most likely could not reach the user's notebooks or
   their timetable at all. macOS has never been run by a human on this project
   (see TESTING.md), which is why nobody had hit it.
 
   Stating the intent here makes a local build and a CI build behave the same
-  way, and stops the workflow depending on a side effect of `--deep`.
+  way, and stops the workflow depending on a side effect of the `deep` flag.
+
+  KEEP THIS COMMENT FREE OF DOUBLE HYPHENS. XML forbids the sequence inside a
+  comment, and this file is parsed by AMFI, not by a forgiving reader: naming
+  the codesign flags in full once made the WHOLE plist unparseable, and the
+  only symptom was `AMFIUnserializeXML: syntax error` forty minutes into a
+  release build. Write flag names bare, as above. See release_assets_test.dart,
+  which fails fast on this.
 
   If Openote is ever submitted to the App Store the sandbox comes back on, and
   brings security-scoped bookmarks with it. That is the migration; nothing here

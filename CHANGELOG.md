@@ -68,6 +68,28 @@ Four reports, one thread. Full reasoning and every measurement in
   header — green for a sync folder, amber for a mirror, a hollow ring for
   this-computer-only — with the answer spelled out in words on hover.
 
+### Fixed — the release build itself (2026-08-07)
+
+The first tag for 0.3.1 built all three platforms and then failed to package
+two of them. Both causes were in steps that had never run before: every prior
+release run died at the version guard within twenty seconds, so the packaging
+half of the workflow reached its first real execution here.
+
+- **The macOS app could not be signed.** `Release.entitlements` carried an
+  explanatory comment naming the `codesign` flags in full, and XML forbids `--`
+  inside a comment — so the entire plist was unparseable and `codesign` failed
+  with `AMFIUnserializeXML: syntax error near line 21`. Local macOS builds had
+  been silently dropping their entitlements for the same reason. The file now
+  parses, and `release_assets_test.dart` fails in milliseconds if the sequence
+  ever comes back.
+- **The Windows installer was rejected by its own version check.** `ISCC.exe`
+  leaves its numeric version fields zeroed, so the guard asserting Inno Setup
+  6.3+ read `0.0` and refused a perfectly capable 6.x. The version is now read
+  from the string fields or the compiler's own banner, and — the part that
+  matters — a version it cannot read is a warning rather than a veto. Finding
+  the compiler no longer recursively scans both Program Files trees, which was
+  costing 4m24s on top of an already-finished build.
+
 ---
 
 ## [0.2.0 · 0.3.0] — 2026-08-04 / 2026-08-05 · the first public release and the student release

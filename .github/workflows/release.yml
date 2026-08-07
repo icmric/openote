@@ -155,27 +155,76 @@ jobs:
           # above is deliberately unpinned, so a future chocolatey package that
           # ships 7.x would land in a directory this path does not name — and
           # the failure would arrive after the whole Rust + Flutter build.
-          $iscc = Get-ChildItem -Path ${env:ProgramFiles(x86)}, $env:ProgramFiles `
-              -Filter ISCC.exe -Recurse -ErrorAction SilentlyContinue |
-            Sort-Object { $_.VersionInfo.FileMajorPart * 1000 + $_.VersionInfo.FileMinorPart } |
-            Select-Object -Last 1 -ExpandProperty FullName
+          #
+          # Look in the conventional 'Inno Setup <n>' directories FIRST. The
+          # recursive sweep below is the fallback, not the default: recursing
+          # both Program Files trees took 4m24s on the runner, and every second
+          # of it was spent after the Rust and Flutter builds had already run.
+          $roots = @(${env:ProgramFiles(x86)}, $env:ProgramFiles) | Where-Object { $_ }
+          $candidates = Get-ChildItem -Path $roots -Filter 'Inno Setup*' -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object { Join-Path $_.FullName 'ISCC.exe' } |
+            Where-Object { Test-Path $_ } |
+            Sort-Object { if ($_ -match 'Inno Setup\s+(\d+)') { [int]$Matches[1] } else { 0 } }
+          $iscc = $candidates | Select-Object -Last 1
+          if (-not $iscc) {
+            $iscc = Get-ChildItem -Path $roots -Filter ISCC.exe -Recurse -ErrorAction SilentlyContinue |
+              Select-Object -Last 1 -ExpandProperty FullName
+          }
           if (-not $iscc) {
             throw "ISCC.exe not found under Program Files — did the Inno Setup install step succeed?"
           }
-          # Assert the floor the .iss actually needs, rather than pinning a
-          # version and hoping. A clear message here beats `Unknown value` from
-          # a compiler most people have never run.
+
+          # Establish the version the .iss actually needs a floor on.
           #
-          # Read the integer parts, NOT ProductVersion: that field is a
-          # free-form display string (git.exe reports '2.48.1.windows.1'), and
-          # casting it to [version] throws — which under the
-          # $ErrorActionPreference='Stop' above would fail the release for a
-          # compiler that was perfectly capable.
+          # Do NOT read FileMajorPart/FileMinorPart: ISCC.exe leaves the fixed
+          # VS_FIXEDFILEINFO block zeroed, so those report 0.0 for every build
+          # of Inno Setup. That is not hypothetical — it rejected a perfectly
+          # capable 6.x with "Inno Setup 0.0 is too old" and cost a release run.
+          #
+          # Do NOT cast ProductVersion to [version] either: it is a free-form
+          # display string (git.exe reports '2.48.1.windows.1') and the cast
+          # throws under the $ErrorActionPreference='Stop' above. Regex out the
+          # leading major.minor instead, and fall back to asking the compiler
+          # for its own banner.
           $fi = (Get-Item $iscc).VersionInfo
-          $v = [version]::new($fi.FileMajorPart, $fi.FileMinorPart)
-          Write-Host "ISCC $v at $iscc"
-          if ($v -lt [version]'6.3') {
-            throw "Inno Setup $v is too old: openote.iss uses ArchitecturesAllowed=x64compatible, which needs 6.3+."
+          $isccVersion = $null
+          foreach ($s in @($fi.ProductVersion, $fi.FileVersion)) {
+            if ($s -and $s -match '(\d+)\.(\d+)') {
+              $isccVersion = [version]::new([int]$Matches[1], [int]$Matches[2])
+              break
+            }
+          }
+          if (-not $isccVersion) {
+            # A bare invocation prints "Inno Setup N.n ... Command-Line Compiler"
+            # and exits non-zero. Shield both the exit code and pwsh 7.4's
+            # native-command error preference, or probing the version becomes
+            # its own way to fail the release.
+            $prev = $PSNativeCommandUseErrorActionPreference
+            try {
+              $PSNativeCommandUseErrorActionPreference = $false
+              $banner = & $iscc 2>&1 | Out-String
+            } catch {
+              $banner = ''
+            } finally {
+              $PSNativeCommandUseErrorActionPreference = $prev
+              $global:LASTEXITCODE = 0
+            }
+            if ($banner -match 'Inno Setup\s+(\d+)\.(\d+)') {
+              $isccVersion = [version]::new([int]$Matches[1], [int]$Matches[2])
+            }
+          }
+
+          # The floor is advisory, never a veto. Its whole purpose is a clear
+          # message instead of ISCC's "Unknown value" from a compiler most
+          # people have never run — so when the version cannot be read, say so
+          # and let ISCC speak for itself. A guard that cannot tell 6.5 from
+          # 0.0 must not be allowed to cancel a release.
+          if ($null -eq $isccVersion) {
+            Write-Warning "Could not read a version from $iscc. Proceeding — if it predates 6.3, ISCC will reject ArchitecturesAllowed=x64compatible itself."
+          } elseif ($isccVersion -lt [version]'6.3') {
+            throw "Inno Setup $isccVersion is too old: openote.iss uses ArchitecturesAllowed=x64compatible, which needs 6.3+."
+          } else {
+            Write-Host "ISCC $isccVersion at $iscc"
           }
 
           $stage = "openote-$env:VERSION-windows-x64"
