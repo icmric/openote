@@ -151,6 +151,7 @@ class Block {
     Map<String, dynamic>? content,
     List<String>? absorbedIds,
     this.access,
+    this.rawType,
     Map<String, dynamic>? unknownFields,
     int? createdAt,
   })  : id = id ?? newId(),
@@ -179,6 +180,23 @@ class Block {
   final List<String> absorbedIds;
   Map<String, dynamic>? access; // reserved (SYNC-9); v1 writes null
   final Map<String, dynamic> unknownFields; // forward-compat round-trip
+
+  /// The on-the-wire `type` string when [type] is [BlockType.unknown], so
+  /// re-serialising preserves it exactly.
+  ///
+  /// **Without this, an old build silently destroys a newer build's block on
+  /// the first save.** `blockTypeFrom` folds any unrecognised name to
+  /// `BlockType.unknown`, and `toJson` wrote `type.name` — the literal string
+  /// `"unknown"`. `'type'` is in [_known], so it was not rescued into
+  /// [unknownFields] either. A page holding a block type from a later release
+  /// therefore round-tripped as `"type":"unknown"`: the content survived, its
+  /// meaning did not, and no later build could ever identify it again.
+  ///
+  /// That makes the "new block types are additive" half of the frozen-v1
+  /// promise false, which is why it is fixed here rather than worked around by
+  /// whichever feature needs a new type first. [Op.rawTag] is the same idea and
+  /// got it right; `Block` simply never had the equivalent.
+  final String? rawType;
   final int createdAt;
   int updatedAt;
 
@@ -189,7 +207,8 @@ class Block {
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        'type': type.name,
+        // `rawType` first: an unrecognised type keeps the name it arrived with.
+        'type': type == BlockType.unknown ? (rawType ?? type.name) : type.name,
         'x': x, 'y': y, 'w': w, 'h': h,
         'rotation': rotation,
         'z': z,
@@ -206,6 +225,7 @@ class Block {
   factory Block.fromJson(Map<String, dynamic> j) => Block(
         id: j['id'] as String,
         type: blockTypeFrom(j['type'] as String? ?? 'unknown'),
+        rawType: j['type'] as String?,
         x: (j['x'] as num?)?.toDouble() ?? 0,
         y: (j['y'] as num?)?.toDouble() ?? 0,
         w: (j['w'] as num?)?.toDouble() ?? 320,

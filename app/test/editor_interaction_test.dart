@@ -265,7 +265,7 @@ void main() {
     /// The BlockView's own rect, chrome included — the bar strip is the top
     /// `_kBarH` of it and the handles live in its padding, so tests aim at
     /// points relative to this rather than at the content.
-    Rect tester_findBlockBox(WidgetTester t) =>
+    Rect blockRect(WidgetTester t) =>
         t.getRect(find.byType(BlockView).first);
 
     /// The offset the live editor's caret currently sits at, or null if no
@@ -289,7 +289,7 @@ void main() {
       await pump(t);
       await t.pump();
 
-      final box = tester_findBlockBox(t);
+      final box = blockRect(t);
       // A point inside the bar strip, above the content — the place a user
       // aims for when they want to drag the container.
       final onBar = Offset(box.center.dx, box.top + 4);
@@ -321,7 +321,7 @@ void main() {
       await t.pump();
       expect(app.editingBlockId, isNull, reason: 'precondition');
 
-      final box = tester_findBlockBox(t);
+      final box = blockRect(t);
       await dragBy(t, Offset(box.center.dx, box.top + 4), const Offset(12, 8));
 
       expect(app.editingBlockId, isNull,
@@ -340,7 +340,7 @@ void main() {
       await t.pump();
       await t.pump();
 
-      final box = tester_findBlockBox(t);
+      final box = blockRect(t);
       // The right-edge handle sits inside the chrome padding.
       await dragBy(
           t, Offset(box.right - 3, box.center.dy), const Offset(10, 0));
@@ -357,7 +357,7 @@ void main() {
       await pump(t);
       await t.pump();
 
-      final box = tester_findBlockBox(t);
+      final box = blockRect(t);
       await dragBy(
           t, Offset(box.left + 30, box.center.dy), const Offset(20, 0));
 

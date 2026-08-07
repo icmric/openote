@@ -34,6 +34,54 @@ void main() {
       expect(jsonDecode(jsonEncode(out)), jsonDecode(jsonEncode(src)));
     });
 
+    test('a block type from a NEWER build keeps its name', () {
+      // The forward-compat half of the frozen-v1 promise: a later release may
+      // add block types, and passing a page through an older build must not
+      // destroy them.
+      //
+      // It did. `blockTypeFrom` folds any unrecognised name to
+      // `BlockType.unknown`, `toJson` wrote `type.name`, and `'type'` is in
+      // `_known` so it was not rescued into `unknownFields` either. The block
+      // came back as `"type":"unknown"` — content intact, meaning gone, and no
+      // later build able to recognise it again. `Op.rawTag` had solved exactly
+      // this for ops; `Block` never had the equivalent.
+      final src = {
+        'id': '0198f3c2-7b1e-7cc3-9f10-3d2a8c41e977',
+        'type': 'video', // a type this build has never heard of
+        'x': 10.0, 'y': 20.0, 'w': 320.0, 'h': 180.0,
+        'rotation': 0.0, 'z': 0,
+        'placement': 'free',
+        'frameId': null,
+        'absorbedIds': <String>[],
+        'access': null,
+        'createdAt': 1753142400000,
+        'updatedAt': 1753142400000,
+        'content': {'url': 'https://example.org/lecture-7'},
+      };
+
+      final b = Block.fromJson(src);
+      expect(b.type, BlockType.unknown, reason: 'this build cannot render it');
+      expect(b.rawType, 'video', reason: 'but it remembers what it was');
+
+      final out = b.toJson();
+      expect(out['type'], 'video',
+          reason: 'an older build must hand the type back untouched');
+      expect(out['content'], src['content'],
+          reason: 'and the payload with it');
+      // The whole envelope, byte for byte.
+      expect(jsonDecode(jsonEncode(out)), jsonDecode(jsonEncode(src)));
+    });
+
+    test('a genuinely typeless block still says "unknown"', () {
+      // The guard must not invent a type where the file had none.
+      final b = Block.fromJson({
+        'id': '0198f3c2-7b1e-7cc3-9f10-3d2a8c41e978',
+        'x': 0.0, 'y': 0.0, 'content': <String, dynamic>{},
+      });
+      expect(b.type, BlockType.unknown);
+      expect(b.toJson()['type'], 'unknown');
+    });
+
     test('stroke arrays are parallel and round-trip', () {
       final s = Stroke(tool: 'pen', colorHex: '#211F1B', size: 2.5)
         ..x.addAll([1.0, 2.0])
