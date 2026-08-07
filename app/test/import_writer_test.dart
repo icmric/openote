@@ -389,8 +389,13 @@ void main() {
   // the legs queued and the interaction completed when the import did.
   //
   // So this measures the gaps, not the ticks.
+  // A real 200-page import with eight 1500-line boxes in it, plus a baseline
+  // pass — comfortably inside 30 s on an idle machine, and not on a busy one.
+  // The default timeout would then fail this as a TIMEOUT rather than on its
+  // assertion, which reports the wrong thing: the point is whether the loop
+  // stayed responsive, not whether the host was fast.
   test('every leg of an interaction lands inside a frame, all import long',
-      () async {
+      timeout: const Timeout(Duration(minutes: 3)), () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (_, app, ref) = await fixture('onote_writer_responsive_');
 
@@ -445,41 +450,59 @@ void main() {
 
     // One "leg" = a timer hop plus a microtask drain, which is what each step
     // of a real gesture → handler → setState chain costs to get scheduled.
-    final legs = <int>[];
-    final sw = Stopwatch()..start();
-    while (!importFinished) {
-      final at = sw.elapsedMicroseconds;
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.microtask(() {});
-      legs.add(sw.elapsedMicroseconds - at);
+    //
+    // Measured against a BASELINE of the same loop with no import running, and
+    // asserted as a ratio. An absolute millisecond budget measures the machine,
+    // not the code: this suite's own history is two rounds of tightening one
+    // (worst < 60, then p99 < 16) and watching it fail anyway whenever the host
+    // was busy — CI once, and locally whenever anything else was compiling. A
+    // ratio cancels the machine out, because a slow host slows the baseline too.
+    Future<List<int>> measureLegs(bool Function() until) async {
+      final out = <int>[];
+      final sw = Stopwatch()..start();
+      while (!until()) {
+        final at = sw.elapsedMicroseconds;
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.microtask(() {});
+        out.add(sw.elapsedMicroseconds - at);
+      }
+      return out;
     }
+
+    int p99of(List<int> xs) {
+      final c = [...xs]..sort();
+      return c[(c.length * 0.99).floor()];
+    }
+
+    // Baseline first, on this machine, right now: 400 legs of an idle loop.
+    var n = 0;
+    final idle = await measureLegs(() => ++n > 400);
+
+    final legs = await measureLegs(() => importFinished);
     await handle.result;
     app.endExclusiveImport(ref.id);
 
     expect(legs.length, greaterThan(100),
         reason: 'the loop has to have actually run during the import for the '
             'rest of this to mean anything');
-    legs.sort();
-    final p99 = legs[(legs.length * 0.99).floor()] / 1000;
-    final worst = legs.last / 1000;
-    // p99, and ONLY p99, is the assertion. If measurement went back to being
-    // atomic every giant box would block this thread for ~90 ms, and this
-    // suite carries eight of them across 200 pages — so the regression moves
-    // the whole upper tail, not one sample. p99 catches that; it cannot be
-    // satisfied by a run that blocks repeatedly.
-    //
-    // There used to be a second assertion, `worst < 60`. It was the only thing
-    // failing CI on macOS, and it was measuring the runner, not the code: a
-    // single worst-case sample on shared infrastructure is scheduler noise.
-    // Reproduced deliberately by saturating every core but one on a machine
-    // where the suite otherwise passes — worst went to 184 ms with two test
-    // files in flight and 518 ms with the whole suite, while p99 stayed inside
-    // 16 ms through both. An assertion that a busy machine can fail on its own
-    // is not a regression pin, it is a coin toss that blocks releases.
-    expect(p99, lessThan(16),
-        reason: 'p99 leg was ${p99.toStringAsFixed(1)} ms (worst '
-            '${worst.toStringAsFixed(1)} ms). Anything approaching a batch '
-            'time means the write phase is back on this thread.');
+
+    // A microsecond floor on the baseline: an idle leg can measure 0 on a fast
+    // machine, and a ratio against zero is not a number.
+    final base = p99of(idle).clamp(50, 1 << 30);
+    final busy = p99of(legs);
+    final ratio = busy / base;
+
+    // What this actually catches. If the write phase went back onto this
+    // thread, or a giant box were measured atomically again, a leg would cost
+    // a whole batch — hundreds of milliseconds against an idle leg's tens of
+    // microseconds, so thousands of times worse. Legitimate scheduling noise
+    // on a contended host is a small multiple. 200x sits in the empty space
+    // between those two, and does not move when the machine does.
+    expect(ratio, lessThan(200),
+        reason: 'p99 leg was ${(busy / 1000).toStringAsFixed(1)} ms against an '
+            'idle baseline of ${(base / 1000).toStringAsFixed(2)} ms '
+            '(${ratio.toStringAsFixed(0)}x). A leg costing a whole batch means '
+            'the write phase is back on this thread.');
   });
 
   // The regression pin for the shape this replaced. The first version asked the

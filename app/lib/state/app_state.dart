@@ -17,6 +17,7 @@ import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
 import '../store/repository.dart';
+import 'page_protection.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../study/flashcards.dart';
@@ -172,16 +173,129 @@ class AppState extends ChangeNotifier
 
   /// Pages in this notebook whose *content* matches [query] (TEXT-7).
   /// The navigator searches titles itself; this is the other half.
-  List<({String pageId, String snippet})> searchContent(String query) =>
-      notebookId == null
-          ? const []
-          : _repo.searchPageContent(notebookId!, query);
+  ///
+  /// **Locked pages are excluded.** Without this the passcode gate would be
+  /// bypassed by typing a word from the page into the search box, which would
+  /// make even its modest promise — "Openote will not show you this page" —
+  /// untrue. The gate makes no claim about the FILE (see page_protection.dart),
+  /// but it has to be coherent inside the app that offers it.
+  List<({String pageId, String snippet})> searchContent(String query) {
+    if (notebookId == null) return const [];
+    final hits = _repo.searchPageContent(notebookId!, query);
+    if (!_anyProtection) return hits;
+    return [for (final h in hits) if (!isLocked(h.pageId)) h];
+  }
 
   /// Re-read the tree from storage into [nodes], bumping [nodesRevision].
   /// Replaces the `app.nodes = repo.loadNodes(id)` line that used to be copied
   /// at every mutation site, importers included.
   void reloadNodes() {
     if (notebookId != null) nodes = _repo.loadNodes(notebookId!);
+  }
+
+  // ── Passcode gating (interim; ADR-0008 designs the real thing) ────────
+  //
+  // A lock on the app's doors, NOT on the file. See page_protection.dart for
+  // what that does and does not mean; the wording there is the wording the
+  // user is shown.
+
+  String _protectKey(String nodeId) => 'protect:${notebookId ?? ''}:$nodeId';
+
+  /// Cheap "is anything protected at all" check, so the common notebook pays
+  /// nothing on the search and page-open paths.
+  bool get _anyProtection => _protectedIds.isNotEmpty;
+  final Set<String> _protectedIds = {};
+
+  /// Unlocked subtree roots → when the unlock expires (null = this session).
+  final Map<String, DateTime?> _unlocked = {};
+
+  /// Re-read which nodes are protected. Called on notebook open and after any
+  /// change, so [_anyProtection] and the gate agree with storage.
+  void reloadProtection() {
+    _protectedIds.clear();
+    if (notebookId == null) return;
+    final prefix = 'protect:${notebookId!}:';
+    for (final k in _repo.settingKeys()) {
+      if (k.startsWith(prefix)) _protectedIds.add(k.substring(prefix.length));
+    }
+  }
+
+  ProtectionRecord? protectionFor(String nodeId) => _protectedIds.contains(nodeId)
+      ? ProtectionRecord.fromJson(_repo.getSetting(_protectKey(nodeId)))
+      : null;
+
+  /// The nearest protected ancestor of [nodeId], itself included — the node
+  /// whose passcode actually governs it. Null when nothing above it is
+  /// protected.
+  ///
+  /// Walking UP rather than marking descendants is what makes protection apply
+  /// to pages added to a locked section later, without any bookkeeping.
+  String? governingNode(String nodeId) {
+    if (!_anyProtection) return null;
+    final byId = {for (final n in nodes) n.id: n};
+    String? cur = nodeId;
+    // Bounded: a corrupt parent cycle must not hang the page-open path.
+    for (var i = 0; cur != null && i < 64; i++) {
+      if (_protectedIds.contains(cur)) return cur;
+      cur = byId[cur]?.parentId;
+    }
+    return null;
+  }
+
+  /// Is [nodeId] currently hidden behind a passcode?
+  bool isLocked(String nodeId) {
+    final root = governingNode(nodeId);
+    if (root == null) return false;
+    if (!_unlocked.containsKey(root)) return true;
+    final until = _unlocked[root];
+    if (until == null) return false; // session-length unlock
+    if (DateTime.now().isBefore(until)) return false;
+    _unlocked.remove(root); // expired
+    return true;
+  }
+
+  /// Try [passcode] against the node governing [nodeId]. Returns false — and
+  /// changes nothing — when it does not match.
+  bool unlockNode(String nodeId, String passcode) {
+    final root = governingNode(nodeId);
+    if (root == null) return true;
+    final rec = protectionFor(root);
+    if (rec == null || !rec.matches(passcode)) return false;
+    final d = rec.policy.duration;
+    // `always` is not cached at all: the next open asks again.
+    if (rec.policy != UnlockPolicy.always) {
+      _unlocked[root] = d == null ? null : DateTime.now().add(d);
+    }
+    notifyListeners();
+    return true;
+  }
+
+  /// Put a passcode on [nodeId]. Everything beneath it inherits.
+  void protectNode(String nodeId, String passcode, UnlockPolicy policy) {
+    _repo.setSetting(
+        _protectKey(nodeId), newProtection(passcode, policy).toJson());
+    _protectedIds.add(nodeId);
+    _unlocked.remove(nodeId);
+    notifyListeners();
+  }
+
+  /// Take the passcode off [nodeId] — only for someone who can supply it.
+  bool unprotectNode(String nodeId, String passcode) {
+    final rec = protectionFor(nodeId);
+    if (rec == null) return true;
+    if (!rec.matches(passcode)) return false;
+    _repo.setSetting(_protectKey(nodeId), null);
+    _protectedIds.remove(nodeId);
+    _unlocked.remove(nodeId);
+    notifyListeners();
+    return true;
+  }
+
+  /// Forget every unlock now — the "Lock now" action, and what shutdown does.
+  void lockAll() {
+    if (_unlocked.isEmpty) return;
+    _unlocked.clear();
+    notifyListeners();
   }
 
   // ── Operation log (ADR-0006, shadow mode) ────────────────────────────

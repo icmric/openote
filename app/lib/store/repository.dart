@@ -328,8 +328,21 @@ class Repository {
   /// Workspace settings (spec §7): session state, custom colours, templates.
   Map<String, dynamic> _settings = {};
   dynamic getSetting(String key) => _settings[key];
+
+  /// Every settings key currently held. For callers that store a FAMILY of
+  /// keys under a prefix (`protect:<notebook>:<node>`) and need to enumerate
+  /// them without knowing the ids in advance.
+  Iterable<String> settingKeys() => _settings.keys.toList(growable: false);
+
   void setSetting(String key, dynamic value) {
-    _settings[key] = value;
+    // A null value REMOVES the key rather than storing a null. Without this a
+    // "protected" flag could only ever be set, never taken off — the map would
+    // keep the key and a prefix scan would still find it.
+    if (value == null) {
+      _settings.remove(key);
+    } else {
+      _settings[key] = value;
+    }
     // Session state (view memory, last page) changes constantly — coalesce.
     _scheduleSaveWorkspace();
   }
