@@ -1,17 +1,15 @@
 # What needs testing, and what I need from you
 
-> Working document · last updated 2026-08-06 · branch `claude/performance`
+> Working document · last updated 2026-08-07 · **v0.3.1 is the build to test**
 >
 > Everything below is either **built but never seen by a human**, or **blocked
 > on something only you can do**. Tick things off as you go; tell me what breaks.
 >
-> **Changes since the last round** — your "inputs execute after the import
-> completes" report named the real mechanism at last: Windows dispatches an
-> app's own queued work ahead of mouse/keyboard, so a loop that never goes
-> idle starves input entirely while frames keep flowing. Every yield in the
-> import (and the PDF import) now goes genuinely idle for 2 ms per chunk.
-> This is a Windows-only failure no Linux test could reproduce, which is why
-> four rounds of fixes measured clean here and still stalled for you — §1.0.
+> **Everything below is now in a real installer.** v0.3.1 is the first release
+> with downloadable builds for all three platforms, so this list is testable
+> without building anything — and shareable with anyone else who wants a look.
+> The import lockup is fixed (§1.0), notebooks take about half the disk space
+> (§1.0d), and every backup dot means something on disk.
 
 ---
 

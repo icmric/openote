@@ -2,7 +2,7 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
-## [0.3.1] · the first release you can actually download
+## [0.3.1] — 2026-08-07 · the first release you can actually download
 
 <!--
 0.3.1, not 0.3.0. The v0.3.0 tag was cut against a commit whose pubspec still
@@ -38,6 +38,16 @@ Four reports, one thread. Full reasoning and every measurement in
   a workspace that had no other notebooks, because the teardown went through the
   recycle bin and that refuses to delete your last notebook.
 - **Imported notebooks are named `Uni Notes`, not `Uni Notes.onepkg`.**
+- **Two more causes of the same freeze, both Windows-shaped.** Laying out an
+  imported page's text is the one job that cannot leave the app's thread, and
+  a real lecture page often has *one* enormous text box — a single indivisible
+  measurement costing **216 ms at 2000 lines, 613 ms at 5000**. That is now
+  measured in small chunks (verified to produce identical layout to the bit).
+  And every chunk is followed by a genuinely idle pause, because Windows
+  dispatches an app's own queued work ahead of mouse and keyboard: a loop that
+  never goes idle starves input entirely while frames keep flowing, which is
+  why the popup could keep updating while clicks queued up until the import
+  finished.
 - A box the OneNote parser could not place now falls back to the top of the
   content area rather than being written under the page title.
 
