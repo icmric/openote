@@ -174,57 +174,41 @@ jobs:
             throw "ISCC.exe not found under Program Files — did the Inno Setup install step succeed?"
           }
 
-          # Establish the version the .iss actually needs a floor on.
+          # Read the compiler's version for the LOG ONLY. It is never a gate.
           #
-          # Do NOT read FileMajorPart/FileMinorPart: ISCC.exe leaves the fixed
-          # VS_FIXEDFILEINFO block zeroed, so those report 0.0 for every build
-          # of Inno Setup. That is not hypothetical — it rejected a perfectly
-          # capable 6.x with "Inno Setup 0.0 is too old" and cost a release run.
+          # This check has now been wrong twice, in both directions, and each
+          # mistake cost a full release run:
+          #   1. FileMajorPart/FileMinorPart — ISCC.exe leaves the fixed
+          #      VS_FIXEDFILEINFO block zeroed, so the floor read 0.0 and
+          #      rejected the 6.x chocolatey had just installed.
+          #   2. ProductVersion/FileVersion — zeroed too. Regexing them out
+          #      produced a confident, wrong 0.0 and threw again, without ever
+          #      reaching the fallback meant to cover exactly that case.
           #
-          # Do NOT cast ProductVersion to [version] either: it is a free-form
-          # display string (git.exe reports '2.48.1.windows.1') and the cast
-          # throws under the $ErrorActionPreference='Stop' above. Regex out the
-          # leading major.minor instead, and fall back to asking the compiler
-          # for its own banner.
+          # The lesson is not "find a third field". It is that the floor was
+          # never load-bearing: ISCC itself rejects ArchitecturesAllowed=
+          # x64compatible when it is too old, and that is the authoritative
+          # answer. The check only ever existed to turn ISCC's terse "Unknown
+          # value" into a sentence naming the cause — so it now runs AFTER the
+          # compile, on the failure path, where being wrong costs nothing.
+          #
+          # Do not cast these strings to [version] either: the field is
+          # free-form (git.exe reports '2.48.1.windows.1') and the cast throws
+          # under the $ErrorActionPreference='Stop' above.
           $fi = (Get-Item $iscc).VersionInfo
           $isccVersion = $null
           foreach ($s in @($fi.ProductVersion, $fi.FileVersion)) {
             if ($s -and $s -match '(\d+)\.(\d+)') {
-              $isccVersion = [version]::new([int]$Matches[1], [int]$Matches[2])
-              break
+              $candidate = [version]::new([int]$Matches[1], [int]$Matches[2])
+              # A 0.x reading means "this binary does not report a version",
+              # not "this binary is ancient".
+              if ($candidate.Major -gt 0) { $isccVersion = $candidate; break }
             }
           }
-          if (-not $isccVersion) {
-            # A bare invocation prints "Inno Setup N.n ... Command-Line Compiler"
-            # and exits non-zero. Shield both the exit code and pwsh 7.4's
-            # native-command error preference, or probing the version becomes
-            # its own way to fail the release.
-            $prev = $PSNativeCommandUseErrorActionPreference
-            try {
-              $PSNativeCommandUseErrorActionPreference = $false
-              $banner = & $iscc 2>&1 | Out-String
-            } catch {
-              $banner = ''
-            } finally {
-              $PSNativeCommandUseErrorActionPreference = $prev
-              $global:LASTEXITCODE = 0
-            }
-            if ($banner -match 'Inno Setup\s+(\d+)\.(\d+)') {
-              $isccVersion = [version]::new([int]$Matches[1], [int]$Matches[2])
-            }
-          }
-
-          # The floor is advisory, never a veto. Its whole purpose is a clear
-          # message instead of ISCC's "Unknown value" from a compiler most
-          # people have never run — so when the version cannot be read, say so
-          # and let ISCC speak for itself. A guard that cannot tell 6.5 from
-          # 0.0 must not be allowed to cancel a release.
-          if ($null -eq $isccVersion) {
-            Write-Warning "Could not read a version from $iscc. Proceeding — if it predates 6.3, ISCC will reject ArchitecturesAllowed=x64compatible itself."
-          } elseif ($isccVersion -lt [version]'6.3') {
-            throw "Inno Setup $isccVersion is too old: openote.iss uses ArchitecturesAllowed=x64compatible, which needs 6.3+."
-          } else {
+          if ($isccVersion) {
             Write-Host "ISCC $isccVersion at $iscc"
+          } else {
+            Write-Host "ISCC at $iscc (the binary reports no usable version)"
           }
 
           $stage = "openote-$env:VERSION-windows-x64"
@@ -232,7 +216,12 @@ jobs:
             "/DAppVersion=$env:VERSION" `
             "/DStageDir=$(Resolve-Path $stage)" `
             packaging/windows/openote.iss
-          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) {
+            $reported = if ($isccVersion) { "$isccVersion" } else { "no version" }
+            throw "ISCC failed with exit code $LASTEXITCODE. If the error above " +
+              "mentions ArchitecturesAllowed, openote.iss needs Inno Setup 6.3+ " +
+              "for x64compatible and this compiler reports $reported."
+          }
           Move-Item packaging/windows/openote-*-setup.exe . -Force
 
       - uses: actions/upload-artifact@v4

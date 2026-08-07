@@ -83,12 +83,19 @@ half of the workflow reached its first real execution here.
   parses, and `release_assets_test.dart` fails in milliseconds if the sequence
   ever comes back.
 - **The Windows installer was rejected by its own version check.** `ISCC.exe`
-  leaves its numeric version fields zeroed, so the guard asserting Inno Setup
-  6.3+ read `0.0` and refused a perfectly capable 6.x. The version is now read
-  from the string fields or the compiler's own banner, and — the part that
-  matters — a version it cannot read is a warning rather than a veto. Finding
-  the compiler no longer recursively scans both Program Files trees, which was
-  costing 4m24s on top of an already-finished build.
+  reports no version at all — the numeric fields *and* the `ProductVersion` /
+  `FileVersion` strings are all zeroed — so the guard asserting Inno Setup 6.3+
+  read `0.0` and refused the perfectly capable 6.x that had just been
+  installed. It took two attempts to accept that: reading a different field
+  produced a confident, wrong `0.0` and failed the release a second time.
+
+  The check no longer gates anything. ISCC itself rejects
+  `ArchitecturesAllowed=x64compatible` when it is too old, and that is the
+  authoritative answer; the guard only ever existed to turn ISCC's terse
+  `Unknown value` into a sentence naming the cause, so it now runs *after* the
+  compile, on the failure path, where being wrong costs nothing. Locating the
+  compiler also stopped recursively scanning both Program Files trees —
+  4m24s, spent after the build had already finished, now about a second.
 
 ---
 
