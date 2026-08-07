@@ -165,6 +165,24 @@ void main() {
           reason: 'inserting lines must re-base every tag below the insert');
     });
 
+
+    test('with nothing focused it declines, so the caller can fall back',
+        () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp, app, _) = await fixture();
+      addTearDown(() {
+        repo.dispose();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      // No editor open: Insert ▸ Image must still produce a picture block
+      // rather than silently doing nothing.
+      app.select(null);
+      expect(insertImageAtCaret(app, png, 'image/png'), isNull);
+    });
+
     test('the same bytes twice reuse one blob', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, tmp, app, b) = await fixture();
@@ -185,6 +203,92 @@ void main() {
           .toSet();
       expect(refs.length, 1,
           reason: 'content-addressed storage: one copy, two references');
+    });
+  });
+
+  // `insertImageAtCaret` inserts at the LIVE caret, and `app.activeEditor`
+  // only exists once a real editing session is mounted — so this needs widgets.
+  // The repo is built in setUp, NOT in the test body: `testWidgets` runs inside
+  // a fake-async zone where `Repository.openAt`'s real file I/O never
+  // completes, and awaiting it in there hangs the run forever.
+  group('Insert ▸ Image with a caret in a box', () {
+    late Repository repo;
+    late Directory tmp;
+    late AppState app;
+    late Block block;
+    final png = Uint8List.fromList(List.filled(64, 9));
+
+    setUp(() async {
+      if (!haveSqlite) return;
+      // `addBlob` records a `blob.put` op, which writes the device seq, which
+      // arms Repository's 400 ms workspace debounce — a pending timer at
+      // teardown, which `testWidgets` fails on, and which would start real disk
+      // I/O inside the fake-async zone if it were allowed to fire. The op log
+      // is not what this test is about.
+      AppState.syncLogEnabled = false;
+      tmp = Directory.systemTemp.createTempSync('onote_insertimg_');
+      repo = await Repository.openAt(tmp);
+      final nb = await repo.createNotebook('Insert');
+      app = AppState(repo)
+        ..notebookId = nb.id
+        ..spellCheckEnabled = false;
+      app.reloadNodes();
+      await app.selectPage(
+          app.nodes.firstWhere((n) => n.kind == NodeKind.page).id);
+      block = app.addBlock(Block(
+        type: BlockType.text,
+        x: 60,
+        y: 60,
+        w: 260,
+        content: {'text': 'lecture notes'},
+      ));
+      app.select(null);
+    });
+
+    tearDown(() {
+      AppState.syncLogEnabled = true; // shared static — put it back
+      if (!haveSqlite) return;
+      app.cancelPendingSave();
+      repo.dispose();
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    testWidgets('the picture lands in the box, not over it', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await t.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ListenableBuilder(
+            listenable: app,
+            builder: (_, __) => Stack(children: [
+              BlockView(block: block, app: app, controller: app.canvas),
+            ]),
+          ),
+        ),
+      ));
+      await t.pump();
+
+      // Insert ▸ Image hard-coded a standalone block at the page centre and
+      // never looked at the caret — so from the MENU, "text and a picture in
+      // one box" was impossible, while paste and drag-and-drop had done it all
+      // along. Both routes now go through this one function.
+      final before = app.blocks.length;
+      app.select(block.id, edit: true);
+      await t.pump();
+      await t.pump();
+      expect(app.activeEditor, isNotNull, reason: 'precondition: live caret');
+
+      final into = insertImageAtCaret(app, png, 'image/png');
+      await t.pump();
+
+      expect(into?.id, block.id);
+      expect(app.blocks.length, before,
+          reason: 'a standalone block would have covered the writing');
+      expect(block.content['text'] as String, contains('](sha256:'));
+      expect(block.content['autoWidth'], false,
+          reason: 'a 64-hex reference must not pin the box to its max width');
+      app.cancelPendingSave();
     });
   });
 

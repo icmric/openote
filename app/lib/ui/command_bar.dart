@@ -3,6 +3,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../canvas/media_drop.dart';
 import '../export/markdown_export.dart';
 import '../export/open_export.dart';
 import '../export/pdf_export.dart';
@@ -714,6 +715,13 @@ class _CommandBarState extends State<CommandBar> {
       'webp' => 'image/webp',
       _ => 'image/png',
     };
+    // Caret first. If a text box has focus the picture belongs IN it, in the
+    // flow of the writing — the same thing paste and drag-and-drop already do.
+    // This route used to skip that check entirely and always drop a standalone
+    // block at the page centre, which is why "multiple types of media in a
+    // single box" looked impossible to anyone who reached for the menu.
+    if (insertImageAtCaret(app, bytes, mime) != null) return;
+
     final hash = app.addBlob(bytes, mime);
     final c = _center();
     final b = app.addBlock(Block(

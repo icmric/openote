@@ -75,6 +75,30 @@ Block insertImageBytes(AppState app, Uint8List bytes, String mime, Offset at,
 ///
 /// Returns the block it went into, or null when the drop missed every text
 /// box (the caller then falls back to [insertImageBytes]).
+/// Put an image into the text box that is being edited RIGHT NOW, at the
+/// caret. Returns the block it went into, or null when nothing editable has
+/// focus — the caller then falls back to making a standalone image block.
+///
+/// Exists because "insert an image" arrived by four routes and only three of
+/// them could do this. Ctrl+V at the caret, Ctrl+V on the canvas and
+/// drag-and-drop all inline; **Insert ▸ Image never did** — it hard-coded a
+/// standalone block at the page centre and never looked at the caret. That is
+/// the discoverable route, the one a menu-first user takes, so from the menu
+/// the answer to "can I have text and a picture in one box?" was simply no.
+Block? insertImageAtCaret(AppState app, Uint8List bytes, String mime) {
+  final ae = app.activeEditor;
+  if (ae == null) return null;
+  final target = ae.block;
+  if (target.type != BlockType.text) return null;
+  final hash = app.addBlob(bytes, mime);
+  // AppState owns undo, commit and notify for the caret path.
+  app.insertTextAtActiveCursor('\n![](sha256:$hash)\n');
+  // Auto-width measures the RAW markdown, and a 64-hex-character line would
+  // pin the box to its maximum width the moment the image landed.
+  target.content['autoWidth'] = false;
+  return target;
+}
+
 Block? insertImageIntoTextAt(
     AppState app, Uint8List bytes, String mime, Offset pagePt,
     {required bool dark}) {
