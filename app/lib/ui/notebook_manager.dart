@@ -145,6 +145,14 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 _sectionLabel('Import into a new notebook'),
                 _importRow(),
               ],
+              // Repeated imports of the same notebook. Shown here rather than
+              // behind a button because the whole problem is that nothing ever
+              // pointed them out: a real workspace was holding 586 MB, of which
+              // ~380 MB was four copies of one OneNote import made while
+              // getting the importer working. Each import correctly mints
+              // fresh ids, so nothing can merge them automatically — only a
+              // person can say they are the same thing, and only if shown.
+              ..._duplicateSection(),
             ],
           ),
         ),
@@ -256,6 +264,98 @@ class _NotebookManagerState extends State<_NotebookManager> {
   }
 
   bool _importOpen = false;
+
+  /// Groups of notebooks that look like the same import repeated.
+  ///
+  /// Computed once per open (a container query and a directory walk each), and
+  /// silent when there is nothing to say — a panel that shows an empty
+  /// "Duplicates" heading to everyone teaches people to ignore the heading.
+  ///
+  /// Nothing is auto-selected and nothing is deleted here: the row deletes to
+  /// the recycle bin through the same `deleteNotebook` path as any other, so
+  /// a mistake is recoverable for the retention period.
+  late final List<DuplicateGroup> _dupes = app.findDuplicateNotebooks();
+
+  List<Widget> _duplicateSection() {
+    if (_dupes.isEmpty) return const [];
+    return [
+      const SizedBox(height: 6),
+      _sectionLabel('Possible duplicates · same title and same page count'),
+      for (final g in _dupes)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(6, 2, 6, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${g.members.length} copies of "${g.title}" · ${g.pages} pages '
+                'each · ${_bytes(g.reclaimable)} would come back',
+                style: const TextStyle(fontSize: 12, height: 1.35),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                // Said explicitly, because "delete the duplicates" is a
+                // frightening sentence unless the safest one is named.
+                'Keep the largest — an import interrupted part way through is '
+                'the smaller one. Deleted copies go to the recycle bin.',
+                style: TextStyle(
+                    fontSize: 11,
+                    height: 1.35,
+                    color: context.surfaces.textSecondary),
+              ),
+              const SizedBox(height: 4),
+              for (final m in g.members)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, bottom: 2),
+                  child: Row(children: [
+                    Icon(
+                        m == g.members.first
+                            ? Icons.star_outline
+                            : Icons.content_copy_outlined,
+                        size: 14,
+                        color: context.surfaces.textSecondary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                          '${m.title} · ${_bytes(m.bytes)}'
+                          '${m == g.members.first ? '  (largest — keep)' : ''}'
+                          '${m.isOpen ? '  (open)' : ''}',
+                          style: const TextStyle(fontSize: 11),
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    if (m != g.members.first && !m.isOpen)
+                      TextButton(
+                        style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 8)),
+                        onPressed: _busyId == m.id
+                            ? null
+                            : () async {
+                                setState(() => _busyId = m.id);
+                                await app.deleteNotebook(m.id);
+                                if (!mounted) return;
+                                setState(() {
+                                  _busyId = null;
+                                  _dupes.remove(g);
+                                });
+                              },
+                        child: const Text('Delete',
+                            style: TextStyle(fontSize: 11)),
+                      ),
+                  ]),
+                ),
+            ],
+          ),
+        ),
+    ];
+  }
+
+  static String _bytes(int n) {
+    if (n >= 1 << 30) return '${(n / (1 << 30)).toStringAsFixed(1)} GB';
+    if (n >= 1 << 20) return '${(n / (1 << 20)).toStringAsFixed(0)} MB';
+    if (n >= 1 << 10) return '${(n / (1 << 10)).toStringAsFixed(0)} KB';
+    return '$n B';
+  }
 
   Widget _sectionLabel(String text) => Padding(
         padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),

@@ -64,7 +64,7 @@ flutter:
     - assets/icon/openote_icon.png
     # Spell-check wordlist (TEXT-11). Loaded lazily on a background isolate the
     # first time text is edited — never at startup.
-    - assets/dict/en_us.txt
+    - assets/dict/en_us.txt.gz
   # Bundled type (style guide §4.1): the app previously rendered in each OS's
   # system font, so no two platforms looked alike. Inter is the UI + note face,
   # JetBrains Mono the code face; both OFL-1.1 (texts beside the assets, rows
@@ -81,9 +81,14 @@ flutter:
         - { asset: assets/fonts/inter/Inter-SemiBoldItalic.ttf, weight: 600, style: italic }
         - { asset: assets/fonts/inter/Inter-Bold.ttf, weight: 700 }
         - { asset: assets/fonts/inter/Inter-BoldItalic.ttf, weight: 700, style: italic }
+    # Regular and Bold only. The italic faces were 557 KB for a combination
+    # nothing in the app's own chrome asks for — code spans are upright, and
+    # the only route to italic mono is a user setting a text block to this
+    # family in the font picker and then italicising part of it. That still
+    # works; the engine synthesises the oblique, which for a monospaced face
+    # at body size is a difference nobody has reported noticing. Add the faces
+    # back if anyone does.
     - family: JetBrains Mono
       fonts:
         - { asset: assets/fonts/jetbrains-mono/JetBrainsMono-Regular.ttf, weight: 400 }
-        - { asset: assets/fonts/jetbrains-mono/JetBrainsMono-Italic.ttf, weight: 400, style: italic }
         - { asset: assets/fonts/jetbrains-mono/JetBrainsMono-Bold.ttf, weight: 700 }
-        - { asset: assets/fonts/jetbrains-mono/JetBrainsMono-BoldItalic.ttf, weight: 700, style: italic }

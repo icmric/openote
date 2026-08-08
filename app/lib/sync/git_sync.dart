@@ -185,14 +185,28 @@ class GitSync {
 # The `.onote` container is a LOCAL CACHE (ADR-0006 §3): a WAL SQLite database
 # rewritten on every save. Committing it would put a large opaque binary in
 # every commit, and two machines pulling each other's copy is the exact
-# corruption the op logs exist to prevent. The logs, blobs and media below are
-# append-only and content-addressed, so they merge without conflicts.
+# corruption the op logs exist to prevent. The logs and blobs are append-only
+# and content-addressed, so they merge without conflicts.
 *.onote
 *.onote-wal
 *.onote-shm
 *.part
 .DS_Store
 Thumbs.db
+
+# Videos stay on the computer they were added to.
+#
+# GitHub rejects any single file over 100 MB outright, and one lecture
+# recording is routinely larger than that — so a notebook that committed its
+# videos would push fine until the day someone dropped a recording in, and
+# then never push again. Worse, the rejection is permanent: the file is in the
+# history by then, and deleting it later does not remove it from what every
+# future clone downloads.
+#
+# The op log still records that the video is THERE, so the other device shows
+# the block and says the file is missing rather than losing the reference.
+# Delete this line for a notebook whose videos are small and worth syncing.
+media/
 ''';
 
   /// Everything staged, committed. Returns a result whose [GitResult.noop] is

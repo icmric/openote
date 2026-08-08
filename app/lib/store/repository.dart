@@ -622,6 +622,51 @@ class Repository {
     return ref;
   }
 
+  /// Hand back the space a notebook is holding but no longer using.
+  ///
+  /// Two distinct kinds of waste, and they need different instruments:
+  ///
+  /// * **Free pages inside the container.** Deleting a 60-slide deck frees
+  ///   SQLite pages, but the FILE keeps its high-water mark and reuses them
+  ///   internally. `VACUUM` rewrites the database without them. The real
+  ///   workspace's 97 MB container was holding 742 free pages ≈ 3 MB.
+  /// * **The write-ahead log.** See [checkpointAndClose] — measured at 4–8 MB
+  ///   per notebook, and on one of them larger than the database itself.
+  ///
+  /// `VACUUM` and not `PRAGMA incremental_vacuum`: the incremental form only
+  /// releases pages the auto-vacuum bookkeeping knows about, and every
+  /// notebook that exists today was created before that pragma was set. A full
+  /// VACUUM works on both, and this runs from an explicit user action rather
+  /// than on a timer, so its cost is one the user asked for.
+  ///
+  /// Returns the bytes reclaimed, which is the only number worth showing.
+  int reclaimFreeSpace(String notebookId) {
+    final ref = notebooks.where((n) => n.id == notebookId).firstOrNull ??
+        trashedNotebooks.where((n) => n.id == notebookId).firstOrNull;
+    if (ref == null) return 0;
+    final file = File(ref.file);
+    final before = file.existsSync() ? file.lengthSync() : 0;
+    final wal = File('${ref.file}-wal');
+    final walBefore = wal.existsSync() ? wal.lengthSync() : 0;
+    try {
+      final db = _db(notebookId);
+      // Checkpoint FIRST. VACUUM on a database with a large WAL rewrites the
+      // pages it is about to fold in, so doing it the other way round does the
+      // work twice and leaves the WAL behind anyway.
+      db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
+      db.execute('VACUUM;');
+      db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
+    } catch (_) {
+      // A locked database or a read-only volume. Nothing is lost — this is
+      // housekeeping — and reporting zero reclaimed is the honest answer.
+      return 0;
+    }
+    final after = file.existsSync() ? file.lengthSync() : 0;
+    final walAfter = wal.existsSync() ? wal.lengthSync() : 0;
+    final freed = (before - after) + (walBefore - walAfter);
+    return freed > 0 ? freed : 0;
+  }
+
   /// A free `<base>.onotebook` directory in the workspace, for a notebook
   /// arriving as logs rather than as a container.
   String freeLogDirPath(String title) {
@@ -1133,7 +1178,7 @@ class Repository {
     _writePending = false;
     _disposed = true;
     for (final db in _open.values) {
-      db.dispose();
+      checkpointAndClose(db);
     }
     _open.clear();
   }

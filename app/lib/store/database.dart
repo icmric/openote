@@ -18,6 +18,18 @@ const onoteFormatMajor = 1;
 
 Database openOnote(String path, {required String notebookId, required String title}) {
   final db = sqlite3.open(path);
+  // **Before `journal_mode`, and before any table exists.** `auto_vacuum` can
+  // only be set on a database with no pages — after that it takes a full
+  // `VACUUM` to change, which is why this line's position is load-bearing
+  // rather than stylistic.
+  //
+  // INCREMENTAL rather than FULL: FULL repacks on every commit, moving pages
+  // during ordinary saves. INCREMENTAL only records what is free, and
+  // [reclaimFreeSpace] spends it when the user asks. Without either, the file
+  // holds its high-water mark forever — a notebook that once contained a
+  // 60-slide deck stays that size after the deck is deleted, which is the
+  // shape of complaint that started this work.
+  db.execute('PRAGMA auto_vacuum=INCREMENTAL;');
   db.execute('PRAGMA journal_mode=WAL;');
   // WAL's recommended durability level: commits don't each fsync (a power cut
   // can lose the last few commits but never corrupts). Import measured ~700
@@ -46,6 +58,32 @@ Database openOnote(String path, {required String notebookId, required String tit
     _seedNotebook(db, notebookId: notebookId, title: title);
   }
   return db;
+}
+
+/// Fold the write-ahead log back into the database, then close.
+///
+/// **Measured, on a real workspace:** `My Notebook.onote` was 2.8 MB with a
+/// **4.1 MB** `-wal` beside it, and a 94 MB container carried 7.4 MB. SQLite
+/// only checkpoints automatically at a page threshold and never truncates the
+/// file, so a session that ends between thresholds leaves the whole WAL on
+/// disk — permanently, because the next open starts appending again rather
+/// than reclaiming it.
+///
+/// `TRUNCATE` (not `PASSIVE` or `FULL`) is the mode that actually returns the
+/// space: the other two fold the pages in and leave the file at its
+/// high-water mark, which is exactly the state being fixed.
+///
+/// Best-effort. A checkpoint can legitimately fail — another connection is
+/// mid-read, the volume is gone — and a failure here must never stop the app
+/// closing. The data is already durable either way; this is about the file's
+/// size, not its contents.
+void checkpointAndClose(Database db) {
+  try {
+    db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
+  } catch (_) {
+    // Nothing to do about it, and nothing at risk.
+  }
+  db.dispose();
 }
 
 /// Idempotent DDL — safe to run on every open (all `IF NOT EXISTS`).

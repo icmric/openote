@@ -1839,6 +1839,89 @@ class AppState extends ChangeNotifier
     );
   }
 
+  /// Compact a notebook's container and hand back the bytes. See
+  /// [Repository.reclaimFreeSpace].
+  ///
+  /// Saves are flushed first — VACUUM on a database with pending work in the
+  /// write-ahead log does that work twice.
+  Future<int> reclaimFreeSpace(String nb) async {
+    await flushSave();
+    final freed = _repo.reclaimFreeSpace(nb);
+    if (freed > 0) notifyListeners();
+    return freed;
+  }
+
+  /// Notebooks that look like repeated imports of the same source.
+  ///
+  /// **Why this exists.** A real workspace held 586 MB, of which ~380 MB was
+  /// FOUR copies of one OneNote notebook — imported repeatedly while getting
+  /// the importer working. Nothing could have deduplicated them automatically:
+  /// each import correctly mints fresh ids, so to the registry they are four
+  /// unrelated notebooks. Only a person can say they are the same thing, and
+  /// they cannot say it if nothing shows them.
+  ///
+  /// **The heuristic is deliberately narrow**, because the cost of a false
+  /// positive is offering to delete someone's distinct notebook. A group
+  /// requires the SAME page count, the SAME section count and a title that
+  /// normalises to the same string — a real second term's notes will differ in
+  /// page count almost immediately. Size is not part of the test (an import
+  /// interrupted halfway would differ) and neither is creation time.
+  ///
+  /// Nothing here deletes anything. It returns groups; the manager shows them
+  /// with sizes and lets the user choose, which is the only safe shape.
+  List<DuplicateGroup> findDuplicateNotebooks() {
+    /// Titles as a person compares them: "Eric - Computing Science
+    /// Honoursonepkg-2" and "Eric - Computing Science Honours-2" are the same
+    /// import twice, because the importer appends its own suffixes and the
+    /// workspace appends `-2`, `-3` for name collisions.
+    String key(NotebookRef n) {
+      final counts = _repo.notebookCounts(n.id);
+      var t = n.title.toLowerCase().trim();
+      t = t.replaceAll(RegExp(r'(onepkg|\.one|\.onepkg)'), '');
+      t = t.replaceAll(RegExp(r'[\s_-]*\(?copy\)?'), '');
+      t = t.replaceAll(RegExp(r'[\s_-]*\d+$'), ''); // trailing -2, -3, " 2"
+      t = t.replaceAll(RegExp(r'[^a-z0-9]+'), '');
+      return '$t|${counts.sections}|${counts.pages}';
+    }
+
+    final groups = <String, List<NotebookRef>>{};
+    for (final n in _repo.notebooks) {
+      // A notebook with no pages is a fresh empty one, and every fresh empty
+      // notebook would otherwise match every other.
+      if (_repo.notebookCounts(n.id).pages == 0) continue;
+      groups.putIfAbsent(key(n), () => []).add(n);
+    }
+
+    final out = <DuplicateGroup>[];
+    for (final e in groups.entries) {
+      if (e.value.length < 2) continue;
+      final members = [
+        for (final n in e.value)
+          (
+            ref: n,
+            bytes: _fileBytes(n.file) + _dirBytesSync(Directory(n.logDirPath)),
+          )
+      ]..sort((a, b) => b.bytes.compareTo(a.bytes));
+      out.add(DuplicateGroup(
+        title: members.first.ref.title,
+        pages: _repo.notebookCounts(members.first.ref.id).pages,
+        members: [
+          for (final m in members)
+            DuplicateMember(
+                id: m.ref.id,
+                title: m.ref.title,
+                bytes: m.bytes,
+                // The one currently open is never the suggested casualty, and
+                // neither is the largest — the biggest is the most likely to
+                // be the complete import.
+                isOpen: m.ref.id == notebookId)
+        ],
+      ));
+    }
+    out.sort((a, b) => b.reclaimable.compareTo(a.reclaimable));
+    return out;
+  }
+
   /// Notebook files on disk that no registry entry — live or trashed — claims.
   ///
   /// Looks in this workspace and one level into each detected cloud folder
@@ -1869,7 +1952,16 @@ class AppState extends ChangeNotifier
           final ext = p.extension(e.path).toLowerCase();
           final isLog = e is Directory && ext == '.onotebook';
           final isContainer = e is File && ext == '.onote';
-          if (!isLog && !isContainer) continue;
+          // A `-wal` or `-shm` whose database is gone. SQLite leaves both
+          // behind if a container is deleted while they exist, and then
+          // nothing ever looks at them again — the real workspace had a 32 KB
+          // `-shm` and a `-wal` for a notebook that no longer exists. They are
+          // only ever orphans when the `.onote` is absent; a live pair belongs
+          // to a working database and deleting it would be destructive.
+          final isStrayWal = e is File &&
+              (ext == '.onote-wal' || ext == '.onote-shm') &&
+              !File('${p.withoutExtension(e.path)}.onote').existsSync();
+          if (!isLog && !isContainer && !isStrayWal) continue;
           final canon = p.canonicalize(e.path);
           if (claimed.contains(canon) || !seen.add(canon)) continue;
           out.add(OrphanFile(
@@ -1913,6 +2005,26 @@ class AppState extends ChangeNotifier
     } catch (_) {
       return 0;
     }
+  }
+
+  /// [_dirBytes] without the await, for callers that are already synchronous.
+  ///
+  /// Only used by the duplicates scan, which walks a handful of directories in
+  /// response to a click. The async version stays the default for anything
+  /// that might touch a big tree while the user is typing.
+  int _dirBytesSync(Directory dir) {
+    if (!dir.existsSync()) return 0;
+    var total = 0;
+    try {
+      for (final e in dir.listSync(recursive: true, followLinks: false)) {
+        if (e is File) {
+          try {
+            total += e.lengthSync();
+          } catch (_) {/* vanished mid-walk */}
+        }
+      }
+    } catch (_) {/* unreadable; report what we counted */}
+    return total;
   }
 
   Future<int> _dirBytes(Directory dir) async {
@@ -5009,6 +5121,51 @@ class NotebookStorage {
 }
 
 /// A `.onote` or `.onotebook` on disk that no registry entry claims.
+/// One notebook inside a [DuplicateGroup].
+class DuplicateMember {
+  const DuplicateMember({
+    required this.id,
+    required this.title,
+    required this.bytes,
+    required this.isOpen,
+  });
+
+  final String id;
+  final String title;
+
+  /// Container plus log directory — what deleting this would actually return.
+  final int bytes;
+
+  /// The notebook currently open. Never proposed as the one to delete.
+  final bool isOpen;
+}
+
+/// Notebooks that look like the same thing imported more than once.
+///
+/// See [AppState.findDuplicateNotebooks] for the heuristic and why it is
+/// deliberately narrow.
+class DuplicateGroup {
+  const DuplicateGroup({
+    required this.title,
+    required this.pages,
+    required this.members,
+  });
+
+  final String title;
+  final int pages;
+
+  /// Largest first, so `members.first` is the most likely complete import.
+  final List<DuplicateMember> members;
+
+  /// What would come back if every copy but the largest went.
+  ///
+  /// The largest, not the oldest or the open one: an import interrupted part
+  /// way through is smaller than a complete one, and keeping the biggest is
+  /// the choice that cannot lose pages.
+  int get reclaimable =>
+      members.skip(1).fold(0, (sum, m) => sum + m.bytes);
+}
+
 class OrphanFile {
   const OrphanFile({
     required this.path,

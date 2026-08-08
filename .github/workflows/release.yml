@@ -113,7 +113,12 @@ jobs:
         working-directory: app
         run: |
           flutter pub get
+          # 4.0 MB of web-only PDFium WASM that desktop cannot execute; the
+          # package documents this command for release builds.
+          dart run pdfrx:remove_wasm_modules
+          dart run tool/strip_web_assets.dart
           flutter build windows --release --build-name=$env:VERSION
+          dart run tool/shake_icons.dart windows
 
       # The FFI loader (app/lib/core/onote_ffi.dart) looks next to the exe
       # first — the DLL must sit beside openote.exe in the zip. The CMake hook
@@ -298,7 +303,10 @@ jobs:
         working-directory: app
         run: |
           flutter pub get
+          dart run pdfrx:remove_wasm_modules
+          dart run tool/strip_web_assets.dart
           flutter build linux --release --build-name="$VERSION"
+          dart run tool/shake_icons.dart linux
 
       # Loader contract: libonote_core.so next to the 'openote' binary. The
       # CMake hook installs it; this is belt-and-braces.
@@ -427,6 +435,8 @@ jobs:
         working-directory: app
         run: |
           flutter pub get
+          dart run pdfrx:remove_wasm_modules
+          dart run tool/strip_web_assets.dart
           flutter build macos --release --build-name="$VERSION"
 
       # Loader contract: dylib next to the exe = Contents/MacOS/. Inserting it

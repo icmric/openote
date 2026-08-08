@@ -14,6 +14,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:io' show gzip;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -22,7 +23,16 @@ import 'package:flutter/widgets.dart' show TextRange;
 /// Where the bundled list lives. English only for now — a deliberate v0.2
 /// scope cut, with the upgrade path (hunspell dictionaries via the Rust core)
 /// recorded in the release plan rather than half-built here.
-const String kDictionaryAsset = 'assets/dict/en_us.txt';
+/// **Gzipped in the bundle**, and inflated on the isolate that already parses
+/// it. The wordlist is 1.7 MB of plain text and compresses to 443 KB — a 1.3 MB
+/// saving on every install, for a decompression the user never waits for
+/// because this whole path is already off the UI thread.
+///
+/// It also fixes a smaller waste: `rootBundle.loadString` caches the decoded
+/// string forever in `CachingAssetBundle._stringCache`, so the 1.7 MB sat in
+/// memory for the life of the process ON TOP of the parsed dictionary. Loading
+/// bytes and inflating them skips that cache entirely.
+const String kDictionaryAsset = 'assets/dict/en_us.txt.gz';
 
 /// Words the user taught us ("Add to dictionary").
 ///
@@ -115,15 +125,19 @@ class SpellChecker {
   static SpellChecker? get loaded => _instance;
 
   static Future<SpellChecker> _load() async {
-    final raw = await rootBundle.loadString(kDictionaryAsset);
-    final dict = await compute(_parse, raw);
+    final raw = await rootBundle.load(kDictionaryAsset);
+    // Inflate AND parse on the background isolate, in one hop. Doing the
+    // inflate here would put 1.7 MB of decompression on the UI thread for no
+    // reason, and would then have to ship the result across the isolate
+    // boundary anyway.
+    final dict = await compute(_parse, raw.buffer.asUint8List());
     final checker = SpellChecker(dict);
     _instance = checker;
     return checker;
   }
 
-  static SpellDictionary _parse(String raw) =>
-      SpellDictionary.fromLines(const LineSplitter().convert(raw));
+  static SpellDictionary _parse(Uint8List gzipped) => SpellDictionary.fromLines(
+      const LineSplitter().convert(utf8.decode(gzip.decode(gzipped))));
 
   /// Inject a dictionary (tests, and a future language switch).
   @visibleForTesting

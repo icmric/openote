@@ -99,6 +99,23 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-fatal-infos
 
+      # pdfrx bundles PDFium as a WASM module for its web target, and its
+      # `assets/` declaration ships it on every platform — 4.0 MB of a 101 MB
+      # Windows bundle that nothing on desktop can execute. The package
+      # documents this exact command for release builds, and the debug banner
+      # nags about it on every run.
+      #
+      # Between `pub get` and `build`, because `pub get` restores the files.
+      - name: Drop the PDFium WASM module (desktop cannot run it)
+        run: dart run pdfrx:remove_wasm_modules
+        working-directory: app
+
+      # media_kit's HLS shim and wakelock_plus's no-sleep shim are browser
+      # payloads that desktop never loads. See app/tool/strip_web_assets.dart.
+      - name: Drop other packages' web-only assets
+        run: dart run tool/strip_web_assets.dart
+        working-directory: app
+
       - name: Build (Linux)
         if: runner.os == 'Linux'
         run: flutter build linux --release
@@ -110,6 +127,16 @@ jobs:
       - name: Build (Windows)
         if: runner.os == 'Windows'
         run: flutter build windows --release
+
+      # Flutter's desktop build never subsets the Material icon font, because
+      # `tool_backend.dart` passes `-dTreeShakeIcons="true"` WITH the quotes
+      # and the shaker tests for `true` without them. 1.6 MB shipped whole in
+      # every Windows and Linux release. macOS is unaffected and this is a
+      # no-op there. See app/tool/shake_icons.dart.
+      - name: Subset the icon font (works around a Flutter SDK bug)
+        if: runner.os != 'macOS'
+        run: dart run tool/shake_icons.dart
+        working-directory: app
 
       - name: Test
         env:
