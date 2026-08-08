@@ -115,6 +115,22 @@ class _AppShellState extends State<AppShell> {
         app.toggleNavCollapsed();
         return true;
       }
+      // Ctrl+N — a new page beside the one you are on. OneNote's chord, and
+      // it sits here with the other navigator chords, BEFORE the
+      // typing early-return: no text field inserts a character for Ctrl+N, and
+      // needing to leave the page you are writing on in order to make the next
+      // one is exactly the friction a shortcut exists to remove.
+      //
+      // Ctrl+Shift+N makes a SUB-page of the current one, which is the other
+      // half of the same thought and has no other keyboard route at all.
+      if (k == LogicalKeyboardKey.keyN) {
+        if (shift) {
+          unawaited(app.addSubpage());
+        } else {
+          unawaited(app.addPage());
+        }
+        return true;
+      }
     }
 
     // While typing: allow only formatting accelerators; everything else

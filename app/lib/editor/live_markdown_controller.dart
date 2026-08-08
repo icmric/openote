@@ -259,8 +259,21 @@ class LiveMarkdownController extends TextEditingController {
   bool _touches(int a, int b, int lo, int hi) =>
       lo >= 0 && hi >= a && lo <= b;
 
-  TextStyle _hidden(TextStyle base) =>
-      base.copyWith(color: const Color(0x00000000), fontSize: 0.1);
+  /// Text that is laid out but must occupy no space.
+  ///
+  /// `letterSpacing` and `wordSpacing` are added PER CHARACTER in logical
+  /// pixels and are not scaled by `fontSize`, so shrinking the font alone left
+  /// the base style's 0.25px per character intact — which over the ~25
+  /// characters of an image reference is about one character of visible gap.
+  /// That was the picture "sitting about 1 char width from the left edge", and
+  /// the same phantom width is what pushed a full-width picture onto the next
+  /// line. Both have to be zeroed, not just the size.
+  TextStyle _hidden(TextStyle base) => base.copyWith(
+        color: const Color(0x00000000),
+        fontSize: 0.01,
+        letterSpacing: 0,
+        wordSpacing: 0,
+      );
   TextStyle _dim(TextStyle base) =>
       base.copyWith(color: OnoteColors.graphite400);
 
@@ -294,11 +307,15 @@ class LiveMarkdownController extends TextEditingController {
           fontSize: (base.fontSize ?? 14) * 0.85);
       final bytes = _resolveImage(img.group(3)!);
       if (bytes != null && line.isNotEmpty) {
-        out.add(TextSpan(
-            text: line.substring(0, line.length - 1),
-            style: _hidden(base)));
+        // The placeholder goes FIRST and stands for the line's first
+        // character; the rest of the reference trails behind it, hidden. The
+        // other way round — hidden run first — put every one of those
+        // characters between the left edge and the picture, and no amount of
+        // shrinking makes N characters occupy exactly nothing. Leading with
+        // the picture makes flush-left exact rather than merely close, and
+        // leaves the unavoidable remainder somewhere it cannot be seen.
         out.add(_SourceSpan(
-          source: line.substring(line.length - 1),
+          source: line.substring(0, 1),
           alignment: PlaceholderAlignment.top,
           child: _EditImage(
             // Keyed by line so the drag state belongs to THIS picture, and is
@@ -315,6 +332,7 @@ class LiveMarkdownController extends TextEditingController {
             onResize: (w, h) => resizeImageLine(lineStart, lineEnd, line, w, h),
           ),
         ));
+        out.add(TextSpan(text: line.substring(1), style: _hidden(base)));
         return;
       }
       // No bytes — a blob still syncing, or one that never arrived. The

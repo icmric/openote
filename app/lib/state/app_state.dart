@@ -3304,20 +3304,98 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// A new page beside the one you are on — never one of its children, and
+  /// never above them.
+  ///
+  /// It used to append at the end of the section with `level: 0`, which went
+  /// wrong in two ways. Positions are lexicographic keys, and the importer
+  /// mints them from a millisecond base (`onenote_import.dart`), so a new
+  /// page's key is not reliably after an imported page's — land between a
+  /// parent and its sub-pages at level 0 and those sub-pages become YOURS,
+  /// because nesting is "the contiguous following run of deeper pages". That
+  /// is the reported "it transfers the sub pages to this new page". And a page
+  /// made while reading page 3 of 50 belongs near page 3, not at the bottom.
+  ///
+  /// So the position is not guessed. The section's pages are put in the order
+  /// they should be in and renumbered — the same thing `sortSection` does, and
+  /// bounded the same way, by the number of pages in one section.
   Future<void> addPage({String? sectionId}) async {
     sectionId ??= sectionOf(pageId) ??
         nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
     if (sectionId == null) return;
-    final n = _putNode(
-        notebookId!,
-        TreeNode(
-            kind: NodeKind.page,
-            parentId: sectionId,
-            title: 'Untitled page',
-            position: _nextPosition()));
+
+    final siblings = pagesOf(sectionId);
+    final at = siblings.indexWhere((p) => p.id == pageId);
+    final current = at < 0 ? null : siblings[at];
+
+    final n = TreeNode(
+      kind: NodeKind.page,
+      parentId: sectionId,
+      title: 'Untitled page',
+      // A sibling of what you are on: from a sub-page you get another
+      // sub-page, at the same indent, under the same parent.
+      level: current?.level ?? 0,
+      position: _nextPosition(),
+    );
+
+    if (current == null) {
+      _putNode(notebookId!, n);
+    } else {
+      // Skip past everything indented BENEATH the current page, so the new
+      // page lands after its whole subtree and cannot come between a parent
+      // and its children.
+      var after = at;
+      while (after + 1 < siblings.length &&
+          siblings[after + 1].level > current.level) {
+        after++;
+      }
+      final ordered = [...siblings]..insert(after + 1, n);
+      var seq = nowMs();
+      for (final p in ordered) {
+        p.position = 'a${(seq++).toString().padLeft(15, '0')}';
+        _putNode(notebookId!, p);
+      }
+    }
+
     reloadNodes();
     await selectPage(n.id);
     pendingTitleEdit = n.id; // cursor lands in the title (OneNote behaviour)
+    notifyListeners();
+  }
+
+  /// A new page indented one level UNDER the one you are on.
+  ///
+  /// The deliberate version of what [addPage] must never do by accident. It
+  /// takes no children from the current page — it is inserted directly beneath
+  /// it, ahead of any existing sub-pages, so those stay where they were.
+  Future<void> addSubpage() async {
+    final current = pageId == null ? null : node(pageId!);
+    if (current == null || current.kind != NodeKind.page) return addPage();
+    final sectionId = current.parentId;
+    if (sectionId == null) return addPage();
+
+    final siblings = pagesOf(sectionId);
+    final at = siblings.indexWhere((p) => p.id == current.id);
+    if (at < 0) return addPage();
+
+    final n = TreeNode(
+      kind: NodeKind.page,
+      parentId: sectionId,
+      title: 'Untitled page',
+      // Clamped to the same 0..2 the indent action allows; a page already at
+      // the deepest level gets a sibling rather than an illegal fourth level.
+      level: (current.level + 1).clamp(0, 2),
+      position: _nextPosition(),
+    );
+    final ordered = [...siblings]..insert(at + 1, n);
+    var seq = nowMs();
+    for (final p in ordered) {
+      p.position = 'a${(seq++).toString().padLeft(15, '0')}';
+      _putNode(notebookId!, p);
+    }
+    reloadNodes();
+    await selectPage(n.id);
+    pendingTitleEdit = n.id;
     notifyListeners();
   }
 

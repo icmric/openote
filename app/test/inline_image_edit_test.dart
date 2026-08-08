@@ -129,12 +129,42 @@ void main() {
       expect(laidOut(t).length, controller.text.length);
     });
 
-    testWidgets('the placeholder stands for the LAST character of the line',
+    testWidgets('the placeholder leads the line, and the rest trails hidden',
         (t) async {
+      // Order matters for where the picture is DRAWN. With the hidden
+      // characters first, all ~25 of them sat between the left edge and the
+      // picture — about one character of gap, and enough phantom width to
+      // push a full-width picture onto the next line.
       await edit(t, '![](sha256:abc123)');
       final out = laidOut(t);
-      expect(out.codeUnitAt(out.length - 1), 0xFFFC);
-      expect(out.substring(0, out.length - 1), '![](sha256:abc123');
+      expect(out.codeUnitAt(0), 0xFFFC, reason: 'the picture comes first');
+      expect(out.substring(1), '![](sha256:abc123)'.substring(1));
+    });
+
+    testWidgets('the picture starts hard against the left edge', (t) async {
+      // The bug, measured: "they all sit about 1 char width from the left
+      // edge". letterSpacing is added per character in logical pixels and is
+      // not scaled by fontSize, so the hidden run kept its full 0.25px each
+      // however small the font was made.
+      await edit(t, '![](sha256:abc123 =120x60)');
+      expect(t.getRect(find.byType(Image)).left,
+          closeTo(t.getRect(find.byType(EditableText)).left, 1.5));
+    });
+
+    testWidgets('a picture as wide as the box stays on its own line', (t) async {
+      // The other half of the same phantom width: a full-width picture plus a
+      // few pixels of invisible text does not fit, so it wrapped and "jumped
+      // down a line".
+      await edit(t, '![](sha256:abc123 =400x200)', width: 400, growable: false);
+      final img = t.getRect(find.byType(Image));
+      final field = t.getRect(find.byType(EditableText));
+      // Against a LINE HEIGHT, not a hand-picked tolerance: the question is
+      // "did it wrap", and a wrap costs a whole line. The few pixels that do
+      // remain are the strut's half-leading, which is documented and pinned
+      // separately by the read/edit parity test.
+      const lineHeight = 14 * 1.5;
+      expect(img.top - field.top, lessThan(lineHeight),
+          reason: 'still on the first line, not pushed below one');
     });
 
     testWidgets('the caret still lands where the character is', (t) async {
