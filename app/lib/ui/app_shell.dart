@@ -1088,17 +1088,30 @@ class _SyncChip extends StatelessWidget {
             Icon(s.icon, size: 16, color: color),
             const SizedBox(width: 5),
             Text(s.label, style: TextStyle(fontSize: 11, color: color)),
-            if (s.isSynced && s.hasOtherDevices) ...[
+            // "Check now". Offered whenever this notebook is synced at all,
+            // not only once a second device has appeared: a git-synced
+            // notebook had no manual pull anywhere in the app, and the moment
+            // someone most wants one is right after setting a second machine
+            // up — which is precisely when the device count is still 1.
+            if (s.isSynced) ...[
               const SizedBox(width: 6),
               InkWell(
-                onTap: () async {
-                  final n = await app.syncPull(nb);
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text(n == 0
-                          ? 'Already up to date.'
-                          : 'Pulled $n change${n == 1 ? '' : 's'}.')));
-                },
+                onTap: app.gitBusy
+                    ? null
+                    : () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        // Through git when git is what syncs this notebook:
+                        // `syncPull` only reads what is already on disk, so on
+                        // its own it would report "already up to date" without
+                        // ever having asked the remote.
+                        final n = s.gitRemote != null
+                            ? await app.syncGitNow()
+                            : await app.syncPull(nb);
+                        messenger.showSnackBar(SnackBar(
+                            content: Text(n == 0
+                                ? 'Already up to date.'
+                                : 'Pulled $n change${n == 1 ? '' : 's'}.')));
+                      },
                 child: Icon(Icons.refresh, size: 16, color: scheme.primary),
               ),
             ],

@@ -48,11 +48,20 @@ SyncState syncStateOf(AppState app, String notebookId) {
 String syncStateTooltip(AppState app, String notebookId) {
   final s = app.syncStatus(notebookId);
   if (s.isSynced) {
-    final where = s.folder!.name;
+    // `where`, never `folder!` — a git-synced notebook has no folder, and this
+    // is called for every row of the notebook list.
+    final where = s.where ?? 'a remote';
+    final how = s.isFolderSynced
+        ? 'Syncing through $where — this notebook lives in a folder your '
+            'cloud keeps in step'
+        // Named as a minute behind rather than as continuous. It is the
+        // difference between the two mechanisms, and the moment it matters is
+        // the moment someone closes a laptop mid-sentence.
+        : 'Syncing to $where — pushed a minute after you stop typing, and '
+            'again when you close Openote';
     return s.hasOtherDevices
-        ? 'Syncing through $where · ${s.devices} devices have opened it'
-        : 'Syncing through $where — this notebook lives in a folder your '
-            'cloud keeps in step';
+        ? '$how · ${s.devices} devices have opened it'
+        : how;
   }
   if (s.mirrors > 0) {
     return 'Backed up to ${s.mirrors} '
@@ -114,7 +123,8 @@ class SyncDotWithLabel extends StatelessWidget {
         Flexible(
           child: Text(
             switch (state) {
-              SyncState.synced => app.syncStatus(notebookId).folder!.name,
+              SyncState.synced =>
+                app.syncStatus(notebookId).where ?? 'Syncing',
               SyncState.mirrored => 'Backed up',
               SyncState.local => 'This computer only',
             },

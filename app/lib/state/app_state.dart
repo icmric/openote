@@ -423,8 +423,17 @@ class AppState extends ChangeNotifier
       final git = _git;
       await git.init();
       if (_gitRemote != null) await git.setRemote(_gitRemote!);
+      // Before the first sync, not after: the cycle commits whatever is in the
+      // directory, and a notebook that has just become shared has all of its
+      // blob bytes still inside the container. Pushing first would send op logs
+      // referencing pictures that are not there.
+      materialiseBlobsIfShared(notebookId!);
       await syncGitNow();
     }
+    // The dot, the chip and the storage figures all read a status memoised for
+    // five seconds; without this they keep saying "this computer only" for a
+    // moment after the user has just watched a push succeed.
+    _invalidateSyncStatus();
     notifyListeners();
   }
 
@@ -530,6 +539,11 @@ class AppState extends ChangeNotifier
       final git = _git;
       await git.init();
       await git.setRemote(_gitRemote!);
+      // The notebook is shared as of this line. Copy the blob bytes out before
+      // the push, or the repository gets op logs referencing pictures it does
+      // not contain.
+      materialiseBlobsIfShared(notebookId!);
+      _invalidateSyncStatus();
       gitStatus = 'Pushing to ${made.fullName}…';
       notifyListeners();
       await flushSave();
@@ -558,23 +572,46 @@ class AppState extends ChangeNotifier
   /// Never throws: a sync failure is a message, not an exception. It is also
   /// never silent — a push that did not happen while the user believes their
   /// notes are safe elsewhere is the one outcome worth being loud about.
-  Future<void> syncGitNow() async {
-    if (!_gitEnabled || notebookId == null || gitBusy) return;
+  /// Returns how many of the other devices' changes this cycle brought in, so
+  /// a caller that asked for it by hand can say what happened.
+  Future<int> syncGitNow() async {
+    if (!_gitEnabled || notebookId == null || gitBusy) return 0;
+    final nb = notebookId!;
+    var folded = 0;
     gitBusy = true;
     notifyListeners();
     try {
       // The logs have to be on disk before they can be committed.
       await flushSave();
       final r = await _git.syncOnce(message: 'Openote: ${currentNotebook.title}');
+      // **Fold in whatever the pull brought down.** Without this the cycle was
+      // only half a sync: `git pull` wrote the other device's log files into
+      // `ops/` and then nothing read them, so the notes arrived on disk and
+      // stayed invisible. Worse than invisible — the recorder replays them at
+      // the next launch WITHOUT writing them to the container, and the next
+      // local save is diffed against that state, so an edit here can undo an
+      // edit there.
+      //
+      // Unconditional, deliberately. `syncOnce` is pull → commit → push, and a
+      // failure at the commit or the push says nothing about the pull that
+      // already succeeded: those files are on disk either way, and refusing to
+      // read them because a later step failed is how a merge gets lost.
+      // `syncPull` is cheap when there is nothing pending — it reads the
+      // watermark and returns 0.
+      folded = await syncPull(nb);
       gitStatus = r.ok
-          ? (r.noop ? 'Up to date' : 'Synced')
+          ? (folded > 0
+              ? 'Synced — brought in $folded ${folded == 1 ? 'change' : 'changes'}'
+              : (r.noop ? 'Up to date' : 'Synced'))
           : 'Could not sync: ${r.message.split('\n').first}';
     } catch (e) {
       gitStatus = 'Could not sync: $e';
     } finally {
       gitBusy = false;
+      _invalidateSyncStatus();
       notifyListeners();
     }
+    return folded;
   }
 
   /// Ask for a sync once the user stops typing.
@@ -820,9 +857,33 @@ class AppState extends ChangeNotifier
   /// many devices have written here, which opens a recorder, which asks this.
   bool notebookIsShared(String nb) {
     if (mirrorsFor(nb).isNotEmpty) return true;
+    // A git remote shares a notebook exactly as much as a cloud folder does,
+    // and this did not know it. The consequence is the one the doc comment on
+    // [materialiseBlobsIfShared] warns about: with this false the recorder
+    // never copies blob BYTES into `blobs/`, so a git-only notebook pushed op
+    // logs that referenced pictures the repository did not contain — and the
+    // other device saw a notebook whose images were all missing. Text arrived;
+    // everything else silently did not.
+    if (gitRemoteFor(nb) != null) return true;
     final path = notebookLogDir(nb);
     if (path == null) return false;
     return cloudFolderContaining(path, also: _syncRoots) != null;
+  }
+
+  /// The git remote configured for [nb], for any notebook — not just the open
+  /// one.
+  ///
+  /// [gitRemote] answers for the CURRENT notebook only, because `_gitRemote` is
+  /// re-read by [reloadGit] on every open. Anything that asks about a notebook
+  /// it does not have selected — the notebook list's sync dots, storage
+  /// figures, blob materialisation for a background recorder — has to read the
+  /// setting directly, or it gets the open notebook's answer for someone
+  /// else's notebook.
+  String? gitRemoteFor(String nb) {
+    final raw = _repo.getSetting(_gitKey(nb));
+    if (raw is! Map || raw['enabled'] != true) return null;
+    final url = raw['remote'];
+    return url is String && url.isNotEmpty ? url : null;
   }
 
   /// Materialise this notebook's blob bytes into `blobs/` if it has become
@@ -1458,6 +1519,9 @@ class AppState extends ChangeNotifier
       folder: folder,
       devices: devices,
       mirrors: mirrorsFor(nb).length,
+      // Per notebook, not [gitRemote] — this is asked about every notebook in
+      // the list, and the open one's remote is not their answer.
+      gitRemote: gitRemoteFor(nb),
     );
     _syncStatusCache[nb] = (status: status, at: now);
     return status;
@@ -2956,6 +3020,15 @@ class AppState extends ChangeNotifier
     // forgotten the lock exists.
     reloadProtection();
     reloadGit();
+    // Re-point the folder watcher at THIS notebook's ops directory.
+    //
+    // It was armed once at startup and never moved. The retry that could have
+    // moved it is guarded on `_watcher == null`, so once startup had armed it
+    // on the first notebook it stayed there for the rest of the session —
+    // every other notebook's incoming changes went unnoticed until the app was
+    // restarted with that one open. `_startWatching` stops the old watcher
+    // first, so calling it unconditionally is safe.
+    _startWatching();
     // Reset the focused section for the new notebook (selectPage refines it).
     activeSectionId =
         nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
@@ -4664,6 +4737,7 @@ class SyncStatus {
     required this.folder,
     required this.devices,
     required this.mirrors,
+    this.gitRemote,
   });
 
   /// The detected cloud folder the notebook lives in, or null when it is only
@@ -4676,8 +4750,53 @@ class SyncStatus {
   /// Configured one-way mirror/backup destinations.
   final int mirrors;
 
-  bool get isSynced => folder != null;
+  /// The git remote this notebook pushes to, or null.
+  ///
+  /// A second way of being synced, added after the first. Every indicator in
+  /// the app derived "is this notebook safe somewhere else" from [folder]
+  /// alone, so a notebook being pushed to GitHub every minute read as "on this
+  /// computer only" — which is both wrong and the exact opposite of
+  /// reassuring.
+  final String? gitRemote;
+
+  /// Is a copy of these notes kept somewhere else, live?
+  ///
+  /// Both routes count. They are not the same mechanism — a cloud folder is
+  /// continuous and a git remote is a minute behind — but the question this
+  /// answers is "if this laptop died, are the notes gone", and for that the
+  /// two are the same answer. The distinction is carried by [where] and by the
+  /// tooltip, not by pretending one of them does not exist.
+  bool get isSynced => folder != null || gitRemote != null;
+
+  /// Synced through a cloud folder specifically. The chooser and the storage
+  /// rows still ask this, because those are about a FOLDER.
+  bool get isFolderSynced => folder != null;
+
   bool get hasOtherDevices => devices > 1;
+
+  /// The remote's host and path, for showing. `github.com/you/notes`.
+  ///
+  /// Trimmed of the scheme, any `user@` and the `.git` suffix, because the
+  /// full clone URL is longer than the space every caller has and the
+  /// interesting part is the middle.
+  String? get gitLabel {
+    final url = gitRemote;
+    if (url == null) return null;
+    var s = url.trim();
+    final scheme = s.indexOf('://');
+    if (scheme >= 0) s = s.substring(scheme + 3);
+    final at = s.indexOf('@');
+    // `git@github.com:you/notes.git` — SSH remotes put the colon where a path
+    // separator belongs, and leaving it makes the label read like a port.
+    if (at >= 0) s = s.substring(at + 1);
+    s = s.replaceFirst(':', '/');
+    if (s.endsWith('.git')) s = s.substring(0, s.length - 4);
+    if (s.endsWith('/')) s = s.substring(0, s.length - 1);
+    return s.isEmpty ? null : s;
+  }
+
+  /// Where the notes live, in as few words as fit. Null when nowhere else.
+  String? get where => folder?.name ?? gitLabel;
 
   /// The chip label.
   ///
@@ -4689,7 +4808,9 @@ class SyncStatus {
   String get label {
     if (!isSynced) return mirrors > 0 ? 'Backed up' : 'Sync…';
     if (hasOtherDevices) return '$devices devices';
-    return folder!.name;
+    // `where`, not `folder!.name` — a git-only notebook is synced and has no
+    // folder, and the bang would have thrown the moment git started counting.
+    return where ?? 'Syncing';
   }
 
   IconData get icon {
@@ -4697,6 +4818,9 @@ class SyncStatus {
       return mirrors > 0 ? Icons.backup_outlined : Icons.cloud_off_outlined;
     }
     if (hasOtherDevices) return Icons.devices;
+    // A distinct glyph for git, because "where are my notes" has a different
+    // answer and the icon is the first thing read.
+    if (folder == null) return Icons.commit;
     return Icons.cloud_done_outlined;
   }
 }
