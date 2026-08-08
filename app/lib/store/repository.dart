@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../core/ids.dart';
+import '../ink/ink_storage.dart';
 import '../model/models.dart';
 import 'database.dart';
 import 'notebook_writer.dart';
@@ -622,6 +624,27 @@ class Repository {
     return ref;
   }
 
+  /// The page mirror's raw JSON, for tests that assert on what is actually
+  /// stored rather than on what is read back.
+  ///
+  /// [readPage] deliberately inflates ink on the way out, so a test that only
+  /// went through it could never tell whether the geometry was still in this
+  /// column — which is the entire claim.
+  @visibleForTesting
+  String? rawPageJsonForTest(String notebookId, String pageId) =>
+      _db(notebookId)
+          .select('SELECT json FROM page_mirror WHERE page_id=?', [pageId])
+          .firstOrNull?['json'] as String?;
+
+  /// The blob hashes a page declares, for the garbage-collection reachability
+  /// test.
+  @visibleForTesting
+  List<String> blobRefsForTest(String notebookId, String pageId) => [
+        for (final r in _db(notebookId).select(
+            'SELECT hash FROM blob_refs WHERE page_id=?', [pageId]))
+          r['hash'] as String
+      ];
+
   /// Hand back the space a notebook is holding but no longer using.
   ///
   /// Two distinct kinds of waste, and they need different instruments:
@@ -996,7 +1019,18 @@ class Repository {
     final rows = _db(notebookId)
         .select('SELECT json FROM page_mirror WHERE page_id=?', [pageId]);
     if (rows.isEmpty) return PageData([], PageProps());
-    return _decodePage(rows.first['json'] as String);
+    final data = _decodePage(rows.first['json'] as String);
+    // **Ink comes back out of its blob here.** Every consumer above this line —
+    // the painter, the eraser, lasso, drag, resize, the three exporters —
+    // keeps seeing the stroke list it has always seen. Only what is written to
+    // disk changed, which is where the 63 MB was.
+    //
+    // A page with no ink pays nothing: `workingAll` returns the same list
+    // object when it changed nothing.
+    return PageData(
+      InkStorage.workingAll(data.blocks, (h) => getBlob(notebookId, h)),
+      data.props,
+    );
   }
 
   static PageData _decodePage(String json) {

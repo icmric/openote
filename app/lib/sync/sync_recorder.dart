@@ -18,6 +18,7 @@ import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 
 import '../model/models.dart';
+import '../ink/ink_codec.dart';
 import 'device_identity.dart';
 import 'materializer.dart';
 import 'op.dart';
@@ -301,7 +302,26 @@ class SyncRecorder {
   /// keeping the op stream identical whether or not a notebook syncs means
   /// turning sync on never has to synthesise history it did not record.
   void blob(String hash, String mime, int size, Uint8List bytes) {
-    if (materialiseBlobs) store.writeBlob(hash, bytes);
+    // **Ink is always written, whatever [materialiseBlobs] says.**
+    //
+    // Deferring blob bytes is a size trade for ATTACHMENTS: an image is also
+    // in the container, so a local-only notebook loses nothing by not copying
+    // it out, and turning sync on backfills the set.
+    //
+    // Ink is not an attachment — it is the page's content. Until now an ink
+    // block carried its strokes inline in `block.set`, so a local-only log was
+    // COMPLETE and a rebuild reconstructed the handwriting. Now the block
+    // holds a reference, and deferring the bytes would make the log unable to
+    // rebuild the notebook it describes — quietly, and only discoverable on
+    // another machine or after a cache rebuild. That is the one property
+    // ADR-0006's shadow mode exists to protect.
+    //
+    // The cost is bounded and small: a whole notebook of handwriting measured
+    // 3.2 MB compressed, against the 26 MB of images the deferral was written
+    // for.
+    if (materialiseBlobs || mime == inkMimeType) {
+      store.writeBlob(hash, bytes);
+    }
     if (state.blobs.contains(hash))
       return; // already recorded; bytes are immutable
     _commit([

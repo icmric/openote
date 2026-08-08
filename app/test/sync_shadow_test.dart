@@ -12,6 +12,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/ink/ink_storage.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -306,27 +307,48 @@ void main() {
     await app.flushSave();
 
     final appended = logFile.lengthSync() - sizeAfterBaseline;
-    final ops = store.readAll();
-    expect(ops.last.kind, OpKind.inkStrokes,
-        reason: 'an erase must not re-record the whole block');
-    // The whole block is ~350 KB; the erase touched one stroke. The appended
-    // record must be O(changed strokes), not O(block).
+
+    // **The assertion changed shape because the mechanism did, and the intent
+    // is what matters.**
+    //
+    // This used to require `OpKind.inkStrokes` — a per-stroke diff that
+    // existed for one reason: an ink `block.set` carried every stroke as JSON,
+    // so re-recording the block cost hundreds of kilobytes. Ink is now a blob
+    // reference, so an ink `block.set` is a few hundred BYTES and the
+    // per-stroke op has nothing left to optimise. The requirement — an erase
+    // must not cost the size of the block — is met more thoroughly than
+    // before, not abandoned.
+    expect(store.readAll().last.kind, OpKind.blockSet);
+    // Tighter than the 20 KB this asked for, because the whole block is now
+    // smaller than the old "small" record. What lands is one blob of the
+    // re-encoded strokes plus a tiny `block.set`.
     expect(appended, lessThan(20 * 1024),
         reason: 'appended $appended bytes for a one-stroke split');
 
-    // And the rebuild still matches the container byte-for-byte — order
-    // included, which is the risky part of positional inserts.
-    expect(canonicalJson(rebuild(repo, nb.id, app.pageId!)),
-        canonicalJson({
-          'schema': 'onote-page/1',
-          'pageId': app.pageId,
-          'page': app.pageProps.toJson(),
-          'blocks': [ink.toJson()],
-        }));
+    // And the rebuild still matches the container exactly — order included,
+    // which is the risky part of positional inserts. Compared against what is
+    // PERSISTED: the live block holds inline strokes, the container holds the
+    // reference, and they are the same handwriting in two representations.
+    final stored = repo.readPage(nb.id, app.pageId!);
+    final rebuilt = rebuild(repo, nb.id, app.pageId!);
+    final rebuiltBlocks = (rebuilt['blocks'] as List);
+    expect(rebuiltBlocks, hasLength(1));
+    final rebuiltInk =
+        Block.fromJson((rebuiltBlocks.single as Map).cast<String, dynamic>());
+    expect(InkStorage.refsOf(rebuiltInk.content),
+        InkStorage.refsOf(stored.blocks.single.content),
+        reason: 'the log and the container must reference the same ink');
+    expect(InkStorage.strokeCount(rebuiltInk.content),
+        (ink.content['strokes'] as List).length,
+        reason: 'and the same number of strokes as the editor holds');
   });
 
-  test('dragging an ink block falls back to block.set (the >50% guard)',
-      () async {
+  // Renamed from "falls back to block.set (the >50% guard)". There is no
+  // fallback and no guard any more: a `block.set` is what an ink change always
+  // writes, and it is small because the geometry is a reference. The property
+  // still worth pinning is that a drag — which rewrites every coordinate —
+  // stays cheap and still rebuilds correctly.
+  test('dragging an ink block stays cheap and rebuilds', () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (repo, tmp) = await freshRepo('onote_shadow_inkmove_');
     addTearDown(() {
@@ -374,13 +396,21 @@ void main() {
     final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
     final store = OpLogStore.forNotebook(ref.file);
     expect(store.readAll().last.kind, OpKind.blockSet);
-    expect(canonicalJson(rebuild(repo, nb.id, app.pageId!)),
-        canonicalJson({
-          'schema': 'onote-page/1',
-          'pageId': app.pageId,
-          'page': app.pageProps.toJson(),
-          'blocks': [ink.toJson()],
-        }));
+
+    final stored = repo.readPage(nb.id, app.pageId!);
+    final rebuiltInk = Block.fromJson(
+        ((rebuild(repo, nb.id, app.pageId!)['blocks'] as List).single as Map)
+            .cast<String, dynamic>());
+    expect(InkStorage.refsOf(rebuiltInk.content),
+        InkStorage.refsOf(stored.blocks.single.content));
+    expect(rebuiltInk.x, ink.x, reason: 'the block moved');
+    expect(rebuiltInk.y, ink.y);
+    // The moved strokes come back at their new coordinates.
+    final back = stored.blocks.single.content['strokes'] as List;
+    final firstStroke =
+        Stroke.fromJson((back.first as Map).cast<String, dynamic>());
+    expect(firstStroke.x.first, closeTo(100, 0.1),
+        reason: 'stroke 0 started at x=0 and the drag added 100');
   });
 
   group('two devices (ADR-0006 step 3)', () {

@@ -17,6 +17,8 @@ import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
 import '../store/media_store.dart';
+import '../ink/ink_codec.dart';
+import '../ink/ink_storage.dart';
 import '../sync/materializer.dart';
 import '../sync/git_sync.dart';
 import '../sync/github_api.dart';
@@ -4992,10 +4994,24 @@ class AppState extends ChangeNotifier
     // status bar claiming "Saved" while the change was never persisted.
     final id = pageId!, nb = notebookId!;
     try {
+      // **Ink becomes bytes here, once, for both destinations.**
+      //
+      // The container and the op log must agree, and they only agree if they
+      // are handed the SAME blocks: the recorder diffs what it is given
+      // against its replayed state, so persisting the ref form to the
+      // container while recording the inline form would make every save look
+      // like a whole-page change and put the 3 MB straight back into the log.
+      //
+      // Through `importBlob`, not `_repo.putBlob` — the latter writes only the
+      // container's `blobs` table and emits no `blob.put`, which would leave
+      // the log holding refs it cannot resolve. That is invisible locally and
+      // total on another device.
+      final toSave = InkStorage.persistAll(
+          blocks, (bytes) => importBlob(nb, bytes, inkMimeType));
       // The engine owns persistence: version snapshot (throttled, SYNC-8) + the
       // mirror write, plus content-hash change-detection on the Rust engine (a
       // save whose hash is unchanged is skipped). See RustEngine/MirrorEngine.
-      await engine.savePage(nb, id, blocks, pageProps);
+      await engine.savePage(nb, id, toSave, pageProps);
       _dirty = false;
       saveError = null;
       // Record AFTER the container write succeeds, so the log never claims a
@@ -5006,7 +5022,7 @@ class AppState extends ChangeNotifier
       //
       // The recorder diffs against its replayed state, so an autosave that
       // changed one block appends one op, not the whole page.
-      _recorderFor(nb)?.page(id, blocks, pageProps);
+      _recorderFor(nb)?.page(id, toSave, pageProps);
       // Throttled inside; a mirror is a safety net, not a live replica.
       unawaited(runMirrors(nb));
     } catch (e) {

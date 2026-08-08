@@ -22,6 +22,7 @@ import 'dart:typed_data';
 
 import 'package:sqlite3/sqlite3.dart';
 
+import '../ink/ink_storage.dart';
 import '../model/models.dart';
 
 class NotebookWriter {
@@ -157,6 +158,16 @@ class NotebookWriter {
               'INSERT OR IGNORE INTO blob_refs(page_id,hash) '
               'SELECT ?, hash FROM blobs WHERE hash=?',
               [pageId, hash.replaceFirst('sha256:', '')]);
+        }
+        // Ink now lives in blobs too, and a page that does not declare its
+        // handwriting here is a page whose handwriting a scanning garbage
+        // collector cannot see. ADR-0007's GC recomputes what is reachable, so
+        // a missing row would collect the entire notebook's ink.
+        for (final ref in InkStorage.refsOf(b.content)) {
+          db.execute(
+              'INSERT OR IGNORE INTO blob_refs(page_id,hash) '
+              'SELECT ?, hash FROM blobs WHERE hash=?',
+              [pageId, ref.replaceFirst('sha256:', '')]);
         }
         final text = b.content['text'];
         if (text is String && text.contains('](sha256:')) {
