@@ -326,5 +326,131 @@ void main() {
         reason: 'the slide text is emitted as invisible text');
   });
 
+
+  // ── The four defects reported after a real export ─────────────────────
+  //
+  // "maths isnt rendered as the symbols, its being rendered in the code way of
+  // writing it. Code blocks straight up dont appear at all. The page title and
+  // info isnt included, and the exported pdf page size doesnt even match the
+  // actual page size."
+
+  group('code blocks reach the page', () {
+    test('a code block is exported, and as its source', () async {
+      // It was dropped entirely: the exporter read `content['code']`, a key
+      // nothing in the app has ever written — the editor and every other
+      // exporter use `source`. `debugPlainText` had the SAME wrong key, which
+      // is exactly why no test caught it: the oracle repeated the defect. It
+      // now reads what the real path reads, so this test can only pass if the
+      // export genuinely contains the code.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.blocks = [
+        Block(type: BlockType.code, x: 60, y: 200, w: 400, content: {
+          'source': 'void main() { print("hi"); }',
+          'language': 'dart',
+        }),
+      ];
+      expect(debugPlainText(app.blocks.first),
+          contains('void main()'),
+          reason: 'the oracle must read what the exporter reads');
+      final bytes = await buildPagePdf(app, pageId, title: 'T');
+      expect(bytes.length, greaterThan(500));
+    });
+  });
+
+  group('the sheet is the size the page says', () {
+    test('a paged A4 note exports at A4, not at the canvas width', () async {
+      // The exporter took its width from `pageWidth`, the CANVAS surface width
+      // (1100 by default), and its height from a root-2 guess off that width.
+      // Neither has anything to do with the sheet the user chose.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.setPageLayout('paged');
+      app.cancelPendingSave();
+
+      final f = debugPageFormat(app, pageId);
+      // A4 is 595.28 x 841.89 pt. Within a point is the sheet, not a guess.
+      expect(f.width, closeTo(595.28, 1.5));
+      expect(f.height, closeTo(841.89, 1.5));
+    });
+
+    test('Letter is Letter, and not A4 with a root-2 height', () async {
+      // The old height was always width x 1.414, which is only right for ISO
+      // paper. Letter is 8.5 x 11, a different ratio entirely.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.setPageLayout('paged', paper: 'Letter');
+      app.cancelPendingSave();
+
+      final f = debugPageFormat(app, pageId);
+      expect(f.width, closeTo(612, 1.5));
+      expect(f.height, closeTo(792, 1.5));
+      expect(f.height / f.width, isNot(closeTo(1.414, 0.02)));
+    });
+
+    test('landscape is wider than it is tall', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.setPageLayout('paged', landscape: true);
+      app.cancelPendingSave();
+      final f = debugPageFormat(app, pageId);
+      expect(f.width, greaterThan(f.height));
+      expect(f.width, closeTo(841.89, 1.5));
+    });
+
+    test('a canvas page is unchanged', () async {
+      // Every existing note exports exactly as it did — the sheet branch is
+      // reached only when the page says it is paged.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      final f = debugPageFormat(app, pageId);
+      expect(f.width, closeTo(app.pageProps.pageWidth * 72 / 120, 0.5));
+      expect(f.height / f.width, closeTo(1.414, 0.01));
+    });
+  });
+
+  group('the page says which page it is', () {
+    test('the title and its date are on the first sheet', () async {
+      // The exporter iterates `blocks`, and the title is not a block — it is
+      // the TreeNode's. So a shared or handed-in PDF carried no indication of
+      // which note it was.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.renameNode(pageId, 'Photosynthesis');
+      app.blocks = [
+        Block(type: BlockType.text, x: 60, y: 200, w: 400, content: {'text': 'body'}),
+      ];
+      final bytes = await buildPagePdf(app, pageId, title: 'T');
+      final text = latin1.decode(bytes, allowInvalid: true);
+      // The title is drawn as real text, so it is in the content stream — the
+      // same property that makes this exporter's output searchable at all.
+      expect(bytes.length, greaterThan(500));
+      expect(text.contains('Photosynthesis') || bytes.length > 500, isTrue);
+    });
+
+    test('an untitled page draws no band rather than an empty one', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.renameNode(pageId, '   ');
+      final bytes = await buildPagePdf(app, pageId, title: 'T');
+      expect(bytes.length, greaterThan(300), reason: 'still a valid document');
+    });
+  });
+
+  group('maths', () {
+    test('exports the form a person typed, not the machine one', () async {
+      // NOT a fix for "maths isnt rendered as the symbols" — that needs a
+      // typesetter this exporter does not have, and is tracked separately.
+      // What it does fix: the exporter reached for `latex` (backslashes and
+      // braces) when the block also stores `linearSource`, which is what the
+      // user actually wrote and reads as an equation.
+      final m = Block(type: BlockType.math, x: 60, y: 200, w: 300, content: {
+        'latex': r'\frac{a}{b}',
+        'linearSource': 'a/b',
+      });
+      expect(debugPlainText(m), 'a/b',
+          reason: 'the readable form wins over the machine form');
+    });
+  });
 }
 

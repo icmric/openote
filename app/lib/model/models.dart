@@ -87,25 +87,33 @@ class NotebookRef {
 
 // ── Page properties (Data Model Spec §3 page-level; CANVAS-11) ───────────
 
-/// A named sheet size, in logical pixels at the app's 96dpi-ish page scale.
+/// A named sheet size, in the canvas's own logical pixels.
 ///
 /// Stored as a NAME rather than a pair of numbers, so a page laid out on A4
-/// stays A4 when someone opens it on a machine that thinks in inches, and so a
-/// future build can adjust the pixel figures without every existing page
-/// disagreeing with it. The dimensions here are the ISO/ANSI sizes converted
-/// at 96 px per inch.
+/// stays A4 when someone opens it on a machine that thinks in inches — and so
+/// these figures could be corrected without every existing page disagreeing
+/// with the build that opens it. Which is exactly what happened: they were
+/// first written at 96 px per inch, and the app does not work in that space.
+///
+/// **120 px per inch.** That is the canvas's unit — the OneNote importer's,
+/// inherited by everything since — and `pdf_vector_export.dart` converts out
+/// of it at `120/72` to reach PDF points. At 96 an "A4" sheet was 794 px, and
+/// the exporter turned that into 476 pt: a page claiming to be A4 and printing
+/// at 80% of it. The screen was wrong the same way, just less visibly, because
+/// nothing on a boundless canvas tells you how big an inch is.
 class PaperSize {
   const PaperSize(this.name, this.width, this.height);
   final String name;
   final double width;
   final double height;
 
-  static const a4 = PaperSize('A4', 794, 1123);
-  static const a5 = PaperSize('A5', 559, 794);
-  static const a3 = PaperSize('A3', 1123, 1587);
-  static const letter = PaperSize('Letter', 816, 1056);
-  static const legal = PaperSize('Legal', 816, 1344);
-  static const tabloid = PaperSize('Tabloid', 1056, 1632);
+  // inches x 120, rounded.
+  static const a4 = PaperSize('A4', 992, 1403);
+  static const a5 = PaperSize('A5', 699, 992);
+  static const a3 = PaperSize('A3', 1403, 1984);
+  static const letter = PaperSize('Letter', 1020, 1320);
+  static const legal = PaperSize('Legal', 1020, 1680);
+  static const tabloid = PaperSize('Tabloid', 1320, 2040);
 
   /// Offered in the picker, metric first — the default is A4 and most of the
   /// world's students are on it.

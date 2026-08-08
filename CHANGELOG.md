@@ -19,6 +19,25 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   the flashcard deck**, all of which read page text directly and none of which
   were checking.
 
+### Fixed — PDF export
+
+- **Code blocks appear at all.** They were dropped silently: the exporter read
+  a key nothing in the app has ever written.
+- **The exported page is the size the page says.** A paged A4 note now comes
+  out as A4 rather than a canvas-width sheet with a guessed height, and Letter,
+  Legal and landscape are their own shapes rather than everything being ISO.
+- **The page's name and date are on the first sheet**, so a PDF you have shared
+  or handed in says which note it is.
+- Code keeps its monospaced face with the app's own font embedded, so symbols
+  and accents inside a code block survive the trip.
+- **Maths still exports as text, not symbols** — but as the form you typed
+  (`a/b`) rather than the machine form (`rac{a}{b}`). Typesetting equations
+  into a PDF needs machinery this exporter does not have; it is written down as
+  the next piece of work rather than left as a surprise.
+- Page mode's paper sizes were themselves slightly wrong — they were worked out
+  at the wrong scale, so an "A4" sheet was about 80% of A4 on screen as well as
+  in the export. Both are right now.
+
 ### Added — pages, as well as the endless canvas
 
 - **A page can be a sheet of paper instead of open canvas.** The button is in

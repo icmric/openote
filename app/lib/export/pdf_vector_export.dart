@@ -129,7 +129,15 @@ void _addPageSheets(
 
   // Content bounds in page px. The page's own width wins over the content's, so
   // a note narrower than its page still exports at the page size the user set.
-  final widthPx = props.pageWidth;
+  //
+  // A PAGED page has a real sheet, and it is not `pageWidth` — that field is
+  // the canvas-mode surface width and nothing keeps the two in step. Exporting
+  // an A4 page at 1100 px wide is how a sheet the user chose came out the
+  // wrong size, and it is why `_sheetHeight`'s root-2 guess is skipped below:
+  // guessing the aspect from the width is right for a canvas note and wrong
+  // for Letter, Legal or anything landscape.
+  final paper = props.isPaged ? props.paper : null;
+  final widthPx = paper?.width ?? props.pageWidth;
   var bottomPx = 0.0;
   for (final b in blocks) {
     final h = b.h ?? app.renderSizes[b.id]?.height ?? app.estimatedHeight(b);
@@ -144,10 +152,11 @@ void _addPageSheets(
   // hand in. The sheet becomes the slide, and anything written past its edge
   // extends the sheet rather than starting a second one, so one slide is always
   // one page of the output.
-  final slide = _slideHeight(blocks, widthPx);
-  final sheetPx = slide == null
-      ? _sheetHeight(widthPx)
-      : (bottomPx > slide ? bottomPx : slide);
+  final slide = paper == null ? _slideHeight(blocks, widthPx) : null;
+  final sheetPx = paper?.height ??
+      (slide == null
+          ? _sheetHeight(widthPx)
+          : (bottomPx > slide ? bottomPx : slide));
   final sheets = (bottomPx / sheetPx).ceil().clamp(1, 500);
   final format = PdfPageFormat(widthPx / _pxPerPoint, sheetPx / _pxPerPoint);
 
@@ -168,6 +177,13 @@ void _addPageSheets(
       margin: pw.EdgeInsets.zero,
       build: (_) => pw.Stack(
         children: [
+          // The title band, on the first sheet only — the same place and the
+          // same shape the canvas draws it (page_title_view.dart). The exporter
+          // iterates `blocks`, and the title is not a block: it lives on the
+          // TreeNode. So a PDF of a note came out with no indication of which
+          // note it was, which is most of what you need from a page you have
+          // shared or handed in.
+          if (sheet == 0) ..._titleBand(app, pageId, widthPx),
           for (final b in visible)
             if (_blockWidget(app, b, top) case final w?) w,
         ],
@@ -181,6 +197,32 @@ void _addPageSheets(
 /// "Is a slide" means exactly one locked background image, at the top, filling
 /// the page width — which is what `pdf_import` writes for one-page-per-slide.
 /// Anything else (a note that happens to contain a picture) is a normal page.
+/// The sheet size the exporter would use for a page, in POINTS.
+///
+/// Exposed because the defect it guards — "the exported pdf page size doesnt
+/// even match the actual page size" — is invisible in the byte stream and
+/// trivially checkable here.
+@visibleForTesting
+PdfPageFormat debugPageFormat(AppState app, String pageId) {
+  final data = app.pageId == pageId ? null : app.readPage(pageId);
+  final props = data?.props ?? app.pageProps;
+  final blocks = data?.blocks ?? app.blocks;
+  final paper = props.isPaged ? props.paper : null;
+  final widthPx = paper?.width ?? props.pageWidth;
+  var bottomPx = 0.0;
+  for (final b in blocks) {
+    final h = b.h ?? app.renderSizes[b.id]?.height ?? app.estimatedHeight(b);
+    if (b.y + h > bottomPx) bottomPx = b.y + h;
+  }
+  if (bottomPx <= 0) bottomPx = _sheetHeight(widthPx);
+  final slide = paper == null ? _slideHeight(blocks, widthPx) : null;
+  final sheetPx = paper?.height ??
+      (slide == null
+          ? _sheetHeight(widthPx)
+          : (bottomPx > slide ? bottomPx : slide));
+  return PdfPageFormat(widthPx / _pxPerPoint, sheetPx / _pxPerPoint);
+}
+
 @visibleForTesting
 double? slideHeightOf(List<Block> blocks, double widthPx) =>
     _slideHeight(blocks, widthPx);
@@ -230,6 +272,58 @@ pw.Widget? _blockWidget(AppState app, Block b, double sheetTop) {
   );
 }
 
+/// The page's name and when it was made, drawn where the canvas draws them.
+///
+/// Positions come from the same constants the screen uses
+/// (`AppState.pageLeftMargin`, `titleBandHeight`), so the exported band lines
+/// up with the content beneath it rather than being a header invented here.
+List<pw.Widget> _titleBand(AppState app, String pageId, double widthPx) {
+  final node = app.node(pageId);
+  final title = (node?.title ?? '').trim();
+  if (title.isEmpty) return const [];
+  const left = AppState.pageLeftMargin;
+  return [
+    pw.Positioned(
+      left: left / _pxPerPoint,
+      top: 20 / _pxPerPoint,
+      child: pw.SizedBox(
+        width: (widthPx - left * 2) / _pxPerPoint,
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(title,
+                style: pw.TextStyle(
+                    fontSize: 26 / _pxPerPoint,
+                    fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 6 / _pxPerPoint),
+            pw.Text(_dateLine(node?.createdAt ?? 0),
+                style: const pw.TextStyle(
+                    fontSize: 12 * 72 / 120,
+                    color: PdfColors.grey600)),
+          ],
+        ),
+      ),
+    ),
+  ];
+}
+
+const _months = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/// Kept textually in step with `PageTitleView._dateLine` — the exported page
+/// saying a different date to the screen would be its own small betrayal.
+String _dateLine(int ms) {
+  final d = DateTime.fromMillisecondsSinceEpoch(ms);
+  final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  final ap = d.hour < 12 ? 'AM' : 'PM';
+  final mm = d.minute.toString().padLeft(2, '0');
+  return '${_days[d.weekday - 1]} ${d.day} ${_months[d.month - 1]} ${d.year}'
+      '    $h:$mm $ap';
+}
+
 /// Text as real text — the whole point of this exporter.
 ///
 /// Markdown markers are stripped rather than styled. Faithful inline styling
@@ -238,14 +332,27 @@ pw.Widget? _blockWidget(AppState app, Block b, double sheetTop) {
 /// that the words are *there*, selectable and searchable, at roughly the right
 /// size. Headings keep their weight because that carries the structure.
 pw.Widget? _textWidget(Block b) {
-  final raw =
-      (b.content['text'] ?? b.content['code'] ?? b.content['latex']) as String?;
+  // `source`, not `code`. Nothing in the app has ever written `content['code']`
+  // — the code editor reads and writes `source` (code_block_view.dart), as do
+  // the Markdown and open-folder exporters — so this key missed, `raw` came
+  // back null, and every code block was dropped from the PDF in silence. The
+  // same wrong key in `debugPlainText` below is why no test caught it: the
+  // oracle repeated the defect.
+  //
+  // `linearSource` is preferred over `latex` for maths because it is what the
+  // user actually typed and reads as an equation; `latex` is the machine form,
+  // full of backslashes and braces. Neither is SYMBOLS — see the note on
+  // _blockWidget.
+  final raw = (b.content['text'] ??
+      b.content['source'] ??
+      b.content['linearSource'] ??
+      b.content['latex']) as String?;
   if (raw == null || raw.trim().isEmpty) return null;
   final sizePx = (b.content['fontSize'] as num?)?.toDouble() ?? 15.0;
   final size = sizePx / _pxPerPoint;
-  // Code keeps a monospaced face — alignment IS the content in a code block,
-  // and Courier is a PDF standard font so it costs no embedding.
-  final mono = b.type == BlockType.code ? pw.Font.courier() : null;
+  // Code keeps a monospaced face — alignment IS the content in a code block.
+  final mono =
+      b.type == BlockType.code ? (_mono ?? pw.Font.courier()) : null;
 
   final spans = <pw.TextSpan>[];
   for (final line in raw.split('\n')) {
@@ -278,7 +385,12 @@ pw.Widget? _textWidget(Block b) {
 @visibleForTesting
 String debugPlainText(Block b) {
   final raw =
-      (b.content['text'] ?? b.content['code'] ?? b.content['latex']) as String?;
+      // The same wrong key the real path had — see `_textWidget`. Keeping the
+      // oracle in step with the exporter is the whole reason it exists.
+      (b.content['text'] ??
+          b.content['source'] ??
+          b.content['linearSource'] ??
+          b.content['latex']) as String?;
   if (raw == null) return '';
   return [
     for (final line in raw.split('\n'))
@@ -466,6 +578,10 @@ PdfColor _pdfColor(String hex) {
 /// The document theme, using the bundled Inter so exported text carries the
 /// same glyph coverage the app has — a maths note full of ∀ ∃ ⊆ would otherwise
 /// export with holes in it, since the PDF standard fonts are Latin-1 only.
+/// The embedded monospace face, once the theme has loaded it. Null in a test
+/// harness with no assets, where [_textWidget] falls back to Courier.
+pw.Font? _mono;
+
 Future<pw.ThemeData?> _theme() async {
   try {
     final regular = pw.Font.ttf(
@@ -474,6 +590,14 @@ Future<pw.ThemeData?> _theme() async {
         await rootBundle.load('assets/fonts/inter/Inter-SemiBold.ttf'));
     final italic = pw.Font.ttf(
         await rootBundle.load('assets/fonts/inter/Inter-Italic.ttf'));
+    // The app's own code face, embedded. `pw.Font.courier()` is a PDF base-14
+    // font and costs no embedding, which is why it was reached for — but it is
+    // WinAnsi only, so a code block containing an arrow, an accent or a box
+    // character loses those glyphs on the way out. Alignment IS the content in
+    // a code block; silently dropping characters from one is worse than the
+    // ~270 KB.
+    _mono = pw.Font.ttf(await rootBundle
+        .load('assets/fonts/jetbrains-mono/JetBrainsMono-Regular.ttf'));
     return pw.ThemeData.withFont(base: regular, bold: bold, italic: italic);
   } catch (_) {
     // No bundled font (a test harness without assets): fall back to the PDF
