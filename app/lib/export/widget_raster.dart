@@ -67,13 +67,23 @@ Future<Uint8List?> rasteriseOffscreen(
     final image = await boundary.toImage(pixelRatio: pixelRatio);
     final data = await image.toByteData(format: ui.ImageByteFormat.png);
     image.dispose();
-    // Drop the subtree so its render objects can be collected — an export of
-    // fifty equations otherwise holds fifty live pipelines. Detaching the
-    // root node is the supported way in; `Element.deactivate`/`unmount` are
-    // framework-internal and the analyzer is right to refuse them.
-    renderView.detach();
-    pipelineOwner.rootNode = null;
-    return data?.buffer.asUint8List();
+    final png = data?.buffer.asUint8List();
+    // Drop the subtree so its render objects can be collected: an export of
+    // fifty equations otherwise holds fifty live pipelines.
+    //
+    // AFTER the pixels are safely in hand, and in its own guard. The first
+    // version of this called `renderView.detach()`, which asserts on an
+    // already-detached node — clearing `rootNode` below is what detaches it —
+    // and because the teardown sat inside the same try as the render, a
+    // successful rasterise was thrown away by a failing cleanup. Every
+    // equation came back null and printed as source, which is the bug this
+    // whole file exists to fix, reintroduced two lines from the end of it.
+    try {
+      pipelineOwner.rootNode = null;
+    } catch (_) {
+      // Nothing to do: the pixels are already captured.
+    }
+    return png;
   } catch (_) {
     return null;
   }

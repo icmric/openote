@@ -467,9 +467,20 @@ void main() {
           'linearSource': 'a/b',
         }),
       ];
-      final raw = readable(await buildPagePdf(app, pageId, title: 'M'));
-      expect(raw, contains('/Image'),
+      final withMath = await buildPagePdf(app, pageId, title: 'M');
+      final raw = latin1.decode(withMath, allowInvalid: true);
+      // `/XObject`, NOT `/Image`. Every page carries
+      // `/ProcSet[/PDF/Text/ImageB/ImageC]`, so `contains('/Image')` is true
+      // of a document with no images whatsoever — the first version of this
+      // test asserted exactly that and passed while nothing rendered at all.
+      expect(raw, contains('/XObject'),
           reason: 'the equation reached the page as pixels');
+
+      // And it is bigger than the same page without the equation, which no
+      // substring can be accidentally satisfied by.
+      app.blocks = [];
+      final without = await buildPagePdf(app, pageId, title: 'M');
+      expect(withMath.length, greaterThan(without.length + 200));
     });
 
     test('an equation that will not paint falls back to its source', () async {
@@ -513,10 +524,13 @@ void main() {
       expect(debugFlowKinds(app, app.blocks.single),
           ['text', 'image', 'text'],
           reason: 'the picture is a picture, between the two runs of prose');
-      final raw = readable(await buildPagePdf(app, pageId, title: 'T'));
-      // A drawn image means an image XObject in the document. Deleted, the
-      // page would carry the words with nothing between them.
-      expect(raw, contains('/Image'), reason: 'the picture reached the page');
+      final raw =
+          latin1.decode(await buildPagePdf(app, pageId, title: 'T'),
+              allowInvalid: true);
+      // `/XObject`, not `/Image`: see the note in the maths group. Every page
+      // has `/ImageB` in its ProcSet whether or not it has a picture.
+      expect(raw, contains('/XObject'),
+          reason: 'the picture reached the page');
     });
 
     test('an in-flow flashcard prints both sides', () async {
