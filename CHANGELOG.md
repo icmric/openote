@@ -48,7 +48,42 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - Your notes go into the repository; the working file Openote keeps on this
   computer does not. Two computers writing that file through a sync service is
   the one thing the notebook format is designed to avoid.
+- **Notebooks ▸ Import ▸ "From a git address"** opens a notebook someone
+  published — paste the address and it is copied here, opened, and kept in step
+  from then on. Private repositories work when a GitHub account is connected.
+  Joining one you already have opens it rather than making a second copy.
 - Needs git installed. Without it the option explains that and offers nothing.
+
+### Fixed — sync
+
+- **A restart could delete the other device's work.** If a second device's
+  changes arrived while Openote was closed, the next thing you typed could undo
+  them — on both machines. The changes were read into memory at startup but
+  never written to the notebook, so the save that followed treated them as
+  deletions. Openote now folds in what arrived before you can type, and refuses
+  to record any change to a page it knows it has not caught up on yet. This
+  applies to folder sync as well as git.
+- **Changes pulled from a git remote appear.** They were arriving on disk and
+  being ignored until the next restart.
+- **Pictures and videos reach the other machine.** A notebook kept only in git
+  pushed its notes without their images — the text arrived and nothing else did.
+- **Switching notebooks re-arms the change watcher.** It stayed pointed at
+  whichever notebook was open when Openote launched, so every other notebook's
+  incoming changes went unnoticed for the rest of the session.
+- **A notebook pushed to git no longer reads as "on this computer only".** The
+  sync dot, the status-bar chip and the storage figures all counted cloud
+  folders and nothing else.
+- **"Check now" is offered as soon as a notebook syncs**, rather than only once
+  a second device has appeared — which was exactly backwards, since the moment
+  you most want it is while setting the second machine up.
+
+### Changed — the sync window
+
+- **It fits on the screen.** Extra copies, git and the storage figures are now
+  three headings that each answer their own question when closed, and open one
+  at a time. It was eight sections stacked in one unbounded scroll.
+- **It keeps up.** A sync finishing in the background now updates the window
+  that is open, instead of showing whatever was true when you opened it.
 
 ### Fixed — PDF export
 

@@ -337,13 +337,13 @@ void main() {
       const a = 'https://github.com/You/Notes.git';
       const b = 'https://github.com/you/notes';
       const c = 'git@github.com:you/notes.git';
-      expect(SyncStatus(folder: null, devices: 1, mirrors: 0, gitRemote: a)
+      expect(const SyncStatus(folder: null, devices: 1, mirrors: 0, gitRemote: a)
               .gitLabel,
           'github.com/You/Notes');
-      expect(SyncStatus(folder: null, devices: 1, mirrors: 0, gitRemote: c)
+      expect(const SyncStatus(folder: null, devices: 1, mirrors: 0, gitRemote: c)
               .gitLabel,
           'github.com/you/notes');
-      expect(SyncStatus(folder: null, devices: 1, mirrors: 0, gitRemote: b)
+      expect(const SyncStatus(folder: null, devices: 1, mirrors: 0, gitRemote: b)
               .gitLabel,
           'github.com/you/notes');
     });

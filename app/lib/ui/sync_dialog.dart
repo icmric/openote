@@ -34,6 +34,77 @@ Future<void> showSyncDialog(BuildContext context, AppState app) async {
   );
 }
 
+/// The foldable halves of the dialog.
+enum _Pane { git, mirrors, storage }
+
+/// A section header that stands on its own, and its contents when opened.
+///
+/// Not an `ExpansionTile`: that draws its own dividers and its own padding,
+/// animates a chevron on the wrong side, and cannot show a value beside the
+/// title without fighting its `subtitle` slot. What is needed here is a row
+/// that answers the question when closed — "Sync with git · github.com/you/n"
+/// — so that opening it is a choice rather than the only way to find out.
+class _Disclosure extends StatelessWidget {
+  const _Disclosure({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.open,
+    required this.onTap,
+    required this.child,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool open;
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.surfaces;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+            child: Row(children: [
+              Icon(icon, size: 16, color: s.textSecondary),
+              const SizedBox(width: 8),
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w600)),
+              const SizedBox(width: 8),
+              // Flexible, because a remote address and a folder name are both
+              // user data of unbounded length in a fixed-width dialog.
+              Flexible(
+                child: Text(subtitle,
+                    style: TextStyle(fontSize: 12, color: s.textSecondary),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    textAlign: TextAlign.right),
+              ),
+              const SizedBox(width: 4),
+              Icon(open ? Icons.expand_less : Icons.expand_more,
+                  size: 18, color: s.textSecondary),
+            ]),
+          ),
+        ),
+        if (open)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 2, 4, 10),
+            child: child,
+          ),
+        Divider(height: 1, color: s.border),
+      ],
+    );
+  }
+}
+
 class _SyncDialog extends StatefulWidget {
   const _SyncDialog({required this.app, required this.notebookId});
   final AppState app;
@@ -54,6 +125,10 @@ class _SyncDialogState extends State<_SyncDialog> {
   /// Show the folder chooser even when already synced — "move this somewhere
   /// else" is a real thing to want.
   bool _changing = false;
+
+  /// Which of the folded sections is open, if any. One at a time: the whole
+  /// point is that the dialog is short enough to read.
+  _Pane? _open;
 
   Future<void> _moveTo(String dir, {String? subfolder}) async {
     setState(() {
@@ -117,7 +192,21 @@ class _SyncDialogState extends State<_SyncDialog> {
       ]),
       content: SizedBox(
         width: 480,
-        child: SingleChildScrollView(
+        // **Bounded.** This was a SingleChildScrollView with no height
+        // constraint, so on a synced notebook with git on, two backups and the
+        // storage figures open it measured well over a viewport — the dialog
+        // filled the window and every answer was somewhere in a long scroll.
+        // 460 is the number the notebook manager already uses.
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 460),
+          // **Listening.** Nothing here subscribed to AppState: every value it
+          // reads — the status, gitStatus, gitBusy — was a snapshot refreshed
+          // only by an explicit setState after a click. A sync that finished
+          // on the 60-second timer, or a status written by a background push,
+          // updated the state and left this dialog showing the old one.
+          child: ListenableBuilder(
+            listenable: app,
+            builder: (context, _) => SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -172,13 +261,56 @@ class _SyncDialogState extends State<_SyncDialog> {
                     style:
                         const TextStyle(fontSize: 12, color: OnoteColors.danger)),
               ],
+              // ── The rest, folded away until asked for.
+              //
+              // These four are separate questions — "where are the files",
+              // "keep it in git", "make me copies", "check for changes on my
+              // own" — and only one of them is ever the reason someone opened
+              // this. Stacked open they were four screens of controls and
+              // prose above the fold, which is what "very cluttered and hard
+              // to read" describes. One opens at a time.
               const Divider(height: 22),
-              _StorageSection(app: app, notebookId: nb),
-              const Divider(height: 22),
-              _GitSection(app: app),
-              const Divider(height: 22),
-              _mirrorSection(),
-              const Divider(height: 22),
+              _Disclosure(
+                icon: Icons.commit,
+                title: 'Sync with git',
+                // The subtitle answers the question without opening anything,
+                // which is most of what a collapsed section is for.
+                subtitle: app.gitEnabled
+                    ? (app.gitRemote == null
+                        ? 'On — this computer only'
+                        : SyncStatus(
+                                folder: null,
+                                devices: 1,
+                                mirrors: 0,
+                                gitRemote: app.gitRemote)
+                            .gitLabel!)
+                    : 'Off',
+                open: _open == _Pane.git,
+                onTap: () => setState(
+                    () => _open = _open == _Pane.git ? null : _Pane.git),
+                child: _GitSection(app: app),
+              ),
+              _Disclosure(
+                icon: Icons.folder_copy_outlined,
+                title: 'Extra copies',
+                subtitle: app.mirrorsFor(nb).isEmpty
+                    ? 'None'
+                    : '${app.mirrorsFor(nb).length} configured',
+                open: _open == _Pane.mirrors,
+                onTap: () => setState(() =>
+                    _open = _open == _Pane.mirrors ? null : _Pane.mirrors),
+                child: _mirrorSection(),
+              ),
+              _Disclosure(
+                icon: Icons.sd_storage_outlined,
+                title: 'Where the files are',
+                subtitle: 'Sizes, paths and leftovers',
+                open: _open == _Pane.storage,
+                onTap: () => setState(() =>
+                    _open = _open == _Pane.storage ? null : _Pane.storage),
+                child: _StorageSection(app: app, notebookId: nb),
+              ),
+              const Divider(height: 12),
               SwitchListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
@@ -198,14 +330,21 @@ class _SyncDialogState extends State<_SyncDialog> {
                     style: TextStyle(fontSize: 11)),
               ),
               const SizedBox(height: 6),
+              // The old version of this ended "Openote never talks to a
+              // server itself … nothing is exposed to the network by
+              // Openote". That was true when folder sync was the only route
+              // and it stopped being true the moment git and the GitHub API
+              // shipped. A privacy claim that has quietly become false is
+              // worse than no claim at all.
               const Text(
                 'Running your own server? Point Syncthing, Nextcloud, or an '
-                'rsync job at the same folder — Openote never talks to a '
-                'server itself, so anything that copies files works and '
-                'nothing is exposed to the network by Openote.',
+                'rsync job at the same folder — anything that copies files '
+                'works.',
                 style: TextStyle(fontSize: 12, height: 1.4),
               ),
             ],
+          ),
+            ),
           ),
         ),
       ),
@@ -469,8 +608,18 @@ class _StorageSectionState extends State<_StorageSection> {
                               'log is not — so it is being re-uploaded on '
                               'every save without actually syncing. Use '
                               '"Move elsewhere" above to put both in place.'
-                          : 'Both are on this computer only. Pick a folder '
-                              'above to sync this notebook.',
+                          : app.gitRemoteFor(widget.notebookId) != null
+                              // Git is a second way of being somewhere else,
+                              // and this used to flatly deny it — telling
+                              // someone whose notes had just been pushed to
+                              // GitHub that they were on this computer only.
+                              ? 'The notes are pushed to '
+                                  '${app.gitRemoteFor(widget.notebookId)}. '
+                                  'The working file stays on this computer, '
+                                  'which is deliberate — two machines sharing '
+                                  'one is what the sync log prevents.'
+                              : 'Both are on this computer only. Pick a '
+                                  'folder above to sync this notebook.',
                   style: const TextStyle(fontSize: 12, height: 1.4),
                 ),
               ],
