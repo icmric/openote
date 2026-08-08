@@ -38,4 +38,11 @@ Templates
     clicking on the button brings up a series of options, however clicking on any of these does nothing, even on a totally fresh page.
 
 Page Linking
-    We curerntly have a basic link system in place to link between pages which is fine, i would however like the ability to have a read-only version of one page visible inside another. I cant edit the other page through this, however edits made to this other page are visible later. 
+    We curerntly have a basic link system in place to link between pages which is fine, i would however like the ability to have a read-only version of one page visible inside another. I cant edit the other page through this, however edits made to this other page are visible later.
+
+Inking
+    Works, although id like it to auto detect when a pen is in proximity of the page and always assume to use it for inking rather than selecting (unless the user specifically selects another option)
+    Pre mapped buttons on the pen also not registering, i have 2 buttons on my pen (many have more or less, or slightly different styles) but the idea is the same, pressing the button is configured in the os to do something (i.e. switch to eraser or whatever), this should be implemented
+
+Navigation
+    On touch screens, by default draging with a finger should pan around the page, it shouldnt be the selector tool.
