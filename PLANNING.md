@@ -25,14 +25,18 @@ Flashcards
 Calander and tasks
     It works currently, however is very limited. This would need a fairly significant UI rework as it would probaly need to replace the page entirley, but having the ability to have a trello like task board would be incredibly helpful for both students and product managers
 
-Box movement
-    The bar only shows up when i hover over the box itself, so if i want to move it i need to move my cursor into the box then back up to the bar
-    Moving the bar should not select the box in an editing sense, it should remain not in editing mode if it wasnt previously in it. 
-
 Content
-    Would like to be able to embed videos into the page
-    Still unable to have multiple types of media in a single box (i.e. both text and an image)
-    Would like the ability to password protect a page (which includes sub pages if applicable), a section, or a section group. Also being able to configure if the password is required for every time its opened, if it lasts for 10 minutes, 1 hour, or until app is closed. 
+    Proper password protection for pages and sections
+
+Storage and size
+    Installer file size is quite a bit larger than expected (20-50mb depending on version), would like the total file size to be smaller as many students dont have much space on their laptops
+    File sizes are still very large too for notebooks, media will always make it large but it still feels much larger than it should, please investigate optimising the file size and potentially compression to save space.
+
+Cloud storage and saving
+    Currently got syncing using pre installed cloud folders, works but feels a bit janky, fine for now though.
+    For those more techincal, maybe we add git/github integration? Would need to all be automated by default as most people wont remeber to save and push changes
+    Currently no real way to share a file or page with someone else, would like to address that
+    In time, live editing (including cursor positions) would be awesome, although that will be quite complex and is not worth the effort at the moment.
 
 Templates
     clicking on the button brings up a series of options, however clicking on any of these does nothing, even on a totally fresh page.
