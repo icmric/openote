@@ -71,6 +71,33 @@ String syncStateTooltip(AppState app, String notebookId) {
   return 'On this computer only — not synced or backed up anywhere';
 }
 
+/// The status bar chip's longer, two-line tooltip.
+///
+/// Here rather than in `app_shell.dart` because it lived there as a private
+/// method on a private widget, which meant nothing could reach it — and it was
+/// the one of the three `folder!` dereferences that no amount of reading
+/// caught, because no test in the suite renders the status bar. Public, taking
+/// a [SyncStatus], it is coverable by anything that can build one.
+String syncChipTooltip(SyncStatus s) {
+  final b = StringBuffer();
+  if (s.isSynced) {
+    b.write(s.isFolderSynced
+        ? 'Syncing through ${s.where}.\n'
+        : 'Pushed to ${s.where} a minute after you stop typing, and again '
+            'when you close Openote.\n');
+    b.write(s.hasOtherDevices
+        ? 'Edited on ${s.devices} devices — changes arrive automatically.'
+        : 'Open this notebook on another device to sync it.');
+  } else {
+    b.write('Only on this computer.\n'
+        'Click to put it in a folder your cloud already syncs.');
+  }
+  if (s.mirrors > 0) {
+    b.write('\n${s.mirrors} backup destination${s.mirrors == 1 ? '' : 's'}.');
+  }
+  return b.toString();
+}
+
 /// A 8px status dot for one notebook.
 class SyncDot extends StatelessWidget {
   const SyncDot({super.key, required this.app, required this.notebookId});

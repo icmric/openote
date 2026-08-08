@@ -1036,6 +1036,18 @@ class AppState extends ChangeNotifier
   /// figures, blob materialisation for a background recorder — has to read the
   /// setting directly, or it gets the open notebook's answer for someone
   /// else's notebook.
+  /// Put [nb] into the git-synced state without running git.
+  ///
+  /// For tests that need to render a git-synced notebook — which is the state
+  /// that produced three null-assertion crashes — rather than to exercise git
+  /// itself.
+  @visibleForTesting
+  void debugSetGitSetting(String nb, String remote) {
+    _repo.setSetting(_gitKey(nb), {'enabled': true, 'remote': remote});
+    if (nb == notebookId) reloadGit();
+    _invalidateSyncStatus();
+  }
+
   String? gitRemoteFor(String nb) {
     final raw = _repo.getSetting(_gitKey(nb));
     if (raw is! Map || raw['enabled'] != true) return null;

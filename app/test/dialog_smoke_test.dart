@@ -23,6 +23,7 @@ import 'package:openote/store/repository.dart';
 import 'package:openote/ui/notebook_manager.dart';
 import 'package:openote/ui/onboarding.dart';
 import 'package:openote/ui/sync_dialog.dart';
+import 'package:openote/ui/sync_dot.dart';
 
 import 'support/sqlite.dart';
 
@@ -114,6 +115,64 @@ void main() {
       // Reported as hard to find: this dialog is where people are thinking
       // about where notebooks live, so adding one belongs here too.
       expect(find.text('Add a notebook…'), findsOneWidget);
+    });
+
+    // EVERY SURFACE, WITH A GIT REMOTE AND NO CLOUD FOLDER.
+    //
+    // The bug this exists for: when git started counting as synced,
+    // `SyncStatus.folder` stayed null while `isSynced` became true — and three
+    // separate places dereferenced `folder!` behind an `isSynced` check. Two
+    // were fixed by reading the code, the third took the status bar down on
+    // the first frame with "Null check operator used on a null value".
+    //
+    // Reading harder was not the answer; rendering the git-only state was. So
+    // this drives it through the widgets rather than asserting on SyncStatus,
+    // which is what makes it catch the next one.
+    testWidgets('the sync dialog opens for a git-only notebook ($label)',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await newApp(tester);
+      // Written straight to the setting: `setGitEnabled` would try to run git.
+      // What is under test is how a git-synced notebook RENDERS.
+      app.debugSetGitSetting(
+          app.notebookId!, 'https://github.com/you/notes.git');
+
+      await openDialog(tester, app, (c, a) => showSyncDialog(c, a),
+          window: size);
+
+      expect(tester.takeException(), isNull,
+          reason: 'a notebook synced through git, not a folder, at $label');
+      expect(find.byType(AlertDialog), findsOneWidget);
+    });
+
+    testWidgets('a git-only notebook reads as synced everywhere ($label)',
+        (tester) async {
+      // The non-widget half, over the same state: label, icon and tooltip all
+      // used to reach for a folder that is not there.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await newApp(tester);
+      final nb = app.notebookId!;
+      app.debugSetGitSetting(nb, 'https://github.com/you/notes.git');
+      // Writing a setting arms the debounced workspace save (400ms). Nothing
+      // is mounted here to pump it out, so drain it or the test ends holding a
+      // pending timer.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(milliseconds: 450));
+
+      final s = app.syncStatus(nb);
+      expect(s.isSynced, isTrue, reason: 'the notes are somewhere else');
+      expect(s.isFolderSynced, isFalse, reason: 'but not in a folder');
+      expect(s.folder, isNull);
+      expect(s.where, 'github.com/you/notes');
+      expect(s.label, isNotEmpty);
+      expect(() => s.icon, returnsNormally);
+      expect(syncStateOf(app, nb), SyncState.synced);
+      expect(syncStateTooltip(app, nb), contains('github.com/you/notes'));
+      // THE ONE THAT CRASHED. It was `_SyncChip._tooltip`, private on a
+      // private widget, and nothing in the suite mounts the status bar — so
+      // this is the assertion that only became possible by moving it out.
+      expect(syncChipTooltip(s), contains('github.com/you/notes'));
+      expect(syncChipTooltip(s), isNot(contains('Only on this computer')));
     });
 
     testWidgets('the welcome flow opens ($label)', (tester) async {

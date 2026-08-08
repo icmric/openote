@@ -21,6 +21,7 @@ import 'sidebar.dart';
 import '../export/print_page.dart';
 import 'study_panel.dart';
 import 'sync_dialog.dart';
+import 'sync_dot.dart';
 import '../theme/tokens.dart';
 
 /// Layout per style guide §5.4: navigator | (toolbar / canvas-as-hero / status).
@@ -1079,7 +1080,7 @@ class _SyncChip extends StatelessWidget {
     final color = s.isSynced ? OnoteColors.success : context.surfaces.textSecondary;
 
     return Tooltip(
-      message: _tooltip(s),
+      message: syncChipTooltip(s),
       child: InkWell(
         onTap: () => showSyncDialog(context, app),
         child: Padding(
@@ -1121,22 +1122,10 @@ class _SyncChip extends StatelessWidget {
     );
   }
 
-  String _tooltip(SyncStatus s) {
-    final b = StringBuffer();
-    if (s.isSynced) {
-      b.write('Syncing through ${s.folder!.name}.\n');
-      b.write(s.hasOtherDevices
-          ? 'Edited on ${s.devices} devices — changes arrive automatically.'
-          : 'Open this notebook on another device to sync it.');
-    } else {
-      b.write('Only on this computer.\n'
-          'Click to put it in a folder your cloud already syncs.');
-    }
-    if (s.mirrors > 0) {
-      b.write('\n${s.mirrors} backup destination${s.mirrors == 1 ? '' : 's'}.');
-    }
-    return b.toString();
-  }
+// The chip's tooltip lives in `sync_dot.dart` as `syncChipTooltip`. It was a
+// private method on this private widget, which is why nothing could reach it
+// — and it was the `folder!` that survived two rounds of fixing the same bug
+// elsewhere and took the status bar down on the first frame.
 }
 
 /// What stands in for a locked page's content.

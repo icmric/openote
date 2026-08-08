@@ -182,7 +182,9 @@ class _SyncDialogState extends State<_SyncDialog> {
   Widget build(BuildContext context) {
     final status = app.syncStatus(nb);
     final path = app.notebookPath(nb);
-    final showChooser = !status.isSynced || _changing;
+    // A notebook synced through git is still not in a cloud folder, so the
+    // folder chooser is still the answer to a question it has not been asked.
+    final showChooser = !status.isFolderSynced || _changing;
 
     return AlertDialog(
       title: Row(children: [
@@ -211,9 +213,14 @@ class _SyncDialogState extends State<_SyncDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (status.isSynced) _linkedCard(status, path),
-              if (status.isSynced) const SizedBox(height: 4),
-              if (!status.isSynced)
+              // `isFolderSynced`, not `isSynced`. This card is about a FOLDER
+              // — it names one, and it offers "move it elsewhere" — and since
+              // git started counting as synced, a git-only notebook reached it
+              // with no folder to name. Same null assertion that took the
+              // status chip down.
+              if (status.isFolderSynced) _linkedCard(status, path),
+              if (status.isFolderSynced) const SizedBox(height: 4),
+              if (!status.isFolderSynced)
                 const Text(
                   'Openote syncs through a folder your cloud already keeps in '
                   'step — no account, no sign-in, and no access to the rest of '
