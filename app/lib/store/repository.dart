@@ -571,6 +571,71 @@ class Repository {
     return ref;
   }
 
+  /// Register a notebook whose only copy is an op-log directory.
+  ///
+  /// This is what a notebook cloned from a git URL looks like: `ops/`,
+  /// `blobs/` and a `manifest.json`, and no `.onote` at all, because the
+  /// container is gitignored on purpose (ADR-0006 §3 — it is a local WAL cache
+  /// and two machines sharing one is the corruption the logs exist to avoid).
+  ///
+  /// [openExistingNotebook] cannot serve this case: it takes the path of a
+  /// container and byte-copies it, which is right for folder sync — where the
+  /// first device physically moved its `.onote` into Drive — and impossible
+  /// here.
+  ///
+  /// So the container is created EMPTY and the first pull fills it in. Empty
+  /// really means empty: unlike [createNotebook] this seeds no section and no
+  /// page. Those two rows have no ops behind them, so on a joined notebook
+  /// they would be permanent ghosts — content the log has never heard of,
+  /// which therefore never syncs anywhere and never goes away.
+  Future<NotebookRef> adoptLogDirectory(String logDir,
+      {required String title, String? notebookId}) async {
+    final dir = Directory(logDir);
+    if (!dir.existsSync()) throw StateError('nothing at $logDir');
+
+    // Matched on the LOG directory, the one thing two entries for the same
+    // notebook always share. The container path never matches — each device
+    // makes its own.
+    bool same(NotebookRef n) => n.logDir != null && p.equals(n.logDir!, logDir);
+    final already = notebooks.where(same).firstOrNull;
+    if (already != null) return already;
+    // The recycle bin counts, for the same reason it counts in
+    // [openExistingNotebook]: re-joining a notebook you had deleted must
+    // restore the entry you already have rather than clone a second copy of
+    // it beside the first.
+    final trashed = trashedNotebooks.where(same).firstOrNull;
+    if (trashed != null) {
+      await restoreNotebook(trashed.id);
+      return trashed;
+    }
+
+    // The workspace id, not the notebook's own id from the manifest. They are
+    // different things: the manifest id identifies the NOTEBOOK across
+    // devices, and this identifies the row in this workspace's registry, which
+    // must stay unique even if the same notebook is somehow joined twice.
+    final id = notebookId ?? newId();
+    final local = _freeNotebookPath(title);
+    final ref = NotebookRef(id: id, file: local, title: title, logDir: logDir);
+    notebooks.add(ref);
+    _open[id] = openOnote(local, notebookId: id, title: title);
+    await _saveNow();
+    return ref;
+  }
+
+  /// A free `<base>.onotebook` directory in the workspace, for a notebook
+  /// arriving as logs rather than as a container.
+  String freeLogDirPath(String title) {
+    var base = title.replaceAll(RegExp(r'[^\w\- ]'), '').trim();
+    if (base.isEmpty) base = 'Notebook';
+    var dir = p.join(workspaceDir.path, '$base.onotebook');
+    var i = 2;
+    while (Directory(dir).existsSync()) {
+      dir = p.join(workspaceDir.path, '$base-$i.onotebook');
+      i++;
+    }
+    return dir;
+  }
+
   /// A unique `<base>.onote` path in the workspace (suffixing `-2`, `-3`, … as
   /// needed). Shared by create and duplicate so both name files the same way.
   String _freeNotebookPath(String title) {

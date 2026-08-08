@@ -8,6 +8,7 @@ import '../export/onenote_import.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'join_git_dialog.dart';
 import 'onboarding.dart';
 import 'sync_dot.dart';
 import '../theme/tokens.dart';
@@ -243,6 +244,13 @@ class _NotebookManagerState extends State<_NotebookManager> {
             (m, c) => importOneNoteSectionWithFeedback(c, app, messenger: m)),
         choice(Icons.drive_folder_upload_outlined, 'Markdown folder',
             (m, _) => importMarkdownWithFeedback(m, app)),
+        // The other end of "put this notebook on GitHub". It sits with the
+        // imports because that is where someone looks for "I have a notebook
+        // somewhere else and I want it here" — the fact that this one arrives
+        // over git rather than as a file is not the user's distinction to
+        // make.
+        choice(Icons.cloud_download_outlined, 'From a git address',
+            (m, c) => showJoinFromGitDialog(c, app, messenger: m)),
       ]),
     );
   }

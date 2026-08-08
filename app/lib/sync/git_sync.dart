@@ -303,7 +303,11 @@ Thumbs.db
   /// `NotebookRef.logDirPath` expects, so the result is a notebook Openote can
   /// open by pointing at it. The container is rebuilt locally by replaying the
   /// logs; it is not in the repository and must not be.
-  static Future<GitResult> clone(String url, String intoDir) async {
+  /// [token] authenticates a PRIVATE repository — which is what this feature
+  /// creates by default, so it is the normal case rather than the exotic one.
+  /// Passed through the environment exactly as [push] and [pull] pass it.
+  static Future<GitResult> clone(String url, String intoDir,
+      {String? token}) async {
     final git = await gitExecutable();
     if (git == null) {
       return const GitResult(-1, '', 'git is not installed on this computer');
@@ -312,8 +316,14 @@ Thumbs.db
         Directory(intoDir).listSync().isNotEmpty) {
       return GitResult(-1, '', 'There is already something at $intoDir');
     }
+    // A GitSync over the target, purely to borrow the credential-helper
+    // arguments and environment. Static because there is no working tree to
+    // run in yet — the clone is what creates one.
+    final auth = GitSync(intoDir, token: token);
     try {
-      final r = await Process.run(git, ['clone', url, intoDir])
+      final r = await Process.run(
+              git, [...auth._authArgs, 'clone', url, intoDir],
+              environment: auth._env)
           .timeout(const Duration(minutes: 10));
       return GitResult(r.exitCode, '${r.stdout}'.trim(), '${r.stderr}'.trim());
     } catch (e) {

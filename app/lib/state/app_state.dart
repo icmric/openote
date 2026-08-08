@@ -17,6 +17,7 @@ import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
 import '../store/media_store.dart';
+import '../sync/materializer.dart';
 import '../sync/git_sync.dart';
 import '../sync/github_api.dart';
 import '../store/repository.dart';
@@ -503,6 +504,160 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Join a notebook from a git URL — the other half of publishing one.
+  ///
+  /// "I want to be able to create and push my notebook to github from within
+  /// the app" has a second machine at the end of it, and this is that machine.
+  /// Paste the URL, get the notebook.
+  ///
+  /// Returns null on success, or a message to show. Never throws.
+  ///
+  /// The order is: clone, register, select, turn git on, pull. Selecting
+  /// BEFORE writing the git setting matters — [setGitEnabled] keys on
+  /// `notebookId` and `_git` resolves `currentNotebook.logDirPath`, so doing
+  /// it earlier would file the new notebook's remote under the old notebook's
+  /// name and point the sync at the wrong directory.
+  Future<String?> joinNotebookFromGit(String url,
+      {void Function(String stage)? onProgress}) async {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return 'Paste the address of the repository.';
+    if (await GitSync.gitExecutable() == null) {
+      return 'Git is not installed on this computer. Installing it from '
+          'git-scm.com is all that is needed.';
+    }
+
+    // Already here? Match on the remote recorded for each notebook, INCLUDING
+    // ones whose git switch is currently off — turning it off keeps the
+    // address on disk, so reading through `gitRemoteFor` would miss a notebook
+    // the user had merely paused and clone a second ~100 MB copy beside it.
+    for (final n in [..._repo.notebooks, ..._repo.trashedNotebooks]) {
+      final raw = _repo.getSetting(_gitKey(n.id));
+      final known = raw is Map ? raw['remote'] : null;
+      if (known is String && _sameRepo(known, trimmed)) {
+        await selectNotebook(n.id);
+        return null;
+      }
+    }
+
+    onProgress?.call('Fetching…');
+    // Named from the URL rather than the manifest, because the directory has
+    // to exist before the manifest inside it can be read.
+    final name = repoNameFor(_repoNameFromUrl(trimmed));
+    final into = _repo.freeLogDirPath(name);
+    final cloned =
+        await GitSync.clone(trimmed, into, token: _githubToken);
+    if (!cloned.ok) {
+      try {
+        final d = Directory(into);
+        if (d.existsSync()) d.deleteSync(recursive: true);
+      } catch (_) {
+        // A half-clone left behind would make the next attempt fail with
+        // "there is already something there", which reads as a different
+        // problem than the one that actually happened.
+      }
+      return _explainClone(cloned.message);
+    }
+
+    // The manifest is the notebook's own name for itself, and it is better
+    // than the repository's: someone's "Year 12 — Physics" became
+    // "Year-12-Physics" on the way to GitHub, and this puts it back.
+    var title = name;
+    String? knownId;
+    try {
+      final mf = File(p.join(into, 'manifest.json'));
+      if (mf.existsSync()) {
+        final j = jsonDecode(mf.readAsStringSync());
+        if (j is Map) {
+          final t = j['title'];
+          if (t is String && t.trim().isNotEmpty) title = t.trim();
+          final i = j['notebookId'];
+          if (i is String && i.isNotEmpty) knownId = i;
+        }
+      }
+    } catch (_) {
+      // A missing or unreadable manifest is not fatal — the logs are the
+      // notebook, and the name is cosmetic.
+    }
+    if (knownId == null) {
+      // Not an Openote notebook, or one from before manifests. Either way the
+      // pull below would produce an empty notebook and no explanation.
+      if (!Directory(p.join(into, 'ops')).existsSync()) {
+        try {
+          Directory(into).deleteSync(recursive: true);
+        } catch (_) {}
+        return 'That repository does not look like an Openote notebook — '
+            'there is no ops folder in it.';
+      }
+    }
+
+    onProgress?.call('Opening…');
+    final ref = await _repo.adoptLogDirectory(into, title: title);
+    await selectNotebook(ref.id);
+    // Git on, with the address it came from, so it keeps in step from here
+    // without the user setting anything up. `setGitEnabled` runs a cycle,
+    // which is the pull that materialises the notebook into its empty
+    // container.
+    await setGitEnabled(true, remote: trimmed);
+    onProgress?.call('Reading the notes…');
+    // Explicitly as well, because `setGitEnabled`'s cycle only folds what
+    // `syncOnce` returns from and a fresh clone's ops are already on disk
+    // before the first pull ever runs.
+    await syncPull(ref.id);
+    reloadNodes();
+    await _loadNotebook();
+    notifyListeners();
+    return null;
+  }
+
+  /// Are these two URLs the same repository?
+  ///
+  /// Compared on host and path with the scheme, any `user@`, a `.git` suffix
+  /// and case set aside, so `https://github.com/you/n.git`,
+  /// `https://github.com/You/N`, and `git@github.com:you/n.git` are one
+  /// notebook rather than three.
+  static bool _sameRepo(String a, String b) => _repoKey(a) == _repoKey(b);
+
+  static String _repoKey(String url) {
+    var s = url.trim().toLowerCase();
+    final scheme = s.indexOf('://');
+    if (scheme >= 0) s = s.substring(scheme + 3);
+    final at = s.indexOf('@');
+    if (at >= 0) s = s.substring(at + 1);
+    s = s.replaceFirst(':', '/');
+    if (s.endsWith('.git')) s = s.substring(0, s.length - 4);
+    while (s.endsWith('/')) {
+      s = s.substring(0, s.length - 1);
+    }
+    return s;
+  }
+
+  static String _repoNameFromUrl(String url) {
+    final key = _repoKey(url);
+    final slash = key.lastIndexOf('/');
+    final last = slash >= 0 ? key.substring(slash + 1) : key;
+    return last.isEmpty ? 'Notebook' : last;
+  }
+
+  /// Git's clone failures, in words that say what to do.
+  static String _explainClone(String message) {
+    final m = message.toLowerCase();
+    if (m.contains('authentication failed') ||
+        m.contains('could not read username') ||
+        m.contains('terminal prompts disabled')) {
+      return 'That repository needs a sign-in. Connect your GitHub account '
+          'above and try again.';
+    }
+    if (m.contains('repository not found') || m.contains('not found')) {
+      return 'No repository at that address — or it is private and this '
+          'account cannot see it. Check the address, and that you are signed '
+          'in to the right account.';
+    }
+    if (m.contains('could not resolve host')) {
+      return 'Could not reach that address. Check your connection.';
+    }
+    return 'Could not fetch it: ${message.split('\n').first}';
+  }
+
   /// Create a repository on GitHub for this notebook, and push it there.
   ///
   /// The whole point of the feature: one button, from an empty notebook to
@@ -754,6 +909,7 @@ class AppState extends ChangeNotifier
         materialiseBlobs: notebookIsShared(nb),
       );
       _recorders[nb] = r;
+      _backfillTree(nb, r);
       // Copy the container's blobs into `blobs/` — for a shared notebook that
       // is the whole point, and it is a no-op for a local-only one. In the
       // background either way: on a real imported notebook this is hundreds of
@@ -823,6 +979,7 @@ class AppState extends ChangeNotifier
         winner = r;
         _recorders[nb] = r;
         r.seedTitle(ref.title);
+        _backfillTree(nb, r);
         _startBlobBackfill(nb, r);
       }
       // Either way: a notebook with no ops directory when `_startWatching` ran
@@ -915,6 +1072,47 @@ class AppState extends ChangeNotifier
     _startBlobBackfill(nb, existing);
   }
 
+  /// Record any node the container has and the log does not.
+  ///
+  /// **The log has to be able to rebuild the notebook, and it could not.**
+  /// `Repository.createNotebook` seeds a first section and page straight into
+  /// SQLite — no ops — so from the log's point of view every notebook has ever
+  /// begun with a page that has no parent and a section that does not exist.
+  /// The same is true of any notebook that predates the log entirely.
+  ///
+  /// Nothing noticed, because every existing way of reaching a second device
+  /// byte-copies the container first, and the missing rows were always already
+  /// there. Joining from a git URL is the first path where the log is the ONLY
+  /// copy — and its first pull failed on the foreign key from the page to a
+  /// section that had never been mentioned.
+  ///
+  /// Idempotent by construction: `SyncRecorder.node` diffs against replayed
+  /// state, so a node the log already knows produces nothing. That makes this
+  /// safe to run on every open, which is what heals notebooks made before this
+  /// existed rather than only new ones.
+  void _backfillTree(String nb, SyncRecorder r) {
+    if (_disposed) return;
+    try {
+      final known = {for (final n in r.materialisedNodes()) n.id};
+      // Parents first, so the ops replay into a tree rather than a pile.
+      final missing = [
+        for (final n in _repo.loadNodes(nb))
+          if (!known.contains(n.id)) n
+      ]..sort((a, b) => a.level.compareTo(b.level));
+      if (missing.isEmpty) return;
+      for (final n in missing) {
+        r.node(n);
+      }
+      debugPrint('[openote/sync] recorded ${missing.length} node(s) the log '
+          'had never been told about in $nb');
+    } catch (e) {
+      // Same rule as everywhere else in shadow mode: the container is
+      // authoritative and a log we cannot write is a degraded check, never a
+      // reason to fail what the user asked for.
+      debugPrint('[openote/sync] tree backfill failed for $nb: $e');
+    }
+  }
+
   void _startBlobBackfill(String nb, SyncRecorder r) {
     if (_disposed || !r.materialiseBlobs) return;
     final f = r
@@ -978,6 +1176,37 @@ class AppState extends ChangeNotifier
   /// Auto-pull would then be "auto-pull, usually", which is worse than manual
   /// because nothing tells you it didn't happen.
   bool _pullAgain = false;
+
+  /// [nodes], reordered so every node follows its parent.
+  ///
+  /// A stable topological sort: roots (and any node whose parent is not in the
+  /// set — an orphan, which delete-wins can produce) come first, then each
+  /// generation below. Cycles cannot happen through the app, but a hand-edited
+  /// or truncated log could produce one, so anything still unplaced after the
+  /// tree is exhausted is appended rather than dropped. Losing a node here
+  /// would be worse than a foreign-key error: the error rolls back and retries,
+  /// a silent drop does not.
+  static List<MatNode> _parentsFirst(List<MatNode> nodes) {
+    final byId = {for (final n in nodes) n.id: n};
+    final out = <MatNode>[];
+    final placed = <String>{};
+
+    void place(MatNode n, int depth) {
+      if (!placed.add(n.id)) return;
+      final parent = n.parentId;
+      // `depth` bounds the recursion in the presence of a cycle; the length of
+      // the list is the deepest a valid tree can be.
+      if (parent != null && byId.containsKey(parent) && depth < nodes.length) {
+        place(byId[parent]!, depth + 1);
+      }
+      out.add(n);
+    }
+
+    for (final n in nodes) {
+      place(n, 0);
+    }
+    return out;
+  }
 
   /// Pull once the background replay has finished, without blocking the open.
   ///
@@ -1092,25 +1321,29 @@ class AppState extends ChangeNotifier
     final pulledBlobs = _ingestForeignBlobs(nb, r, pending);
 
     _repo.runInTransaction(nb, () {
-      for (final pageId in changed.pages) {
-        final mirror = r.materialisedPage(pageId);
-        final blocks = [
-          for (final b in (mirror['blocks'] as List? ?? const []))
-            Block.fromJson((b as Map).cast<String, dynamic>())
-        ];
-        final props = PageProps.fromJson(
-            (mirror['page'] as Map?)?.cast<String, dynamic>());
-        _repo.writePage(nb, pageId, blocks, props);
-      }
+      // **Nodes before pages.** `page_mirror.page_id` is a foreign key onto
+      // `nodes(id)` and every container runs with `PRAGMA foreign_keys=ON`, so
+      // writing a page whose node row does not exist yet fails with SQLITE
+      // constraint 787 — and `runInTransaction` rolls back, discarding the
+      // WHOLE pull rather than one row.
+      //
+      // It has never mattered because every existing way of getting a
+      // notebook onto a second device copies the container first, so the node
+      // rows are always already there and the tree ops are updates. A notebook
+      // joined from a git URL has no container to copy — the log IS the
+      // notebook — so its very first pull creates every node and every page at
+      // once, and the order stops being an implementation detail.
       if (changed.treeChanged) {
-        // Deletions first: a node the log says is gone must leave the
-        // container, or a remote delete would be silently ignored and
-        // "delete wins" would become "delete loses". Soft-delete, so it
-        // lands in the recycle bin exactly as a local delete would.
-        for (final id in r.materialisedDeletedIds()) {
-          _repo.softDeleteNode(nb, id);
-        }
-        for (final n in r.materialisedNodes()) {
+        // PARENTS BEFORE CHILDREN. `nodes.parent_id` is a self-referencing
+        // foreign key, so a page written before its section fails the same way
+        // a page written before its node does — and rolls back the same whole
+        // transaction. The materialised nodes come out in map order, which is
+        // whatever order the ops happened to be replayed in.
+        //
+        // Same reason as the block above: on a container that already has the
+        // tree these are all updates and order is irrelevant. On the empty
+        // container a git join creates, every row is an insert.
+        for (final n in _parentsFirst(r.materialisedNodes())) {
           _repo.upsertNode(
               nb,
               TreeNode(
@@ -1124,6 +1357,27 @@ class AppState extends ChangeNotifier
                 level: n.level,
                 createdAt: n.createdAt == 0 ? null : n.createdAt,
               ));
+        }
+      }
+      for (final pageId in changed.pages) {
+        final mirror = r.materialisedPage(pageId);
+        final blocks = [
+          for (final b in (mirror['blocks'] as List? ?? const []))
+            Block.fromJson((b as Map).cast<String, dynamic>())
+        ];
+        final props = PageProps.fromJson(
+            (mirror['page'] as Map?)?.cast<String, dynamic>());
+        _repo.writePage(nb, pageId, blocks, props);
+      }
+      if (changed.treeChanged) {
+        // Deletions LAST, and this is the half that has to stay after the
+        // pages: a node the log says is gone must leave the container, or a
+        // remote delete would be silently ignored and "delete wins" would
+        // become "delete loses". Running it before the page writes would let a
+        // page write resurrect what the delete just removed. Soft-delete, so
+        // it lands in the recycle bin exactly as a local delete would.
+        for (final id in r.materialisedDeletedIds()) {
+          _repo.softDeleteNode(nb, id);
         }
       }
     });
