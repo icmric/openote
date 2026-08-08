@@ -45,6 +45,19 @@ bool initSqliteForTests() {
 /// rather than rewritten, which is safe precisely because the name pins the
 /// bytes.
 String? _loadableCopy(File src) {
+  // **Windows only, and that is not a shortcut — it is the whole reason.**
+  //
+  // The problem being solved is a Windows one: a loaded DLL is locked, so a
+  // test run stopped the next `flutter run` from overwriting `sqlite3.dll`.
+  // Unix has no such lock; a running process keeps its inode and the file can
+  // be replaced underneath it.
+  //
+  // And copying actively BREAKS the other two. macOS refuses to load a
+  // `.dylib`/framework whose code signature no longer matches its location,
+  // and a Linux `/tmp` is routinely mounted `noexec`, which makes `dlopen`
+  // fail outright. Both showed up as every sqlite-dependent test failing on
+  // CI while Windows stayed green.
+  if (!Platform.isWindows) return null;
   try {
     final stat = src.statSync();
     final name = 'onote-sqlite-${stat.size}-'
