@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../editor/code_block_view.dart';
 import '../editor/file_block_view.dart';
+import '../editor/flashcard_block_view.dart';
 import '../editor/image_block_view.dart';
 import '../editor/math_block_view.dart';
 import '../editor/table_block_view.dart';
@@ -355,6 +356,8 @@ class _BlockViewState extends State<BlockView> {
         'Equation. ${b.content['linearSource'] ?? b.content['latex'] ?? ''}',
       BlockType.image => 'Image',
       BlockType.file => 'Attachment: ${b.content['name'] ?? 'file'}',
+      BlockType.flashcard =>
+        'Flashcard: ${b.content['front'] ?? 'empty'}',
       _ => '${b.type.name} block',
     };
     return t.trim().isEmpty ? '${b.type.name} block' : t;
@@ -476,6 +479,7 @@ class _BlockViewState extends State<BlockView> {
       BlockType.code => CodeBlockView(block: b, app: app),
       BlockType.table => TableBlockView(block: b, app: app),
       BlockType.file => FileBlockView(block: b, app: app),
+      BlockType.flashcard => FlashcardBlockView(block: b, app: app),
       _ => Padding(
           padding: const EdgeInsets.all(8),
           child: Text('Unsupported block: ${b.type.name}',

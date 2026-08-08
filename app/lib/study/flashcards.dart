@@ -9,9 +9,18 @@
 /// *studying* it. That step is the differentiator: no mainstream notes app
 /// does it natively, and students maintain a painful second system by hand.
 ///
-/// **Scope guard:** this is reviewing your own notes, not a flashcard
-/// authoring suite. No images on cards, no shared decks, no deck editor —
-/// the cards are a *view* of the notes and stay that way.
+/// **Scope guard, revised.** This began as a pure *view* of the notes: tag a
+/// line, get a card. That stayed true and stays true — but "Currently not
+/// intuitive how to use them" was the verdict, because nothing about typing a
+/// line of notes suggests that tagging it produces a card, and the tag chords
+/// are invisible until you know them.
+///
+/// So there is now a second door: Insert ▸ Flashcard puts a real card on the
+/// page, which you fill in and flip where it sits. Both doors lead to the same
+/// deck — [cardsFromBlock] emits from either, so scheduling, the study panel,
+/// the deck counts and the exam plan needed no changes at all. What is still
+/// out of scope is a flashcard *app*: no shared decks, no card templates, no
+/// separate authoring surface away from the notes.
 library;
 
 import '../model/models.dart';
@@ -92,6 +101,33 @@ final _definitionSplits = [
 ///   beats a whole-line recall for a fact buried in a sentence.
 List<Flashcard> cardsFromBlock(
     Block block, String pageId, String pageTitle) {
+  // A card the user placed on the page directly (Insert > Flashcard). It is
+  // ONE card and it needs no parsing — the front and back are already the two
+  // things they typed. Emitting it here rather than anywhere else is what
+  // makes it appear in the study panel, the deck counts, the exam plan and the
+  // scheduler with no further plumbing: everything downstream consumes this
+  // function, and it does not care where a card came from.
+  if (block.type == BlockType.flashcard) {
+    final front = (block.content['front'] as String? ?? '').trim();
+    final back = (block.content['back'] as String? ?? '').trim();
+    // A half-written card is not a card. Reviewing a blank front teaches
+    // nothing and cannot be graded honestly.
+    if (front.isEmpty || back.isEmpty) return const [];
+    return [
+      Flashcard(
+        pageId: pageId,
+        pageTitle: pageTitle,
+        blockId: block.id,
+        // Line 0: a block card has no line to move, so its id is stable for
+        // the block's whole life. `Flashcard.id` is `blockId:line`, and the
+        // scheduling state is stored under it.
+        line: 0,
+        front: front,
+        back: back,
+        kind: TagKind.question,
+      )
+    ];
+  }
   if (block.type != BlockType.text) return const [];
   final tags = NoteTag.listFrom(block.content);
   if (tags.isEmpty) return const [];

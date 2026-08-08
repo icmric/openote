@@ -419,6 +419,7 @@ class _CommandBarState extends State<CommandBar> {
       ins(Icons.attach_file, 'File', () => _insertFile(context)),
       ins(Icons.play_circle_outline, 'Video or link…',
           () => _insertMediaLink(context)),
+      ins(Icons.style_outlined, 'Flashcard', _insertFlashcard),
       ins(Icons.link, 'Page link', () => _insertPageLink(context)),
       ins(Icons.dashboard_customize_outlined, 'Template',
           () => _applyTemplate(context)),
@@ -905,6 +906,25 @@ class _CommandBarState extends State<CommandBar> {
       ),
     );
     if (choice != null) app.applyTemplate(choice);
+  }
+
+  /// A card on the page, opened ready to be written.
+  ///
+  /// The second door to the study loop, and the one people find. Tagging a
+  /// line still makes a card and always will, but "Currently not intuitive how
+  /// to use them" was the verdict on a feature whose only entrance was a
+  /// keyboard chord over a tag nobody knew produced anything.
+  void _insertFlashcard() {
+    final c = _center();
+    final b = app.addBlock(Block(
+      type: BlockType.flashcard,
+      x: c.dx - 170,
+      y: c.dy - 90,
+      w: 340,
+      h: 180,
+      content: {'front': '', 'back': ''},
+    ));
+    app.select(b.id);
   }
 
   Future<void> _insertPageLink(BuildContext context) async {

@@ -131,7 +131,24 @@ class PageData {
 
 // ── Blocks ───────────────────────────────────────────────────────────────
 
-enum BlockType { text, ink, math, image, code, file, table, frame, embed, unknown }
+// `flashcard` is the newest member, and adding it was only safe because of
+// `Block.rawType`: a build that predates it reads the type as `unknown`,
+// carries the literal string through untouched, and writes it back — so a page
+// with a card on it round-trips through an older Openote without losing the
+// card. Before rawType, a new enum value destroyed data on old builds.
+enum BlockType {
+  text,
+  ink,
+  math,
+  image,
+  code,
+  file,
+  table,
+  frame,
+  embed,
+  flashcard,
+  unknown
+}
 
 BlockType blockTypeFrom(String s) =>
     BlockType.values.asNameMap()[s] ?? BlockType.unknown;
