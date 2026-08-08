@@ -11,6 +11,7 @@
 // There was no test for templates at all. That is why. These run the REAL
 // state function against the REAL built-in data, so a template that cannot be
 // parsed fails here instead of on a page.
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -19,8 +20,16 @@ import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/state/builtin_templates.dart';
 import 'package:openote/store/repository.dart';
+import 'package:openote/study/flashcards.dart';
 
 import 'support/sqlite.dart';
+
+/// How many blocks a built-in template contains, without applying it.
+int _blockCount(AppState app, String name) {
+  final raw = builtinTemplates[name];
+  if (raw == null) return 0;
+  return ((jsonDecode(raw) as Map)['blocks'] as List).length;
+}
 
 void main() {
   var haveSqlite = false;
@@ -104,6 +113,133 @@ void main() {
     app.undo();
     expect(app.blocks, isEmpty,
         reason: 'a template drops content onto a page you own');
+  });
+
+  group('it respects the page it lands on', () {
+    // "They dont respect the current layout of the page (with the title and
+    // stuff), they just go over it all." Templates are authored on an empty
+    // page, so their blocks carry coordinates that sit over the title band and
+    // over whatever you had already written.
+
+    Block existing({double y = 200, double h = 120}) => Block(
+        type: BlockType.text,
+        x: 44,
+        y: y,
+        w: 300,
+        h: h,
+        content: {'text': 'My own notes'});
+
+    test('on an empty page it starts below the title band', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.applyTemplate(builtinTemplates.keys.first);
+      final top = app.blocks.map((b) => b.y).reduce((a, b) => a < b ? a : b);
+      expect(top, greaterThanOrEqualTo(AppState.contentTop),
+          reason: 'nothing may sit over the title and date');
+    });
+
+    test('on a page with content it lands underneath, touching nothing',
+        () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final mine = existing();
+      app.blocks = [mine];
+      final wasY = mine.y;
+
+      app.applyTemplate(builtinTemplates.keys.first);
+
+      expect(mine.y, wasY, reason: 'my block did not move');
+      expect(mine.content['text'], 'My own notes');
+      final added = app.blocks.where((b) => b.id != mine.id);
+      expect(added, isNotEmpty);
+      for (final b in added) {
+        expect(b.y, greaterThan(wasY + 120),
+            reason: 'every template block is below what was already there');
+        expect(b.z, greaterThan(mine.z),
+            reason: 'and on top of the stack, not buried under it');
+      }
+    });
+
+    test('the template keeps its own shape when it is moved', () {
+      // Translated as one piece: the blocks' positions RELATIVE to each other
+      // are what makes a template look like a template.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final name = builtinTemplates.keys
+          .firstWhere((n) => _blockCount(app, n) > 1, orElse: () => '');
+      if (name.isEmpty) return markTestSkipped('no multi-block built-in');
+
+      app.applyTemplate(name);
+      final onEmpty = [for (final b in app.blocks) (b.x, b.y)];
+
+      app.blocks = [existing()];
+      app.applyTemplate(name);
+      final onBusy = [
+        for (final b in app.blocks.where((b) => b.content['text'] != 'My own notes'))
+          (b.x, b.y)
+      ];
+
+      expect(onBusy.length, onEmpty.length);
+      final shift = onBusy.first.$2 - onEmpty.first.$2;
+      for (var i = 0; i < onEmpty.length; i++) {
+        expect(onBusy[i].$1, onEmpty[i].$1, reason: 'x is unchanged');
+        expect(onBusy[i].$2 - onEmpty[i].$2, closeTo(shift, 0.01),
+            reason: 'every block shifted by the same amount');
+      }
+    });
+
+    test('it does not rewrite the page settings of a page in use', () {
+      // Applying a template to a page you have been working on must not
+      // silently change its background or its grid.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.blocks = [existing()];
+      app.pageProps.background = 'grid';
+      app.applyTemplate(builtinTemplates.keys.first);
+      expect(app.pageProps.background, 'grid');
+    });
+  });
+
+  group('they teach the study loop by using it', () {
+    // The one thing a template can do that a blank page cannot. A Question or
+    // Definition tag on an EMPTY line makes no card — so a template can mark
+    // the line in advance and the card appears the moment the student writes
+    // on it, which is how someone discovers the feature exists.
+    test('Revision sheet brings real flashcards with it', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.applyTemplate('Revision sheet');
+      expect(app.blocks.where((b) => b.type == BlockType.flashcard),
+          isNotEmpty);
+    });
+
+    test('a tagged template line becomes a card once it is written on', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.applyTemplate('Revision sheet');
+      final tagged = app.blocks.firstWhere(
+          (b) => (b.content['tags'] as List?)?.isNotEmpty ?? false);
+      expect(cardsFromBlock(tagged, 'p', 't'), isEmpty,
+          reason: 'an empty tagged line is not a card yet');
+
+      const nl = '\n';
+      final lines = (tagged.content['text'] as String).split(nl);
+      lines[1] = 'Derivative — the rate at which a function changes';
+      tagged.content['text'] = lines.join(nl);
+
+      final cards = cardsFromBlock(tagged, 'p', 't');
+      expect(cards, hasLength(1),
+          reason: 'writing on the line is all it takes');
+      expect(cards.single.front, 'Derivative');
+    });
+
+    test('no built-in puts a card in the deck before you write anything', () {
+      // The tags are an invitation, not content. A template that quietly added
+      // cards would have you revising its own placeholder text.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      for (final name in builtinTemplates.keys) {
+        app.blocks = [];
+        app.applyTemplate(name);
+        for (final b in app.blocks) {
+          expect(cardsFromBlock(b, 'p', 't'), isEmpty,
+              reason: '"$name" arrived with a card already in it');
+        }
+      }
+    });
   });
 
   test('an unknown name changes nothing rather than throwing', () {

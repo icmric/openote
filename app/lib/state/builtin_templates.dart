@@ -40,8 +40,16 @@ const Map<String, String> builtinTemplates = {
 {"page":{"background":"ruled"},"blocks":[
  {"type":"text","x":60,"y":40,"w":700,"content":{"text":"# Lecture\\n**Course:**  \\n**Date:** "}},
  {"type":"text","x":60,"y":200,"w":700,"content":{"text":"## Key points\\n- "}},
- {"type":"text","x":800,"y":200,"w":240,"content":{"text":"## Questions\\n- "}},
+ {"type":"text","x":800,"y":200,"w":240,"content":{"text":"## Questions to answer later\\n- ","tags":[{"kind":"question","line":1}]}},
  {"type":"text","x":60,"y":560,"w":700,"content":{"text":"## Follow-up\\n- [ ] Review these notes\\n- [ ] "}}
+]}''',
+  'Revision sheet': '''
+{"page":{"background":"blank"},"blocks":[
+ {"type":"text","x":60,"y":40,"w":960,"content":{"text":"# Revision\\n**Topic:**  \\n**Exam:** "}},
+ {"type":"text","x":60,"y":190,"w":460,"content":{"text":"## Definitions\\n","tags":[{"kind":"definition","line":1}]}},
+ {"type":"flashcard","x":560,"y":190,"w":420,"h":170,"content":{"front":"","back":""}},
+ {"type":"flashcard","x":560,"y":390,"w":420,"h":170,"content":{"front":"","back":""}},
+ {"type":"text","x":60,"y":430,"w":460,"content":{"text":"## Still shaky on\\n- [ ] "}}
 ]}''',
   'Project kickoff': '''
 {"page":{"background":"blank"},"blocks":[

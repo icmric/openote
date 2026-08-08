@@ -3063,6 +3063,20 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Drop a template onto the page, BELOW whatever is already there.
+  ///
+  /// It used to land on top: page properties replaced outright, and every
+  /// block placed at the coordinates it was saved with — which for a template
+  /// authored on an empty page means over the title band and over the first
+  /// paragraph of whatever you had written. "They dont respect the current
+  /// layout of the page (with the title and stuff), they just go over it all."
+  ///
+  /// So the template's own shape is preserved — every block keeps its position
+  /// RELATIVE to the others — and the whole arrangement is translated to sit
+  /// under the existing content, or at the top of the writing area when the
+  /// page is empty. Page properties are only taken on an empty page: applying
+  /// a template to a page you have been working on must not silently change
+  /// its background or grid.
   void applyTemplate(String name) {
     final t = _repo.getSetting('templates');
     // User template first so a same-named save shadows the built-in.
@@ -3071,8 +3085,15 @@ class AppState extends ChangeNotifier
     if (raw == null) return;
     pushUndo();
     final j = jsonDecode(raw) as Map<String, dynamic>;
-    pageProps =
-        PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>());
+    final onEmptyPage = blocks.isEmpty;
+    if (onEmptyPage) {
+      pageProps =
+          PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>());
+    }
+
+    // Where the template's top edge should end up, and how far that is from
+    // where it was authored.
+    final incoming = <Block>[];
     for (final bj in (j['blocks'] as List)) {
       // `Block.fromJson` reads `j['id'] as String` — a NON-NULLABLE cast — and
       // the built-in templates carry no ids, because their blocks were written
@@ -3108,11 +3129,47 @@ class AppState extends ChangeNotifier
           (sj as Map)['id'] = newId();
         }
       }
-      blocks.add(fresh);
+      incoming.add(fresh);
+    }
+    if (incoming.isEmpty) return;
+
+    // Translate as one piece, so the template still looks like itself.
+    final templateTop = incoming.map((b) => b.y).reduce(math.min);
+    final landAt = onEmptyPage ? contentTop : contentExtent().bottom + 24;
+    final dy = landAt - templateTop;
+    // Ink is page-absolute (Ink Spec §3): its stroke points do not move with
+    // the block, so a translated ink block would leave its drawing behind.
+    final movesInk = dy != 0;
+    for (final b in incoming) {
+      b.y += dy;
+      if (movesInk && b.type == BlockType.ink) _translateInk(b, dy);
+    }
+
+    // Through addBlock so each lands on top of the stack rather than at z 0,
+    // which is what put a freshly applied template UNDERNEATH existing blocks.
+    for (final b in incoming) {
+      blocks.add(b
+        ..z = (blocks.isEmpty
+            ? 0
+            : blocks.map((e) => e.z).reduce((a, c) => a > c ? a : c) + 1));
     }
     docRevision++;
     markDirty();
     notifyListeners();
+  }
+
+  /// Shift an ink block's strokes with its box. Stroke coordinates are
+  /// page-absolute (Ink Spec §3), so moving the block alone leaves the drawing
+  /// where it was. The same arithmetic `moveSelectedBy` does, and it has to
+  /// stay the same: strokes are parallel `x` and `y` lists, not point pairs.
+  void _translateInk(Block b, double dy) {
+    for (final sj in (b.content['strokes'] as List? ?? const [])) {
+      final m = sj as Map;
+      final ys = m['y'];
+      if (ys is List) m['y'] = [for (final v in ys) (v as num) + dy];
+    }
+    // The canvas caches decoded strokes by `id#updatedAt`.
+    b.updatedAt = nowMs();
   }
 
   // ── Page-surface geometry (CANVAS-1 v0.3) ──────────────────────────────
