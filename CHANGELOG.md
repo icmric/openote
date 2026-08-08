@@ -27,6 +27,17 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - Applying a template no longer discards data belonging to blocks a newer
   Openote wrote.
 
+### Fixed — pictures and new pages
+
+- **In-flow pictures sit flush against the left edge**, and one as wide as its
+  box stays on its line instead of dropping below it.
+- **Making a new page no longer takes the current page's sub-pages.** It is
+  created beside the page you are on — from a sub-page you get another
+  sub-page — and immediately after that page rather than at the bottom of the
+  section.
+- **Ctrl+N** makes a new page, **Ctrl+Shift+N** a sub-page of the one you are
+  on.
+
 ### Added
 
 - **A flashcard you can put straight on the page** — Insert ▸ Flashcard. Write
