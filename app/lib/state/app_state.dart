@@ -3225,10 +3225,104 @@ class AppState extends ChangeNotifier
   /// additionally grows to fill the viewport — computed in the canvas widget.
   Size pageSize() {
     final e = contentExtent();
+    if (pageProps.isPaged) {
+      // A sheet does not grow sideways, ever — that is what makes it a sheet.
+      // It grows DOWNWARD by whole sheets, so the surface is always a whole
+      // number of pages and a page break never lands in the middle of nothing.
+      final paper = pageProps.paper;
+      final sheets = math.max(1, (e.bottom / paper.height).ceil());
+      return Size(paper.width, paper.height * sheets);
+    }
     return Size(
       math.max(pageProps.pageWidth, e.right + pageGrowMargin),
       math.max(defaultPageHeight, e.bottom + pageGrowMargin),
     );
+  }
+
+  /// How many sheets the current page occupies. 1 in canvas mode, where the
+  /// idea does not apply.
+  int get sheetCount {
+    if (!pageProps.isPaged) return 1;
+    return math.max(
+        1, (contentExtent().bottom / pageProps.paper.height).ceil());
+  }
+
+  /// The writing area of a sheet: the paper minus its margins.
+  ///
+  /// The left margin matches the canvas's own [pageLeftMargin] so text sits in
+  /// the same place in both modes and switching does not shift a word.
+  static const double sheetMargin = 64;
+
+  ({double left, double top, double width}) sheetTextArea() {
+    final paper = pageProps.paper;
+    return (
+      left: sheetMargin,
+      top: contentTop,
+      width: paper.width - sheetMargin * 2,
+    );
+  }
+
+  /// Turn the current page into a sheet, or back into open canvas.
+  ///
+  /// Switching TO paged does the thing that makes page mode usable at all:
+  /// "in page mode i think text boxes shouldnt be the default, it should be
+  /// like a regular text/md editor. Basically ends up being just one really
+  /// big box." So a page with nothing on it gets that one box, and a page with
+  /// existing boxes keeps them — reflowing somebody's freeform layout into a
+  /// column is a destructive guess, and the boxes are still theirs to move.
+  void setPageLayout(String layout, {String? paper, bool? landscape}) {
+    pushUndo();
+    pageProps.layout = layout;
+    if (paper != null) pageProps.paperSize = paper;
+    if (landscape != null) pageProps.landscape = landscape;
+    if (pageProps.isPaged) {
+      _ensureSheetBody();
+      // Every box is pulled inside the sheet: one left outside the paper is
+      // content the user cannot see and will not find.
+      for (final b in blocks) {
+        clampBlockToPage(b);
+      }
+    }
+    docRevision++;
+    markDirty();
+    notifyListeners();
+  }
+
+  /// The one big box a paged page writes into, created if it is not there.
+  ///
+  /// Recognised by geometry rather than by a flag: it is the full-width text
+  /// block at the top of the sheet. That means an imported or hand-made page
+  /// that already looks like a document is treated as one, and it means
+  /// nothing new has to be stored to know which box is "the body".
+  Block? _ensureSheetBody() {
+    final area = sheetTextArea();
+    final existing = sheetBody();
+    if (existing != null) return existing;
+    if (blocks.isNotEmpty) return null; // their layout, not ours to replace
+    final b = Block(
+      type: BlockType.text,
+      x: area.left,
+      y: area.top,
+      w: area.width,
+      // The width is the sheet's, not the text's — a document body is a
+      // column, and auto-width would shrink it to the longest line.
+      content: {'text': '', 'autoWidth': false},
+    );
+    blocks.add(b);
+    return b;
+  }
+
+  /// The body box of a paged page, or null when the page is a free layout.
+  Block? sheetBody() {
+    if (!pageProps.isPaged) return null;
+    final area = sheetTextArea();
+    for (final b in blocks) {
+      if (b.type != BlockType.text) continue;
+      if ((b.x - area.left).abs() > 24) continue;
+      if ((b.w - area.width).abs() > 24) continue;
+      return b;
+    }
+    return null;
   }
 
   /// OneNote-style intelligent placement: create near the click, but align to
@@ -3297,6 +3391,16 @@ class AppState extends ChangeNotifier
   void clampBlockToPage(Block b) {
     if (b.x < 0) b.x = 0;
     if (b.y < contentTop) b.y = contentTop;
+    if (!pageProps.isPaged) return;
+    // On a sheet the right edge is real. A box dragged past it is content the
+    // user cannot see and will not print, so it is pulled back inside — and
+    // narrowed first if it is simply too wide to fit at all.
+    final paper = pageProps.paper;
+    final maxW = paper.width - sheetMargin * 2;
+    if (b.w > maxW) b.w = maxW;
+    final maxX = paper.width - sheetMargin - b.w;
+    if (b.x > maxX) b.x = math.max(sheetMargin, maxX);
+    if (b.x < sheetMargin) b.x = sheetMargin;
   }
 
   /// Push imported or legacy blocks out from under the title band.
@@ -3414,8 +3518,18 @@ class AppState extends ChangeNotifier
       }
     }
 
+    // Inherit the shape of the page you were on BEFORE it is replaced by the
+    // new one's props. A notebook you are writing an essay in should not drop
+    // back to open canvas every time you start the next page.
+    final inherit = pageProps.isPaged
+        ? (paper: pageProps.paperSize, landscape: pageProps.landscape)
+        : null;
     reloadNodes();
     await selectPage(n.id);
+    if (inherit != null) {
+      setPageLayout('paged',
+          paper: inherit.paper, landscape: inherit.landscape);
+    }
     pendingTitleEdit = n.id; // cursor lands in the title (OneNote behaviour)
     notifyListeners();
   }

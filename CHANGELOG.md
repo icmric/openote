@@ -19,6 +19,24 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   the flashcard deck**, all of which read page text directly and none of which
   were checking.
 
+### Added — pages, as well as the endless canvas
+
+- **A page can be a sheet of paper instead of open canvas.** The button is in
+  the View row: A4, A5, A3, Letter, Legal or Tabloid, portrait or landscape,
+  and you can change it whenever you like. Canvas is still the default and
+  every existing page opens exactly as it did.
+- **In page mode you just write.** The page starts as one full-width column —
+  a plain text/Markdown editor rather than a spread of boxes — and grows a new
+  sheet when you reach the bottom of the last one. Everything else still works
+  inside it: pictures, cards, maths, tables.
+- **It is per page, not per notebook**, so one notebook can hold the lecture
+  you scribble on and the essay you have to hand in.
+- A new page keeps the shape of the one you made it from.
+- **Not done yet**: printing and PDF export still lay a paged page out as one
+  continuous sheet rather than breaking where the page breaks. Switching a page
+  that already has boxes on it keeps them where they are rather than reflowing
+  them into the column.
+
 ### Changed — templates
 
 - **A template lands under what is already on the page** instead of on top of

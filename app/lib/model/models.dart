@@ -87,16 +87,71 @@ class NotebookRef {
 
 // ── Page properties (Data Model Spec §3 page-level; CANVAS-11) ───────────
 
+/// A named sheet size, in logical pixels at the app's 96dpi-ish page scale.
+///
+/// Stored as a NAME rather than a pair of numbers, so a page laid out on A4
+/// stays A4 when someone opens it on a machine that thinks in inches, and so a
+/// future build can adjust the pixel figures without every existing page
+/// disagreeing with it. The dimensions here are the ISO/ANSI sizes converted
+/// at 96 px per inch.
+class PaperSize {
+  const PaperSize(this.name, this.width, this.height);
+  final String name;
+  final double width;
+  final double height;
+
+  static const a4 = PaperSize('A4', 794, 1123);
+  static const a5 = PaperSize('A5', 559, 794);
+  static const a3 = PaperSize('A3', 1123, 1587);
+  static const letter = PaperSize('Letter', 816, 1056);
+  static const legal = PaperSize('Legal', 816, 1344);
+  static const tabloid = PaperSize('Tabloid', 1056, 1632);
+
+  /// Offered in the picker, metric first — the default is A4 and most of the
+  /// world's students are on it.
+  static const all = [a4, a5, a3, letter, legal, tabloid];
+
+  static PaperSize byName(String? n) =>
+      all.firstWhere((p) => p.name == n, orElse: () => a4);
+}
+
 class PageProps {
   PageProps({
     this.background = 'blank',
     this.gridSize = 24,
     this.pageWidth = 1100,
+    this.layout = 'canvas',
+    this.paperSize = 'A4',
+    this.landscape = false,
     Map<String, dynamic>? unknownFields,
   }) : unknownFields = unknownFields ?? {};
   String background; // blank | grid | dotted | ruled
   double gridSize;
   double pageWidth; // presented page-surface width (CANVAS-1 v0.3)
+
+  /// `canvas` (the default, and what Openote has always been) or `paged`.
+  ///
+  /// Canvas is boundless and free: boxes go where you put them. Paged is a
+  /// sheet of a fixed size that you write down, like a word processor — "in
+  /// page mode i think text boxes shouldnt be the default, it should be like a
+  /// regular text/md editor. Basically ends up being just one really big box."
+  ///
+  /// Deliberately per PAGE, not per notebook: a notebook holds lecture notes
+  /// you scribble on and an essay you have to hand in, and forcing one shape on
+  /// both is the reason people keep two apps.
+  String layout;
+
+  /// The name of a [PaperSize]. Only meaningful when [layout] is `paged`.
+  String paperSize;
+  bool landscape;
+
+  bool get isPaged => layout == 'paged';
+
+  /// The sheet, honouring orientation.
+  PaperSize get paper {
+    final p = PaperSize.byName(paperSize);
+    return landscape ? PaperSize(p.name, p.height, p.width) : p;
+  }
 
   /// Page-level properties written by a newer Openote (or another tool) that
   /// this build doesn't understand. Preserved verbatim so a round-trip through
@@ -104,18 +159,38 @@ class PageProps {
   /// — the same contract [Block.unknownFields] honours).
   final Map<String, dynamic> unknownFields;
 
-  static const _known = {'background', 'gridSize', 'pageWidth'};
+  static const _known = {
+    'background',
+    'gridSize',
+    'pageWidth',
+    'layout',
+    'paperSize',
+    'landscape',
+  };
 
   Map<String, dynamic> toJson() => {
         'background': background,
         'gridSize': gridSize,
         'pageWidth': pageWidth,
+        // Written only when they say something. A canvas page is the
+        // overwhelming majority and its JSON is byte-identical to what every
+        // previous build wrote — which matters beyond tidiness: emitting three
+        // new keys unconditionally would rewrite every page in every notebook
+        // on the next save, and hand the sync log a diff for all of them.
+        if (isPaged) 'layout': layout,
+        if (isPaged) 'paperSize': paperSize,
+        if (isPaged && landscape) 'landscape': landscape,
         ...unknownFields,
       };
   factory PageProps.fromJson(Map<String, dynamic>? j) => PageProps(
         background: j?['background'] as String? ?? 'blank',
         gridSize: (j?['gridSize'] as num?)?.toDouble() ?? 24,
         pageWidth: (j?['pageWidth'] as num?)?.toDouble() ?? 1100,
+        // Additive, and defaulted: a page written by any earlier build has no
+        // `layout` key and must open exactly as it always did.
+        layout: j?['layout'] as String? ?? 'canvas',
+        paperSize: j?['paperSize'] as String? ?? 'A4',
+        landscape: j?['landscape'] as bool? ?? false,
         unknownFields: {
           for (final e in (j ?? const {}).entries)
             if (!_known.contains(e.key)) e.key: e.value,

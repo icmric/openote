@@ -711,6 +711,11 @@ class _PageCanvasState extends State<PageCanvas> {
                       background: app.pageProps.background,
                       gridSize: app.gridSize,
                       dark: dark,
+                      sheet: app.pageProps.isPaged
+                          ? Size(app.pageProps.paper.width,
+                              app.pageProps.paper.height)
+                          : null,
+                      sheets: app.sheetCount,
                     ),
                   ),
                 ),
@@ -1003,6 +1008,8 @@ class _PagePainter extends CustomPainter {
     required this.background,
     required this.gridSize,
     required this.dark,
+    this.sheet,
+    this.sheets = 1,
   });
   final CanvasController controller;
   final Size pageSize;
@@ -1010,12 +1017,56 @@ class _PagePainter extends CustomPainter {
   final double gridSize;
   final bool dark;
 
+  /// The paper, when this page is in paged mode. Null on open canvas.
+  final Size? sheet;
+
+  /// How many sheets of it the content occupies.
+  final int sheets;
+
   @override
   void paint(Canvas canvas, Size size) {
     final pageColor = dark ? OnoteColors.night0 : OnoteColors.paper0;
+    final paper = sheet;
+    if (paper != null) {
+      // A SHEET has edges, and edges are the whole point of page mode: the
+      // desk around it is darker so the paper reads as an object you could
+      // pick up, and where one sheet ends the next begins. Canvas mode paints
+      // the viewport all one colour precisely because it has no edges.
+      canvas.drawRect(Offset.zero & size,
+          Paint()..color = dark ? OnoteColors.night200 : OnoteColors.paper200);
+      final topLeft = controller.pageToScreen(Offset.zero);
+      final w = paper.width * controller.scale;
+      final h = paper.height * controller.scale;
+      final shadow = Paint()
+        ..color = Colors.black.withValues(alpha: dark ? .35 : .12)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+      for (var i = 0; i < sheets; i++) {
+        final r = Rect.fromLTWH(topLeft.dx, topLeft.dy + h * i, w, h);
+        // Skip sheets that are nowhere near the viewport: a fifty-page essay
+        // must not cost fifty shadow blurs a frame.
+        if (r.bottom < -h || r.top > size.height + h) continue;
+        canvas.drawRect(r.deflate(1).shift(const Offset(0, 2)), shadow);
+        canvas.drawRect(r, Paint()..color = pageColor);
+      }
+      _paintPattern(canvas, size);
+      // The break between sheets, drawn last so it sits over the pattern.
+      final edge = Paint()
+        ..color = dark ? OnoteColors.night300 : OnoteColors.paper300
+        ..strokeWidth = 1;
+      for (var i = 1; i < sheets; i++) {
+        final y = topLeft.dy + h * i;
+        if (y < 0 || y > size.height) continue;
+        canvas.drawLine(Offset(topLeft.dx, y), Offset(topLeft.dx + w, y), edge);
+      }
+      return;
+    }
     // Seamless: the whole viewport is the page colour — one consistent
     // surface at every zoom (the backdrop and page are the same thing).
     canvas.drawRect(Offset.zero & size, Paint()..color = pageColor);
+    _paintPattern(canvas, size);
+  }
+
+  void _paintPattern(Canvas canvas, Size size) {
 
     // Background pattern (blank = nothing). Drawn across the visible area but
     // starting below the title band and aligned to the content top, so the
@@ -1057,6 +1108,8 @@ class _PagePainter extends CustomPainter {
   bool shouldRepaint(covariant _PagePainter old) =>
       old.background != background ||
       old.dark != dark ||
+      old.sheet != sheet ||
+      old.sheets != sheets ||
       old.pageSize != pageSize ||
       old.controller.scale != controller.scale ||
       old.controller.offset != controller.offset;

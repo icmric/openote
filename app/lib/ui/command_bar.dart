@@ -583,11 +583,52 @@ class _CommandBarState extends State<CommandBar> {
           color: app.pageProps.background == v ? scheme.primary : null,
           onPressed: () => app.setBackground(v),
         );
+    final paged = app.pageProps.isPaged;
     return Row(children: [
       bg('blank', Icons.crop_din, 'blank'),
       bg('grid', Icons.grid_4x4, 'grid'),
       bg('dotted', Icons.apps, 'dotted'),
       bg('ruled', Icons.notes, 'ruled'),
+      const _Div(),
+      // Canvas or paper. Per page, not per notebook: one notebook holds the
+      // lecture you scribble on and the essay you hand in, and making you
+      // choose once for both is why people keep two apps.
+      IconButton(
+        icon: Icon(paged ? Icons.description : Icons.dashboard_customize,
+            size: 18),
+        tooltip: paged
+            ? 'Page mode: ${app.pageProps.paper.name}'
+                '${app.pageProps.landscape ? ' landscape' : ''} '
+                '— click for canvas'
+            : 'Canvas mode: boundless — click for pages',
+        isSelected: paged,
+        visualDensity: VisualDensity.compact,
+        color: paged ? scheme.primary : null,
+        onPressed: () => app.setPageLayout(paged ? 'canvas' : 'paged'),
+      ),
+      if (paged)
+        PopupMenuButton<String>(
+          tooltip: 'Paper size',
+          icon: const Icon(Icons.aspect_ratio, size: 18),
+          onSelected: (v) => v == '_rotate'
+              ? app.setPageLayout('paged',
+                  landscape: !app.pageProps.landscape)
+              : app.setPageLayout('paged', paper: v),
+          itemBuilder: (_) => [
+            for (final p in PaperSize.all)
+              CheckedPopupMenuItem(
+                value: p.name,
+                checked: app.pageProps.paperSize == p.name,
+                child: Text(p.name),
+              ),
+            const PopupMenuDivider(),
+            CheckedPopupMenuItem(
+              value: '_rotate',
+              checked: app.pageProps.landscape,
+              child: const Text('Landscape'),
+            ),
+          ],
+        ),
       const _Div(),
       IconButton(
         icon: Icon(app.snapToGrid ? Icons.grid_goldenratio : Icons.grid_off,
