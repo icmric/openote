@@ -2,6 +2,44 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
+## [Unreleased]
+
+### Fixed — passcodes now behave like passcodes
+
+- **A lock survived closing Openote.** It did not before: the code that reloads
+  which pages are protected was never called outside tests, so every restart
+  began with the gate wide open — locked pages opened with no prompt, and their
+  titles and contents came back in search. The passcode itself was never lost;
+  nothing read it.
+- **Locking a page now locks the sub-pages indented under it**, which is what
+  was always promised. Sub-pages are not children in the file format — they sit
+  in the same section with an indent level — and the lock was walking the
+  wrong relationship.
+- **Locked pages no longer leak through the tags panel, the planner agenda or
+  the flashcard deck**, all of which read page text directly and none of which
+  were checking.
+
+### Fixed — templates
+
+- **Insert ▸ Template does something.** Every built-in template failed on a
+  parse error the moment you picked one, and had done since they were added.
+  The failure was completely silent.
+- Applying a template no longer discards data belonging to blocks a newer
+  Openote wrote.
+
+### Added
+
+- **A flashcard you can put straight on the page** — Insert ▸ Flashcard. Write
+  the question and the answer, tap to turn it over. It joins the same deck as
+  tagged lines, so it counts towards your revision and your exam plan without
+  anything extra. Tagging lines still works exactly as before.
+- **Dragging a picture past the edge of its box now widens the box** instead of
+  stopping. (Note: the box does not shrink back on its own afterwards — use its
+  right-hand resize handle.)
+- **Hold Ctrl while dragging a box to flip it out of the grid** — or into it, if
+  the grid is off — for that one drag. Everything else stays as it was. Not Alt:
+  Alt-dragging a text box already means "move it instead of selecting text".
+
 ## [0.4.2] — 2026-08-08
 
 ### Added — videos you keep, and watch, in your notes
