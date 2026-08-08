@@ -1,6 +1,7 @@
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
 import 'package:sqlite3/open.dart';
 
 /// Point `package:sqlite3` at the native library the desktop build bundles.
@@ -36,6 +37,34 @@ bool initSqliteForTests() {
   return found;
 }
 
+/// A copy of [src] in the temp directory, or null if one cannot be made.
+///
+/// Named after the source's size and modification time, so a rebuilt library
+/// produces a new name and a stale copy is never used. Several test processes
+/// run concurrently and will all want the same name: an existing copy is reused
+/// rather than rewritten, which is safe precisely because the name pins the
+/// bytes.
+String? _loadableCopy(File src) {
+  try {
+    final stat = src.statSync();
+    final name = 'onote-sqlite-${stat.size}-'
+        '${stat.modified.millisecondsSinceEpoch}'
+        '${p.extension(src.path)}';
+    final dest = File(p.join(Directory.systemTemp.path, name));
+    if (!dest.existsSync() || dest.lengthSync() != stat.size) {
+      // A partially written copy from a process that died mid-write would be
+      // the wrong length, hence the size check rather than mere existence.
+      src.copySync(dest.path);
+    }
+    return dest.absolute.path;
+  } catch (_) {
+    // No temp space, a locked destination mid-copy, an exotic filesystem.
+    // Falling back to the original is what happened before this existed, so
+    // the worst case is the old behaviour rather than a failure.
+    return null;
+  }
+}
+
 bool _findSqlite() {
   for (final rel in const [
     'build/windows/x64/runner/Debug/sqlite3.dll',
@@ -52,8 +81,26 @@ bool _findSqlite() {
   ]) {
     final f = File(rel);
     if (f.existsSync()) {
-      sqliteLibraryPathForTests = f.absolute.path;
-      open.overrideForAll(() => DynamicLibrary.open(f.absolute.path));
+      // **Load a COPY, never the build output itself.**
+      //
+      // The first path on this list is the Debug DLL that `flutter run` has to
+      // overwrite on its next build — and a loaded library is locked on
+      // Windows. So a test run left the build broken:
+      //
+      //   file INSTALL cannot copy file ".../plugins/.../Debug/sqlite3.dll"
+      //   to ".../runner/Debug/sqlite3.dll": Permission denied.
+      //
+      // Worse, it survived the run: `flutter_tester` processes routinely
+      // outlive the suite (a leaked timer, an open handle), so the lock
+      // persisted until they were killed by hand. The symptom is a CMake error
+      // deep in MSBuild output that looks nothing like "your tests are still
+      // running".
+      //
+      // Copying costs ~2 MB and one file write per build, and it decouples
+      // the two entirely.
+      final path = _loadableCopy(f) ?? f.absolute.path;
+      sqliteLibraryPathForTests = path;
+      open.overrideForAll(() => DynamicLibrary.open(path));
       return true;
     }
   }
