@@ -19,6 +19,7 @@ import 'package:path/path.dart' as p;
 import '../core/platform_open.dart';
 import '../state/app_state.dart';
 import '../sync/cloud_folders.dart';
+import '../sync/github_api.dart';
 import '../sync/mirrors.dart';
 import '../theme/onote_theme.dart';
 import 'notebook_manager.dart';
@@ -746,6 +747,28 @@ class _GitSectionState extends State<_GitSection> {
                 },
         ),
         if (app.gitEnabled) ...[
+          if (app.gitRemote == null) ...[
+            const SizedBox(height: 4),
+            _GitHubPublish(
+                app: app,
+                onDone: () => setState(() {
+                      // The field below is about to become the visible record
+                      // of where this notebook lives; it must not still be
+                      // showing the empty box the repository was created from.
+                      _remote.text = app.gitRemote ?? _remote.text;
+                    })),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(child: Divider(color: context.surfaces.border)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text('or use a repository you already have',
+                    style: TextStyle(
+                        fontSize: 11, color: context.surfaces.textSecondary)),
+              ),
+              Expanded(child: Divider(color: context.surfaces.border)),
+            ]),
+          ],
           const SizedBox(height: 4),
           TextField(
             controller: _remote,
@@ -783,15 +806,243 @@ class _GitSectionState extends State<_GitSection> {
           ]),
           const SizedBox(height: 4),
           Text(
-            'Openote never asks for your password: it runs the git already on '
-            'this computer and uses whatever sign-in you have set up for it. '
-            'If a push needs credentials you have not configured, it will say '
-            'so here rather than appear to work.',
+            app.githubConnected
+                ? 'Signed in to GitHub as ${app.githubLogin}. The token is '
+                    'kept on this computer and sent only to GitHub — it is '
+                    'never written into the notebook or its repository.'
+                : 'Openote never asks for your password: it runs the git '
+                    'already on this computer and uses whatever sign-in you '
+                    'have set up for it. If a push needs credentials you have '
+                    'not configured, it will say so here rather than appear '
+                    'to work.',
             style: TextStyle(
                 fontSize: 11, height: 1.4, color: context.surfaces.textSecondary),
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Creating the repository, without leaving the app.
+///
+/// "I want to be able to create and push my notebook to github from within the
+/// app, no extra steps required outside the app."
+///
+/// One thing genuinely cannot move inside, and it is worth being straight
+/// about which: GitHub only issues tokens on its own site, so connecting an
+/// account is a visit to one page, once. Everything on either side of that —
+/// naming the repository, creating it, pointing the notebook at it, the first
+/// push and every sync afterwards — happens here. The button opens the page
+/// with the right scope already ticked so there is nothing to get wrong on it
+/// but the copying.
+class _GitHubPublish extends StatefulWidget {
+  const _GitHubPublish({required this.app, required this.onDone});
+  final AppState app;
+  final VoidCallback onDone;
+
+  @override
+  State<_GitHubPublish> createState() => _GitHubPublishState();
+}
+
+class _GitHubPublishState extends State<_GitHubPublish> {
+  late final TextEditingController _name =
+      TextEditingController(text: repoNameFor(widget.app.currentNotebook.title));
+  final TextEditingController _token = TextEditingController();
+
+  /// Private unless the user says otherwise. These are somebody's notes, and a
+  /// public repository of a student's coursework created by a default nobody
+  /// read is not a mistake to make on their behalf.
+  bool _private = true;
+  bool _busy = false;
+  String? _error;
+  bool _pasting = false;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _token.dispose();
+    super.dispose();
+  }
+
+  AppState get app => widget.app;
+
+  Future<void> _connect() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final problem = await app.connectGitHub(_token.text);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = problem;
+      if (problem == null) {
+        _pasting = false;
+        _token.clear(); // it is stored now; no reason to keep it on screen
+      }
+    });
+  }
+
+  Future<void> _create() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final problem =
+        await app.createGitHubRepo(private: _private, name: _name.text);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = problem;
+    });
+    if (problem == null) widget.onDone();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final connected = app.githubConnected;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: context.surfaces.chrome2,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: context.surfaces.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.cloud_upload_outlined, size: 16),
+            const SizedBox(width: 6),
+            const Expanded(
+              child: Text('Put this notebook on GitHub',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+            if (connected)
+              Text(app.githubLogin!,
+                  style: TextStyle(
+                      fontSize: 11, color: context.surfaces.textSecondary)),
+          ]),
+          const SizedBox(height: 8),
+          if (!connected && !_pasting)
+            Text(
+              'Openote can create the repository and push to it for you. It '
+              'needs a token from GitHub first — one page, once.',
+              style: TextStyle(
+                  fontSize: 11,
+                  height: 1.4,
+                  color: context.surfaces.textSecondary),
+            ),
+          if (!connected && !_pasting) ...[
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: () async {
+                await PlatformOpen.url(GitHubApi.tokenPage);
+                if (mounted) setState(() => _pasting = true);
+              },
+              icon: const Icon(Icons.open_in_new, size: 15),
+              label: const Text('Connect GitHub', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+          if (!connected && _pasting) ...[
+            Text(
+              'On the page that just opened, scroll to the bottom and press '
+              '“Generate token”, then copy it and paste it here. Openote asked '
+              'for the “repo” permission and nothing else.',
+              style: TextStyle(
+                  fontSize: 11,
+                  height: 1.4,
+                  color: context.surfaces.textSecondary),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _token,
+              autofocus: true,
+              // Obscured because a token is a password in every way that
+              // matters, and this dialog gets opened while screen sharing.
+              obscureText: true,
+              style: const TextStyle(fontSize: 12),
+              decoration: const InputDecoration(
+                isDense: true,
+                labelText: 'Paste your token',
+                hintText: 'ghp_…',
+              ),
+              onSubmitted: (_) => _connect(),
+            ),
+            const SizedBox(height: 6),
+            Row(children: [
+              FilledButton(
+                onPressed: _busy ? null : _connect,
+                child: Text(_busy ? 'Checking…' : 'Connect',
+                    style: const TextStyle(fontSize: 12)),
+              ),
+              TextButton(
+                onPressed: _busy ? null : () => setState(() => _pasting = false),
+                child: const Text('Cancel', style: TextStyle(fontSize: 12)),
+              ),
+            ]),
+          ],
+          if (connected) ...[
+            TextField(
+              controller: _name,
+              style: const TextStyle(fontSize: 12),
+              decoration: const InputDecoration(
+                isDense: true,
+                labelText: 'Repository name',
+              ),
+            ),
+            const SizedBox(height: 2),
+            CheckboxListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _private,
+              onChanged: _busy ? null : (v) => setState(() => _private = v ?? true),
+              title: const Text('Keep it private', style: TextStyle(fontSize: 12)),
+              subtitle: Text(
+                _private
+                    ? 'Only you can see it'
+                    : 'ANYONE ON THE INTERNET WILL BE ABLE TO READ THESE NOTES',
+                style: TextStyle(
+                    fontSize: 11,
+                    color: _private
+                        ? context.surfaces.textSecondary
+                        : OnoteColors.danger),
+              ),
+            ),
+            Row(children: [
+              FilledButton.icon(
+                onPressed: _busy || app.gitBusy ? null : _create,
+                icon: _busy || app.gitBusy
+                    ? const SizedBox(
+                        width: 13,
+                        height: 13,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.add, size: 15),
+                label: Text(_busy || app.gitBusy ? 'Working…' : 'Create and push',
+                    style: const TextStyle(fontSize: 12)),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: _busy
+                    ? null
+                    : () {
+                        app.disconnectGitHub();
+                        setState(() {});
+                      },
+                child: const Text('Sign out', style: TextStyle(fontSize: 12)),
+              ),
+            ]),
+          ],
+          if (_error != null) ...[
+            const SizedBox(height: 6),
+            Text(_error!,
+                style: const TextStyle(
+                    fontSize: 11, height: 1.4, color: OnoteColors.danger)),
+          ],
+        ],
+      ),
     );
   }
 }

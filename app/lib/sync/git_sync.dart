@@ -22,17 +22,66 @@ import '../model/models.dart';
 /// are content-addressed, so the same is true of them. The conflict case that
 /// makes git-as-sync miserable for ordinary documents does not arise.
 ///
-/// **Credentials are not ours.** Nothing here reads, stores or transmits a
-/// password or token: every remote operation runs the user's own `git`, which
-/// uses whatever credential helper they have already set up. That is why the
-/// feature is honest about being "for those more technical" — and it is also
-/// the only version of this a note-taking app has any business shipping.
+/// **Credentials, and where they are not.** By default nothing here reads or
+/// transmits a password: every remote operation runs the user's own `git`,
+/// which uses whatever credential helper they already have. That covers people
+/// with SSH keys or a working credential manager, and it was the whole story
+/// until "no extra steps required outside the app" — creating a repository on
+/// GitHub needs a token, and a token that can create a repository can also
+/// push, so [token] carries it through to git as well.
+///
+/// When it is set, it is passed through the ENVIRONMENT to an inline
+/// credential helper, never on the command line and never into `.git/config`.
+/// Both of the obvious shortcuts leak: a token in the remote URL
+/// (`https://<token>@github.com/…`) is written to a config file that gets
+/// copied between machines and pasted into bug reports, and a token in an
+/// `-c http.extraHeader=…` argument is visible to every other process on the
+/// machine for as long as git runs. The environment is neither.
 class GitSync {
-  const GitSync(this.dir);
+  const GitSync(this.dir, {this.token});
 
   /// The `.onotebook` directory. The repository root is this directory itself,
   /// so a notebook is a repository and nothing outside it is ever staged.
   final String dir;
+
+  /// A GitHub token to authenticate remote operations with, when the user has
+  /// connected an account. Null means "use whatever git is already set up
+  /// with", which is the right answer for SSH remotes and for anyone who has
+  /// their own credential helper.
+  final String? token;
+
+  /// The environment variable the helper reads the token out of.
+  static const _tokenVar = 'OPENOTE_GIT_TOKEN';
+
+  /// Arguments that make git authenticate as [token], for one invocation.
+  ///
+  /// The empty `credential.helper=` first is load-bearing: config helpers are
+  /// a LIST, and without clearing it a system-wide manager (Git Credential
+  /// Manager on Windows, osxkeychain on a Mac) answers first with a stale
+  /// credential for github.com and the push fails with a confusing 403.
+  /// The auth arguments, for the test that checks they actually work.
+  ///
+  /// Exposed because the risky part of this is SHELL QUOTING inside a config
+  /// value, evaluated by whatever `sh` git found — and that is not something
+  /// to be confident about by reading. A test drives `git credential fill`
+  /// with exactly these and asserts the token comes back out.
+  List<String> get debugAuthArgs => _authArgs;
+
+  /// The environment those arguments need, for the same test.
+  Map<String, String> get debugEnv => _env;
+
+  List<String> get _authArgs => token == null || token!.isEmpty
+      ? const []
+      : [
+          '-c', 'credential.helper=',
+          // `x-access-token` as the username is GitHub's convention for
+          // token-as-password; any non-empty username works, but this one is
+          // what shows up in their own docs and tooling.
+          '-c',
+          'credential.helper=!f() { test "\$1" = get && '
+              'echo username=x-access-token && '
+              'echo password=\$$_tokenVar; }; f',
+        ];
 
   static String? _gitPath;
   static bool _looked = false;
@@ -66,13 +115,26 @@ class GitSync {
     _gitPath = path;
   }
 
+  /// The environment every git call runs in.
+  ///
+  /// `GIT_TERMINAL_PROMPT=0` matters more than it looks. Openote's git has no
+  /// terminal, so a remote that wants a password would otherwise sit waiting
+  /// for input at a prompt nobody can see — the app appears to hang, and the
+  /// 90-second timeout is the only thing that ends it. Off, git fails
+  /// immediately with something the user can read instead.
+  Map<String, String> get _env => {
+        'GIT_TERMINAL_PROMPT': '0',
+        if (token != null && token!.isNotEmpty) _tokenVar: token!,
+      };
+
   Future<GitResult> _run(List<String> args, {Duration? timeout}) async {
     final git = await gitExecutable();
     if (git == null) {
       return const GitResult(-1, '', 'git is not installed on this computer');
     }
     try {
-      final r = await Process.run(git, args, workingDirectory: dir)
+      final r = await Process.run(git, [..._authArgs, ...args],
+              workingDirectory: dir, environment: _env)
           .timeout(timeout ?? const Duration(seconds: 90));
       return GitResult(r.exitCode, '${r.stdout}'.trim(), '${r.stderr}'.trim());
     } on ProcessException catch (e) {

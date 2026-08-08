@@ -18,6 +18,7 @@ import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
 import '../store/media_store.dart';
 import '../sync/git_sync.dart';
+import '../sync/github_api.dart';
 import '../store/repository.dart';
 import 'page_protection.dart';
 import '../model/tags.dart';
@@ -396,6 +397,11 @@ class AppState extends ChangeNotifier
   /// Wiring only one is precisely how the passcode gate came to evaporate on
   /// restart in 0.4.2; the same trap was waiting here.
   void reloadGit() {
+    // The account is global and the remote is per notebook, but they are
+    // reloaded together so there is only ONE thing every open path has to
+    // remember to call. Two reload methods and two call sites is four chances
+    // to wire three of them, which is the shape the passcode bug had.
+    reloadGitHub();
     _gitEnabled = false;
     _gitRemote = null;
     gitStatus = null;
@@ -414,12 +420,137 @@ class AppState extends ChangeNotifier
     _repo.setSetting(_gitKey(notebookId!),
         on || _gitRemote != null ? {'enabled': on, 'remote': _gitRemote} : null);
     if (on) {
-      final git = gitFor(currentNotebook);
+      final git = _git;
       await git.init();
       if (_gitRemote != null) await git.setRemote(_gitRemote!);
       await syncGitNow();
     }
     notifyListeners();
+  }
+
+  // ── A GitHub account, connected once ─────────────────────────────────
+  //
+  // "I want to be able to create and push my notebook to github from within
+  // the app, no extra steps required outside the app."
+  //
+  // The account is stored GLOBALLY rather than per notebook, because it is a
+  // property of the person, not of the notes: connect once and every notebook
+  // can be published. The per-notebook part is the remote, above.
+
+  static const _githubKey = 'github';
+
+  /// Where the GitHub API lives. Only tests move it, and they move it at a
+  /// real local server — the restart path is the one that has broken in this
+  /// codebase before (`reloadProtection` shipped with no caller), so it is
+  /// worth being able to exercise end to end rather than by inspection.
+  static String debugGitHubBase = 'https://api.github.com';
+
+  String? _githubToken;
+  String? _githubLogin;
+
+  /// The connected account's username, or null when none is connected.
+  String? get githubLogin => _githubLogin;
+  bool get githubConnected => _githubToken != null && _githubToken!.isNotEmpty;
+
+  /// This notebook's working tree, authenticated if an account is connected.
+  ///
+  /// Every git call goes through here so that connecting an account is enough
+  /// to make ordinary background syncs authenticate too — otherwise the
+  /// create-and-push button would work and the timer that runs a minute later
+  /// would start failing, which is the worst of both.
+  GitSync get _git => GitSync(currentNotebook.logDirPath, token: _githubToken);
+
+  void reloadGitHub() {
+    final raw = _repo.getSetting(_githubKey);
+    if (raw is! Map) return;
+    _githubToken = raw['token'] as String?;
+    _githubLogin = raw['login'] as String?;
+  }
+
+  /// Check a token and remember it if GitHub accepts it.
+  ///
+  /// Verified BEFORE it is stored, so "connected" never means "we kept a
+  /// string you pasted and will find out it was wrong at the next push".
+  /// Returns null on success, or a message to show.
+  Future<String?> connectGitHub(String token) async {
+    final t = token.trim();
+    if (t.isEmpty) return 'Paste the token you copied from GitHub.';
+    final login = await GitHubApi(t, baseUrl: debugGitHubBase).login();
+    if (login == null) {
+      return 'GitHub did not accept that token. Check it was copied whole, '
+          'and that it has not expired.';
+    }
+    _githubToken = t;
+    _githubLogin = login;
+    _repo.setSetting(_githubKey, {'token': t, 'login': login});
+    notifyListeners();
+    return null;
+  }
+
+  void disconnectGitHub() {
+    _githubToken = null;
+    _githubLogin = null;
+    _repo.setSetting(_githubKey, null);
+    notifyListeners();
+  }
+
+  /// Create a repository on GitHub for this notebook, and push it there.
+  ///
+  /// The whole point of the feature: one button, from an empty notebook to
+  /// notes that exist somewhere other than this laptop. Returns null on
+  /// success, or a message.
+  ///
+  /// Order matters. The repository is created FIRST and the remote set only
+  /// once GitHub has confirmed it, because a remote pointing at a repository
+  /// that does not exist is a notebook that reports a sync failure every
+  /// minute forever.
+  Future<String?> createGitHubRepo({bool private = true, String? name}) async {
+    if (!githubConnected) return 'Connect a GitHub account first.';
+    if (notebookId == null) return 'Open a notebook first.';
+    if (gitBusy) return null;
+    gitBusy = true;
+    gitStatus = 'Creating the repository…';
+    notifyListeners();
+    try {
+      final made = await GitHubApi(_githubToken!, baseUrl: debugGitHubBase)
+          .createRepo(
+          name?.trim().isNotEmpty == true
+              ? repoNameFor(name!)
+              : repoNameFor(currentNotebook.title),
+          private: private,
+          description: 'Openote notebook — ${currentNotebook.title}');
+      if (!made.ok) {
+        gitStatus = made.error;
+        return made.error;
+      }
+      _gitEnabled = true;
+      _gitRemote = made.cloneUrl;
+      _repo.setSetting(
+          _gitKey(notebookId!), {'enabled': true, 'remote': _gitRemote});
+      final git = _git;
+      await git.init();
+      await git.setRemote(_gitRemote!);
+      gitStatus = 'Pushing to ${made.fullName}…';
+      notifyListeners();
+      await flushSave();
+      final pushed = await git.syncOnce(message: 'Openote: ${currentNotebook.title}');
+      if (!pushed.ok) {
+        // The repository is real and the remote is set, so this is recoverable
+        // by pressing Sync now — say so rather than leaving them wondering
+        // whether to create another one.
+        gitStatus = 'Created ${made.fullName}, but the first push failed: '
+            '${pushed.message.split('\n').first}';
+        return gitStatus;
+      }
+      gitStatus = 'Pushed to ${made.fullName}';
+      return null;
+    } catch (e) {
+      gitStatus = 'Could not create the repository: $e';
+      return gitStatus;
+    } finally {
+      gitBusy = false;
+      notifyListeners();
+    }
   }
 
   /// Run one cycle now, and report what happened.
@@ -434,8 +565,7 @@ class AppState extends ChangeNotifier
     try {
       // The logs have to be on disk before they can be committed.
       await flushSave();
-      final r = await gitFor(currentNotebook)
-          .syncOnce(message: 'Openote: ${currentNotebook.title}');
+      final r = await _git.syncOnce(message: 'Openote: ${currentNotebook.title}');
       gitStatus = r.ok
           ? (r.noop ? 'Up to date' : 'Synced')
           : 'Could not sync: ${r.message.split('\n').first}';

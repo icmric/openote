@@ -148,4 +148,168 @@ void main() {
     await app.syncGitNow();
     expect(app.gitStatus, isNull);
   });
+
+  // ── A connected GitHub account ───────────────────────────────────────
+  //
+  // "I want to be able to create and push my notebook to github from within
+  // the app, no extra steps required outside the app."
+  //
+  // The account is GLOBAL and the remote is per notebook, which is the split
+  // these tests exist to pin: connecting once must publish any notebook, and
+  // publishing one must not point another at it.
+  group('a GitHub account', () {
+    late HttpServer server;
+    var login = 'icmric';
+    late List<String> paths;
+
+    setUp(() async {
+      if (!haveSqlite) return;
+      paths = [];
+      // Reset, or the test that makes the token invalid leaves every test
+      // after it talking to a server that answers 401.
+      login = 'icmric';
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      AppState.debugGitHubBase =
+          'http://${server.address.host}:${server.port}';
+      server.listen((req) async {
+        paths.add(req.uri.path);
+        await req.drain<void>();
+        if (login.isEmpty) {
+          req.response.statusCode = 401;
+          req.response.write('{"message":"Bad credentials"}');
+        } else if (req.uri.path == '/user') {
+          req.response.write('{"login":"$login"}');
+        } else {
+          req.response.statusCode = 201;
+          req.response.write('{"clone_url":"https://example.invalid/n.git",'
+              '"full_name":"$login/Notes"}');
+        }
+        await req.response.close();
+      });
+    });
+
+    tearDown(() async {
+      if (!haveSqlite) return;
+      AppState.debugGitHubBase = 'https://api.github.com';
+      await server.close(force: true);
+    });
+
+    test('a token is checked BEFORE it is stored', () async {
+      // "Connected" must never mean "we kept a string you pasted and will find
+      // out it was wrong at the next push", because the next push is the
+      // moment the user has stopped watching.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      login = '';
+      final problem = await app.connectGitHub('ghp_wrong');
+      expect(problem, isNotNull);
+      expect(app.githubConnected, isFalse);
+      expect(paths, ['/user'], reason: 'it asked, rather than assuming');
+    });
+
+    test('an empty paste is caught without a round trip', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      expect(await app.connectGitHub('   '), isNotNull);
+      expect(paths, isEmpty);
+    });
+
+    test('a good token connects, and names the account', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      login = 'icmric';
+      expect(await app.connectGitHub('  ghp_good  '), isNull);
+      expect(app.githubConnected, isTrue);
+      expect(app.githubLogin, 'icmric');
+    });
+
+    test('THE ACCOUNT SURVIVES A RESTART', () async {
+      // Through `selectNotebook` and nothing else. This is the exact shape of
+      // the bug that shipped in 0.4.2: `reloadProtection` existed, worked, and
+      // had no caller, so every restart forgot. Calling `reloadGitHub()` by
+      // hand here would test the method rather than the wiring.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final home = app.notebookId!;
+      await app.connectGitHub('ghp_good');
+
+      final fresh = AppState(repo)..spellCheckEnabled = false;
+      addTearDown(fresh.cancelPendingSave);
+      await fresh.selectNotebook(home);
+
+      expect(fresh.githubConnected, isTrue, reason: 'signing in is once');
+      expect(fresh.githubLogin, 'icmric');
+    });
+
+    test('the account is global — every notebook can publish', () async {
+      // The remote is per notebook; the ACCOUNT is a property of the person.
+      // Making someone sign in again per notebook would be the wrong split.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await app.connectGitHub('ghp_good');
+      final other = await repo.createNotebook('Elsewhere');
+      await app.selectNotebook(other.id);
+      expect(app.githubConnected, isTrue);
+      expect(app.gitRemote, isNull, reason: 'but not the remote');
+    });
+
+    test('signing out forgets the token for good', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final home = app.notebookId!;
+      await app.connectGitHub('ghp_good');
+      app.disconnectGitHub();
+
+      final fresh = AppState(repo)..spellCheckEnabled = false;
+      addTearDown(fresh.cancelPendingSave);
+      await fresh.selectNotebook(home);
+      expect(fresh.githubConnected, isFalse);
+      expect(fresh.githubLogin, isNull);
+    });
+
+    test('publishing without an account asks for one first', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      expect(await app.createGitHubRepo(), contains('Connect'));
+      expect(paths, isEmpty, reason: 'nothing was created');
+    });
+
+    test('the remote is set only once GitHub confirms the repository',
+        () async {
+      // Order matters. A remote pointing at a repository that does not exist
+      // is a notebook that reports a sync failure every minute, forever.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await app.connectGitHub('ghp_good');
+      login = ''; // creation will now fail
+      final problem = await app.createGitHubRepo(name: 'Notes');
+      expect(problem, isNotNull);
+      expect(app.gitRemote, isNull, reason: 'nothing was pointed anywhere');
+      expect(app.gitEnabled, isFalse);
+    });
+
+    test('a created repository becomes this notebook\'s remote, and persists',
+        () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final home = app.notebookId!;
+      await app.connectGitHub('ghp_good');
+      // git is absent in these tests (see setUp), so the push cannot succeed —
+      // what is under test is that the repository was created and recorded,
+      // and that the failure is REPORTED rather than swallowed.
+      await app.createGitHubRepo(name: 'Notes');
+      expect(paths, contains('/user/repos'));
+      expect(app.gitRemote, 'https://example.invalid/n.git');
+      expect(app.gitEnabled, isTrue);
+
+      final fresh = AppState(repo)..spellCheckEnabled = false;
+      addTearDown(fresh.cancelPendingSave);
+      await fresh.selectNotebook(home);
+      expect(fresh.gitRemote, 'https://example.invalid/n.git');
+    });
+
+    test('a first push that fails says so, and says it is recoverable',
+        () async {
+      // The repository is real and the remote is set, so pressing Sync now is
+      // the fix. Silence here would leave someone believing their notes are
+      // somewhere they never reached.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await app.connectGitHub('ghp_good');
+      final problem = await app.createGitHubRepo(name: 'Notes');
+      expect(problem, isNotNull, reason: 'git is not installed in this test');
+      expect(problem, contains('Created'));
+      expect(app.gitStatus, equals(problem));
+    });
+  });
 }

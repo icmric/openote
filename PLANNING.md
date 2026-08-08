@@ -19,9 +19,6 @@ PDF Import
 Page Format
     By default everything should be infinite and pageless like it currently is, but id like the option to be able to work with pages (ideally being able to set the size too, default is A4, but also setting other metric and american sizes)
 
-Flashcards
-    Currently not intuitive how to use them, rather than using the tags, maybe we instead create a new thing in insert, so it inserts a flashcard element onto the page. This can be edited and used in place on the page without having to use the seperate tab, but still maintiang the option to see them all in the one place.
-
 Calander and tasks
     It works currently, however is very limited. This would need a fairly significant UI rework as it would probaly need to replace the page entirley, but having the ability to have a trello like task board would be incredibly helpful for both students and product managers
 
@@ -34,7 +31,7 @@ Storage and size
 
 Cloud storage and saving
     Currently got syncing using pre installed cloud folders, works but feels a bit janky, fine for now though.
-    For those more techincal, maybe we add git/github integration? Would need to all be automated by default as most people wont remeber to save and push changes
+    For those more techincal, maybe we add git/github integration? Would need to all be automated by default as most people wont remeber to save and push changes. I belive obsidian allows for cloud storage with github, would be good to be able to import directly using that one link
     Currently no real way to share a file or page with someone else, would like to address that
     In time, live editing (including cursor positions) would be awesome, although that will be quite complex and is not worth the effort at the moment.
 

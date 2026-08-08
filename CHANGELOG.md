@@ -27,10 +27,24 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   a history on this computer only.
 - **It syncs a minute after you stop typing**, and once more when you close
   Openote. Not on every keystroke: that would be a commit per sentence.
-- **Openote never asks for your password.** It runs the git already on your
-  computer and uses whatever sign-in you have set up for it. If a push needs
-  credentials you have not configured it says so, rather than appearing to
-  work.
+- **"Put this notebook on GitHub" creates the repository for you.** Name it,
+  press the button, and Openote makes it on GitHub, points the notebook at it
+  and pushes — without you visiting github.com to make one first.
+- **It is private unless you say otherwise**, and the option says in as many
+  words what making it public would mean.
+- Connecting a GitHub account is one page, once. GitHub only issues tokens on
+  its own site, so that step cannot move into the app; the button opens the
+  right page with the right permission already ticked, and you paste the token
+  back. Every notebook you own can be published after that without signing in
+  again.
+- **The token is never written into the notebook or its repository.** Not into
+  `.git/config`, not into the remote address, and not onto a command line where
+  other programs on your computer could read it. It is kept on this computer
+  and sent only to GitHub.
+- **If you have not connected an account, Openote never asks for your
+  password.** It runs the git already on your computer and uses whatever
+  sign-in you have set up for it. If a push needs credentials you have not
+  configured it says so, rather than appearing to work.
 - Your notes go into the repository; the working file Openote keeps on this
   computer does not. Two computers writing that file through a sync service is
   the one thing the notebook format is designed to avoid.
