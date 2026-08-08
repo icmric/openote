@@ -28,12 +28,16 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
+import 'package:flutter/material.dart' show Colors, SizedBox, TextStyle;
+import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../canvas/ink_painter.dart' show colorFromHex;
 import '../model/models.dart';
 import '../state/app_state.dart';
 import 'md_common.dart';
+import 'pdf_export.dart' show buildPageRasterPdf;
+import 'widget_raster.dart';
 
 /// Page px per PDF point.
 ///
@@ -65,7 +69,19 @@ Future<String?> exportPagePdfVector(AppState app) async {
   );
   if (location == null) return null;
 
-  final bytes = await buildPagePdf(app, pageId, title: page.title);
+  // If the vector build cannot be produced, still produce a PDF. A picture of
+  // the page is worse than real text — unsearchable, unselectable, bigger —
+  // but it is a document the user can hand in, and "the export failed" is not.
+  // The reasoning is theirs: "if we are able to render it on screen there must
+  // be a way to render it in the pdf too."
+  Uint8List bytes;
+  try {
+    bytes = await buildPagePdf(app, pageId, title: page.title);
+  } catch (_) {
+    final fallback = await buildPageRasterPdf(app);
+    if (fallback == null) rethrow;
+    bytes = fallback;
+  }
   await File(location.path).writeAsBytes(bytes);
   return location.path;
 }
@@ -101,7 +117,7 @@ Future<Uint8List> buildPagePdf(AppState app, String pageId,
     {required String title}) async {
   final doc = pw.Document(title: title, creator: 'Openote');
   final theme = await _theme();
-  _addPageSheets(doc, app, pageId, theme);
+  await _addPageSheets(doc, app, pageId, theme);
   return doc.save();
 }
 
@@ -111,7 +127,7 @@ Future<Uint8List> buildDeckPdf(AppState app, String sectionId,
   final doc = pw.Document(title: title, creator: 'Openote');
   final theme = await _theme();
   for (final p in app.pagesOf(sectionId)) {
-    _addPageSheets(doc, app, p.id, theme);
+    await _addPageSheets(doc, app, p.id, theme);
   }
   return doc.save();
 }
@@ -121,11 +137,16 @@ Future<Uint8List> buildDeckPdf(AppState app, String sectionId,
 /// Reads the page's **own** properties rather than the open page's — exporting
 /// a section means most of these pages are closed, and borrowing the open
 /// page's width would have laid every one of them out at the wrong size.
-void _addPageSheets(
-    pw.Document doc, AppState app, String pageId, pw.ThemeData? theme) {
+Future<void> _addPageSheets(
+    pw.Document doc, AppState app, String pageId, pw.ThemeData? theme) async {
   final data = app.pageId == pageId ? null : app.readPage(pageId);
   final blocks = data?.blocks ?? app.blocks;
   final props = data?.props ?? app.pageProps;
+
+  // Equations are painted BEFORE the document is laid out: rasterising a
+  // widget is asynchronous and the sheet builder below is not. One image per
+  // math block, keyed by block id.
+  final maths = await _renderMaths(blocks);
 
   // Content bounds in page px. The page's own width wins over the content's, so
   // a note narrower than its page still exports at the page size the user set.
@@ -185,7 +206,7 @@ void _addPageSheets(
           // shared or handed in.
           if (sheet == 0) ..._titleBand(app, pageId, widthPx),
           for (final b in visible)
-            if (_blockWidget(app, b, top) case final w?) w,
+            if (_blockWidget(app, b, top, maths) case final w?) w,
         ],
       ),
     ));
@@ -286,7 +307,8 @@ bool _overlaps(AppState app, Block b, double top, double bottom) {
 ///
 /// Returns null for a block this exporter has nothing useful to say about, so
 /// an unknown future block type is skipped rather than drawn as a placeholder.
-pw.Widget? _blockWidget(AppState app, Block b, double sheetTop) {
+pw.Widget? _blockWidget(AppState app, Block b, double sheetTop,
+    Map<String, Uint8List> maths) {
   final h = b.h ?? app.renderSizes[b.id]?.height ?? app.estimatedHeight(b);
   final left = b.x / _pxPerPoint;
   final top = (b.y - sheetTop) / _pxPerPoint;
@@ -295,7 +317,8 @@ pw.Widget? _blockWidget(AppState app, Block b, double sheetTop) {
   final child = switch (b.type) {
     BlockType.ink => _inkWidget(b, h),
     BlockType.image => _imageWidget(app, b, h),
-    BlockType.text || BlockType.code || BlockType.math => _textWidget(app, b),
+    BlockType.math => _mathWidget(b, maths[b.id]),
+    BlockType.text || BlockType.code => _textWidget(app, b),
     BlockType.table => _tableWidget(b),
     _ => null,
   };
@@ -407,10 +430,15 @@ pw.Widget? _mixedFlow(AppState app, Block b) {
         final wPx = double.tryParse(img.group(2) ?? '');
         final hPx = double.tryParse(img.group(3) ?? '');
         try {
+          // A picture with no ` =WxH` has no size in POINTS, and leaving it
+          // null lets the encoder read its intrinsic PIXEL dimensions as
+          // points — a 600px screenshot drawn 8 inches wide. Falling back to
+          // the block's own width is what the screen does too.
+          final wPt = (wPx ?? b.w) / _pxPerPoint;
           children.add(pw.Padding(
             padding: const pw.EdgeInsets.symmetric(vertical: 2),
             child: pw.Image(pw.MemoryImage(bytes),
-                width: wPx == null ? null : wPx / _pxPerPoint,
+                width: wPt,
                 height: hPx == null ? null : hPx / _pxPerPoint,
                 fit: pw.BoxFit.contain,
                 alignment: pw.Alignment.centerLeft),
@@ -442,6 +470,46 @@ pw.Widget? _mixedFlow(AppState app, Block b) {
 final _imageLineRe =
     RegExp(r'^\s*!\[[^\]]*\]\(([^)\s]+)(?:\s+=(\d+)x(\d+))?\)\s*$');
 final _cardLineRe = RegExp(r'^\s*\?\[([^\]]*)\]\(([^)]*)\)\s*$');
+
+/// Paint every equation on the page, once, off screen.
+///
+/// Returns only what succeeded — a block missing from the map falls back to
+/// printing its source, which is what the exporter did for everything before.
+Future<Map<String, Uint8List>> _renderMaths(List<Block> blocks) async {
+  final out = <String, Uint8List>{};
+  for (final b in blocks) {
+    if (b.type != BlockType.math) continue;
+    final tex = (b.content['latex'] as String? ?? '').trim();
+    if (tex.isEmpty) continue;
+    // 3x, so the equation is still crisp when the reader zooms in — the whole
+    // complaint about the OLD raster exporter was that its output went to mush.
+    final png = await rasteriseOffscreen(
+      Math.tex(tex,
+          textStyle: const TextStyle(fontSize: 24, color: Colors.black),
+          onErrorFallback: (_) => const SizedBox.shrink()),
+      pixelRatio: 3,
+    );
+    if (png != null) out[b.id] = png;
+  }
+  return out;
+}
+
+/// An equation as the picture the app draws, or as its source when that could
+/// not be painted.
+///
+/// A picture, and deliberately: "its fine to rasterise it into an image, it
+/// does not need to remain selectable". Nothing else in this exporter is
+/// rasterised, and the file stays searchable everywhere else — an equation is
+/// the one thing nobody Ctrl+Fs for.
+pw.Widget? _mathWidget(Block b, Uint8List? png) {
+  if (png == null) return _plainTextWidget(b);
+  try {
+    return pw.Image(pw.MemoryImage(png),
+        fit: pw.BoxFit.contain, alignment: pw.Alignment.centerLeft);
+  } catch (_) {
+    return _plainTextWidget(b);
+  }
+}
 
 /// A flashcard, printed as both sides. On paper there is nothing to flip, and
 /// a question with its answer withheld is not something anyone can revise from.

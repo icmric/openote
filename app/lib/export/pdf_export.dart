@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:file_selector/file_selector.dart';
@@ -53,15 +54,57 @@ Future<String?> exportPagePdf(AppState app) async {
   );
   if (location == null) return null;
 
-  final doc = pw.Document(title: page.title, creator: 'Openote');
-  final mem = pw.MemoryImage(byteData.buffer.asUint8List());
-  // Points at 0.5 px/pt keeps the page dimensioned like the 2× capture.
+  await File(location.path).writeAsBytes(
+      await _wrapCapture(page.title, byteData.buffer.asUint8List(), imgW, imgH));
+  return location.path;
+}
+
+Future<Uint8List> _wrapCapture(
+    String title, Uint8List png, int imgW, int imgH) async {
+  final doc = pw.Document(title: title, creator: 'Openote');
+  final mem = pw.MemoryImage(png);
+  // Points at 0.5 px/pt keeps the page dimensioned like the 2x capture.
   final format = PdfPageFormat(imgW / 2, imgH / 2);
   doc.addPage(pw.Page(
     pageFormat: format,
     margin: pw.EdgeInsets.zero,
     build: (_) => pw.Image(mem, fit: pw.BoxFit.contain),
   ));
-  await File(location.path).writeAsBytes(await doc.save());
-  return location.path;
+  return doc.save();
+}
+
+/// A picture of the page as PDF bytes, for when the vector export cannot be
+/// produced. Null when the canvas is not on screen to be photographed.
+///
+/// "if it fails during an export, should we maybe do a fallback where we
+/// export as pdf still but just do it as an image" — yes, and this is the
+/// half that makes it possible: the same capture the raster exporter does,
+/// without the file dialog, so the caller can write it to a location the user
+/// has already chosen.
+Future<Uint8List?> buildPageRasterPdf(AppState app) async {
+  final ctx = app.canvasKey.currentContext;
+  if (ctx == null) return null;
+  final page = app.nodes.where((n) => n.id == app.pageId).firstOrNull;
+  if (page == null) return null;
+  app.select(null);
+  final c = app.canvas;
+  final oldScale = c.scale;
+  final oldOffset = c.offset;
+  c.fitTo(app.contentBounds().inflate(24));
+  await WidgetsBinding.instance.endOfFrame;
+  if (!ctx.mounted) return null;
+  ui.Image? image;
+  try {
+    final boundary = ctx.findRenderObject() as RenderRepaintBoundary;
+    image = await boundary.toImage(pixelRatio: 2.0);
+  } catch (_) {
+    return null;
+  } finally {
+    c.jumpTo(oldScale, oldOffset);
+  }
+  final data = await image.toByteData(format: ui.ImageByteFormat.png);
+  final w = image.width, h = image.height;
+  image.dispose();
+  if (data == null) return null;
+  return _wrapCapture(page.title, data.buffer.asUint8List(), w, h);
 }

@@ -43,10 +43,13 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   Korean still will not on Windows or macOS — the system fonts for them are in
   a format the PDF writer cannot read, and bundling one would add 16 MB to the
   download. Linux is fine if you have Noto installed.
-- **Maths still exports as text, not symbols** — but as the form you typed
-  (`a/b`) rather than the machine form (`rac{a}{b}`). Typesetting equations
-  into a PDF needs machinery this exporter does not have; it is written down as
-  the next piece of work rather than left as a surprise.
+- **Maths exports as maths.** Equations are drawn exactly as the app draws
+  them and embedded as pictures — not selectable, which is the trade, but an
+  equation is not something anyone searches a PDF for. If one cannot be drawn
+  it falls back to its written form (`a/b`) rather than taking the export down.
+- **If a PDF export goes wrong, you still get a PDF.** Rather than failing, it
+  falls back to a picture of the page — unsearchable and larger, but a document
+  you can hand in.
 - Page mode's paper sizes were themselves slightly wrong — they were worked out
   at the wrong scale, so an "A4" sheet was about 80% of A4 on screen as well as
   in the export. Both are right now.

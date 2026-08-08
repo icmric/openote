@@ -451,6 +451,43 @@ void main() {
       expect(debugPlainText(m), 'a/b',
           reason: 'the readable form wins over the machine form');
     });
+
+    test('an equation is drawn as the picture the app draws', () async {
+      // "its fine to rasterise it into an image, it does not need to remain
+      // selectable." So the equation is painted off screen — the same
+      // flutter_math widget, against a private pipeline — and embedded.
+      //
+      // Asserted as an image XObject appearing where there was none: a page
+      // whose only content is maths has nothing else that could produce one.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.blocks = [
+        Block(type: BlockType.math, x: 60, y: 200, w: 300, content: {
+          'latex': r'\frac{a}{b}',
+          'linearSource': 'a/b',
+        }),
+      ];
+      final raw = readable(await buildPagePdf(app, pageId, title: 'M'));
+      expect(raw, contains('/Image'),
+          reason: 'the equation reached the page as pixels');
+    });
+
+    test('an equation that will not paint falls back to its source', () async {
+      // Every failure in the rasteriser returns null rather than throwing, so
+      // a page with one impossible equation still exports — with that
+      // equation as text, which is where this started.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.blocks = [
+        Block(type: BlockType.math, x: 60, y: 200, w: 300, content: {
+          'latex': '',
+          'linearSource': 'still here',
+        }),
+      ];
+      expect(debugPlainText(app.blocks.single), 'still here');
+      final bytes = await buildPagePdf(app, pageId, title: 'M');
+      expect(bytes.length, greaterThan(400), reason: 'a real document');
+    });
   });
 
   group('everything in the box comes out', () {
