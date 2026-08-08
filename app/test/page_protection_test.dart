@@ -181,17 +181,40 @@ void main() {
       expect(app.protectionFor(section.id), isNull);
     });
 
-    test('protection survives reopening the notebook', () {
+    test('protection survives reopening the notebook', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // THE test this file most needed and did not have. It used to build a
+      // fresh AppState and then call reloadProtection() BY HAND — which is
+      // precisely the line production was missing, so it passed for a release
+      // in which every lock evaporated on restart. Reopening a notebook now
+      // goes through the real entry point and nothing else.
       app.protectNode(section.id, 'pw', UnlockPolicy.session);
-      // A fresh AppState over the same repository, as a restart would give.
-      final fresh = AppState(repo)..notebookId = app.notebookId;
-      fresh.reloadNodes();
-      fresh.reloadProtection();
+
+      final fresh = AppState(repo)..spellCheckEnabled = false;
       addTearDown(fresh.cancelPendingSave);
+      await fresh.selectNotebook(app.notebookId!);
+
       expect(fresh.isLocked(page.id), isTrue,
           reason: 'a restart must not drop the gate');
       expect(fresh.unlockNode(page.id, 'pw'), isTrue);
+    });
+
+    test('switching notebooks does not carry an unlock across', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // Unlocks are keyed by node id. Ids are unique per notebook, so a stale
+      // entry cannot literally unlock the wrong page — but leaving the map
+      // populated across a switch is how that stops being true the first time
+      // an id is ever reused, and it kept a dead notebook's state alive.
+      final home = app.notebookId!;
+      app.protectNode(section.id, 'pw', UnlockPolicy.session);
+      expect(app.unlockNode(page.id, 'pw'), isTrue);
+      expect(app.isLocked(page.id), isFalse);
+
+      final other = await repo.createNotebook('Elsewhere');
+      await app.selectNotebook(other.id);
+      await app.selectNotebook(home);
+      // Back where we started, and the gate is closed again.
+      expect(app.isLocked(page.id), isTrue);
     });
 
     test('reloadProtection sees what a previous session set', () {
@@ -202,6 +225,69 @@ void main() {
       app.reloadProtection();
       expect(app.protectionFor(section.id), isNotNull);
       expect(app.isLocked(page.id), isTrue);
+    });
+
+    test('a locked page locks the SUB-PAGES indented under it', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // Sub-pages are not children in the data model: every page's parentId is
+      // its SECTION, and the nesting the navigator draws is `level` plus
+      // position order. The gate walked parentId, so it stepped straight past
+      // the parent page to the section and a passcode on a page governed
+      // nothing beneath it. ADR-0008 promises otherwise in as many words.
+      final sub = app.importNode(
+          app.notebookId!,
+          TreeNode(
+              kind: NodeKind.page,
+              parentId: section.id,
+              title: 'Secret sub',
+              level: 1,
+              position: 'b3'));
+      final deeper = app.importNode(
+          app.notebookId!,
+          TreeNode(
+              kind: NodeKind.page,
+              parentId: section.id,
+              title: 'Deeper still',
+              level: 2,
+              position: 'b4'));
+      final after = app.importNode(
+          app.notebookId!,
+          TreeNode(
+              kind: NodeKind.page,
+              parentId: section.id,
+              title: 'Unrelated',
+              position: 'b5'));
+      app.reloadNodes();
+
+      app.protectNode(page.id, 'pw', UnlockPolicy.session);
+      expect(app.isLocked(sub.id), isTrue, reason: 'one level down');
+      expect(app.governingNode(sub.id), page.id);
+      expect(app.isLocked(deeper.id), isTrue, reason: 'two levels down');
+      expect(app.isLocked(after.id), isFalse,
+          reason: 'the run ends at the next page of equal depth');
+
+      // And the passcode of the parent is what opens them.
+      expect(app.unlockNode(deeper.id, 'wrong'), isFalse);
+      expect(app.unlockNode(deeper.id, 'pw'), isTrue);
+      expect(app.isLocked(sub.id), isFalse);
+    });
+
+    test('locking a sub-page does not lock its parent', () {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The walk goes UP only. Protecting something nested must not reach
+      // back out and hide the page it sits under.
+      final sub = app.importNode(
+          app.notebookId!,
+          TreeNode(
+              kind: NodeKind.page,
+              parentId: section.id,
+              title: 'Sub',
+              level: 1,
+              position: 'b3'));
+      app.reloadNodes();
+      app.protectNode(sub.id, 'pw', UnlockPolicy.session);
+      expect(app.isLocked(sub.id), isTrue);
+      expect(app.isLocked(page.id), isFalse);
     });
 
     test('a locked page is not findable by its TITLE either', () {

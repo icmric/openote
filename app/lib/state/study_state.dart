@@ -78,6 +78,17 @@ abstract interface class StudyDocument {
 
   /// Bumped when the tree changes shape or a node's rendered fields change.
   int get nodesRevision;
+
+  /// Is this page behind a passcode right now?
+  ///
+  /// The deck reads the TEXT of every tagged line, so without this a locked
+  /// page's questions and definitions are dealt straight onto a flashcard —
+  /// content the app has just refused to show on the page itself.
+  bool isPageLocked(String pageId);
+
+  /// Bumped whenever the answer to [isPageLocked] could have changed, so the
+  /// deck cache does not serve a deck built before the lock.
+  int get gateRevision;
 }
 
 class StudyState extends ChangeNotifier {
@@ -256,7 +267,8 @@ class StudyState extends ChangeNotifier {
     // Closed pages. nodesRevision covers pages added/renamed/removed;
     // docRevision covers a page's stored content being replaced wholesale.
     final key = '${_doc.notebookId}#$sectionId#$pageId'
-        '#${_doc.docRevision}#${_doc.nodesRevision}#$openId';
+        '#${_doc.docRevision}#${_doc.nodesRevision}#$openId'
+        '#${_doc.gateRevision}';
     var stored = _deckCache[key];
     if (stored == null) {
       // A revision bumped: every entry keyed on the old one is dead weight.
@@ -270,6 +282,7 @@ class StudyState extends ChangeNotifier {
       for (final n in _doc.nodes.where(inScope)) {
         if (n.id == openId) continue; // the live half, below
         if (!tagged.contains(n.id)) continue;
+        if (_doc.isPageLocked(n.id)) continue;
         for (final b in _doc.readPageShared(n.id).blocks) {
           out.addAll(cardsFromBlock(b, n.id, n.title));
         }

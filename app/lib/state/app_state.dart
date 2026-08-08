@@ -210,15 +210,42 @@ class AppState extends ChangeNotifier
   /// Unlocked subtree roots → when the unlock expires (null = this session).
   final Map<String, DateTime?> _unlocked = {};
 
-  /// Re-read which nodes are protected. Called on notebook open and after any
-  /// change, so [_anyProtection] and the gate agree with storage.
+  /// Bumped whenever the set of locked nodes could have changed. Caches that
+  /// filter on [isLocked] must include it in their key, or they answer from
+  /// before the lock.
+  int _gateRevision = 0;
+
+  @override
+  int get gateRevision => _gateRevision;
+
+  @override
+  bool isPageLocked(String pageId) => isLocked(pageId);
+
+  /// Re-read which nodes are protected, for the notebook that is open now.
+  ///
+  /// **Every entry point that changes which notebook is open must call this.**
+  /// It shipped in 0.4.2 with no caller in the app at all — only tests — so
+  /// `_protectedIds` was empty on every cold start, `_anyProtection` was false,
+  /// and the gate evaporated: locked pages opened with no prompt, their titles
+  /// and content came back in search, and the context menu offered to lock the
+  /// page *again*, overwriting the stored record without ever asking for the
+  /// old passcode. The record was in workspace.json the whole time; nothing
+  /// read it. The test that was supposed to catch this built a fresh AppState
+  /// and then called this method BY HAND, which is exactly the line production
+  /// was missing — so it passed while the feature did not work.
+  ///
+  /// The unlock cache is cleared too: unlocks are keyed by node id, ids are
+  /// unique per notebook, and carrying them across a notebook switch would
+  /// mean an unlock granted in one notebook silently applying in another.
   void reloadProtection() {
     _protectedIds.clear();
+    _unlocked.clear();
     if (notebookId == null) return;
     final prefix = 'protect:${notebookId!}:';
     for (final k in _repo.settingKeys()) {
       if (k.startsWith(prefix)) _protectedIds.add(k.substring(prefix.length));
     }
+    _gateRevision++;
   }
 
   ProtectionRecord? protectionFor(String nodeId) => _protectedIds.contains(nodeId)
@@ -238,9 +265,40 @@ class AppState extends ChangeNotifier
     // Bounded: a corrupt parent cycle must not hang the page-open path.
     for (var i = 0; cur != null && i < 64; i++) {
       if (_protectedIds.contains(cur)) return cur;
-      cur = byId[cur]?.parentId;
+      cur = _protectionParent(byId[cur]);
     }
     return null;
+  }
+
+  /// The node one step up the hierarchy the USER sees.
+  ///
+  /// For everything except a sub-page that is `parentId`. A sub-page is the
+  /// exception, and it is why locking a page did not lock the pages indented
+  /// beneath it: sub-pages are not children in the data model at all. Every
+  /// page's `parentId` is its SECTION — `makeSubpageOf` sets
+  /// `parentId = target.parentId` — and the nesting the navigator draws is
+  /// [TreeNode.level] plus position order. So walking `parentId` from a
+  /// sub-page steps straight past its parent page to the section, and a
+  /// passcode on the parent governs nothing.
+  ///
+  /// The rule here is the one the rest of the app already uses for exactly
+  /// this relationship (`sidebar._pageEntriesFor`, `sortSection`): a page's
+  /// parent is the nearest PRECEDING page in the section, in position order,
+  /// with a strictly smaller level.
+  String? _protectionParent(TreeNode? n) {
+    if (n == null) return null;
+    if (n.kind != NodeKind.page || n.level == 0) return n.parentId;
+    final siblings = pagesOf(n.parentId ?? '');
+    final i = siblings.indexWhere((p) => p.id == n.id);
+    // Not found: an id from another notebook, or nodes mid-reload. Falling
+    // back to parentId keeps the walk terminating on something real.
+    if (i < 0) return n.parentId;
+    for (var j = i - 1; j >= 0; j--) {
+      if (siblings[j].level < n.level) return siblings[j].id;
+    }
+    // Indented with nothing shallower above it — malformed, but a real state
+    // an import can produce. The section still governs it.
+    return n.parentId;
   }
 
   /// Is [nodeId] currently hidden behind a passcode?
@@ -252,6 +310,7 @@ class AppState extends ChangeNotifier
     if (until == null) return false; // session-length unlock
     if (DateTime.now().isBefore(until)) return false;
     _unlocked.remove(root); // expired
+    _gateRevision++;
     return true;
   }
 
@@ -267,6 +326,7 @@ class AppState extends ChangeNotifier
     if (rec.policy != UnlockPolicy.always) {
       _unlocked[root] = d == null ? null : DateTime.now().add(d);
     }
+    _gateRevision++;
     notifyListeners();
     return true;
   }
@@ -277,6 +337,7 @@ class AppState extends ChangeNotifier
         _protectKey(nodeId), newProtection(passcode, policy).toJson());
     _protectedIds.add(nodeId);
     _unlocked.remove(nodeId);
+    _gateRevision++;
     notifyListeners();
   }
 
@@ -288,6 +349,7 @@ class AppState extends ChangeNotifier
     _repo.setSetting(_protectKey(nodeId), null);
     _protectedIds.remove(nodeId);
     _unlocked.remove(nodeId);
+    _gateRevision++;
     notifyListeners();
     return true;
   }
@@ -296,6 +358,7 @@ class AppState extends ChangeNotifier
   void lockAll() {
     if (_unlocked.isEmpty) return;
     _unlocked.clear();
+    _gateRevision++;
     notifyListeners();
   }
 
@@ -1776,12 +1839,21 @@ class AppState extends ChangeNotifier
   @override
   List<TaggedLine> allTags() {
     if (notebookId == null) return const [];
-    final key = '$notebookId#$docRevision#$nodesRevision#$pageId';
+    // `_gateRevision` is in the key because the answer depends on which pages
+    // are locked, and locking or unlocking changes neither the document nor
+    // the node revision. Without it, a page unlocked mid-session would keep
+    // its tags hidden until some unrelated edit happened to bump the key.
+    final key =
+        '$notebookId#$docRevision#$nodesRevision#$pageId#$_gateRevision';
     final cached = _allTagsCache;
     if (cached != null && cached.key == key) return cached.tags;
     final tagged = _repo.pageIdsWithTags(notebookId!).toSet();
     final out = <TaggedLine>[];
     for (final n in nodes.where((n) => n.kind == NodeKind.page)) {
+      // The rollup quotes the text of every tagged line, so an unguarded scan
+      // reprints a locked page's contents in the tags panel and the planner's
+      // agenda — the gate walked around by the app that offers it.
+      if (isLocked(n.id)) continue;
       // The open page's in-memory blocks are fresher than the container — and
       // it is also the one page the prefilter must not exclude, since its
       // unsaved edits may carry tags the stored JSON does not.
@@ -2590,6 +2662,10 @@ class AppState extends ChangeNotifier
     await _repo.purgeExpiredNotebooks();
     _repo.purgeExpiredNodes(notebookId!);
     reloadNodes();
+    // Startup does NOT go through _loadNotebook — it opens the last notebook
+    // inline — so the gate has to be rehydrated here as well. Both paths, or
+    // the lock is only as good as which door you came in by.
+    reloadProtection();
     // Replay the open notebook's log in a background isolate, starting now.
     // This used to happen synchronously inside `_startWatching` on the first
     // frame — for a freshly imported notebook that is a multi-megabyte log,
@@ -2626,6 +2702,12 @@ class AppState extends ChangeNotifier
 
   Future<void> _loadNotebook() async {
     reloadNodes();
+    // The single funnel every notebook-open goes through — startup, switching,
+    // creating, joining — which is why the gate is rehydrated HERE rather than
+    // in init(). Before any page is selected: `selectPage` below loads a
+    // page's blocks, and it must not load a locked one into an app that has
+    // forgotten the lock exists.
+    reloadProtection();
     // Reset the focused section for the new notebook (selectPage refines it).
     activeSectionId =
         nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
@@ -2974,10 +3056,28 @@ class AppState extends ChangeNotifier
     pageProps =
         PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>());
     for (final bj in (j['blocks'] as List)) {
-      final src = Block.fromJson((bj as Map).cast<String, dynamic>());
+      // `Block.fromJson` reads `j['id'] as String` — a NON-NULLABLE cast — and
+      // the built-in templates carry no ids, because their blocks were written
+      // by hand as literal JSON. So every built-in threw `type 'Null' is not a
+      // subtype of type 'String'` on its very first block, from the day they
+      // were added, and the throw landed in a discarded Future: no dialog, no
+      // red screen, nothing. That is the whole of "clicking any of these does
+      // nothing". A template is a PROTOTYPE, and an id is the one field a
+      // prototype has no business carrying — so one is supplied here rather
+      // than written into the data. A real id in the JSON still wins.
+      final src =
+          Block.fromJson({'id': newId(), ...(bj as Map).cast<String, dynamic>()});
       final fresh = Block(
         id: newId(),
         type: src.type,
+        // `rawType` and `unknownFields` are the two carriers the frozen-format
+        // promise rests on: without them a block written by a NEWER build is
+        // reduced to `"type":"unknown"` and its meaning is gone for good. A
+        // user template saved from a page containing one would have destroyed
+        // it on every apply. `rotation` has the same hazard.
+        rawType: src.rawType,
+        unknownFields: src.unknownFields,
+        rotation: src.rotation,
         x: src.x,
         y: src.y,
         w: src.w,
