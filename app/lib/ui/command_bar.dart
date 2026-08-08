@@ -915,6 +915,16 @@ class _CommandBarState extends State<CommandBar> {
   /// to use them" was the verdict on a feature whose only entrance was a
   /// keyboard chord over a tag nobody knew produced anything.
   void _insertFlashcard() {
+    // If a text box is being edited, the card goes INTO it, in flow with the
+    // writing — "Ideally id like to be able to have everything in a single box
+    // at once". Same rule the picture follows, and for the same reason: the
+    // caret is where you said you wanted it.
+    final ae = app.activeEditor;
+    if (ae != null && ae.block.type == BlockType.text) {
+      app.insertTextAtActiveCursor('\n?[Question](Answer)\n');
+      app.select(ae.block.id);
+      return;
+    }
     final c = _center();
     final b = app.addBlock(Block(
       type: BlockType.flashcard,

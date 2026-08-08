@@ -7,6 +7,8 @@ import '../core/platform_open.dart';
 import '../model/tags.dart';
 import '../theme/onote_theme.dart';
 import 'md_table.dart';
+import '../editor/flashcard_view.dart';
+import '../study/flashcards.dart' show inlineCardRe;
 
 /// Interim inline-Markdown rendering (TEXT-2/4 at block granularity):
 /// a text block RENDERS its Markdown when not being edited and reveals the
@@ -447,6 +449,24 @@ class _MarkdownViewState extends State<MarkdownView> {
                     TextSpan(children: inlineSpans(body, baseStyle, dark, onWikiLink)),
                     style: baseStyle)),
           ],
+        ),
+      );
+    }
+
+    // A flashcard written into the prose: `?[front](back)` on its own line.
+    // The same widget the block form uses, so a card is one object however it
+    // got onto the page — see editor/flashcard_view.dart.
+    final cardMatch = inlineCardRe.firstMatch(line);
+    if (cardMatch != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460, minHeight: 132),
+          child: FlipCard(
+            front: cardMatch.group(1) ?? '',
+            back: cardMatch.group(2) ?? '',
+            compact: true,
+          ),
         ),
       );
     }

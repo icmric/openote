@@ -85,6 +85,68 @@ void main() {
     });
   });
 
+  group('a card written into a paragraph', () {
+    // "would be nice if i could have them in the same box with text and other
+    // stuff. Ideally id like to be able to have everything in a single box at
+    // once." `?[front](back)` on its own line, mirroring the in-flow image
+    // form — and reaching the deck through the same function, so the study
+    // panel needed nothing.
+    Block prose(String text) =>
+        Block(id: 'b1', type: BlockType.text, x: 0, y: 0, content: {'text': text});
+
+    test('it becomes a card, sharing the block with the writing', () {
+      final cards = cardsFromBlock(
+          prose('''
+Some notes about the war.
+?[When did it start?](1914)
+And some more notes.'''),
+          'p1',
+          'History');
+      expect(cards, hasLength(1));
+      expect(cards.single.front, 'When did it start?');
+      expect(cards.single.back, '1914');
+      expect(cards.single.line, 1, reason: 'its id tracks the line it is on');
+      expect(cards.single.id, 'b1:1');
+    });
+
+    test('several in one block all count', () {
+      final cards = cardsFromBlock(
+          prose('''
+?[A](1)
+prose in between
+?[B](2)'''), 'p', 't');
+      expect(cards.map((c) => c.front), ['A', 'B']);
+    });
+
+    test('a half-written one is not dealt into the deck', () {
+      expect(cardsFromBlock(prose('?[Only a question]()'), 'p', 't'), isEmpty);
+      expect(cardsFromBlock(prose('?[](Only an answer)'), 'p', 't'), isEmpty);
+    });
+
+    test('it does not need a tag, and does not disturb tags that are there',
+        () {
+      // A block used to be skipped outright when it had no tags. An in-flow
+      // card carries no tag — writing it IS the marking — so that early return
+      // had to learn about this shape.
+      final both = Block(id: 'b2', type: BlockType.text, x: 0, y: 0, content: {
+        'text': 'Osmosis — movement of water across a membrane\n'
+            '?[Symbol for sodium?](Na)',
+        'tags': [
+          {'kind': TagKind.definition.name, 'line': 0}
+        ],
+      });
+      final cards = cardsFromBlock(both, 'p', 't');
+      expect(cards.map((c) => c.front), containsAll(['Osmosis', 'Symbol for sodium?']));
+    });
+
+    test('it is not confused with a picture or a wiki link', () {
+      expect(cardsFromBlock(prose('![alt](sha256:abc)'), 'p', 't'), isEmpty);
+      expect(cardsFromBlock(prose('[[Some page]]'), 'p', 't'), isEmpty);
+      expect(cardsFromBlock(prose('a ?[mid](line) card'), 'p', 't'), isEmpty,
+          reason: 'line-anchored, exactly like the image form');
+    });
+  });
+
   group('it survives a build that has never heard of it', () {
     test('the type name round-trips through an unknown block', () {
       // The format-freeze promise, and the reason adding a BlockType value was

@@ -6,6 +6,9 @@ import 'package:flutter/services.dart';
 
 import '../markdown/md_render.dart' show indentPx;
 import '../theme/onote_theme.dart';
+import '../study/flashcards.dart' show inlineCardRe;
+import '../theme/tokens.dart';
+import 'flashcard_view.dart';
 
 /// A [TextEditingController] that renders Markdown **as you type** (TEXT-2/4):
 /// the moment a construct closes (e.g. the second `*` of `**bold**`) the text
@@ -282,6 +285,30 @@ class LiveMarkdownController extends TextEditingController {
     final lineEnd = lineStart + line.length;
     final onLine = lo >= 0 && hi >= lineStart && lo <= lineEnd;
 
+    // A flashcard written into the prose: `?[front](back)` on its own line.
+    // Same placeholder arithmetic as the picture below — the card stands for
+    // the line's FIRST character and the rest trails hidden, so the paragraph
+    // has exactly as many code units as the raw text and not one caret offset
+    // moves. See the long note on the image branch; it is the same trick and
+    // the same invariant.
+    if (line.isNotEmpty) {
+      final card = inlineCardRe.firstMatch(line);
+      if (card != null) {
+        out.add(_SourceSpan(
+          source: line.substring(0, 1),
+          alignment: PlaceholderAlignment.top,
+          child: _InlineCard(
+            key: ValueKey('card@$lineStart'),
+            front: card.group(1) ?? '',
+            back: card.group(2) ?? '',
+            selected: onLine,
+          ),
+        ));
+        out.add(TextSpan(text: line.substring(1), style: _hidden(base)));
+        return;
+      }
+    }
+
     // An in-flow image reference, drawn as the picture itself.
     //
     // The obvious way to do this — swap the line for a WidgetSpan — desyncs
@@ -460,6 +487,43 @@ class LiveMarkdownController extends TextEditingController {
       out.add(TextSpan(text: sub.substring(last), style: cBase));
     }
   }
+}
+
+/// A card inside a paragraph, in the live editor.
+///
+/// Deliberately NOT editable in place: you change it by editing the line, the
+/// same way you change a link or a picture reference. Backspacing into it
+/// breaks the `?[…](…)` shape and the raw text reappears, which is its own
+/// explanation of what just happened.
+class _InlineCard extends StatelessWidget {
+  const _InlineCard({
+    super.key,
+    required this.front,
+    required this.back,
+    required this.selected,
+  });
+
+  final String front;
+  final String back;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Container(
+          width: 420,
+          height: 132,
+          // A foreground decoration, so the caret outline costs no layout and
+          // the card cannot shift a pixel when the caret enters its line.
+          foregroundDecoration: selected
+              ? BoxDecoration(
+                  borderRadius: OnoteRadius.xlAll,
+                  border: Border.all(
+                      color: OnoteColors.brass400.withValues(alpha: .85)))
+              : null,
+          child: FlipCard(front: front, back: back, compact: true),
+        ),
+      );
 }
 
 /// A [WidgetSpan] that remembers the source text it stands in for.

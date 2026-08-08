@@ -1,10 +1,9 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'flashcard_view.dart';
 import '../theme/tokens.dart';
 
 /// A flashcard living on the page, written and revised where it sits.
@@ -37,17 +36,7 @@ class FlashcardBlockView extends StatefulWidget {
   State<FlashcardBlockView> createState() => _FlashcardBlockViewState();
 }
 
-class _FlashcardBlockViewState extends State<FlashcardBlockView>
-    with SingleTickerProviderStateMixin {
-  /// Created in [initState], NOT as a `late final` initialiser.
-  ///
-  /// A card inserted from the menu opens straight into the editor and its
-  /// build never touches this — so with lazy initialisation the controller was
-  /// first constructed inside `dispose()`, where the element is already
-  /// deactivated and the ticker's ancestor lookup asserts. Every newly created
-  /// card threw on the way out.
-  late final AnimationController _flip;
-
+class _FlashcardBlockViewState extends State<FlashcardBlockView> {
   bool _editing = false;
   TextEditingController? _front;
   TextEditingController? _back;
@@ -56,13 +45,9 @@ class _FlashcardBlockViewState extends State<FlashcardBlockView>
   String get _backText => widget.block.content['back'] as String? ?? '';
   bool get _blank => _frontText.trim().isEmpty && _backText.trim().isEmpty;
 
-  /// Past the halfway point the back is the face you are looking at.
-  bool get _showingBack => _flip.value >= 0.5;
-
   @override
   void initState() {
     super.initState();
-    _flip = AnimationController(vsync: this, duration: OnoteMotion.large);
     // A card dropped on the page has nothing on it, so it opens ready to be
     // written rather than as an empty rectangle you have to work out how to
     // fill. Through _openEditor, NOT by setting the flag: the editor's fields
@@ -75,19 +60,9 @@ class _FlashcardBlockViewState extends State<FlashcardBlockView>
 
   @override
   void dispose() {
-    _flip.dispose();
     _front?.dispose();
     _back?.dispose();
     super.dispose();
-  }
-
-  void _toggleFlip() {
-    if (_editing) return;
-    if (_flip.isCompleted || _flip.velocity > 0) {
-      _flip.reverse();
-    } else {
-      _flip.forward();
-    }
   }
 
   /// Open the editor. The one place `_editing` becomes true, so the fields can
@@ -100,12 +75,7 @@ class _FlashcardBlockViewState extends State<FlashcardBlockView>
     _editing = true;
   }
 
-  void _startEditing() {
-    setState(_openEditor);
-    // Editing a card you had turned over is confusing — both halves are shown
-    // side by side, so the flip state means nothing while it is open.
-    _flip.value = 0;
-  }
+  void _startEditing() => setState(_openEditor);
 
   void _commit() {
     final f = _front?.text ?? '';
@@ -131,119 +101,13 @@ class _FlashcardBlockViewState extends State<FlashcardBlockView>
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     if (_editing) return _editor(dark);
-    return AnimatedBuilder(
-      animation: _flip,
-      builder: (context, _) {
-        final t = Curves.easeInOut.transform(_flip.value);
-        final angle = t * math.pi;
-        return Transform(
-          key: const ValueKey('flashcard-flip'),
-          alignment: Alignment.center,
-          // A little perspective, or the card reads as a rectangle being
-          // squashed rather than something turning over.
-          transform: Matrix4.identity()
-            ..setEntry(3, 2, 0.0015)
-            ..rotateY(angle),
-          child: _showingBack
-              // The back would be laid out mirrored by the rotation that
-              // brought it round; flipping it again puts it the right way up.
-              ? Transform(
-                  alignment: Alignment.center,
-                  transform: Matrix4.identity()..rotateY(math.pi),
-                  child: _face(dark, back: true),
-                )
-              : _face(dark, back: false),
-        );
-      },
-    );
-  }
-
-  Widget _face(bool dark, {required bool back}) {
-    final text = back ? _backText : _frontText;
-    final accent = back ? OnoteColors.ink300 : OnoteColors.brass400;
-    return Container(
-      decoration: BoxDecoration(
-        color: dark ? OnoteColors.night100 : Colors.white,
-        borderRadius: OnoteRadius.xlAll,
-        border: Border.all(color: accent.withValues(alpha: .55), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: dark ? .35 : .08),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: _toggleFlip,
-          child: Stack(
-            children: [
-              // The accent stripe is the only thing that differs at a glance
-              // between the two faces, which is what makes "which side am I
-              // looking at" answerable without reading.
-              Positioned(
-                left: 0,
-                top: 0,
-                bottom: 0,
-                child: Container(width: 5, color: accent),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                    OnoteSpace.x7, OnoteSpace.x6, OnoteSpace.x6, OnoteSpace.x6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Row(
-                      children: [
-                        Text(back ? 'ANSWER' : 'QUESTION',
-                            style: OnoteType.overline.copyWith(color: accent)),
-                        const Spacer(),
-                        _iconButton(Icons.edit_outlined, 'Edit this card',
-                            _startEditing),
-                      ],
-                    ),
-                    const SizedBox(height: OnoteSpace.x4),
-                    Flexible(
-                      child: SingleChildScrollView(
-                        child: Text(
-                          text.trim().isEmpty
-                              ? (back ? 'No answer yet' : 'No question yet')
-                              : text,
-                          style: OnoteType.ui.copyWith(
-                            fontSize: 16,
-                            height: 1.4,
-                            color: text.trim().isEmpty
-                                ? OnoteColors.graphite400
-                                : null,
-                            fontStyle: text.trim().isEmpty
-                                ? FontStyle.italic
-                                : FontStyle.normal,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: OnoteSpace.x4),
-                    Row(
-                      children: [
-                        const Icon(Icons.autorenew,
-                            size: 13, color: OnoteColors.graphite400),
-                        const SizedBox(width: OnoteSpace.x2),
-                        Text(back ? 'Tap to go back' : 'Tap to reveal',
-                            style: OnoteType.caption
-                                .copyWith(color: OnoteColors.graphite400)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    // The SAME card the in-flow form draws (editor/flashcard_view.dart). One
+    // widget, so a card is one object whether it is a block on the page or a
+    // line inside a paragraph — two that merely looked alike would drift.
+    return FlipCard(
+      front: _frontText,
+      back: _backText,
+      trailing: _iconButton(Icons.edit_outlined, 'Edit this card', _startEditing),
     );
   }
 

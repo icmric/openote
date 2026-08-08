@@ -81,6 +81,19 @@ String plainify(String s) {
   return out.trim();
 }
 
+/// A whole line that is nothing but a card: `?[front](back)`.
+///
+/// Mirrors the in-flow image form `![alt](src)` deliberately — the leading
+/// character is the discriminator, and `?` reads as a question. Line-anchored,
+/// because both renderers are, and because a card is a block-level thing even
+/// when it lives inside a paragraph.
+///
+/// Nothing else in the Markdown dialect claims `?[`: images need `!`, wiki
+/// links are `[[…]]`, and the inline alternation has no branch that can begin
+/// here. A build that has never heard of it shows the literal text — ugly, but
+/// lossless, which is the promise that matters.
+final RegExp inlineCardRe = RegExp(r'^\s*\?\[([^\]]*)\]\(([^)]*)\)\s*$');
+
 /// The separators a definition line may use, most explicit first.
 final _definitionSplits = [
   RegExp(r'\s+—\s+'), // em dash
@@ -130,9 +143,34 @@ List<Flashcard> cardsFromBlock(
   }
   if (block.type != BlockType.text) return const [];
   final tags = NoteTag.listFrom(block.content);
-  if (tags.isEmpty) return const [];
-  final lines = (block.content['text'] as String? ?? '').split('\n');
+  final text = block.content['text'] as String? ?? '';
+  // NOT `if (tags.isEmpty) return` any more: a block can carry in-flow cards
+  // and no tags at all, which is the whole point of the `?[…](…)` form. The
+  // substring check keeps an ordinary untagged paragraph as cheap as before.
+  if (tags.isEmpty && !text.contains('?[')) return const [];
+  final lines = text.split('\n');
   final out = <Flashcard>[];
+
+  // Cards written directly into the prose, scanned independently of the tags:
+  // writing `?[…](…)` IS the marking, so no tag is involved.
+  for (var i = 0; i < lines.length; i++) {
+    final m = inlineCardRe.firstMatch(lines[i]);
+    if (m == null) continue;
+    final front = plainify(m.group(1) ?? '');
+    final back = plainify(m.group(2) ?? '');
+    // Half a card teaches nothing and cannot be graded honestly — and a card
+    // is half-written for exactly as long as it takes to type the other side.
+    if (front.isEmpty || back.isEmpty) continue;
+    out.add(Flashcard(
+      pageId: pageId,
+      pageTitle: pageTitle,
+      blockId: block.id,
+      line: i,
+      front: front,
+      back: back,
+      kind: TagKind.question,
+    ));
+  }
 
   for (final tag in tags) {
     if (tag.kind != TagKind.question && tag.kind != TagKind.definition) {

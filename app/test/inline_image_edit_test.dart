@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/live_markdown_controller.dart';
+import 'package:openote/editor/flashcard_view.dart';
 import 'package:openote/markdown/md_render.dart';
 import 'package:openote/theme/tokens.dart';
 
@@ -214,6 +215,50 @@ void main() {
       // Line-anchored, exactly like the read renderer, so the two agree.
       await edit(t, 'see ![](sha256:abc123) here');
       expect(find.byType(Image), findsNothing);
+    });
+  });
+
+  group('a flashcard in the same box as the writing', () {
+    // "Ideally id like to be able to have everything in a single box at once."
+    // Same placeholder arithmetic as the picture, so the same invariant has to
+    // hold: the laid-out paragraph must have exactly as many code units as the
+    // raw text, or every caret offset after the card is wrong.
+    testWidgets('renders as a card among the prose', (t) async {
+      await edit(t, 'Notes above\n?[What is 7x8?](56)\nNotes below');
+      expect(find.byType(FlipCard), findsOneWidget);
+      expect(find.text('What is 7x8?'), findsOneWidget);
+      expect(find.text('56'), findsNothing, reason: 'the answer is hidden');
+    });
+
+    testWidgets('the paragraph is still exactly as long as the raw text',
+        (t) async {
+      await edit(t, 'Notes above\n?[Q](A)\nNotes below');
+      expect(laidOut(t).length, controller.text.length);
+    });
+
+    testWidgets('the caret after it still lands where the character is',
+        (t) async {
+      await edit(t, '?[Q](A)\nhello');
+      final at = controller.text.indexOf('hello');
+      final caret = tester(t)
+          .renderEditable
+          .getLocalRectForCaret(TextPosition(offset: at));
+      expect(caret.left, lessThan(2.0));
+    });
+
+    testWidgets('and it reads the same when you are not editing', (t) async {
+      // Both renderers, or the box visibly changes on entering edit mode.
+      await t.pumpWidget(const MaterialApp(
+        home: Scaffold(
+          body: MarkdownView(
+            text: 'Notes above\n?[What is 7x8?](56)\nNotes below',
+            baseStyle: TextStyle(fontSize: 14),
+          ),
+        ),
+      ));
+      await t.pumpAndSettle();
+      expect(find.byType(FlipCard), findsOneWidget);
+      expect(find.text('What is 7x8?'), findsOneWidget);
     });
   });
 
