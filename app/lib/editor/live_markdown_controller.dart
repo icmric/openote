@@ -32,6 +32,11 @@ class LiveMarkdownController extends TextEditingController {
   /// so without this the new size would draw correctly and then never be saved.
   VoidCallback? onSelfEdit;
 
+  /// Ask the host to widen the block by [extra] logical pixels — see
+  /// `OnoteEditSession.requestExtraWidth`. Null means the box cannot grow, and
+  /// a picture then clamps to it exactly as it did before.
+  void Function(double extra)? requestExtraWidth;
+
   /// Resolved blobs, so a repaint per keystroke is not a SQLite read per
   /// keystroke. A miss is never cached: the bytes may still be arriving from a
   /// sync, and a notebook the user never leaves would remember the gap forever.
@@ -304,6 +309,7 @@ class LiveMarkdownController extends TextEditingController {
             height: double.tryParse(img.group(5) ?? ''),
             indent: indentPx(img.group(1)!.length, base.fontSize),
             selected: onLine,
+            onNeedWidth: requestExtraWidth,
             label: line,
             labelStyle: refStyle,
             onResize: (w, h) => resizeImageLine(lineStart, lineEnd, line, w, h),
@@ -486,6 +492,7 @@ class _EditImage extends StatefulWidget {
     required this.label,
     required this.labelStyle,
     required this.onResize,
+    required this.onNeedWidth,
   });
 
   final Uint8List bytes;
@@ -499,6 +506,9 @@ class _EditImage extends StatefulWidget {
   final String label;
   final TextStyle labelStyle;
   final void Function(double w, double h) onResize;
+
+  /// Ask the host for more room. Null when the box cannot grow.
+  final void Function(double extra)? onNeedWidth;
 
   @override
   State<_EditImage> createState() => _EditImageState();
@@ -534,27 +544,57 @@ class _EditImageState extends State<_EditImage> {
     if (size == null || size.width <= 0 || size.height <= 0) return;
     final w = widget.width, h = widget.height;
     _aspect = (w != null && h != null && h > 0) ? w / h : size.width / size.height;
+    // The drag starts from the STORED width when there is one, not from the
+    // size on screen: a picture whose `=WxH` is wider than its box is drawn
+    // clamped, and starting from the clamped size would shrink it the moment
+    // it was touched.
+    final from = (w != null && w > 0) ? w : size.width;
+    _wanted = from;
     setState(() {
-      _dragW = size.width;
-      _dragH = size.width / _aspect;
+      _dragW = from;
+      _dragH = from / _aspect;
     });
   }
 
+  /// Where the pointer has asked the picture to be, ignoring what will fit.
+  ///
+  /// Tracked separately from [_dragW] because the two diverge whenever the box
+  /// is the limit: the pointer keeps going, the picture cannot, and the box is
+  /// asked to catch up. Accumulating deltas into the CLAMPED width instead
+  /// would silently swallow every pixel of overshoot, so dragging out and back
+  /// would not return to where it started.
+  double? _wanted;
+
   void _updateDrag(Offset delta) {
-    final from = _dragW;
-    if (from == null) return;
-    final next = (from + delta.dx).clamp(_kMinImageWidth, _maxWidth());
+    if (_dragW == null) return;
+    final wanted = (_wanted ?? _dragW!) + delta.dx;
+    _wanted = wanted;
+    final avail = _maxWidth();
+    // Push past the edge and the BOX grows, rather than the picture stopping.
+    // The request is for the shortfall only; the host owns Block.w and the
+    // chrome between it and this placeholder's constraints.
+    if (wanted > avail) widget.onNeedWidth?.call(wanted - avail);
+    // Still clamped to what is available THIS frame. The growth lands on the
+    // next one, and until it does, drawing wider than the box would mean
+    // writing a `=WxH` the picture is not actually rendered at — the text and
+    // the picture would disagree about a number the user can see.
+    final next =
+        wanted.clamp(_kMinImageWidth, math.max(_kMinImageWidth, avail)) as double;
     setState(() {
       _dragW = next;
       _dragH = next / _aspect;
     });
   }
 
+
   void _endDrag() {
     final w = _dragW, h = _dragH;
     // Cleared and committed in the same frame: the rebuild the commit causes
     // carries the new size, so the picture never flashes back to the old one.
-    setState(() => _dragW = _dragH = null);
+    setState(() {
+      _dragW = _dragH = null;
+      _wanted = null;
+    });
     if (w != null && h != null && h > 0) widget.onResize(w, h);
   }
 

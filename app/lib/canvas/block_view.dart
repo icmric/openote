@@ -185,12 +185,29 @@ class _BlockViewState extends State<BlockView> {
     app.setDragging(true);
   }
 
+  /// Ctrl, and NOT Alt, even though the ask said "ctrl or alt".
+  ///
+  /// Alt already means something here: Alt-drag on a text body is the escape
+  /// hatch that moves the box instead of selecting its text (see
+  /// [_bodyDragStart]). Giving Alt a second meaning during the same gesture
+  /// would make the two indistinguishable. Shift is taken too — additive
+  /// selection. Ctrl is free, and it is the half of the ask that survives.
+  ///
+  /// Meta is accepted alongside it because Ctrl-drag is not idiomatic on
+  /// macOS, where Ctrl-click is the secondary click.
+  static bool get _modeOverrideHeld =>
+      HardwareKeyboard.instance.isControlPressed ||
+      HardwareKeyboard.instance.isMetaPressed;
+
   void _drag(DragUpdateDetails d) {
     if (!_dragUndoPushed) {
       app.pushUndo();
       _dragUndoPushed = true;
     }
     if (!selected) app.select(b.id);
+    // Read per MOVE, not at drag start: the whole point is that pressing or
+    // releasing the key part way through a drag changes what happens next.
+    app.snapOverride = _modeOverrideHeld;
     final scale = widget.controller.scale;
     app.moveSelectedBy(d.delta.dx / scale, d.delta.dy / scale);
     // Alignment guides (CANVAS-7). Computed after the move so the guide
@@ -200,8 +217,14 @@ class _BlockViewState extends State<BlockView> {
 
   void _dragEnd(DragEndDetails d) {
     _dragUndoPushed = false;
+    // Settle in whatever mode is in force at the moment of release — "as soon
+    // as i release it it goes back to grid". A key let go before the mouse
+    // therefore snaps the block into the grid on drop, which is the reading
+    // that lets you change your mind without starting the drag again.
+    app.snapOverride = _modeOverrideHeld;
     app.applyAlignSnap();
     app.settleSelected();
+    app.snapOverride = false;
     app.setDragging(false);
   }
 

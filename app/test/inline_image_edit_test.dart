@@ -33,18 +33,35 @@ void main() {
   const style = TextStyle(fontSize: 14, height: 1.5);
   late LiveMarkdownController controller;
 
-  /// The editor, in a box 400px wide, with the blob store stubbed.
+  /// How wide the host has made the box. Starts at the requested width and
+  /// grows exactly as `TextBlockView` grows `Block.w` — by the deficit the
+  /// engine asks for — so growth is exercised end to end rather than asserted
+  /// against a stub that always says yes.
+  late ValueNotifier<double> boxWidth;
+
+  /// The editor, in a box that can grow, with the blob store stubbed.
   Future<void> edit(WidgetTester t, String text,
-      {Uint8List? Function(String)? resolver, double width = 400}) async {
-    controller = LiveMarkdownController(text: text, dark: false)
-      ..imageResolver = resolver ?? (_) => png;
+      {Uint8List? Function(String)? resolver,
+      double width = 400,
+      bool growable = true}) async {
+    boxWidth = ValueNotifier<double>(width);
+    addTearDown(boxWidth.dispose);
+    controller = LiveMarkdownController(text: text, dark: false);
+    // Separate statements, not a cascade: `..imageResolver = resolver ?? (_) => png`
+    // parses the arrow body as swallowing everything after it.
+    controller.imageResolver = resolver ?? (_) => png;
+    controller.requestExtraWidth = growable
+        ? (extra) =>
+            boxWidth.value = (boxWidth.value + extra).clamp(80.0, 4000.0)
+        : null;
     addTearDown(controller.dispose);
     await t.pumpWidget(MaterialApp(
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,
-          child: SizedBox(
-            width: width,
+          child: ValueListenableBuilder<double>(
+            valueListenable: boxWidth,
+            builder: (_, w, child) => SizedBox(width: w, child: child),
             child: TextField(
               controller: controller,
               maxLines: null,
@@ -285,14 +302,56 @@ void main() {
       expect(saved, 1, reason: 'a programmatic edit must tell the host once');
     });
 
-    testWidgets('it cannot be dragged wider than the box', (t) async {
-      // "based on the box for max, but to be able to make it smaller".
+    testWidgets('dragging past the edge grows the BOX with it', (t) async {
+      // The rule reversed: "if i try to expand the image larger than the box,
+      // the box just grows with it to accomodate it". This replaces a test
+      // that pinned the opposite — the picture stopping at the box edge.
       await edit(t, '![](sha256:abc123 =200x100)', width: 300);
+      final before = boxWidth.value;
+      await dragHandle(t, 400);
+      expect(boxWidth.value, greaterThan(before),
+          reason: 'the box was asked for more room and took it');
+      final m = RegExp(r'=(\d+)x(\d+)').firstMatch(controller.text)!;
+      expect(int.parse(m.group(1)!), greaterThan(300),
+          reason: 'and the picture is genuinely wider than the box used to be');
+    });
+
+    testWidgets('what is written is what is drawn', (t) async {
+      // The invariant that makes growth safe. The picture is only ever
+      // recorded at a width it is actually rendered at, so the `=WxH` in the
+      // text and the pixels on screen can never disagree — which is what would
+      // happen if the drag ran ahead of a box that refused to grow.
+      await edit(t, '![](sha256:abc123 =200x100)', width: 300, growable: false);
       await dragHandle(t, 2000);
       final m = RegExp(r'=(\d+)x(\d+)').firstMatch(controller.text)!;
-      expect(int.parse(m.group(1)!), lessThanOrEqualTo(300));
-      expect(int.parse(m.group(1)!), greaterThan(200),
-          reason: 'it did grow, it just stopped at the box');
+      final rendered = t.getSize(find.byType(Image)).width;
+      expect(int.parse(m.group(1)!), closeTo(rendered, 1.0));
+      expect(boxWidth.value, 300, reason: 'a box that cannot grow did not');
+    });
+
+    testWidgets('overshoot inside one drag is remembered, not swallowed',
+        (t) async {
+      // Against a box that will NOT grow, push well past the edge and come
+      // back — within a single gesture. The pixels spent beyond the clamp have
+      // to be remembered, or the way back is short by exactly that many and
+      // the picture ends up smaller than it started. (Across two SEPARATE
+      // drags it legitimately does not: each drag starts from the width that
+      // was actually stored.)
+      await edit(t, '![](sha256:abc123 =200x100)', width: 240, growable: false);
+      final g = await t.startGesture(t.getCenter(find.byIcon(Icons.south_east)));
+      for (var i = 0; i < 6; i++) {
+        await g.moveBy(const Offset(50, 0));
+        await t.pump(const Duration(milliseconds: 16));
+      }
+      for (var i = 0; i < 6; i++) {
+        await g.moveBy(const Offset(-50, 0));
+        await t.pump(const Duration(milliseconds: 16));
+      }
+      await g.up();
+      await t.pumpAndSettle();
+      final m = RegExp(r'=(\d+)x(\d+)').firstMatch(controller.text)!;
+      expect(int.parse(m.group(1)!), closeTo(200, 12),
+          reason: 'back to roughly the width it began at');
     });
 
     testWidgets('it cannot be dragged away to nothing', (t) async {

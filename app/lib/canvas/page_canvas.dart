@@ -786,7 +786,11 @@ class _PageCanvasState extends State<PageCanvas> {
                   ),
                 ),
                 // Alignment grid — only visible while dragging a block
-                if (app.draggingBlock && app.snapToGrid)
+                // effectiveSnap, not snapToGrid: holding Ctrl mid-drag pulls
+                // the block out of the grid, and the grid must stop being
+                // drawn at the same moment or the overlay is telling the user
+                // something that is no longer true.
+                if (app.draggingBlock && app.effectiveSnap)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: CustomPaint(

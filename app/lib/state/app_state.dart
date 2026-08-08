@@ -1604,6 +1604,24 @@ class AppState extends ChangeNotifier
   // Canvas settings
   Tool tool = Tool.select;
   bool snapToGrid = true; // on by default; the grid only shows while dragging
+
+  /// Held down mid-drag to invert [snapToGrid] for THIS drag only.
+  ///
+  /// "if im in grid mode, holding down ctrl while moving puts that one in free
+  /// form and leaves the rest in their grid pattern, but as soon as i release
+  /// it it goes back to grid, and vice versa."
+  ///
+  /// Set by the canvas from the live keyboard on every pointer move, so a
+  /// modifier pressed or released PART WAY through a drag takes effect
+  /// immediately rather than at the moment the drag began. It is deliberately
+  /// a plain flag rather than a keyboard read in here: the state layer has no
+  /// business knowing about hardware, and a settable flag is what makes the
+  /// behaviour testable without simulating key events.
+  bool snapOverride = false;
+
+  /// Whether placement snaps right now — the mode plus any live override.
+  /// Every drag-time decision reads THIS, never [snapToGrid] directly.
+  bool get effectiveSnap => snapOverride ? !snapToGrid : snapToGrid;
   int penColor = 0;
   double penSize = 2.5;
 
@@ -3691,7 +3709,7 @@ class AppState extends ChangeNotifier
   // Snap step comes from the page's own grid (Data Model Spec §3), so a page's
   // stored gridSize actually drives placement instead of being dead state.
   double get gridSize => pageProps.gridSize;
-  double snap(double v) => snapToGrid ? (v / gridSize).round() * gridSize : v;
+  double snap(double v) => effectiveSnap ? (v / gridSize).round() * gridSize : v;
 
   Block addBlock(Block b, {bool recordUndo = true}) {
     if (recordUndo) pushUndo();
@@ -3833,11 +3851,13 @@ class AppState extends ChangeNotifier
       if (b.type != BlockType.ink) {
         if ((b.x - pageLeftMargin).abs() < 26) {
           b.x = pageLeftMargin;
-        } else if (snapToGrid) {
+        } else if (effectiveSnap) {
           b.x = snap(b.x);
         }
-        if (snapToGrid) b.y = snap(b.y);
-        b.placement = snapToGrid ? 'snapped' : 'free';
+        if (effectiveSnap) b.y = snap(b.y);
+        // The block records the mode it was actually DROPPED in, so one box
+        // pulled out of the grid stays out and everything else stays in.
+        b.placement = effectiveSnap ? 'snapped' : 'free';
       }
       clampBlockToPage(b);
     }

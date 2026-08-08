@@ -280,20 +280,32 @@ void main() {
     // other, so EVERY call would re-read all twelve pages — the cache still
     // nominally present and doing nothing.
     final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
-    for (var i = 0; i < 3; i++) {
-      app.study.deckStats(pageId: app.pageId);
-      app.study.deckStats(sectionId: section);
-      app.study.deckStats();
-    }
-    final sw = Stopwatch()..start();
+
+    // Measured as a RATIO against the cold pass, not against a millisecond
+    // threshold. The absolute form (`< 50ms` for 300 calls) failed on a loaded
+    // machine while the cache was working perfectly — it measured how busy the
+    // computer was, which is not the claim. Cold-vs-warm is the claim, and it
+    // holds on any hardware.
+    final cold = Stopwatch()..start();
+    app.study.deckStats(pageId: app.pageId);
+    app.study.deckStats(sectionId: section);
+    app.study.deckStats();
+    cold.stop();
+
+    final warm = Stopwatch()..start();
     for (var i = 0; i < 100; i++) {
       app.study.deckStats(pageId: app.pageId);
       app.study.deckStats(sectionId: section);
       app.study.deckStats();
     }
-    sw.stop();
-    expect(sw.elapsedMilliseconds, lessThan(50),
-        reason: '300 mixed-scope calls took ${sw.elapsedMilliseconds}ms');
+    warm.stop();
+
+    // 100x the work in less time than the cold pass took: only possible if
+    // every one of those calls came out of the cache. A single-slot cache
+    // would evict on every scope change and this would be ~100x SLOWER.
+    expect(warm.elapsedMicroseconds, lessThan(cold.elapsedMicroseconds),
+        reason: 'cold 3 calls: ${cold.elapsedMicroseconds}us, '
+            'warm 300 calls: ${warm.elapsedMicroseconds}us');
   });
 
   // ── Study stats and the exam countdown (P1) ────────────────────────────

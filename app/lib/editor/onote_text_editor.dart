@@ -125,6 +125,23 @@ abstract class OnoteEditSession {
   /// normally put it".
   Offset? pendingCaretGlobal;
 
+  /// The engine asking for the BOX to be this many logical pixels wider.
+  ///
+  /// An engine may not write to the block — that is the ADR-0004 seam, and the
+  /// reason this is a callback rather than a reach into `AppState`. In-flow
+  /// content can still need more room than it has: dragging a picture past the
+  /// edge of its box should widen the box, not stop at it.
+  ///
+  /// A DEFICIT rather than a target width, deliberately. The engine knows how
+  /// much more room it needs; only the host knows what `Block.w` currently is
+  /// and how much of it the padding, insets and field chrome consume. Passing
+  /// the difference means neither side has to model the other's arithmetic.
+  ///
+  /// The host may widen by less than asked (there is a ceiling). Engines must
+  /// therefore treat their own available width as the truth on the next frame
+  /// rather than assuming the request was granted.
+  void Function(double extra)? requestExtraWidth;
+
   /// The text offset under a point in global (screen) coordinates, or null if
   /// the engine can't answer right now.
   ///

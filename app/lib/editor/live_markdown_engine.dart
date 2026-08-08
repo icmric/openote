@@ -97,6 +97,8 @@ class _LiveMarkdownSession extends OnoteEditSession {
     // programmatic edit never fires TextField.onChanged — without this the new
     // size would draw perfectly and then be gone on the next open.
     controller.onSelfEdit = () => onChanged(controller.text);
+    // Forwarded, not handled: only the host may touch the block (ADR-0004).
+    controller.requestExtraWidth = (extra) => requestExtraWidth?.call(extra);
   }
 
   final LiveMarkdownController controller;
