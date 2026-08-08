@@ -680,6 +680,51 @@ class _StorageSectionState extends State<_StorageSection> {
                   style: TextStyle(fontSize: 12)),
             ),
         ]),
+        // Converting handwriting is offered only when there is handwriting to
+        // convert, and it says how much: an action whose effect nobody can see
+        // beforehand reads as a risk rather than a saving. New ink has been
+        // binary since v0.11; this is for pages written before it.
+        if (_inkPages == null)
+          const SizedBox.shrink()
+        else if (_inkPages! > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(children: [
+              TextButton.icon(
+                onPressed: _converting
+                    ? null
+                    : () async {
+                        setState(() => _converting = true);
+                        final freed =
+                            await app.convertInkToBinary(widget.notebookId);
+                        if (!mounted) return;
+                        setState(() {
+                          _converting = false;
+                          _inkFreed = freed;
+                          _inkPages =
+                              app.inlineInkPageCount(widget.notebookId);
+                          _storage = app.storageFor(widget.notebookId);
+                        });
+                      },
+                icon: _converting
+                    ? const SizedBox(
+                        width: 13,
+                        height: 13,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.gesture, size: 16),
+                label: Text(
+                    _converting
+                        ? 'Converting handwriting…'
+                        : 'Shrink handwriting on $_inkPages '
+                            '${_inkPages == 1 ? 'page' : 'pages'}',
+                    style: const TextStyle(fontSize: 12)),
+              ),
+              if (_inkFreed != null && _inkFreed! > 0)
+                Text('${_bytes(_inkFreed!)} smaller',
+                    style: TextStyle(
+                        fontSize: 11, color: context.surfaces.textSecondary)),
+            ]),
+          ),
         if (_orphans != null) _orphanList(),
       ],
     );
@@ -687,6 +732,23 @@ class _StorageSectionState extends State<_StorageSection> {
 
   bool _reclaiming = false;
   int? _reclaimed;
+
+  bool _converting = false;
+  int? _inkFreed;
+
+  /// How many pages still hold handwriting as JSON.
+  ///
+  /// Counted once in [initState] and again after a conversion — not in
+  /// `build`. It is a LIKE scan over the page mirror, and the section now sits
+  /// inside a `ListenableBuilder`, so a per-build query would run it on every
+  /// notifyListeners the app makes.
+  int? _inkPages;
+
+  @override
+  void initState() {
+    super.initState();
+    _inkPages = app.inlineInkPageCount(widget.notebookId);
+  }
 
   Widget _row(String label, String path, int bytes, CloudFolder? cloud,
       {bool isContainer = false, bool missing = false}) {

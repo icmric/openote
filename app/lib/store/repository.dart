@@ -636,6 +636,34 @@ class Repository {
           .select('SELECT json FROM page_mirror WHERE page_id=?', [pageId])
           .firstOrNull?['json'] as String?;
 
+  /// How many bytes of JSON the page mirror holds for [pageId].
+  ///
+  /// Measured in SQLite rather than in Dart: `LENGTH(json)` on a 3 MB row is
+  /// free, and pulling the string out to call `.length` on it is not.
+  int pageJsonBytes(String notebookId, String pageId) =>
+      (_db(notebookId)
+              .select('SELECT LENGTH(json) AS n FROM page_mirror WHERE page_id=?',
+                  [pageId])
+              .firstOrNull?['n'] as num?)
+          ?.toInt() ??
+      0;
+
+  /// Write page JSON straight into the mirror, bypassing every projection.
+  ///
+  /// For tests that need to construct a page the way an OLDER build wrote it —
+  /// inline ink strokes, for instance. Going through [writePage] would run it
+  /// through today's code and produce today's shape, which is precisely what a
+  /// migration test must not do.
+  @visibleForTesting
+  void writePageRawForTest(
+          String notebookId, String pageId, Map<String, dynamic> json) =>
+      _db(notebookId).execute(
+          'INSERT INTO page_mirror(page_id,json,mirror_rev,updated_at) '
+          'VALUES(?,?,1,?) ON CONFLICT(page_id) DO UPDATE SET '
+          'json=excluded.json, mirror_rev=mirror_rev+1, '
+          'updated_at=excluded.updated_at',
+          [pageId, jsonEncode(json), nowMs()]);
+
   /// The blob hashes a page declares, for the garbage-collection reachability
   /// test.
   @visibleForTesting
@@ -1087,6 +1115,21 @@ class Repository {
         for (final r in _db(notebookId).select(
             'SELECT page_id FROM page_mirror WHERE json LIKE ?',
             const ['%"tags":%']))
+          r['page_id'] as String
+      ];
+
+  /// Pages that still hold their handwriting as inline JSON stroke arrays.
+  ///
+  /// A SQL prefilter, for the reason spelled out above [pageIdsWithTags]:
+  /// decoding all 328 pages of a real notebook to discover that 215 have no ink
+  /// is most of the work for none of the win. `"strokes":[{` is deliberately
+  /// narrower than `"strokes"` — it excludes an empty array and excludes an
+  /// already-converted page, so the conversion is re-runnable and a second run
+  /// finds nothing.
+  List<String> pageIdsWithInlineInk(String notebookId) => [
+        for (final r in _db(notebookId).select(
+            'SELECT page_id FROM page_mirror WHERE json LIKE ?',
+            const [r'%"strokes":[{%']))
           r['page_id'] as String
       ];
 

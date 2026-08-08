@@ -27,6 +27,8 @@ library;
 
 import 'dart:typed_data';
 
+import '../ink/ink_codec.dart';
+import '../ink/ink_storage.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 
@@ -70,7 +72,15 @@ class AppStateImportSink implements ImportSink {
 
   @override
   void page(String pageId, List<Block> blocks, PageProps props) =>
-      app.importPage(notebookId, pageId, blocks, props);
+      // Same conversion as `IsolateImportSink.page`, and for the same reason:
+      // this is the funnel every import route already passes through, and it
+      // has `blob` beside it. Handwriting reaches disk as bytes rather than as
+      // decimal text.
+      app.importPage(
+          notebookId,
+          pageId,
+          InkStorage.persistAll(blocks, (b) => blob(b, inkMimeType)),
+          props);
 
   @override
   String blob(Uint8List bytes, String mime) =>

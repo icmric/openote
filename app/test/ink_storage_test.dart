@@ -213,6 +213,116 @@ void main() {
         reason: 'the ink blob must be reachable from the page');
   });
 
+  group('converting a notebook that already has JSON ink', () {
+    /// Write a page the way a pre-v0.11 build did: inline strokes straight
+    /// into the mirror, bypassing the storage boundary entirely.
+    void writeLegacyPage(String id, List<Stroke> strokes) {
+      repo.writePageRawForTest(app.notebookId!, id, {
+        'schema': 'onote-page/1',
+        'pageId': id,
+        'page': PageProps().toJson(),
+        'blocks': [
+          Block(
+            id: 'legacy-ink',
+            type: BlockType.ink,
+            x: 100,
+            y: 80,
+            w: 800,
+            h: 600,
+            content: {'strokes': [for (final s in strokes) s.toJson()]},
+          ).toJson()
+        ],
+      });
+    }
+
+    test('IT IS LOSSLESS, AND THE MIRROR SHRINKS', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final strokes = handwriting(count: 150, seed: 11);
+      writeLegacyPage(pageId, strokes);
+      final before = repo.pageJsonBytes(app.notebookId!, pageId);
+      expect(before, greaterThan(50000),
+          reason: 'the fixture must be big enough to be worth converting');
+
+      final freed = await app.convertInkToBinary(app.notebookId!);
+      expect(freed, greaterThan(0));
+
+      final after = repo.pageJsonBytes(app.notebookId!, pageId);
+      expect(after, lessThan(before ~/ 10),
+          reason: 'page JSON $before -> $after bytes');
+      expect(repo.rawPageJsonForTest(app.notebookId!, pageId),
+          isNot(contains('"strokes"')));
+
+      // Every stroke, every point, still there.
+      final back = repo.readPage(app.notebookId!, pageId).blocks.single;
+      final list = back.content['strokes'] as List;
+      expect(list.length, strokes.length);
+      for (var i = 0; i < strokes.length; i++) {
+        final got = Stroke.fromJson((list[i] as Map).cast<String, dynamic>());
+        expect(got.x.length, strokes[i].x.length, reason: 'stroke $i');
+        for (var k = 0; k < got.x.length; k++) {
+          expect(got.x[k], closeTo(strokes[i].x[k], 1 / (2 * kInkScale)));
+          expect(got.y[k], closeTo(strokes[i].y[k], 1 / (2 * kInkScale)));
+        }
+      }
+      // And the block's own geometry is untouched — a conversion that moved
+      // the box would be a visible regression on every imported page.
+      expect(back.x, 100);
+      expect(back.y, 80);
+      expect(back.w, 800);
+    });
+
+    test('running it twice does nothing the second time', () async {
+      // The prefilter excludes converted pages, so a run interrupted halfway
+      // can simply be run again.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      writeLegacyPage(pageId, handwriting(count: 20));
+      expect(await app.convertInkToBinary(app.notebookId!), greaterThan(0));
+      final blobs = repo.blobIndex(app.notebookId!).length;
+
+      expect(await app.convertInkToBinary(app.notebookId!), 0,
+          reason: 'nothing left to convert');
+      expect(repo.blobIndex(app.notebookId!).length, blobs,
+          reason: 'and no duplicate blob was written');
+    });
+
+    test('a notebook with no ink is untouched and costs nothing', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.blocks = [
+        Block(type: BlockType.text, x: 0, y: 0, content: {'text': 'prose'})
+      ];
+      app.markDirty();
+      await app.flushSave();
+      expect(await app.convertInkToBinary(app.notebookId!), 0);
+      expect(repo.readPage(app.notebookId!, pageId).blocks.single.content['text'],
+          'prose');
+    });
+
+    test('the log learns the new shape too', () async {
+      // Otherwise a rebuild would still produce the old giant blocks, and the
+      // container and the log would disagree about the same page — which is
+      // the divergence shadow mode exists to prevent.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      writeLegacyPage(pageId, handwriting(count: 25));
+      await app.convertInkToBinary(app.notebookId!);
+
+      final ref = repo.notebooks.firstWhere((n) => n.id == app.notebookId);
+      final store = OpLogStore.forNotebook(ref.file, logDir: ref.logDir);
+      final sets = store
+          .readAll()
+          .where((o) => o.kind == OpKind.blockSet)
+          .toList();
+      expect(sets, isNotEmpty);
+      final content =
+          ((sets.last.map['block'] as Map)['content'] as Map).cast<String, dynamic>();
+      expect(content.containsKey('strokes'), isFalse,
+          reason: 'the recorded block must carry the reference');
+      expect(InkStorage.refsOf(content), isNotEmpty);
+      // And the bytes it references are in the log's blob store.
+      final hash = InkStorage.refsOf(content).first;
+      expect(store.readBlob(hash.replaceFirst('sha256:', '')), isNotNull);
+    });
+  });
+
   group('the storage boundary on its own', () {
     test('a missing blob leaves the reference alone', () {
       // A notebook joined from a remote can legitimately hold a ref whose

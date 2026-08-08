@@ -67,6 +67,8 @@ import 'package:sqlite3/open.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../core/onote_ffi.dart';
+import '../ink/ink_codec.dart';
+import '../ink/ink_storage.dart';
 import '../model/models.dart';
 import '../store/database.dart';
 import '../store/notebook_writer.dart';
@@ -439,8 +441,19 @@ class IsolateImportSink implements ImportSink {
 
   @override
   void page(String pageId, List<Block> blocks, PageProps props) {
-    writer.writePage(pageId, blocks, props);
-    recorder?.page(pageId, blocks, props);
+    // Imported handwriting becomes bytes HERE rather than in the importer.
+    //
+    // The importer builds ink as JSON stroke maps because that is what the
+    // Rust parser hands back and what the model takes; converting it there
+    // would mean the same change in every importer. This is the one place
+    // every import route already funnels through, and it has `blob` beside it.
+    //
+    // On the real notebook this is the difference between an import writing
+    // 63 MB of stroke text and writing 3.2 MB — twice, since the log gets a
+    // copy too.
+    final toWrite = InkStorage.persistAll(blocks, (bytes) => blob(bytes, inkMimeType));
+    writer.writePage(pageId, toWrite, props);
+    recorder?.page(pageId, toWrite, props);
   }
 
   @override

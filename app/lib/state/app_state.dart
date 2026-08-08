@@ -1841,6 +1841,94 @@ class AppState extends ChangeNotifier
     );
   }
 
+  /// How many of [nb]'s pages still hold handwriting as inline JSON.
+  ///
+  /// Zero for a notebook that has none, or one already converted — which is
+  /// what lets the UI offer the conversion only when there is something to
+  /// gain, and say how much.
+  int inlineInkPageCount(String nb) {
+    try {
+      return _repo.pageIdsWithInlineInk(nb).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Convert a notebook's existing ink from JSON to binary blobs.
+  ///
+  /// New handwriting has been binary since the storage boundary landed; this is
+  /// for what is already on disk. On the real notebook that is 113 pages
+  /// holding 63 MB of stroke JSON, in the container AND again in the operation
+  /// log, and it comes out at 3.2 MB.
+  ///
+  /// **Page by page, each in its own transaction, and re-runnable.** A single
+  /// transaction over 113 pages would hold a write lock for the whole
+  /// conversion and roll the lot back on one bad page; this way an interrupted
+  /// run leaves a notebook that is partly converted and entirely working, and
+  /// running it again finishes the job. `toPersisted` is a no-op on a page that
+  /// is already done, so there is nothing to track.
+  ///
+  /// Reported through [onProgress] so the caller can show it, because on a big
+  /// notebook this is seconds rather than milliseconds.
+  ///
+  /// Returns the bytes reclaimed from the page mirror. The blobs themselves are
+  /// new bytes on disk, so the honest figure is what [Repository.storageFor]
+  /// says afterwards — this is the mirror's share, which is the large half.
+  Future<int> convertInkToBinary(
+    String nb, {
+    void Function(int done, int total)? onProgress,
+  }) async {
+    await flushSave();
+    // Only pages that actually contain inline strokes. A SQL prefilter, for
+    // the same reason `pageIdsWithTags` uses one: decoding 328 pages to
+    // discover that 215 have no ink is most of the work for none of the win.
+    // `"strokes":[{` excludes empty arrays and already-converted pages.
+    final candidates = _repo.pageIdsWithInlineInk(nb);
+    if (candidates.isEmpty) return 0;
+
+    var freed = 0;
+    for (var i = 0; i < candidates.length; i++) {
+      final pageId = candidates[i];
+      try {
+        final before = _repo.pageJsonBytes(nb, pageId);
+        final data = _repo.readPage(nb, pageId);
+        final converted = InkStorage.persistAll(
+            data.blocks, (bytes) => importBlob(nb, bytes, inkMimeType));
+        if (converted != data.blocks) {
+          _repo.writePage(nb, pageId, converted, data.props);
+          // The log has to learn the new shape too, or a rebuild would still
+          // produce the old giant blocks and the two would disagree.
+          _recorderFor(nb)?.page(pageId, converted, data.props);
+          freed += before - _repo.pageJsonBytes(nb, pageId);
+        }
+      } catch (e) {
+        // One unconvertible page must not stop the other 112. It keeps its
+        // inline strokes, which still render and still save.
+        debugPrint('[openote/ink] could not convert $pageId: $e');
+      }
+      onProgress?.call(i + 1, candidates.length);
+      // Yield between pages: the largest single block is ~40 ms of encode, and
+      // a tight loop over 113 of them is four seconds of frozen window.
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    // The mirror just shrank by tens of megabytes; without this the file keeps
+    // its high-water mark and the user sees no change at all.
+    _repo.reclaimFreeSpace(nb);
+    if (pageId != null && notebookId == nb) {
+      // The open page's blocks are pre-conversion in memory. Re-read, or the
+      // next save would write the old shape straight back over the new one —
+      // and `_dirty` is false, so nothing else would ever correct it.
+      final data = await engine.loadPage(nb, pageId!);
+      blocks = data.blocks;
+      pageProps = data.props;
+      docRevision++;
+    }
+    _invalidateSyncStatus();
+    notifyListeners();
+    return freed;
+  }
+
   /// Compact a notebook's container and hand back the bytes. See
   /// [Repository.reclaimFreeSpace].
   ///
