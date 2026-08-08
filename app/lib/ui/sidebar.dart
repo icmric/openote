@@ -178,7 +178,14 @@ class _SidebarState extends State<Sidebar> {
     final results = app.nodes
         .where((n) =>
             (n.kind == NodeKind.page || n.kind == NodeKind.section) &&
-            n.title.toLowerCase().contains(q))
+            n.title.toLowerCase().contains(q) &&
+            // Titles are excluded for the same reason content is (see
+            // AppState.searchContent). A page called "Therapy" leaks the thing
+            // that made it worth locking, and half a search box that honours
+            // the passcode while the other half does not is not a gate. The
+            // tree still shows it, so a locked page is never unreachable —
+            // search is where you would stumble ON it.
+            !app.isLocked(n.id))
         .toList();
     // Notebook-wide content search (TEXT-7). Titles match first because a
     // title hit is almost always what you meant; content hits follow, minus

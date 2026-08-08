@@ -204,6 +204,30 @@ void main() {
       expect(app.isLocked(page.id), isTrue);
     });
 
+    test('a locked page is not findable by its TITLE either', () {
+      // The sidebar's search box has two halves — titles matched against
+      // app.nodes, content matched through searchContent — and only the second
+      // consulted the gate. A page called "Therapy" leaks the thing that made
+      // it worth locking, so both halves have to agree.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      List<TreeNode> titleHits(String q) => app.nodes
+          .where((n) =>
+              (n.kind == NodeKind.page || n.kind == NodeKind.section) &&
+              n.title.toLowerCase().contains(q) &&
+              !app.isLocked(n.id))
+          .toList();
+
+      expect(titleHits('diary').map((n) => n.id), contains(page.id),
+          reason: 'precondition: findable while unprotected');
+      app.protectNode(section.id, 'pw', UnlockPolicy.session);
+      expect(titleHits('diary'), isEmpty);
+      expect(titleHits('private'), isEmpty, reason: 'the section too');
+      expect(titleHits('lectures').map((n) => n.id), contains(otherPage.id),
+          reason: 'and everything else is untouched');
+      app.unlockNode(page.id, 'pw');
+      expect(titleHits('diary').map((n) => n.id), contains(page.id));
+    });
+
     test('a locked page is not findable by searching its own words', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       // The gate makes no claim about the FILE, but it has to be coherent

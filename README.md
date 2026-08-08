@@ -30,7 +30,7 @@ Grab the latest build from **[openote.org](https://openote.org)** or the
 |---|---|---|
 | **Windows** | `openote-*-windows-x64-setup.exe` | Run it. Installs for your user only, so it never asks for an administrator password. *(Prefer no installer? The `.zip` is the same build — unzip anywhere and run `openote.exe`.)* |
 | **macOS** | `openote-*-macos-universal.dmg` | Open it, drag Openote to Applications. |
-| **Linux** | `openote-*-linux-x86_64.AppImage` | `chmod +x` it and run. A `.tar.gz` is there if AppImage doesn't suit. |
+| **Linux** | `openote-*-linux-amd64.deb` (Ubuntu/Debian/Mint) or `openote-*-linux-x86_64.rpm` (Fedora/RHEL/openSUSE) | Double-click it, or install from a terminal. Openote then appears in your applications menu. *(Neither fits? The `.tar.gz` extracts anywhere and runs with `./openote`.)* |
 
 Your notes are written to your own machine in an open, documented format. There
 is no account, and nothing is uploaded anywhere.
@@ -47,7 +47,7 @@ tagged commit; you can read both.
 - **Windows** — *"Windows protected your PC"*: click **More info** ▸ **Run anyway**.
 - **macOS** — *"openote is damaged and can't be opened"*: after copying to
   Applications, run `xattr -cr /Applications/openote.app` once.
-- **Linux** — no warning; AppImages just run.
+- **Linux** — no warning; the `.deb` and `.rpm` install like any other package.
 
 ## What is Openote?
 

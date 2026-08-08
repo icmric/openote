@@ -33,12 +33,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ubuntu-22.04 is here because release.yml pins the AppImage job to it
-        # (for an older glibc floor, so the AppImage runs on more distros) and
-        # that label appeared NOWHERE else in CI — so a jammy-only toolchain
-        # break could only ever be discovered during a release, after the build
-        # had already been paid for.
-        os: [ubuntu-latest, ubuntu-22.04, macos-latest, windows-latest]
+        # ubuntu-24.04 is pinned EXPLICITLY, even though ubuntu-latest is
+        # currently the same image, because release.yml pins its Linux job to
+        # that exact label — and when ubuntu-latest moves on, this entry is
+        # what keeps CI testing the host releases are actually built on.
+        # (It was 22.04, for an older glibc floor. media_kit_video links
+        # libmpv, and jammy's soname is one no current distro ships — see the
+        # comment on release.yml's linux job.)
+        os: [ubuntu-latest, ubuntu-24.04, macos-latest, windows-latest]
     defaults:
       run:
         working-directory: app

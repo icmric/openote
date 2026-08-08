@@ -2,7 +2,7 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
-## [Unreleased]
+## [0.4.2] — 2026-08-08
 
 ### Added — videos you keep, and watch, in your notes
 
@@ -46,6 +46,20 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   that stops someone reading over your shoulder or picking up your laptop.
 - A forgotten passcode cannot be recovered, but the notes are not lost either:
   they are still in the file.
+
+### Changed — which Linux distros the packages run on
+
+- **The Linux builds now require glibc 2.39 or newer.** In practice: Ubuntu
+  24.04+, Fedora 40+, Debian 13, Mint 22, openSUSE. **Debian 12 and Ubuntu
+  22.04 cannot run 0.4.2** and should stay on 0.4.1.
+  - The reason is video. Openote's player links libmpv, so the version present
+    on the machine that BUILDS the release is the version every user needs —
+    and the older build host we used produced binaries asking for a libmpv no
+    current distro ships. Left alone, the packages would have installed
+    perfectly and then failed to start. Moving the build forward fixes that and
+    costs the two older distros.
+  - Getting both back means building inside a Debian 12 container; it is
+    recorded as the next step rather than rushed into this release.
 
 ### Known gaps
 

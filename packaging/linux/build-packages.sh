@@ -71,17 +71,24 @@ install -m644 "$REPO/LICENSE" "$ROOT/usr/share/doc/openote/copyright"
 
 # ── .deb ────────────────────────────────────────────────────────────────────
 # Depends is hand-written rather than auto-generated. `dpkg-shlibdeps` would
-# pin the exact library versions present on the BUILD machine, which is an
-# older Ubuntu chosen deliberately for its glibc floor — those versions would
-# then be unsatisfiable on the very distros the floor exists to support.
+# pin the exact library versions present on the BUILD machine, which is a
+# pinned Ubuntu chosen deliberately (see release.yml's linux job) — those
+# versions would then be unsatisfiable on the distros the pin exists to reach.
 #
-# libmpv is how video plays inside the app. It is loaded at RUNTIME with
-# dlopen and never linked against, so no dependency scanner would ever find
-# it — it has to be named here or not at all. A machine without it gets an
-# Openote that shows an "install this package" card where the player goes. `libmpv2 | libmpv1` because the soname changed between Ubuntu
-# 22.04 and 24.04 and both are still in use; an alternation is satisfied by
-# either, where naming one would make the .deb refuse to install on half the
-# machines it targets.
+# libmpv is how video plays inside the app, and it is a LINK-time dependency,
+# not a dlopen. media_kit_video's Linux plugin does
+# `target_link_libraries(... PkgConfig::mpv ...)`, so the soname of whatever
+# libmpv the BUILD HOST had is baked into libmedia_kit_video_plugin.so and
+# resolved by ld.so before main() — get it wrong and the app does not start at
+# all, rather than starting without video.
+#
+# `libmpv2` alone, NOT `libmpv2 | libmpv1`. The alternation looked like it
+# covered both Ubuntu generations and covered neither honestly: the binary
+# needs exactly ONE soname, so offering an alternative that cannot satisfy it
+# just means apt installs the wrong library and reports success. The release is
+# built on noble (mpv 0.37, libmpv.so.2), so .so.2 is what this asks for, and
+# release.yml's "Verify shared-library dependencies" step asserts the built
+# binary agrees rather than trusting this line to stay in step.
 echo "==> building .deb"
 install -d "$ROOT/DEBIAN"
 cat > "$ROOT/DEBIAN/control" <<EOF
@@ -91,7 +98,7 @@ Section: office
 Priority: optional
 Architecture: amd64
 Maintainer: Openote <noreply@openote.org>
-Depends: libgtk-3-0, libglib2.0-0, libstdc++6, libmpv2 | libmpv1
+Depends: libgtk-3-0, libglib2.0-0, libstdc++6, libmpv2
 Homepage: https://openote.org
 Description: Open-source alternative to Microsoft OneNote
  A freeform notebook with handwriting, maths and an open file format.
@@ -137,7 +144,7 @@ rm -rf "$ROOT/DEBIAN"
 # real runtime needs are declared by hand below.
 #
 # `mpv-libs` is Fedora's and RHEL's name for libmpv — the same dependency the
-# .deb spells `libmpv2 | libmpv1` — and it is in the default repositories, so
+# .deb spells `libmpv2` — and it is in the default repositories, so
 # this does not quietly require RPM Fusion to be enabled.
 echo "==> building .rpm"
 install -d "$STAGE/rpm"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}

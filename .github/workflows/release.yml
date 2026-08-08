@@ -235,21 +235,37 @@ jobs:
   linux:
     name: linux x64
     needs: version
-    # Pinned older than CI's ubuntu-latest on purpose: a binary inherits the
-    # build host's glibc floor, so an older base runs on more distros. That is
-    # why the packages declare their dependencies by hand — see
-    # packaging/linux/build-packages.sh; auto-generated ones would pin THIS
-    # machine's library versions and be unsatisfiable on the distros the floor
-    # exists to reach.
+    # Pinned, not `ubuntu-latest`, and the pin is now 24.04 — it was 22.04, and
+    # moving it was forced. TWO properties of this host are inherited by the
+    # artifact and they pull in opposite directions:
     #
-    # REVISIT BEFORE 2026-09-17. GitHub begins deprecating Ubuntu 22 images on
-    # that date, with brownout windows that deliberately fail jobs using the
-    # label, and full removal by 2027-04-17. When it goes, the choice is
-    # `ubuntu-24.04` (accepting glibc 2.39 as the floor) or building inside a
-    # `container: ubuntu:22.04` on a newer runner, which decouples the floor
-    # from the runner image's lifecycle entirely. The second is more work and
-    # the right answer if Linux users matter.
-    runs-on: ubuntu-22.04
+    #   * glibc. A binary inherits the build host's floor, so an OLDER base
+    #     reaches more distros. 22.04 gave 2.35; 24.04 gives 2.39.
+    #   * libmpv's SONAME. media_kit_video's Linux plugin LINKS libmpv
+    #     (`target_link_libraries(... PkgConfig::mpv ...)`), so whichever
+    #     libmpv-dev this host has is baked in and resolved by ld.so before
+    #     main(). Jammy's is mpv 0.34 → libmpv.so.1; noble's is 0.37 →
+    #     libmpv.so.2.
+    #
+    # Nothing currently shipping outside 22.04 has libmpv.so.1 — Ubuntu 24.04,
+    # Debian 12/13, Mint 22, Fedora and openSUSE are all .so.2. Staying on
+    # jammy would therefore have produced packages that INSTALL cleanly on
+    # those distros (the declared dependency is satisfied) and then die at exec
+    # with "error while loading shared libraries: libmpv.so.1". Not degraded
+    # video — no launch at all, on the majority of the machines the .deb and
+    # .rpm target. The soname wins; the glibc floor is the price.
+    #
+    # What that price is: Debian 12 (glibc 2.36) and Ubuntu 22.04 (2.35) cannot
+    # run 0.4.2. They stay on 0.4.1. Getting both properties would mean
+    # building inside a `container: debian:12` — glibc 2.36 AND libmpv.so.2 —
+    # which is the right answer if those users matter and is a rewrite of this
+    # job rather than a label change. It also decouples the floor from GitHub's
+    # image lifecycle, which the 22.04 deprecation on 2026-09-17 makes a
+    # question that has to be answered anyway.
+    #
+    # The "Verify shared-library dependencies" step below asserts the soname
+    # rather than trusting this comment to stay true.
+    runs-on: ubuntu-24.04
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -288,6 +304,26 @@ jobs:
       # CMake hook installs it; this is belt-and-braces.
       - name: Stage native library into the bundle
         run: cp rust/onote_core/target/release/libonote_core.so app/build/linux/x64/release/bundle/
+
+      # The check that would have caught shipping a jammy-linked binary to
+      # Fedora. libmpv is a LINK-time dependency of media_kit_video's plugin,
+      # so its soname is a property of the artifact, not of this file's
+      # comments — and the failure mode it guards is silent: the package
+      # installs, then the app does not start. Assert the soname the binary
+      # actually asks for against the one the packages declare.
+      - name: Verify shared-library dependencies
+        run: |
+          set -euo pipefail
+          plugin=app/build/linux/x64/release/bundle/lib/libmedia_kit_video_plugin.so
+          [ -f "$plugin" ] || { echo "::error::$plugin is missing — media_kit_video did not build, so there is no video in this release"; exit 1; }
+          soname="$(objdump -p "$plugin" | awk '/NEEDED/ && /libmpv/ {print $2}')"
+          echo "libmedia_kit_video_plugin.so needs: ${soname:-<nothing>}"
+          if [ "$soname" != "libmpv.so.2" ]; then
+            echo "::error::expected libmpv.so.2, got '${soname:-<nothing>}'."
+            echo "::error::The packages declare libmpv2 (deb) and mpv-libs (rpm), both of which provide .so.2."
+            echo "::error::A mismatch here ships packages that install cleanly and then fail to launch."
+            exit 1
+          fi
 
       # Fallback artifact: always produced, works everywhere tar does.
       - name: Package tar.gz
@@ -463,9 +499,12 @@ jobs:
             - **Linux**: `openote-*-linux-amd64.deb` on Ubuntu/Debian/Mint, or
               `openote-*-linux-x86_64.rpm` on Fedora/RHEL/openSUSE. Double-click
               it, or install from a terminal — then Openote is in your
-              applications menu like any other program, and `.onote` files open
-              on double-click. (Neither fits? The `.tar.gz` runs from anywhere:
-              extract it and run `./openote` inside.)
+              applications menu like any other program, and `.onote` files are
+              named and iconed correctly in your file manager. (Neither fits?
+              The `.tar.gz` runs from anywhere: extract it and run `./openote`
+              inside. It has no package manager to ask for libmpv, so if you
+              want video to play in the page, install `mpv-libs` on Fedora or
+              `libmpv2` on Ubuntu/Debian yourself — the app says so too.)
             - **macOS**: `openote-*-macos-universal.dmg` — drag Openote to Applications.
 
             ---
