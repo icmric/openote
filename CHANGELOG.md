@@ -4,6 +4,54 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-08
+
+Sync through GitHub, and a notebook that is a fraction of the size it was.
+
+### Added — handwriting stops being text
+
+- **Ink is stored as compact binary instead of JSON.** Measured on a real
+  imported notebook: 63.09 MB of stroke data becomes **3.22 MB** — 19.6× — and
+  every point is preserved to within 1/16 of a pixel, which is a quarter of a
+  device pixel at full zoom. New handwriting is binary from this release;
+  **Sync ▸ Where the files are ▸ "Shrink handwriting"** converts what you
+  already have, and reports the bytes it gave back.
+- The notebook that prompted this went from 191 MB to about 35 MB.
+
+### Added — smaller install
+
+- **101 MB → 94 MB.** Chiefly a 1.6 MB icon font that Flutter's own desktop
+  build never subsets (a quoting bug in the SDK, worked around here), 4 MB of
+  web-only PDF machinery that desktop cannot execute, a compressed word list,
+  and two font faces nothing asked for.
+
+### Added — storage housekeeping
+
+- **Reclaim space** compacts a notebook and hands back what it was holding —
+  free database pages and the write-ahead log, which one notebook had grown
+  larger than the database itself.
+- **A duplicates finder** in the notebook manager: repeated imports of the same
+  notebook are listed with their sizes so you can bin the extras. Nothing could
+  have merged them automatically — each import correctly mints new ids.
+- Stray `-wal`/`-shm` files whose database is gone are offered by the
+  leftovers scan.
+
+### Fixed — data safety
+
+- **A restart could delete the other device's work.** If a second device's
+  changes arrived while Openote was closed, the next thing you typed could undo
+  them, on both machines. Openote now folds in what arrived before you can
+  type, and refuses to record a change to a page it knows it has not caught up
+  on. This applied to folder sync as well as git.
+
+### Known — importing from OneNote
+
+Some pages still lay out wrongly: a text box can be drawn over a diagram, two
+boxes can land on top of each other, paragraphs can come in out of order, and
+blank lines between bullets are dropped. The content itself is imported — it is
+the positions that are wrong. Diagnosed in
+`docs/planning/v0.11-size-and-speed-overhaul.md`.
+
 ### Fixed — passcodes now behave like passcodes
 
 - **A lock survived closing Openote.** It did not before: the code that reloads
