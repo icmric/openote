@@ -373,8 +373,22 @@ class SyncRecorder {
       }
     }
     out.sort(Op.compare);
+    // Asking the question is what arms the guard. Every path that folds
+    // foreign ops in goes through here first, so this is the one place that
+    // reliably knows the answer — and it is answered fresh from disk each
+    // time, so a log that arrived while the app was running counts too.
+    foreignPending = out.isNotEmpty;
     return out;
   }
+
+  /// True while this device's replayed [state] contains other devices' work
+  /// that its container does not.
+  ///
+  /// Set by [pendingForeignOps], cleared by [markForeignSeen]. While it is
+  /// true, [page] refuses to record a diff — see the reasoning there. It
+  /// starts FALSE and is only ever raised by an explicit check, so a recorder
+  /// nobody has asked about behaves exactly as before.
+  bool foreignPending = false;
 
   static String foreignSeqKey(String notebookId, String device) =>
       'syncSeen:$notebookId:$device';
@@ -431,9 +445,15 @@ class SyncRecorder {
       ];
 
   /// Record that [device]'s ops up to [seq] are folded in.
+  ///
+  /// Lowers [foreignPending] — the caller advances the watermark only after
+  /// writing the materialised pages into the container, so by the time this
+  /// runs, `state` and the container agree again and diffing is safe.
   void markForeignSeen(String dev, int seq,
-          void Function(String key, Object? value) writeSetting) =>
-      writeSetting(foreignSeqKey(notebookId, dev), seq);
+      void Function(String key, Object? value) writeSetting) {
+    writeSetting(foreignSeqKey(notebookId, dev), seq);
+    foreignPending = false;
+  }
 
   /// Blobs referenced by ops whose bytes are not in `blobs/`. Empty means a
   /// rebuild from this log could reconstruct the notebook's content in full.
@@ -459,6 +479,29 @@ class SyncRecorder {
   /// blocks too. Diffing against the replayed state recovers block granularity
   /// without changing the save path.
   void page(String pageId, List<Block> blocks, PageProps props) {
+    // **Do not diff against state the container has not been given.**
+    //
+    // The replay at open folds EVERY device's log into `state`, including ops
+    // this device has never written into its container. The app then saves the
+    // page as the container knows it — without the other device's blocks —
+    // and the diff below reads that absence as a deletion, emitting
+    // `block.remove` at a Lamport above the original. That op wins the total
+    // order on every replica, so the other device loses a block it wrote and
+    // watched appear. Reproduced: a restart, then one keystroke on a page the
+    // other device had also edited.
+    //
+    // Skipping the whole diff is deliberate rather than skipping only the
+    // removals. A block the other device MODIFIED is also mis-seen: the
+    // container's older copy differs from `prev`, so it is re-emitted as a
+    // `block.set` carrying stale content at a higher Lamport, which reverts
+    // their edit just as effectively without ever calling it a removal.
+    //
+    // The cost is one lost autosave of local edits to this page in the window
+    // between launch and the fold — and it is not lost, only unrecorded: the
+    // container still has it, and the next save after the fold records it
+    // against correct state. A missed op is recoverable; a destructive one
+    // that has already replicated is not.
+    if (foreignPending) return;
     final prev = state.pages[pageId];
     final ops = <Op>[];
 

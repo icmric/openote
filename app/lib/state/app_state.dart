@@ -979,6 +979,23 @@ class AppState extends ChangeNotifier
   /// because nothing tells you it didn't happen.
   bool _pullAgain = false;
 
+  /// Pull once the background replay has finished, without blocking the open.
+  ///
+  /// Separate from [syncPull] because that one warms the recorder itself and
+  /// awaiting it here would reintroduce the startup stall. Failures are logged
+  /// rather than thrown: this runs detached from any user action, and a
+  /// notebook that cannot fold must still open.
+  void _foldWhenWarm(String nb) {
+    unawaited(warmRecorder(nb).then<int>((r) async {
+      // The user may have moved on to another notebook while this replayed.
+      if (r == null || _disposed || notebookId != nb) return 0;
+      return syncPull(nb);
+    }).catchError((Object e) {
+      debugPrint('[openote/sync] open-time fold failed: $e');
+      return 0;
+    }));
+  }
+
   Future<int> syncPull(String nb) async {
     if (_pulling) {
       // Don't queue a second concurrent pull — two overlapping pulls would both
@@ -3020,6 +3037,22 @@ class AppState extends ChangeNotifier
     // forgotten the lock exists.
     reloadProtection();
     reloadGit();
+    // Fold in anything that arrived while this notebook was closed.
+    //
+    // Nothing did this before, on any path: the watcher only reports files
+    // that change while it is running, so another device's log that landed
+    // overnight was replayed into the recorder's memory at open and never
+    // written to the container. The page then rendered without it, and the
+    // next save was diffed against state the container did not have — see the
+    // guard in `SyncRecorder.page`, which stops that being destructive.
+    //
+    // NOT awaited, deliberately. The replay is documented at ~0.5s for a big
+    // imported notebook, and it was moved off this path precisely because it
+    // was most of "the app is locked up for the first few seconds after
+    // launching". `_syncPullLocked` bumps `docRevision` and reloads the open
+    // page when it lands, so the content appears a moment later rather than
+    // the whole window waiting for it.
+    _foldWhenWarm(notebookId!);
     // Re-point the folder watcher at THIS notebook's ops directory.
     //
     // It was armed once at startup and never moved. The retry that could have

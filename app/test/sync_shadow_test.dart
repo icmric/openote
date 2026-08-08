@@ -451,6 +451,143 @@ void main() {
       expect(texts, containsAll(<String>['mine', 'theirs']));
     });
 
+    // A RESTART MUST NOT REVERT THE OTHER DEVICE.
+    //
+    // The failure, reproduced before the fix: device A quits. Device B adds a
+    // block to a page and its log arrives. A relaunches — the recorder's
+    // replay folds B's block into `state`, but nothing writes it into A's
+    // container, so the editor renders the page without it. A types one
+    // character. The save diffs the container's blocks against `state`, sees
+    // B's block "missing", and emits `block.remove` at a Lamport ABOVE B's.
+    // That op wins the total order on every replica, so B loses a block it
+    // wrote and watched appear.
+    //
+    // The Lamport ordering is why this is data loss rather than a glitch: the
+    // replay raises A's clock to the log maximum, so anything A emits
+    // afterwards sorts after everything B has ever written.
+    test('a save before the fold cannot delete the other device\'s block',
+        () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp) = await freshRepo('onote_sync_revert_');
+      addTearDown(() {
+        repo.dispose();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      final nb = await repo.createNotebook('Revert');
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+
+      // ── Session one: this device writes a block and quits.
+      final first = AppState(repo)..notebookId = nb.id;
+      first.reloadNodes();
+      final pageId = first.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+      first.pageId = pageId;
+      first.blocks = [
+        Block(
+            id: 'mine-1',
+            type: BlockType.text,
+            x: 0,
+            y: 0,
+            content: {'text': 'mine'})
+      ];
+      first.markDirty();
+      await first.flushSave();
+      first.cancelPendingSave();
+
+      // ── While it is closed, the other device adds a block to the same page.
+      final store = OpLogStore.forNotebook(ref.file);
+      otherDeviceWrites(store, [
+        op(1, 500, OpKind.blockSet, {
+          'pageId': pageId,
+          'block': {
+            'id': 'theirs-1',
+            'type': 'text',
+            'x': 0,
+            'y': 100,
+            'w': 320,
+            'content': {'text': 'theirs'}
+          }
+        }),
+      ]);
+
+      // ── Session two. A fresh AppState over the same repository is the
+      // restart; the recorder replays every log, B's included.
+      final second = AppState(repo)..notebookId = nb.id;
+      second.reloadNodes();
+      second.pageId = pageId;
+      addTearDown(second.cancelPendingSave);
+
+      final recorder = await second.warmRecorder(nb.id);
+      expect(recorder, isNotNull);
+      // The replay HAS their block, and the container does not. This gap is
+      // the bug's precondition, and asserting it here means the test still
+      // describes the real hazard if the replay ever changes.
+      expect(recorder!.materialisedPage(pageId)['blocks'], isNotNull);
+      expect(
+          repo.readPage(nb.id, pageId).blocks.map((b) => b.id), ['mine-1'],
+          reason: 'the container has not been given their block');
+
+      // Asking arms the guard — and every fold path asks first.
+      expect(recorder.pendingForeignOps(repo.getSetting), hasLength(1));
+      expect(recorder.foreignPending, isTrue);
+
+      // ── The keystroke. The page is saved as the CONTAINER knows it.
+      second.blocks = [
+        Block(
+            id: 'mine-1',
+            type: BlockType.text,
+            x: 0,
+            y: 0,
+            content: {'text': 'mine, edited'})
+      ];
+      second.markDirty();
+      await second.flushSave();
+
+      // Nothing destructive reached the log.
+      final ours = store.readDevice(second.localDeviceId());
+      expect(
+          ours.where((o) => o.kind == OpKind.blockRemove), isEmpty,
+          reason: 'a block this device never saw must not be deleted by it');
+      expect(
+          ours.where((o) =>
+              o.kind == OpKind.blockSet &&
+              (o.map['block'] as Map?)?['id'] == 'theirs-1'),
+          isEmpty,
+          reason: 'nor re-written with stale content, which reverts it just '
+              'as effectively');
+
+      // And their block is still there for everyone: a rebuild from the merged
+      // log — which is what every other device replays — still has it.
+      final rebuilt = Materializer()..applyAll(store.readAll());
+      expect(rebuilt.pages[pageId]!.blocks.keys, contains('theirs-1'));
+
+      // ── After the fold, saving records normally again.
+      final pulled = await second.syncPull(nb.id);
+      expect(pulled, 1);
+      expect(recorder.foreignPending, isFalse);
+      expect(repo.readPage(nb.id, pageId).blocks.map((b) => b.id),
+          containsAll(<String>['mine-1', 'theirs-1']),
+          reason: 'the fold puts their block in the container');
+
+      second.blocks = [
+        ...repo.readPage(nb.id, pageId).blocks,
+        Block(
+            id: 'mine-2',
+            type: BlockType.text,
+            x: 0,
+            y: 200,
+            content: {'text': 'after'})
+      ];
+      second.markDirty();
+      await second.flushSave();
+      final after = Materializer()..applyAll(store.readAll());
+      expect(after.pages[pageId]!.blocks.keys,
+          containsAll(<String>['mine-1', 'theirs-1', 'mine-2']),
+          reason: 'recording resumes once the container has caught up');
+    });
+
     test('pulling twice is a no-op (the watermark holds)', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, tmp) = await freshRepo('onote_sync_twice_');
