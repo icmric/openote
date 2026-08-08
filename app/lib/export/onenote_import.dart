@@ -778,6 +778,16 @@ String? _importPagesIntoSection(ImportSink sink, String sectionId,
         List<dynamic> pages, String Function() next) =>
     sink.batch(() => _importPagesLocked(sink, sectionId, pages, next));
 
+/// The page-import path, reachable from a test with one parsed section.
+///
+/// The e2e import tests could only drive the whole `.onepkg` flow, so a single
+/// misbehaving page had no way to be examined without importing a five-year
+/// notebook around it. Exposed for diagnosing exactly that.
+@visibleForTesting
+String? importPagesForTest(
+        ImportSink sink, String sectionId, List<dynamic> pages) =>
+    _importPagesIntoSection(sink, sectionId, pages, newId);
+
 String? _importPagesLocked(ImportSink sink, String sectionId,
     List<dynamic> pages, String Function() next) {
   String? firstPageId;
