@@ -17,6 +17,7 @@ import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
 import '../store/media_store.dart';
+import '../sync/git_sync.dart';
 import '../store/repository.dart';
 import 'page_protection.dart';
 import '../model/tags.dart';
@@ -360,6 +361,103 @@ class AppState extends ChangeNotifier
     _unlocked.clear();
     _gateRevision++;
     notifyListeners();
+  }
+
+  // ── Git as a sync transport (PLANNING: "git/github integration") ──────
+  //
+  // The engine is sync/git_sync.dart; this is the part that decides WHEN.
+
+  String _gitKey(String nb) => 'git:$nb';
+
+  bool _gitEnabled = false;
+  String? _gitRemote;
+  Timer? _gitDebounce;
+
+  /// Is this notebook backed by a git remote?
+  bool get gitEnabled => _gitEnabled;
+  String? get gitRemote => _gitRemote;
+
+  /// What the last cycle did, for the dialog. Null until one has run.
+  String? gitStatus;
+  bool gitBusy = false;
+
+  /// Whether git exists on this machine at all. Null until asked.
+  bool? gitAvailable;
+
+  Future<void> checkGitAvailable() async {
+    gitAvailable = await GitSync.gitExecutable() != null;
+    notifyListeners();
+  }
+
+  /// Re-read this notebook's git settings.
+  ///
+  /// Called from EVERY notebook-open path, and there are two — `_loadNotebook`
+  /// and `init`, which opens the last notebook inline rather than through it.
+  /// Wiring only one is precisely how the passcode gate came to evaporate on
+  /// restart in 0.4.2; the same trap was waiting here.
+  void reloadGit() {
+    _gitEnabled = false;
+    _gitRemote = null;
+    gitStatus = null;
+    _gitDebounce?.cancel();
+    if (notebookId == null) return;
+    final raw = _repo.getSetting(_gitKey(notebookId!));
+    if (raw is! Map) return;
+    _gitEnabled = raw['enabled'] == true;
+    _gitRemote = raw['remote'] as String?;
+  }
+
+  Future<void> setGitEnabled(bool on, {String? remote}) async {
+    if (notebookId == null) return;
+    _gitEnabled = on;
+    if (remote != null) _gitRemote = remote.trim().isEmpty ? null : remote.trim();
+    _repo.setSetting(_gitKey(notebookId!),
+        on || _gitRemote != null ? {'enabled': on, 'remote': _gitRemote} : null);
+    if (on) {
+      final git = gitFor(currentNotebook);
+      await git.init();
+      if (_gitRemote != null) await git.setRemote(_gitRemote!);
+      await syncGitNow();
+    }
+    notifyListeners();
+  }
+
+  /// Run one cycle now, and report what happened.
+  ///
+  /// Never throws: a sync failure is a message, not an exception. It is also
+  /// never silent — a push that did not happen while the user believes their
+  /// notes are safe elsewhere is the one outcome worth being loud about.
+  Future<void> syncGitNow() async {
+    if (!_gitEnabled || notebookId == null || gitBusy) return;
+    gitBusy = true;
+    notifyListeners();
+    try {
+      // The logs have to be on disk before they can be committed.
+      await flushSave();
+      final r = await gitFor(currentNotebook)
+          .syncOnce(message: 'Openote: ${currentNotebook.title}');
+      gitStatus = r.ok
+          ? (r.noop ? 'Up to date' : 'Synced')
+          : 'Could not sync: ${r.message.split('\n').first}';
+    } catch (e) {
+      gitStatus = 'Could not sync: $e';
+    } finally {
+      gitBusy = false;
+      notifyListeners();
+    }
+  }
+
+  /// Ask for a sync once the user stops typing.
+  ///
+  /// Long — a minute — and deliberately so. Saving is debounced at 700ms
+  /// because losing edits matters; a commit every 700ms would be a commit per
+  /// sentence and a push per commit, which is noise on the remote and a
+  /// network round trip while someone is mid-paragraph. A minute of quiet is
+  /// a natural pause, and shutdown flushes anything still pending.
+  void scheduleGitSync() {
+    if (!_gitEnabled) return;
+    _gitDebounce?.cancel();
+    _gitDebounce = Timer(const Duration(seconds: 60), syncGitNow);
   }
 
   // ── Operation log (ADR-0006, shadow mode) ────────────────────────────
@@ -2684,6 +2782,7 @@ class AppState extends ChangeNotifier
     // inline — so the gate has to be rehydrated here as well. Both paths, or
     // the lock is only as good as which door you came in by.
     reloadProtection();
+    reloadGit();
     // Replay the open notebook's log in a background isolate, starting now.
     // This used to happen synchronously inside `_startWatching` on the first
     // frame — for a freshly imported notebook that is a multi-megabyte log,
@@ -2726,6 +2825,7 @@ class AppState extends ChangeNotifier
     // page's blocks, and it must not load a locked one into an app that has
     // forgotten the lock exists.
     reloadProtection();
+    reloadGit();
     // Reset the focused section for the new notebook (selectPage refines it).
     activeSectionId =
         nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
@@ -4259,6 +4359,10 @@ class AppState extends ChangeNotifier
     study.noteContentChanged();
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 700), flushSave);
+    // "Would need to all be automated by default as most people wont remeber
+    // to save and push changes." Every edit pushes the git timer out, so a
+    // cycle runs once writing stops rather than in the middle of a sentence.
+    scheduleGitSync();
     notifyListeners();
   }
 
@@ -4308,6 +4412,7 @@ class AppState extends ChangeNotifier
   /// interval of edits was silently lost on every close.
   Future<void> shutdown() async {
     _saveDebounce?.cancel();
+    _gitDebounce?.cancel();
     try {
       await flushSave();
     } catch (_) {
@@ -4316,6 +4421,13 @@ class AppState extends ChangeNotifier
     _rememberView();
     _persistSession();
     await _repo.flushWorkspace(); // settle the debounced registry write
+    // One last cycle on the way out, so closing the lid is not a lost push.
+    // Guarded like the save above: exit must never be blocked by a network.
+    if (_gitEnabled) {
+      try {
+        await syncGitNow();
+      } catch (_) {}
+    }
   }
 
   /// Drop a pending debounced save without writing it.
@@ -4324,7 +4436,10 @@ class AppState extends ChangeNotifier
   /// disk I/O would never complete, and leaving the timer armed fails the
   /// test's own "no pending timers" invariant.
   @visibleForTesting
-  void cancelPendingSave() => _saveDebounce?.cancel();
+  void cancelPendingSave() {
+    _saveDebounce?.cancel();
+    _gitDebounce?.cancel();
+  }
 
   /// Set by [dispose]. Background work started before disposal checks this
   /// before touching anything, because a replay or a backfill can land after

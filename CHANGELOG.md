@@ -19,6 +19,23 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   the flashcard deck**, all of which read page text directly and none of which
   were checking.
 
+### Added — sync a notebook with git
+
+- **Notebook ▸ Sync ▸ "Sync with git"** keeps a notebook in a git repository
+  and pushes it as you work — no button to remember. Give it a remote address
+  (a GitHub repository, or anything git can push to) or leave it empty to keep
+  a history on this computer only.
+- **It syncs a minute after you stop typing**, and once more when you close
+  Openote. Not on every keystroke: that would be a commit per sentence.
+- **Openote never asks for your password.** It runs the git already on your
+  computer and uses whatever sign-in you have set up for it. If a push needs
+  credentials you have not configured it says so, rather than appearing to
+  work.
+- Your notes go into the repository; the working file Openote keeps on this
+  computer does not. Two computers writing that file through a sync service is
+  the one thing the notebook format is designed to avoid.
+- Needs git installed. Without it the option explains that and offers nothing.
+
 ### Fixed — PDF export
 
 - **Code blocks appear at all.** They were dropped silently: the exporter read

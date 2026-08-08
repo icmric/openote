@@ -174,6 +174,8 @@ class _SyncDialogState extends State<_SyncDialog> {
               const Divider(height: 22),
               _StorageSection(app: app, notebookId: nb),
               const Divider(height: 22),
+              _GitSection(app: app),
+              const Divider(height: 22),
               _mirrorSection(),
               const Divider(height: 22),
               SwitchListTile(
@@ -660,4 +662,136 @@ List<({String name, String path, CloudFolder folder})> findExistingNotebooks() {
     }
   }
   return out;
+}
+
+/// Backing a notebook with a git remote.
+///
+/// Shown to everyone but honest about who it is for: it needs git installed
+/// and a repository you already have somewhere. On a machine without git it
+/// says so and offers nothing, rather than presenting a switch that cannot
+/// work.
+///
+/// The wording avoids the word "backup". This IS a backup in every practical
+/// sense, but calling it one invites people to rely on it before they have
+/// checked that the remote is reachable, and the failure mode of a backup
+/// nobody verified is the worst one there is.
+class _GitSection extends StatefulWidget {
+  const _GitSection({required this.app});
+  final AppState app;
+
+  @override
+  State<_GitSection> createState() => _GitSectionState();
+}
+
+class _GitSectionState extends State<_GitSection> {
+  late final TextEditingController _remote =
+      TextEditingController(text: widget.app.gitRemote ?? '');
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.app.gitAvailable == null) {
+      widget.app.checkGitAvailable();
+    }
+  }
+
+  @override
+  void dispose() {
+    _remote.dispose();
+    super.dispose();
+  }
+
+  AppState get app => widget.app;
+
+  @override
+  Widget build(BuildContext context) {
+    final available = app.gitAvailable;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Sync with git',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 4),
+        Text(
+          available == false
+              ? 'Git is not installed on this computer, so this is not '
+                  'available here. Installing it from git-scm.com is all that '
+                  'is needed.'
+              : 'Keeps this notebook in a git repository and pushes it as you '
+                  'work. Your notes go in; the working file Openote keeps on '
+                  'this computer does not.',
+          style: TextStyle(
+              fontSize: 12, height: 1.4, color: context.surfaces.textSecondary),
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Sync this notebook with git',
+              style: TextStyle(fontSize: 13)),
+          subtitle: app.gitStatus == null
+              ? null
+              : Text(app.gitStatus!,
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: app.gitStatus!.startsWith('Could not')
+                          ? OnoteColors.danger
+                          : context.surfaces.textSecondary)),
+          value: app.gitEnabled,
+          onChanged: available == false || app.gitBusy
+              ? null
+              : (v) async {
+                  await app.setGitEnabled(v, remote: _remote.text);
+                  if (mounted) setState(() {});
+                },
+        ),
+        if (app.gitEnabled) ...[
+          const SizedBox(height: 4),
+          TextField(
+            controller: _remote,
+            style: const TextStyle(fontSize: 12),
+            decoration: const InputDecoration(
+              isDense: true,
+              labelText: 'Remote address',
+              hintText: 'https://github.com/you/my-notes.git',
+              helperText: 'Leave empty to keep a history on this computer only',
+              helperMaxLines: 2,
+            ),
+            onSubmitted: (v) async {
+              await app.setGitEnabled(true, remote: v);
+              if (mounted) setState(() {});
+            },
+          ),
+          const SizedBox(height: 8),
+          Row(children: [
+            TextButton.icon(
+              onPressed: app.gitBusy
+                  ? null
+                  : () async {
+                      await app.setGitEnabled(true, remote: _remote.text);
+                      if (mounted) setState(() {});
+                    },
+              icon: app.gitBusy
+                  ? const SizedBox(
+                      width: 13,
+                      height: 13,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.sync, size: 16),
+              label: Text(app.gitBusy ? 'Syncing…' : 'Sync now',
+                  style: const TextStyle(fontSize: 12)),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Text(
+            'Openote never asks for your password: it runs the git already on '
+            'this computer and uses whatever sign-in you have set up for it. '
+            'If a push needs credentials you have not configured, it will say '
+            'so here rather than appear to work.',
+            style: TextStyle(
+                fontSize: 11, height: 1.4, color: context.surfaces.textSecondary),
+          ),
+        ],
+      ],
+    );
+  }
 }
