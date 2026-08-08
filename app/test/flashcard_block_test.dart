@@ -17,6 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/canvas/block_view.dart';
 import 'package:openote/editor/flashcard_block_view.dart';
+import 'package:openote/editor/live_markdown_controller.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/model/tags.dart';
 import 'package:openote/state/app_state.dart';
@@ -137,6 +138,46 @@ prose in between
       });
       final cards = cardsFromBlock(both, 'p', 't');
       expect(cards.map((c) => c.front), containsAll(['Osmosis', 'Symbol for sodium?']));
+    });
+
+    test('editing it rewrites the line, and only that line', () {
+      // The edit path an in-flow card actually has. It cannot be a caret: the
+      // card handles the tap (it flips), so no click ever puts a caret on its
+      // line, and the raw text is laid out at a hairline size behind it. A
+      // card you could see and not change was the regression.
+      final c = LiveMarkdownController(
+          text: 'before\n?[Old Q](Old A)\nafter', dark: false);
+      addTearDown(c.dispose);
+      var told = 0;
+      c.onSelfEdit = () => told++;
+
+      const line = '?[Old Q](Old A)';
+      final at = c.text.indexOf(line);
+      c.replaceCardLine(at, at + line.length, line, 'New Q', 'New A');
+
+      expect(c.text, 'before\n?[New Q](New A)\nafter');
+      expect(told, 1, reason: 'a programmatic edit must tell the host once');
+    });
+
+    test('brackets typed into a card do not break the line', () {
+      // The delimiters are what make the line a card, so they cannot survive
+      // inside it. Losing a bracket beats losing the card.
+      final c = LiveMarkdownController(text: '?[a](b)', dark: false);
+      addTearDown(c.dispose);
+      c.replaceCardLine(0, 7, '?[a](b)', 'f(x) [sic]', 'y = f(x)');
+      expect(inlineCardRe.hasMatch(c.text), isTrue,
+          reason: 'still a card: \${c.text}');
+      final m = inlineCardRe.firstMatch(c.text)!;
+      expect(m.group(1), 'f x sic');
+      expect(m.group(2), 'y = f x');
+    });
+
+    test('a stale edit is dropped rather than applied to other text', () {
+      final c = LiveMarkdownController(text: '?[a](b)', dark: false);
+      addTearDown(c.dispose);
+      c.text = 'entirely different';
+      c.replaceCardLine(0, 7, '?[a](b)', 'x', 'y');
+      expect(c.text, 'entirely different');
     });
 
     test('it is not confused with a picture or a wiki link', () {

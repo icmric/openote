@@ -186,3 +186,84 @@ class _FlipCardState extends State<FlipCard>
     );
   }
 }
+
+/// Ask for a new front and back. Returns null when cancelled.
+///
+/// A dialog rather than fields on the card itself, and that is deliberate: an
+/// in-flow card lives inside a `TextField`'s span tree, and putting editable
+/// fields in there means two editors competing for focus and a caret that
+/// belongs to neither. The block form can afford inline fields because it is a
+/// block; this one cannot.
+Future<({String front, String back})?> editCardDialog(
+        BuildContext context, String front, String back) =>
+    showDialog<({String front, String back})>(
+      context: context,
+      builder: (_) => _EditCardDialog(front: front, back: back),
+    );
+
+class _EditCardDialog extends StatefulWidget {
+  const _EditCardDialog({required this.front, required this.back});
+  final String front;
+  final String back;
+
+  @override
+  State<_EditCardDialog> createState() => _EditCardDialogState();
+}
+
+class _EditCardDialogState extends State<_EditCardDialog> {
+  late final _front = TextEditingController(text: widget.front);
+  late final _back = TextEditingController(text: widget.back);
+
+  @override
+  void dispose() {
+    _front.dispose();
+    _back.dispose();
+    super.dispose();
+  }
+
+  void _submit() =>
+      Navigator.of(context).pop((front: _front.text, back: _back.text));
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Edit card'),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('QUESTION',
+                  style:
+                      OnoteType.overline.copyWith(color: OnoteColors.brass400)),
+              const SizedBox(height: OnoteSpace.x2),
+              TextField(
+                controller: _front,
+                autofocus: true,
+                maxLines: null,
+                style: OnoteType.ui.copyWith(fontSize: 15),
+                decoration: const InputDecoration(isDense: true),
+                textInputAction: TextInputAction.next,
+              ),
+              const SizedBox(height: OnoteSpace.x5),
+              Text('ANSWER',
+                  style: OnoteType.overline.copyWith(color: OnoteColors.ink300)),
+              const SizedBox(height: OnoteSpace.x2),
+              TextField(
+                controller: _back,
+                maxLines: null,
+                style: OnoteType.ui.copyWith(fontSize: 15),
+                decoration: const InputDecoration(isDense: true),
+                onSubmitted: (_) => _submit(),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel')),
+          FilledButton(onPressed: _submit, child: const Text('Done')),
+        ],
+      );
+}

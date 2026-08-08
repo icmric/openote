@@ -87,6 +87,47 @@ class LiveMarkdownController extends TextEditingController {
     onSelfEdit?.call();
   }
 
+  /// Rewrite the card occupying [lineStart]..[lineEnd] with a new front and
+  /// back.
+  ///
+  /// The same shape as [resizeImageLine], and for the same reason: the offsets
+  /// are captured when the span is built and used when the dialog closes, so
+  /// they can be stale. The range is re-read and nothing happens at all unless
+  /// it still holds the line we started from — an edit that quietly lands on
+  /// the wrong text would be a corruption.
+  void replaceCardLine(
+      int lineStart, int lineEnd, String was, String front, String back) {
+    if (lineStart < 0 || lineEnd > text.length || lineStart > lineEnd) return;
+    if (text.substring(lineStart, lineEnd) != was) return;
+    // The delimiters are what make the line a card, so they cannot appear
+    // inside it. Stripping beats refusing: the user typed a bracket, not a
+    // syntax error, and losing one character is better than losing the card.
+    String clean(String v) => v
+        .replaceAll(RegExp(r'[\[\]()\r\n]'), ' ')
+        // Collapse the gaps the stripping leaves, or `f(x) [sic]` comes back
+        // as `f x   sic` — technically intact and visibly mangled.
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    final next = '?[${clean(front)}](${clean(back)})';
+    if (next == was) return;
+
+    final delta = next.length - was.length;
+    int adj(int o) => o <= lineStart
+        ? o
+        : (o >= lineEnd ? o + delta : lineStart + next.length);
+    final sel = selection;
+    value = TextEditingValue(
+      text: text.replaceRange(lineStart, lineEnd, next),
+      selection: sel.isValid
+          ? TextSelection(
+              baseOffset: adj(sel.baseOffset),
+              extentOffset: adj(sel.extentOffset))
+          : sel,
+      composing: TextRange.empty,
+    );
+    onSelfEdit?.call();
+  }
+
   // Inline: **b** __b__ *i* _i_ `c` ~~s~~ ==h== ++u++ {{#hex text}}
   // `++u++` is appended LAST so the group numbers the dispatch below relies on
   // are unchanged.
@@ -302,6 +343,8 @@ class LiveMarkdownController extends TextEditingController {
             front: card.group(1) ?? '',
             back: card.group(2) ?? '',
             selected: onLine,
+            onEdit: (f, b) => replaceCardLine(
+                lineStart, lineStart + line.length, line, f, b),
           ),
         ));
         out.add(TextSpan(text: line.substring(1), style: _hidden(base)));
@@ -501,11 +544,15 @@ class _InlineCard extends StatelessWidget {
     required this.front,
     required this.back,
     required this.selected,
+    required this.onEdit,
   });
 
   final String front;
   final String back;
   final bool selected;
+
+  /// Write a new front and back back into the source line.
+  final void Function(String front, String back) onEdit;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -521,7 +568,25 @@ class _InlineCard extends StatelessWidget {
                   border: Border.all(
                       color: OnoteColors.brass400.withValues(alpha: .85)))
               : null,
-          child: FlipCard(front: front, back: back, compact: true),
+          child: FlipCard(
+            front: front,
+            back: back,
+            compact: true,
+            trailing: Builder(
+              builder: (ctx) => IconButton(
+                icon: const Icon(Icons.edit_outlined, size: 14),
+                color: OnoteColors.graphite400,
+                tooltip: 'Edit this card',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                onPressed: () async {
+                  final r = await editCardDialog(ctx, front, back);
+                  if (r != null) onEdit(r.front, r.back);
+                },
+              ),
+            ),
+          ),
         ),
       );
 }

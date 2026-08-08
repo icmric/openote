@@ -914,27 +914,39 @@ class _CommandBarState extends State<CommandBar> {
   /// line still makes a card and always will, but "Currently not intuitive how
   /// to use them" was the verdict on a feature whose only entrance was a
   /// keyboard chord over a tag nobody knew produced anything.
+  /// A card, always in flow with writing — into the box you are editing, or
+  /// into a new box of its own.
+  ///
+  /// It used to drop a standalone `BlockType.flashcard` when no box was open,
+  /// which made the good form conditional on having clicked into something
+  /// first: "i have to have an active text box to insert one which i dont
+  /// want". Now there is one answer, and if there is nowhere to put a card the
+  /// somewhere is created. A card that arrives inside a text box is also a
+  /// card you can immediately write around, which is the whole point of it
+  /// being in flow.
+  ///
+  /// `BlockType.flashcard` is still read and rendered — pages already have
+  /// them — it is simply no longer the thing this makes.
   void _insertFlashcard() {
-    // If a text box is being edited, the card goes INTO it, in flow with the
-    // writing — "Ideally id like to be able to have everything in a single box
-    // at once". Same rule the picture follows, and for the same reason: the
-    // caret is where you said you wanted it.
+    const line = '?[Question](Answer)';
     final ae = app.activeEditor;
     if (ae != null && ae.block.type == BlockType.text) {
-      app.insertTextAtActiveCursor('\n?[Question](Answer)\n');
+      app.insertTextAtActiveCursor('\n$line\n');
       app.select(ae.block.id);
       return;
     }
-    final c = _center();
+    final pos = app.smartTextPosition(_center());
     final b = app.addBlock(Block(
-      type: BlockType.flashcard,
-      x: c.dx - 170,
-      y: c.dy - 90,
-      w: 340,
-      h: 180,
-      content: {'front': '', 'back': ''},
+      type: BlockType.text,
+      x: pos.dx,
+      y: pos.dy,
+      w: 460,
+      // A card is 420 wide and the auto-width measurement reads the RAW
+      // markdown, which is far narrower than the card it stands for — the box
+      // would size itself to the text and clip the card.
+      content: {'text': '$line\n', 'autoWidth': false},
     ));
-    app.select(b.id);
+    app.select(b.id, edit: true);
   }
 
   Future<void> _insertPageLink(BuildContext context) async {

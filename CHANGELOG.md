@@ -51,8 +51,10 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 - **Flashcards in the same box as your writing.** Put `?[question](answer)` on
   its own line inside any text box and it becomes a real card, sitting in the
-  flow of the notes around it — Insert ▸ Flashcard does it for you when a box
-  is open. It counts towards your revision exactly like any other card.
+  flow of the notes around it. Insert ▸ Flashcard always makes one of these —
+  into the box you are editing, or into a new box if you are not editing
+  anything. Use the pencil on the card to change what it says. It counts
+  towards your revision exactly like any other card.
 - **A flashcard you can put straight on the page** — Insert ▸ Flashcard. Write
   the question and the answer, tap to turn it over. It joins the same deck as
   tagged lines, so it counts towards your revision and your exam plan without
