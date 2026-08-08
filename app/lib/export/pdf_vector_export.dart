@@ -197,6 +197,41 @@ void _addPageSheets(
 /// "Is a slide" means exactly one locked background image, at the top, filling
 /// the page width — which is what `pdf_import` writes for one-page-per-slide.
 /// Anything else (a note that happens to contain a picture) is a normal page.
+/// What a text block decomposes into, in order: `text`, `image` or `card`.
+///
+/// Exposed because the thing worth testing — that an in-flow picture becomes a
+/// PICTURE rather than being deleted — is not observable in the finished file.
+/// Once a TTF is embedded the content stream carries glyph indices, not words,
+/// which is why no test in here has ever searched the output for note text.
+@visibleForTesting
+List<String> debugFlowKinds(AppState app, Block b) {
+  final text = b.content['text'] as String? ?? '';
+  final out = <String>[];
+  var pendingText = false;
+  for (final line in text.split('\n')) {
+    final img = _imageLineRe.firstMatch(line);
+    if (img != null && app.blob(img.group(1)!) != null) {
+      if (pendingText) {
+        out.add('text');
+        pendingText = false;
+      }
+      out.add('image');
+      continue;
+    }
+    if (_cardLineRe.hasMatch(line)) {
+      if (pendingText) {
+        out.add('text');
+        pendingText = false;
+      }
+      out.add('card');
+      continue;
+    }
+    pendingText = true;
+  }
+  if (pendingText) out.add('text');
+  return out;
+}
+
 /// The sheet size the exporter would use for a page, in POINTS.
 ///
 /// Exposed because the defect it guards — "the exported pdf page size doesnt
@@ -260,7 +295,7 @@ pw.Widget? _blockWidget(AppState app, Block b, double sheetTop) {
   final child = switch (b.type) {
     BlockType.ink => _inkWidget(b, h),
     BlockType.image => _imageWidget(app, b, h),
-    BlockType.text || BlockType.code || BlockType.math => _textWidget(b),
+    BlockType.text || BlockType.code || BlockType.math => _textWidget(app, b),
     BlockType.table => _tableWidget(b),
     _ => null,
   };
@@ -331,7 +366,105 @@ String _dateLine(int ms) {
 /// different text model; the thing that matters for a shared or printed note is
 /// that the words are *there*, selectable and searchable, at roughly the right
 /// size. Headings keep their weight because that carries the structure.
-pw.Widget? _textWidget(Block b) {
+pw.Widget? _textWidget(AppState app, Block b) {
+  // A text block is a container of MIXED content (Data Model §5.1): pictures
+  // and flashcards live on their own lines inside the prose. The exporter used
+  // to delete both — `_stripInline` threw away every `![](sha256:…)` on the
+  // grounds that "the image itself is a separate block", which was true before
+  // in-flow images existed and has been false since. So a picture you put in
+  // the middle of your notes simply was not in the PDF.
+  if (b.type == BlockType.text) {
+    final mixed = _mixedFlow(app, b);
+    if (mixed != null) return mixed;
+  }
+  return _plainTextWidget(b);
+}
+
+/// A block whose text carries in-flow pictures or cards, as a column of real
+/// widgets. Null when it is ordinary prose, which is the overwhelming majority
+/// and keeps the simple path simple.
+pw.Widget? _mixedFlow(AppState app, Block b) {
+  final text = b.content['text'] as String? ?? '';
+  if (!text.contains('![') && !text.contains('?[')) return null;
+  final lines = text.split('\n');
+  final children = <pw.Widget>[];
+  final run = <String>[];
+
+  void flushRun() {
+    if (run.isEmpty) return;
+    final w = _plainTextWidget(b, override: run.join('\n'));
+    if (w != null) children.add(w);
+    run.clear();
+  }
+
+  for (final line in lines) {
+    final img = _imageLineRe.firstMatch(line);
+    if (img != null) {
+      final bytes = app.blob(img.group(1)!);
+      if (bytes != null) {
+        flushRun();
+        // The stored ` =WxH` is in page px, like everything else here.
+        final wPx = double.tryParse(img.group(2) ?? '');
+        final hPx = double.tryParse(img.group(3) ?? '');
+        try {
+          children.add(pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(vertical: 2),
+            child: pw.Image(pw.MemoryImage(bytes),
+                width: wPx == null ? null : wPx / _pxPerPoint,
+                height: hPx == null ? null : hPx / _pxPerPoint,
+                fit: pw.BoxFit.contain,
+                alignment: pw.Alignment.centerLeft),
+          ));
+        } catch (_) {
+          // An image the encoder cannot read must not take the words with it.
+        }
+        continue;
+      }
+      // No bytes: fall through and let the reference print as text, so the
+      // reader can see something is missing rather than nothing at all.
+    }
+    final card = _cardLineRe.firstMatch(line);
+    if (card != null) {
+      flushRun();
+      children.add(_cardWidget(card.group(1) ?? '', card.group(2) ?? ''));
+      continue;
+    }
+    run.add(line);
+  }
+  flushRun();
+  if (children.isEmpty) return null;
+  return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start, children: children);
+}
+
+/// Kept textually in step with the renderers' own patterns
+/// (`md_render._reImage`, `live_markdown_controller._imageLineRe`).
+final _imageLineRe =
+    RegExp(r'^\s*!\[[^\]]*\]\(([^)\s]+)(?:\s+=(\d+)x(\d+))?\)\s*$');
+final _cardLineRe = RegExp(r'^\s*\?\[([^\]]*)\]\(([^)]*)\)\s*$');
+
+/// A flashcard, printed as both sides. On paper there is nothing to flip, and
+/// a question with its answer withheld is not something anyone can revise from.
+pw.Widget _cardWidget(String front, String back) => pw.Container(
+      margin: const pw.EdgeInsets.symmetric(vertical: 3),
+      padding: const pw.EdgeInsets.all(6),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey400, width: 0.7),
+        borderRadius: pw.BorderRadius.circular(4),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(_stripInline(front),
+              style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 2),
+          pw.Text(_stripInline(back),
+              style: const pw.TextStyle(fontSize: 9)),
+        ],
+      ),
+    );
+
+pw.Widget? _plainTextWidget(Block b, {String? override}) {
   // `source`, not `code`. Nothing in the app has ever written `content['code']`
   // — the code editor reads and writes `source` (code_block_view.dart), as do
   // the Markdown and open-folder exporters — so this key missed, `raw` came
@@ -343,10 +476,11 @@ pw.Widget? _textWidget(Block b) {
   // user actually typed and reads as an equation; `latex` is the machine form,
   // full of backslashes and braces. Neither is SYMBOLS — see the note on
   // _blockWidget.
-  final raw = (b.content['text'] ??
+  final raw = override ??
+      (b.content['text'] ??
       b.content['source'] ??
-      b.content['linearSource'] ??
-      b.content['latex']) as String?;
+          b.content['linearSource'] ??
+          b.content['latex']) as String?;
   if (raw == null || raw.trim().isEmpty) return null;
   final sizePx = (b.content['fontSize'] as num?)?.toDouble() ?? 15.0;
   final size = sizePx / _pxPerPoint;
@@ -582,6 +716,70 @@ PdfColor _pdfColor(String hex) {
 /// harness with no assets, where [_textWidget] falls back to Courier.
 pw.Font? _mono;
 
+/// Faces borrowed from the operating system so writing that is not Latin
+/// survives the export.
+///
+/// Inter covers Latin, Greek and Cyrillic and nothing else — so a note with
+/// Chinese, Japanese, Korean, Arabic, Hebrew, Thai or Devanagari in it came
+/// out blank. The `pdf` package does not substitute for a glyph the embedded
+/// font lacks; it has to be handed an alternative.
+///
+/// BORROWED, not bundled, and that is a trade made deliberately: a CJK face
+/// alone is 16 MB or more, which would roughly double an install already
+/// larger than the user wants (docs/planning/install-size-findings.md). Every
+/// desktop that can DISPLAY these scripts already has a font for them, so the
+/// export reads one off disk when it needs one and embeds only the glyphs used.
+///
+/// All best-effort: a missing path, a format the encoder will not read, a
+/// locked file — each is skipped. An export that loses a script is bad; one
+/// that fails outright because a font moved is worse.
+///
+/// **What this reaches, and what it does not.** Greek, Cyrillic, Arabic,
+/// Hebrew, Thai and the Indic scripts are covered on every desktop. Chinese,
+/// Japanese and Korean usually are NOT on Windows or macOS, because the system
+/// faces for them are `.ttc` collections the encoder cannot read; on Linux,
+/// Noto's plain OTF build does work. Bundling a CJK face would fix it
+/// everywhere and cost 16 MB — a decision that belongs with the install-size
+/// work, not here.
+Future<List<pw.Font>> _systemFallbacks() async {
+  final cached = _systemFallbackCache;
+  if (cached != null) return cached;
+  // **No `.ttc`.** A TrueType Collection holds several faces in one file and
+  // the `pdf` package's parser cannot read one — and it fails at LAYOUT, deep
+  // inside `Document.save`, not when the bytes are loaded. So a collection in
+  // this list does not degrade an export, it destroys it. That rules out most
+  // of Windows' and macOS's CJK faces, which are all collections.
+  final candidates = <String>[
+    // Windows. Tahoma is the wide one: Greek, Cyrillic, Arabic, Hebrew, Thai.
+    r'C:\Windows\Fonts\tahoma.ttf',
+    r'C:\Windows\Fonts\Nirmala.ttf', // Devanagari and the Indic scripts
+    r'C:\Windows\Fonts\malgun.ttf', // Korean
+    // macOS.
+    '/Library/Fonts/Arial Unicode.ttf',
+    '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
+    // Linux, where Noto is the near-universal answer and ships as plain TTF.
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf',
+    '/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf',
+    '/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf',
+  ];
+  final out = <pw.Font>[];
+  for (final path in candidates) {
+    if (out.length >= 3) break; // enough coverage; each one costs memory
+    try {
+      if (path.endsWith('.ttc')) continue; // see above
+      final f = File(path);
+      if (!f.existsSync()) continue;
+      out.add(pw.Font.ttf(ByteData.sublistView(await f.readAsBytes())));
+    } catch (_) {
+      // Unreadable, or a format the encoder rejects — try the next.
+    }
+  }
+  return _systemFallbackCache = out;
+}
+
+List<pw.Font>? _systemFallbackCache;
+
 Future<pw.ThemeData?> _theme() async {
   try {
     final regular = pw.Font.ttf(
@@ -598,7 +796,12 @@ Future<pw.ThemeData?> _theme() async {
     // ~270 KB.
     _mono = pw.Font.ttf(await rootBundle
         .load('assets/fonts/jetbrains-mono/JetBrainsMono-Regular.ttf'));
-    return pw.ThemeData.withFont(base: regular, bold: bold, italic: italic);
+    return pw.ThemeData.withFont(
+      base: regular,
+      bold: bold,
+      italic: italic,
+      fontFallback: [if (_mono != null) _mono!, ...await _systemFallbacks()],
+    );
   } catch (_) {
     // No bundled font (a test harness without assets): fall back to the PDF
     // standard faces rather than failing the export.

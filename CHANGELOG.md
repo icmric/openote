@@ -30,6 +30,19 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   or handed in says which note it is.
 - Code keeps its monospaced face with the app's own font embedded, so symbols
   and accents inside a code block survive the trip.
+- **Pictures inside a text box are exported.** They were being deleted: the
+  exporter stripped every in-flow picture on the assumption that pictures are
+  always their own block, which stopped being true when they became something
+  you could put in the middle of a paragraph. Flashcards written into your
+  notes come out too, with both sides showing — on paper there is nothing to
+  flip, and a question with the answer withheld is not something you can revise
+  from.
+- **Writing that is not Latin survives the export.** Greek, Cyrillic, Arabic,
+  Hebrew, Thai and the Indic scripts now come out as themselves rather than
+  blanks, using a font borrowed from your computer. Chinese, Japanese and
+  Korean still will not on Windows or macOS — the system fonts for them are in
+  a format the PDF writer cannot read, and bundling one would add 16 MB to the
+  download. Linux is fine if you have Noto installed.
 - **Maths still exports as text, not symbols** — but as the form you typed
   (`a/b`) rather than the machine form (`rac{a}{b}`). Typesetting equations
   into a PDF needs machinery this exporter does not have; it is written down as

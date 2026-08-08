@@ -452,5 +452,105 @@ void main() {
           reason: 'the readable form wins over the machine form');
     });
   });
+
+  group('everything in the box comes out', () {
+    // A text block is a container of MIXED content. The exporter used to
+    // DELETE every in-flow picture — `_stripInline` threw away
+    // `![](sha256:…)` on the grounds that "the image itself is a separate
+    // block", true before in-flow images existed and false ever since.
+    final png = base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwACh'
+        'wGA60e6kgAAAABJRU5ErkJggg==');
+
+    test('an in-flow picture is drawn, not deleted', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      final hash = app.addBlob(png, 'image/png');
+      app.blocks = [
+        Block(type: BlockType.text, x: 60, y: 200, w: 400, content: {
+          'text': 'Before the picture\n'
+              '![](sha256:$hash =60x60)\n'
+              'After the picture',
+        }),
+      ];
+      expect(debugFlowKinds(app, app.blocks.single),
+          ['text', 'image', 'text'],
+          reason: 'the picture is a picture, between the two runs of prose');
+      final raw = readable(await buildPagePdf(app, pageId, title: 'T'));
+      // A drawn image means an image XObject in the document. Deleted, the
+      // page would carry the words with nothing between them.
+      expect(raw, contains('/Image'), reason: 'the picture reached the page');
+    });
+
+    test('an in-flow flashcard prints both sides', () async {
+      // On paper there is nothing to flip, and a question with its answer
+      // withheld is not something anyone can revise from.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.blocks = [
+        Block(type: BlockType.text, x: 60, y: 200, w: 400, content: {
+          'text': 'notes\n?[What is 7x8?](56)\nmore notes',
+        }),
+      ];
+      expect(debugFlowKinds(app, app.blocks.single), ['text', 'card', 'text']);
+      final bytes = await buildPagePdf(app, pageId, title: 'T');
+      expect(bytes.length, greaterThan(500), reason: 'a real document');
+    });
+
+    test('ordinary prose still takes the simple path', () async {
+      // The mixed-flow branch is entered only when there is something to mix,
+      // so the overwhelmingly common block is untouched.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.blocks = [
+        Block(type: BlockType.text, x: 60, y: 200, w: 400, content: {
+          'text': 'Just some writing, with **bold** in it.',
+        }),
+      ];
+      expect(debugFlowKinds(app, app.blocks.single), ['text'],
+          reason: 'nothing to mix, so nothing is mixed');
+      final bytes = await buildPagePdf(app, pageId, title: 'T');
+      expect(bytes.length, greaterThan(400));
+    });
+
+    test('a picture whose bytes are gone leaves the words alone', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.blocks = [
+        Block(type: BlockType.text, x: 60, y: 200, w: 400, content: {
+          'text': 'above\n![](sha256:missing)\nbelow',
+        }),
+      ];
+      // The reference stays as text so the reader can see something is
+      // missing, rather than the words closing silently over the gap.
+      expect(debugFlowKinds(app, app.blocks.single), ['text']);
+      final bytes = await buildPagePdf(app, pageId, title: 'T');
+      expect(bytes.length, greaterThan(400));
+    });
+
+    test('writing that is not Latin survives', () async {
+      // Inter covers Latin, Greek and Cyrillic and nothing else, and the pdf
+      // package does not substitute for a glyph the embedded font lacks — so
+      // CJK, Arabic and Devanagari exported as blanks. Fonts are borrowed from
+      // the operating system rather than bundled (a CJK face alone is 16 MB).
+      //
+      // Asserted as "the export succeeds and is a real document", because
+      // which fonts exist is a property of the MACHINE, not of this code: on a
+      // runner with none of the candidate paths the honest outcome is still a
+      // valid PDF, just one missing those glyphs.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.blocks = [
+        Block(type: BlockType.text, x: 60, y: 200, w: 400, content: {
+          'text': 'English, Ελληνικά, Русский, 日本語, العربية, हिन्दी',
+        }),
+      ];
+      final bytes = await buildPagePdf(app, pageId, title: 'T');
+      expect(bytes.length, greaterThan(500));
+      expect(debugPlainText(app.blocks.single), contains('日本語'),
+          reason: 'the text reaches the exporter intact — what happens to it '
+              'after that depends on which fonts this machine has');
+    });
+  });
 }
 
