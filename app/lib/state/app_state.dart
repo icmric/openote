@@ -1914,36 +1914,90 @@ class AppState extends ChangeNotifier
   /// Returns the bytes reclaimed from the page mirror. The blobs themselves are
   /// new bytes on disk, so the honest figure is what [Repository.storageFor]
   /// says afterwards — this is the mirror's share, which is the large half.
-  Future<int> convertInkToBinary(
+  Future<InkConversionResult> convertInkToBinary(
     String nb, {
     void Function(int done, int total)? onProgress,
   }) async {
     await flushSave();
+    // **Catch up with the other devices FIRST, or this work is undone.**
+    //
+    // Reported as "it seemed to do something for about 45s before the spinner
+    // just went away and the button returned back to saying 113 pages", with
+    // nothing in the console — and it reproduces only on a notebook that is
+    // actually syncing, which is why it worked perfectly on a copy.
+    //
+    // The mechanism: a pull rebuilds each changed page from the OP LOG
+    // (`materialisedPage`), and the log still holds the pre-conversion giant
+    // inline-ink `block.set` ops. Converting writes the small reference form
+    // into the container and records a new, later `block.set` so the two
+    // agree — EXCEPT that `SyncRecorder.page` refuses to record anything while
+    // `foreignPending` is true (the guard that stops a restart deleting the
+    // other device's work). So on a syncing notebook the conversion silently
+    // recorded nothing, and the very next pull materialised all 113 pages back
+    // to their inline form from the log. Forty-five seconds, perfectly undone.
+    //
+    // Folding first clears the flag, so the conversion is recorded and sticks.
+    await syncPull(nb);
+    final rec = await warmRecorder(nb);
+    if (rec != null && rec.foreignPending) {
+      // Still behind — another device's ops arrived during the fold. Refusing
+      // is right: converting now would be thrown away again, and doing 45
+      // seconds of work that silently reverts is the bug being fixed.
+      return const InkConversionResult(
+        candidates: 0,
+        converted: 0,
+        failed: 0,
+        freed: 0,
+        firstError: 'there are changes from another device still to fold in. '
+            'Try again in a moment.',
+      );
+    }
     // Only pages that actually contain inline strokes. A SQL prefilter, for
     // the same reason `pageIdsWithTags` uses one: decoding 328 pages to
     // discover that 215 have no ink is most of the work for none of the win.
     // `"strokes":[{` excludes empty arrays and already-converted pages.
     final candidates = _repo.pageIdsWithInlineInk(nb);
-    if (candidates.isEmpty) return 0;
+    if (candidates.isEmpty) {
+      return const InkConversionResult(
+          candidates: 0, converted: 0, failed: 0, freed: 0);
+    }
+    // A pull landing mid-conversion would rewrite pages from the log behind
+    // us, exactly as above. The watcher is stopped for the duration and
+    // restarted after; anything that arrives meanwhile is picked up by the
+    // poll on the next tick.
+    _stopWatching();
 
-    var freed = 0;
+    var freed = 0, converted = 0, failed = 0;
+    String? firstError;
     for (var i = 0; i < candidates.length; i++) {
       final pageId = candidates[i];
       try {
         final before = _repo.pageJsonBytes(nb, pageId);
         final data = _repo.readPage(nb, pageId);
-        final converted = InkStorage.persistAll(
+        final out = InkStorage.persistAll(
             data.blocks, (bytes) => importBlob(nb, bytes, inkMimeType));
-        if (converted != data.blocks) {
-          _repo.writePage(nb, pageId, converted, data.props);
-          // The log has to learn the new shape too, or a rebuild would still
-          // produce the old giant blocks and the two would disagree.
-          _recorderFor(nb)?.page(pageId, converted, data.props);
-          freed += before - _repo.pageJsonBytes(nb, pageId);
+        if (identical(out, data.blocks)) {
+          // Nothing to convert on a page the prefilter matched. That is not an
+          // error, but it IS the silent outcome the user saw — the run took 45
+          // seconds and reported nothing — so it is counted, not shrugged off.
+          failed++;
+          firstError ??= 'a page matched the search but held no convertible '
+              'handwriting';
+          continue;
         }
+        _repo.writePage(nb, pageId, out, data.props);
+        // The log has to learn the new shape too, or a rebuild would still
+        // produce the old giant blocks and the two would disagree.
+        _recorderFor(nb)?.page(pageId, out, data.props);
+        freed += before - _repo.pageJsonBytes(nb, pageId);
+        converted++;
       } catch (e) {
         // One unconvertible page must not stop the other 112. It keeps its
-        // inline strokes, which still render and still save.
+        // inline strokes, which still render and still save — but a `catch`
+        // that only writes to a console nobody is watching is how this came
+        // back as "it did something for 45s and nothing happened".
+        failed++;
+        firstError ??= '$e';
         debugPrint('[openote/ink] could not convert $pageId: $e');
       }
       onProgress?.call(i + 1, candidates.length);
@@ -1952,6 +2006,7 @@ class AppState extends ChangeNotifier
       await Future<void>.delayed(Duration.zero);
     }
 
+    _startWatching(); // whatever arrived meanwhile is picked up next tick
     // The mirror just shrank by tens of megabytes; without this the file keeps
     // its high-water mark and the user sees no change at all.
     _repo.reclaimFreeSpace(nb);
@@ -1966,7 +2021,13 @@ class AppState extends ChangeNotifier
     }
     _invalidateSyncStatus();
     notifyListeners();
-    return freed;
+    return InkConversionResult(
+      candidates: candidates.length,
+      converted: converted,
+      failed: failed,
+      freed: freed,
+      firstError: firstError,
+    );
   }
 
   /// Compact a notebook's container and hand back the bytes. See
@@ -5288,6 +5349,57 @@ class NotebookStorage {
 }
 
 /// A `.onote` or `.onotebook` on disk that no registry entry claims.
+/// What a run of [AppState.convertInkToBinary] actually did.
+///
+/// It used to return a byte count, and a byte count cannot distinguish "there
+/// was nothing to do" from "every page failed" — which is precisely the report
+/// this exists to answer: *"it seemed to do something for about 45s before the
+/// spinner just went away and the button returned back to saying 113 pages. No
+/// error in the console."*
+class InkConversionResult {
+  const InkConversionResult({
+    required this.candidates,
+    required this.converted,
+    required this.failed,
+    required this.freed,
+    this.firstError,
+  });
+
+  /// Pages the search offered.
+  final int candidates;
+
+  /// Pages actually rewritten.
+  final int converted;
+
+  /// Pages that matched but produced nothing — an error, or no convertible
+  /// handwriting after all.
+  final int failed;
+
+  /// Bytes the page mirror lost.
+  final int freed;
+
+  /// The first thing that went wrong, for showing. Null when nothing did.
+  final String? firstError;
+
+  bool get didNothing => converted == 0 && candidates > 0;
+
+  /// A sentence for the user. Never silent: a run that changed nothing says so
+  /// and says what it hit.
+  String describe(String Function(int) bytes) {
+    if (candidates == 0) return 'Nothing left to shrink.';
+    if (converted == 0) {
+      return 'Could not shrink any of the $candidates pages'
+          '${firstError == null ? '.' : ' — $firstError'}';
+    }
+    final tail = failed == 0
+        ? ''
+        : ' $failed could not be converted'
+            '${firstError == null ? '.' : ' — $firstError'}';
+    return 'Shrank $converted of $candidates pages, '
+        '${bytes(freed)} smaller.$tail';
+  }
+}
+
 /// One notebook inside a [DuplicateGroup].
 class DuplicateMember {
   const DuplicateMember({

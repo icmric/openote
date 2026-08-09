@@ -743,13 +743,16 @@ class _StorageSectionState extends State<_StorageSection> {
                 onPressed: _converting
                     ? null
                     : () async {
-                        setState(() => _converting = true);
-                        final freed =
+                        setState(() {
+                          _converting = true;
+                          _inkResult = null;
+                        });
+                        final r =
                             await app.convertInkToBinary(widget.notebookId);
                         if (!mounted) return;
                         setState(() {
                           _converting = false;
-                          _inkFreed = freed;
+                          _inkResult = r;
                           _inkPages =
                               app.inlineInkPageCount(widget.notebookId);
                           _storage = app.storageFor(widget.notebookId);
@@ -768,10 +771,19 @@ class _StorageSectionState extends State<_StorageSection> {
                             '${_inkPages == 1 ? 'page' : 'pages'}',
                     style: const TextStyle(fontSize: 12)),
               ),
-              if (_inkFreed != null && _inkFreed! > 0)
-                Text('${_bytes(_inkFreed!)} smaller',
-                    style: TextStyle(
-                        fontSize: 11, color: context.surfaces.textSecondary)),
+              if (_inkResult != null)
+                Expanded(
+                  child: Text(_inkResult!.describe(_bytes),
+                      style: TextStyle(
+                          fontSize: 11,
+                          height: 1.35,
+                          // A run that changed nothing is not good news, and
+                          // showing it in the same grey as a success is how it
+                          // went unnoticed for 45 seconds.
+                          color: _inkResult!.didNothing
+                              ? OnoteColors.danger
+                              : context.surfaces.textSecondary)),
+                ),
             ]),
           ),
         if (_orphans != null) _orphanList(),
@@ -783,7 +795,7 @@ class _StorageSectionState extends State<_StorageSection> {
   int? _reclaimed;
 
   bool _converting = false;
-  int? _inkFreed;
+  InkConversionResult? _inkResult;
 
   /// How many pages still hold handwriting as JSON.
   ///

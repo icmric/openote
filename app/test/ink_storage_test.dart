@@ -243,8 +243,11 @@ void main() {
       expect(before, greaterThan(50000),
           reason: 'the fixture must be big enough to be worth converting');
 
-      final freed = await app.convertInkToBinary(app.notebookId!);
-      expect(freed, greaterThan(0));
+      final r = await app.convertInkToBinary(app.notebookId!);
+      expect(r.converted, 1);
+      expect(r.failed, 0);
+      expect(r.freed, greaterThan(0));
+      expect(r.didNothing, isFalse);
 
       final after = repo.pageJsonBytes(app.notebookId!, pageId);
       expect(after, lessThan(before ~/ 10),
@@ -276,13 +279,99 @@ void main() {
       // can simply be run again.
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       writeLegacyPage(pageId, handwriting(count: 20));
-      expect(await app.convertInkToBinary(app.notebookId!), greaterThan(0));
+      expect((await app.convertInkToBinary(app.notebookId!)).converted,
+          greaterThan(0));
       final blobs = repo.blobIndex(app.notebookId!).length;
 
-      expect(await app.convertInkToBinary(app.notebookId!), 0,
-          reason: 'nothing left to convert');
+      final again = await app.convertInkToBinary(app.notebookId!);
+      expect(again.candidates, 0, reason: 'nothing left to convert');
+      expect(again.didNothing, isFalse,
+          reason: 'no candidates is success, not a silent failure');
       expect(repo.blobIndex(app.notebookId!).length, blobs,
           reason: 'and no duplicate blob was written');
+    });
+
+    test('IT IS NOT UNDONE BY A PULL — the reported silent failure', () async {
+      // "it seemed to do something for about 45s before the spinner just went
+      // away and the button returned back to saying 113 pages."
+      //
+      // The conversion worked perfectly on a copy and failed every time on the
+      // real, SYNCING notebook. A pull rebuilds each changed page from the op
+      // log, and the log still holds the pre-conversion giant inline-ink ops —
+      // so unless the conversion also RECORDS the new shape, the next pull
+      // materialises every page straight back. And `SyncRecorder.page` refuses
+      // to record while `foreignPending` is true, which on a syncing notebook
+      // it usually is.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      writeLegacyPage(pageId, handwriting(count: 30));
+
+      // A second, real page for the foreign op to land on — page_mirror has a
+      // foreign key onto nodes, so an op for a page that does not exist fails
+      // the whole pull.
+      final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+      final other = repo.upsertNode(app.notebookId!,
+          TreeNode(kind: NodeKind.page, parentId: section.id, title: 'Other'));
+
+      final r = await app.warmRecorder(app.notebookId!);
+      expect(r, isNotNull);
+      final ref = repo.notebooks.firstWhere((n) => n.id == app.notebookId);
+      final store = OpLogStore.forNotebook(ref.file, logDir: ref.logDir);
+      store.append('some-other-device', [
+        Op(
+            device: 'some-other-device',
+            seq: 1,
+            lamport: 900,
+            timestamp: 1000,
+            kind: OpKind.blockSet,
+            data: {
+              // A DIFFERENT page: the ink page was written straight into the
+              // mirror by the fixture, so the log has never heard of it, and
+              // a pull would materialise it as empty. That is a property of
+              // the fixture, not of the product — the real notebook's ink IS
+              // in its log. What matters here is only that a foreign op is
+              // outstanding while the conversion runs.
+              'pageId': other.id,
+              'block': {'id': 'theirs', 'type': 'text', 'x': 0, 'y': 400,
+                'content': {'text': 'from the other machine'}}
+            })
+      ]);
+
+      // RAISE THE FLAG the way the running app does: the watcher fires a pull,
+      // which asks pendingForeignOps, which sets foreignPending — and from
+      // that moment SyncRecorder.page records nothing at all.
+      expect(r!.pendingForeignOps(repo.getSetting), isNotEmpty);
+      expect(r.foreignPending, isTrue,
+          reason: 'this is the state a syncing notebook is usually in');
+
+      final result = await app.convertInkToBinary(app.notebookId!);
+      // Either it folded their op first and converted, or it declined and
+      // said why — never 45 seconds of work reported as nothing.
+      expect(result.didNothing, isFalse,
+          reason: 'a run that changes nothing must say so: '
+              '${result.firstError}');
+      expect(result.converted, greaterThan(0));
+
+      // THE LOG LEARNED THE NEW SHAPE. Without this the next pull rebuilds
+      // every page from the log's giant inline ops and undoes the lot.
+      final logged = store
+          .readAll()
+          .where((o) => o.kind == OpKind.blockSet)
+          .where((o) => (o.map['pageId']) == pageId)
+          .toList();
+      expect(logged, isNotEmpty,
+          reason: 'the conversion was never recorded, so a pull will revert it');
+      final lastContent = ((logged.last.map['block'] as Map)['content'] as Map)
+          .cast<String, dynamic>();
+      expect(InkStorage.isRefForm(lastContent), isTrue,
+          reason: 'the log must hold the reference form, not the strokes');
+
+      // And the conversion SURVIVES the next pull, which is the actual bug.
+      await app.syncPull(app.notebookId!);
+      expect(repo.pageIdsWithInlineInk(app.notebookId!), isEmpty,
+          reason: 'a pull rebuilt the page from the log and put the inline '
+              'strokes back — 45 seconds of work undone');
+      expect(repo.rawPageJsonForTest(app.notebookId!, pageId),
+          isNot(contains('"strokes"')));
     });
 
     test('a notebook with no ink is untouched and costs nothing', () async {
@@ -292,7 +381,7 @@ void main() {
       ];
       app.markDirty();
       await app.flushSave();
-      expect(await app.convertInkToBinary(app.notebookId!), 0);
+      expect((await app.convertInkToBinary(app.notebookId!)).candidates, 0);
       expect(repo.readPage(app.notebookId!, pageId).blocks.single.content['text'],
           'prose');
     });
