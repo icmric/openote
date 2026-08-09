@@ -4,6 +4,35 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-08-09
+
+### Fixed — boxes under the mouse
+
+- **Resize works along the whole edge of a box**, not only on the little
+  grab pill. The strip changed the cursor all along the edge but accepted
+  the drag only over the handle.
+- **A selected box outranks its neighbours for the mouse.** Where a selected
+  box ran under another, the neighbour swallowed the clicks — the end of the
+  box could not be grabbed to resize, and its text could not be reached.
+  The box you selected now lifts above everything while selected (visually
+  too), and drops back into place on deselect.
+
+### Fixed — page windows
+
+- **Videos inside a page window have their shape back** — the poster card
+  collapsed to its play icon because the window sized it by width alone, so
+  the play button was unreachable. Play, open-externally and save-a-copy all
+  work in place now.
+
+### Fixed — CI was measuring the weather
+
+- Two tests timed the runner instead of testing the code (a cache asserted
+  by stopwatch, a file-watcher burst asserting an exact OS batching factor),
+  and one assumed macOS never echoes a file event from just before a watcher
+  starts. All three now assert the actual claim — decode counts, "fewer
+  events than writes", one echo of grace on Darwin — and CI is green on all
+  four platforms for the first time in two days.
+
 ## [0.6.1] — 2026-08-09
 
 ### Fixed — git sync on a fresh computer
