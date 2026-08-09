@@ -8,9 +8,11 @@
 // labelled chips instead of crashes.
 import 'dart:io';
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/canvas/block_view.dart';
 import 'package:openote/canvas/portal_view.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -260,6 +262,52 @@ void main() {
           reason: 'following a link is navigation, not mutation');
       // Navigating armed the debounced session/workspace write; drop it, or
       // the fake-async zone ends with a pending timer.
+      app.cancelPendingSave();
+    });
+
+    testWidgets('A LINK STILL NAVIGATES INSIDE THE FULL BLOCK CHROME',
+        (t) async {
+      // The previous test pumps PortalBlockView alone, which is not what the
+      // app mounts: in the app the portal sits inside BlockView — an opaque
+      // body GestureDetector (tap-to-select, pan), a raw pointer Listener,
+      // and a long-press detector, all competing in the gesture arena with
+      // the link's own detector. "I still can't follow links in an embedded
+      // page" while flashcards flip is what an arena loss looks like, so the
+      // regression test must include the full chrome.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+      final third = repo
+          .upsertNode(
+              app.notebookId!,
+              TreeNode(
+                  kind: NodeKind.page, parentId: section.id, title: 'Third'))
+          .id;
+      app.reloadNodes();
+      writeSource('[[Third|$third]]');
+
+      final b = embedBlock();
+      await t.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ListenableBuilder(
+            listenable: app,
+            builder: (_, __) => Stack(children: [
+              BlockView(block: b, app: app, controller: app.canvas),
+            ]),
+          ),
+        ),
+      ));
+      await t.pump();
+
+      // A MOUSE tap, not the test default of touch: the report comes from a
+      // desktop, and SelectionArea handles mouse clicks differently (it
+      // positions the selection on mouse-down), so only a mouse tap exercises
+      // the arena the user's click actually runs.
+      await t.tap(find.textContaining('Third', findRichText: true).first,
+          warnIfMissed: false, kind: PointerDeviceKind.mouse);
+      await t.pump();
+      await t.pump();
+      expect(app.pageId, third,
+          reason: 'the link must win the arena against the block chrome');
       app.cancelPendingSave();
     });
 

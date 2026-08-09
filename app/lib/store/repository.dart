@@ -1052,7 +1052,16 @@ class Repository {
 
   // ── Page content (mirror-write mode, spec §4) ──────────────────────────
 
+  /// How many times a page has been read and decoded out of SQLite — cache
+  /// misses, in effect, since [readPageShared] only lands here when it has
+  /// nothing cached. For tests that assert caching by COUNT: the wall-clock
+  /// versions measured how busy the CI runner was, not whether the cache
+  /// worked, and failed on loaded macOS/Linux runners while the cache was
+  /// doing its job perfectly.
+  static int debugPageDecodes = 0;
+
   PageData readPage(String notebookId, String pageId) {
+    debugPageDecodes++;
     final rows = _db(notebookId)
         .select('SELECT json FROM page_mirror WHERE page_id=?', [pageId]);
     if (rows.isEmpty) return PageData([], PageProps());

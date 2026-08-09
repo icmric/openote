@@ -315,7 +315,15 @@ class PortalContent extends StatelessWidget {
         // Interactive on purpose: playing a lecture recording or opening an
         // attachment READS the source page, and doing it in place is what the
         // user asked windows for. Every control on this card is a read.
-        return SizedBox(width: b.w, child: FileBlockView(block: b, app: app));
+        //
+        // Height as well as width: a video poster card has no intrinsic
+        // height (BlockView normally imposes the block's), so width alone
+        // collapsed it to its play icon — "the player bar appears however
+        // the box outlining the video isn't there, and clicking play doesn't
+        // work". Plain attachments carry h == null and keep sizing to their
+        // content.
+        return SizedBox(
+            width: b.w, height: b.h, child: FileBlockView(block: b, app: app));
       case BlockType.flashcard:
         return IgnorePointer(
             child: SizedBox(

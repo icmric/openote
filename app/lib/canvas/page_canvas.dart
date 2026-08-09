@@ -771,14 +771,29 @@ class _PageCanvasState extends State<PageCanvas> {
                           ),
                         ),
                         // Painted in z order (review fix: z was stored but
-                        // insertion order used to win).
+                        // insertion order used to win) — except that the
+                        // SELECTION outranks z. Hit-testing follows paint
+                        // order, so a selected box whose end runs under a
+                        // neighbour could not be resized or have its text
+                        // reached where they overlap: the neighbour's opaque
+                        // body swallowed the click. The box the user chose is
+                        // the box the mouse should mean, so it paints (and
+                        // therefore hit-tests) above everything while
+                        // selected, and drops back into place on deselect.
                         for (final b in ([
                           ...app.blocks.where((b) =>
                               b.type != BlockType.ink &&
                               (visible.overlaps(_blockRect(b)) ||
                                   app.selectedIds.contains(b.id) ||
                                   app.editingBlockId == b.id))
-                        ]..sort((a, b) => a.z.compareTo(b.z))))
+                        ]..sort((a, b) {
+                            int lift(Block x) => app.selectedIds.contains(x.id) ||
+                                    app.editingBlockId == x.id
+                                ? 1
+                                : 0;
+                            final byLift = lift(a) - lift(b);
+                            return byLift != 0 ? byLift : a.z.compareTo(b.z);
+                          })))
                           BlockView(
                             key: ValueKey('${b.id}#${app.docRevision}'),
                             block: b,

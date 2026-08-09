@@ -259,14 +259,16 @@ void main() {
     addTearDown(() => cleanup(repo, tmp));
 
     // The split cache must not have reintroduced the per-keystroke full read.
+    // Asserted by COUNTING page decodes, not by timing them: the wall-clock
+    // form (`200 calls < 50ms`) measured how busy the machine was, and CI
+    // runners are busy machines. Zero decodes is the claim, on any hardware.
     app.study.deckStats();
-    final sw = Stopwatch()..start();
+    final before = Repository.debugPageDecodes;
     for (var i = 0; i < 200; i++) {
       app.study.deckStats();
     }
-    sw.stop();
-    expect(sw.elapsedMilliseconds, lessThan(50),
-        reason: '200 deckStats calls took ${sw.elapsedMilliseconds}ms');
+    expect(Repository.debugPageDecodes, before,
+        reason: 'a warm deckStats must not re-read any page from SQLite');
   });
 
   test('several scopes in one frame all stay cached', () async {
@@ -281,31 +283,26 @@ void main() {
     // nominally present and doing nothing.
     final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
 
-    // Measured as a RATIO against the cold pass, not against a millisecond
-    // threshold. The absolute form (`< 50ms` for 300 calls) failed on a loaded
-    // machine while the cache was working perfectly — it measured how busy the
-    // computer was, which is not the claim. Cold-vs-warm is the claim, and it
-    // holds on any hardware.
-    final cold = Stopwatch()..start();
+    // Asserted by COUNTING page decodes, third time lucky. The first form
+    // (`300 calls < 50ms`) measured how loaded the machine was; the second
+    // (warm 300 < cold 3, a ratio) still lost the race on a fast Mac where
+    // the cold pass was 1.3ms and one descheduling of the warm loop outweighed
+    // it — CI was red for two days on exactly that. Decode count is the claim
+    // itself: a working cache does ZERO further reads, a single-slot cache
+    // does hundreds, and neither depends on the clock.
     app.study.deckStats(pageId: app.pageId);
     app.study.deckStats(sectionId: section);
     app.study.deckStats();
-    cold.stop();
 
-    final warm = Stopwatch()..start();
+    final warmBefore = Repository.debugPageDecodes;
     for (var i = 0; i < 100; i++) {
       app.study.deckStats(pageId: app.pageId);
       app.study.deckStats(sectionId: section);
       app.study.deckStats();
     }
-    warm.stop();
-
-    // 100x the work in less time than the cold pass took: only possible if
-    // every one of those calls came out of the cache. A single-slot cache
-    // would evict on every scope change and this would be ~100x SLOWER.
-    expect(warm.elapsedMicroseconds, lessThan(cold.elapsedMicroseconds),
-        reason: 'cold 3 calls: ${cold.elapsedMicroseconds}us, '
-            'warm 300 calls: ${warm.elapsedMicroseconds}us');
+    expect(Repository.debugPageDecodes, warmBefore,
+        reason: '300 scoped calls after the cold pass must re-read nothing — '
+            'a single-slot cache would evict on every scope change');
   });
 
   // ── Study stats and the exam countdown (P1) ────────────────────────────

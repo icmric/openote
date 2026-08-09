@@ -145,7 +145,14 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
     await settleAll();
-    expect(fired.length, lessThanOrEqualTo(2),
+    // Strictly fewer than the eight writes — NOT a pinned coalescing factor.
+    // The old `<= 2` encoded an assumption about how the OS batches file
+    // events, and macOS FSEvents delivered the same burst as three groups on
+    // a slow runner: red CI, working code. The claim this test owns is only
+    // that the settle window coalesces AT ALL — one event per write is
+    // exactly what a regression to no-debounce produces, and any grouping
+    // below that proves the window exists.
+    expect(fired.length, lessThan(8),
         reason: 'the settle window exists to coalesce a burst');
   });
 

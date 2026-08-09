@@ -662,6 +662,13 @@ class _BlockViewState extends State<BlockView> {
                   child: MouseRegion(
                     cursor: SystemMouseCursors.resizeLeftRight,
                     child: GestureDetector(
+                      // Opaque, or the strip is grabbable only over the pill:
+                      // the default deferToChild hit-tests only where a child
+                      // painted, so the cursor changed across the whole edge
+                      // (MouseRegion is the full strip) while the drag worked
+                      // on the 10×28 handle alone — "I cannot resize it
+                      // unless I'm directly over the grab bar".
+                      behavior: HitTestBehavior.opaque,
                       supportedDevices: devices,
                       onPanUpdate: _resize,
                       onPanEnd: (_) => _resizeUndoPushed = false,
@@ -691,6 +698,7 @@ class _BlockViewState extends State<BlockView> {
                     child: MouseRegion(
                       cursor: SystemMouseCursors.resizeUpDown,
                       child: GestureDetector(
+                        behavior: HitTestBehavior.opaque, // whole strip, as above
                         supportedDevices: devices,
                         onPanUpdate: (d) =>
                             _resizeBy(d, width: false, height: true),
