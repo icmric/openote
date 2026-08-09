@@ -1596,6 +1596,41 @@ class AppState extends ChangeNotifier
 
   OpFolderWatcher? _watcher;
 
+  // ── Is sync actually working? ────────────────────────────────────────
+  //
+  // Reported twice, and both times unanswerable from outside: "it seems like
+  // that change doesnt really ever get reflected on the other machine". The
+  // watcher either fires or it does not, the pull either finds ops or it does
+  // not, and NONE of that was visible — so the only available diagnosis was
+  // "press the button and see". These three fields turn that into a readout.
+
+  /// When the watcher (or its poll) last decided something had changed.
+  DateTime? lastForeignSignalAt;
+
+  /// When a pull last completed, and what it found.
+  DateTime? lastPullAt;
+
+  /// Whether the folder watcher is armed for the open notebook.
+  bool get watchingForChanges => _watcher?.isWatching ?? false;
+
+  /// Why it is not armed, in words, or null when it is.
+  ///
+  /// Each of these is a real reason it has been off in practice, and none of
+  /// them said anything to the user.
+  String? get notWatchingBecause {
+    if (watchingForChanges) return null;
+    if (!syncLogEnabled) return 'the operation log is disabled in this build';
+    if (!autoSync) return 'automatic pulling is switched off, below';
+    if (notebookId == null) return 'no notebook is open';
+    final store = _bareLog(notebookId!);
+    if (store == null) return 'this notebook has no sync log yet';
+    if (!store.opsDir.existsSync()) {
+      return 'this notebook has no ops folder yet — it appears on the first '
+          'save';
+    }
+    return 'the folder could not be watched';
+  }
+
   void _startWatching() {
     _stopWatching();
     if (!autoSync || notebookId == null || !syncLogEnabled) return;
@@ -1612,11 +1647,16 @@ class AppState extends ChangeNotifier
       opsDir: store.opsDir,
       ownDevice: localDeviceId(),
       onForeignChange: () {
+        lastForeignSignalAt = DateTime.now();
+        debugPrint('[openote/sync] a foreign log changed — pulling');
         // Fire-and-forget: a failed pull must not take down the watcher, and
         // the next change (or the manual button) retries anyway.
-        syncPull(notebookId!).catchError((Object e) {
+        syncPull(notebookId!).then((n) {
+          lastPullAt = DateTime.now();
+          debugPrint('[openote/sync] auto-pull folded $n op(s)');
+          notifyListeners();
+        }).catchError((Object e) {
           debugPrint('[openote/sync] auto-pull failed: $e');
-          return 0;
         });
       },
     )..start();
@@ -5082,6 +5122,15 @@ class AppState extends ChangeNotifier
     // status bar claiming "Saved" while the change was never persisted.
     final id = pageId!, nb = notebookId!;
     try {
+      // Warm the recorder BEFORE anything that would open it synchronously.
+      //
+      // Both the ink persist below (through `importBlob`) and the recording at
+      // the end reach for `_recorderFor`, which replays the whole operation log
+      // on the calling thread when none is installed — 1,936 ms on a real
+      // 64.6 MB log. Getting it here, off-thread, means neither of them ever
+      // triggers that. Null when the log is disabled or unavailable, which is
+      // exactly what those call sites already handle.
+      final rec = await warmRecorder(nb);
       // **Ink becomes bytes here, once, for both destinations.**
       //
       // The container and the op log must agree, and they only agree if they
@@ -5110,7 +5159,21 @@ class AppState extends ChangeNotifier
       //
       // The recorder diffs against its replayed state, so an autosave that
       // changed one block appends one op, not the whole page.
-      _recorderFor(nb)?.page(id, toSave, pageProps);
+      // **Awaited, not `_recorderFor`.** That opens the recorder
+      // SYNCHRONOUSLY when none is installed yet, which means reading and
+      // JSON-decoding the whole operation log on the calling thread — measured
+      // at **1,936 ms** on a real 64.6 MB log, paid by the first save after
+      // launch. Since a page is marked dirty simply by being opened (the
+      // title-band repair), that first save is usually the first page switch,
+      // and it froze the window for two seconds for no reason the user could
+      // see.
+      //
+      // `warmRecorder` does the same replay in a background isolate and hands
+      // the result over, so the wait is off the UI thread. It is safe to await
+      // here specifically because the container write above has already
+      // succeeded — the log is a shadow of it, and recording a moment later
+      // changes nothing about what is durable.
+      rec?.page(id, toSave, pageProps);
       // Throttled inside; a mirror is a safety net, not a live replica.
       unawaited(runMirrors(nb));
     } catch (e) {

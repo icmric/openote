@@ -34,6 +34,20 @@ Future<void> showSyncDialog(BuildContext context, AppState app) async {
   );
 }
 
+/// "3s ago", for the sync readout. [absent] when there is no time yet.
+String _ago(DateTime? t, String absent, String label) {
+  if (t == null) return absent;
+  final s = DateTime.now().difference(t).inSeconds;
+  final when = s < 2
+      ? 'just now'
+      : s < 60
+          ? '${s}s ago'
+          : s < 3600
+              ? '${s ~/ 60} min ago'
+              : '${s ~/ 3600} h ago';
+  return '$label $when.';
+}
+
 /// The foldable halves of the dialog.
 enum _Pane { git, mirrors, storage }
 
@@ -335,6 +349,41 @@ class _SyncDialogState extends State<_SyncDialog> {
                 subtitle: const Text(
                     "Watches for other devices' changes and folds them in.",
                     style: TextStyle(fontSize: 11)),
+              ),
+              // **Say whether it is actually working.**
+              //
+              // Reported twice: "it seems like that change doesnt really ever
+              // get reflected on the other machine". Whether the watcher was
+              // armed, whether anything had arrived, and whether a pull had
+              // run were all invisible — so the only way to diagnose it was to
+              // press the button and guess. A switch that claims to watch
+              // should be able to say that it is.
+              Padding(
+                padding: const EdgeInsets.only(left: 2, bottom: 4),
+                child: Row(children: [
+                  Icon(
+                      app.watchingForChanges
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                      size: 14,
+                      color: app.watchingForChanges
+                          ? OnoteColors.success
+                          : OnoteColors.danger),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      app.watchingForChanges
+                          ? 'Watching this notebook. '
+                              '${_ago(app.lastForeignSignalAt, 'Nothing has arrived yet.', 'Last change seen')}'
+                              '${app.lastPullAt == null ? '' : ' ${_ago(app.lastPullAt, '', 'Last pull')} (${app.lastSyncPull} changes).'}'
+                          : 'NOT watching — ${app.notWatchingBecause}.',
+                      style: TextStyle(
+                          fontSize: 11,
+                          height: 1.35,
+                          color: context.surfaces.textSecondary),
+                    ),
+                  ),
+                ]),
               ),
               const SizedBox(height: 6),
               // The old version of this ended "Openote never talks to a
