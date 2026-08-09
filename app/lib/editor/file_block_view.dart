@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -6,10 +7,12 @@ import 'package:path/path.dart' as p;
 
 import '../core/platform_open.dart';
 import '../export/md_common.dart' show safeFilename;
+import '../media/pdf_pages.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
+import '../ui/pdf_viewer_dialog.dart';
 import 'video_block_view.dart';
 
 /// File attachment block (MEDIA-2): the file lives in the notebook's
@@ -53,6 +56,15 @@ class FileBlockView extends StatelessWidget {
     }
     final url = (block.content['url'] as String?)?.trim();
     if (url != null && url.isNotEmpty) return _linkCard(context, url);
+    // A PDF card: the deck behind a click, with a thumbnail so the page
+    // reads as holding the document rather than a paperclip. Keyed on the
+    // mime, so a plain .pdf attachment dropped before this existed upgrades
+    // itself the next time it renders. An older build shows it as its
+    // ordinary attachment card — same blob, both buttons still work.
+    final blob = block.content['blob'] as String?;
+    if (blob != null && block.content['mime'] == 'application/pdf') {
+      return _pdfCard(context, blob);
+    }
     final name = block.content['name'] as String? ?? 'file';
     final size = (block.content['size'] as num?)?.toInt() ?? 0;
     return Padding(
@@ -90,6 +102,78 @@ class FileBlockView extends StatelessWidget {
             visualDensity: VisualDensity.compact,
             tooltip: 'Save a copy…',
             onPressed: () => _saveCopy(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The whole document behind a click: first page as the thumbnail, opened
+  /// in the popup viewer where the text is selectable. "Embed my lectures
+  /// into the page to be able to quickly reference in the future."
+  Widget _pdfCard(BuildContext context, String blob) {
+    final name = (block.content['name'] as String?)?.trim();
+    final pages = (block.content['pages'] as num?)?.toInt();
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: () => showPdfViewerDialog(context, app, hash: blob, title: name),
+      borderRadius: BorderRadius.circular(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+            child: FutureBuilder<Uint8List?>(
+              future: PdfPages.pageImage(app, blob, 0),
+              builder: (context, snap) => snap.data == null
+                  ? Container(
+                      height: 120,
+                      color: OnoteColors.paper100,
+                      child: const Center(
+                        child: Icon(Icons.picture_as_pdf_outlined,
+                            size: 32, color: OnoteColors.graphite400),
+                      ),
+                    )
+                  : Image.memory(snap.data!,
+                      height: 160,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.topCenter,
+                      gaplessPlayback: true),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+            child: Row(children: [
+              Icon(Icons.picture_as_pdf_outlined,
+                  size: 18, color: scheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(name == null || name.isEmpty ? 'PDF' : name,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w500)),
+                    Text(
+                        pages == null
+                            ? 'Open — text is selectable'
+                            : '$pages page${pages == 1 ? '' : 's'} — open to '
+                                'read and copy',
+                        style: const TextStyle(
+                            fontSize: 11, color: OnoteColors.graphite400)),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.download_outlined, size: 16),
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Save a copy…',
+                onPressed: () => _saveCopy(context),
+              ),
+            ]),
           ),
         ],
       ),

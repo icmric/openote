@@ -8,28 +8,18 @@
 > Removed as completed so far: page format, password protection, the
 > storage/size overhaul, templates, git/GitHub sync with join-by-link, page
 > linking + live page windows, finger-drag panning, boxes stopping at the
-> screen edge, box background colour + transparency, and CSV/TSV import
-> into tables (drop a file on the page, or right-click ▸ Table from CSV).
+> screen edge, box background colour + transparency, CSV/TSV import into
+> tables, **PDF as a real PDF** (stored once, pages rendered on demand, text
+> selectable/copyable in the popup viewer — right-click a slide ▸ Open the
+> PDF, or import "As a card" for the thumbnail-that-opens flow), and
+> **inking** (pen proximity switches to the pen tool; the pen's tail and its
+> barrel button erase — arbitrary per-button OS mappings never reach a
+> cross-platform app, so barrel = erase is the half that exists).
 
-PDF Import
-    We currently can import a PDF which is great, it locks in place which is what i want too. However it seems to import them as just a static image rather than the actual PDF. This is only important since id like to be able to highlight and copy text from within it, which isnt currently possible.
-    → Planned as storage wave 1c: store the PDF once and render pages on
-      demand. Fixes this AND the thumbnail ask below AND the biggest single
-      source of disk bloat, which is why it is next.
-      See docs/planning/v0.10-responsiveness-and-storage.md §1.3.
-
-PDF/PPTX Thumbnail
-    Id like to be able to import a file into my notebook, have a little thumbnail appear in my page with everything, but not have the whole thing always open
-    I want to then be able to click it and open it all in a popup window or a side window. Means i can embed my lectures into the page to be able to quickly reference in the future and not have to flick between the notebook and browser
-    → Same plan as PDF Import above — the stored-once PDF is what a
-      thumbnail card and a popup viewer both render from.
-
-Inking
-    Works, although id like it to auto detect when a pen is in proximity of the page and always assume to use it for inking rather than selecting (unless the user specifically selects another option)
-    Pre mapped buttons on the pen also not registering, i have 2 buttons on my pen (many have more or less, or slightly different styles) but the idea is the same, pressing the button is configured in the os to do something (i.e. switch to eraser or whatever), this should be implemented
-    → Note: what a pen button reports is platform- and driver-dependent;
-      Flutter surfaces a stylus "barrel button" flag but not arbitrary OS
-      mappings, so the second half needs a capability check per platform.
+PPTX Thumbnail
+    (The PDF half of this shipped as the card import.) PPTX has no renderer
+    here — a .pptx still lands as a plain attachment. Rendering it needs
+    either a converter on import or exporting to PDF first.
 
 Tables
     Excel like spreadsheet or SQL like table

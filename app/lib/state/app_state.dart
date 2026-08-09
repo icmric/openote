@@ -3167,6 +3167,21 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Bringing a pen NEAR the page switches to inking (PLANNING.md: "auto
+  /// detect when a pen is in proximity of the page and always assume to use
+  /// it for inking rather than selecting"). Only ever switches FROM the
+  /// select tool, and once per approach of the pen — so choosing Select (or
+  /// anything else) while the pen hovers sticks until the pen leaves and
+  /// comes back, which is the "unless the user specifically selects another
+  /// option" half of the ask.
+  bool penProximitySwitch = true;
+
+  void setPenProximitySwitch(bool v) {
+    penProximitySwitch = v;
+    _repo.setSetting('penProximity', v);
+    notifyListeners();
+  }
+
   /// True when the selection is ink and can therefore be recoloured (INK-7).
   bool get hasInkSelection =>
       blocks.any((b) => selectedIds.contains(b.id) && b.type == BlockType.ink);
@@ -3736,6 +3751,8 @@ class AppState extends ChangeNotifier
     if (td != null) {
       touchDrawing = TouchDrawing.values.asNameMap()[td] ?? touchDrawing;
     }
+    final pp = _repo.getSetting('penProximity');
+    if (pp is bool) penProximitySwitch = pp;
     final cc = _repo.getSetting('customColors');
     if (cc is List) customColors.addAll(cc.cast<String>());
     final vm = _repo.getSetting('viewMemory');

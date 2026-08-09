@@ -7,6 +7,7 @@ import '../state/app_state.dart';
 import '../theme/tokens.dart';
 import 'color_picker.dart';
 import 'insert_portal_dialog.dart';
+import 'pdf_viewer_dialog.dart';
 
 /// Right-click menus (style guide: most actions within ≤2 clicks).
 
@@ -63,6 +64,10 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       if (b.content['bg'] != null)
         _item('bg-clear', Icons.format_color_reset_outlined,
             'Remove background'),
+      // A slide is a page of a stored PDF; the viewer is where its text is
+      // selectable, which the raster on the canvas can never be.
+      if (b.content['pdf'] is String)
+        _item('open-pdf', Icons.picture_as_pdf_outlined, 'Open the PDF…'),
       const PopupMenuDivider(),
       _item('front', Icons.flip_to_front, 'Bring to front'),
       _item('back', Icons.flip_to_back, 'Send to back'),
@@ -95,6 +100,12 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       app.pushUndo();
       b.content.remove('bg');
       app.updateBlock(b);
+    case 'open-pdf':
+      if (context.mounted) {
+        await showPdfViewerDialog(context, app,
+            hash: b.content['pdf'] as String,
+            initialPage: (b.content['page'] as num?)?.toInt() ?? 0);
+      }
     case 'copy':
       app.copySelectedBlocks();
     case 'cut':

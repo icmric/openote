@@ -219,13 +219,21 @@ void _rebaseTags(Block b, {required int fromLine, required int by}) {
 /// Insert a non-image file as an attachment block.
 Block insertFileBytes(
     AppState app, Uint8List bytes, String name, Offset at) {
-  final hash = app.addBlob(bytes, mimeForExtension(name));
+  final mime = mimeForExtension(name);
+  final hash = app.addBlob(bytes, mime);
   final b = app.addBlock(Block(
     type: BlockType.file,
     x: at.dx - 110,
     y: at.dy - 24,
-    w: 220,
-    content: {'blob': 'sha256:$hash', 'name': name},
+    // A PDF renders as a thumbnail card (FileBlockView keys on the mime), so
+    // it gets card width; anything else stays a compact attachment chip.
+    w: mime == 'application/pdf' ? 300 : 220,
+    content: {
+      'blob': 'sha256:$hash',
+      'name': name,
+      'mime': mime,
+      'size': bytes.length,
+    },
   ));
   app.select(b.id);
   return b;

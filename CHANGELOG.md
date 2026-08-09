@@ -4,6 +4,34 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — a PDF is a PDF now
+
+- **Importing a PDF stores the file once and renders pages on demand.** The
+  old importer rasterised every page into stored images — a 60-slide deck
+  became hundreds of megabytes standing in for a 4 MB file. Now the notebook
+  keeps the PDF itself (it syncs like any picture does) and slides on the
+  page are drawn from it as they come into view, pixel-identical to before.
+  Imports finish in seconds instead of minutes, and annotating slides works
+  exactly as it did.
+- **Right-click any slide ▸ "Open the PDF…"** for the popup viewer, where
+  the text is real: drag to select, Ctrl+C to copy — the "highlight and copy
+  text from within it" ask, answered where the text actually lives.
+- **Import "As a card"** (the arrow next to PDF slides, or just drop a .pdf
+  onto the page): one small thumbnail card instead of a spread of slides —
+  click it to open the whole document in the viewer. "Embed my lectures into
+  the page … and not have to flick between the notebook and browser."
+
+### Added — the pen knows what it is for
+
+- **Bringing the pen near the page switches to inking.** On its approach the
+  tool flips from Select to Pen — no toolbar trip. Picking another tool
+  while the pen hovers sticks until the pen leaves and returns, and a toggle
+  in the Draw tab turns the whole behaviour off.
+- **The pen's tail erases, and so does its barrel button** held while
+  drawing. (What a pen button reports is up to the OS and driver — the
+  barrel signal is the one that reliably reaches applications, so it maps to
+  the eraser, which is what it means nearly everywhere.)
+
 ## [0.6.2] — 2026-08-09
 
 ### Fixed — boxes under the mouse

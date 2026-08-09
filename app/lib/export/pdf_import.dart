@@ -5,37 +5,34 @@
 ///
 /// This is the workflow GoodNotes and Notability built businesses on, and it
 /// is Apple-locked and paid there. OneNote's equivalent ("Insert → PDF
-/// printout") rasterises pages into images and loses the text. It composes
-/// almost entirely from what Openote already has: each PDF page becomes an
-/// Openote page carrying one **locked background image block**, ink rides on
-/// top exactly as it always does, and the extracted text feeds the existing
-/// notebook-wide search.
+/// printout") rasterises pages into images and loses the text.
 ///
-/// Two deliberate choices:
+/// **The PDF is stored ONCE, and pages are references** (storage wave 1c).
+/// The importer used to rasterise every page to a 2× PNG blob: a 60-slide
+/// deck became hundreds of megabytes of pixels standing in for a 4 MB file.
+/// Now the source PDF goes into the blob store once — it syncs exactly like
+/// an image does — and each slide block carries `{pdf: sha256:…, page: i}`,
+/// rendered on demand by `PdfPages` at the same scale, so it looks identical
+/// and costs almost nothing at rest. It also means the PDF's own text is
+/// still there for the viewer's selection and copy.
 ///
-/// - **Pages are rendered to images, not re-typeset.** A slide's layout is the
-///   information; re-flowing it into our block model would destroy the thing
-///   the student is annotating. The text layer rides alongside for search
-///   rather than replacing the picture.
+/// Two deliberate choices survive from the raster era:
+///
+/// - **Slides keep their layout.** A slide's layout is the information;
+///   re-flowing it into our block model would destroy the thing the student
+///   is annotating. The text layer rides alongside for search.
 /// - **The background is locked.** An annotation layer is only usable if the
-///   thing underneath cannot be nudged, and a 2 MB image that moves when you
-///   miss with the pen is worse than no import at all.
+///   thing underneath cannot be nudged.
 library;
 
-import 'dart:async';
-import 'dart:ui' as ui;
+import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import '../model/models.dart';
 import '../state/app_state.dart';
-
-/// Render scale. 2× keeps slide text crisp at 100% zoom and readable when
-/// zoomed in, without the memory cost of 3× on a 60-slide deck.
-const double kPdfRenderScale = 2.0;
 
 /// Page width we lay imported slides out at, matching the default page width
 /// so a slide fills the page the way it does in a PDF reader.
@@ -56,6 +53,12 @@ enum PdfPlacement {
   /// One Openote page per PDF page, in a new section named after the file.
   /// Better for a 200-slide unit you want in the navigator as separate pages.
   pagePerSlide,
+
+  /// One small card with a thumbnail — the whole deck behind a click, not
+  /// spread over the page. "Have a little thumbnail appear in my page, but
+  /// not have the whole thing always open." Clicking the card opens the
+  /// viewer, where the text is selectable.
+  card,
 }
 
 /// Result of an import, for the caller's summary.
@@ -75,7 +78,7 @@ Future<PdfImportResult?> importPdfAsPages(
       placement: placement, onProgress: onProgress);
 }
 
-/// Import [path], either onto the current page or as one page per slide.
+/// Import [path] — onto the current page, as one page per slide, or as a card.
 ///
 /// Exposed separately from the picker so it can be driven by a drop, by a
 /// test, or by a future "attach the reading list" flow.
@@ -88,30 +91,38 @@ Future<PdfImportResult> importPdfFile(
 }) async {
   final nb = app.notebookId;
   if (nb == null) return (pages: 0, sectionId: null, firstPageId: null);
-  if (placement == PdfPlacement.currentPage && app.pageId == null) {
-    // No page open — make one and stack onto it.
+  if (placement != PdfPlacement.pagePerSlide && app.pageId == null) {
+    // No page open — make one and put it there.
     //
     // This used to silently switch to one-page-per-slide, which is a different
     // feature, not a fallback: the deck arrived scattered across dozens of
-    // navigator entries and nothing said why. Opening the app on a section
-    // rather than a page is an ordinary thing to do, so the "wrong" mode was
-    // reachable without the user choosing it. Honour the mode that was asked
-    // for; only the arrow menu switches modes now.
+    // navigator entries and nothing said why. Honour the mode that was asked
+    // for; only the arrow menu switches modes.
     await app.addPage();
     if (app.pageId == null) {
-      // Still nowhere to put it (no section at all) — say so rather than
-      // quietly doing something else.
       return (pages: 0, sectionId: null, firstPageId: null);
     }
   }
 
-  final doc = await PdfDocument.openFile(path);
+  // The source file, once, into the content-addressed store. Everything else
+  // in this import is a reference to this hash.
+  final bytes = await File(path).readAsBytes();
+  final doc = await PdfDocument.openData(bytes, sourceName: displayName);
   try {
-    if (placement == PdfPlacement.currentPage) {
-      return await _importOntoCurrentPage(app, nb, doc, onProgress);
-    }
+    final pdfHash = placement == PdfPlacement.pagePerSlide
+        ? app.importBlob(nb, bytes, 'application/pdf')
+        : app.addBlob(bytes, 'application/pdf');
     final title =
         displayName.replaceAll(RegExp(r'\.pdf$', caseSensitive: false), '');
+
+    if (placement == PdfPlacement.card) {
+      return _importAsCard(app, doc, pdfHash,
+          title.isEmpty ? displayName : title);
+    }
+    if (placement == PdfPlacement.currentPage) {
+      return await _importOntoCurrentPage(app, doc, pdfHash, onProgress);
+    }
+
     // A section per PDF: a 60-slide deck dumped into an existing section
     // would bury everything already there.
     final section = app.importNode(
@@ -127,34 +138,16 @@ Future<PdfImportResult> importPdfFile(
     final total = doc.pages.length;
     var pos = nowMs();
 
-    // Rendered in CHUNKS, then written in one transaction per chunk.
-    //
-    // Rendering is async (pdfium off the UI thread) and a SQLite transaction
-    // must not span awaits, so the whole import cannot be one transaction.
-    // Per-page commits would be slow on a 200-slide deck; holding every page's
-    // PNG to commit once would be hundreds of megabytes. A chunk is the
-    // compromise, and it also bounds how much is lost if the import is
-    // interrupted — earlier chunks are already committed pages.
-    const chunkSize = 8;
+    // Chunked transactions, as before — but the per-page work is now only
+    // TEXT EXTRACTION, so a 200-slide import that used to render for minutes
+    // finishes in seconds.
+    const chunkSize = 16;
     for (var start = 0; start < total; start += chunkSize) {
       final end = (start + chunkSize).clamp(0, total);
-      final batch = <({_Rendered img, String? text, int index})>[];
+      final batch = <({PdfPage page, String? text, int index})>[];
       for (var i = start; i < end; i++) {
-        final page = doc.pages[i];
-        final rendered = await _renderPageToPng(page);
-        if (rendered == null) continue;
-        // Text layer: hidden, but present in the page JSON, so the existing
-        // brute-force notebook search finds slides by their words without a
-        // second index to keep in step.
-        String? text;
-        try {
-          text = (await page.loadText())?.fullText.trim();
-        } catch (_) {
-          text = null; // a scanned deck has no text layer; that's fine
-        }
-        batch.add((img: rendered, text: text, index: i));
+        batch.add((page: doc.pages[i], text: await _textOf(doc.pages[i]), index: i));
       }
-      if (batch.isEmpty) continue;
 
       app.importBatch(nb, () {
         for (final item in batch) {
@@ -168,31 +161,15 @@ Future<PdfImportResult> importPdfFile(
               ));
           firstPageId ??= node.id;
 
-          final hash = app.importBlob(nb, item.img.png, 'image/png');
-          // Fit the slide to the page width, preserving aspect.
           const w = kPdfPageWidth;
-          final h = item.img.height / item.img.width * w;
-
+          final h = item.page.height / item.page.width * w;
           app.importPage(
             nb,
             node.id,
             [
-              Block(
-                type: BlockType.image,
-                x: 0,
-                y: 0,
-                w: w,
-                content: {
-                  'blob': 'sha256:$hash',
-                  'mime': 'image/png',
-                  // The two properties that make this an annotation surface
-                  // rather than a picture someone dropped on the page.
-                  'locked': true,
-                  'background': true,
-                  if (item.text != null && item.text!.isNotEmpty)
-                    'sourceText': item.text,
-                },
-              )..h = h,
+              _slideBlock(pdfHash, item.page, item.index, item.text,
+                  x: 0, y: 0, w: w, background: true)
+                ..h = h
             ],
             PageProps(pageWidth: w),
           );
@@ -213,21 +190,83 @@ Future<PdfImportResult> importPdfFile(
   }
 }
 
+/// One reference block for one slide.
+Block _slideBlock(
+  String pdfHash,
+  PdfPage page,
+  int index,
+  String? text, {
+  required double x,
+  required double y,
+  required double w,
+  bool background = false,
+}) =>
+    Block(
+      type: BlockType.image,
+      x: x,
+      y: y,
+      w: w,
+      content: {
+        'pdf': 'sha256:$pdfHash',
+        'page': index,
+        'mime': 'application/pdf',
+        // The PDF's own geometry, so aspect and proportional resize never
+        // need the pixels.
+        'naturalW': page.width,
+        'naturalH': page.height,
+        // The two properties that make this an annotation surface rather
+        // than a picture someone dropped on the page.
+        'locked': true,
+        if (background) 'background': true,
+        if (text != null && text.isNotEmpty) 'sourceText': text,
+      },
+    );
+
+Future<String?> _textOf(PdfPage page) async {
+  try {
+    // Hidden, but present in the page JSON, so the existing brute-force
+    // notebook search finds slides by their words.
+    return (await page.loadText())?.fullText.trim();
+  } catch (_) {
+    return null; // a scanned deck has no text layer; that's fine
+  }
+}
+
+/// The card: one block, the deck behind a click.
+PdfImportResult _importAsCard(
+    AppState app, PdfDocument doc, String pdfHash, String name) {
+  final anchor = _insertionAnchor(app);
+  app.pushUndo();
+  final b = app.addBlock(
+    Block(
+      type: BlockType.file,
+      x: AppState.pageLeftMargin,
+      y: anchor.top,
+      w: 300,
+      content: {
+        'kind': 'pdf',
+        'blob': 'sha256:$pdfHash',
+        'name': name,
+        'mime': 'application/pdf',
+        'pages': doc.pages.length,
+      },
+    ),
+    recordUndo: false,
+  );
+  app.select(b.id);
+  return (pages: doc.pages.length, sectionId: null, firstPageId: app.pageId);
+}
+
 /// Stack every slide down the page that is currently open, below whatever is
 /// already on it.
 ///
-/// Deliberately incremental rather than one transaction: each slide is added
-/// to the LIVE page as it finishes rendering, so a 60-slide deck fills in
-/// visibly instead of the window sitting still and then jumping. That also
-/// means the normal save path handles it — no separate import transaction, and
-/// the op log records the blocks the same way it records any other edit.
-///
 /// One `pushUndo` for the whole import, so Ctrl+Z takes the deck back out in
-/// one go rather than sixty times.
+/// one go rather than sixty times. With rendering gone from the import path,
+/// the whole deck lands in one visible step.
 Future<PdfImportResult> _importOntoCurrentPage(
   AppState app,
-  String nb,
   PdfDocument doc,
+  String pdfHash,
   void Function(int done, int total)? onProgress,
 ) async {
   final total = doc.pages.length;
@@ -242,38 +281,17 @@ Future<PdfImportResult> _importOntoCurrentPage(
   final top = y;
   // Everything that sat below the insertion point moves down as slides land,
   // so inserting at the caret opens a gap instead of burying what follows.
-  // Empty when appending at the end, which is the common case.
   final displaced = anchor.displaced;
   Block? first;
   var made = 0;
   for (var i = 0; i < total; i++) {
-    final rendered = await _renderPageToPng(doc.pages[i]);
-    if (rendered == null) continue;
-    String? text;
-    try {
-      text = (await doc.pages[i].loadText())?.fullText.trim();
-    } catch (_) {
-      text = null; // a scanned deck has no text layer; that's fine
-    }
-    final hash = app.addBlob(rendered.png, 'image/png');
-    final h = rendered.height / rendered.width * width;
+    final page = doc.pages[i];
+    final text = await _textOf(page);
+    final h = page.height / page.width * width;
     final block = app.addBlock(
-      Block(
-        type: BlockType.image,
-        x: AppState.pageLeftMargin,
-        y: y,
-        w: width,
-        content: {
-          'blob': 'sha256:$hash',
-          'mime': 'image/png',
-          // Locked, because the point is to write ON it: a 2 MB image that
-          // slides sideways when you miss with the pen is worse than no import
-          // at all. The move bar and handles are gated on the same flag, so a
-          // locked slide has no chrome either.
-          'locked': true,
-          if (text != null && text.isNotEmpty) 'sourceText': text,
-        },
-      )..h = h,
+      _slideBlock(pdfHash, page, i, text,
+          x: AppState.pageLeftMargin, y: y, w: width)
+        ..h = h,
       recordUndo: false,
     );
     first ??= block;
@@ -281,26 +299,18 @@ Future<PdfImportResult> _importOntoCurrentPage(
     // the next slide's y from the requested position would drift.
     final advance = block.y + h + kPdfStackGap - y;
     y = block.y + h + kPdfStackGap;
-    // Open the gap as we go, so a slide inserted at the caret pushes the notes
-    // below it down rather than landing on top of them. Doing it per slide
-    // (rather than once at the end from a total height) keeps the page
-    // self-consistent at every yield, which matters because the canvas paints
-    // between iterations.
     for (final d in displaced) {
       d.y += advance;
     }
     made++;
     onProgress?.call(made, total);
-    // A real delay — it keeps the window painting (the slides appear one by
-    // one), and unlike Duration.zero it lets the message loop go idle, which
-    // on Windows is the only time hardware input is dispatched.
+    // Text extraction is quick, but the loop still yields so a 200-slide
+    // deck never freezes input — and a REAL delay, for the same Windows
+    // message-loop reason as always.
     await Future<void>.delayed(const Duration(milliseconds: 2));
   }
-  // Bring the result into view. The slides land BELOW everything already on
-  // the page, which on a page with any content at all means off screen — so
-  // without this the app reports "imported 40 slides" while nothing visibly
-  // changes, and the user has to go looking for what they were just told
-  // about.
+  // Bring the result into view — the slides land below everything already on
+  // the page, which on a page with content means off screen.
   if (first != null) {
     app.select(first.id);
     app.canvas.centerOn(Offset(width / 2 + AppState.pageLeftMargin, top + 200));
@@ -314,9 +324,7 @@ Future<PdfImportResult> _importOntoCurrentPage(
 /// **At the cursor if there is one, below everything otherwise.** A student
 /// importing a deck mid-lecture wants it where they are working, not appended
 /// a screen and a half below their last note; a student importing into an empty
-/// page wants it at the top. Anchoring on the block being edited (or, failing
-/// that, the selected one) reads as "insert here" without needing a separate
-/// insertion-point UI.
+/// page wants it at the top.
 ///
 /// [displaced] is every block strictly below the anchor, which the caller
 /// shifts down as slides land. Landing on top of somebody's notes is not a
@@ -335,9 +343,7 @@ Future<PdfImportResult> _importOntoCurrentPage(
     return (
       top: top,
       // Strictly below the anchor block, by its own top edge — a block that
-      // merely overlaps the gap stays put, because moving something that
-      // starts above the insertion point would look like the import shuffled
-      // unrelated notes.
+      // merely overlaps the gap stays put.
       displaced: [
         for (final b in app.blocks)
           if (b.id != caret.id && b.y >= caret.y + 1) b
@@ -345,12 +351,9 @@ Future<PdfImportResult> _importOntoCurrentPage(
     );
   }
 
-  // Nothing focused: append below everything.
-  //
-  // Belt and braces, because `contentExtent` can under-report — a block
-  // scrolled out of view is culled, so it never measured itself and only an
-  // estimate is available — and an import is exactly when most of the page is
-  // off screen. Take the lower of the two answers.
+  // Nothing focused: append below everything. Belt and braces, because
+  // `contentExtent` can under-report for culled, never-measured blocks — and
+  // an import is exactly when most of the page is off screen.
   var y = app.contentExtent().bottom;
   for (final b in app.blocks) {
     final bottom = bottomOf(b);
@@ -366,55 +369,3 @@ Future<PdfImportResult> _importOntoCurrentPage(
 @visibleForTesting
 ({double top, List<Block> displaced}) debugInsertionAnchor(AppState app) =>
     _insertionAnchor(app);
-
-/// A rendered page's PNG bytes and pixel size.
-typedef _Rendered = ({Uint8List png, int width, int height});
-
-Future<_Rendered?> _renderPageToPng(PdfPage page) async {
-  final w = (page.width * kPdfRenderScale).round();
-  final h = (page.height * kPdfRenderScale).round();
-  if (w <= 0 || h <= 0) return null;
-
-  PdfImage? img;
-  try {
-    img = await page.render(
-      fullWidth: w.toDouble(),
-      fullHeight: h.toDouble(),
-      width: w,
-      height: h,
-      // White, not transparent: a slide with a transparent background renders
-      // as invisible text on the page's own colour, and in dark mode that is
-      // black-on-black.
-      backgroundColor: 0xFFFFFFFF,
-    );
-    if (img == null) return null;
-    final png = await _bgraToPng(img.pixels, img.width, img.height);
-    if (png == null) return null;
-    return (png: png, width: img.width, height: img.height);
-  } catch (e) {
-    debugPrint('[openote/pdf] page render failed: $e');
-    return null;
-  } finally {
-    img?.dispose();
-  }
-}
-
-/// pdfium hands back raw BGRA; the blob store holds real image files so that a
-/// third-party tool reading a notebook gets a PNG, not a pixel dump.
-Future<Uint8List?> _bgraToPng(Uint8List bgra, int width, int height) async {
-  final completer = Completer<ui.Image>();
-  ui.decodeImageFromPixels(
-    bgra,
-    width,
-    height,
-    ui.PixelFormat.bgra8888,
-    completer.complete,
-  );
-  final image = await completer.future;
-  try {
-    final data = await image.toByteData(format: ui.ImageByteFormat.png);
-    return data?.buffer.asUint8List();
-  } finally {
-    image.dispose();
-  }
-}

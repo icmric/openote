@@ -152,12 +152,18 @@ class NotebookWriter {
       // maintained count silently deletes someone's content.
       db.execute('DELETE FROM blob_refs WHERE page_id=?', [pageId]);
       for (final b in blocks) {
-        final hash = b.content['blob'];
-        if (hash is String) {
-          db.execute(
-              'INSERT OR IGNORE INTO blob_refs(page_id,hash) '
-              'SELECT ?, hash FROM blobs WHERE hash=?',
-              [pageId, hash.replaceFirst('sha256:', '')]);
+        // `blob` on images/files, `pdf` on on-demand slide references
+        // (storage wave 1c). The second is load-bearing for the future GC:
+        // a page of slides reaches exactly one blob — the source PDF — and
+        // a sweep that cannot see that reference collects the whole deck.
+        for (final key in const ['blob', 'pdf']) {
+          final hash = b.content[key];
+          if (hash is String) {
+            db.execute(
+                'INSERT OR IGNORE INTO blob_refs(page_id,hash) '
+                'SELECT ?, hash FROM blobs WHERE hash=?',
+                [pageId, hash.replaceFirst('sha256:', '')]);
+          }
         }
         // Ink now lives in blobs too, and a page that does not declare its
         // handwriting here is a page whose handwriting a scanning garbage

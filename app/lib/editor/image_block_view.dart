@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../media/pdf_pages.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -27,6 +28,10 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   MemoryImage? _provider;
   String? _hash;
 
+  /// True while an on-demand PDF page render is in flight — the placeholder
+  /// then says "rendering" rather than "missing", which are different facts.
+  bool _rendering = false;
+
   @override
   void initState() {
     super.initState();
@@ -36,10 +41,37 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   @override
   void didUpdateWidget(covariant ImageBlockView old) {
     super.didUpdateWidget(old);
-    if (widget.block.content['blob'] != _hash) _load();
+    final key = widget.block.content['pdf'] ?? widget.block.content['blob'];
+    if (key != _hash) _load();
   }
 
   void _load() {
+    // A slide is a REFERENCE — `{pdf: sha256:…, page: i}` — rendered on
+    // demand (storage wave 1c). The PDF is stored once; the pixels exist
+    // only while something is looking at them.
+    final pdf = widget.block.content['pdf'] as String?;
+    if (pdf != null) {
+      _hash = pdf;
+      final page = (widget.block.content['page'] as num?)?.toInt() ?? 0;
+      final hit = PdfPages.cached(pdf, page);
+      if (hit != null) {
+        _bytes = hit;
+        _provider = MemoryImage(hit);
+        if (mounted) setState(() {});
+        return;
+      }
+      _rendering = true;
+      PdfPages.pageImage(widget.app, pdf, page).then((png) {
+        if (!mounted || widget.block.content['pdf'] != pdf) return;
+        setState(() {
+          _rendering = false;
+          _bytes = png;
+          _provider = png == null ? null : MemoryImage(png);
+        });
+      });
+      if (mounted) setState(() {});
+      return;
+    }
     _hash = widget.block.content['blob'] as String?;
     _bytes = _hash == null ? null : widget.app.blob(_hash!);
     _provider = _bytes == null ? null : MemoryImage(_bytes!);
@@ -60,13 +92,31 @@ class _ImageBlockViewState extends State<ImageBlockView> {
 
   @override
   Widget build(BuildContext context) {
+    if (_provider == null && _rendering) {
+      // The slide's own footprint, so the page does not reflow when the
+      // pixels arrive a frame or two later.
+      return SizedBox(
+        width: widget.block.w,
+        height: widget.block.h,
+        child: const Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
     if (_provider == null) {
-      return const Padding(
-        padding: EdgeInsets.all(12),
+      final isPdf = widget.block.content['pdf'] != null;
+      return Padding(
+        padding: const EdgeInsets.all(12),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.broken_image_outlined, color: OnoteColors.graphite400),
-          SizedBox(width: 8),
-          Text('Missing image', style: TextStyle(color: OnoteColors.graphite400)),
+          Icon(isPdf ? Icons.picture_as_pdf_outlined : Icons.broken_image_outlined,
+              color: OnoteColors.graphite400),
+          const SizedBox(width: 8),
+          Text(isPdf ? 'PDF not here yet — still syncing?' : 'Missing image',
+              style: const TextStyle(color: OnoteColors.graphite400)),
         ]),
       );
     }

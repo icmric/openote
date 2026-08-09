@@ -572,6 +572,25 @@ class _CommandBarState extends State<CommandBar> {
           ),
         ]),
       ),
+      const _Div(),
+      // Pen proximity → pen tool. On by default because it is what a pen
+      // means; the toggle exists for people who use the pen as a pointer.
+      Tooltip(
+        message: 'Bringing the pen near the page switches to inking.\n'
+            'Pick another tool while the pen hovers and it sticks until the\n'
+            'pen leaves and comes back. The pen\'s tail (or its barrel\n'
+            'button, held while drawing) erases.',
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.draw_outlined,
+              size: 16, color: context.surfaces.textSecondary),
+          const SizedBox(width: 2),
+          Switch(
+            value: app.penProximitySwitch,
+            onChanged: app.setPenProximitySwitch,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ]),
+      ),
       const SizedBox(width: 4),
     ]);
   }
@@ -1597,6 +1616,12 @@ class _PdfImportButton extends StatelessWidget {
           onPressed: () => _importPdfWithProgress(context, app,
               placement: PdfPlacement.pagePerSlide),
           child: const Text('One page per slide'),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.branding_watermark_outlined, size: 16),
+          onPressed: () =>
+              _importPdfWithProgress(context, app, placement: PdfPlacement.card),
+          child: const Text('As a card — open in a popup'),
         ),
       ],
     );

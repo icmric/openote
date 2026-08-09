@@ -114,6 +114,34 @@ class _PageCanvasState extends State<PageCanvas> {
     }
   }
 
+  /// Pen proximity → inking. Hover events are how a pen announces itself
+  /// before it touches — Windows Ink and most drivers report the pen floating
+  /// over the digitiser — and OneNote's behaviour on that signal is the one
+  /// people's hands already know: the pen means ink, immediately, no toolbar
+  /// trip. Switches only FROM Select and only on the pen's APPROACH (the
+  /// first stylus signal after the grace window), so picking Select — or any
+  /// tool — while the pen hovers sticks until the pen leaves and comes back.
+  void _stylusProximity(PointerHoverEvent e) {
+    if (e.kind != PointerDeviceKind.stylus &&
+        e.kind != PointerDeviceKind.invertedStylus) {
+      return;
+    }
+    final approaching = !_stylusActive;
+    _lastStylus = DateTime.now();
+    if (approaching && app.penProximitySwitch && app.tool == Tool.select) {
+      app.setTool(Tool.pen);
+    }
+  }
+
+  /// True while the CURRENT ink gesture erases regardless of the selected
+  /// tool: the pen's tail (invertedStylus — that end IS an eraser), or its
+  /// barrel button held while drawing, which is the one signal a pen button
+  /// reliably reaches an application as. The OS maps whatever physical
+  /// button the pen has onto it; arbitrary per-button OS actions never reach
+  /// us, so this is the half of the pen-buttons ask a cross-platform app can
+  /// honour.
+  bool _gestureErase = false;
+
   /// Abandon the stroke in progress without committing it — used when a second
   /// finger lands, turning what looked like a draw into a pinch. Without this
   /// the first finger of every two-finger gesture would leave a stray mark.
@@ -176,8 +204,15 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _inkDown(PointerDownEvent e) {
     app.claimedPointers.remove(e.pointer); // keep the claim set tidy
+    // The pen's own erase signals, per gesture: the tail end, or the barrel
+    // button held at contact. (kPrimaryStylusButton shares its bit with
+    // kSecondaryButton, which is exactly how Windows reports a barrel press —
+    // the kind guard is what keeps a right-click mouse drag from erasing.)
+    _gestureErase = e.kind == PointerDeviceKind.invertedStylus ||
+        ((e.kind == PointerDeviceKind.stylus) &&
+            (e.buttons & kPrimaryStylusButton) != 0);
     final pt = _clampToPagePoint(controller.screenToPage(e.localPosition));
-    if (app.tool == Tool.eraser) {
+    if (app.tool == Tool.eraser || _gestureErase) {
       _eraseAt(pt);
       return;
     }
@@ -200,7 +235,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _inkMove(PointerMoveEvent e) {
-    if (app.tool == Tool.eraser) {
+    if (app.tool == Tool.eraser || _gestureErase) {
       _eraseAt(controller.screenToPage(e.localPosition));
       return;
     }
@@ -226,6 +261,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _inkUp(PointerUpEvent e) {
     _eraseUndoPushed = false;
+    _gestureErase = false;
     final w = _wet;
     if (w == null || w.x.length < 2) {
       setState(() => _wet = null);
@@ -935,6 +971,7 @@ class _PageCanvasState extends State<PageCanvas> {
         },
         onPointerCancel: (e) {
           _touches.remove(e.pointer);
+          _gestureErase = false;
           _cancelWetStroke();
         },
         child: canvas,
@@ -1006,6 +1043,8 @@ class _PageCanvasState extends State<PageCanvas> {
 
     return Listener(
       onPointerSignal: _onScroll,
+      // Hover is how a pen announces its approach; see _stylusProximity.
+      onPointerHover: _stylusProximity,
       onPointerPanZoomStart: (e) => _pzLastScale = 1.0,
       onPointerPanZoomUpdate: (e) {
         if (e.scale != 1.0) {

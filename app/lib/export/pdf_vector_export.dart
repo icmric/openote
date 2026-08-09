@@ -33,6 +33,7 @@ import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../canvas/ink_painter.dart' show colorFromHex;
+import '../media/pdf_pages.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import 'md_common.dart';
@@ -145,8 +146,17 @@ Future<void> _addPageSheets(
 
   // Equations are painted BEFORE the document is laid out: rasterising a
   // widget is asynchronous and the sheet builder below is not. One image per
-  // math block, keyed by block id.
+  // math block, keyed by block id. PDF slides join the same map for the same
+  // reason — an on-demand slide (storage wave 1c) has no stored pixels until
+  // something renders them, and the sheet builder cannot await.
   final maths = await _renderMaths(blocks);
+  for (final b in blocks) {
+    final pdf = b.content['pdf'];
+    if (b.type != BlockType.image || pdf is! String) continue;
+    final png = await PdfPages.pageImage(
+        app, pdf, (b.content['page'] as num?)?.toInt() ?? 0);
+    if (png != null) maths[b.id] = png;
+  }
 
   // Content bounds in page px. The page's own width wins over the content's, so
   // a note narrower than its page still exports at the page size the user set.
@@ -316,7 +326,7 @@ pw.Widget? _blockWidget(AppState app, Block b, double sheetTop,
 
   final child = switch (b.type) {
     BlockType.ink => _inkWidget(b, h),
-    BlockType.image => _imageWidget(app, b, h),
+    BlockType.image => _imageWidget(app, b, h, prerendered: maths[b.id]),
     BlockType.math => _mathWidget(b, maths[b.id]),
     BlockType.text || BlockType.code => _textWidget(app, b),
     BlockType.table => _tableWidget(b),
@@ -661,7 +671,8 @@ pw.Widget? _tableWidget(Block b) {
   );
 }
 
-pw.Widget? _imageWidget(AppState app, Block b, double h) {
+pw.Widget? _imageWidget(AppState app, Block b, double h,
+    {Uint8List? prerendered}) {
   final wPt = b.w / _pxPerPoint;
   final hPt = h / _pxPerPoint;
 
@@ -670,9 +681,12 @@ pw.Widget? _imageWidget(AppState app, Block b, double h) {
   // down — and, since the text layer below is independent of it, must not take
   // the slide's *words* with it either. Losing the picture is bad; losing the
   // picture and silently losing everything written on it is worse.
+  //
+  // [prerendered] is an on-demand PDF slide's pixels, painted in the async
+  // pass above; a stored image still reads its own blob here.
   pw.Widget? image;
   final ref = b.content['blob'] as String?;
-  final bytes = ref == null ? null : app.blob(ref);
+  final bytes = prerendered ?? (ref == null ? null : app.blob(ref));
   if (bytes != null) {
     try {
       image = pw.Image(pw.MemoryImage(bytes),
