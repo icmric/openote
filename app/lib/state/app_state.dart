@@ -1239,33 +1239,61 @@ class AppState extends ChangeNotifier
   // human decision, because the cost of being wrong is somebody's notes and
   // the cost of asking is one click.
 
-  /// Notebooks this session has already looked at, so switching back and forth
-  /// does not re-run anything.
+  /// Notebooks this session has already finished with — completed a pass, or
+  /// found nothing to do — so switching back and forth does not re-run
+  /// anything. A DEFERRAL does not land here: the notebooks most in need of
+  /// tidying are the actively used ones, which are exactly the ones where the
+  /// user is mid-sentence when the timer fires. Marking them done on that
+  /// evidence would disable the feature precisely on its target population.
   final Set<String> _housekept = {};
 
   Timer? _housekeepingTimer;
+  Timer? _housekeepingNoteClear;
+
+  /// The run in flight, so [settleBackgroundWork] can drain it — otherwise its
+  /// late I/O lands charged to whichever test runs next.
+  Future<void>? _housekeepingRun;
 
   /// When [nb] was last tidied, so a notebook with nothing to do is not
   /// examined on every single open.
   static String _housekeepingKey(String nb) => 'tidiedAt:$nb';
 
-  void _scheduleHousekeeping(String nb) {
-    if (_housekept.contains(nb)) return;
+  void _scheduleHousekeeping(String nb,
+      {Duration delay = const Duration(seconds: 20)}) {
+    if (_disposed || _housekept.contains(nb)) return;
     _housekeepingTimer?.cancel();
     // Well after the notebook has finished opening. The open path already
     // costs a replay and a fold; adding a scan to it would make the thing
     // meant to be invisible the slowest part of launching.
-    _housekeepingTimer =
-        Timer(const Duration(seconds: 20), () => _runHousekeeping(nb));
+    _housekeepingTimer = Timer(delay, () {
+      final f = _runHousekeeping(nb);
+      _housekeepingRun = f;
+      unawaited(f.whenComplete(() {
+        if (identical(_housekeepingRun, f)) _housekeepingRun = null;
+      }));
+    });
   }
 
+  /// Try again in a few minutes: the fire moment was busy, not wrong.
+  void _deferHousekeeping(String nb) {
+    if (_disposed || notebookId != nb) return;
+    _scheduleHousekeeping(nb, delay: const Duration(minutes: 3));
+  }
+
+  @visibleForTesting
+  Future<void> runHousekeepingForTest(String nb) => _runHousekeeping(nb);
+
   Future<void> _runHousekeeping(String nb) async {
-    if (_disposed || notebookId != nb || !_housekept.add(nb)) return;
-    // Not while there are unsaved edits, and not while a sync is mid-flight:
-    // the conversion rewrites pages, and a pull rewrites pages from the log.
-    // Those two racing is exactly the bug that made a manual conversion
-    // silently revert.
-    if (_dirty || _pulling) return;
+    if (_disposed || notebookId != nb || _housekept.contains(nb)) return;
+    // Not while there are unsaved edits, not while a sync is mid-flight, not
+    // while an import owns the log: the conversion rewrites pages, and a pull
+    // rewrites pages from the log. Those two racing is exactly the bug that
+    // made a manual conversion silently revert. Busy is a DEFERRAL — come
+    // back when the typing stops — never a verdict on the notebook.
+    if (_dirty || _pulling || _importingNotebooks.contains(nb)) {
+      _deferHousekeeping(nb);
+      return;
+    }
 
     try {
       final last = (_repo.getSetting(_housekeepingKey(nb)) as num?)?.toInt();
@@ -1274,12 +1302,14 @@ class AppState extends ChangeNotifier
       // check itself is one indexed LIKE query, but it is not free on a big
       // container and there is no reason to pay it every launch.
       if (last != null && now - last < const Duration(days: 7).inMilliseconds) {
+        _housekept.add(nb);
         return;
       }
 
       final pages = inlineInkPageCount(nb);
       if (pages == 0) {
         _repo.setSetting(_housekeepingKey(nb), now);
+        _housekept.add(nb);
         return;
       }
 
@@ -1290,25 +1320,44 @@ class AppState extends ChangeNotifier
       housekeepingNote = 'Making handwriting smaller on $pages pages…';
       notifyListeners();
 
-      final r = await convertInkToBinary(nb);
+      final r = await convertInkToBinary(nb, unattended: true);
       if (_disposed) return;
+      if (r.deferred) {
+        // It stepped aside — the user typed, or another device's changes were
+        // still folding. What it converted is durable; the clock is NOT
+        // stamped and the session slot is NOT consumed, so the rest happens
+        // once things go quiet.
+        housekeepingNote = null;
+        notifyListeners();
+        _deferHousekeeping(nb);
+        return;
+      }
+      _housekept.add(nb);
       _repo.setSetting(_housekeepingKey(nb), nowMs());
-      housekeepingNote = r.converted > 0
+      // Only announced on the notebook it happened to: the note is app-global,
+      // and a user who switched notebooks mid-run should not read another
+      // notebook's result under this one's pages.
+      housekeepingNote = r.converted > 0 && notebookId == nb
           ? 'Handwriting made smaller on ${r.converted} pages.'
           : null;
       notifyListeners();
       // The note is information, not a task. It clears itself.
       if (housekeepingNote != null) {
-        Timer(const Duration(seconds: 12), () {
+        _housekeepingNoteClear?.cancel();
+        _housekeepingNoteClear = Timer(const Duration(seconds: 12), () {
           if (_disposed) return;
           housekeepingNote = null;
           notifyListeners();
         });
       }
     } catch (e) {
-      // Housekeeping must never be able to break using the app.
+      // Housekeeping must never be able to break using the app. An error is a
+      // verdict (unlike busy): consume the slot rather than retry-looping all
+      // session against the same failure.
+      _housekept.add(nb);
       debugPrint('[openote/tidy] $nb: $e');
       housekeepingNote = null;
+      if (!_disposed) notifyListeners();
     }
   }
 
@@ -1639,6 +1688,7 @@ class AppState extends ChangeNotifier
         ..._recorderWarms.values,
         ..._blobBackfills.values,
         ..._mirrorRuns.values,
+        if (_housekeepingRun != null) _housekeepingRun!,
       ];
       if (pending.isEmpty) return;
       await Future.wait(pending).catchError((_) => const <void>[]);
@@ -2008,9 +2058,18 @@ class AppState extends ChangeNotifier
   /// Returns the bytes reclaimed from the page mirror. The blobs themselves are
   /// new bytes on disk, so the honest figure is what [Repository.storageFor]
   /// says afterwards — this is the mirror's share, which is the large half.
+  /// When [unattended] — the automatic housekeeping path — the run behaves
+  /// like a guest rather than an owner: the open page is left alone (its ink
+  /// converts anyway on the user's next save, through `flushSave`'s
+  /// `persistAll`), the in-memory editor state is never touched, the VACUUM is
+  /// deferred to shutdown, and the first sign of the user doing anything —
+  /// typing, a pull, switching notebooks — stops the run where it stands.
+  /// Every page already converted is durable on its own; the rest is simply
+  /// still to do, reported as [InkConversionResult.deferred].
   Future<InkConversionResult> convertInkToBinary(
     String nb, {
     void Function(int done, int total)? onProgress,
+    bool unattended = false,
   }) async {
     await flushSave();
     // **Catch up with the other devices FIRST, or this work is undone.**
@@ -2044,13 +2103,26 @@ class AppState extends ChangeNotifier
         freed: 0,
         firstError: 'there are changes from another device still to fold in. '
             'Try again in a moment.',
+        deferred: true,
       );
     }
     // Only pages that actually contain inline strokes. A SQL prefilter, for
     // the same reason `pageIdsWithTags` uses one: decoding 328 pages to
     // discover that 215 have no ink is most of the work for none of the win.
     // `"strokes":[{` excludes empty arrays and already-converted pages.
-    final candidates = _repo.pageIdsWithInlineInk(nb);
+    var candidates = _repo.pageIdsWithInlineInk(nb);
+    if (unattended && notebookId == nb && pageId != null) {
+      // **The page the user is looking at is not converted behind their back.**
+      //
+      // The manual path may rewrite it because the sync dialog is modal — no
+      // editable surface is live, so nothing can race the re-read at the end.
+      // Unattended, the editor IS live, and the only safe relationship to its
+      // page is not to touch it. No coverage is lost: the moment the user
+      // edits that page, `flushSave` converts its ink through `persistAll`
+      // like any other save, and a page never edited again is caught by the
+      // next weekly pass, by then no longer open.
+      candidates = [for (final p in candidates) if (p != pageId) p];
+    }
     if (candidates.isEmpty) {
       return const InkConversionResult(
           candidates: 0, converted: 0, failed: 0, freed: 0);
@@ -2058,56 +2130,90 @@ class AppState extends ChangeNotifier
     // A pull landing mid-conversion would rewrite pages from the log behind
     // us, exactly as above. The watcher is stopped for the duration and
     // restarted after; anything that arrives meanwhile is picked up by the
-    // poll on the next tick.
+    // poll on the next tick. try/finally, because a run that escapes without
+    // restarting the watcher leaves auto-pull silently off for the session.
     _stopWatching();
 
     var freed = 0, converted = 0, failed = 0;
+    var aborted = false;
     String? firstError;
-    for (var i = 0; i < candidates.length; i++) {
-      final pageId = candidates[i];
-      try {
-        final before = _repo.pageJsonBytes(nb, pageId);
-        final data = _repo.readPage(nb, pageId);
-        final out = InkStorage.persistAll(
-            data.blocks, (bytes) => importBlob(nb, bytes, inkMimeType));
-        if (identical(out, data.blocks)) {
-          // Nothing to convert on a page the prefilter matched. That is not an
-          // error, but it IS the silent outcome the user saw — the run took 45
-          // seconds and reported nothing — so it is counted, not shrugged off.
-          failed++;
-          firstError ??= 'a page matched the search but held no convertible '
-              'handwriting';
-          continue;
+    try {
+      for (var i = 0; i < candidates.length; i++) {
+        if (unattended &&
+            (_dirty ||
+                _pulling ||
+                notebookId != nb ||
+                (rec?.foreignPending ?? false))) {
+          // The user did something — typed, pulled, switched notebooks. An
+          // unattended run yields to all of it immediately: each converted
+          // page is already durable (container write + recorded op), and the
+          // remainder is picked up when things go quiet again.
+          aborted = true;
+          break;
         }
-        _repo.writePage(nb, pageId, out, data.props);
-        // The log has to learn the new shape too, or a rebuild would still
-        // produce the old giant blocks and the two would disagree.
-        _recorderFor(nb)?.page(pageId, out, data.props);
-        freed += before - _repo.pageJsonBytes(nb, pageId);
-        converted++;
-      } catch (e) {
-        // One unconvertible page must not stop the other 112. It keeps its
-        // inline strokes, which still render and still save — but a `catch`
-        // that only writes to a console nobody is watching is how this came
-        // back as "it did something for 45s and nothing happened".
-        failed++;
-        firstError ??= '$e';
-        debugPrint('[openote/ink] could not convert $pageId: $e');
+        final pageId = candidates[i];
+        try {
+          final before = _repo.pageJsonBytes(nb, pageId);
+          final data = _repo.readPage(nb, pageId);
+          final out = InkStorage.persistAll(
+              data.blocks, (bytes) => importBlob(nb, bytes, inkMimeType));
+          if (identical(out, data.blocks)) {
+            // Nothing to convert on a page the prefilter matched. That is not
+            // an error, but it IS the silent outcome the user saw — the run
+            // took 45 seconds and reported nothing — so it is counted, not
+            // shrugged off.
+            failed++;
+            firstError ??= 'a page matched the search but held no convertible '
+                'handwriting';
+            continue;
+          }
+          _repo.writePage(nb, pageId, out, data.props);
+          // The log has to learn the new shape too, or a rebuild would still
+          // produce the old giant blocks and the two would disagree.
+          _recorderFor(nb)?.page(pageId, out, data.props);
+          freed += before - _repo.pageJsonBytes(nb, pageId);
+          converted++;
+        } catch (e) {
+          // One unconvertible page must not stop the other 112. It keeps its
+          // inline strokes, which still render and still save — but a `catch`
+          // that only writes to a console nobody is watching is how this came
+          // back as "it did something for 45s and nothing happened".
+          failed++;
+          firstError ??= '$e';
+          debugPrint('[openote/ink] could not convert $pageId: $e');
+        }
+        onProgress?.call(i + 1, candidates.length);
+        // Yield between pages: the largest single block is ~40 ms of encode,
+        // and a tight loop over 113 of them is four seconds of frozen window.
+        // A REAL delay, not Duration.zero — a zero timer is itself posted work
+        // due immediately, so the queue never goes idle, and idle is when
+        // Windows lets mouse and keyboard through (same reasoning as the blob
+        // backfill and `repairWholeNotebook`).
+        await Future<void>.delayed(const Duration(milliseconds: 2));
       }
-      onProgress?.call(i + 1, candidates.length);
-      // Yield between pages: the largest single block is ~40 ms of encode, and
-      // a tight loop over 113 of them is four seconds of frozen window.
-      await Future<void>.delayed(Duration.zero);
+    } finally {
+      _startWatching(); // whatever arrived meanwhile is picked up next tick
     }
-
-    _startWatching(); // whatever arrived meanwhile is picked up next tick
-    // The mirror just shrank by tens of megabytes; without this the file keeps
-    // its high-water mark and the user sees no change at all.
-    _repo.reclaimFreeSpace(nb);
-    if (pageId != null && notebookId == nb) {
-      // The open page's blocks are pre-conversion in memory. Re-read, or the
-      // next save would write the old shape straight back over the new one —
-      // and `_dirty` is false, so nothing else would ever correct it.
+    if (unattended) {
+      // The mirror shrank but the file keeps its high-water mark until a
+      // VACUUM — seconds of synchronous IO that must not land on the UI
+      // isolate while someone is mid-sentence. Deferred to shutdown, where
+      // there is no interface left to freeze.
+      if (converted > 0) _repo.setSetting('vacuumPending:$nb', true);
+    } else {
+      // Manual runs VACUUM immediately: the user pressed the button and is
+      // watching a spinner in a modal dialog, so the cost is one they asked
+      // for and the shrink is visible the moment the dialog updates.
+      _repo.reclaimFreeSpace(nb);
+    }
+    if (!unattended && pageId != null && notebookId == nb && !_dirty) {
+      // The open page's blocks are pre-conversion in memory; refresh them so
+      // the editor and the container agree. Manual-only (unattended excluded
+      // the open page above) and only while CLEAN: if a save failed earlier,
+      // `_dirty` is still true and `blocks` holds the user's unsaved work —
+      // overwriting it from disk here would discard edits without a trace.
+      // Skipping is safe either way: the next `flushSave` converts whatever
+      // it is handed through `persistAll`.
       final data = await engine.loadPage(nb, pageId!);
       blocks = data.blocks;
       pageProps = data.props;
@@ -2121,6 +2227,7 @@ class AppState extends ChangeNotifier
       failed: failed,
       freed: freed,
       firstError: firstError,
+      deferred: aborted,
     );
   }
 
@@ -5350,10 +5457,24 @@ class AppState extends ChangeNotifier
   Future<void> shutdown() async {
     _saveDebounce?.cancel();
     _gitDebounce?.cancel();
+    _housekeepingTimer?.cancel();
     try {
       await flushSave();
     } catch (_) {
       // Never block exit on a save failure — flushSave already recorded it.
+    }
+    // The VACUUMs unattended housekeeping owed. A container the ink migration
+    // shrank keeps its high-water mark until one runs, and a full VACUUM is
+    // seconds of synchronous IO — unacceptable on a timer while someone is
+    // writing, invisible on the way out because there is no interface left to
+    // freeze. One shot per flag; a flag for a since-deleted notebook clears
+    // harmlessly (reclaimFreeSpace returns 0 for an unknown id).
+    for (final key in _repo.settingKeys()) {
+      if (!key.startsWith('vacuumPending:')) continue;
+      try {
+        _repo.reclaimFreeSpace(key.substring('vacuumPending:'.length));
+      } catch (_) {}
+      _repo.setSetting(key, null);
     }
     _rememberView();
     _persistSession();
@@ -5376,6 +5497,11 @@ class AppState extends ChangeNotifier
   void cancelPendingSave() {
     _saveDebounce?.cancel();
     _gitDebounce?.cancel();
+    // Housekeeping arms timers too (the post-open delay, the deferral retry,
+    // the note clear), and a fake-async widget test that loaded a notebook
+    // would otherwise end with one still pending.
+    _housekeepingTimer?.cancel();
+    _housekeepingNoteClear?.cancel();
   }
 
   /// Set by [dispose]. Background work started before disposal checks this
@@ -5390,6 +5516,7 @@ class AppState extends ChangeNotifier
     _disposed = true;
     _stopWatching();
     _housekeepingTimer?.cancel();
+    _housekeepingNoteClear?.cancel();
     _syncStatusPoll?.cancel();
     _saveDebounce?.cancel();
     // The planner owns a Timer. A `late final` touched here is constructed
@@ -5459,6 +5586,7 @@ class InkConversionResult {
     required this.failed,
     required this.freed,
     this.firstError,
+    this.deferred = false,
   });
 
   /// Pages the search offered.
@@ -5477,11 +5605,24 @@ class InkConversionResult {
   /// The first thing that went wrong, for showing. Null when nothing did.
   final String? firstError;
 
-  bool get didNothing => converted == 0 && candidates > 0;
+  /// The run stepped aside rather than finishing — the notebook was behind
+  /// another device, or (unattended) the user started typing mid-run. Whatever
+  /// it did convert is durable; the rest is simply still to do. Distinct from
+  /// failure because the right response is "try again later", not "give up",
+  /// and distinct from success because the caller must NOT record the notebook
+  /// as tidied.
+  final bool deferred;
+
+  bool get didNothing => converted == 0 && candidates > 0 && !deferred;
 
   /// A sentence for the user. Never silent: a run that changed nothing says so
   /// and says what it hit.
   String describe(String Function(int) bytes) {
+    if (deferred && converted == 0) {
+      // Declining used to fall through to "Nothing left to shrink." — the
+      // opposite of the truth, beside a button still saying 113 pages.
+      return 'Skipped — ${firstError ?? 'the notebook was busy'}';
+    }
     if (candidates == 0) return 'Nothing left to shrink.';
     if (converted == 0) {
       return 'Could not shrink any of the $candidates pages'

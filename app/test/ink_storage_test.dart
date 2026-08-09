@@ -413,6 +413,152 @@ void main() {
     });
   });
 
+  group('unattended housekeeping', () {
+    // The same feature run by a timer instead of a button, which changes the
+    // safety contract entirely: the manual path is safe because the sync
+    // dialog is MODAL — no editable surface is live during the run. Unattended
+    // there is no modality, so the run must be a guest: never touch the open
+    // page, never touch the editor's memory, and step aside the moment the
+    // user does anything.
+
+    void writeLegacyPage(String id, List<Stroke> strokes) {
+      repo.writePageRawForTest(app.notebookId!, id, {
+        'schema': 'onote-page/1',
+        'pageId': id,
+        'page': PageProps().toJson(),
+        'blocks': [
+          Block(
+            id: 'legacy-ink',
+            type: BlockType.ink,
+            x: 100,
+            y: 80,
+            w: 800,
+            h: 600,
+            content: {'strokes': [for (final s in strokes) s.toJson()]},
+          ).toJson()
+        ],
+      });
+    }
+
+    String otherPage(String title) {
+      final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+      return repo
+          .upsertNode(app.notebookId!,
+              TreeNode(kind: NodeKind.page, parentId: section.id, title: title))
+          .id;
+    }
+
+    test('TYPING AT THE WRONG MOMENT DEFERS — IT DOES NOT DISABLE', () async {
+      // The shipped guard read `!_housekept.add(nb)` BEFORE checking
+      // `_dirty`, so one keystroke at the twenty-second mark consumed the
+      // session's only attempt and stamped nothing. The notebooks most in
+      // need of tidying are the actively used ones — which are exactly the
+      // ones where the user is mid-sentence when the timer fires.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      writeLegacyPage(otherPage('Other'), handwriting(count: 20, seed: 21));
+
+      app.markDirty(); // the user is mid-sentence when the timer fires
+      await app.runHousekeepingForTest(app.notebookId!);
+      app.cancelPendingSave(); // drop the deferral retry the test won't wait for
+      expect(repo.getSetting('tidiedAt:${app.notebookId}'), isNull,
+          reason: 'busy is a deferral, not a completed pass');
+      expect(repo.pageIdsWithInlineInk(app.notebookId!), isNotEmpty,
+          reason: 'nothing was converted while the user was typing');
+
+      await app.flushSave(); // the typing stopped
+      await app.runHousekeepingForTest(app.notebookId!);
+      app.cancelPendingSave();
+      expect(repo.pageIdsWithInlineInk(app.notebookId!), isEmpty,
+          reason: 'the same session finished the work once things went quiet');
+      expect(repo.getSetting('tidiedAt:${app.notebookId}'), isNotNull);
+    });
+
+    test('THE OPEN PAGE AND THE EDITOR\'S MEMORY ARE NEVER TOUCHED', () async {
+      // The manual path ends by re-reading the open page from disk into
+      // `blocks`. Run from a timer, that discards whatever the user typed
+      // during the run — unboundedly, if an earlier save failed and `blocks`
+      // is holding unsaved work. Unattended, the open page is excluded from
+      // the run entirely, so there is nothing to re-read and no way to lose.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      writeLegacyPage(pageId, handwriting(count: 15, seed: 22)); // OPEN page
+      final other = otherPage('Other');
+      writeLegacyPage(other, handwriting(count: 20, seed: 23));
+      final editorBlocks = app.blocks;
+
+      await app.runHousekeepingForTest(app.notebookId!);
+      app.cancelPendingSave();
+
+      expect(identical(app.blocks, editorBlocks), isTrue,
+          reason: 'unattended must never swap the editor state from disk');
+      expect(repo.rawPageJsonForTest(app.notebookId!, other),
+          isNot(contains('"strokes":[{')),
+          reason: 'every page the user is NOT looking at converts');
+      expect(repo.rawPageJsonForTest(app.notebookId!, pageId),
+          contains('"strokes":[{'),
+          reason: 'the page on screen is not rewritten behind the user — '
+              'its next ordinary save converts it through persistAll');
+      expect(repo.getSetting('tidiedAt:${app.notebookId}'), isNotNull,
+          reason: 'leaving the open page for its next save still completes '
+              'the pass');
+    });
+
+    test('the vacuum is owed to shutdown, not run on the timer', () async {
+      // reclaimFreeSpace is a synchronous whole-file rewrite whose own doc
+      // comment says it "runs from an explicit user action rather than on a
+      // timer". On a timer it froze the window for seconds with no dialog
+      // explaining why. Deferred to shutdown, there is no interface to freeze.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      writeLegacyPage(otherPage('Other'), handwriting(count: 20, seed: 24));
+
+      await app.runHousekeepingForTest(app.notebookId!);
+      app.cancelPendingSave();
+      expect(repo.getSetting('vacuumPending:${app.notebookId}'), isTrue,
+          reason: 'the debt is recorded rather than paid mid-session');
+
+      await app.shutdown();
+      expect(repo.getSetting('vacuumPending:${app.notebookId}'), isNull,
+          reason: 'shutdown pays it and clears the flag');
+    });
+
+    test('a keystroke mid-run stops the run where it stands', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      for (var i = 0; i < 3; i++) {
+        writeLegacyPage(otherPage('P$i'), handwriting(count: 15, seed: 30 + i));
+      }
+
+      var fired = 0;
+      final r = await app.convertInkToBinary(app.notebookId!,
+          unattended: true,
+          onProgress: (done, total) {
+            if (++fired == 1) app.markDirty(); // keystroke after page one
+          });
+      app.cancelPendingSave();
+
+      expect(r.deferred, isTrue,
+          reason: 'stopping for the user is a deferral, not a failure');
+      expect(r.converted, 1,
+          reason: 'the page in flight finishes; nothing further starts');
+      expect(repo.pageIdsWithInlineInk(app.notebookId!), hasLength(2),
+          reason: 'the rest waits, durable exactly as it was');
+    });
+
+    test('a deferred result says why instead of "nothing left"', () {
+      // The decline used to fall through to candidates == 0, which describe()
+      // rendered as "Nothing left to shrink." beside a button still counting
+      // 113 pages.
+      const r = InkConversionResult(
+          candidates: 0,
+          converted: 0,
+          failed: 0,
+          freed: 0,
+          firstError: 'there are changes from another device still to fold in',
+          deferred: true);
+      expect(r.describe((b) => '$b'), contains('another device'));
+      expect(r.didNothing, isFalse,
+          reason: 'deferral is not the silent-failure state');
+    });
+  });
+
   group('the storage boundary on its own', () {
     test('a missing blob leaves the reference alone', () {
       // A notebook joined from a remote can legitimately hold a ref whose
