@@ -8,6 +8,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -442,6 +443,52 @@ void main() {
       expect(out, same(content),
           reason: 'left legacy: it still renders and still saves');
       expect(called, isFalse, reason: 'nothing was written');
+    });
+
+    test('A ROUND TRIP DOES NOT PUT THE STROKES BACK ON DISK', () {
+      // The bug that made the whole feature a no-op, and it was invisible
+      // because everything still WORKED — the strokes were simply written
+      // twice. `toWorking` adds a decoded `strokes` list beside the `ink`
+      // descriptor so the painter and the exporters see what they always saw;
+      // `toPersisted` then returned that untouched because it was already a
+      // reference, so a converted page grew its geometry straight back on the
+      // next save. The notebook never actually shrank, and every page stayed a
+      // candidate the conversion would then refuse:
+      //
+      //   "it could not shrink any of the 113 pages — a page matched the
+      //    search but held no convertable handwriting"
+      final strokes = [
+        Stroke(
+            id: 'a',
+            tool: 'pen',
+            colorHex: '#211F1B',
+            size: 2,
+            x: [1, 2, 3],
+            y: [1, 2, 3])
+      ];
+      final store = <String, Uint8List>{};
+      final persisted = InkStorage.toPersisted(
+          <String, dynamic>{'strokes': [for (final s in strokes) s.toJson()]},
+          (bytes) {
+        const hash = 'sha256:aa';
+        store[hash] = bytes;
+        return hash;
+      });
+      expect(persisted.containsKey('strokes'), isFalse);
+
+      // Read it the way the editor does…
+      final working = InkStorage.toWorking(persisted, (h) => store[h]);
+      expect(working['strokes'], isA<List>(),
+          reason: 'consumers must still see strokes');
+
+      // …and save it again. THIS is where the geometry used to come back.
+      final again = InkStorage.toPersisted(working, (_) {
+        fail('an unchanged reference must not write a second blob');
+      });
+      expect(again.containsKey('strokes'), isFalse,
+          reason: 'the working strokes must not reach the disk');
+      expect(InkStorage.refsOf(again), InkStorage.refsOf(persisted),
+          reason: 'and it is still the same ink');
     });
 
     test('counting strokes never opens a blob', () {

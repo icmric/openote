@@ -101,7 +101,22 @@ abstract final class InkStorage {
     Map<String, dynamic> content,
     String Function(Uint8List bytes) putBlob,
   ) {
-    if (isRefForm(content)) return content;
+    if (isRefForm(content)) {
+      // **Already a reference — but drop the working strokes on the way out.**
+      //
+      // [toWorking] puts a decoded `strokes` list beside the `ink` descriptor
+      // so every existing consumer keeps seeing what it always saw. Returning
+      // that untouched wrote BOTH to disk, which undid the entire point: a
+      // converted page grew its geometry back on the very next save, the
+      // notebook never actually shrank, and — because the conversion's search
+      // looks for `"strokes":[{` while this bails on `isRefForm` — every page
+      // stayed a candidate that could never be converted again.
+      //
+      // Reported exactly that way: "it could not shrink any of the 113 pages —
+      // a page matched the search but held no convertable handwriting".
+      if (!content.containsKey(kStrokesKey)) return content;
+      return Map<String, dynamic>.of(content)..remove(kStrokesKey);
+    }
     final legacy = content[kStrokesKey];
     if (legacy is! List) return content;
 
