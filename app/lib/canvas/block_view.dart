@@ -14,6 +14,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../ui/context_menus.dart';
 import 'canvas_controller.dart';
+import 'portal_view.dart';
 
 /// Selection chrome + move/resize for one block; dispatches content by type.
 /// Interaction (F-4 fix): single tap on text/code/math enters editing
@@ -234,9 +235,13 @@ class _BlockViewState extends State<BlockView> {
   // or the block has no text to select — an image or an attachment, where
   // dragging the picture is unambiguous and matches OneNote.
   void _bodyDragStart(DragStartDetails d) {
+    // An embed's body drag belongs to its SelectionArea — dragging over the
+    // windowed text selects it for copying, exactly as it would on the source
+    // page. The window moves by its bar, or Alt-drag, like a text box.
     _bodyDragMoves = _locked
         ? false
-        : !_editableType || HardwareKeyboard.instance.isAltPressed;
+        : (!_editableType && b.type != BlockType.embed) ||
+            HardwareKeyboard.instance.isAltPressed;
     if (_bodyDragMoves) _dragStart(d);
   }
 
@@ -358,6 +363,7 @@ class _BlockViewState extends State<BlockView> {
       BlockType.file => 'Attachment: ${b.content['name'] ?? 'file'}',
       BlockType.flashcard =>
         'Flashcard: ${b.content['front'] ?? 'empty'}',
+      BlockType.embed => 'Window to another page',
       _ => '${b.type.name} block',
     };
     return t.trim().isEmpty ? '${b.type.name} block' : t;
@@ -480,6 +486,7 @@ class _BlockViewState extends State<BlockView> {
       BlockType.table => TableBlockView(block: b, app: app),
       BlockType.file => FileBlockView(block: b, app: app),
       BlockType.flashcard => FlashcardBlockView(block: b, app: app),
+      BlockType.embed => PortalBlockView(block: b, app: app),
       _ => Padding(
           padding: const EdgeInsets.all(8),
           child: Text('Unsupported block: ${b.type.name}',

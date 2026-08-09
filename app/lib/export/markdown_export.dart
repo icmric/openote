@@ -61,6 +61,23 @@ Future<String?> exportPageMarkdown(AppState app) async {
         }
       case BlockType.ink:
         inkCount += (b.content['strokes'] as List?)?.length ?? 0;
+      case BlockType.embed:
+        // EMBED-8's plain-link projection: Markdown cannot hold a live
+        // window, so the export names the source and links to it rather than
+        // silently dropping the block or inlining a stale copy.
+        final ref = (b.content['ref'] as Map?)?.cast<String, dynamic>();
+        final dst = ref?['pageId'] as String?;
+        if (dst != null) {
+          final title = app.nodes
+                  .where((n) => n.id == dst)
+                  .firstOrNull
+                  ?.title
+                  .trim() ??
+              '';
+          buf.writeln('> Window onto '
+              '[${title.isEmpty ? 'another page' : title}](onote://page/$dst)'
+              '\n');
+        }
       default:
         break;
     }

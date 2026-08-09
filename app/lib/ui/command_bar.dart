@@ -26,6 +26,7 @@ import '../theme/onote_theme.dart';
 import 'color_picker.dart';
 import 'command_button.dart';
 import 'font_picker.dart';
+import 'insert_portal_dialog.dart';
 import '../theme/tokens.dart';
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
@@ -421,6 +422,10 @@ class _CommandBarState extends State<CommandBar> {
           () => _insertMediaLink(context)),
       ins(Icons.style_outlined, 'Flashcard', _insertFlashcard),
       ins(Icons.link, 'Page link', () => _insertPageLink(context)),
+      // A link navigates; a window SHOWS — a live, read-only view of part of
+      // another page, kept current as that page changes (EMBED-2).
+      ins(Icons.picture_in_picture_alt_outlined, 'Page window',
+          () => showInsertPortalDialog(context, app, _center())),
       ins(Icons.dashboard_customize_outlined, 'Template',
           () => _applyTemplate(context)),
     ]);

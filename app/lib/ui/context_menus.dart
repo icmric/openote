@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
+import 'insert_portal_dialog.dart';
 
 /// Right-click menus (style guide: most actions within ≤2 clicks).
 
@@ -95,6 +96,8 @@ Future<void> showCanvasMenu(BuildContext context, AppState app,
       _item('text', Icons.text_fields, 'New text box here'),
       _item('math', Icons.functions, 'New equation here'),
       _item('table', Icons.table_chart_outlined, 'New table here'),
+      _item('portal', Icons.picture_in_picture_alt_outlined,
+          'Page window here…'),
       _item('paste', Icons.paste_outlined, 'Paste',
           enabled: app.canPasteBlocks, shortcut: 'Ctrl+V'),
       const PopupMenuDivider(),
@@ -131,6 +134,10 @@ Future<void> showCanvasMenu(BuildContext context, AppState app,
             ]
           }));
       app.select(b.id, edit: true);
+    case 'portal':
+      if (context.mounted) {
+        await showInsertPortalDialog(context, app, pagePt);
+      }
     case 'paste':
       app.pasteBlocks(at: pagePt);
     case 'bg-blank':

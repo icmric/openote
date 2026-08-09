@@ -120,6 +120,16 @@ A `range` embed target uses `(startBlockId, endBlockId)` at block granularity in
 
 ## 7. Embed model (live transclusion — EMBED-*)
 
+> **Implementation status (v0.13).** Shipped first: `page` and `rect` targets,
+> same-notebook only, resolution order **live → tombstone**. `snapshotBlob` is
+> deliberately not written yet — a snapshot is a copy, and for a same-notebook
+> embed the source is always local, so the snapshot buys nothing until
+> cross-notebook embeds exist; the field stays reserved. `rect` shipped before
+> `frame` because frames are not implemented; the marquee-to-implicit-frame
+> promotion in §6 remains the target once they are. `block`/`range` targets and
+> the §7.4 deletion warning are unimplemented; an embed carrying an
+> unimplemented target renders as an inert chip, never an error.
+
 ### 7.1 The reference
 
 ```jsonc

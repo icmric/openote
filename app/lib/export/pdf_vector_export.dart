@@ -320,6 +320,7 @@ pw.Widget? _blockWidget(AppState app, Block b, double sheetTop,
     BlockType.math => _mathWidget(b, maths[b.id]),
     BlockType.text || BlockType.code => _textWidget(app, b),
     BlockType.table => _tableWidget(b),
+    BlockType.embed => _embedWidget(app, b, h),
     _ => null,
   };
   if (child == null) return null;
@@ -327,6 +328,25 @@ pw.Widget? _blockWidget(AppState app, Block b, double sheetTop,
     left: left,
     top: top,
     child: pw.SizedBox(width: w, child: child),
+  );
+}
+
+/// A page window (live embed). Print cannot be live, and v1 keeps no
+/// snapshot to inline (EMBED-8's fallback), so the export draws the frame
+/// with its attribution rather than pretending the content was here.
+pw.Widget _embedWidget(AppState app, Block b, double h) {
+  final ref = (b.content['ref'] as Map?)?.cast<String, dynamic>();
+  final title =
+      (app.node(ref?['pageId'] as String? ?? '')?.title ?? '').trim();
+  return pw.Container(
+    height: h / _pxPerPoint,
+    padding: const pw.EdgeInsets.all(4),
+    decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey400, width: .5)),
+    child: pw.Text(
+      'Window onto: ${title.isEmpty ? 'another page' : title}',
+      style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey600),
+    ),
   );
 }
 

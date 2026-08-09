@@ -4,6 +4,28 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — page windows (live embeds)
+
+- **A window onto another page** (right-click the canvas ▸ *Page window
+  here…*, or Insert ▸ *Page window*): pick a page, drag out the part of it
+  you want — on a real rendering of that page — and it appears on the current
+  page as a live, read-only view. Edit the source page and the window shows
+  the change; rename it and the window's badge follows (the reference is by
+  id, not title). Text inside the window can be selected and copied; nothing
+  inside it can be edited, clicked, or toggled. The badge opens the source.
+- **It is a pointer, not a copy.** The block stores a page id and a
+  rectangle — a few dozen bytes — and renders straight from the same decoded-
+  page cache the rest of the app reads, so a window costs no storage and no
+  duplicate state, and can never drift out of date.
+- Windows inside windows render three levels deep; a circular chain (A shows
+  B shows A) is detected and shown as a labelled chip instead of recursing.
+  A window whose source page was deleted says so instead of erroring, and
+  greys itself while the page is in the recycle bin. Backlinks count windows
+  as references to the source page.
+- Resizing a window keeps its region's proportions — the one handle zooms
+  the view. Markdown export writes an attribution link in its place; PDF
+  export draws the frame with a "window onto" caption.
+
 ## [0.5.0] — 2026-08-08
 
 Sync through GitHub, and a notebook that is a fraction of the size it was.
