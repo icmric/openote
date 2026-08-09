@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../editor/board_block_view.dart';
 import '../editor/code_block_view.dart';
 import '../editor/file_block_view.dart';
 import '../editor/flashcard_block_view.dart';
@@ -254,12 +255,15 @@ class _BlockViewState extends State<BlockView> {
   // or the block has no text to select — an image or an attachment, where
   // dragging the picture is unambiguous and matches OneNote.
   void _bodyDragStart(DragStartDetails d) {
-    // An embed's body drag belongs to its SelectionArea — dragging over the
-    // windowed text selects it for copying, exactly as it would on the source
-    // page. The window moves by its bar, or Alt-drag, like a text box.
+    // An embed's body drag belongs to its SelectionArea, and a board's to
+    // its card dragging — grabbing either by the body must not move the
+    // block out from under the gesture. They move by their bar, or Alt-drag,
+    // like a text box.
     _bodyDragMoves = _locked
         ? false
-        : (!_editableType && b.type != BlockType.embed) ||
+        : (!_editableType &&
+                b.type != BlockType.embed &&
+                b.type != BlockType.board) ||
             HardwareKeyboard.instance.isAltPressed;
     if (_bodyDragMoves) _dragStart(d);
   }
@@ -383,6 +387,7 @@ class _BlockViewState extends State<BlockView> {
       BlockType.flashcard =>
         'Flashcard: ${b.content['front'] ?? 'empty'}',
       BlockType.embed => 'Window to another page',
+      BlockType.board => 'Task board',
       _ => '${b.type.name} block',
     };
     return t.trim().isEmpty ? '${b.type.name} block' : t;
@@ -527,6 +532,7 @@ class _BlockViewState extends State<BlockView> {
       BlockType.file => FileBlockView(block: b, app: app),
       BlockType.flashcard => FlashcardBlockView(block: b, app: app),
       BlockType.embed => PortalBlockView(block: b, app: app),
+      BlockType.board => BoardBlockView(block: b, app: app),
       _ => Padding(
           padding: const EdgeInsets.all(8),
           child: Text('Unsupported block: ${b.type.name}',

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../editor/board_block_view.dart';
 import '../editor/code_block_view.dart';
 import '../editor/file_block_view.dart';
 import '../editor/flashcard_block_view.dart';
@@ -341,6 +342,11 @@ class PortalContent extends StatelessWidget {
         return IgnorePointer(
             child: SizedBox(
                 width: b.w, child: FlashcardBlockView(block: b, app: app)));
+      case BlockType.board:
+        // A picture of a board: dragging cards through a window would be a
+        // write to the source page.
+        return IgnorePointer(
+            child: SizedBox(width: b.w, child: BoardBlockView(block: b, app: app)));
       case BlockType.embed:
         return _nested(context, b);
       default:

@@ -230,6 +230,10 @@ enum BlockType {
   frame,
   embed,
   flashcard,
+  // A trello-style task board: columns of draggable cards. Additive under
+  // the same `rawType` contract that made `flashcard` safe to add — an older
+  // build shows "Unsupported block: board" and round-trips it untouched.
+  board,
   unknown
 }
 

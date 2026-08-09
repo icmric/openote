@@ -1,6 +1,7 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import '../editor/board_block_view.dart';
 import '../export/csv_import.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
@@ -133,7 +134,8 @@ Future<void> showCanvasMenu(BuildContext context, AppState app,
       _item('table', Icons.table_chart_outlined, 'New table here'),
       _item('portal', Icons.picture_in_picture_alt_outlined,
           'Page window here…'),
-      _item('csv', Icons.grid_on_outlined, 'Table from CSV here…'),
+      _item('csv', Icons.grid_on_outlined, 'Table from a file here… (CSV, Excel)'),
+      _item('board', Icons.view_kanban_outlined, 'Task board here'),
       _item('paste', Icons.paste_outlined, 'Paste',
           enabled: app.canPasteBlocks, shortcut: 'Ctrl+V'),
       const PopupMenuDivider(),
@@ -180,7 +182,7 @@ Future<void> showCanvasMenu(BuildContext context, AppState app,
       final XFile? file;
       try {
         file = await openFile(acceptedTypeGroups: const [
-          XTypeGroup(label: 'Tables', extensions: ['csv', 'tsv'])
+          XTypeGroup(label: 'Tables', extensions: ['csv', 'tsv', 'xlsx'])
         ]);
       } catch (e) {
         if (context.mounted) {
@@ -191,7 +193,7 @@ Future<void> showCanvasMenu(BuildContext context, AppState app,
       }
       if (file == null) return;
       final bytes = await file.readAsBytes();
-      final r = insertCsvTable(app, bytes, pagePt);
+      final r = insertTableFromFile(app, file.name, bytes, pagePt);
       if (context.mounted) {
         if (!r.placed) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -201,6 +203,15 @@ Future<void> showCanvasMenu(BuildContext context, AppState app,
               .showSnackBar(SnackBar(content: Text(r.note!)));
         }
       }
+    case 'board':
+      final board = app.addBlock(Block(
+        type: BlockType.board,
+        x: pagePt.dx,
+        y: pagePt.dy,
+        w: 700,
+        content: BoardBlockView.starterContent(),
+      ));
+      app.select(board.id);
     case 'paste':
       app.pasteBlocks(at: pagePt);
     case 'bg-blank':

@@ -17,6 +17,7 @@ import 'dart:ui' show Offset;
 
 import '../model/models.dart';
 import '../state/app_state.dart';
+import 'xlsx_import.dart';
 
 /// Rows and columns are capped, not because parsing is slow but because the
 /// RESULT is a block the canvas lays out — a 50,000-row dump would freeze the
@@ -109,12 +110,12 @@ String detectCsvDelimiter(String text) {
   return ',';
 }
 
-/// The cells for a table block: parsed, capped, and padded rectangular —
-/// the table view and the Markdown exporter both assume every row has the
-/// header's width, exactly as `md_table` pads on the way in.
-({List<List<String>> cells, int droppedRows, int droppedCols}) csvCells(
-    String text) {
-  final parsed = parseCsv(text);
+/// The cells for a table block: capped and padded rectangular — the table
+/// view and the Markdown exporter both assume every row has the header's
+/// width, exactly as `md_table` pads on the way in. Shared by the CSV and
+/// xlsx paths, so both truncate by the same rule and report it the same way.
+({List<List<String>> cells, int droppedRows, int droppedCols}) tabularCells(
+    List<List<String>> parsed) {
   // A lone empty trailing field from `a,b,\n` is data; a fully empty row from
   // a blank line is not.
   final rows = [
@@ -140,6 +141,10 @@ String detectCsvDelimiter(String text) {
   );
 }
 
+({List<List<String>> cells, int droppedRows, int droppedCols}) csvCells(
+        String text) =>
+    tabularCells(parseCsv(text));
+
 /// Decode, parse and place a table block at [at].
 ///
 /// [placed] is false when the file held no rows — the caller decides the
@@ -149,7 +154,26 @@ String detectCsvDelimiter(String text) {
 ({bool placed, String? note}) insertCsvTable(
     AppState app, Uint8List bytes, Offset at) {
   final text = utf8.decode(bytes, allowMalformed: true);
-  final r = csvCells(text);
+  return _placeCells(app, csvCells(text), at);
+}
+
+/// Any tabular file this app can read — csv/tsv by parsing, .xlsx through
+/// the minimal reader — placed as a table block. One entry point, so the
+/// drop path and the menu item cannot drift in what they accept.
+({bool placed, String? note}) insertTableFromFile(
+    AppState app, String name, Uint8List bytes, Offset at) {
+  if (name.toLowerCase().endsWith('.xlsx')) {
+    final rows = readXlsxRows(bytes);
+    if (rows == null) return (placed: false, note: null);
+    return _placeCells(app, tabularCells(rows), at);
+  }
+  return insertCsvTable(app, bytes, at);
+}
+
+({bool placed, String? note}) _placeCells(
+    AppState app,
+    ({List<List<String>> cells, int droppedRows, int droppedCols}) r,
+    Offset at) {
   if (r.cells.isEmpty) return (placed: false, note: null);
   final b = app.addBlock(Block(
     type: BlockType.table,
@@ -177,5 +201,5 @@ String detectCsvDelimiter(String text) {
 /// Does this filename look like tabular data this importer should take?
 bool looksLikeCsv(String name) {
   final n = name.toLowerCase();
-  return n.endsWith('.csv') || n.endsWith('.tsv');
+  return n.endsWith('.csv') || n.endsWith('.tsv') || n.endsWith('.xlsx');
 }

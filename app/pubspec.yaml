@@ -24,6 +24,13 @@ dependencies:
   flutter_math_fork: ^0.7.2
   # Image insertion & save dialogs
   file_selector: ^1.0.3
+  # xlsx import: an .xlsx is a zip of XML, and both halves were ALREADY in
+  # the dependency tree transitively — promoting them adds no new third-party
+  # code to the build, which is why the reader is hand-rolled rather than a
+  # spreadsheet package. Licences audited per LICENSING.md.
+  archive: ^4.0.9
+  xml: ^6.6.1
+
   # PDF export (pure Dart)
   pdf: ^3.10.0
   # Printing (P13) — drives the OS print dialog with the same vector page the

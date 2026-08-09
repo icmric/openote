@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 
 import '../canvas/media_drop.dart';
 import '../core/platform_open.dart';
+import '../editor/board_block_view.dart';
 import '../export/markdown_export.dart';
 import '../export/open_export.dart';
 import '../export/pdf_export.dart';
@@ -411,6 +412,7 @@ class _CommandBarState extends State<CommandBar> {
       ins(Icons.functions, 'Equation', _insertMath),
       ins(Icons.code, 'Code', _insertCode),
       ins(Icons.table_chart_outlined, 'Table', _insertTable),
+      ins(Icons.view_kanban_outlined, 'Board', _insertBoard),
       ins(Icons.image_outlined, 'Image', () => _insertImage(context)),
       // The lecture-slide flow. Default is a printout down THIS page — one
       // continuous thing you scroll and write on, next to the notes already
@@ -775,6 +777,17 @@ class _CommandBarState extends State<CommandBar> {
           ]
         }));
     app.select(b.id, edit: true);
+  }
+
+  void _insertBoard() {
+    final c = _center();
+    final b = app.addBlock(Block(
+        type: BlockType.board,
+        x: c.dx - 350,
+        y: c.dy - 100,
+        w: 700,
+        content: BoardBlockView.starterContent()));
+    app.select(b.id);
   }
 
   Future<void> _insertImage(BuildContext context) async {

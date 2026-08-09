@@ -23,14 +23,19 @@ PPTX Thumbnail
 
 Tables
     Excel like spreadsheet or SQL like table
-    import data (xlxs), live data (via api)
+    live data (via api)
     graphing
-    → csv/tsv import shipped; xlsx needs a reader package, live data and
-      graphing want a design pass (what refreshes, when, and what a chart
-      block is) — worth doing together with the spreadsheet question.
+    → csv/tsv/xlsx import shipped (drop the file, or right-click ▸ Table
+      from a file). Live data and graphing want a design pass (what
+      refreshes, when, and what a chart block is) — worth doing together
+      with the spreadsheet-engine question.
 
 Calander and tasks
-    It works currently, however is very limited. This would need a fairly significant UI rework as it would probaly need to replace the page entirley, but having the ability to have a trello like task board would be incredibly helpful for both students and product managers
+    It works currently, however is very limited.
+    → The trello board shipped as a BLOCK (Insert ▸ Board, or right-click ▸
+      Task board here): columns, draggable cards, inline editing — stretched
+      wide on an empty page it IS a board page, and it sits beside notes in
+      a way a page mode couldn't. The wider calendar rework stays open.
 
 accesability
     i13n

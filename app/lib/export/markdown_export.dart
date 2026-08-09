@@ -61,6 +61,20 @@ Future<String?> exportPageMarkdown(AppState app) async {
         }
       case BlockType.ink:
         inkCount += (b.content['strokes'] as List?)?.length ?? 0;
+      case BlockType.board:
+        // A board's Markdown projection: one heading per column, cards as a
+        // list. Round enough that a reader (or a re-import) keeps the
+        // structure a human would reconstruct anyway.
+        final columns = b.content['columns'];
+        if (columns is List) {
+          for (final col in columns.whereType<Map>()) {
+            buf.writeln('## ${col['title'] ?? 'Column'}\n');
+            for (final card in (col['cards'] as List? ?? const [])) {
+              buf.writeln('- $card');
+            }
+            buf.writeln();
+          }
+        }
       case BlockType.embed:
         // EMBED-8's plain-link projection: Markdown cannot hold a live
         // window, so the export names the source and links to it rather than

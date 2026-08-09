@@ -4,6 +4,34 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — a task board on the page
+
+- **A trello-style board block** (Insert ▸ Board, or right-click the canvas ▸
+  *Task board here*): columns with counts, cards you add and edit in place,
+  drag cards between and within columns, rename columns by clicking their
+  title, add columns as you need them (an empty one can be removed). It is a
+  block, on purpose — stretched wide on an empty page it *is* a board page,
+  and a small one sits beside lecture notes, which a whole-page board could
+  never do. Boards ride the normal undo/save/sync path and export to
+  Markdown as headings with lists.
+
+### Added — Excel files become tables
+
+- **Drop an .xlsx onto the page** (or right-click ▸ *Table from a file*) and
+  the first worksheet becomes the same editable table a .csv does — shared
+  and inline strings, numbers, booleans, and a formula cell's *cached value*,
+  which is the numbers you saw rather than a formula engine. Dates arrive as
+  Excel's serial numbers for now. Same 500×64 cap as CSV, reported when it
+  cuts.
+
+### Fixed — the PDF popup behaves
+
+- **The viewer is a window over the page, not a takeover** — about 760px
+  wide, with the notebook visible behind it.
+- **A mouse-wheel tick scrolls a real distance** (it moved a fifth of a
+  screen), and a **draggable page-numbered scroll thumb** on the right edge
+  covers a hundred-page deck in one gesture.
+
 ### Added — a PDF is a PDF now
 
 - **Importing a PDF stores the file once and renders pages on demand.** The
