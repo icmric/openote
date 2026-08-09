@@ -173,6 +173,69 @@ class OpLogStore {
     return ops;
   }
 
+  /// [readDevice] from a byte offset, for a caller that has already seen the
+  /// prefix.
+  ///
+  /// **Why this exists.** `pendingForeignOps` ran `readDevice` for every
+  /// foreign device on EVERY pull — and `readDevice` slurps and JSON-parses the
+  /// whole file to then discard everything at or below a watermark. Measured on
+  /// a real notebook: **1,977 ms to parse one 64.6 MB log**, paid on the UI
+  /// thread, every time the sync button was pressed or the watcher fired, even
+  /// when nothing had changed. That is most of the reported "app fully locks up
+  /// for 10-20s".
+  ///
+  /// A byte offset is safe here in a way it would not be for a general file,
+  /// and the reason is the transport's central rule: **a device's log is
+  /// append-only and has exactly one writer.** Bytes below the offset can never
+  /// change, so they never need re-reading.
+  ///
+  /// Returns the ops found after [from] and the offset to resume at. The
+  /// resume offset is the end of the last COMPLETE line — a log being written
+  /// by a cloud client routinely ends mid-line, and resuming inside that line
+  /// next time would silently lose the op it belongs to.
+  ({List<Op> ops, int next}) readDeviceFrom(String device, int from) {
+    final f = logFor(device);
+    if (!f.existsSync()) return (ops: const [], next: 0);
+    final len = f.lengthSync();
+    // A file that SHRANK is not the file we had an offset into — a fresh
+    // clone, a restore, a compaction. Start over rather than read from a
+    // meaningless position.
+    var start = (from > 0 && from <= len) ? from : 0;
+    if (start >= len) return (ops: const [], next: len);
+
+    final raf = f.openSync();
+    final Uint8List bytes;
+    try {
+      raf.setPositionSync(start);
+      bytes = raf.readSync(len - start);
+    } finally {
+      raf.closeSync();
+    }
+
+    // Where the last newline is, so a torn tail is left for next time.
+    var lastNl = -1;
+    for (var i = bytes.length - 1; i >= 0; i--) {
+      if (bytes[i] == 0x0A) {
+        lastNl = i;
+        break;
+      }
+    }
+    if (lastNl < 0) {
+      // No complete line in this window yet.
+      return (ops: const [], next: start);
+    }
+
+    final text = utf8.decode(
+        Uint8List.sublistView(bytes, 0, lastNl + 1),
+        allowMalformed: true);
+    final ops = <Op>[];
+    for (final line in const LineSplitter().convert(text)) {
+      final op = Op.decode(line);
+      if (op != null) ops.add(op);
+    }
+    return (ops: ops, next: start + lastNl + 1);
+  }
+
   /// The union of every device's log, in deterministic total order.
   /// This is the merge: there is no conflict resolution step, only a sort.
   List<Op> readAll() {

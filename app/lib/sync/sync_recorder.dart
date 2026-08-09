@@ -384,11 +384,26 @@ class SyncRecorder {
   /// when another device has synced a log in, which is the whole point.
   List<Op> pendingForeignOps(Object? Function(String key) readSetting) {
     final out = <Op>[];
+    _resumeAt.clear();
     for (final dev in store.deviceIds()) {
       if (dev == device.id) continue;
       final seen =
           (readSetting(foreignSeqKey(notebookId, dev)) as num?)?.toInt() ?? 0;
-      for (final op in store.readDevice(dev)) {
+      // **From where we left off, not from the beginning.** This used to run
+      // `readDevice`, which slurps and JSON-parses the whole file so the loop
+      // below can throw away everything at or under the watermark. Measured on
+      // a real notebook that is 1,977 ms per call, on the UI thread, on EVERY
+      // pull — including the overwhelmingly common one where nothing changed.
+      //
+      // The offset is safe because a device's log is append-only with one
+      // writer, so its prefix can never change. The seq test stays as the
+      // authority: an offset that is stale, missing or invalidated by a
+      // shrunken file simply means more re-reading, never a wrong answer.
+      final from =
+          (readSetting(foreignOffsetKey(notebookId, dev)) as num?)?.toInt() ?? 0;
+      final r = store.readDeviceFrom(dev, from);
+      _resumeAt[dev] = r.next;
+      for (final op in r.ops) {
         if (op.seq > seen) out.add(op);
       }
     }
@@ -472,8 +487,26 @@ class SyncRecorder {
   void markForeignSeen(String dev, int seq,
       void Function(String key, Object? value) writeSetting) {
     writeSetting(foreignSeqKey(notebookId, dev), seq);
+    // Persist where the read got to, so the next pull resumes instead of
+    // re-parsing megabytes. Written only alongside the seq watermark — the two
+    // must advance together, or a crash between them could leave an offset
+    // past ops the container never received.
+    final at = _resumeAt[dev];
+    if (at != null) {
+      writeSetting(foreignOffsetKey(notebookId, dev), at);
+    }
     foreignPending = false;
   }
+
+  /// Where [pendingForeignOps] stopped reading each foreign log, this call.
+  ///
+  /// Not persisted here: only [markForeignSeen] writes it, and only for a
+  /// device whose ops actually reached the container.
+  final Map<String, int> _resumeAt = {};
+
+  /// The byte offset watermark, beside [foreignSeqKey].
+  static String foreignOffsetKey(String notebookId, String device) =>
+      'syncSeenAt:$notebookId:$device';
 
   /// Blobs referenced by ops whose bytes are not in `blobs/`. Empty means a
   /// rebuild from this log could reconstruct the notebook's content in full.

@@ -1,0 +1,243 @@
+// Noticing that another device wrote — the part that silently did not work.
+//
+// Reported: "If i make an edit on one machine it seems like that change doesnt
+// really ever get reflected on the other machine … For a change to be
+// reflected i have to press the little sync button."
+//
+// Writing was fine and the manual pull was fine; only the notification was
+// missing, and nothing in the suite covered it. The watcher's own doc comment
+// said a cloud client "often renames a temp file over it" — and the filter then
+// dropped exactly that, because a temp name does not end in `.oplog` and
+// `FileSystemMoveEvent.path` is the SOURCE, not the destination.
+//
+// So these tests write logs the way a cloud client actually writes them.
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:openote/sync/folder_watch.dart';
+import 'package:openote/sync/op.dart';
+import 'package:openote/sync/op_log.dart';
+
+void main() {
+  late Directory ops;
+  const own = 'device-mine';
+  const other = 'device-theirs';
+
+  setUp(() => ops = Directory.systemTemp.createTempSync('onote_watch_'));
+  tearDown(() {
+    try {
+      ops.deleteSync(recursive: true);
+    } catch (_) {}
+  });
+
+  /// A watcher whose poll is fast enough to test, wired to a counter.
+  ({OpFolderWatcher w, List<int> fired}) watcher({
+    Duration settle = const Duration(milliseconds: 20),
+    Duration poll = const Duration(milliseconds: 40),
+  }) {
+    final fired = <int>[];
+    final w = OpFolderWatcher(
+      opsDir: ops,
+      ownDevice: own,
+      settle: settle,
+      pollEvery: poll,
+      onForeignChange: () => fired.add(1),
+    );
+    return (w: w, fired: fired);
+  }
+
+  /// Long enough for a debounce, a poll tick and a filesystem event to land.
+  Future<void> settleAll() =>
+      Future<void>.delayed(const Duration(milliseconds: 400));
+
+  test('a plain write to a foreign log is noticed', () async {
+    final (w: w, fired: fired) = watcher();
+    w.start();
+    addTearDown(w.stop);
+    await settleAll();
+    fired.clear();
+
+    File('${ops.path}/$other.oplog').writeAsStringSync('{"op":"x"}\n');
+    await settleAll();
+    expect(fired, isNotEmpty);
+  });
+
+  test('A CLOUD CLIENT\'S TEMP-FILE RENAME IS NOTICED', () async {
+    // The actual failure. OneDrive and Drive write `<name>.oplog~RF1a2b.TMP`
+    // and rename it into place: every event before the rename names a file
+    // that does not end in `.oplog`, and the rename event itself carries the
+    // TEMP path in `.path` with the real target in `.destination`.
+    final (w: w, fired: fired) = watcher();
+    w.start();
+    addTearDown(w.stop);
+    await settleAll();
+    fired.clear();
+
+    final tmp = File('${ops.path}/$other.oplog~RF1a2b3c.TMP')
+      ..writeAsStringSync('{"op":"x"}\n');
+    tmp.renameSync('${ops.path}/$other.oplog');
+    await settleAll();
+
+    expect(fired, isNotEmpty,
+        reason: 'this is exactly how the sync folder receives a log, and it '
+            'produced nothing at all before');
+  });
+
+  test('a log that appears while nothing is watching is still noticed',
+      () async {
+    // A network share, a container, a platform whose notifications do not
+    // arrive: the poll is the floor and has to catch it on its own.
+    final (w: w, fired: fired) = watcher();
+    w.start();
+    addTearDown(w.stop);
+    await settleAll();
+    fired.clear();
+
+    // Same length, different content and mtime — a cloud client can replace a
+    // file with one of the same size, which a size-only check would miss.
+    final f = File('${ops.path}/$other.oplog')
+      ..writeAsStringSync('{"op":"aaa"}\n');
+    await settleAll();
+    fired.clear();
+    f.writeAsStringSync('{"op":"bbb"}\n');
+    f.setLastModifiedSync(
+        DateTime.now().add(const Duration(seconds: 5)));
+    await settleAll();
+    expect(fired, isNotEmpty, reason: 'a same-size replacement still counts');
+  });
+
+  test('our own writes do not trigger a pull', () async {
+    // Otherwise every save schedules a re-read of what was just written.
+    final (w: w, fired: fired) = watcher();
+    w.start();
+    addTearDown(w.stop);
+    await settleAll();
+    fired.clear();
+
+    File('${ops.path}/$own.oplog').writeAsStringSync('{"op":"mine"}\n');
+    await settleAll();
+    expect(fired, isEmpty);
+  });
+
+  test('arming the watcher does not itself fire', () async {
+    // The poll takes a baseline on start; without that, opening any notebook
+    // would pull immediately and the freeze would look like part of opening.
+    File('${ops.path}/$other.oplog').writeAsStringSync('{"op":"already"}\n');
+    final (w: w, fired: fired) = watcher();
+    w.start();
+    addTearDown(w.stop);
+    await settleAll();
+    expect(fired, isEmpty,
+        reason: 'existing logs are the baseline, not news');
+  });
+
+  test('a burst of writes produces one pull, not one per write', () async {
+    final (w: w, fired: fired) = watcher();
+    w.start();
+    addTearDown(w.stop);
+    await settleAll();
+    fired.clear();
+
+    final f = File('${ops.path}/$other.oplog');
+    for (var i = 0; i < 8; i++) {
+      f.writeAsStringSync('{"op":"$i"}\n', mode: FileMode.append);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    await settleAll();
+    expect(fired.length, lessThanOrEqualTo(2),
+        reason: 'the settle window exists to coalesce a burst');
+  });
+
+  _incremental();
+
+  test('stopping really stops', () async {
+    final (w: w, fired: fired) = watcher();
+    w.start();
+    await settleAll();
+    await w.stop();
+    fired.clear();
+
+    File('${ops.path}/$other.oplog').writeAsStringSync('{"op":"after"}\n');
+    await settleAll();
+    expect(fired, isEmpty);
+    expect(w.isWatching, isFalse);
+  });
+}
+
+// ── Reading a foreign log without re-reading all of it ──────────────────
+
+void _incremental() {
+  late Directory dir;
+  setUp(() => dir = Directory.systemTemp.createTempSync('onote_incr_'));
+  tearDown(() {
+    try {
+      dir.deleteSync(recursive: true);
+    } catch (_) {}
+  });
+
+  test('resuming from an offset returns only what is new', () {
+    // The cost this removes: `pendingForeignOps` ran `readDevice`, parsing the
+    // whole file to discard everything under the watermark — 1,977 ms for one
+    // real 64.6 MB log, on the UI thread, on every single pull.
+    final store = OpLogStore.forNotebook('${dir.path}/N.onote');
+    store.ensureInitialised(notebookId: 'nb', title: 'N');
+    Op op(int seq) => Op(
+        device: 'them',
+        seq: seq,
+        lamport: seq,
+        timestamp: 1000 + seq,
+        kind: OpKind.blockSet,
+        data: {'pageId': 'p', 'block': {'id': 'b$seq'}});
+
+    store.append('them', [op(1), op(2)]);
+    final first = store.readDeviceFrom('them', 0);
+    expect(first.ops.map((o) => o.seq), [1, 2]);
+    expect(first.next, greaterThan(0));
+
+    store.append('them', [op(3)]);
+    final second = store.readDeviceFrom('them', first.next);
+    expect(second.ops.map((o) => o.seq), [3],
+        reason: 'only the appended op is parsed');
+
+    // Idempotent: nothing new means nothing returned and no movement.
+    final third = store.readDeviceFrom('them', second.next);
+    expect(third.ops, isEmpty);
+    expect(third.next, second.next);
+  });
+
+  test('a torn final line is left for next time, not lost', () {
+    // A cloud client's file routinely ends mid-line. Resuming inside that line
+    // would drop the op it belongs to for good.
+    final store = OpLogStore.forNotebook('${dir.path}/N.onote');
+    store.ensureInitialised(notebookId: 'nb', title: 'N');
+    final f = File('${store.opsDir.path}/them.oplog');
+    f.writeAsStringSync('{"v":1,"dev":"them","seq":1,"lc":1,"ts":1,'
+        '"enc":"none","op":"block.set","d":{"pageId":"p","block":{"id":"b1"}}}\n'
+        '{"v":1,"dev":"them","seq":2,"lc":2,"ts":2,"enc":"none","op":"blo');
+
+    final r = store.readDeviceFrom('them', 0);
+    expect(r.ops.map((o) => o.seq), [1], reason: 'only the complete line');
+
+    // The rest arrives; resuming must produce op 2 whole.
+    f.writeAsStringSync(
+        'ck.set","d":{"pageId":"p","block":{"id":"b2"}}}\n',
+        mode: FileMode.append);
+    final r2 = store.readDeviceFrom('them', r.next);
+    expect(r2.ops.map((o) => o.seq), [2],
+        reason: 'the torn op is recovered, not skipped');
+  });
+
+  test('a log that shrank is re-read from the start', () {
+    // A fresh clone, a restore, a future compaction: an old offset points at
+    // a meaningless position and must not be trusted.
+    final store = OpLogStore.forNotebook('${dir.path}/N.onote');
+    store.ensureInitialised(notebookId: 'nb', title: 'N');
+    final f = File('${store.opsDir.path}/them.oplog');
+    f.writeAsStringSync('{"v":1,"dev":"them","seq":9,"lc":9,"ts":9,'
+        '"enc":"none","op":"block.set","d":{"pageId":"p","block":{"id":"x"}}}\n');
+    final r = store.readDeviceFrom('them', 9000000);
+    expect(r.ops.map((o) => o.seq), [9],
+        reason: 'an offset past the end means start over, not read nothing');
+  });
+}

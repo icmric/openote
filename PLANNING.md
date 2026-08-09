@@ -47,3 +47,6 @@ Inking
 
 Navigation
     On touch screens, by default draging with a finger should pan around the page, it shouldnt be the selector tool.
+
+Content boxes
+    Should expand to a preset width (which they already do well), OR to the edge of the screen if they are put off to the side. Can be manually expanded beyond this limit, but it should automatically stop growing before going off the screen (with a small amount of buffer room)
