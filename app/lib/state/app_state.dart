@@ -1222,6 +1222,100 @@ class AppState extends ChangeNotifier
     return out;
   }
 
+  // ── Housekeeping nobody has to know about ────────────────────────────
+  //
+  // "Realistically no one will notice any of this nor will they think about
+  // running it."
+  //
+  // Correct, and it is the whole problem with a maintenance button: the people
+  // whose notebooks need it are exactly the people who will never press it.
+  // A notebook imported before handwriting became binary carries ~80 MB it
+  // does not need, and its owner has no way to know.
+  //
+  // **Only work that is reversible in effect happens on its own.** Converting
+  // ink rewrites a representation and loses nothing — the strokes come back
+  // identically, which `ink_storage_test` asserts point by point. DELETING
+  // anything does not qualify: leftover files and duplicate notebooks stay a
+  // human decision, because the cost of being wrong is somebody's notes and
+  // the cost of asking is one click.
+
+  /// Notebooks this session has already looked at, so switching back and forth
+  /// does not re-run anything.
+  final Set<String> _housekept = {};
+
+  Timer? _housekeepingTimer;
+
+  /// When [nb] was last tidied, so a notebook with nothing to do is not
+  /// examined on every single open.
+  static String _housekeepingKey(String nb) => 'tidiedAt:$nb';
+
+  void _scheduleHousekeeping(String nb) {
+    if (_housekept.contains(nb)) return;
+    _housekeepingTimer?.cancel();
+    // Well after the notebook has finished opening. The open path already
+    // costs a replay and a fold; adding a scan to it would make the thing
+    // meant to be invisible the slowest part of launching.
+    _housekeepingTimer =
+        Timer(const Duration(seconds: 20), () => _runHousekeeping(nb));
+  }
+
+  Future<void> _runHousekeeping(String nb) async {
+    if (_disposed || notebookId != nb || !_housekept.add(nb)) return;
+    // Not while there are unsaved edits, and not while a sync is mid-flight:
+    // the conversion rewrites pages, and a pull rewrites pages from the log.
+    // Those two racing is exactly the bug that made a manual conversion
+    // silently revert.
+    if (_dirty || _pulling) return;
+
+    try {
+      final last = (_repo.getSetting(_housekeepingKey(nb)) as num?)?.toInt();
+      final now = nowMs();
+      // A notebook with nothing to do is re-examined weekly, not hourly. The
+      // check itself is one indexed LIKE query, but it is not free on a big
+      // container and there is no reason to pay it every launch.
+      if (last != null && now - last < const Duration(days: 7).inMilliseconds) {
+        return;
+      }
+
+      final pages = inlineInkPageCount(nb);
+      if (pages == 0) {
+        _repo.setSetting(_housekeepingKey(nb), now);
+        return;
+      }
+
+      // Announced, not silent. "Without requiring direct input" is not the
+      // same as "without telling them": a notebook quietly rewriting itself is
+      // alarming if you notice, and this is a change the user might reasonably
+      // want to know happened.
+      housekeepingNote = 'Making handwriting smaller on $pages pages…';
+      notifyListeners();
+
+      final r = await convertInkToBinary(nb);
+      if (_disposed) return;
+      _repo.setSetting(_housekeepingKey(nb), nowMs());
+      housekeepingNote = r.converted > 0
+          ? 'Handwriting made smaller on ${r.converted} pages.'
+          : null;
+      notifyListeners();
+      // The note is information, not a task. It clears itself.
+      if (housekeepingNote != null) {
+        Timer(const Duration(seconds: 12), () {
+          if (_disposed) return;
+          housekeepingNote = null;
+          notifyListeners();
+        });
+      }
+    } catch (e) {
+      // Housekeeping must never be able to break using the app.
+      debugPrint('[openote/tidy] $nb: $e');
+      housekeepingNote = null;
+    }
+  }
+
+  /// What background housekeeping is doing, for the status bar. Null when
+  /// nothing is happening, which is almost always.
+  String? housekeepingNote;
+
   /// Pull once the background replay has finished, without blocking the open.
   ///
   /// Separate from [syncPull] because that one warms the recorder itself and
@@ -3622,6 +3716,7 @@ class AppState extends ChangeNotifier
     // page when it lands, so the content appears a moment later rather than
     // the whole window waiting for it.
     _foldWhenWarm(notebookId!);
+    _scheduleHousekeeping(notebookId!);
     // Re-point the folder watcher at THIS notebook's ops directory.
     //
     // It was armed once at startup and never moved. The retry that could have
@@ -5294,6 +5389,7 @@ class AppState extends ChangeNotifier
   void dispose() {
     _disposed = true;
     _stopWatching();
+    _housekeepingTimer?.cancel();
     _syncStatusPoll?.cancel();
     _saveDebounce?.cancel();
     // The planner owns a Timer. A `late final` touched here is constructed

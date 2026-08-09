@@ -931,6 +931,16 @@ class _StatusBar extends StatelessWidget {
           // notebook — until then there is nothing to say, and a permanent
           // "1 device" chip would be noise.
           if (app.notebookId != null) _SyncChip(app: app),
+          // Background housekeeping, when there is any. Nothing to click and
+          // nothing to decide — it says what is happening and goes away.
+          // "Without requiring direct input" is not the same as "in secret":
+          // a notebook that quietly rewrites itself is alarming if you notice.
+          if (app.housekeepingNote != null) ...[
+            const SizedBox(width: 10),
+            Text(app.housekeepingNote!,
+                style: TextStyle(
+                    fontSize: 11, color: context.surfaces.textSecondary)),
+          ],
           const SizedBox(width: 12),
           // Active compute engine (§ADR-0002): green chip when the Rust core
           // is linked, with the live page content-hash it computed on save.
