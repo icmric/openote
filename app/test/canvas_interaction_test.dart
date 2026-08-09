@@ -111,6 +111,48 @@ void main() {
       app.cancelPendingSave();
     });
 
+    testWidgets('DRAGGING THE SCROLL BAR SCROLLS — IT DOES NOT MARQUEE',
+        (t) async {
+      // The canvas's select handler is a raw Listener, outside the gesture
+      // arena — so the bar's GestureDetector winning meant nothing to it,
+      // and a drag on the track was also a marquee: "it draws up a box
+      // behind it as it goes up". The bar now claims its pointers.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // Content far below the fold, so the page is taller than the window
+      // (the bar only exists then) and a stray marquee would catch nothing —
+      // the tell is the pending→marquee mode itself selecting NOTHING while
+      // the page also fails to move. Selection empty AND offset moved is
+      // the pass.
+      app.addBlock(Block(
+          type: BlockType.text,
+          x: 100,
+          y: 2400,
+          w: 300,
+          content: {'text': 'far below', 'autoWidth': false}));
+      app.select(null);
+      await pump(t);
+
+      final before = app.canvas.offset;
+      final g = await t.startGesture(const Offset(794, 100),
+          kind: PointerDeviceKind.mouse);
+      await t.pump();
+      // Several small moves, as a real mouse produces: a single big jump is
+      // swallowed whole by the drag recognizer's ACCEPT and never arrives
+      // as an update.
+      for (var i = 0; i < 4; i++) {
+        await g.moveBy(const Offset(0, 30));
+        await t.pump();
+      }
+      await g.up();
+      await t.pump();
+
+      expect(app.canvas.offset.dy, lessThan(before.dy),
+          reason: 'dragging the thumb down scrolls the page down');
+      expect(app.selectedIds, isEmpty,
+          reason: 'and no marquee ran behind the bar');
+      app.cancelPendingSave();
+    });
+
     testWidgets('a mouse drag still marquees', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final b = app.addBlock(Block(

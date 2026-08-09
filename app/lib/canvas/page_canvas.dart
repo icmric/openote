@@ -686,6 +686,11 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // ── The page scroll bar ─────────────────────────────────────────────────
 
+  /// Hover/drag state for the bar, for the colour feedback a control that
+  /// consumes your pointer owes you.
+  bool _scrollbarHover = false;
+  bool _scrollbarDrag = false;
+
   /// Screen-space vertical scroll bar, present only when the page is taller
   /// than the viewport at the current zoom. Built inside the canvas's
   /// AnimatedBuilder, so it tracks every pan and zoom without its own state.
@@ -703,6 +708,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final range = trackH - thumbH;
     if (range <= 0) return const [];
     final progress = (-controller.offset.dy / scrollable).clamp(0.0, 1.0);
+    final live = _scrollbarDrag || _scrollbarHover;
 
     void jumpTo(double localY) {
       final p = ((localY - margin - thumbH / 2) / range).clamp(0.0, 1.0);
@@ -710,21 +716,41 @@ class _PageCanvasState extends State<PageCanvas> {
     }
 
     return [
-      // The track: click to jump. Kept narrow so the strip it takes from the
-      // page edge is the width every other app's scroll bar already takes.
+      // The track: click to jump, drag to scroll. Kept narrow so the strip
+      // it takes from the page edge is the width every other app's scroll
+      // bar already takes.
       Positioned(
         right: 0,
         top: 0,
         bottom: 0,
         width: 12,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (d) => jumpTo(d.localPosition.dy),
-          onVerticalDragUpdate: (d) => controller.panBy(
-              Offset(0, -d.delta.dy * scrollable / range)),
-          child: Container(
-            color: (dark ? OnoteColors.night200 : OnoteColors.paper200)
-                .withValues(alpha: .35),
+        child: MouseRegion(
+          onEnter: (_) => setState(() => _scrollbarHover = true),
+          onExit: (_) => setState(() => _scrollbarHover = false),
+          child: Listener(
+            // CLAIM the pointer, exactly as a block does. The canvas's
+            // select-mode handler is a raw Listener, not a gesture-arena
+            // participant — the GestureDetector below winning its arena
+            // means nothing to it, so a drag on the track was ALSO a
+            // pending→marquee on the canvas: "it draws up a box behind it
+            // as it goes up".
+            onPointerDown: (e) => app.claimedPointers.add(e.pointer),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (d) => jumpTo(d.localPosition.dy),
+              onVerticalDragStart: (_) =>
+                  setState(() => _scrollbarDrag = true),
+              onVerticalDragUpdate: (d) => controller.panBy(
+                  Offset(0, -d.delta.dy * scrollable / range)),
+              onVerticalDragEnd: (_) =>
+                  setState(() => _scrollbarDrag = false),
+              onVerticalDragCancel: () =>
+                  setState(() => _scrollbarDrag = false),
+              child: Container(
+                color: (dark ? OnoteColors.night200 : OnoteColors.paper200)
+                    .withValues(alpha: live ? .55 : .35),
+              ),
+            ),
           ),
         ),
       ),
@@ -732,13 +758,17 @@ class _PageCanvasState extends State<PageCanvas> {
         right: 2,
         top: margin + progress * range,
         child: IgnorePointer(
-          // The track above owns the gestures; the thumb is the indicator.
+          // The track above owns the gestures; the thumb is the indicator —
+          // brighter under the mouse, primary while dragging, so consuming
+          // the pointer LOOKS like consuming the pointer.
           child: Container(
             width: 8,
             height: thumbH,
             decoration: BoxDecoration(
-              color: (dark ? OnoteColors.moon100 : OnoteColors.graphite500)
-                  .withValues(alpha: .55),
+              color: _scrollbarDrag
+                  ? Theme.of(context).colorScheme.primary
+                  : (dark ? OnoteColors.moon100 : OnoteColors.graphite500)
+                      .withValues(alpha: _scrollbarHover ? .85 : .55),
               borderRadius: BorderRadius.circular(4),
             ),
           ),
@@ -986,7 +1016,12 @@ class _PageCanvasState extends State<PageCanvas> {
       // gathered into one selection.
       canvas = Listener(
         behavior: HitTestBehavior.opaque,
-        onPointerDown: _lassoDown,
+        onPointerDown: (e) {
+          // The scroll bar claims its pointers; a lasso must not start
+          // under it.
+          if (app.claimedPointers.remove(e.pointer)) return;
+          _lassoDown(e);
+        },
         onPointerMove: _lassoMove,
         onPointerUp: _lassoUp,
         child: canvas,
@@ -1001,6 +1036,9 @@ class _PageCanvasState extends State<PageCanvas> {
       canvas = Listener(
         behavior: HitTestBehavior.opaque,
         onPointerDown: (e) {
+          // The scroll bar claims its pointers; the pen must not draw a
+          // stroke behind it.
+          if (app.claimedPointers.remove(e.pointer)) return;
           _noteStylus(e);
           if (e.kind != PointerDeviceKind.touch) {
             _inkDown(e);

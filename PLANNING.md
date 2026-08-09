@@ -54,9 +54,13 @@ accesability
 Local code
     Write and execute code like JS, SQL, etc
     Similar to juniper notebook
-    → Needs a sandbox decision before anything else: executing note content
-      is the one feature where "a shared notebook can contain anything a
-      stranger wrote" stops being hypothetical.
+    → PLANNED: docs/planning/v0.14-local-code.md. The sandbox rule leads
+      (manual runs only, engines with no ambient authority, "a stranger's
+      cell can waste five seconds of CPU and nothing else"). Phase 1 is
+      SQL — zero new dependencies, page tables become queryable, lands the
+      "SQL like table" half of the Tables ask too; Phase 2 is JS via an
+      embedded QuickJS; sessions/write-back/charts staged behind them.
+      Three questions for you at the bottom of the doc.
 
 Cloud storage and saving
     Currently no real way to share a file or page with someone else, would like to address that
