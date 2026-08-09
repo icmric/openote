@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 
 import '../editor/text_block_view.dart';
+import '../export/csv_import.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart';
@@ -349,7 +350,15 @@ Future<int> dropFilesOntoCanvas(
     final name = path.split(Platform.pathSeparator).last;
     // Cascade multiple drops so they don't land exactly on top of each other.
     final where = at + Offset(offset, offset);
-    if (!_looksLikeImage(name)) {
+    if (looksLikeCsv(name)) {
+      // Tabular data becomes a TABLE, not an attachment — "import data (csv)"
+      // means the rows end up editable on the page, the same block the table
+      // button makes. An unusable file falls back to an attachment, so the
+      // drop never simply vanishes.
+      if (!insertCsvTable(app, bytes, where).placed) {
+        insertFileBytes(app, bytes, name, where);
+      }
+    } else if (!_looksLikeImage(name)) {
       insertFileBytes(app, bytes, name, where);
     } else if (insertImageIntoTextAt(app, bytes, mimeForExtension(name), where,
             dark: dark) ==

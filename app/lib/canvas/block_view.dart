@@ -12,6 +12,7 @@ import '../editor/text_block_view.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import '../ui/color_picker.dart';
 import '../ui/context_menus.dart';
 import 'canvas_controller.dart';
 import 'portal_view.dart';
@@ -586,9 +587,13 @@ class _BlockViewState extends State<BlockView> {
           height: b.h,
           constraints: const BoxConstraints(minHeight: 36),
           decoration: BoxDecoration(
-            color: editing || selected || _hover
-                ? (dark ? OnoteColors.night50 : OnoteColors.paper0)
-                : Colors.transparent,
+            // A chosen fill beats the hover/selection surface: the border
+            // still carries those states, and a translucent tint the user
+            // picked must not flicker opaque every time the mouse crosses it.
+            color: onoteColorFromHex(b.content['bg'] as String?) ??
+                (editing || selected || _hover
+                    ? (dark ? OnoteColors.night50 : OnoteColors.paper0)
+                    : Colors.transparent),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               width: primary && !editing ? 2 : 1,

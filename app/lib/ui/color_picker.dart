@@ -4,6 +4,19 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 
+/// The picker's own hex convention, decoded: `RRGGBB` (opaque) or `RRGGBBAA`.
+/// Public because everything that STORES a picked colour needs the same
+/// reading of it when it draws — a second parser is a second convention.
+Color? onoteColorFromHex(String? hex) {
+  if (hex == null) return null;
+  final h = hex.replaceFirst('#', '');
+  final v = int.tryParse(h, radix: 16);
+  if (v == null) return null;
+  if (h.length == 6) return Color(0xFF000000 | v);
+  if (h.length == 8) return Color(((v & 0xFF) << 24) | (v >> 8));
+  return null;
+}
+
 /// Full colour picker per Style Guide §7a.3: preset palette grid →
 /// recent/custom row → custom area (hue slider + saturation/value field +
 /// RGBA sliders + hex). Returns an RRGGBB or RRGGBBAA hex string, or null.

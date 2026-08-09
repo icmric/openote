@@ -15,6 +15,7 @@ import '../model/models.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import '../ui/color_picker.dart';
 import 'ink_painter.dart';
 
 /// Live page embeds (transclusion) — EMBED-2…7, Data Model Spec §7.
@@ -255,7 +256,19 @@ class PortalContent extends StatelessWidget {
                       Positioned(
                         left: b.x,
                         top: b.y,
-                        child: _contentFor(context, b, dark),
+                        // A box's chosen fill travels with it into the window
+                        // — BlockView draws it on the source page, so a
+                        // window that dropped it would not look like the page
+                        // it claims to show.
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color:
+                                onoteColorFromHex(b.content['bg'] as String?) ??
+                                    Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: _contentFor(context, b, dark),
+                        ),
                       ),
                   ],
                 ),

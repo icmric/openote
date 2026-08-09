@@ -1,8 +1,11 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import '../export/csv_import.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
+import 'color_picker.dart';
 import 'insert_portal_dialog.dart';
 
 /// Right-click menus (style guide: most actions within ≤2 clicks).
@@ -53,6 +56,13 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
           'lock',
           b.content['locked'] == true ? Icons.lock_open_outlined : Icons.lock_outline,
           b.content['locked'] == true ? 'Unlock' : 'Lock in place'),
+      // The box itself gets attributes, starting with a fill. The picker
+      // returns RRGGBBAA, so transparency comes with it — a translucent
+      // highlight over a diagram is half of why anyone tints a box.
+      _item('bg', Icons.format_color_fill, 'Background colour…'),
+      if (b.content['bg'] != null)
+        _item('bg-clear', Icons.format_color_reset_outlined,
+            'Remove background'),
       const PopupMenuDivider(),
       _item('front', Icons.flip_to_front, 'Bring to front'),
       _item('back', Icons.flip_to_back, 'Send to back'),
@@ -70,6 +80,20 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       } else {
         b.content['locked'] = true;
       }
+      app.updateBlock(b);
+    case 'bg':
+      if (context.mounted) {
+        final hex = await showOnoteColorPicker(context, app,
+            initial: b.content['bg'] as String?);
+        if (hex != null) {
+          app.pushUndo();
+          b.content['bg'] = hex;
+          app.updateBlock(b);
+        }
+      }
+    case 'bg-clear':
+      app.pushUndo();
+      b.content.remove('bg');
       app.updateBlock(b);
     case 'copy':
       app.copySelectedBlocks();
@@ -98,6 +122,7 @@ Future<void> showCanvasMenu(BuildContext context, AppState app,
       _item('table', Icons.table_chart_outlined, 'New table here'),
       _item('portal', Icons.picture_in_picture_alt_outlined,
           'Page window here…'),
+      _item('csv', Icons.grid_on_outlined, 'Table from CSV here…'),
       _item('paste', Icons.paste_outlined, 'Paste',
           enabled: app.canPasteBlocks, shortcut: 'Ctrl+V'),
       const PopupMenuDivider(),
@@ -137,6 +162,33 @@ Future<void> showCanvasMenu(BuildContext context, AppState app,
     case 'portal':
       if (context.mounted) {
         await showInsertPortalDialog(context, app, pagePt);
+      }
+    case 'csv':
+      // Same face-the-failure rule as the Insert ribbon's pickers: a picker
+      // that cannot open must say so, not be a menu item that does nothing.
+      final XFile? file;
+      try {
+        file = await openFile(acceptedTypeGroups: const [
+          XTypeGroup(label: 'Tables', extensions: ['csv', 'tsv'])
+        ]);
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Couldn't open the file picker: $e")));
+        }
+        return;
+      }
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      final r = insertCsvTable(app, bytes, pagePt);
+      if (context.mounted) {
+        if (!r.placed) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('That file has no rows in it.')));
+        } else if (r.note != null) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(r.note!)));
+        }
       }
     case 'paste':
       app.pasteBlocks(at: pagePt);
