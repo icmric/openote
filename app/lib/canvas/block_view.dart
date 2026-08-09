@@ -35,6 +35,24 @@ class BlockView extends StatefulWidget {
   State<BlockView> createState() => _BlockViewState();
 }
 
+/// Where an auto-width text box must stop growing, in page units — a little
+/// short of the viewport's right edge — or null when the ordinary growth
+/// clamp ([TextBlockView.maxAutoW]) is reached first and the edge never
+/// comes into it.
+///
+/// Floored at [TextBlockView.minAutoW]: a box created hard against the edge
+/// still gets a usable width and pokes past rather than collapsing to a
+/// sliver, which is the lesser of the two wrongs.
+double? autoWidthEdgeCap({
+  required double blockX,
+  required double viewportRightPage,
+  double buffer = 24,
+}) {
+  final room = viewportRightPage - buffer - blockX;
+  if (room >= TextBlockView.maxAutoW) return null;
+  return room < TextBlockView.minAutoW ? TextBlockView.minAutoW : room;
+}
+
 /// Screen-space chrome reserved AROUND the block's content, in page units.
 ///
 /// Reserved rather than overflowed, and that is the whole trick.
@@ -467,6 +485,27 @@ class _BlockViewState extends State<BlockView> {
     // width — so this does not disturb an imported layout.)
     if (b.type == BlockType.text && b.content['autoWidth'] != false) {
       displayW = TextBlockView.autoWidth(b, dark: dark);
+      // "It should automatically stop growing before going off the screen."
+      // A box near the right edge stops at the viewport and PINS there —
+      // the same one-way `autoWidth: false` latch a manual resize sets — so
+      // it wraps like a fixed box from then on and can still be dragged
+      // wider by hand. Checked only while EDITING, which is the only time a
+      // box grows: applying it in read mode would make zooming in reflow
+      // every box near the edge, because the viewport edge in page units
+      // moves with the zoom. (A zero viewport means there is no canvas — a
+      // bare test harness — and no edge to stop at.)
+      if (editing && widget.controller.viewport.width > 0) {
+        final cap = autoWidthEdgeCap(
+          blockX: b.x,
+          viewportRightPage: widget.controller
+              .screenToPage(Offset(widget.controller.viewport.width, 0))
+              .dx,
+        );
+        if (cap != null && displayW > cap) {
+          displayW = cap;
+          b.content['autoWidth'] = false;
+        }
+      }
       b.w = displayW;
     }
     // Math sizes itself: equations are tall/wide in ways a stored width can't

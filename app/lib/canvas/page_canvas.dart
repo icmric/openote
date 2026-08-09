@@ -51,6 +51,14 @@ class _PageCanvasState extends State<PageCanvas> {
   Offset _marqueeEndPage = Offset.zero;
   Offset _lastScreen = Offset.zero;
 
+  /// What kind of pointer went down, decided when a pending drag commits:
+  /// a mouse or pen drag on empty page is a marquee, a FINGER drag is a pan.
+  /// "On touch screens, by default dragging with a finger should pan around
+  /// the page, it shouldn't be the selector tool" — the platform convention
+  /// everywhere touch exists, and marquee stays reachable with a pen or a
+  /// mouse. A finger TAP still does everything a click does.
+  PointerDeviceKind _downKind = PointerDeviceKind.mouse;
+
   // Two-finger touch pinch tracking.
   final Map<int, Offset> _touches = {};
   double? _pinchBaseDist;
@@ -501,6 +509,7 @@ class _PageCanvasState extends State<PageCanvas> {
     if (app.claimedPointers.remove(e.pointer)) return; // a block owns this one
     _downScreen = e.localPosition;
     _lastScreen = e.localPosition;
+    _downKind = e.kind;
 
     if (e.kind == PointerDeviceKind.mouse &&
         (e.buttons & kMiddleMouseButton) != 0) {
@@ -565,8 +574,16 @@ class _PageCanvasState extends State<PageCanvas> {
         setState(() {});
       case _DragMode.pending:
         if ((e.localPosition - _downScreen).distance > 5) {
-          _mode = _DragMode.marquee;
-          _marqueeEndPage = controller.screenToPage(e.localPosition);
+          if (_downKind == PointerDeviceKind.touch) {
+            // A finger drag on empty page pans (see _downKind). The distance
+            // already travelled is applied too, so the page doesn't hiccup
+            // by the 5px it took to decide.
+            _mode = _DragMode.pan;
+            controller.panBy(e.localPosition - _downScreen);
+          } else {
+            _mode = _DragMode.marquee;
+            _marqueeEndPage = controller.screenToPage(e.localPosition);
+          }
           setState(() {});
         }
       case _DragMode.marquee:
