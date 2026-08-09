@@ -761,7 +761,20 @@ class _CommandBarState extends State<CommandBar> {
   Future<void> _insertImage(BuildContext context) async {
     const typeGroup = XTypeGroup(
         label: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp']);
-    final file = await openFile(acceptedTypeGroups: [typeGroup]);
+    final XFile? file;
+    try {
+      file = await openFile(acceptedTypeGroups: [typeGroup]);
+    } catch (e) {
+      // The picker itself failing (a platform-channel or GTK problem) used to
+      // be an unhandled async error in a console nobody runs the app from —
+      // on screen, a button that simply does nothing. Reported from Linux as
+      // exactly that; whatever the cause turns out to be, it must have a face.
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Couldn't open the file picker: $e")));
+      }
+      return;
+    }
     if (file == null) return;
     final Uint8List bytes = await file.readAsBytes();
     final ext = file.name.split('.').last.toLowerCase();
@@ -832,13 +845,26 @@ class _CommandBarState extends State<CommandBar> {
   /// are. That is the deal the dialog states before the picker opens, and the
   /// reason the copy shows its progress rather than looking like a freeze.
   Future<void> _insertLocalVideo(BuildContext context) async {
-    final picked = await openFile(acceptedTypeGroups: [
-      const XTypeGroup(
-          label: 'Video and audio',
-          extensions: [...kVideoExtensions, ...kAudioExtensions]),
-    ]);
+    final XFile? picked;
+    try {
+      picked = await openFile(acceptedTypeGroups: [
+        const XTypeGroup(
+            label: 'Video and audio',
+            extensions: [...kVideoExtensions, ...kAudioExtensions]),
+      ]);
+    } catch (e) {
+      // Same face-the-failure rule as _insertImage.
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Couldn't open the file picker: $e")));
+      }
+      return;
+    }
     if (picked == null) return;
-    final source = File(picked.path);
+    // Rebound non-null: `picked` was assigned inside a try, which costs its
+    // promotion inside the closures below.
+    final chosen = picked;
+    final source = File(chosen.path);
     final size = await source.length();
     if (!context.mounted) return;
     final progress = ValueNotifier<double>(0);
@@ -848,7 +874,7 @@ class _CommandBarState extends State<CommandBar> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _MediaCopyDialog(
-        name: picked.name,
+        name: chosen.name,
         bytes: size,
         progress: progress,
         onCancel: () {
@@ -879,8 +905,8 @@ class _CommandBarState extends State<CommandBar> {
         content: {
           'kind': 'video',
           'media': stored,
-          'name': picked.name,
-          'mime': mimeForMediaExtension(picked.path) ??
+          'name': chosen.name,
+          'mime': mimeForMediaExtension(chosen.path) ??
               'application/octet-stream',
           'size': size,
         },
@@ -913,7 +939,17 @@ class _CommandBarState extends State<CommandBar> {
   }
 
   Future<void> _insertFile(BuildContext context) async {
-    final file = await openFile();
+    final XFile? file;
+    try {
+      file = await openFile();
+    } catch (e) {
+      // Same face-the-failure rule as _insertImage.
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Couldn't open the file picker: $e")));
+      }
+      return;
+    }
     if (file == null) return;
     final Uint8List bytes = await file.readAsBytes();
     final hash = app.addBlob(bytes, 'application/octet-stream');

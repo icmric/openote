@@ -122,8 +122,23 @@ class GitSync {
   /// for input at a prompt nobody can see — the app appears to hang, and the
   /// 90-second timeout is the only thing that ends it. Off, git fails
   /// immediately with something the user can read instead.
+  ///
+  /// **The commit identity is Openote's own, always.** A machine that has
+  /// never had git configured — which is every computer belonging to the
+  /// student this app is for — refuses to commit at all: "Author identity
+  /// unknown … Please tell me who you are." That is how "create and push"
+  /// on a fresh Linux install created the repository (the API needs no git)
+  /// and then synced nothing, forever: every cycle died at the commit step.
+  /// These commits are transport records of log files, not authorship, so a
+  /// fixed identity is not just a fallback — it also makes the history read
+  /// the same from every device. Environment rather than `-c`, because a
+  /// `pull --no-rebase` writes MERGE commits and those need an identity too.
   Map<String, String> get _env => {
         'GIT_TERMINAL_PROMPT': '0',
+        'GIT_AUTHOR_NAME': 'Openote',
+        'GIT_AUTHOR_EMAIL': 'openote@localhost',
+        'GIT_COMMITTER_NAME': 'Openote',
+        'GIT_COMMITTER_EMAIL': 'openote@localhost',
         if (token != null && token!.isNotEmpty) _tokenVar: token!,
       };
 
@@ -170,7 +185,13 @@ class GitSync {
     // would be overwritten by merge" — which is what a second device joining
     // an existing notebook hits, every time, on the one operation that has to
     // work for the feature to be worth anything.
-    await commitAll('Openote: track this notebook');
+    //
+    // And the result is PROPAGATED, not discarded. This used to return
+    // success unconditionally, which buried the fresh-machine identity
+    // failure (see [_env]) under a green light — the first symptom anyone
+    // saw was a repository on GitHub with nothing in it.
+    final committed = await commitAll('Openote: track this notebook');
+    if (!committed.ok) return committed;
     return const GitResult(0, '', '');
   }
 

@@ -58,19 +58,20 @@ void main() {
 
   /// Publish a device's open notebook to [url].
   ///
-  /// The repository is initialised and given an identity BEFORE `setGitEnabled`
-  /// runs, because a machine with no global git config cannot commit — CI is
-  /// one, and so is a fresh container. `GitSync.init` is idempotent, so doing
-  /// it here and again inside `setGitEnabled` is free.
+  /// Deliberately NO `git config user.name/email` here. This helper used to
+  /// inject an identity "because a machine with no global git config cannot
+  /// commit — CI is one, and so is a fresh container" — which was the product
+  /// bug itself, papered over where only the tests could benefit: on a
+  /// student's fresh Linux install, "create and push" made the repository
+  /// over the API and then every commit died on "Author identity unknown",
+  /// so nothing ever synced. GitSync now carries its own identity in the
+  /// environment, and running these tests WITHOUT the workaround is what
+  /// proves it — CI has no global git config, exactly like that laptop.
   Future<void> publish(AppState app, String url) async {
     final dir = app.currentNotebook.logDirPath;
     Directory(dir).createSync(recursive: true);
     final git = (await GitSync.gitExecutable())!;
     await Process.run(git, ['init', '--initial-branch=main'],
-        workingDirectory: dir);
-    await Process.run(git, ['config', 'user.email', 'test@openote.invalid'],
-        workingDirectory: dir);
-    await Process.run(git, ['config', 'user.name', 'Openote Test'],
         workingDirectory: dir);
     await app.setGitEnabled(true, remote: url);
   }

@@ -246,10 +246,8 @@ void main() {
         ..createSync(recursive: true);
       final g = GitSync(dir.path, token: 'ghp_irrelevant_here');
       await g.init();
-      await Process.run(git, ['config', 'user.email', 't@openote.invalid'],
-          workingDirectory: dir.path);
-      await Process.run(git, ['config', 'user.name', 'Openote Test'],
-          workingDirectory: dir.path);
+      // No `git config user.*` — GitSync's own environment identity must be
+      // enough, or a fresh machine cannot commit at all.
       await g.setRemote(bare.path);
       File('${dir.path}/ops/a.oplog').createSync(recursive: true);
       File('${dir.path}/ops/a.oplog').writeAsStringSync('notes');

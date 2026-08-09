@@ -4,6 +4,30 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-08-09
+
+### Fixed — git sync on a fresh computer
+
+- **"Create and push" on a machine that had never run git synced nothing,
+  forever.** Creating the repository goes through the GitHub API and needs no
+  git, so the repository appeared — and then every commit died on git's
+  "Author identity unknown", because a fresh computer has no `user.name` or
+  `user.email` configured. A developer's machine always does, which is why
+  this survived every test on ours: the test harness even *set one up* as a
+  workaround, hiding the product bug from the exact suite that should have
+  caught it. Openote now supplies its own commit identity (`Openote
+  <openote@localhost>`) through the environment on every git call — commits,
+  and the merge commits a pull creates — so syncing never depends on the
+  machine being configured. The tests run without the workaround now, which
+  on CI (also unconfigured) makes the whole git suite the fresh-laptop case.
+- `GitSync.init` no longer swallows a failed first commit — that green light
+  is what made the empty repository the first visible symptom.
+
+### Fixed — quiet failures get a face
+
+- If the file picker itself fails to open (Insert ▸ Image / File / video),
+  the error now appears as a message instead of a button that does nothing.
+
 ## [0.6.0] — 2026-08-09
 
 Page windows, and a video dialog that works again.

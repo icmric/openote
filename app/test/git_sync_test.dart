@@ -47,18 +47,16 @@ void main() {
     return dir.path;
   }
 
-  /// A device: its own `.onotebook` directory, with an identity set so commits
-  /// are possible on a machine with no global git config (CI is one).
+  /// A device: its own `.onotebook` directory. Deliberately NO
+  /// `git config user.*` — GitSync carries its own commit identity in the
+  /// environment precisely so a machine with no global git config (CI, and
+  /// every fresh laptop) can commit. The old per-repo config here was the
+  /// workaround that hid that product bug from these tests.
   Future<GitSync> device(String name) async {
     final dir = Directory('${root.path}/$name.onotebook')
       ..createSync(recursive: true);
     final g = GitSync(dir.path);
     await g.init();
-    final git = (await GitSync.gitExecutable())!;
-    await Process.run(git, ['config', 'user.email', 'test@openote.invalid'],
-        workingDirectory: dir.path);
-    await Process.run(git, ['config', 'user.name', 'Openote Test'],
-        workingDirectory: dir.path);
     return g;
   }
 
@@ -74,6 +72,27 @@ void main() {
       expect(g.isRepo, isTrue);
       final ignore = File('${g.dir}/.gitignore').readAsStringSync();
       expect(ignore, contains('*.onote'));
+    });
+
+    test('COMMITS NEVER DEPEND ON THE MACHINE KNOWING WHO YOU ARE', () async {
+      // The Linux report: "create and push" made the repository (the GitHub
+      // API needs no git) and then synced nothing, forever — because a fresh
+      // machine has no git identity and `git commit` refuses with "Author
+      // identity unknown". GitSync now supplies its own identity through the
+      // environment, which must BOTH satisfy an unconfigured machine and win
+      // over a configured one, so the assertion is exact: the author is
+      // Openote's, whatever this machine's global config says. (CI has no
+      // global config, so there this same test is the fresh-laptop case.)
+      if (!haveGit) return markTestSkipped('git not installed');
+      final g = await device('a');
+      write(g, 'ops/a.oplog', 'one line');
+      final r = await g.commitAll('from a machine that never ran git config');
+      expect(r.ok, isTrue, reason: r.message);
+
+      final git = (await GitSync.gitExecutable())!;
+      final log = await Process.run(git, ['log', '-1', '--format=%an <%ae>'],
+          workingDirectory: g.dir);
+      expect('${log.stdout}'.trim(), 'Openote <openote@localhost>');
     });
 
     test('init is safe to run again', () async {
