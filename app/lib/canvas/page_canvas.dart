@@ -684,6 +684,69 @@ class _PageCanvasState extends State<PageCanvas> {
     if (app.tool == Tool.text) app.setTool(Tool.select);
   }
 
+  // ── The page scroll bar ─────────────────────────────────────────────────
+
+  /// Screen-space vertical scroll bar, present only when the page is taller
+  /// than the viewport at the current zoom. Built inside the canvas's
+  /// AnimatedBuilder, so it tracks every pan and zoom without its own state.
+  List<Widget> _scrollBar(BuildContext context, bool dark) {
+    final vp = controller.viewport;
+    final ps = controller.pageSize;
+    if (ps == null || vp == Size.zero) return const [];
+    final docH = ps.height * controller.scale;
+    final scrollable = docH - vp.height;
+    if (scrollable <= 1) return const [];
+
+    const margin = 4.0;
+    final trackH = vp.height - margin * 2;
+    final thumbH = (trackH * vp.height / docH).clamp(48.0, trackH);
+    final range = trackH - thumbH;
+    if (range <= 0) return const [];
+    final progress = (-controller.offset.dy / scrollable).clamp(0.0, 1.0);
+
+    void jumpTo(double localY) {
+      final p = ((localY - margin - thumbH / 2) / range).clamp(0.0, 1.0);
+      controller.panBy(Offset(0, -p * scrollable - controller.offset.dy));
+    }
+
+    return [
+      // The track: click to jump. Kept narrow so the strip it takes from the
+      // page edge is the width every other app's scroll bar already takes.
+      Positioned(
+        right: 0,
+        top: 0,
+        bottom: 0,
+        width: 12,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (d) => jumpTo(d.localPosition.dy),
+          onVerticalDragUpdate: (d) => controller.panBy(
+              Offset(0, -d.delta.dy * scrollable / range)),
+          child: Container(
+            color: (dark ? OnoteColors.night200 : OnoteColors.paper200)
+                .withValues(alpha: .35),
+          ),
+        ),
+      ),
+      Positioned(
+        right: 2,
+        top: margin + progress * range,
+        child: IgnorePointer(
+          // The track above owns the gestures; the thumb is the indicator.
+          child: Container(
+            width: 8,
+            height: thumbH,
+            decoration: BoxDecoration(
+              color: (dark ? OnoteColors.moon100 : OnoteColors.graphite500)
+                  .withValues(alpha: .55),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+
   // ── Wheel / trackpad ────────────────────────────────────────────────────
 
   void _onScroll(PointerSignalEvent e) {
@@ -905,6 +968,11 @@ class _PageCanvasState extends State<PageCanvas> {
                     ),
                   ),
                 ),
+                // A real scroll bar for the page — "there is also no scroll
+                // bar for the page". Wheel and drag still pan; this is the
+                // instrument for POSITION: see where you are in a long page,
+                // and cover all of it in one drag.
+                ..._scrollBar(context, dark),
               ],
             ),
           ),

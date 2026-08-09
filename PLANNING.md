@@ -25,10 +25,14 @@ Tables
     Excel like spreadsheet or SQL like table
     live data (via api)
     graphing
-    → csv/tsv/xlsx import shipped (drop the file, or right-click ▸ Table
-      from a file). Live data and graphing want a design pass (what
-      refreshes, when, and what a chart block is) — worth doing together
-      with the spreadsheet-engine question.
+    Excel import should keep formulas as formulas, styling rules, charts —
+    "it seems to have imported it just as a plain text table"
+    → csv/tsv/xlsx import shipped as VALUES (a formula cell imports the
+      number you saw). Keeping formulas live, conditional styling and charts
+      is not an importer gap — the table block has no formula model, no cell
+      styling and no chart to import INTO, so this is the spreadsheet-engine
+      design pass: decide what a table block can hold first, then the
+      importer fills it. Live data belongs to the same pass.
 
 Calander and tasks
     It works currently, however is very limited.
