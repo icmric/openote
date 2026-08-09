@@ -4,6 +4,10 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-08-09
+
+Page windows, and a video dialog that works again.
+
 ### Added — page windows (live embeds)
 
 - **A window onto another page** (right-click the canvas ▸ *Page window
@@ -11,8 +15,12 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   you want — on a real rendering of that page — and it appears on the current
   page as a live, read-only view. Edit the source page and the window shows
   the change; rename it and the window's badge follows (the reference is by
-  id, not title). Text inside the window can be selected and copied; nothing
-  inside it can be edited, clicked, or toggled. The badge opens the source.
+  id, not title). Text inside the window can be selected and copied; **links
+  inside it follow** (wiki-links open their page, web links open the browser)
+  and **videos and attachments play and open in place** — but nothing inside
+  it can be *changed*: checkboxes don't tick, tags don't toggle, ink doesn't
+  erase. Interaction is drawn on one line: anything that navigates or plays
+  works, anything that writes cannot. The badge opens the source page.
 - **It is a pointer, not a copy.** The block stores a page id and a
   rectangle — a few dozen bytes — and renders straight from the same decoded-
   page cache the rest of the app reads, so a window costs no storage and no
@@ -25,6 +33,16 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - Resizing a window keeps its region's proportions — the one handle zooms
   the view. Markdown export writes an attribution link in its place; PDF
   export draws the frame with a "window onto" caption.
+
+### Fixed
+
+- **The "Embed a video or link" dialog rendered as a full-screen grey box**
+  on release builds — reported from Linux, but broken everywhere since it
+  shipped in 0.5.0. Its button row used a layout widget (`Spacer`) that is
+  only legal inside a `Flex`, and a dialog's action bar is not one; the
+  failed build painted as the grey error box. The dialog now has a widget
+  test that builds it, which is how this class of bug gets caught before a
+  release instead of on someone's laptop.
 
 ## [0.5.0] — 2026-08-08
 

@@ -221,6 +221,48 @@ void main() {
           reason: 'blocks outside the region are not even built');
     });
 
+    testWidgets('A LINK INSIDE THE WINDOW NAVIGATES; A CHECKBOX DOES NOT TICK',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The interaction policy on one page: navigation works, writes cannot.
+      final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+      final third = repo
+          .upsertNode(
+              app.notebookId!,
+              TreeNode(
+                  kind: NodeKind.page, parentId: section.id, title: 'Third'))
+          .id;
+      app.reloadNodes();
+      const text = '[[Third|THIRD]]\n- [ ] never ticked from a window';
+      writeSource(text.replaceFirst('THIRD', third));
+
+      await t.pumpWidget(host(embedBlock()));
+      await t.pump();
+
+      // The checkbox renders — and taps do nothing, because with no
+      // onToggleCheckbox the GestureDetector is built with onTap: null.
+      final box = find.byIcon(Icons.check_box_outline_blank);
+      expect(box, findsOneWidget);
+      await t.tap(box, warnIfMissed: false);
+      await t.pump();
+      final after = repo.readPage(app.notebookId!, srcId).blocks.single
+          .content['text'] as String;
+      expect(after, contains('[ ]'),
+          reason: 'a window can never write to the page it shows');
+
+      // The wiki-link is live: tapping it opens the page it names (EMBED-3,
+      // "links inside embedded content keep their own behavior").
+      await t.tap(find.textContaining('Third', findRichText: true).first,
+          warnIfMissed: false);
+      await t.pump();
+      await t.pump();
+      expect(app.pageId, third,
+          reason: 'following a link is navigation, not mutation');
+      // Navigating armed the debounced session/workspace write; drop it, or
+      // the fake-async zone ends with a pending timer.
+      app.cancelPendingSave();
+    });
+
     testWidgets('a circular embed chips instead of recursing', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       // Host embeds Source; Source embeds Host. Rendering the first must not

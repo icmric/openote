@@ -209,6 +209,15 @@ class Repository {
     });
   }
 
+  /// Drop a pending debounced workspace write without performing it.
+  ///
+  /// For `AppState.cancelPendingSave` — a widget test that navigates arms the
+  /// 400 ms debounce inside testWidgets' fake-async zone, where the write's
+  /// file I/O could never complete and the armed timer fails the framework's
+  /// own no-pending-timers invariant. `_writePending` is left true, so a later
+  /// [flushWorkspace] still writes everything that was owed.
+  void cancelPendingWorkspaceWrite() => _writeDebounce?.cancel();
+
   /// Write any pending workspace state now and wait for it (called on
   /// shutdown, and by any test that is about to delete the directory it lives
   /// in).

@@ -799,7 +799,7 @@ class _CommandBarState extends State<CommandBar> {
   Future<void> _insertMediaLink(BuildContext context) async {
     final result = await showDialog<_MediaChoice>(
       context: context,
-      builder: (_) => const _MediaLinkDialog(),
+      builder: (_) => const MediaLinkDialog(),
     );
     if (result == null) return;
     if (result.pickFile) {
@@ -1666,14 +1666,19 @@ class _MediaChoice {
 /// A URL is validated with the same allow-list that will later be asked to
 /// open it (`PlatformOpen.isOpenableUrl`), so a link that cannot be opened is
 /// refused at the point of typing rather than becoming a dead card in the page.
-class _MediaLinkDialog extends StatefulWidget {
-  const _MediaLinkDialog();
+///
+/// Public, so a widget test can pump it directly: this dialog shipped broken
+/// (see the actions note below) and nothing could have caught that, because a
+/// private dialog three calls deep behind a file picker is a widget no test
+/// ever built.
+class MediaLinkDialog extends StatefulWidget {
+  const MediaLinkDialog({super.key});
 
   @override
-  State<_MediaLinkDialog> createState() => _MediaLinkDialogState();
+  State<MediaLinkDialog> createState() => _MediaLinkDialogState();
 }
 
-class _MediaLinkDialogState extends State<_MediaLinkDialog> {
+class _MediaLinkDialogState extends State<MediaLinkDialog> {
   final _url = TextEditingController();
   final _name = TextEditingController();
   String? _error;
@@ -1743,20 +1748,29 @@ class _MediaLinkDialogState extends State<_MediaLinkDialog> {
           ],
         ),
       ),
+      // The file button sits LEFT of Cancel because it is the other half of
+      // the question rather than a way out of it — pushed apart by the
+      // alignment, NOT by a Spacer. AlertDialog lays its actions out in an
+      // OverflowBar, which is not a Flex, and a Spacer is an Expanded: its
+      // ParentData contract is only satisfiable inside a Flex, so the Spacer
+      // broke the dialog's build — on a release build that renders as the
+      // whole dialog replaced by a grey error box, reported on Linux as "the
+      // popup was taking up the whole screen and was just grey".
+      actionsAlignment: MainAxisAlignment.spaceBetween,
       actions: [
-        // Left of Cancel, because it is the other half of the question rather
-        // than a way out of it.
         TextButton.icon(
           icon: const Icon(Icons.video_file_outlined, size: 17),
           label: const Text('Use a file on this computer…'),
           onPressed: () =>
               Navigator.of(context).pop(const _MediaChoice.file()),
         ),
-        const Spacer(),
-        TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel')),
-        FilledButton(onPressed: _submit, child: const Text('Add link')),
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel')),
+          const SizedBox(width: 8),
+          FilledButton(onPressed: _submit, child: const Text('Add link')),
+        ]),
       ],
     );
   }

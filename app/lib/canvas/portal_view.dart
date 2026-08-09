@@ -10,7 +10,9 @@ import '../editor/math_block_view.dart';
 import '../editor/onote_text_editor.dart';
 import '../editor/table_block_view.dart';
 import '../editor/text_block_view.dart';
+import '../markdown/md_render.dart';
 import '../model/models.dart';
+import '../model/tags.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'ink_painter.dart';
@@ -34,16 +36,27 @@ import 'ink_painter.dart';
 ///    favour of frames — but frames are not implemented yet, and the shape is
 ///    the spec's own, so a later frame upgrade is additive.
 ///
-/// **Read-only is enforced structurally**, not by asking each view to behave:
-/// the content sits under an [IgnorePointer], so the checkbox toggles, link
-/// taps and tag callbacks the read-mode views carry can never fire; and the
-/// blocks handed to those views are DEEP COPIES with `portal:`-prefixed ids,
-/// so even a view that mutates its block in build cannot touch the shared
-/// page cache — and a self-embedded page can never match `editingBlockId`
-/// and wake the text editor's session machinery on a block that is only a
-/// picture of itself. A [SelectionArea] above the IgnorePointer keeps text
-/// selectable for copying: selection needs geometry, not pointer delivery to
-/// the text widgets themselves.
+/// **Read-only is enforced structurally**, not by asking each view to behave.
+/// Interaction is a PER-TYPE policy, drawn on one line: anything that
+/// *navigates or plays* works, anything that *writes* cannot exist.
+///
+///  * Text renders through [MarkdownView] directly with only the safe
+///    callbacks wired — wiki-links and web links navigate/open, while the
+///    checkbox and tag mutators are simply not passed, so their gesture
+///    handlers are never constructed (`onTap: null`, not "onTap ignored").
+///  * File and video cards stay fully interactive: play, open, save-a-copy
+///    are all reads of the source, and playing a lecture inside the window
+///    is half the point of having one.
+///  * Everything else — images, tables, code, equations, flashcards — sits
+///    under its own [IgnorePointer]; none of it has a read-only interaction
+///    worth the risk of the write path it also carries.
+///
+/// Two backstops behind the policy: the blocks handed to every view are DEEP
+/// COPIES with `portal:`-prefixed ids, so even a view that mutates its block
+/// in build cannot touch the shared page cache — and a self-embedded page can
+/// never match `editingBlockId` and wake the text editor's session machinery
+/// on a block that is only a picture of itself. A [SelectionArea] over the
+/// whole window keeps its text selectable for copying.
 class PortalRef {
   const PortalRef({required this.pageId, required this.wholePage, this.rect});
 
@@ -254,42 +267,59 @@ class PortalContent extends StatelessWidget {
     );
   }
 
-  /// The same dispatch as `BlockView`, minus every piece of chrome and
-  /// interaction — these are pictures of blocks, not blocks.
+  /// The same dispatch as `BlockView`, minus the chrome, applying the
+  /// interaction policy from the class comment: navigation and playback live,
+  /// every write path structurally absent.
   Widget _contentFor(BuildContext context, Block b, bool dark) {
     switch (b.type) {
       case BlockType.text:
-        // Straight to the engine's read view, BYPASSING TextBlockView: its
-        // State owns edit-session lifecycle keyed on `editingBlockId`, and a
-        // picture of a block must never be able to reach any of it.
+        // MarkdownView directly, BYPASSING both TextBlockView (whose State
+        // owns edit-session lifecycle keyed on `editingBlockId`) and the
+        // engine's buildReadOnly (which wires the checkbox/tag MUTATORS to
+        // the app). Only the safe callbacks exist here: wiki-links navigate,
+        // web links open through their own PlatformOpen allow-list, images
+        // resolve. A checkbox with no callback is built with `onTap: null`.
         final w = TextBlockView.autoWidth(b, dark: dark);
         return SizedBox(
           width: w,
-          child: OnoteEditors.active.buildReadOnly(
-            context,
-            TextSurface(
-              block: b,
-              app: app,
+          child: Padding(
+            padding: TextBlockView.insetFor(b),
+            child: MarkdownView(
+              text: OnoteEditors.active.deserialize(b.content),
               baseStyle: TextBlockView.baseStyle(b, dark: dark),
-              inset: TextBlockView.insetFor(b),
-              dark: dark,
+              onWikiLink: (label, id) => app.openWikiLink(label, id),
+              imageResolver: (src) {
+                final nb = app.notebookId;
+                if (nb == null || !src.startsWith('sha256:')) return null;
+                return app.blob(src);
+              },
+              // Tags are shown (they are part of how the page looks) but not
+              // toggleable: no onToggleTag, no onToggleCheckbox.
+              tagsByLine: NoteTag.byLine(b.content),
             ),
           ),
         );
       case BlockType.math:
         // Self-sizing, exactly as BlockView renders it in read mode.
-        return MathBlockView(block: b, app: app);
+        return IgnorePointer(child: MathBlockView(block: b, app: app));
       case BlockType.image:
-        return SizedBox(width: b.w, child: ImageBlockView(block: b, app: app));
+        return IgnorePointer(
+            child: SizedBox(width: b.w, child: ImageBlockView(block: b, app: app)));
       case BlockType.code:
-        return SizedBox(width: b.w, child: CodeBlockView(block: b, app: app));
+        return IgnorePointer(
+            child: SizedBox(width: b.w, child: CodeBlockView(block: b, app: app)));
       case BlockType.table:
-        return SizedBox(width: b.w, child: TableBlockView(block: b, app: app));
+        return IgnorePointer(
+            child: SizedBox(width: b.w, child: TableBlockView(block: b, app: app)));
       case BlockType.file:
+        // Interactive on purpose: playing a lecture recording or opening an
+        // attachment READS the source page, and doing it in place is what the
+        // user asked windows for. Every control on this card is a read.
         return SizedBox(width: b.w, child: FileBlockView(block: b, app: app));
       case BlockType.flashcard:
-        return SizedBox(
-            width: b.w, child: FlashcardBlockView(block: b, app: app));
+        return IgnorePointer(
+            child: SizedBox(
+                width: b.w, child: FlashcardBlockView(block: b, app: app)));
       case BlockType.embed:
         return _nested(context, b);
       default:
@@ -402,21 +432,20 @@ class PortalBlockView extends StatelessWidget {
 
     final title = portalTitle(app, ref.pageId);
     final content = RepaintBoundary(
+      // No blanket pointer-blocker here — interactivity is decided per block
+      // type inside PortalContent (see the class comment): links navigate,
+      // videos play, and nothing that writes is ever constructed. The
+      // SelectionArea keeps the windowed text selectable for copying.
       child: SelectionArea(
-        // Selection lives ABOVE the IgnorePointer: dragging selects text for
-        // copying, while no tap can ever reach a checkbox, a link, or a
-        // flashcard's flip — the read-only guarantee is structural.
-        child: IgnorePointer(
-          child: ClipRect(
-            child: FittedBox(
-              fit: BoxFit.contain,
-              alignment: Alignment.topLeft,
-              child: PortalContent(
-                app: app,
-                source: src,
-                rect: rect,
-                chain: [if (hostPage != null) hostPage, ref.pageId],
-              ),
+        child: ClipRect(
+          child: FittedBox(
+            fit: BoxFit.contain,
+            alignment: Alignment.topLeft,
+            child: PortalContent(
+              app: app,
+              source: src,
+              rect: rect,
+              chain: [if (hostPage != null) hostPage, ref.pageId],
             ),
           ),
         ),

@@ -5502,6 +5502,9 @@ class AppState extends ChangeNotifier
     // would otherwise end with one still pending.
     _housekeepingTimer?.cancel();
     _housekeepingNoteClear?.cancel();
+    // And navigating (selectPage → _persistSession) arms the repository's
+    // debounced workspace write, which is the same shape of pending timer.
+    _repo.cancelPendingWorkspaceWrite();
   }
 
   /// Set by [dispose]. Background work started before disposal checks this
