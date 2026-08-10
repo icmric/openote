@@ -133,3 +133,4 @@ Consistency/UX
       behaviour, doors to Sync / AI access / shortcuts, About + update
       check. Style DEFAULTS still live only per-feature — they join the
       page when the styles system grows defaults at all.
+    Pressing 'Del' when clicking on a page or group doesnt delete it - only way to delete is right click and press delete
