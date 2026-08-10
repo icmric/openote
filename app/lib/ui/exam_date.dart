@@ -26,6 +26,7 @@ import 'package:flutter/material.dart';
 import '../state/app_state.dart';
 import '../study/study_stats.dart';
 import '../theme/tokens.dart';
+import 'onote_dialog.dart';
 
 /// How far out a new date lands when there isn't one yet. Two weeks is the
 /// horizon at which revision starts feeling real — far enough that a plan has
@@ -46,7 +47,7 @@ Future<bool> pickExamDate(
       : DateTime(start.year, start.month, start.day + _defaultLeadDays);
   final section = app.nodes.where((n) => n.id == sectionId).firstOrNull;
 
-  final result = await showDialog<_ExamWhen>(
+  final result = await showOnoteDialog<_ExamWhen>(
     context: context,
     builder: (ctx) => _ExamWhenDialog(
       title: section == null || section.title.isEmpty

@@ -113,8 +113,19 @@ Drawing
     text interpretation, shape interpretation
 
 Consistency/UX
-    When entering edit mode in a code block it doesnt respect click position to start editing or highlighting when not yet in editing mode
-    Copy/paste doesnt work for code blocks
     Ensure all blocks are consistent in their behaviours, being able to be copy and pasted, consistent navigation, formatting etc. Most objects should be able to share a box with each other, however for stuff like code blocks could stick with being their own thing if its not practical to mix them in.
+    → v0.7.1 took the concrete half: code blocks now respect click
+      position and are text-selectable without editing (same pointer
+      behaviour as text boxes); copy/paste clones every block through the
+      open-format round-trip, so nothing — including block types from
+      newer versions — loses anything in transit. The blocks-sharing-a-box
+      model is the remaining design question.
     Simple unobtrusive animations consistently would be nice. A little bounce when a popup appears, the PDF viewer looking like it opens from the thumbnail, animation switching between menus, stuff like that
+    → Every dialog now opens through one shared transition (quick fade +
+      slight bounce). Menu-switch and open-from-thumbnail animations are
+      still open.
     Centeralised settings page (including stuff like syncing, defaults for styles etc, and other information)
+    → Shipped v0.7.1 (the gear, top bar): theme, spell check, pen
+      behaviour, doors to Sync / AI access / shortcuts, About + update
+      check. Style DEFAULTS still live only per-feature — they join the
+      page when the styles system grows defaults at all.

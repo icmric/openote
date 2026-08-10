@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import 'wrap_selection.dart';
+import '../ui/onote_dialog.dart';
 
 /// The card itself: two faces and the turn between them.
 ///
@@ -197,7 +198,7 @@ class _FlipCardState extends State<FlipCard>
 /// block; this one cannot.
 Future<({String front, String back})?> editCardDialog(
         BuildContext context, String front, String back) =>
-    showDialog<({String front, String back})>(
+    showOnoteDialog<({String front, String back})>(
       context: context,
       builder: (_) => _EditCardDialog(front: front, back: back),
     );

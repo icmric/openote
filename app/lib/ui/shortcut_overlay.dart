@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../theme/onote_theme.dart';
 import 'keyboard_map.dart';
+import 'onote_dialog.dart';
 
 /// The Ctrl+/ shortcut reference — a rendering of [keyboardMap] and nothing
 /// else, so what this shows IS what the map says. Adding a binding to the
 /// map is the whole job of documenting it.
 Future<void> showShortcutOverlay(BuildContext context) {
-  return showDialog<void>(
+  return showOnoteDialog<void>(
     context: context,
     builder: (_) => const _ShortcutOverlay(),
   );

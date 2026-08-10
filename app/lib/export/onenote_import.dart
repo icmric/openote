@@ -12,6 +12,7 @@ import '../model/models.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart';
 import 'import_sink.dart';
+import '../ui/onote_dialog.dart';
 
 /// Isolate entry points: the Rust parse (LZX + binary decode + base64) can
 /// take seconds on a big notebook and must not freeze the UI thread. Each
@@ -96,7 +97,7 @@ Future<T> _withBusyDialog<T>(BuildContext? context,
       message.dispose();
     }
   }
-  showDialog<void>(
+  showOnoteDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (_) => AlertDialog(

@@ -129,7 +129,23 @@ human is the end-to-end with a real client:
       the new version by itself**. Nothing to press but the one button.
       (0.6.2 can't test this — the updater ships in 0.7.0.)
 
-### 2.6 Small recent things
+### 2.6 v0.7.1 — the consistency round
+
+- [ ] **Linux push, the real retest**: on the Linux machine open Sync ▸
+      Connect GitHub ▸ paste a token ▸ sync — the push should go through.
+      Before connecting, the error should now say exactly that in plain
+      words (no "terminal prompts disabled").
+- [ ] **Code blocks**: click into the middle of a line — the caret should
+      land THERE. Drag over code without clicking first — it should
+      highlight and Ctrl+C should copy, no editor opening.
+- [ ] **Settings** (the gear, top-right of the tab row): theme, spell
+      check, pen switch all live; Check for updates says "up to date".
+- [ ] **Dialogs** should all open with the same quick fade-and-settle.
+- [ ] **The update button itself**: install 0.7.0 first, then publish
+      0.7.1 — 0.7.0 should offer it, download, install and relaunch
+      by itself. This is the whole update-through-app loop, live.
+
+### 2.7 Small recent things
 
 - [ ] **Ctrl+/** — the keyboard shortcut reference, from anywhere including
       mid-typing. Same chord or Esc closes it; View tab has a button too.

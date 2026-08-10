@@ -24,6 +24,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'sync_dialog.dart';
 import '../theme/tokens.dart';
+import 'onote_dialog.dart';
 
 /// Show the welcome flow if this workspace has never been used.
 ///
@@ -41,7 +42,7 @@ Future<void> maybeShowOnboarding(BuildContext context, AppState app) async {
 }
 
 Future<void> showOnboarding(BuildContext context, AppState app) =>
-    showDialog<void>(
+    showOnoteDialog<void>(
       context: context,
       barrierDismissible: true,
       builder: (_) => _Onboarding(app: app),

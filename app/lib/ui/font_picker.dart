@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../core/system_fonts.dart';
 import '../theme/tokens.dart';
+import 'onote_dialog.dart';
 
 /// Searchable system-font picker (§7a.3): every installed family, each row
 /// rendered in its own face. Returns the family name, or null.
 Future<String?> showFontPicker(BuildContext context, {String? current}) {
-  return showDialog<String>(
+  return showOnoteDialog<String>(
     context: context,
     builder: (ctx) => _FontPickerDialog(current: current),
   );

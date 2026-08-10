@@ -12,6 +12,7 @@ import '../state/app_state.dart';
 import '../store/media_store.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
+import '../ui/onote_dialog.dart';
 
 /// A video or recording kept in the notebook and played in the page.
 ///
@@ -247,7 +248,7 @@ class _VideoBlockViewState extends State<VideoBlockView> {
     }
   }
 
-  void _explainMissingLibrary(BuildContext context) => showDialog<void>(
+  void _explainMissingLibrary(BuildContext context) => showOnoteDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Playing here needs one more package'),

@@ -2,6 +2,39 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
+## [0.7.1] — 2026-08-10
+
+### Fixed — the Linux push finally says what it needs
+
+- Joining a shared notebook on a second computer pulled fine and then
+  failed to push with git's own "could not read Username … terminal
+  prompts disabled". The cause is by design — your GitHub access key
+  lives per-computer and is never written into the notebook — but the
+  message now says the useful thing: open Sync, press Connect GitHub on
+  THIS computer, sync again.
+
+### Changed — code blocks behave like text blocks
+
+- **Click position is respected**: tapping into a code block opens the
+  editor with the caret where you clicked, not at the end.
+- **Text is selectable without editing**: drag over a code block to
+  highlight, Ctrl+C to copy — no editor needed, same as a text box.
+
+### Fixed — copy/paste carries every block whole
+
+- Pasting rebuilt blocks field-by-field and silently dropped rotation and
+  — worse — the identity of block types this build doesn't know, so a
+  block written by a newer Openote lost its type when pasted. The clone
+  now goes through the same open-format round-trip everything else uses.
+
+### Added — consistency polish
+
+- **One settings page** (the gear in the top bar): theme, spell check,
+  pen behaviour, the doors to Sync / AI access / keyboard shortcuts, and
+  About with a check-for-updates button.
+- **Every dialog opens with the same quick fade-and-settle** — the
+  "little bounce" — instead of each popup arriving differently.
+
 ## [0.7.0] — 2026-08-10
 
 ### Added — AI access (MCP)

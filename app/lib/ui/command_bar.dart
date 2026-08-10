@@ -29,9 +29,11 @@ import 'command_button.dart';
 import 'font_picker.dart';
 import 'insert_portal_dialog.dart';
 import 'mcp_dialog.dart';
+import 'settings_dialog.dart';
 import 'shortcut_overlay.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
+import 'onote_dialog.dart';
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
 /// View. OneNote's few-clicks accessibility in Openote's calm language — a
@@ -240,6 +242,14 @@ class _CommandBarState extends State<CommandBar> {
                                 const Text('Materialize notebook to folder…'),
                           ),
                         ],
+                      ),
+                      // The one place to LOOK for a setting (PLANNING
+                      // "Consistency/UX": centralised settings page).
+                      IconButton(
+                        icon: const Icon(Icons.settings_outlined, size: 18),
+                        tooltip: 'Settings…',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => showSettingsDialog(context, app),
                       ),
                     ]),
                   ),
@@ -873,7 +883,7 @@ class _CommandBarState extends State<CommandBar> {
   /// in a single drag. A URL is a few dozen bytes and is machine-independent,
   /// so it syncs to another device and still resolves there.
   Future<void> _insertMediaLink(BuildContext context) async {
-    final result = await showDialog<_MediaChoice>(
+    final result = await showOnoteDialog<_MediaChoice>(
       context: context,
       builder: (_) => const MediaLinkDialog(),
     );
@@ -933,7 +943,7 @@ class _CommandBarState extends State<CommandBar> {
     final progress = ValueNotifier<double>(0);
     var cancelled = false;
     var dialogOpen = true;
-    unawaited(showDialog<void>(
+    unawaited(showOnoteDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _MediaCopyDialog(
@@ -1039,7 +1049,7 @@ class _CommandBarState extends State<CommandBar> {
               'No templates yet — right-click a page and "Save as template…"')));
       return;
     }
-    final choice = await showDialog<String>(
+    final choice = await showOnoteDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
         title: const Text('Apply template'),
@@ -1101,7 +1111,7 @@ class _CommandBarState extends State<CommandBar> {
           const SnackBar(content: Text('No other pages to link to yet.')));
       return;
     }
-    final choice = await showDialog<String>(
+    final choice = await showOnoteDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
         title: const Text('Link to page'),
@@ -1683,7 +1693,7 @@ Future<void> _importPdfWithProgress(BuildContext context, AppState app,
   var dialogOpen = false;
   if (context.mounted) {
     dialogOpen = true;
-    showDialog<void>(
+    showOnoteDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(

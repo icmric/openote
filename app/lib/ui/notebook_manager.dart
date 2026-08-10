@@ -12,6 +12,7 @@ import 'join_git_dialog.dart';
 import 'onboarding.dart';
 import 'sync_dot.dart';
 import '../theme/tokens.dart';
+import 'onote_dialog.dart';
 
 /// The notebook manager (style guide §7b) — the one place notebooks are managed.
 ///
@@ -27,7 +28,7 @@ Future<void> showNotebookManager(BuildContext context, AppState app,
     {String? focusId}) async {
   await app.purgeExpiredTrash();
   if (!context.mounted) return;
-  await showDialog<void>(
+  await showOnoteDialog<void>(
     context: context,
     builder: (_) => _NotebookManager(app: app, focusId: focusId),
   );
@@ -559,7 +560,7 @@ String _daysLeft(int deletedAt, int retentionDays) {
 }
 
 Future<bool> _confirmPurge(BuildContext context, NotebookRef nb) async {
-  final ok = await showDialog<bool>(
+  final ok = await showOnoteDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('Delete permanently?'),
@@ -587,7 +588,7 @@ Future<String?> _promptNotebookName(BuildContext context,
   controller.selection =
       TextSelection(baseOffset: 0, extentOffset: controller.text.length);
   try {
-    final v = await showDialog<String>(
+    final v = await showOnoteDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(title),
@@ -719,7 +720,7 @@ Future<void> _repairWithProgress(BuildContext context, AppState app) async {
   var open = false;
   if (context.mounted) {
     open = true;
-    showDialog<void>(
+    showOnoteDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(

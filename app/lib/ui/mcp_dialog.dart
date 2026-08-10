@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../api/mcp_connect.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'onote_dialog.dart';
 
 /// AI access (spec 14 §8). The audience is a student who has never heard
 /// the word MCP: the visible path is a switch and ONE button — "Connect
@@ -11,7 +12,7 @@ import '../theme/onote_theme.dart';
 /// jargon (MCP, server, port, token, config) lives behind the Advanced
 /// fold, for people connecting some other tool.
 Future<void> showMcpDialog(BuildContext context, AppState app) {
-  return showDialog<void>(
+  return showOnoteDialog<void>(
     context: context,
     builder: (_) => _McpDialog(app: app),
   );

@@ -17,11 +17,12 @@ import 'package:flutter/material.dart';
 import '../planner/event_kinds.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
+import 'onote_dialog.dart';
 
 /// Show the alert-rules dialog. Returns when it closes; changes are applied as
 /// they are made, so there is no Save button to forget to press.
 Future<void> showEventAlertDialog(BuildContext context, AppState app) =>
-    showDialog<void>(
+    showOnoteDialog<void>(
       context: context,
       builder: (ctx) => _EventAlertDialog(app: app),
     );

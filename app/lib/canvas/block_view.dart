@@ -121,11 +121,15 @@ class _BlockViewState extends State<BlockView> {
       app.select(b.id, additive: true);
     } else if (_editableType) {
       // Where the click landed, so the caret goes there instead of jumping to
-      // the end of the block. Only TEXT consumes it — a click on a table, a
-      // code block or an equation would otherwise leave the token set, and the
-      // next text box you opened by any other route would jump its caret to a
-      // point on a completely different block.
-      if (b.type == BlockType.text) app.pendingCaretGlobal = _pressGlobal;
+      // the end of the block. Only types whose editors CONSUME the token may
+      // set it — a type that ignored it would leave it lying around, and the
+      // next text box opened by any other route would jump its caret to a
+      // point on a completely different block. Text consumes it in the
+      // markdown engine; code consumes it in code_block_view (the
+      // "doesn't respect click position" report).
+      if (b.type == BlockType.text || b.type == BlockType.code) {
+        app.pendingCaretGlobal = _pressGlobal;
+      }
       app.select(b.id, edit: true); // tap-to-edit (F-4)
     } else {
       app.select(b.id);

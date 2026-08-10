@@ -28,6 +28,7 @@ import '../theme/onote_theme.dart';
 import 'exam_date.dart';
 import 'side_panel.dart';
 import '../theme/tokens.dart';
+import 'onote_dialog.dart';
 
 /// Which pages a session draws from. Pages ARE the deck structure — a lecture
 /// page is a deck without anyone having to build one — so this is a view over
@@ -176,7 +177,7 @@ class _StudyPanelState extends State<StudyPanel> {
   }
 
   Future<void> _resetSchedule() async {
-    final ok = await showDialog<bool>(
+    final ok = await showOnoteDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
         title: const Text('Forget this deck’s schedule?'),

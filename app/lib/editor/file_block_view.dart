@@ -14,6 +14,7 @@ import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import '../ui/pdf_viewer_dialog.dart';
 import 'video_block_view.dart';
+import '../ui/onote_dialog.dart';
 
 /// File attachment block (MEDIA-2): the file lives in the notebook's
 /// content-addressed blob store; "Save a copy…" extracts it back out.
@@ -295,7 +296,7 @@ class FileBlockView extends StatelessWidget {
   /// alternative as the other button — the same shape §7h asks of every
   /// destructive-or-risky confirmation.
   Future<bool?> _confirmRun(BuildContext context, String filename) =>
-      showDialog<bool>(
+      showOnoteDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Run this file?'),

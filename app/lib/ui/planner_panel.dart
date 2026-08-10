@@ -36,6 +36,7 @@ import 'month_grid.dart';
 import 'side_panel.dart';
 import 'planner_format.dart';
 import '../theme/tokens.dart';
+import 'onote_dialog.dart';
 
 class PlannerPanel extends StatefulWidget {
   const PlannerPanel({super.key, required this.app});
@@ -635,7 +636,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
   }
 
   Future<TreeNode?> _pickSection(List<TreeNode> sections) =>
-      showDialog<TreeNode>(
+      showOnoteDialog<TreeNode>(
         context: context,
         builder: (ctx) => SimpleDialog(
           title: const Text('Which section?', style: TextStyle(fontSize: 15)),
@@ -673,7 +674,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
               'due date.')));
       return;
     }
-    final chosen = await showDialog<TaggedLine>(
+    final chosen = await showOnoteDialog<TaggedLine>(
       context: context,
       builder: (ctx) => SimpleDialog(
         title: const Text('Give which line a deadline?',
@@ -706,7 +707,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
   }
 
   Future<void> _addReminder(DateTime now) async {
-    final r = await showDialog<({String text, DateTime at})>(
+    final r = await showOnoteDialog<({String text, DateTime at})>(
       context: context,
       builder: (ctx) => _ReminderDialog(now: now),
     );
@@ -730,7 +731,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
   }
 
   Future<void> _subscribe() async {
-    final url = await showDialog<String>(
+    final url = await showOnoteDialog<String>(
       context: context,
       builder: (ctx) => _CalendarDialog(existing: planner.calendar?.url),
     );
@@ -744,7 +745,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
             : 'Could not load that calendar: $err')));
   }
 
-  Future<void> _showWarnings() => showDialog<void>(
+  Future<void> _showWarnings() => showOnoteDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('About this calendar',

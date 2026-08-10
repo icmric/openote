@@ -262,4 +262,33 @@ void main() {
       expect(File('${occupied.path}/mine.txt').existsSync(), isTrue);
     });
   });
+
+  group('friendlyGitFailure', () {
+    test('the Linux field case: anonymous pull, credential-less push', () {
+      final msg = friendlyGitFailure(
+          "fatal: could not read Username for 'https://github.com': "
+          'terminal prompts disabled',
+          connected: false);
+      expect(msg, contains('Connect GitHub'));
+      expect(msg, contains('THIS computer'));
+      expect(msg, isNot(contains('terminal prompts')),
+          reason: "git's words never reach the user for auth failures");
+    });
+
+    test('connected but rejected: points at reconnecting, not at nothing',
+        () {
+      final msg = friendlyGitFailure(
+          'remote: Permission to x/y.git denied.\n'
+          'fatal: unable to access: The requested URL returned error: 403',
+          connected: true);
+      expect(msg, contains('fresh token'));
+    });
+
+    test('non-auth failures keep their first git line', () {
+      expect(
+          friendlyGitFailure('fatal: unable to access: Could not resolve '
+              'host: github.com\nmore detail', connected: false),
+          'fatal: unable to access: Could not resolve host: github.com');
+    });
+  });
 }

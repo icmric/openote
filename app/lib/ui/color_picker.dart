@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
+import 'onote_dialog.dart';
 
 /// The picker's own hex convention, decoded: `RRGGBB` (opaque) or `RRGGBBAA`.
 /// Public because everything that STORES a picked colour needs the same
@@ -22,7 +23,7 @@ Color? onoteColorFromHex(String? hex) {
 /// RGBA sliders + hex). Returns an RRGGBB or RRGGBBAA hex string, or null.
 Future<String?> showOnoteColorPicker(BuildContext context, AppState app,
     {String? initial}) {
-  return showDialog<String>(
+  return showOnoteDialog<String>(
     context: context,
     builder: (ctx) => _ColorPickerDialog(app: app, initial: initial),
   );

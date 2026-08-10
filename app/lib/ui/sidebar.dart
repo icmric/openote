@@ -14,6 +14,7 @@ import 'protect_dialog.dart';
 import 'sync_dot.dart';
 import 'planner_format.dart';
 import '../theme/tokens.dart';
+import 'onote_dialog.dart';
 
 Color _sectionColor(String? token, bool dark) => switch (token) {
       'brass-400' => OnoteColors.brass400,
@@ -1162,7 +1163,7 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
   await app.purgeExpiredTrash();
   if (!context.mounted) return;
   final retention = app.recycleRetentionDays;
-  await showDialog<void>(
+  await showOnoteDialog<void>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setLocal) {
@@ -1284,7 +1285,7 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
 }
 
 Future<bool> _confirmPurgeNotebook(BuildContext context, NotebookRef nb) async {
-  final ok = await showDialog<bool>(
+  final ok = await showOnoteDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('Delete permanently?'),
@@ -1816,7 +1817,7 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       final groups = app.nodes
           .where((n) => n.kind == NodeKind.sectionGroup)
           .toList();
-      final choice = await showDialog<String>(
+      final choice = await showOnoteDialog<String>(
         context: context,
         builder: (ctx) => SimpleDialog(
           title: const Text('Move section to…'),
@@ -1851,7 +1852,7 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
 
 Future<void> _promptSaveTemplate(BuildContext context, AppState app) async {
   final controller = TextEditingController();
-  final name = await showDialog<String>(
+  final name = await showOnoteDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('Save as template'),
@@ -1884,7 +1885,7 @@ Future<void> _promptSaveTemplate(BuildContext context, AppState app) async {
 /// Version history dialog (SYNC-8): restore any snapshot of the current page.
 Future<void> showVersionHistory(BuildContext context, AppState app) async {
   final versions = app.pageVersions();
-  await showDialog<void>(
+  await showOnoteDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('Version history'),

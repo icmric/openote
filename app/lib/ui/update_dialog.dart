@@ -6,6 +6,7 @@ import '../core/platform_open.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../update/app_update.dart';
+import 'onote_dialog.dart';
 
 /// The update flow (PLANNING.md: "make a popup to stop them interacting
 /// further, save everything, … prevent them from using the app during the
@@ -19,7 +20,7 @@ import '../update/app_update.dart';
 Future<void> showUpdateDialog(BuildContext context, AppState app) {
   final info = app.updateAvailable;
   if (info == null) return Future.value();
-  return showDialog<void>(
+  return showOnoteDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (_) => _UpdateDialog(app: app, info: info),

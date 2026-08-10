@@ -836,7 +836,8 @@ class AppState extends ChangeNotifier
           ? (folded > 0
               ? 'Synced — brought in $folded ${folded == 1 ? 'change' : 'changes'}'
               : (r.noop ? 'Up to date' : 'Synced'))
-          : 'Could not sync: ${r.message.split('\n').first}';
+          : 'Could not sync: '
+              '${friendlyGitFailure(r.message, connected: githubConnected)}';
     } catch (e) {
       gitStatus = 'Could not sync: $e';
     } finally {
@@ -3695,19 +3696,21 @@ class AppState extends ChangeNotifier
     final list = (jsonDecode(raw) as List)
         .map((j) => Block.fromJson((j as Map).cast<String, dynamic>()))
         .toList();
-    // Fresh identities (Data Model §2 rule 3), offset placement.
+    // Fresh identities (Data Model §2 rule 3), offset placement. The clone
+    // goes THROUGH toJson/fromJson rather than a hand-picked constructor
+    // call: rebuilding field-by-field silently dropped everything the
+    // hand-picking forgot — rotation, z, frameId, and worst, `rawType` +
+    // `unknownFields`, so pasting a block a NEWER build had written
+    // destroyed its type on the spot (the exact loss Block.rawType exists
+    // to prevent). The format is the copy, the way it is the API.
     final newIds = <String>[];
     for (final src in list) {
-      final fresh = Block(
-        id: newId(),
-        type: src.type,
-        x: (at?.dx ?? src.x + 28),
-        y: (at?.dy ?? src.y + 28),
-        w: src.w,
-        h: src.h,
-        placement: src.placement,
-        content: jsonDecode(jsonEncode(src.content)) as Map<String, dynamic>,
-      );
+      final fresh = Block.fromJson({
+        ...jsonDecode(jsonEncode(src.toJson())) as Map<String, dynamic>,
+        'id': newId(),
+      });
+      fresh.x = at?.dx ?? src.x + 28;
+      fresh.y = at?.dy ?? src.y + 28;
       if (fresh.type == BlockType.ink) {
         final dx = fresh.x - src.x, dy = fresh.y - src.y;
         for (final sj in (fresh.content['strokes'] as List)) {

@@ -5,6 +5,7 @@ import 'package:pdfrx/pdfrx.dart';
 
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'onote_dialog.dart';
 
 /// The popup PDF viewer: the whole document behind a card or a slide, with
 /// REAL text — select it, copy it — because the pages in here are drawn by
@@ -27,7 +28,7 @@ Future<void> showPdfViewerDialog(
     return Future.value();
   }
   final controller = PdfViewerController();
-  return showDialog<void>(
+  return showOnoteDialog<void>(
     context: context,
     builder: (context) {
       final screen = MediaQuery.of(context).size;

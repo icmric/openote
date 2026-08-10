@@ -24,11 +24,12 @@ import '../sync/mirrors.dart';
 import '../theme/onote_theme.dart';
 import 'notebook_manager.dart';
 import '../theme/tokens.dart';
+import 'onote_dialog.dart';
 
 Future<void> showSyncDialog(BuildContext context, AppState app) async {
   final nb = app.notebookId;
   if (nb == null) return;
-  await showDialog<void>(
+  await showOnoteDialog<void>(
     context: context,
     builder: (_) => _SyncDialog(app: app, notebookId: nb),
   );

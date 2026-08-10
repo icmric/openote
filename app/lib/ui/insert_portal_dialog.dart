@@ -6,13 +6,14 @@ import '../canvas/portal_view.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'onote_dialog.dart';
 
 /// Insert a live page window (EMBED-2): pick a page, then drag out the area of
 /// it to show — on a real rendering of the page, because choosing a region of
 /// content you cannot see is guesswork. "Whole page" skips the drag.
 Future<void> showInsertPortalDialog(
     BuildContext context, AppState app, Offset pagePt) {
-  return showDialog<void>(
+  return showOnoteDialog<void>(
     context: context,
     builder: (_) => _InsertPortalDialog(app: app, at: pagePt),
   );

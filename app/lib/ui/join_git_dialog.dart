@@ -14,11 +14,12 @@ import 'package:flutter/material.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
+import 'onote_dialog.dart';
 
 Future<void> showJoinFromGitDialog(BuildContext context, AppState app,
     {ScaffoldMessengerState? messenger}) async {
   final m = messenger ?? ScaffoldMessenger.of(context);
-  final joined = await showDialog<String>(
+  final joined = await showOnoteDialog<String>(
     context: context,
     builder: (_) => _JoinDialog(app: app),
   );

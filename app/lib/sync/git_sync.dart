@@ -406,3 +406,31 @@ class GitResult {
 
 /// The `.onotebook` directory of a notebook, as a git working tree.
 GitSync gitFor(NotebookRef ref) => GitSync(ref.logDirPath);
+
+/// Turn git's own words into the user's next step.
+///
+/// The field case (Eric, Linux, 2026-08-10): a joined PUBLIC notebook pulls
+/// anonymously and beautifully — and then the first push says "could not
+/// read Username for 'https://github.com': terminal prompts disabled",
+/// because the GitHub token lives per-machine (deliberately: it is never
+/// written into the repository) and this machine has none. The raw stderr
+/// is accurate and useless; what the user needs is WHERE the fix is.
+String friendlyGitFailure(String raw, {required bool connected}) {
+  final t = raw.toLowerCase();
+  final authShaped = t.contains('terminal prompts disabled') ||
+      t.contains('could not read username') ||
+      t.contains('could not read password') ||
+      t.contains('authentication failed') ||
+      t.contains('permission denied') ||
+      t.contains('403');
+  if (authShaped) {
+    return connected
+        ? "GitHub rejected this computer's access key — it may have "
+            'expired, or not have permission for this notebook. Open Sync '
+            'and connect GitHub again with a fresh token.'
+        : 'Anyone can read this notebook, but sending changes needs your '
+            'GitHub access key on THIS computer too. Open Sync, press '
+            'Connect GitHub, and sync again.';
+  }
+  return raw.split('\n').first;
+}

@@ -13,11 +13,12 @@ import 'package:flutter/material.dart';
 import '../state/app_state.dart';
 import '../state/page_protection.dart';
 import '../theme/onote_theme.dart';
+import 'onote_dialog.dart';
 
 /// Ask for a new passcode and a policy. Returns null if cancelled.
 Future<({String passcode, UnlockPolicy policy})?> askNewPasscode(
         BuildContext context, String nodeTitle) =>
-    showDialog<({String passcode, UnlockPolicy policy})>(
+    showOnoteDialog<({String passcode, UnlockPolicy policy})>(
       context: context,
       builder: (_) => _SetPasscodeDialog(nodeTitle: nodeTitle),
     );
@@ -26,7 +27,7 @@ Future<({String passcode, UnlockPolicy policy})?> askNewPasscode(
 /// [verify] is called so a wrong entry can be reported without closing.
 Future<bool> askToUnlock(
         BuildContext context, String nodeTitle, bool Function(String) verify) =>
-    showDialog<bool>(
+    showOnoteDialog<bool>(
       context: context,
       builder: (_) => _UnlockDialog(nodeTitle: nodeTitle, verify: verify),
     ).then((v) => v ?? false);

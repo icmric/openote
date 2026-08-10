@@ -8,6 +8,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'code_highlight.dart';
 import '../theme/tokens.dart';
+import '../ui/onote_dialog.dart';
 
 /// Code block (CODE-1): monospace, language label, copy button, preserved
 /// formatting, and dependency-free syntax highlighting (see `code_highlight`;
@@ -34,7 +35,32 @@ class _CodeBlockViewState extends State<CodeBlockView> {
   bool _undoPushed = false;
   bool _running = false;
 
+  /// Where the last pointer went down on the read-only view — the tap that
+  /// opens the editor carries it as the caret target.
+  Offset? _readPressGlobal;
+
   bool get editing => widget.app.editingBlockId == widget.block.id;
+
+  /// The text offset under a global point, via the editing TextField's own
+  /// RenderEditable (found by walking our subtree — TextField doesn't
+  /// expose it). Null while there's no laid-out field yet.
+  int? _offsetAtGlobal(Offset global) {
+    EditableTextState? found;
+    void visit(Element e) {
+      if (found != null) return;
+      if (e is StatefulElement && e.state is EditableTextState) {
+        found = e.state as EditableTextState;
+        return;
+      }
+      e.visitChildren(visit);
+    }
+
+    final root = context as Element;
+    root.visitChildren(visit);
+    final r = found?.renderEditable;
+    if (r == null || !r.hasSize) return null;
+    return r.getPositionForPoint(global).offset;
+  }
 
   bool get _runnable =>
       isRunnableLanguage(widget.block.content['language'] as String?);
@@ -186,6 +212,22 @@ class _CodeBlockViewState extends State<CodeBlockView> {
                 ? Builder(builder: (context) {
                     widget.app
                         .setActiveEditor(_controller, widget.block, 'source');
+                    // Consume the click-point token the canvas set, once the
+                    // field exists — the caret lands where the click did
+                    // instead of wherever focus drops it ("it doesnt respect
+                    // click position").
+                    final want = widget.app.pendingCaretGlobal;
+                    if (want != null) {
+                      widget.app.pendingCaretGlobal = null;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!mounted) return;
+                        final at = _offsetAtGlobal(want);
+                        if (at != null) {
+                          _controller.selection =
+                              TextSelection.collapsed(offset: at);
+                        }
+                      });
+                    }
                     return Focus(
                       onKeyEvent: _onKey,
                       child: TextField(
@@ -215,12 +257,25 @@ class _CodeBlockViewState extends State<CodeBlockView> {
                   ),
                     );
                   })
-                : Text.rich(
-                    TextSpan(
-                      style: mono,
-                      children: source.isEmpty
-                          ? [const TextSpan(text: ' ')]
-                          : highlightCode(source, language, dark),
+                // Selectable WITHOUT entering the editor — drag highlights,
+                // Ctrl+C copies, exactly like a text block's body. A plain
+                // tap still opens the editor (with the caret at the tap),
+                // via onTap below; the press point is caught by the
+                // Listener because SelectableText's own tap details don't
+                // surface a global position.
+                : Listener(
+                    onPointerDown: (e) => _readPressGlobal = e.position,
+                    child: SelectableText.rich(
+                      TextSpan(
+                        style: mono,
+                        children: source.isEmpty
+                            ? [const TextSpan(text: ' ')]
+                            : highlightCode(source, language, dark),
+                      ),
+                      onTap: () {
+                        widget.app.pendingCaretGlobal = _readPressGlobal;
+                        widget.app.select(widget.block.id, edit: true);
+                      },
                     ),
                   ),
           ),
@@ -334,7 +389,7 @@ class _CodeBlockViewState extends State<CodeBlockView> {
   Future<void> _pickLanguage() async {
     const langs = ['text', 'dart', 'python', 'js', 'ts', 'rust', 'c', 'cpp',
       'java', 'kotlin', 'sql', 'bash', 'json', 'yaml', 'html', 'css'];
-    final choice = await showDialog<String>(
+    final choice = await showOnoteDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
         title: const Text('Language'),
