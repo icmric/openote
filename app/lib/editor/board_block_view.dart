@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'wrap_selection.dart';
 
 /// A trello-style task board on the page (PLANNING.md: "having the ability
 /// to have a trello like task board would be incredibly helpful").
@@ -323,6 +324,12 @@ class _BoardBlockViewState extends State<BoardBlockView> {
         autofocus: true,
         maxLines: null,
         style: const TextStyle(fontSize: 12),
+        // Wrap-on-selection, same as every other content field.
+        inputFormatters: const [
+          WrapSelectionFormatter(
+              pairs: WrapSelectionFormatter.bracketPairs,
+              autoCloseFences: false)
+        ],
         decoration: const InputDecoration(
           isDense: true,
           contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 7),

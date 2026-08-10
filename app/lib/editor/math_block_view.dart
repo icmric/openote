@@ -7,6 +7,7 @@ import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
+import 'wrap_selection.dart';
 
 /// Math block: linear/LaTeX entry while editing, rendered 2-D notation
 /// otherwise. Commit runs on the editing→not state transition (F-3 fix) so
@@ -133,6 +134,12 @@ class _MathBlockViewState extends State<MathBlockView> {
               focusNode: _focus,
               maxLines: null,
               style: const TextStyle(fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, fontSize: 14),
+              // Wrap-on-selection, same as every other content field.
+              inputFormatters: const [
+                WrapSelectionFormatter(
+                    pairs: WrapSelectionFormatter.bracketPairs,
+                    autoCloseFences: false)
+              ],
               decoration: OnoteInput.bare.copyWith(
                 hintText: r'Linear math… e.g. \sum_(n=1)^oo 1/n^2',
               ),

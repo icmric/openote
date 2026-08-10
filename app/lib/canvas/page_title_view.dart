@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../editor/wrap_selection.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -106,6 +107,12 @@ class _PageTitleViewState extends State<PageTitleView> {
               focusNode: _focus,
               style: titleStyle,
               maxLines: 1,
+              // Wrap-on-selection, same as every other content field.
+              inputFormatters: const [
+                WrapSelectionFormatter(
+                    pairs: WrapSelectionFormatter.bracketPairs,
+                    autoCloseFences: false)
+              ],
               decoration: OnoteInput.bare.copyWith(
                 hintText: 'Page title',
               ),

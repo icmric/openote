@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
+import 'wrap_selection.dart';
 
 /// The card itself: two faces and the turn between them.
 ///
@@ -242,6 +243,11 @@ class _EditCardDialogState extends State<_EditCardDialog> {
                 autofocus: true,
                 maxLines: null,
                 style: OnoteType.ui.copyWith(fontSize: 15),
+                inputFormatters: const [
+                  WrapSelectionFormatter(
+                      pairs: WrapSelectionFormatter.bracketPairs,
+                      autoCloseFences: false)
+                ],
                 decoration: const InputDecoration(isDense: true),
                 textInputAction: TextInputAction.next,
               ),
@@ -253,6 +259,11 @@ class _EditCardDialogState extends State<_EditCardDialog> {
                 controller: _back,
                 maxLines: null,
                 style: OnoteType.ui.copyWith(fontSize: 15),
+                inputFormatters: const [
+                  WrapSelectionFormatter(
+                      pairs: WrapSelectionFormatter.bracketPairs,
+                      autoCloseFences: false)
+                ],
                 decoration: const InputDecoration(isDense: true),
                 onSubmitted: (_) => _submit(),
               ),

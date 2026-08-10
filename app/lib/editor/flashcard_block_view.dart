@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'wrap_selection.dart';
 import 'flashcard_view.dart';
 import '../theme/tokens.dart';
 
@@ -153,6 +154,11 @@ class _FlashcardBlockViewState extends State<FlashcardBlockView> {
                 autofocus: true,
                 maxLines: null,
                 style: OnoteType.ui.copyWith(fontSize: 15),
+                inputFormatters: const [
+                  WrapSelectionFormatter(
+                      pairs: WrapSelectionFormatter.bracketPairs,
+                      autoCloseFences: false)
+                ],
                 decoration: const InputDecoration(
                     isDense: true, hintText: 'What are you learning?'),
                 textInputAction: TextInputAction.next,
@@ -166,6 +172,11 @@ class _FlashcardBlockViewState extends State<FlashcardBlockView> {
                 controller: _back,
                 maxLines: null,
                 style: OnoteType.ui.copyWith(fontSize: 15),
+                inputFormatters: const [
+                  WrapSelectionFormatter(
+                      pairs: WrapSelectionFormatter.bracketPairs,
+                      autoCloseFences: false)
+                ],
                 decoration: const InputDecoration(
                     isDense: true,
                     hintText: 'The answer you want to recall'),

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../code/code_runner.dart';
 import '../model/models.dart';
+import 'wrap_selection.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'code_highlight.dart';
@@ -192,6 +193,14 @@ class _CodeBlockViewState extends State<CodeBlockView> {
                     focusNode: _focus..requestFocus(),
                     maxLines: null,
                     style: mono,
+                    // Same wrap-on-selection as the text editor — typing (
+                    // over a selected word wraps it, never replaces it.
+                    // Brackets and quotes only: * is a character in code.
+                    inputFormatters: const [
+                      WrapSelectionFormatter(
+                          pairs: WrapSelectionFormatter.bracketPairs,
+                          autoCloseFences: false)
+                    ],
                     decoration:
                         OnoteInput.bare.copyWith(hintText: '// code'),
                     onChanged: (v) {

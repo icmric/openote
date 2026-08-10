@@ -5,6 +5,7 @@ import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
+import 'wrap_selection.dart';
 
 /// Table block (MEDIA-3). content: { cells: [[String,…],…] }.
 /// In edit mode each cell is a field with spreadsheet-style navigation:
@@ -250,6 +251,12 @@ class _TableBlockViewState extends State<TableBlockView> {
               focusNode: _nodes[r][c],
               style: style,
               maxLines: null,
+              // Wrap-on-selection, same as every other content field.
+              inputFormatters: const [
+                WrapSelectionFormatter(
+                    pairs: WrapSelectionFormatter.bracketPairs,
+                    autoCloseFences: false)
+              ],
               decoration: OnoteInput.bare.copyWith(
                   contentPadding: const EdgeInsets.symmetric(vertical: 6)),
               onChanged: (v) {
