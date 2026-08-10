@@ -147,12 +147,15 @@ human is the end-to-end with a real client:
 - [ ] **More motion**: toolbar tabs (Home/Insert/Draw/View) crossfade;
       the PDF viewer grows out of its thumbnail card; section groups and
       subpage groups slide open/closed in the sidebar.
-- [ ] **Page-switch speed** — the big one: in your imported notebook,
-      flick between slide-heavy pages. The page itself should appear
-      immediately (pictures may pop in over the next fraction of a
-      second on FIRST visit; revisits should be instant). If anything
-      still takes ~half a second consistently, tell me WHICH page and
-      what's on it.
+- [ ] **Sidebar clicks — THE half-second fix**: clicking pages, sections
+      and groups should act the instant you release the mouse (it was the
+      double-click-to-rename binding making every single click wait out
+      the double-click window — your hotkey-vs-mouse isolation found it).
+      Double-click still renames: first click selects, second opens the
+      name editor, like a file explorer. Group open/close should now
+      visibly ANIMATE instead of jumping late.
+- [ ] **Page-switch speed**: slide-heavy pages should appear immediately,
+      pictures popping in a beat later on first visit; revisits instant.
 - [ ] **Clean status bar**: in this build the bottom bar shows only
       saved/sync state — no "Rust · hash" chip (that's debug-only now).
 - [ ] **Settings** (the gear, top-right of the tab row): theme, spell

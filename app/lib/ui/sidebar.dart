@@ -61,6 +61,27 @@ List<Widget> _pageEntriesFor(AppState app, TreeNode section) {
   return range(0, pages.length);
 }
 
+/// Detects a double-click WITHOUT a DoubleTap recognizer. An InkWell that
+/// binds `onDoubleTap` defers EVERY single tap by the double-tap window
+/// (~300 ms) while the gesture arena waits to see whether a second tap
+/// follows — which was the "very consistent" delay on every sidebar click
+/// (pages, sections, groups all bound it for rename; hotkeys were instant
+/// because they skip the pointer pipeline entirely). With this gate the
+/// first click ACTS immediately and a second within the window renames —
+/// the file-explorer behaviour, and the whole delay gone.
+class _DoubleTapGate {
+  DateTime? _last;
+
+  /// True when this tap is the second of a double-click.
+  bool tap() {
+    final now = DateTime.now();
+    final isDouble = _last != null &&
+        now.difference(_last!) < const Duration(milliseconds: 300);
+    _last = isDouble ? null : now;
+    return isDouble;
+  }
+}
+
 /// Animated expand/collapse for tree groups (Eric: "an animation when
 /// opening and closing groups (both page and section)"). The child stays
 /// in the tree; its height animates between natural and zero in the app's
@@ -535,6 +556,7 @@ class _GroupHeader extends StatefulWidget {
 
 class _GroupHeaderState extends State<_GroupHeader> {
   bool _renaming = false;
+  final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
   AppState get app => widget.app;
@@ -557,9 +579,17 @@ class _GroupHeaderState extends State<_GroupHeader> {
             fontStyle: target ? FontStyle.italic : FontStyle.normal,
             color: target ? scheme.primary : null);
         return InkWell(
-          onTap: _renaming ? null : () => app.toggleGroupCollapsed(group.id),
+          // No onDoubleTap — it deferred every click (see _DoubleTapGate).
+          onTap: _renaming
+              ? null
+              : () {
+                  if (_taps.tap()) {
+                    setState(() => _renaming = true);
+                    return;
+                  }
+                  app.toggleGroupCollapsed(group.id);
+                },
           onTapDown: (d) => _downPos = d.globalPosition,
-          onDoubleTap: () => setState(() => _renaming = true),
           onSecondaryTapUp: (d) => showNodeMenu(context, app, group,
               canIndent: false, position: d.globalPosition),
           onLongPress: () => showNodeMenu(context, app, group,
@@ -1087,6 +1117,7 @@ class _SectionHeader extends StatefulWidget {
 
 class _SectionHeaderState extends State<_SectionHeader> {
   bool _renaming = false;
+  final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
   AppState get app => widget.app;
@@ -1132,9 +1163,17 @@ class _SectionHeaderState extends State<_SectionHeader> {
                 ? OnoteColors.moon100
                 : OnoteColors.graphite700);
     return InkWell(
-      onTap: _renaming ? null : () => app.activateSection(section.id),
+      // No onDoubleTap — it deferred every click (see _DoubleTapGate).
+      onTap: _renaming
+          ? null
+          : () {
+              if (_taps.tap()) {
+                setState(() => _renaming = true);
+                return;
+              }
+              app.activateSection(section.id);
+            },
       onTapDown: (d) => _downPos = d.globalPosition,
-      onDoubleTap: () => setState(() => _renaming = true),
       onSecondaryTapUp: (d) => showNodeMenu(context, app, section,
           canIndent: false, position: d.globalPosition),
       onLongPress: () => showNodeMenu(context, app, section,
@@ -1501,6 +1540,7 @@ class _PageTile extends StatefulWidget {
 
 class _PageTileState extends State<_PageTile> {
   bool _renaming = false;
+  final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
   AppState get app => widget.app;
@@ -1592,9 +1632,17 @@ class _PageTileState extends State<_PageTile> {
       color:
           selected ? scheme.primary.withValues(alpha: .10) : Colors.transparent,
       child: InkWell(
-        onTap: _renaming ? null : () => app.selectPage(page.id),
+        // No onDoubleTap — it deferred every click (see _DoubleTapGate).
+        onTap: _renaming
+            ? null
+            : () {
+                if (_taps.tap()) {
+                  setState(() => _renaming = true);
+                  return;
+                }
+                app.selectPage(page.id);
+              },
         onTapDown: (d) => _downPos = d.globalPosition,
-        onDoubleTap: () => setState(() => _renaming = true),
         onSecondaryTapUp: (d) => showNodeMenu(context, app, page,
             canIndent: true, position: d.globalPosition),
         onLongPress: () => showNodeMenu(context, app, page,

@@ -4,16 +4,21 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
-### Fixed — page switching is fast now
+### Fixed — sidebar clicks act INSTANTLY
 
-- Changing pages (and sections, which open their remembered page) stalled
-  about half a second, very consistently. The cause: every image on the
-  incoming page was read from the notebook database on the spot, before
-  the first frame could draw — imported pages full of slides paid it in
-  full, every time. Images now load just after the page appears, one per
-  beat, into a memory cache — so the page shows instantly, pictures pop
-  in over the next fraction of a second, and revisiting a page costs no
-  reads at all.
+- **The real half-second, found**: every click on a page, section or
+  group in the sidebar was silently waiting out the double-click window
+  before acting — the double-click-to-rename binding forced every single
+  click to pause and check whether a second was coming. That one wait was
+  the whole "consistent half second", which is why keyboard navigation
+  was always instant and page size never mattered. Clicks now act the
+  moment you release; double-click still renames (the first click
+  selects, like a file explorer), and the group open/close animation
+  actually plays instead of arriving late.
+- Separately, images no longer load from the database before the page's
+  first frame: the page appears immediately, pictures fill in a beat
+  later, and revisited pages cost no reads at all (a memory cache keyed
+  by content).
 
 ### Added — the sidebar moves
 
