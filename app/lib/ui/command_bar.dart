@@ -707,9 +707,7 @@ class _CommandBarState extends State<CommandBar> {
       IconButton(
         icon: Icon(Icons.smart_toy_outlined,
             size: 18, color: app.mcpEnabled ? scheme.primary : null),
-        tooltip: app.mcpEnabled
-            ? 'AI access is ON (127.0.0.1:${app.mcpPort})'
-            : 'AI access (MCP)…',
+        tooltip: app.mcpEnabled ? 'AI access is ON' : 'AI access…',
         visualDensity: VisualDensity.compact,
         onPressed: () => showMcpDialog(context, app),
       ),

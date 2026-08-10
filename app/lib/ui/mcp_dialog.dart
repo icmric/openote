@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../api/mcp_connect.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 
-/// AI access (spec 14): the switch for the local MCP server, and the
-/// ready-to-paste client config once it is on. The dialog IS the security
-/// briefing — what turns on, what can reach it, and that off is off.
+/// AI access (spec 14 §8). The audience is a student who has never heard
+/// the word MCP: the visible path is a switch and ONE button — "Connect
+/// Claude Code" — and Openote writes the connection itself. Every piece of
+/// jargon (MCP, server, port, token, config) lives behind the Advanced
+/// fold, for people connecting some other tool.
 Future<void> showMcpDialog(BuildContext context, AppState app) {
   return showDialog<void>(
     context: context,
@@ -14,13 +17,20 @@ Future<void> showMcpDialog(BuildContext context, AppState app) {
   );
 }
 
-class _McpDialog extends StatelessWidget {
+class _McpDialog extends StatefulWidget {
   const _McpDialog({required this.app});
   final AppState app;
 
-  /// The one-line setup for Claude Code — the front door. A JSON blob with
-  /// no stated destination sent the first user to Connectors, which cannot
-  /// carry the auth header; the COMMAND is unambiguous about where it goes.
+  @override
+  State<_McpDialog> createState() => _McpDialogState();
+}
+
+class _McpDialogState extends State<_McpDialog> {
+  AppState get app => widget.app;
+
+  ClaudeConnectResult? _result;
+
+  /// The one-line setup for other MCP clients' CLIs, shown under Advanced.
   String get _cli => 'claude mcp add --transport http --scope user openote '
       'http://127.0.0.1:${app.mcpPort}/mcp '
       '--header "Authorization: Bearer ${app.mcpToken}"';
@@ -35,6 +45,12 @@ class _McpDialog extends StatelessWidget {
     }
   }
 }''';
+
+  void _connect() {
+    setState(() {
+      _result = connectClaudeCode(port: app.mcpPort!, token: app.mcpToken!);
+    });
+  }
 
   Widget _snippet(BuildContext context, String text) => Container(
         width: double.infinity,
@@ -63,22 +79,21 @@ class _McpDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return ListenableBuilder(
       listenable: app,
       builder: (context, _) => AlertDialog(
-        title: const Text('AI access (MCP)'),
+        title: const Text('AI access'),
         content: SizedBox(
           width: 480,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: ListView(
+            shrinkWrap: true,
             children: [
               const Text(
-                'Lets AI tools you already use — Claude, editors, agents — '
-                'read your notes, search them, create pages and flashcards. '
-                'Only while Openote is running, only from this computer, '
-                'and only with the key below. Changes they make are ordinary '
-                'edits: they sync, and Ctrl+Z undoes them.',
+                'Let an AI helper — like Claude — read your notes, search '
+                'them, quiz you, and make flashcards from them. It only '
+                'works while Openote is open, only on this computer, and '
+                'anything it adds is a normal edit: Ctrl+Z undoes it.',
                 style: TextStyle(fontSize: 12.5, height: 1.4),
               ),
               const SizedBox(height: 10),
@@ -88,9 +103,7 @@ class _McpDialog extends StatelessWidget {
                   onChanged: (v) => app.setMcpEnabled(v),
                 ),
                 const SizedBox(width: 6),
-                Text(app.mcpEnabled
-                    ? 'On — serving at 127.0.0.1:${app.mcpPort}'
-                    : 'Off'),
+                Text(app.mcpEnabled ? 'On' : 'Off'),
               ]),
               if (app.mcpError != null)
                 Padding(
@@ -100,34 +113,70 @@ class _McpDialog extends StatelessWidget {
                           fontSize: 11, color: OnoteColors.danger)),
                 ),
               if (app.mcpEnabled) ...[
-                const SizedBox(height: 8),
-                const Text('Claude Code: run this once in any terminal '
-                    '(NOT the Connectors page — that cannot carry the key):',
-                    style: TextStyle(
-                        fontSize: 11, color: OnoteColors.graphite400)),
-                const SizedBox(height: 4),
-                _snippet(context, _cli),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    icon: const Icon(Icons.copy, size: 14),
-                    label: const Text('Copy command'),
-                    onPressed: () => _copy(context, _cli),
-                  ),
+                const SizedBox(height: 10),
+                FilledButton.icon(
+                  icon: const Icon(Icons.link, size: 16),
+                  label: const Text('Connect Claude Code'),
+                  onPressed: _connect,
                 ),
-                const Text('Other MCP clients: this goes in the config '
-                    'file (e.g. a project\'s .mcp.json):',
-                    style: TextStyle(
-                        fontSize: 11, color: OnoteColors.graphite400)),
-                const SizedBox(height: 4),
-                _snippet(context, _config),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    icon: const Icon(Icons.copy, size: 14),
-                    label: const Text('Copy config'),
-                    onPressed: () => _copy(context, _config),
+                if (_result != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      _result!.message,
+                      style: TextStyle(
+                          fontSize: 12,
+                          height: 1.4,
+                          color: _result!.status == ClaudeConnect.failed
+                              ? OnoteColors.danger
+                              : scheme.primary),
+                    ),
                   ),
+                const SizedBox(height: 4),
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  shape: const Border(),
+                  title: const Text('Other AI tools (advanced)',
+                      style: TextStyle(fontSize: 12.5)),
+                  children: [
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                          'Openote speaks MCP, the standard AI tools use to '
+                          'connect to apps. Any MCP-capable tool can use '
+                          'this — the key inside is a password, so paste it '
+                          'only into tools you trust.',
+                          style: TextStyle(
+                              fontSize: 11, color: OnoteColors.graphite400)),
+                    ),
+                    const SizedBox(height: 6),
+                    _snippet(context, _config),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.copy, size: 14),
+                        label: const Text('Copy config'),
+                        onPressed: () => _copy(context, _config),
+                      ),
+                    ),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                          'Or, for tools with a command line, run once:',
+                          style: TextStyle(
+                              fontSize: 11, color: OnoteColors.graphite400)),
+                    ),
+                    const SizedBox(height: 4),
+                    _snippet(context, _cli),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.copy, size: 14),
+                        label: const Text('Copy command'),
+                        onPressed: () => _copy(context, _cli),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ],

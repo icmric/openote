@@ -127,3 +127,34 @@ For any PR that touches the model or adds a feature, the API questions are:
    still routed through the ordinary write path? Still recorded?
 4. Never: a tool-specific schema for content that has a format
    representation. That is how APIs drift; §2 exists to forbid it.
+
+## 8. Connecting a client: the no-jargon rule
+
+The audience for the AI-access dialog is a year-10 student who does not
+know what MCP is and has never opened a terminal (Eric, 2026-08-10: "I
+want to dejargon this as much as possible, and make it as simple as
+possible"). Field-tested the hard way: v1 of the dialog handed over a
+config JSON with no destination, and the first real user landed in a
+terminal error.
+
+Normative for this dialog and any future connection surface:
+
+- **The visible path is a switch and one button.** "Connect Claude Code"
+  writes the connection itself: Openote merges an `openote` entry into
+  `~/.claude.json` (`mcpServers`, user scope) — exactly what
+  `claude mcp add --scope user` would do, minus the terminal.
+  Implementation and its safety rules: `api/mcp_connect.dart`.
+- **Never destroy another app's config.** Merge, don't overwrite; a file
+  that doesn't parse is refused, not clobbered; the first write of a
+  pre-existing file leaves a one-time `.openote-backup` beside it.
+- **Honest status.** "Connected" only when Claude Code shows signs of
+  being installed; otherwise say plainly what to install and that the
+  connection will work once it is.
+- **Self-healing.** Whenever the server starts, an entry the user
+  previously made is refreshed (ports move); an entry they never made is
+  never created uninvited.
+- **Jargon lives behind the Advanced fold.** MCP, ports, tokens, config
+  JSON and the CLI one-liner exist for other tools' users — below an
+  expander, never in the primary path. A future "connect X" for another
+  client follows the same shape: one button that does the work, or it
+  isn't simple enough to ship.

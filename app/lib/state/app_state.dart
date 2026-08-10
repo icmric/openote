@@ -21,6 +21,7 @@ import '../ink/ink_codec.dart';
 import '../ink/ink_storage.dart';
 import '../sync/materializer.dart';
 import '../sync/git_sync.dart';
+import '../api/mcp_connect.dart';
 import '../api/mcp_server.dart';
 import '../sync/github_api.dart';
 import '../store/repository.dart';
@@ -241,6 +242,10 @@ class AppState extends ChangeNotifier
       mcpEnabled = true;
       _repo.setSetting(
           'mcp', {'enabled': true, 'token': mcpToken, 'port': mcpPort});
+      // If the user connected Claude Code, keep that connection current —
+      // the port can move when another app holds it. No-op for everyone
+      // who never pressed Connect.
+      refreshClaudeCodeEntry(port: mcpPort!, token: mcpToken!);
     } catch (e) {
       mcpEnabled = false;
       mcpError = '$e';

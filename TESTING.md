@@ -101,11 +101,12 @@ JS item below is machine-unverified**:
 The protocol and tools are machine-tested over real HTTP; what needs a
 human is the end-to-end with a real client:
 
-- [ ] View tab ▸ the robot icon ▸ turn it on ▸ **Copy command** and run it
-      in any terminal — it registers the server with Claude Code (`claude
-      mcp add …`). NOT the Connectors page: that only takes a URL and can't
-      carry the key. Then in a fresh Claude Code session, ask it to list
-      your notebooks, read a page, search.
+- [ ] View tab ▸ the robot icon ▸ turn it on ▸ press **Connect Claude
+      Code** — no terminal, no copying; Openote writes the connection
+      itself and the message tells you it worked. Then in a fresh Claude
+      Code session, ask it to list your notebooks, read a page, search.
+      (The old JSON/command routes still exist under "Other AI tools
+      (advanced)" for any non-Claude tool.)
 - [ ] Ask it to CREATE something — "make me 5 flashcards about X on page Y"
       is the canonical test. The cards should appear on the page, be
       undoable with Ctrl+Z, and show up in the study deck.
