@@ -46,9 +46,11 @@ class _McpDialogState extends State<_McpDialog> {
   }
 }''';
 
-  void _connect() {
+  void _connect(
+      ClaudeConnectResult Function({required int port, required String token})
+          connector) {
     setState(() {
-      _result = connectClaudeCode(port: app.mcpPort!, token: app.mcpToken!);
+      _result = connector(port: app.mcpPort!, token: app.mcpToken!);
     });
   }
 
@@ -114,11 +116,18 @@ class _McpDialogState extends State<_McpDialog> {
                 ),
               if (app.mcpEnabled) ...[
                 const SizedBox(height: 10),
-                FilledButton.icon(
-                  icon: const Icon(Icons.link, size: 16),
-                  label: const Text('Connect Claude Code'),
-                  onPressed: _connect,
-                ),
+                Wrap(spacing: 8, runSpacing: 8, children: [
+                  FilledButton.icon(
+                    icon: const Icon(Icons.link, size: 16),
+                    label: const Text('Connect Claude Code'),
+                    onPressed: () => _connect(connectClaudeCode),
+                  ),
+                  FilledButton.tonalIcon(
+                    icon: const Icon(Icons.link, size: 16),
+                    label: const Text('Connect Gemini CLI'),
+                    onPressed: () => _connect(connectGeminiCli),
+                  ),
+                ]),
                 if (_result != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
@@ -132,6 +141,18 @@ class _McpDialogState extends State<_McpDialog> {
                               : scheme.primary),
                     ),
                   ),
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text(
+                      'ChatGPT and the Gemini app can\'t do this yet: their '
+                      'connectors run on the company\'s servers, which '
+                      'can\'t see apps on your computer. If they add '
+                      'support, a button will appear here.',
+                      style: TextStyle(
+                          fontSize: 11,
+                          height: 1.4,
+                          color: OnoteColors.graphite400)),
+                ),
                 const SizedBox(height: 4),
                 ExpansionTile(
                   tilePadding: EdgeInsets.zero,

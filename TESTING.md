@@ -101,12 +101,16 @@ JS item below is machine-unverified**:
 The protocol and tools are machine-tested over real HTTP; what needs a
 human is the end-to-end with a real client:
 
-- [ ] View tab ▸ the robot icon ▸ turn it on ▸ press **Connect Claude
+- [x] View tab ▸ the robot icon ▸ turn it on ▸ press **Connect Claude
       Code** — no terminal, no copying; Openote writes the connection
-      itself and the message tells you it worked. Then in a fresh Claude
-      Code session, ask it to list your notebooks, read a page, search.
-      (The old JSON/command routes still exist under "Other AI tools
-      (advanced)" for any non-Claude tool.)
+      itself. *(Confirmed end-to-end 2026-08-10: your Connect click, then
+      list → read → create page → 14 flashcards, all over the wire.)*
+- [ ] **Connect Gemini CLI** — same button pattern. If you don't have
+      Gemini CLI installed, the honest "doesn't look installed yet"
+      message IS the pass; if you do, ask it to list your notebooks.
+- [ ] **Re-import a OneNote section containing ¬** (e.g. Discrete Maths
+      week 1): the NOT symbols that came in as � should now arrive as ¬.
+      Existing pages keep their � until re-imported or hand-fixed.
 - [ ] Ask it to CREATE something — "make me 5 flashcards about X on page Y"
       is the canonical test. The cards should appear on the page, be
       undoable with Ctrl+Z, and show up in the study deck.

@@ -85,24 +85,69 @@ void main() {
     expect(r.status, ClaudeConnect.connected);
   });
 
-  group('refreshClaudeCodeEntry', () {
-    test('updates a stale entry the user made', () {
+  group('refreshConnectedClients', () {
+    test('updates stale entries the user made — in every connected tool',
+        () {
+      Directory('${home.path}${Platform.pathSeparator}.gemini').createSync();
       connectClaudeCode(port: 27191, token: 'tok', home: home.path);
-      refreshClaudeCodeEntry(port: 27300, token: 'tok2', home: home.path);
-      final entry = read()['mcpServers']['openote'] as Map;
-      expect(entry['url'], 'http://127.0.0.1:27300/mcp');
-      expect(entry['headers']['Authorization'], 'Bearer tok2');
+      connectGeminiCli(port: 27191, token: 'tok', home: home.path);
+      refreshConnectedClients(port: 27300, token: 'tok2', home: home.path);
+
+      final claude = read()['mcpServers']['openote'] as Map;
+      expect(claude['url'], 'http://127.0.0.1:27300/mcp');
+      expect(claude['headers']['Authorization'], 'Bearer tok2');
+      final gemini = jsonDecode(File(
+              '${home.path}${Platform.pathSeparator}.gemini${Platform.pathSeparator}settings.json')
+          .readAsStringSync())['mcpServers']['openote'] as Map;
+      expect(gemini['httpUrl'], 'http://127.0.0.1:27300/mcp');
     });
 
     test('does NOTHING when the user never connected', () {
-      refreshClaudeCodeEntry(port: 27191, token: 'tok', home: home.path);
+      refreshConnectedClients(port: 27191, token: 'tok', home: home.path);
       expect(cfg().existsSync(), isFalse,
           reason: "Openote doesn't write into other apps' config uninvited");
 
       cfg().writeAsStringSync(jsonEncode({'mcpServers': {}}));
       final before = cfg().readAsStringSync();
-      refreshClaudeCodeEntry(port: 27191, token: 'tok', home: home.path);
+      refreshConnectedClients(port: 27191, token: 'tok', home: home.path);
       expect(cfg().readAsStringSync(), before);
+    });
+  });
+
+  group('Gemini CLI', () {
+    File gcfg() => File(
+        '${home.path}${Platform.pathSeparator}.gemini${Platform.pathSeparator}settings.json');
+
+    test('with ~/.gemini present: connected, httpUrl form, keys preserved',
+        () {
+      Directory(gcfg().parent.path).createSync();
+      gcfg().writeAsStringSync(jsonEncode({'theme': 'Default'}));
+      final r = connectGeminiCli(port: 27191, token: 'tok', home: home.path);
+      expect(r.status, ClaudeConnect.connected);
+      expect(r.message, contains('Gemini CLI'));
+
+      final root =
+          jsonDecode(gcfg().readAsStringSync()) as Map<String, dynamic>;
+      expect(root['theme'], 'Default', reason: 'existing settings survive');
+      expect(root['mcpServers']['openote']['httpUrl'],
+          'http://127.0.0.1:27191/mcp');
+      expect(File('${gcfg().path}.openote-backup').existsSync(), isTrue);
+    });
+
+    test('without ~/.gemini: writes config, honest about not installed', () {
+      final r = connectGeminiCli(port: 27191, token: 'tok', home: home.path);
+      expect(r.status, ClaudeConnect.wroteConfigOnly);
+      expect(r.message, contains("doesn't look installed"));
+      expect(gcfg().existsSync(), isTrue,
+          reason: 'ready the moment Gemini CLI is installed');
+    });
+
+    test('corrupt settings: refuses to write, file untouched', () {
+      Directory(gcfg().parent.path).createSync();
+      gcfg().writeAsStringSync('[broken');
+      final r = connectGeminiCli(port: 27191, token: 'tok', home: home.path);
+      expect(r.status, ClaudeConnect.failed);
+      expect(gcfg().readAsStringSync(), '[broken');
     });
   });
 }

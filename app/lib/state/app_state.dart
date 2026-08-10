@@ -242,10 +242,10 @@ class AppState extends ChangeNotifier
       mcpEnabled = true;
       _repo.setSetting(
           'mcp', {'enabled': true, 'token': mcpToken, 'port': mcpPort});
-      // If the user connected Claude Code, keep that connection current —
-      // the port can move when another app holds it. No-op for everyone
-      // who never pressed Connect.
-      refreshClaudeCodeEntry(port: mcpPort!, token: mcpToken!);
+      // Keep any connection the user made current — the port can move
+      // when another app holds it. No-op for everyone who never pressed
+      // Connect.
+      refreshConnectedClients(port: mcpPort!, token: mcpToken!);
     } catch (e) {
       mcpEnabled = false;
       mcpError = '$e';

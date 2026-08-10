@@ -3053,10 +3053,10 @@ impl PropSet {
             _ => Vec::new(),
         }
     }
-    /// Text of a rich-text run: UTF-8 body (0x3498) preferred, else UTF-16.
+    /// Text of a rich-text run: 8-bit body (0x3498) preferred, else UTF-16.
     fn run_text(&self) -> Option<String> {
         if let Some(PVal::Str(b)) = self.get(PID_TEXT_UTF8) {
-            return Some(String::from_utf8_lossy(b).into_owned());
+            return Some(decode_8bit_text(b));
         }
         if let Some(PVal::Str(b)) = self.get(PID_TEXT_UTF16) {
             return Some(decode_utf16(b));
@@ -3257,7 +3257,7 @@ fn parse_obj(r: &Reader, start: usize, len: usize) -> (Option<String>, Vec<u32>)
             if data_o + 4 + cb <= end {
                 let bytes = &r.d[data_o + 4..data_o + 4 + cb];
                 if pid == PID_TEXT_UTF8 {
-                    text = Some(String::from_utf8_lossy(bytes).into_owned());
+                    text = Some(decode_8bit_text(bytes));
                 } else if pid == PID_TEXT_UTF16 && text.is_none() {
                     text = Some(decode_utf16(bytes));
                 }
@@ -3802,6 +3802,56 @@ fn decode_multibyte_signed(b: &[u8]) -> Option<Vec<i64>> {
 }
 
 /// Decode a UTF-16LE string property.
+/// The 8-bit text body (0x3498). Despite the property's "UTF-8" name,
+/// OneNote writes the ANSI code page here whenever every character of a run
+/// fits it — so a run holding ¬ (0xAC in cp1252) arrives as a lone Latin
+/// byte that is INVALID UTF-8. `from_utf8_lossy` turned exactly those runs
+/// into U+FFFD, which is how a user's NOT symbols became � while the same
+/// symbol survived in runs OneNote happened to store as UTF-16. Strict
+/// UTF-8 first — pure ASCII and genuine UTF-8 pass through unchanged —
+/// then Windows-1252, which maps every byte, so nothing is ever replaced.
+fn decode_8bit_text(b: &[u8]) -> String {
+    match std::str::from_utf8(b) {
+        Ok(s) => s.to_owned(),
+        Err(_) => b.iter().map(|&c| cp1252(c)).collect(),
+    }
+}
+
+/// Windows-1252 → Unicode: identical to Latin-1 except 0x80–0x9F, which
+/// hold the printable punctuation below (undefined slots pass through).
+fn cp1252(b: u8) -> char {
+    match b {
+        0x80 => '\u{20AC}', // €
+        0x82 => '\u{201A}',
+        0x83 => '\u{0192}',
+        0x84 => '\u{201E}',
+        0x85 => '\u{2026}', // …
+        0x86 => '\u{2020}',
+        0x87 => '\u{2021}',
+        0x88 => '\u{02C6}',
+        0x89 => '\u{2030}',
+        0x8A => '\u{0160}',
+        0x8B => '\u{2039}',
+        0x8C => '\u{0152}',
+        0x8E => '\u{017D}',
+        0x91 => '\u{2018}', // '
+        0x92 => '\u{2019}', // '
+        0x93 => '\u{201C}', // "
+        0x94 => '\u{201D}', // "
+        0x95 => '\u{2022}', // •
+        0x96 => '\u{2013}', // –
+        0x97 => '\u{2014}', // —
+        0x98 => '\u{02DC}',
+        0x99 => '\u{2122}', // ™
+        0x9A => '\u{0161}',
+        0x9B => '\u{203A}',
+        0x9C => '\u{0153}',
+        0x9E => '\u{017E}',
+        0x9F => '\u{0178}',
+        other => other as char,
+    }
+}
+
 fn decode_utf16(b: &[u8]) -> String {
     let pairs = b.len() / 2;
     let mut s = String::with_capacity(pairs);
@@ -5102,5 +5152,27 @@ mod tests {
         );
         // Pure math stays pure.
         assert_eq!(latexify_prose("x + y = z"), "x + y = z");
+    }
+
+    /// OneNote stores a run as single ANSI bytes whenever its characters fit
+    /// the code page. ¬ (0xAC) is the byte that reached a user as U+FFFD —
+    /// a discrete-maths NOT symbol — because the old decode was
+    /// from_utf8_lossy; the same page kept ¬ intact in runs OneNote happened
+    /// to store as UTF-16, which is what made it look random.
+    #[test]
+    fn ansi_text_runs_decode_without_replacement_chars() {
+        let mut b = b"denoted as ".to_vec();
+        b.push(0xAC);
+        assert_eq!(decode_8bit_text(&b), "denoted as \u{00AC}");
+        // The 0x80–0x9F table: smart quotes and the en dash.
+        assert_eq!(
+            decode_8bit_text(&[0x93, 0x41, 0x94, 0x96]),
+            "\u{201C}A\u{201D}\u{2013}"
+        );
+        // Genuine UTF-8 (all-ASCII included) passes through untouched.
+        assert_eq!(
+            decode_8bit_text("¬ already utf-8 ∧".as_bytes()),
+            "¬ already utf-8 ∧"
+        );
     }
 }

@@ -139,11 +139,24 @@ terminal error.
 
 Normative for this dialog and any future connection surface:
 
-- **The visible path is a switch and one button.** "Connect Claude Code"
-  writes the connection itself: Openote merges an `openote` entry into
-  `~/.claude.json` (`mcpServers`, user scope) — exactly what
-  `claude mcp add --scope user` would do, minus the terminal.
-  Implementation and its safety rules: `api/mcp_connect.dart`.
+- **The visible path is a switch and per-tool Connect buttons.** Openote
+  writes each connection itself into the tool's own settings file —
+  exactly what that tool's `mcp add` command would do, minus the
+  terminal. Implementation and its safety rules: `api/mcp_connect.dart`.
+  The client landscape as of 2026-08:
+
+  | Tool | Status | Why |
+  |---|---|---|
+  | Claude Code | ✅ button | user-scope `mcpServers` in `~/.claude.json` |
+  | Gemini CLI | ✅ button | `mcpServers` (`httpUrl`) in `~/.gemini/settings.json` |
+  | ChatGPT app | ❌ impossible today | its connectors run on OpenAI's servers, which cannot reach `127.0.0.1` on the user's machine (and the UI carries no auth header) |
+  | Gemini app | ❌ impossible today | same: cloud-side connectors cannot see a local server |
+  | Anything else MCP-capable | Advanced fold | generic config JSON + CLI one-liner |
+
+  The dialog states the ❌ rows in plain words rather than hiding them —
+  "can't yet, their connectors run on the company's servers" — so nobody
+  hunts for a setting that does not exist. Revisit if either vendor ships
+  a desktop-side MCP client; the button pattern is ready for it.
 - **Never destroy another app's config.** Merge, don't overwrite; a file
   that doesn't parse is refused, not clobbered; the first write of a
   pre-existing file leaves a one-time `.openote-backup` beside it.
