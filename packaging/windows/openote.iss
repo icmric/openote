@@ -105,6 +105,18 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 Filename: "{app}\{#AppExe}"; \
   Description: "Launch {#AppName}"; \
   Flags: nowait postinstall skipifsilent
+; Silent installs are the update-through-app path: update_dialog.dart runs
+; this setup with /SILENT after the app saves and exits. `skipifsilent`
+; above rightly skips the interactive launch checkbox — this entry is its
+; silent twin, so an in-app update ends with the NEW Openote open,
+; completing "apply the update and relaunch" with no user action at all.
+Filename: "{app}\{#AppExe}"; Flags: nowait; Check: RelaunchAfterSilentUpdate
+
+[Code]
+function RelaunchAfterSilentUpdate: Boolean;
+begin
+  Result := WizardSilent;
+end;
 
 [UninstallDelete]
 ; Only what the installer itself created. **The user's notebooks live in their

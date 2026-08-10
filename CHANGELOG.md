@@ -2,7 +2,7 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
-## [Unreleased]
+## [0.7.0] — 2026-08-10
 
 ### Added — AI access (MCP)
 
@@ -98,6 +98,60 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   drawing. (What a pen button reports is up to the OS and driver — the
   barrel signal is the one that reliably reaches applications, so it maps to
   the eraser, which is what it means nearly everywhere.)
+
+### Added — one-click AI connections, no jargon
+
+- **Connect Claude Code / Connect Gemini CLI buttons** in the AI-access
+  dialog: Openote writes the connection into the tool's own settings file
+  itself — no terminal, no copying config. It merges (never overwrites),
+  refuses files it can't parse, backs up before its first write, and keeps
+  the connection current if the port ever moves. MCP, ports and tokens now
+  live behind an "Other AI tools (advanced)" fold.
+- The dialog is honest about ChatGPT and the Gemini app: their connectors
+  run on the vendor's servers, which can't see apps on your computer — so
+  no button pretends otherwise.
+
+### Added — the app updates itself
+
+- **Openote checks for a newer release at launch** (silently — offline
+  costs you nothing) and shows a small Update button when one exists.
+  Pressing it saves everything, downloads the installer behind a progress
+  bar, closes, installs silently, and **reopens as the new version by
+  itself** (Windows; other platforms get the download page). This is the
+  last version you install by hand.
+
+### Added — full keyboard control, first two phases
+
+- **Ctrl+/ shows every shortcut in the app**, rendered from one keyboard
+  map in code — the documentation can't drift from reality, and a test
+  walks every row. The View tab has a button for the mouse-first path.
+- **The canvas works one-handed**: Tab/Shift+Tab select boxes in reading
+  order, arrows jump to the nearest box in that direction, Enter opens the
+  box's editor, Esc climbs back out, Ctrl+arrows move the selected box a
+  grid step (Shift for 1 px) with one undo entry per burst, like a drag.
+
+### Added — a page scroll bar
+
+- A vertical bar on the page's right edge whenever the page is taller than
+  the window: drag it, click the track to jump. It claims the pointer
+  properly, so no selection box appears behind it.
+
+### Changed — typing a bracket over selected text wraps it, everywhere
+
+- Selecting a word and typing `(`, `"`, `*` … wraps the selection instead
+  of replacing it in every text surface — code blocks, table cells, board
+  cards, flashcards, math, the page title — matching what the markdown
+  editor already did.
+
+### Fixed — OneNote import ate ¬ and friends
+
+- OneNote stores a text run as single ANSI bytes whenever its characters
+  fit the old Windows character set; the importer read those bytes as
+  UTF-8, so a ¬ (and smart quotes, dashes, €) in exactly those runs became
+  the � replacement character — while the same symbol survived elsewhere on
+  the page. The importer now falls back to the proper Windows-1252 table,
+  which maps every byte. Pages already imported keep their � until
+  re-imported; fresh imports arrive intact.
 
 ## [0.6.2] — 2026-08-09
 

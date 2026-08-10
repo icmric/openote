@@ -23,6 +23,7 @@ import '../sync/materializer.dart';
 import '../sync/git_sync.dart';
 import '../api/mcp_connect.dart';
 import '../api/mcp_server.dart';
+import '../update/app_update.dart';
 import '../sync/github_api.dart';
 import '../store/repository.dart';
 import 'page_protection.dart';
@@ -250,6 +251,18 @@ class AppState extends ChangeNotifier
       mcpEnabled = false;
       mcpError = '$e';
     }
+    notifyListeners();
+  }
+
+  /// Update-through-app: set when launch found a newer release. The
+  /// command bar shows its button off this; null means current or the
+  /// check failed (offline etc.), which deliberately look identical.
+  UpdateInfo? updateAvailable;
+
+  Future<void> checkForAppUpdate() async {
+    final u = await fetchLatestUpdate();
+    if (u == null) return;
+    updateAvailable = u;
     notifyListeners();
   }
 
@@ -3818,6 +3831,7 @@ class AppState extends ChangeNotifier
     if (pp is bool) penProximitySwitch = pp;
     // Detached: binding a port must never gate the app opening.
     unawaited(_restoreMcp());
+    unawaited(checkForAppUpdate());
     final cc = _repo.getSetting('customColors');
     if (cc is List) customColors.addAll(cc.cast<String>());
     final vm = _repo.getSetting('viewMemory');

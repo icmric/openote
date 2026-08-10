@@ -30,6 +30,7 @@ import 'font_picker.dart';
 import 'insert_portal_dialog.dart';
 import 'mcp_dialog.dart';
 import 'shortcut_overlay.dart';
+import 'update_dialog.dart';
 import '../theme/tokens.dart';
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
@@ -113,6 +114,19 @@ class _CommandBarState extends State<CommandBar> {
                     scrollDirection: Axis.horizontal,
                     reverse: true,
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      // Update-through-app: the "little update button" of
+                      // PLANNING.md. Exists only when launch found a newer
+                      // release, and leads with the version so the tooltip
+                      // answers "to what?" before the click.
+                      if (app.updateAvailable != null)
+                        IconButton(
+                          icon: Icon(Icons.system_update_alt,
+                              size: 18, color: scheme.primary),
+                          tooltip:
+                              'Update to ${app.updateAvailable!.version}…',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => showUpdateDialog(context, app),
+                        ),
                       // Current-tool escape hatch: visible whenever not in Select.
                       if (app.tool != Tool.select)
                         Padding(

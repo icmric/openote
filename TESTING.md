@@ -1,8 +1,8 @@
 # What needs testing, and what I need from you
 
-> Working document · last updated 2026-08-10 · **test from master** (no
-> release is cut yet, on your instruction — Linux items wait for the next
-> one; everything else runs from source on Windows).
+> Working document · last updated 2026-08-10 · **v0.7.0 is cut** — install
+> it from the release page (one last manual install; the app updates
+> itself from here). The Linux queue (§3) is unblocked by this release.
 >
 > Everything below is either **built but never touched by a human**, or
 > **half-verified** — you confirmed part and deferred the rest. Tick things
@@ -118,7 +118,18 @@ human is the end-to-end with a real client:
       stays on), and the same pasted config should still work.
 - [ ] Sanity: with the toggle OFF, the same client must fail to connect.
 
-### 2.5 Small recent things
+### 2.5 Update through the app — NEW in 0.7.0
+
+- [ ] What you can check NOW: a fresh 0.7.0 install shows **no** update
+      button (nothing newer exists — a button here would be a bug).
+- [ ] The real test arrives with the NEXT release: an Update button appears
+      near Study/Planner within a launch, tooltip names the version, and
+      pressing Update now saves everything, downloads with a progress bar
+      you can't click past, closes, installs silently, and **reopens as
+      the new version by itself**. Nothing to press but the one button.
+      (0.6.2 can't test this — the updater ships in 0.7.0.)
+
+### 2.6 Small recent things
 
 - [ ] **Ctrl+/** — the keyboard shortcut reference, from anywhere including
       mid-typing. Same chord or Esc closes it; View tab has a button too.
