@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../code/code_runner.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -10,7 +11,13 @@ import '../theme/tokens.dart';
 /// Code block (CODE-1): monospace, language label, copy button, preserved
 /// formatting, and dependency-free syntax highlighting (see `code_highlight`;
 /// swappable for `re_highlight` later without touching this view).
-/// content: { language, source }.
+/// content: { language, source, output?, ranAt? }.
+///
+/// `sql` and `js` cells RUN (v0.14 local code, phases 1–2): the Run button
+/// (or Ctrl+Enter while editing) executes the source in a sandboxed isolate
+/// — see code/code_runner.dart for the rules — and the output persists under
+/// the source, so the page reads like a finished notebook without re-running
+/// anything.
 class CodeBlockView extends StatefulWidget {
   const CodeBlockView({super.key, required this.block, required this.app});
   final Block block;
@@ -24,8 +31,59 @@ class _CodeBlockViewState extends State<CodeBlockView> {
   late final TextEditingController _controller;
   final _focus = FocusNode();
   bool _undoPushed = false;
+  bool _running = false;
 
   bool get editing => widget.app.editingBlockId == widget.block.id;
+
+  bool get _runnable =>
+      isRunnableLanguage(widget.block.content['language'] as String?);
+
+  /// One click, one run: gather the page's table blocks, hand everything to
+  /// the sandboxed runner, persist what came back. The output is part of the
+  /// note (it syncs, it undoes) — that is the Jupyter property.
+  Future<void> _run() async {
+    if (_running) return;
+    setState(() => _running = true);
+    final b = widget.block;
+    final app = widget.app;
+    // Page tables in reading order, named by their first header cell — the
+    // runner sanitises and also mounts them as t1…tn.
+    final tableBlocks = [...app.blocks.where((x) => x.type == BlockType.table)]
+      ..sort((a, c) => a.y != c.y ? a.y.compareTo(c.y) : a.x.compareTo(c.x));
+    final tables = <CodeTable>[
+      for (final t in tableBlocks)
+        if (t.content['cells'] is List)
+          (
+            name: (() {
+              final cells = t.content['cells'] as List;
+              final first = cells.isNotEmpty ? cells.first : null;
+              return first is List && first.isNotEmpty ? '${first.first}' : '';
+            })(),
+            cells: [
+              for (final r in (t.content['cells'] as List))
+                [for (final c in (r as List)) '$c']
+            ]
+          ),
+    ];
+    final out = await runCode(
+      language: b.content['language'] as String? ?? 'text',
+      source: b.content['source'] as String? ?? '',
+      tables: tables,
+    );
+    if (!mounted) return;
+    app.pushUndo();
+    b.content['output'] = out.toJson();
+    b.content['ranAt'] = nowMs();
+    app.updateBlock(b);
+    setState(() => _running = false);
+  }
+
+  void _clearOutput() {
+    widget.app.pushUndo();
+    widget.block.content.remove('output');
+    widget.block.content.remove('ranAt');
+    widget.app.updateBlock(widget.block);
+  }
 
   bool _wasEditing = false;
 
@@ -94,6 +152,23 @@ class _CodeBlockViewState extends State<CodeBlockView> {
                           color: OnoteColors.graphite400)),
                 ),
                 const Spacer(),
+                if (_runnable)
+                  _running
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 8),
+                          child: SizedBox(
+                              width: 13,
+                              height: 13,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2)),
+                        )
+                      : IconButton(
+                          icon: const Icon(Icons.play_arrow, size: 16),
+                          visualDensity: VisualDensity.compact,
+                          color: Theme.of(context).colorScheme.primary,
+                          tooltip: 'Run  (Ctrl+Enter)',
+                          onPressed: _run,
+                        ),
                 IconButton(
                   icon: const Icon(Icons.copy, size: 14),
                   visualDensity: VisualDensity.compact,
@@ -140,14 +215,99 @@ class _CodeBlockViewState extends State<CodeBlockView> {
                     ),
                   ),
           ),
+          ..._outputPane(context, mono, dark),
         ],
       ),
     );
   }
 
+  /// The run's result, under the source: text and errors in the same mono,
+  /// rows as a real table. Persisted content, not widget state — device B
+  /// reads device A's output without running anything.
+  List<Widget> _outputPane(BuildContext context, TextStyle mono, bool dark) {
+    final out = CodeOutput.fromJson(widget.block.content['output']);
+    if (out == null) return const [];
+    final headerStyle = mono.copyWith(
+        fontSize: 12, fontWeight: FontWeight.w600);
+    final cellStyle = mono.copyWith(fontSize: 12);
+    return [
+      Divider(
+          height: 1,
+          color: dark ? OnoteColors.night300 : OnoteColors.paper300),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(10, 2, 4, 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(children: [
+              Text(out.kind == 'error' ? 'error' : 'output',
+                  style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: out.kind == 'error'
+                          ? OnoteColors.danger
+                          : OnoteColors.graphite400)),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close, size: 12),
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Clear the output',
+                onPressed: _clearOutput,
+              ),
+            ]),
+            if (out.cells != null)
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Table(
+                  defaultColumnWidth: const IntrinsicColumnWidth(),
+                  border: TableBorder.all(
+                      color:
+                          dark ? OnoteColors.night300 : OnoteColors.paper300,
+                      width: .5),
+                  children: [
+                    for (var r = 0; r < out.cells!.length; r++)
+                      TableRow(children: [
+                        for (final c in out.cells![r])
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            child: Text(c,
+                                style: r == 0 ? headerStyle : cellStyle),
+                          ),
+                      ]),
+                  ],
+                ),
+              )
+            else
+              SelectableText(out.text ?? '',
+                  style: out.kind == 'error'
+                      ? cellStyle.copyWith(color: OnoteColors.danger)
+                      : cellStyle),
+            if (out.truncated)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('Showing the first $kMaxOutputRows rows.',
+                    style: const TextStyle(
+                        fontSize: 10, color: OnoteColors.graphite400)),
+              ),
+          ],
+        ),
+      ),
+    ];
+  }
+
   /// Tab inserts two spaces at the caret instead of moving focus (Tab isn't
-  /// consumed by EditableText, so it bubbles here first).
+  /// consumed by EditableText, so it bubbles here first). Ctrl+Enter runs —
+  /// Jupyter's muscle memory.
   KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    if (e is KeyDownEvent &&
+        e.logicalKey == LogicalKeyboardKey.enter &&
+        HardwareKeyboard.instance.isControlPressed &&
+        _runnable) {
+      _run();
+      return KeyEventResult.handled;
+    }
     if (e is KeyDownEvent && e.logicalKey == LogicalKeyboardKey.tab) {
       final sel = _controller.selection;
       if (!sel.isValid) return KeyEventResult.ignored;

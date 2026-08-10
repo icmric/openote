@@ -4,6 +4,26 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — code that runs (SQL and JavaScript cells)
+
+- **A code block set to `sql` or `js` gets a Run button** (and Ctrl+Enter
+  while editing). Output lands under the source — text, an error, or rows
+  as a real table — and **persists with the note**: it syncs, it undoes,
+  and the page reads like a finished notebook without re-running anything.
+- **Every table block on the page is queryable.** SQL sees them as tables
+  (named from the first header cell, and as `t1…tn`; the wrong-name error
+  lists what exists); JS sees them as `tables.<name>` arrays. Drop a CSV,
+  write `SELECT unit, AVG(mark) FROM marks GROUP BY unit`, run.
+- **Sandboxed by construction**: runs only ever start from your click; the
+  engines have no file, network or process access to escape to (the JS
+  engine is built without the fetch bridge its wrapper enables by
+  default); five-second timeout, 64 KB output cap, 200-row table cap. The
+  honest residual is documented in code: a stuck native call keeps its
+  thread until it finishes — the UI always gets its answer on time.
+- Other languages (including ones installed on your system) are planned —
+  behind real per-platform OS sandboxing, not a trust prompt. See
+  docs/planning/v0.14-local-code.md.
+
 ### Added — a task board on the page
 
 - **A trello-style board block** (Insert ▸ Board, or right-click the canvas ▸

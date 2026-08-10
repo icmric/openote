@@ -52,15 +52,16 @@ accesability
       surface; i18n is a one-time wiring cost plus translations forever.
 
 Local code
-    Write and execute code like JS, SQL, etc
-    Similar to juniper notebook
-    → PLANNED: docs/planning/v0.14-local-code.md. The sandbox rule leads
-      (manual runs only, engines with no ambient authority, "a stranger's
-      cell can waste five seconds of CPU and nothing else"). Phase 1 is
-      SQL — zero new dependencies, page tables become queryable, lands the
-      "SQL like table" half of the Tables ask too; Phase 2 is JS via an
-      embedded QuickJS; sessions/write-back/charts staged behind them.
-      Three questions for you at the bottom of the doc.
+    Write and execute code like JS, SQL, etc — similar to juniper notebook
+    In time: other languages too, maybe ones the user already has installed
+    on their system, if we can access that in a sandboxed way
+    → SQL and JS cells SHIPPED (Run button / Ctrl+Enter; page tables are
+      queryable; output persists and syncs). Remaining, staged in
+      docs/planning/v0.14-local-code.md: page sessions + Run All,
+      write-back behind a confirm, chart output (shared with the Tables
+      graphing design), and system interpreters — which need REAL OS
+      sandboxing per platform (AppContainer / bubblewrap / sandbox-exec),
+      because a prompt is not a sandbox.
 
 Cloud storage and saving
     Currently no real way to share a file or page with someone else, would like to address that

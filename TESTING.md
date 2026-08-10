@@ -72,7 +72,31 @@ stored once, slides are drawn from it on demand.
       taller than the window: drag it, click the track to jump. Wheel and
       panning unchanged.
 
-### 2.3 Small recent things
+### 2.3 Code cells — NEW, and the JS half is untestable by machine
+
+SQL cells are fully covered by tests; the JS engine only exists in a real
+build (QuickJS arrives with the Flutter build, not the test VM), so **every
+JS item below is machine-unverified**:
+
+- [ ] Make a code block, set its language to `sql`, put a table on the same
+      page (drop a CSV), and run `SELECT * FROM t1` — the Run button, or
+      Ctrl+Enter while editing. Output should appear under the source as a
+      real table and SURVIVE a restart.
+- [ ] The error for a wrong table name should list the tables that do
+      exist on the page.
+- [ ] Set language `js`: `console.log("hi"); 1 + 2` — output shows both.
+      `tables.<name>` should hold your page table's rows.
+- [ ] `typeof fetch` in a js cell must print `undefined` — if it prints
+      `function`, stop and tell me immediately, that is a sandbox hole.
+- [ ] A `while(true){}` js cell: the spinner should give way to a
+      "Stopped" error after ~5 s and the app stay responsive. (Known,
+      documented: the stuck engine thread keeps burning a core until app
+      close — the UI recovering is the claim to check.)
+- [ ] The scroll bar again after this build: drag it — the page should
+      move and NO selection box should appear behind it (that was the
+      pointer-claim fix).
+
+### 2.4 Small recent things
 
 - [ ] **Selected-box priority on text**: select a box whose end runs under
       another, then try SELECTING TEXT in the overlapped part (you confirmed
