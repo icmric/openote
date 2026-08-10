@@ -96,7 +96,22 @@ JS item below is machine-unverified**:
       move and NO selection box should appear behind it (that was the
       pointer-claim fix).
 
-### 2.4 Small recent things
+### 2.4 AI access (MCP) — NEW
+
+The protocol and tools are machine-tested over real HTTP; what needs a
+human is the end-to-end with a real client:
+
+- [ ] View tab ▸ the robot icon ▸ turn it on, copy the config, add it to
+      Claude Code (`.mcp.json`) or another MCP client. Ask it to list your
+      notebooks, read a page, search.
+- [ ] Ask it to CREATE something — "make me 5 flashcards about X on page Y"
+      is the canonical test. The cards should appear on the page, be
+      undoable with Ctrl+Z, and show up in the study deck.
+- [ ] Restart Openote: the server should come back by itself (the toggle
+      stays on), and the same pasted config should still work.
+- [ ] Sanity: with the toggle OFF, the same client must fail to connect.
+
+### 2.5 Small recent things
 
 - [ ] **Selected-box priority on text**: select a box whose end runs under
       another, then try SELECTING TEXT in the overlapped part (you confirmed

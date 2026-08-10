@@ -21,6 +21,7 @@ import '../ink/ink_codec.dart';
 import '../ink/ink_storage.dart';
 import '../sync/materializer.dart';
 import '../sync/git_sync.dart';
+import '../api/mcp_server.dart';
 import '../sync/github_api.dart';
 import '../store/repository.dart';
 import 'page_protection.dart';
@@ -197,6 +198,63 @@ class AppState extends ChangeNotifier
   /// at every mutation site, importers included.
   void reloadNodes() {
     if (notebookId != null) nodes = _repo.loadNodes(notebookId!);
+  }
+
+  // ── Read access to ANY notebook, for the external API (spec 14) ───────
+  //
+  // The API resolves ids across the whole workspace; the open notebook is
+  // answered from live state by the tools layer, these read the store.
+
+  List<TreeNode> readNodesOf(String nb) => _repo.loadNodes(nb);
+
+  PageData readPageOf(String nb, String pageId) => _repo.readPage(nb, pageId);
+
+  List<({String pageId, String snippet})> searchPagesOf(
+          String nb, String query) =>
+      _repo.searchPageContent(nb, query);
+
+  // ── The MCP server (spec 14): AI tools reading and writing notes ──────
+
+  McpServer? _mcpServer;
+  bool mcpEnabled = false;
+  String? mcpToken;
+  int? mcpPort;
+  String? mcpError;
+
+  /// Turn the local MCP server on or off. Off is the default forever; on
+  /// generates a bearer token once and binds 127.0.0.1 (spec 14 §4). The
+  /// chosen port persists so pasted client configs stay valid.
+  Future<void> setMcpEnabled(bool on) async {
+    mcpError = null;
+    if (!on) {
+      mcpEnabled = false;
+      await _mcpServer?.stop();
+      _repo.setSetting('mcp', {'enabled': false, 'token': mcpToken});
+      notifyListeners();
+      return;
+    }
+    mcpToken ??= '${newId()}${newId()}'.replaceAll('-', '');
+    _mcpServer ??= McpServer(this);
+    try {
+      mcpPort = await _mcpServer!
+          .start(token: mcpToken!, preferredPort: mcpPort ?? 27191);
+      mcpEnabled = true;
+      _repo.setSetting(
+          'mcp', {'enabled': true, 'token': mcpToken, 'port': mcpPort});
+    } catch (e) {
+      mcpEnabled = false;
+      mcpError = '$e';
+    }
+    notifyListeners();
+  }
+
+  /// Restore the server on launch when the user left it on.
+  Future<void> _restoreMcp() async {
+    final s = _repo.getSetting('mcp');
+    if (s is! Map) return;
+    mcpToken = s['token'] as String?;
+    mcpPort = (s['port'] as num?)?.toInt();
+    if (s['enabled'] == true) await setMcpEnabled(true);
   }
 
   // ── Passcode gating (interim; ADR-0008 designs the real thing) ────────
@@ -3753,6 +3811,8 @@ class AppState extends ChangeNotifier
     }
     final pp = _repo.getSetting('penProximity');
     if (pp is bool) penProximitySwitch = pp;
+    // Detached: binding a port must never gate the app opening.
+    unawaited(_restoreMcp());
     final cc = _repo.getSetting('customColors');
     if (cc is List) customColors.addAll(cc.cast<String>());
     final vm = _repo.getSetting('viewMemory');
@@ -5535,6 +5595,7 @@ class AppState extends ChangeNotifier
   void dispose() {
     _disposed = true;
     _stopWatching();
+    unawaited(_mcpServer?.stop());
     _housekeepingTimer?.cancel();
     _housekeepingNoteClear?.cancel();
     _syncStatusPoll?.cancel();

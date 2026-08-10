@@ -4,6 +4,25 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — AI access (MCP)
+
+- **Openote is an MCP server now** (View tab ▸ the robot icon): AI tools
+  you already use — Claude, editors, agents — can list notebooks, read
+  pages (as the open page-JSON format or as Markdown), search, create
+  pages, append content, and **make flashcards** that land straight in the
+  study deck. Everything an AI writes is an ordinary edit: it syncs, and
+  Ctrl+Z undoes it.
+- **Off by default, and locked down when on**: the server binds
+  127.0.0.1 only, every request needs the bearer token the dialog shows
+  you (paste-ready client config included), browser cross-origin requests
+  are rejected, and closing Openote takes the API down with it.
+- The design is a spec, not an implementation detail:
+  docs/specs/14-external-api-mcp.md — its core rule ("the file format IS
+  the API") means new block types are readable and writable through the
+  API the day they exist, with no API change. The test suite proves it by
+  round-tripping a board block through an API layer that contains no
+  board code.
+
 ### Added — code that runs (SQL and JavaScript cells)
 
 - **A code block set to `sql` or `js` gets a Run button** (and Ctrl+Enter

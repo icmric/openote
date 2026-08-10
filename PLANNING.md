@@ -44,12 +44,17 @@ Calander and tasks
 accesability
     i13n
     full keyboard control
-    MCP
-        read stuff but also write stuff, like asking to create flash cards, etc.
-    → Three different sizes in one word: MCP is a self-contained server over
-      the notebook model (and the most leveraged — every AI tool gets to read
-      and write notes); full keyboard control is incremental work across every
-      surface; i18n is a one-time wiring cost plus translations forever.
+    → MCP SHIPPED (View tab ▸ AI access): a local MCP server, off by
+      default, token-guarded, loopback-only — AI tools read pages, search,
+      create pages, append blocks, make flashcards, and every write is an
+      ordinary synced, undoable edit. The durable contract is
+      docs/specs/14-external-api-mcp.md, whose §2 rule ("the file format IS
+      the API") is what keeps future block types API-visible automatically —
+      consult §7's checklist in any PR that touches the model.
+      Keyboard control is PLANNED at docs/planning/v0.16-keyboard-control.md
+      (one keyboard map in code, a Ctrl+/ reference rendered from it, then
+      the block-traversal sweep); i18n follows it, pending the
+      which-languages decision.
 
 Local code
     Write and execute code like JS, SQL, etc — similar to juniper notebook
@@ -79,3 +84,6 @@ Prezi like presentation
 
 Live editing
     In time, live editing (including cursor positions) would be awesome, although that will be quite complex and is not worth the effort at the moment.
+
+Update through app
+    App should search for new version of the app (maybe each launch?) and if it finds a new version a little update buttons appears. If the user clicks it it should make a popup to stop them interacting further, save everything then if they confirm download do the download, however prevent them from using the app during the process. It should automatically apply the update and relaunch the app

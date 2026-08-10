@@ -28,6 +28,7 @@ import 'color_picker.dart';
 import 'command_button.dart';
 import 'font_picker.dart';
 import 'insert_portal_dialog.dart';
+import 'mcp_dialog.dart';
 import '../theme/tokens.dart';
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
@@ -693,6 +694,17 @@ class _CommandBarState extends State<CommandBar> {
         tooltip: 'Zoom to fit content',
         visualDensity: VisualDensity.compact,
         onPressed: () => app.canvas.fitTo(app.contentBounds().inflate(24)),
+      ),
+      const _Div(),
+      // AI access (spec 14): the switch and the paste-ready client config.
+      IconButton(
+        icon: Icon(Icons.smart_toy_outlined,
+            size: 18, color: app.mcpEnabled ? scheme.primary : null),
+        tooltip: app.mcpEnabled
+            ? 'AI access is ON (127.0.0.1:${app.mcpPort})'
+            : 'AI access (MCP)…',
+        visualDensity: VisualDensity.compact,
+        onPressed: () => showMcpDialog(context, app),
       ),
       const _Div(),
       SegmentedButton<ThemeMode>(

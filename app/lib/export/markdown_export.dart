@@ -24,14 +24,41 @@ Future<String?> exportPageMarkdown(AppState app) async {
   );
   if (location == null) return null;
 
-  final ordered = [...app.blocks]..sort((a, b) {
+  final assets = <String, String>{}; // hash -> filename
+  final md = pageMarkdownOf(app, page.title, app.blocks, assetsOut: assets);
+
+  final outPath = location.path;
+  await File(outPath).writeAsString(md);
+  // Write referenced image assets next to the file.
+  if (assets.isNotEmpty) {
+    final assetDir = Directory(p.join(p.dirname(outPath), 'assets'));
+    await assetDir.create(recursive: true);
+    for (final e in assets.entries) {
+      final bytes = app.blob(e.key);
+      if (bytes != null) {
+        await File(p.join(p.dirname(outPath), e.value)).writeAsBytes(bytes);
+      }
+    }
+  }
+  return outPath;
+}
+
+/// The Markdown projection of one page — the FUNCTION, shared by the file
+/// exporter above and the external API's `read_page format: "markdown"`
+/// (spec 14 §5), because two projections of the same page would drift.
+///
+/// Freeform layout flattens to reading order (top-to-bottom, then
+/// left-to-right); page.json remains the fidelity path.
+String pageMarkdownOf(AppState app, String title, List<Block> blocks,
+    {Map<String, String>? assetsOut}) {
+  final ordered = [...blocks]..sort((a, b) {
       final dy = a.y.compareTo(b.y);
       return dy != 0 ? dy : a.x.compareTo(b.x);
     });
 
-  final buf = StringBuffer('# ${page.title}\n\n');
+  final buf = StringBuffer('# $title\n\n');
   var inkCount = 0;
-  final assets = <String, String>{}; // hash -> filename
+  final assets = assetsOut ?? <String, String>{};
 
   for (final b in ordered) {
     switch (b.type) {
@@ -100,19 +127,5 @@ Future<String?> exportPageMarkdown(AppState app) async {
     buf.writeln('> _This page also contains $inkCount ink strokes '
         '(not representable in Markdown — see the .onote file or InkML export)._');
   }
-
-  final outPath = location.path;
-  await File(outPath).writeAsString(buf.toString());
-  // Write referenced image assets next to the file.
-  if (assets.isNotEmpty) {
-    final assetDir = Directory(p.join(p.dirname(outPath), 'assets'));
-    await assetDir.create(recursive: true);
-    for (final e in assets.entries) {
-      final bytes = app.blob(e.key);
-      if (bytes != null) {
-        await File(p.join(p.dirname(outPath), e.value)).writeAsBytes(bytes);
-      }
-    }
-  }
-  return outPath;
+  return buf.toString();
 }
