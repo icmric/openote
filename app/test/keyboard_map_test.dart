@@ -183,4 +183,181 @@ void main() {
       expect(find.text('Keyboard shortcuts'), findsOneWidget);
     });
   });
+
+  group('block traversal (v0.16 phase 2)', () {
+    var haveSqlite = false;
+    setUpAll(() => haveSqlite = initSqliteForTests());
+
+    late Directory tmp;
+    late Repository repo;
+    late AppState app;
+    // Reading order is y-then-x: a (top-left), b (top-right), c (below a).
+    late Block a, b, c;
+
+    setUp(() async {
+      if (!haveSqlite) return;
+      AppState.syncLogEnabled = false;
+      tmp = Directory.systemTemp.createTempSync('onote_trav_');
+      repo = await Repository.openAt(tmp);
+      final nb = await repo.createNotebook('Study');
+      app = AppState(repo)
+        ..notebookId = nb.id
+        ..spellCheckEnabled = false;
+      app.reloadNodes();
+      final page = app.nodes.firstWhere((n) => n.kind == NodeKind.page);
+      a = Block(
+          type: BlockType.text, x: 40, y: 120, w: 200, h: 60,
+          content: {'markdown': 'alpha'});
+      b = Block(
+          type: BlockType.text, x: 420, y: 130, w: 200, h: 60,
+          content: {'markdown': 'beta'});
+      c = Block(
+          type: BlockType.text, x: 40, y: 340, w: 200, h: 60,
+          content: {'markdown': 'gamma'});
+      app.importPage(nb.id, page.id, [a, b, c], PageProps());
+      app.reloadNodes();
+      await app.selectPage(page.id);
+      app.markOnboardingSeen();
+    });
+
+    tearDown(() {
+      AppState.syncLogEnabled = true;
+      if (!haveSqlite) return;
+      app.cancelPendingSave();
+      repo.dispose();
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    Future<void> pumpShell(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(
+        theme: onoteTheme(Brightness.light),
+        home: AppShell(app: app),
+      ));
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> key(WidgetTester tester, LogicalKeyboardKey k,
+        {bool ctrl = false, bool shift = false}) async {
+      if (ctrl) await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyDownEvent(k);
+      await tester.sendKeyUpEvent(k);
+      if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      if (ctrl) await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('Tab walks reading order, Shift+Tab walks it backwards',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await pumpShell(tester);
+      expect(app.selectedBlockId, isNull);
+
+      await key(tester, LogicalKeyboardKey.tab);
+      expect(app.selectedBlockId, a.id, reason: 'first Tab → first in order');
+      await key(tester, LogicalKeyboardKey.tab);
+      expect(app.selectedBlockId, b.id, reason: 'y ties broken by x');
+      await key(tester, LogicalKeyboardKey.tab);
+      expect(app.selectedBlockId, c.id);
+      await key(tester, LogicalKeyboardKey.tab);
+      expect(app.selectedBlockId, a.id, reason: 'wraps');
+      await key(tester, LogicalKeyboardKey.tab, shift: true);
+      expect(app.selectedBlockId, c.id, reason: 'Shift+Tab reverses');
+    });
+
+    testWidgets('arrows select spatially; Enter edits; Escape climbs out',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await pumpShell(tester);
+
+      await key(tester, LogicalKeyboardKey.tab); // a
+      await key(tester, LogicalKeyboardKey.arrowRight);
+      expect(app.selectedBlockId, b.id, reason: 'b is to a\'s right');
+      await key(tester, LogicalKeyboardKey.arrowLeft);
+      expect(app.selectedBlockId, a.id);
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      expect(app.selectedBlockId, c.id, reason: 'c is below a');
+      await key(tester, LogicalKeyboardKey.arrowUp);
+      expect(app.selectedBlockId, a.id,
+          reason: 'and back up — this is the press that caught the '
+              'framework focus walk running in parallel');
+
+      await key(tester, LogicalKeyboardKey.enter);
+      expect(app.editingBlockId, a.id, reason: 'Enter edits the selection');
+      await key(tester, LogicalKeyboardKey.escape);
+      expect(app.editingBlockId, isNull, reason: 'Escape exits the editor');
+
+      // Flush the autosave debounce the edit session armed, or the binding
+      // fails the test for pending timers.
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('Ctrl+arrows nudge, clamp to the page, and undo as one step',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await pumpShell(tester);
+
+      // The app's blocks are its own decoded instances, not the ones the
+      // seed handed to importPage — read positions from the live one.
+      Block live() => app.blocks.firstWhere((x) => x.id == a.id);
+
+      await key(tester, LogicalKeyboardKey.tab); // a
+      final x0 = live().x, y0 = live().y;
+
+      await key(tester, LogicalKeyboardKey.arrowRight, ctrl: true);
+      await key(tester, LogicalKeyboardKey.arrowRight, ctrl: true);
+      await key(tester, LogicalKeyboardKey.arrowDown, ctrl: true);
+      expect(live().x, greaterThan(x0));
+      expect(live().y, greaterThan(y0));
+
+      // Fine nudge: exactly one pixel.
+      final xBefore = live().x;
+      await key(tester, LogicalKeyboardKey.arrowRight,
+          ctrl: true, shift: true);
+      expect(live().x, xBefore + 1);
+
+      // The burst is ONE undo entry: a single undo restores the start.
+      app.undo();
+      expect(live().x, x0, reason: 'one burst, one undo step');
+      expect(live().y, y0);
+
+      // Clamp: nudging left forever stops at the page edge, never negative.
+      for (var i = 0; i < 30; i++) {
+        await key(tester, LogicalKeyboardKey.arrowLeft, ctrl: true);
+      }
+      expect(live().x, greaterThanOrEqualTo(0));
+
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('traversal keys stop at an open dialog', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await pumpShell(tester);
+
+      await key(tester, LogicalKeyboardKey.tab);
+      expect(app.selectedBlockId, a.id);
+
+      // Open the shortcut overlay — a route on top of the shell.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.slash);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.slash);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      expect(find.text('Keyboard shortcuts'), findsOneWidget);
+
+      await key(tester, LogicalKeyboardKey.tab);
+      expect(app.selectedBlockId, a.id,
+          reason: 'Tab must not move selection behind a dialog');
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      expect(app.selectedBlockId, a.id);
+    });
+  });
 }

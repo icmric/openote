@@ -65,6 +65,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onKey);
+    _canvasFocus.dispose();
     super.dispose();
   }
 
@@ -106,11 +107,16 @@ class _AppShellState extends State<AppShell> {
       }
       if (app.editingBlockId != null || app.titleEditing) {
         FocusManager.instance.primaryFocus?.unfocus();
+        // Hand focus back to the canvas so Tab/arrow traversal keeps
+        // working after climbing out of an editor — the root scope would
+        // otherwise let the framework's own focus walk take the arrows.
+        _canvasFocus.requestFocus();
         app.select(null);
         return true;
       }
       if (!editable && app.selectedIds.isNotEmpty) {
         app.select(null);
+        _canvasFocus.requestFocus();
         return true;
       }
       return false;
@@ -272,6 +278,176 @@ class _AppShellState extends State<AppShell> {
       }
     }
     return false;
+  }
+
+  // ── Block traversal (v0.16 phase 2) ────────────────────────────────────
+  //
+  // Tab/Enter/arrows do NOT go through the global handler above: a
+  // HardwareKeyboard handler's `true` does not stop the framework's own
+  // Shortcuts, so consuming arrows globally left Flutter's directional
+  // focus walk running in parallel — three arrow presses in, focus had
+  // crept into the sidebar search box and traversal went dead (caught by
+  // the phase-2 tests). Instead the canvas subtree owns a focus node and
+  // overrides those keys with its own Shortcuts, which wins by
+  // nearest-ancestor and switches the framework walk off. Dialogs and
+  // text fields keep native behaviour for free: they hold focus, so the
+  // canvas shortcuts are not on the focus path at all.
+
+  final FocusNode _canvasFocus =
+      FocusNode(debugLabel: 'canvas-traversal', skipTraversal: true);
+
+  Widget _canvasKeys(Widget canvas) {
+    return Shortcuts(
+      shortcuts: const {
+        SingleActivator(LogicalKeyboardKey.tab): _TraverseIntent(1),
+        SingleActivator(LogicalKeyboardKey.tab, shift: true):
+            _TraverseIntent(-1),
+        SingleActivator(LogicalKeyboardKey.arrowLeft): _SpatialIntent(-1, 0),
+        SingleActivator(LogicalKeyboardKey.arrowRight): _SpatialIntent(1, 0),
+        SingleActivator(LogicalKeyboardKey.arrowUp): _SpatialIntent(0, -1),
+        SingleActivator(LogicalKeyboardKey.arrowDown): _SpatialIntent(0, 1),
+        SingleActivator(LogicalKeyboardKey.enter): _EditIntent(),
+        SingleActivator(LogicalKeyboardKey.numpadEnter): _EditIntent(),
+        // Nudges live here too, not in the global handler: with the canvas
+        // focused, an unclaimed Ctrl+arrow falls through to the framework's
+        // default ScrollAction, which asserts when more than one primary
+        // scrollable exists (the sidebar and the page both do).
+        SingleActivator(LogicalKeyboardKey.arrowLeft, control: true):
+            _NudgeIntent(-1, 0, fine: false),
+        SingleActivator(LogicalKeyboardKey.arrowRight, control: true):
+            _NudgeIntent(1, 0, fine: false),
+        SingleActivator(LogicalKeyboardKey.arrowUp, control: true):
+            _NudgeIntent(0, -1, fine: false),
+        SingleActivator(LogicalKeyboardKey.arrowDown, control: true):
+            _NudgeIntent(0, 1, fine: false),
+        SingleActivator(LogicalKeyboardKey.arrowLeft,
+            control: true, shift: true): _NudgeIntent(-1, 0, fine: true),
+        SingleActivator(LogicalKeyboardKey.arrowRight,
+            control: true, shift: true): _NudgeIntent(1, 0, fine: true),
+        SingleActivator(LogicalKeyboardKey.arrowUp,
+            control: true, shift: true): _NudgeIntent(0, -1, fine: true),
+        SingleActivator(LogicalKeyboardKey.arrowDown,
+            control: true, shift: true): _NudgeIntent(0, 1, fine: true),
+      },
+      child: Actions(
+        actions: {
+          _TraverseIntent: CallbackAction<_TraverseIntent>(
+              onInvoke: (i) => _traverse(i.dir)),
+          _SpatialIntent: CallbackAction<_SpatialIntent>(
+              onInvoke: (i) => _spatial(i.dx, i.dy)),
+          _EditIntent:
+              CallbackAction<_EditIntent>(onInvoke: (_) => _editSelected()),
+          _NudgeIntent: CallbackAction<_NudgeIntent>(
+              onInvoke: (i) => _nudge(i.dx.toDouble(), i.dy.toDouble(),
+                  fine: i.fine)),
+        },
+        // Pointer-down (not tap: it must run even when a drag follows)
+        // routes focus to the canvas, so click-a-block-then-arrow works
+        // when focus was in the sidebar or toolbar. An editor opening on
+        // the same gesture wins afterwards — its request is post-frame.
+        child: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) {
+            if (app.editingBlockId == null) _canvasFocus.requestFocus();
+          },
+          child: Focus(
+            focusNode: _canvasFocus,
+            autofocus: true,
+            child: canvas,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// True when any route (dialog, viewer, menu) sits above the shell. The
+  /// global handler fires regardless, so every canvas-traversal key checks
+  /// this — Tab must not move block selection behind an open dialog.
+  bool get _routeOnTop =>
+      _shortcutsOpen ||
+      !mounted ||
+      Navigator.of(context, rootNavigator: true).canPop();
+
+  /// Blocks in reading order — THE order, the same y-then-x sort the
+  /// Markdown export and the MCP read_page projection use. Ink is skipped:
+  /// selecting a stroke cluster by Tab helps nobody.
+  List<Block> _traversable() =>
+      app.blocks.where((b) => b.type != BlockType.ink).toList()
+        ..sort((a, b) {
+          final dy = a.y.compareTo(b.y);
+          return dy != 0 ? dy : a.x.compareTo(b.x);
+        });
+
+  bool _traverse(int dir) {
+    if (_routeOnTop) return false;
+    final order = _traversable();
+    if (order.isEmpty) return false;
+    final cur = order.indexWhere((b) => b.id == app.selectedBlockId);
+    final next = cur < 0
+        ? (dir > 0 ? order.first : order.last)
+        : order[(cur + dir + order.length) % order.length];
+    app.select(next.id);
+    return true;
+  }
+
+  bool _editSelected() {
+    if (_routeOnTop) return false;
+    final id = app.selectedBlockId;
+    if (id == null || app.editingBlockId != null) return false;
+    app.select(id, edit: true);
+    return true;
+  }
+
+  /// Nearest block in the pressed direction, centre to centre, with drift
+  /// off-axis costing double — the standard directional-navigation score.
+  bool _spatial(int dx, int dy) {
+    if (_routeOnTop) return false;
+    final order = _traversable();
+    if (order.isEmpty) return false;
+    final cur =
+        order.where((b) => b.id == app.selectedBlockId).firstOrNull;
+    if (cur == null) {
+      app.select(order.first.id);
+      return true;
+    }
+    Offset centre(Block b) => Offset(b.x + b.w / 2, b.y + (b.h ?? 80) / 2);
+    final c0 = centre(cur);
+    Block? best;
+    var bestScore = double.infinity;
+    for (final b in order) {
+      if (b.id == cur.id) continue;
+      final c = centre(b);
+      final along = (c.dx - c0.dx) * dx + (c.dy - c0.dy) * dy;
+      if (along <= 0) continue;
+      final cross = (dx != 0 ? (c.dy - c0.dy) : (c.dx - c0.dx)).abs();
+      final score = along + cross * 2;
+      if (score < bestScore) {
+        bestScore = score;
+        best = b;
+      }
+    }
+    // At the edge with nothing further: still consumed, so the keystroke
+    // can't fall through and wander the widget focus tree.
+    if (best != null) app.select(best.id);
+    return true;
+  }
+
+  /// One undo entry per nudge BURST, not per keypress — holding an arrow is
+  /// one movement the way one drag is, and pausing ~a second starts a new
+  /// undoable step.
+  int _lastNudgeMs = 0;
+  bool _nudge(double dx, double dy, {required bool fine}) {
+    if (_routeOnTop) return false;
+    if (app.selectedIds.isEmpty) return false;
+    final step = fine ? 1.0 : (app.effectiveSnap ? app.gridSize : 8.0);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastNudgeMs > 900) app.pushUndo();
+    _lastNudgeMs = now;
+    app.moveSelectedBy(dx * step, dy * step);
+    for (final b in app.blocks.where((b) => app.selectedIds.contains(b.id))) {
+      app.clampBlockToPage(b);
+    }
+    return true;
   }
 
   void _toggleShortcutOverlay() {
@@ -437,8 +613,9 @@ class _AppShellState extends State<AppShell> {
                                 ? _EmptyState(app: app)
                                 : app.isLocked(page.id)
                                     ? _LockedPage(app: app, page: page)
-                                    : PageCanvas(
-                                        key: ValueKey(app.pageId), state: app),
+                                    : _canvasKeys(PageCanvas(
+                                        key: ValueKey(app.pageId),
+                                        state: app)),
                           ),
                           if (app.showStudyPanel) ...[
                             const VerticalDivider(width: 1),
@@ -1214,4 +1391,29 @@ class _LockedPage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Canvas traversal intents (v0.16 phase 2). Private to the shell: the
+/// canvas is the only surface that binds them, and the keyboard map is
+/// where their meaning is documented.
+class _TraverseIntent extends Intent {
+  const _TraverseIntent(this.dir);
+  final int dir;
+}
+
+class _SpatialIntent extends Intent {
+  const _SpatialIntent(this.dx, this.dy);
+  final int dx;
+  final int dy;
+}
+
+class _EditIntent extends Intent {
+  const _EditIntent();
+}
+
+class _NudgeIntent extends Intent {
+  const _NudgeIntent(this.dx, this.dy, {required this.fine});
+  final int dx;
+  final int dy;
+  final bool fine;
 }

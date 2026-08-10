@@ -119,6 +119,12 @@ human is the end-to-end with a real client:
       mid-typing. Same chord or Esc closes it; View tab has a button too.
       Everything it lists should be true — a listed chord that doesn't work
       is a bug worth reporting.
+- [ ] **Keyboard-only canvas**: click an empty part of the page once, then
+      put the mouse down. Tab / Shift+Tab should walk the boxes in reading
+      order, plain arrows jump to the nearest box in that direction, Enter
+      drops into the box's editor, Esc climbs back out, Ctrl+arrows move
+      the selected box (add Shift for 1 px), Del deletes. Arrow keys inside
+      a text box must still move the CARET (the box only moves with Ctrl).
 
 - [ ] **Selected-box priority on text**: select a box whose end runs under
       another, then try SELECTING TEXT in the overlapped part (you confirmed

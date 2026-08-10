@@ -52,6 +52,12 @@ const List<KeySection> keyboardMap = [
         'Wraps the selection instead of replacing it'),
   ]),
   KeySection('On the page (nothing focused)', [
+    KeyBinding('Tab / Shift+Tab',
+        'Select the next / previous box, in reading order'),
+    KeyBinding('↑ ↓ ← →', 'Select the nearest box in that direction'),
+    KeyBinding('Enter', 'Edit the selected box (Esc climbs back out)'),
+    KeyBinding('Ctrl+↑↓←→',
+        'Move the selected box (one grid step; add Shift for 1 px)'),
     KeyBinding('V / T / P / H / E',
         'Tool: Select, Text, Pen, Highlighter, Eraser'),
     KeyBinding('Ctrl+C / Ctrl+X / Ctrl+V', 'Copy / cut / paste blocks'),
