@@ -25,25 +25,64 @@ Color _sectionColor(String? token, bool dark) => switch (token) {
       _ => dark ? OnoteColors.ink400 : OnoteColors.ink500,
     };
 
-/// The page rows for a section, honouring subpage collapse (a collapsed page
-/// hides everything indented beneath it).
+/// The page rows for a section, honouring subpage collapse. Children are
+/// NESTED under a [_Reveal] rather than skipped from a flat list, so
+/// collapsing a page animates its subpages closed instead of them blinking
+/// out of existence.
 List<Widget> _pageEntriesFor(AppState app, TreeNode section) {
   final pages = app.pagesOf(section.id); // already ordered by position
-  final out = <Widget>[];
-  int? hideDeeperThan;
-  for (var i = 0; i < pages.length; i++) {
-    final p = pages[i];
-    if (hideDeeperThan != null) {
-      if (p.level > hideDeeperThan) continue;
-      hideDeeperThan = null;
+  List<Widget> range(int start, int end) {
+    final out = <Widget>[];
+    var i = start;
+    while (i < end) {
+      final p = pages[i];
+      var j = i + 1;
+      while (j < end && pages[j].level > p.level) {
+        j++;
+      }
+      final hasKids = j > i + 1;
+      final collapsed = app.collapsedPages.contains(p.id);
+      out.add(_PageTile(
+          app: app, page: p, hasChildren: hasKids, collapsed: collapsed));
+      if (hasKids) {
+        out.add(_Reveal(
+          open: !collapsed,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: range(i + 1, j),
+          ),
+        ));
+      }
+      i = j;
     }
-    final hasKids = i + 1 < pages.length && pages[i + 1].level > p.level;
-    final collapsed = app.collapsedPages.contains(p.id);
-    out.add(_PageTile(
-        app: app, page: p, hasChildren: hasKids, collapsed: collapsed));
-    if (hasKids && collapsed) hideDeeperThan = p.level;
+    return out;
   }
-  return out;
+
+  return range(0, pages.length);
+}
+
+/// Animated expand/collapse for tree groups (Eric: "an animation when
+/// opening and closing groups (both page and section)"). The child stays
+/// in the tree; its height animates between natural and zero in the app's
+/// one motion register (150 ms, ease-out).
+class _Reveal extends StatelessWidget {
+  const _Reveal({required this.open, required this.child});
+  final bool open;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRect(
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.topCenter,
+        child: open
+            ? child
+            : const SizedBox(width: double.infinity, height: 0),
+      ),
+    );
+  }
 }
 
 /// Navigator (style guide §7b): a notebook bar, a search/jump box, then TWO
@@ -427,8 +466,9 @@ class _SidebarState extends State<Sidebar> {
           // the rail is what says where the group ENDS — with several groups
           // in a column, an indent that just stops is ambiguous, because the
           // next group's header looks like an outdented sibling either way.
-          if (!app.collapsedGroups.contains(g.id))
-            Padding(
+          _Reveal(
+            open: !app.collapsedGroups.contains(g.id),
+            child: Padding(
               padding: const EdgeInsets.only(left: 13),
               child: Container(
                 decoration: BoxDecoration(
@@ -449,6 +489,7 @@ class _SidebarState extends State<Sidebar> {
                 ),
               ),
             ),
+          ),
         ],
         for (final s in looseSections) row(s),
       ],

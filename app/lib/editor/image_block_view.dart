@@ -14,6 +14,36 @@ import '../theme/onote_theme.dart';
 /// Stateful so the decoded image + its provider are cached — this stops the
 /// hover flicker (a fresh Image.memory each rebuild would blank for a frame)
 /// and lets us record the intrinsic size for proportional resizing.
+/// Content-addressed LRU for block-image bytes, shared across every
+/// image view and every page. Keys are sha256 hashes, so an entry can
+/// never be stale; the cap bounds memory, evicting least-recently-used.
+class _BlobCache {
+  static final _map = <String, Uint8List>{};
+  static var _size = 0;
+  static const _cap = 48 << 20; // 48 MB — a few pages of slides
+
+  Uint8List? get(String h) {
+    final v = _map.remove(h);
+    if (v != null) _map[h] = v; // re-insert = most recent
+    return v;
+  }
+
+  void put(String h, Uint8List b) {
+    if (b.length > _cap) return;
+    final old = _map.remove(h);
+    if (old != null) _size -= old.length;
+    _map[h] = b;
+    _size += b.length;
+    while (_size > _cap && _map.isNotEmpty) {
+      final k = _map.keys.first;
+      _size -= _map[k]!.length;
+      _map.remove(k);
+    }
+  }
+}
+
+final _blobCache = _BlobCache();
+
 class ImageBlockView extends StatefulWidget {
   const ImageBlockView({super.key, required this.block, required this.app});
   final Block block;
@@ -72,22 +102,63 @@ class _ImageBlockViewState extends State<ImageBlockView> {
       if (mounted) setState(() {});
       return;
     }
-    _hash = widget.block.content['blob'] as String?;
-    _bytes = _hash == null ? null : widget.app.blob(_hash!);
-    _provider = _bytes == null ? null : MemoryImage(_bytes!);
+    final h = widget.block.content['blob'] as String?;
+    _hash = h;
+    if (h == null) {
+      _bytes = null;
+      _provider = null;
+      if (mounted) setState(() {});
+      return;
+    }
+    // Content-addressed LRU first: a hash can never go stale, so a hit IS
+    // the bytes — revisiting a page costs no reads at all.
+    final cached = _blobCache.get(h);
+    if (cached != null) {
+      _setBytes(cached);
+      if (mounted) setState(() {});
+      return;
+    }
+    // Cold read, DEFERRED. The fetch is a synchronous SQLite read —
+    // megabytes for an imported slide — and doing it during build was THE
+    // page-switch stall: every image on the incoming page was read
+    // back-to-back before the first frame could paint ("about half a
+    // second or so very consistently"). Reads now run after the frame,
+    // one per event-loop turn through a shared queue, so the page appears
+    // immediately and its pictures pop in over the next few frames.
+    _rendering = true;
+    _readQueue = _readQueue.then((_) async {
+      await Future<void>.delayed(Duration.zero);
+      if (!mounted || widget.block.content['blob'] != h) return;
+      final b = widget.app.blob(h);
+      if (b != null) _blobCache.put(h, b);
+      if (!mounted || widget.block.content['blob'] != h) return;
+      setState(() {
+        _rendering = false;
+        _setBytes(b);
+      });
+    });
+    if (mounted) setState(() {});
+  }
+
+  /// One event-loop turn between blob reads, shared by every image on the
+  /// page — the stagger that keeps any single frame cheap.
+  static Future<void> _readQueue = Future<void>.value();
+
+  void _setBytes(Uint8List? b) {
+    _bytes = b;
+    _provider = b == null ? null : MemoryImage(b);
     // Record intrinsic size once, so width-resize keeps aspect ratio.
-    if (_bytes != null && widget.block.content['naturalW'] == null) {
-      ui.decodeImageFromList(_bytes!, (img) {
+    if (b != null && widget.block.content['naturalW'] == null) {
+      ui.decodeImageFromList(b, (img) {
         if (!mounted) return;
         widget.block.content['naturalW'] = img.width.toDouble();
         widget.block.content['naturalH'] = img.height.toDouble();
-        // Persist it (once) so proportional resize, export and hit-testing all
-        // agree without re-decoding on every load.
+        // Persist it (once) so proportional resize, export and hit-testing
+        // all agree without re-decoding on every load.
         widget.app.markDirty();
         setState(() {});
       });
     }
-    if (mounted) setState(() {});
   }
 
   @override

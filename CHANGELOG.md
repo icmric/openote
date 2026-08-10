@@ -2,6 +2,45 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
+## [Unreleased]
+
+### Fixed — page switching is fast now
+
+- Changing pages (and sections, which open their remembered page) stalled
+  about half a second, very consistently. The cause: every image on the
+  incoming page was read from the notebook database on the spot, before
+  the first frame could draw — imported pages full of slides paid it in
+  full, every time. Images now load just after the page appears, one per
+  beat, into a memory cache — so the page shows instantly, pictures pop
+  in over the next fraction of a second, and revisiting a page costs no
+  reads at all.
+
+### Added — the sidebar moves
+
+- Opening and closing groups animates — section groups and a page's
+  subpages slide open and closed in the app's one motion register,
+  instead of blinking in and out.
+
+### Fixed — editing keys behave (follow-up to 0.7.1)
+
+- While editing any box, arrow keys moved the box SELECTION instead of
+  the caret, and Enter could be eaten instead of making a new line — the
+  canvas's keyboard traversal was shadowing the editor. It now stands
+  down entirely whenever an editor holds focus.
+- **Typing on a selected box just works**: select a text or code box and
+  start typing — it opens at the end and your letters land. Tool letters
+  still switch tools when nothing typeable is selected.
+
+### Added — more of the motion list
+
+- Toolbar tab switches crossfade; the PDF viewer grows out of its
+  thumbnail card.
+
+### Changed — cleaner status bar
+
+- The bottom bar shows saved state and sync only. The engine/build chip
+  ("Rust · a3f9c210") is debug-builds-only now.
+
 ## [0.7.1] — 2026-08-10
 
 ### Fixed — the Linux push finally says what it needs
