@@ -17,6 +17,7 @@ import 'onboarding.dart';
 import 'planner_panel.dart';
 import 'side_panel.dart';
 import 'protect_dialog.dart';
+import 'shortcut_overlay.dart';
 import 'sidebar.dart';
 import '../export/print_page.dart';
 import 'study_panel.dart';
@@ -43,6 +44,12 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   AppState get app => widget.app;
+
+  /// Whether the Ctrl+/ shortcut reference is up. Tracked here because the
+  /// global handler runs even under a dialog: Ctrl+/ must toggle rather than
+  /// stack, and Escape must close the overlay instead of falling through to
+  /// clear-selection below it.
+  bool _shortcutsOpen = false;
 
   @override
   void initState() {
@@ -89,6 +96,10 @@ class _AppShellState extends State<AppShell> {
     // Escape: close find / exit our editors / clear selection. Gated on our
     // own state so a dialog's own Escape-to-cancel still works.
     if (k == LogicalKeyboardKey.escape) {
+      if (_shortcutsOpen) {
+        Navigator.of(context, rootNavigator: true).pop();
+        return true;
+      }
       if (app.findOpen) {
         app.toggleFind();
         return true;
@@ -109,6 +120,13 @@ class _AppShellState extends State<AppShell> {
     // collide with typing (no field inserts a character for Ctrl+PageDown),
     // and OneNote users reach for them mid-sentence.
     if (ctrl) {
+      // Ctrl+/ — the shortcut reference (keyboard_map.dart). With the
+      // navigator chords, before the typing early-return: the whole point is
+      // reaching it from wherever you are, and no field types on Ctrl+/.
+      if (k == LogicalKeyboardKey.slash) {
+        _toggleShortcutOverlay();
+        return true;
+      }
       if (k == LogicalKeyboardKey.pageDown) return _cyclePage(1);
       if (k == LogicalKeyboardKey.pageUp) return _cyclePage(-1);
       if (k == LogicalKeyboardKey.tab) return _cycleSection(shift ? -1 : 1);
@@ -254,6 +272,16 @@ class _AppShellState extends State<AppShell> {
       }
     }
     return false;
+  }
+
+  void _toggleShortcutOverlay() {
+    if (_shortcutsOpen) {
+      Navigator.of(context, rootNavigator: true).pop();
+      return;
+    }
+    _shortcutsOpen = true;
+    unawaited(showShortcutOverlay(context)
+        .whenComplete(() => _shortcutsOpen = false));
   }
 
   bool _tool(Tool t) {

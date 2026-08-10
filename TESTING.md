@@ -115,6 +115,11 @@ human is the end-to-end with a real client:
 
 ### 2.5 Small recent things
 
+- [ ] **Ctrl+/** — the keyboard shortcut reference, from anywhere including
+      mid-typing. Same chord or Esc closes it; View tab has a button too.
+      Everything it lists should be true — a listed chord that doesn't work
+      is a bug worth reporting.
+
 - [ ] **Selected-box priority on text**: select a box whose end runs under
       another, then try SELECTING TEXT in the overlapped part (you confirmed
       resize; text selection through the overlap is the other half).
