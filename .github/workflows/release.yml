@@ -497,8 +497,19 @@ jobs:
           name: Openote ${{ needs.version.outputs.version }}
           generate_release_notes: true
           files: dist/*
+          # THE BODY IS WHAT THE IN-APP UPDATE DIALOG SHOWS (update-through
+          # -app fetches the release body as the "what's new" text). So the
+          # review step before publishing MUST replace the top of this with
+          # a short human "What's new" — the actual features and fixes, in
+          # the user's language — ABOVE the download boilerplate. Eric,
+          # 2026-08-10: "ensure the patch notes actually describe whats new
+          # at the start rather than the generic info since thats whats
+          # seen in app." CHANGELOG.md's newest section is the source.
           body: |
-            <!-- Draft: review, edit, then publish. -->
+            <!-- Draft: review, edit, then publish.
+                 STEP 1 (required): write "## What's new" at the TOP —
+                 summarise CHANGELOG.md's newest section in plain words.
+                 The app shows this body in the update dialog. -->
 
             ## Downloads
             - **Windows**: `openote-*-windows-x64-setup.exe` — the installer.

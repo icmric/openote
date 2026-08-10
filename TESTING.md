@@ -135,9 +135,19 @@ human is the end-to-end with a real client:
       Connect GitHub ▸ paste a token ▸ sync — the push should go through.
       Before connecting, the error should now say exactly that in plain
       words (no "terminal prompts disabled").
-- [ ] **Code blocks**: click into the middle of a line — the caret should
-      land THERE. Drag over code without clicking first — it should
-      highlight and Ctrl+C should copy, no editor opening.
+- [ ] **Code blocks, full re-test** (your reports, all addressed): click
+      into the middle of a line — caret lands THERE. Drag over code
+      without clicking first — highlights, Ctrl+C copies. While EDITING:
+      arrows move the caret (not the selected box), Enter makes a new
+      line, dragging selects text.
+- [ ] **Type-through**: select any text or code box (click once, or Tab)
+      and just start typing — it should enter the box at the END and your
+      letters appear. Tool letters (V/T/P/H/E) still switch tools when
+      nothing typeable is selected.
+- [ ] **More motion**: toolbar tabs (Home/Insert/Draw/View) crossfade;
+      the PDF viewer grows out of its thumbnail card.
+- [ ] **Clean status bar**: in this build the bottom bar shows only
+      saved/sync state — no "Rust · hash" chip (that's debug-only now).
 - [ ] **Settings** (the gear, top-right of the tab row): theme, spell
       check, pen switch all live; Check for updates says "up to date".
 - [ ] **Dialogs** should all open with the same quick fade-and-settle.

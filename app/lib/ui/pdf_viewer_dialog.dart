@@ -20,6 +20,7 @@ Future<void> showPdfViewerDialog(
   required String hash,
   String? title,
   int initialPage = 0,
+  Offset? growFrom,
 }) {
   final bytes = app.blob(hash);
   if (bytes == null) {
@@ -30,6 +31,7 @@ Future<void> showPdfViewerDialog(
   final controller = PdfViewerController();
   return showOnoteDialog<void>(
     context: context,
+    growFrom: growFrom,
     builder: (context) {
       final screen = MediaQuery.of(context).size;
       // Enough to read an A4 page comfortably, never a takeover. Small

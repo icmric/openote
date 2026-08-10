@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -265,12 +266,17 @@ class _AppShellState extends State<AppShell> {
       return false;
     }
 
-    // Bare keys — only reached when no text field is focused.
-    if (k == LogicalKeyboardKey.keyV) return _tool(Tool.select);
-    if (k == LogicalKeyboardKey.keyT) return _tool(Tool.text);
-    if (k == LogicalKeyboardKey.keyP) return _tool(Tool.pen);
-    if (k == LogicalKeyboardKey.keyH) return _tool(Tool.highlighter);
-    if (k == LogicalKeyboardKey.keyE) return _tool(Tool.eraser);
+    // Bare keys — only reached when no text field is focused. Tool letters
+    // additionally step aside when the selection is a box you can TYPE
+    // into: there, a letter means "start writing" (type-through, handled
+    // on the canvas focus node), not "switch tool".
+    if (!_selectedTypeable) {
+      if (k == LogicalKeyboardKey.keyV) return _tool(Tool.select);
+      if (k == LogicalKeyboardKey.keyT) return _tool(Tool.text);
+      if (k == LogicalKeyboardKey.keyP) return _tool(Tool.pen);
+      if (k == LogicalKeyboardKey.keyH) return _tool(Tool.highlighter);
+      if (k == LogicalKeyboardKey.keyE) return _tool(Tool.eraser);
+    }
     if (k == LogicalKeyboardKey.delete || k == LogicalKeyboardKey.backspace) {
       if (app.selectedIds.isNotEmpty) {
         app.removeSelected();
@@ -330,16 +336,24 @@ class _AppShellState extends State<AppShell> {
             control: true, shift: true): _NudgeIntent(0, 1, fine: true),
       },
       child: Actions(
+        // _CanvasAction gates every binding on THE CANVAS NODE ITSELF
+        // holding focus. Without the gate, these Shortcuts sit between
+        // every editor on the canvas and the app root, and nearest-ancestor
+        // means they shadow the editors' own keys — the field bugs Eric
+        // hit: arrows while editing jumped BOXES instead of moving the
+        // caret, and Enter was eaten instead of making a new line. A
+        // disabled action makes the ShortcutManager report the key
+        // unhandled, so it bubbles on to normal text editing.
         actions: {
-          _TraverseIntent: CallbackAction<_TraverseIntent>(
-              onInvoke: (i) => _traverse(i.dir)),
-          _SpatialIntent: CallbackAction<_SpatialIntent>(
-              onInvoke: (i) => _spatial(i.dx, i.dy)),
+          _TraverseIntent: _CanvasAction<_TraverseIntent>(
+              _canvasFocus, (i) => _traverse(i.dir)),
+          _SpatialIntent: _CanvasAction<_SpatialIntent>(
+              _canvasFocus, (i) => _spatial(i.dx, i.dy)),
           _EditIntent:
-              CallbackAction<_EditIntent>(onInvoke: (_) => _editSelected()),
-          _NudgeIntent: CallbackAction<_NudgeIntent>(
-              onInvoke: (i) => _nudge(i.dx.toDouble(), i.dy.toDouble(),
-                  fine: i.fine)),
+              _CanvasAction<_EditIntent>(_canvasFocus, (_) => _editSelected()),
+          _NudgeIntent: _CanvasAction<_NudgeIntent>(
+              _canvasFocus,
+              (i) => _nudge(i.dx.toDouble(), i.dy.toDouble(), fine: i.fine)),
         },
         // Pointer-down (not tap: it must run even when a drag follows)
         // routes focus to the canvas, so click-a-block-then-arrow works
@@ -353,6 +367,7 @@ class _AppShellState extends State<AppShell> {
           child: Focus(
             focusNode: _canvasFocus,
             autofocus: true,
+            onKeyEvent: _onCanvasKey,
             child: canvas,
           ),
         ),
@@ -430,6 +445,74 @@ class _AppShellState extends State<AppShell> {
     // can't fall through and wander the widget focus tree.
     if (best != null) app.select(best.id);
     return true;
+  }
+
+  /// A single selected block that accepts typing — the condition under
+  /// which a bare letter means "write" rather than "switch tool".
+  bool get _selectedTypeable {
+    if (app.selectedIds.length != 1 || app.editingBlockId != null) {
+      return false;
+    }
+    final t = app.blocks
+        .where((x) => x.id == app.selectedBlockId)
+        .firstOrNull
+        ?.type;
+    return t == BlockType.text || t == BlockType.code;
+  }
+
+  /// Type-through (Eric: "if i tap a key on my keyboard it should put me
+  /// into editing mode, chuck me at the end of the box and put that
+  /// character in"). Runs on the canvas focus node, so it exists exactly
+  /// when a block is selected but nothing is being edited.
+  KeyEventResult _onCanvasKey(FocusNode node, KeyEvent e) {
+    if (e is! KeyDownEvent) return KeyEventResult.ignored;
+    final ch = e.character;
+    if (ch == null || ch.isEmpty) return KeyEventResult.ignored;
+    // Control characters and chords are someone else's business.
+    if (ch.codeUnits.every((u) => u < 0x20)) return KeyEventResult.ignored;
+    if (HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isAltPressed) {
+      return KeyEventResult.ignored;
+    }
+    if (app.selectedIds.length != 1 || app.editingBlockId != null) {
+      return KeyEventResult.ignored;
+    }
+    final b =
+        app.blocks.where((x) => x.id == app.selectedBlockId).firstOrNull;
+    if (b == null ||
+        (b.type != BlockType.text && b.type != BlockType.code)) {
+      return KeyEventResult.ignored;
+    }
+    app.select(b.id, edit: true); // no caret token → the editor opens at
+    _typeThrough(b.id, ch, tries: 8); // the end, which is the intent here
+    return KeyEventResult.handled;
+  }
+
+  /// Deliver the typed character once the editor exists. The editor builds
+  /// a frame (or two) after select(edit:true); it registers its controller
+  /// via setActiveEditor, which is the delivery address.
+  void _typeThrough(String id, String ch, {required int tries}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || app.editingBlockId != id) return;
+      final ed = app.activeEditor;
+      if (ed == null || ed.block.id != id) {
+        if (tries > 0) _typeThrough(id, ch, tries: tries - 1);
+        return;
+      }
+      final c = ed.controller;
+      final sel = c.selection;
+      final at = sel.isValid ? sel.start : c.text.length;
+      final end = sel.isValid ? sel.end : c.text.length;
+      c.value = c.value.copyWith(
+        text: c.text.replaceRange(at, end, ch),
+        selection: TextSelection.collapsed(offset: at + ch.length),
+      );
+      // Through the same write the editor's own onChanged would do.
+      ed.block.content[ed.contentKey] = c.text;
+      ed.block.updatedAt = nowMs();
+      app.markDirty();
+    });
   }
 
   /// One undo entry per nudge BURST, not per keypress — holding an arrow is
@@ -1149,7 +1232,13 @@ class _StatusBar extends StatelessWidget {
           const SizedBox(width: 12),
           // Active compute engine (§ADR-0002): green chip when the Rust core
           // is linked, with the live page content-hash it computed on save.
-          Tooltip(
+          //
+          // DEBUG BUILDS ONLY. The stale-library trap this chip exists for
+          // is a developer problem; a student reading "Rust · a3f9c210"
+          // learns nothing except that the app is talking to itself. The
+          // user-facing health signals (saved state, sync) stay.
+          if (kDebugMode)
+            Tooltip(
             // The build stamp is here because the stale-library trap keeps
             // costing real time: the app loads a compiled artefact, so being on
             // the right branch says nothing about what is actually running.
@@ -1391,6 +1480,18 @@ class _LockedPage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// An action that exists only while the canvas node itself is focused —
+/// the moment focus moves into any editor (or anywhere else), it reports
+/// disabled and the keystroke bubbles on to whoever actually owns it.
+class _CanvasAction<T extends Intent> extends CallbackAction<T> {
+  _CanvasAction(this.node, OnInvokeCallback<T> onInvoke)
+      : super(onInvoke: onInvoke);
+  final FocusNode node;
+
+  @override
+  bool isEnabled(T intent) => node.hasPrimaryFocus;
 }
 
 /// Canvas traversal intents (v0.16 phase 2). Private to the shell: the

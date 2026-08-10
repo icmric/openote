@@ -266,14 +266,37 @@ class _CommandBarState extends State<CommandBar> {
             // two rows share an edge instead of being inset by different
             // amounts. `IconButton` brings its own 8px, which is the margin.
             alignment: Alignment.centerLeft,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: switch (_tab) {
-                0 => _homeRow(context),
-                1 => _insertRow(context),
-                2 => _drawRow(context),
-                _ => _viewRow(context),
-              },
+            // Tab switches animate (PLANNING "Consistency/UX": "animation
+            // switching between menus"): the outgoing row fades as the new
+            // one fades in with a small upward drift — same 150ms register
+            // as the dialog transition, so the app has ONE sense of motion.
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 150),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              transitionBuilder: (child, anim) => FadeTransition(
+                opacity: anim,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                          begin: const Offset(0, 0.15), end: Offset.zero)
+                      .animate(anim),
+                  child: child,
+                ),
+              ),
+              layoutBuilder: (current, previous) => Stack(
+                alignment: Alignment.centerLeft,
+                children: [...previous, if (current != null) current],
+              ),
+              child: SingleChildScrollView(
+                key: ValueKey(_tab),
+                scrollDirection: Axis.horizontal,
+                child: switch (_tab) {
+                  0 => _homeRow(context),
+                  1 => _insertRow(context),
+                  2 => _drawRow(context),
+                  _ => _viewRow(context),
+                },
+              ),
             ),
           ),
         ],

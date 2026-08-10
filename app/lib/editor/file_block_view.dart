@@ -117,7 +117,17 @@ class FileBlockView extends StatelessWidget {
     final pages = (block.content['pages'] as num?)?.toInt();
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
-      onTap: () => showPdfViewerDialog(context, app, hash: blob, title: name),
+      // growFrom: the card's own centre — the viewer reads as the
+      // thumbnail opening rather than a dialog appearing over it.
+      onTap: () {
+        final box = context.findRenderObject() as RenderBox?;
+        showPdfViewerDialog(context, app,
+            hash: blob,
+            title: name,
+            growFrom: box != null && box.hasSize
+                ? box.localToGlobal(box.size.center(Offset.zero))
+                : null);
+      },
       borderRadius: BorderRadius.circular(10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

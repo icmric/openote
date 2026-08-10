@@ -118,12 +118,16 @@ Consistency/UX
       position and are text-selectable without editing (same pointer
       behaviour as text boxes); copy/paste clones every block through the
       open-format round-trip, so nothing — including block types from
-      newer versions — loses anything in transit. The blocks-sharing-a-box
-      model is the remaining design question.
+      newer versions — loses anything in transit. The follow-up round
+      fixed the editor-key leaks (arrows jumped boxes, Enter was eaten —
+      canvas traversal now stands down whenever an editor holds focus)
+      and added TYPE-THROUGH: a letter on a selected text/code box starts
+      writing at its end. The blocks-sharing-a-box model is the remaining
+      design question.
     Simple unobtrusive animations consistently would be nice. A little bounce when a popup appears, the PDF viewer looking like it opens from the thumbnail, animation switching between menus, stuff like that
-    → Every dialog now opens through one shared transition (quick fade +
-      slight bounce). Menu-switch and open-from-thumbnail animations are
-      still open.
+    → All three shipped: one shared dialog transition (quick fade +
+      slight bounce), toolbar tab switches fade/slide in the same motion
+      register, and the PDF viewer grows out of its thumbnail card.
     Centeralised settings page (including stuff like syncing, defaults for styles etc, and other information)
     → Shipped v0.7.1 (the gear, top bar): theme, spell check, pen
       behaviour, doors to Sync / AI access / shortcuts, About + update

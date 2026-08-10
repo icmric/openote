@@ -56,6 +56,8 @@ const List<KeySection> keyboardMap = [
         'Select the next / previous box, in reading order'),
     KeyBinding('↑ ↓ ← →', 'Select the nearest box in that direction'),
     KeyBinding('Enter', 'Edit the selected box (Esc climbs back out)'),
+    KeyBinding('Just start typing',
+        'A letter on a selected text or code box starts writing at its end'),
     KeyBinding('Ctrl+↑↓←→',
         'Move the selected box (one grid step; add Shift for 1 px)'),
     KeyBinding('V / T / P / H / E',
