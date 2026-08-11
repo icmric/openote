@@ -134,3 +134,19 @@ Consistency/UX
       check. Style DEFAULTS still live only per-feature — they join the
       page when the styles system grows defaults at all.
     Pressing 'Del' when clicking on a page or group doesnt delete it - only way to delete is right click and press delete
+    Hovering over a box makes its background solid, this makes aligning with other objects more difficult and is different to how it will be rendered
+
+Code editor
+    Auto detect language
+    clearly mark languages that can be run locally
+    typing experience more like VS code or traditional IDEs - tab adds spaces, (, ", etc creates a pair, typing () or {} then pretting enter while inside creates a new line but adds the tab indentation and moves } to a new line below the cursor
+    c++ and c# support
+    More logical ordering, maybe grouping/indenting? c -> c++, c#
+
+General text editing
+    Editing mode still has a large amount of content movement with dot points - when editing they are much closer to the left than when viewing. Should always be the same, ideally same as viewing or somewhere in between
+    pressing ctrl + b for example inserts **** for bolding, however backspacing one should delete all 4. Ideally we dont even show the **** for bolding, just have it appear in the toolbar as on. Still allow users to type it as an aditional shortcut (in which case it should maintin its current behaviour). Same deal with italics, headings, colours, etc.
+    If imported text is both bold AND italic, it will bold it but will still end up with *around* the word, with all that being bold
+    Extra blank lines arent respected or included in import
+    * and a space should auto turn into bullet list
+        Bullet list currently uses - as default rather than *, no way to change it?
