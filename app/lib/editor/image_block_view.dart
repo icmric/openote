@@ -54,7 +54,6 @@ class ImageBlockView extends StatefulWidget {
 }
 
 class _ImageBlockViewState extends State<ImageBlockView> {
-  Uint8List? _bytes;
   MemoryImage? _provider;
   String? _hash;
 
@@ -85,7 +84,6 @@ class _ImageBlockViewState extends State<ImageBlockView> {
       final page = (widget.block.content['page'] as num?)?.toInt() ?? 0;
       final hit = PdfPages.cached(pdf, page);
       if (hit != null) {
-        _bytes = hit;
         _provider = MemoryImage(hit);
         if (mounted) setState(() {});
         return;
@@ -95,7 +93,6 @@ class _ImageBlockViewState extends State<ImageBlockView> {
         if (!mounted || widget.block.content['pdf'] != pdf) return;
         setState(() {
           _rendering = false;
-          _bytes = png;
           _provider = png == null ? null : MemoryImage(png);
         });
       });
@@ -105,7 +102,6 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     final h = widget.block.content['blob'] as String?;
     _hash = h;
     if (h == null) {
-      _bytes = null;
       _provider = null;
       if (mounted) setState(() {});
       return;
@@ -145,7 +141,6 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   static Future<void> _readQueue = Future<void>.value();
 
   void _setBytes(Uint8List? b) {
-    _bytes = b;
     _provider = b == null ? null : MemoryImage(b);
     // Record intrinsic size once, so width-resize keeps aspect ratio.
     if (b != null && widget.block.content['naturalW'] == null) {

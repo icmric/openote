@@ -5,7 +5,8 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 ## [Unreleased]
 
 ### Fixed
-- **CI is green again on all four app platforms.** Six tests were asserting on wall-clock time — "200 calls in under 50 ms", "the first page lands inside the first quarter of the import", "these two clicks are 300 ms apart". `flutter test` runs files in parallel, so those bars measured how much CPU the machine had spare rather than anything about the code: they passed when run alone and failed in a full suite, and on a two-core CI runner they failed every time while the caches and the import were working perfectly. They now count the work — page reads, directory listings, measurement round-trips — which cannot move with the weather.
+- **CI is green again on all four app platforms — and the cause was not what it looked like.** The red Analyze step was one real `unused_field` warning left behind by the PDF rework, invisible on the dev machine because a local check filtered analyzer output down to nothing and reported success regardless. The field is gone. Two genuine hardenings came out of chasing it: the Flutter SDK is now **pinned** in CI and release (an SDK release could previously change what every branch built with, with no commit to bisect), and six tests that asserted on wall-clock time — "200 calls in under 50 ms", "first progress inside the first quarter of the import" — now count the work instead (page reads, directory listings, measurement round-trips), because `flutter test` runs files in parallel and a stopwatch bar measures the machine's spare CPU, not the code.
+- **CI is ~3.5 minutes faster and a third cheaper.** Measured per-step: the duplicate `ubuntu-latest` job (same image as the pinned 24.04) is gone, analyze and icon-font subsetting run once instead of on every OS, and the test reporter is the one built for Actions.
 
 ### Fixed — a test that was measuring the hardware
 

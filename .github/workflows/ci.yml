@@ -91,15 +91,21 @@ jobs:
         working-directory: rust/onote_core
         run: cargo build --release
 
-      # PINNED, and the pin is the fix for a real outage. `channel: stable`
-      # resolves whatever is stable at run time, so when 3.44.9 shipped every
-      # push started analyzing against a compiler nobody had run locally —
-      # analyze went red on all four app jobs for two days while the same
-      # tree was clean on every dev machine. The lockfile pins the packages;
-      # this pins the other input. Upgrading the SDK is now a deliberate
-      # one-line bump, made together with whatever new diagnostics it brings
-      # (keep it in step with release.yml, which pins the same version so a
-      # tag never builds with a toolchain CI has not tested).
+      # PINNED for determinism: `channel: stable` resolves whatever is
+      # stable at run time, so an SDK release can change what CI analyzes
+      # and builds with under every branch at once, with no commit to bisect.
+      # The lockfile pins the packages; this pins the other input, and
+      # upgrading becomes a deliberate one-line bump made together with
+      # whatever new diagnostics the new SDK brings. Keep it in step with
+      # release.yml, which pins the same version so a tag never builds with
+      # a toolchain CI has not tested.
+      #
+      # For the record: this pin was first written in the belief that 3.44.9
+      # had caused the two-day analyze failure. It had not — the failure was
+      # a real `unused_field` warning in the tree, invisible locally only
+      # because a dev-side check filtered analyzer output and echoed
+      # "analyze ok" unconditionally. The pin stays because determinism is
+      # right on its own merits, not because it fixed that.
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.44.8
