@@ -33,14 +33,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ubuntu-24.04 is pinned EXPLICITLY, even though ubuntu-latest is
-        # currently the same image, because release.yml pins its Linux job to
-        # that exact label — and when ubuntu-latest moves on, this entry is
-        # what keeps CI testing the host releases are actually built on.
-        # (It was 22.04, for an older glibc floor. media_kit_video links
-        # libmpv, and jammy's soname is one no current distro ships — see the
-        # comment on release.yml's linux job.)
-        os: [ubuntu-latest, ubuntu-24.04, macos-latest, windows-latest]
+        # ubuntu-24.04, NOT ubuntu-latest: release.yml pins its Linux job to
+        # this exact label, so this is the host releases are actually built
+        # on — the one whose breakage matters. Both labels were run for a
+        # while "for when they diverge", but they are the same image today,
+        # so the second job could only ever repeat the first's answer at the
+        # cost of a full build per push. When ubuntu-latest does move on, the
+        # pin keeps testing the release host, which is the promise this
+        # matrix exists to keep. (24.04 rather than 22.04 for the libmpv
+        # soname — see the comment on release.yml's linux job.)
+        os: [ubuntu-24.04, macos-latest, windows-latest]
     defaults:
       run:
         working-directory: app
@@ -54,7 +56,10 @@ jobs:
           # libmpv-dev and libepoxy-dev are media_kit_video's: its Linux plugin
           # links against both through pkg-config, so without them the plugin
           # silently drops out of the build and video does not exist.
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libmpv-dev libepoxy-dev
+          # --no-install-recommends: libgtk-3-dev alone drags in tens of
+          # recommended packages nothing here links against. The explicit
+          # list IS the dependency set, so recommends are pure download time.
+          sudo apt-get install -y --no-install-recommends clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libmpv-dev libepoxy-dev
 
       # The CMake hook now builds the Rust core during `flutter build` when
       # cargo is present (it is, on all GitHub runners) — cache it or every
@@ -96,7 +101,13 @@ jobs:
 
       # Errors and warnings are fatal; infos are not. That is the bar
       # CONTRIBUTING.md states, so CI enforces exactly it and no more.
+      #
+      # Linux only: analysis reads the same Dart against the same resolved
+      # packages on every OS, so three copies of this step can only agree.
+      # It was 23 s of the Windows job — the critical path of the whole
+      # workflow, since the run finishes when its slowest job does.
       - name: Analyze
+        if: runner.os == 'Linux'
         run: flutter analyze --no-fatal-infos
 
       # pdfrx bundles PDFium as a WASM module for its web target, and its
@@ -133,15 +144,23 @@ jobs:
       # and the shaker tests for `true` without them. 1.6 MB shipped whole in
       # every Windows and Linux release. macOS is unaffected and this is a
       # no-op there. See app/tool/shake_icons.dart.
+      # Linux only, and in CI this is a SMOKE TEST of the tool, not
+      # packaging: release.yml runs it for real on every platform at tag
+      # time. One run per push proves the tool still works against a fresh
+      # build; the Windows copy bought no extra coverage and cost 60 s of
+      # the slowest job.
       - name: Subset the icon font (works around a Flutter SDK bug)
-        if: runner.os != 'macOS'
+        if: runner.os == 'Linux'
         run: dart run tool/shake_icons.dart
         working-directory: app
 
+      # The github reporter annotates failures in the PR view and stays
+      # quiet on success — `expanded` streamed a line per test (1,000+) into
+      # the log websocket, which is not free on a Windows runner.
       - name: Test
         env:
           CI: 'true'
-        run: flutter test --reporter expanded
+        run: flutter test --reporter github
 
   # The Rust core (Apache-2.0 tier). Independent of Flutter by design — the core
   # is meant to be usable standalone, so CI proves it builds and tests without a
