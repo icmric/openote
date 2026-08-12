@@ -2,7 +2,7 @@
 
 This is the design and specification documentation for **Openote**, an open-source, natively cross-platform alternative to Microsoft OneNote.
 
-> **Status (2026-08-06):** the project is well past planning. A working Flutter + Rust application lives in [`app/`](../app/README.md) and [`rust/onote_core/`](../rust/onote_core/README.md), with **684 Dart + 52 Rust tests green**. Phase 1's MVP and most of Phase 2 are implemented; the Phase 3 headline feature (the reverse-engineered **OneNote `.one`/`.onepkg` importer**) works on real notebooks. Recent work has been performance and durability rather than new surface — see [v0.9](planning/v0.9-performance.md) and [v0.10](planning/v0.10-responsiveness-and-storage.md). These documents are therefore **living specs describing intent**, not a pre-code plan: where a document and the code disagree, the disagreement is a bug in one of them — see the [reviews](#reviews) for the last full reconciliation.
+> **Status (2026-08-11, v0.7.1):** the project is well past planning. A working Flutter + Rust application lives in [`app/`](../app/README.md) and [`rust/onote_core/`](../rust/onote_core/README.md), with **1,071 Dart + 53 Rust tests green**. Phase 1's MVP and most of Phase 2 are implemented; the Phase 3 headline feature (the reverse-engineered **OneNote `.one`/`.onepkg` importer**) works on real notebooks. Since v0.6 the surface has grown fast — git sync with join-by-link, password-protected pages, an MCP server for AI tools, local code cells, keyboard control — and the [standing backlog](planning/v0.4-and-beyond.md) is the ranked list of what has not. These documents are therefore **living specs describing intent**, not a pre-code plan: where a document and the code disagree, the disagreement is a bug in one of them — see the [reviews](#reviews) for the last full reconciliation.
 
 ## Reading order
 
@@ -43,7 +43,7 @@ The OneNote-style linear input grammar (build-as-you-type: fractions, scripts, n
 Stroke capture and storage (parallel arrays with pressure/tilt/time), rendering via the perfect-freehand pipeline, tools, InkML interchange, and recognition hooks.
 
 ### [Architecture Decision Records](adr/README.md)
-Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/ADR-0002-crdt-library.md)) · storage container ([0003](adr/ADR-0003-storage-container.md)) · editor engine ([0004](adr/ADR-0004-editor-engine.md) — keep the engine we own, behind a seam) · licensing proposal ([0005](adr/ADR-0005-licensing.md)) · sync transport + text model ([0006](adr/ADR-0006-sync-transport-and-text-model.md), proposed). Each records context, rationale, consequences, and revisit triggers.
+Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/ADR-0002-crdt-library.md)) · storage container ([0003](adr/ADR-0003-storage-container.md)) · editor engine ([0004](adr/ADR-0004-editor-engine.md) — keep the engine we own, behind a seam) · licensing ([0005](adr/ADR-0005-licensing.md), ratified) · sync transport + text model ([0006](adr/ADR-0006-sync-transport-and-text-model.md)) · blob lifecycle ([0007](adr/ADR-0007-blob-lifecycle.md)) · page protection ([0008](adr/ADR-0008-page-protection.md)). Each records context, rationale, consequences, and revisit triggers.
 
 ## Reviews
 
@@ -54,7 +54,7 @@ Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/AD
 ## Supporting documents
 
 - [Roadmap](../ROADMAP.md) — phased plan from MVP to collaboration.
-- [Planning documents](planning/README.md) — one per release-sized piece of work, kept after shipping: what was reported, what was measured, which options were weighed, and what it cost. The index says which are built and which are still plans. Currently v0.2 → **v0.10 (responsiveness and storage)**, plus the standing product backlog in [v0.4-and-beyond](planning/v0.4-and-beyond.md).
+- [Planning documents](planning/README.md) — one per release-sized piece of work, kept after shipping: what was reported, what was measured, which options were weighed, and what it cost. The index separates **open** plans from shipped reasoning and from the one plan that was **rejected**. Currently v0.2 → v0.16, plus the ranked standing backlog in [v0.4-and-beyond](planning/v0.4-and-beyond.md).
 - [Releasing](RELEASING.md) — how a commit on `master` becomes a download: the three commands, the four manual steps (publishing the draft, the two Cloudflare secrets, pointing the domain, and the signing decision), what each platform artifact is, why the site is a Worker rather than static hosting, and what to do when a job fails.
 - [Contributing](../CONTRIBUTING.md) — how to get involved.
 - [README](../README.md) — project overview.
