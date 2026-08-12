@@ -4,6 +4,19 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed
+- **CI is green again on all four app platforms.** Six tests were asserting on wall-clock time — "200 calls in under 50 ms", "the first page lands inside the first quarter of the import", "these two clicks are 300 ms apart". `flutter test` runs files in parallel, so those bars measured how much CPU the machine had spare rather than anything about the code: they passed when run alone and failed in a full suite, and on a two-core CI runner they failed every time while the caches and the import were working perfectly. They now count the work — page reads, directory listings, measurement round-trips — which cannot move with the weather.
+
+### Fixed — a test that was measuring the hardware
+
+- The probe guarding double-click-to-rename compared **wall-clock** times
+  while the test only advanced Flutter's fake clock, so it was really
+  asserting that the machine could rebuild the sidebar between two clicks
+  in under 300 ms. It passed where that was true and failed where it was
+  not, which left the suite red on `master`. The window now reads a clock
+  the test can drive; the shipped behaviour is unchanged, because a
+  double-click is a real-time gesture and has to stay one.
+
 ### Fixed — sidebar clicks act INSTANTLY
 
 - **The real half-second, found**: every click on a page, section or

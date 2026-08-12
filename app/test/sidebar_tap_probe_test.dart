@@ -89,10 +89,22 @@ void main() {
     // The affordance the deferral was paying for must still exist: two
     // quick clicks open the inline rename (first click selects — the
     // file-explorer behaviour).
+    //
+    // The clock is DRIVEN, not waited on. The gate measures wall-clock time
+    // and `tester.pump(Duration)` moves only the fake clock, so left alone
+    // this asserted that the machine could rebuild the sidebar between two
+    // taps in under 300 ms — true on a fast machine, false on a slower one,
+    // and nothing to do with the code under test. Here the two clicks are 80 ms
+    // apart by construction.
+    var fake = DateTime(2026, 8, 10, 12);
+    sidebarNow = () => fake;
+    addTearDown(() => sidebarNow = DateTime.now);
+
     // .first = the sidebar tile; the open page paints its title on the
     // canvas too after the first click selects it.
     await tester.tap(find.text('Target page 2').first);
     await tester.pump(const Duration(milliseconds: 80));
+    fake = fake.add(const Duration(milliseconds: 80));
     await tester.tap(find.text('Target page 2').first);
     await tester.pumpAndSettle();
     // The navigator always holds ONE TextField (the search box); the

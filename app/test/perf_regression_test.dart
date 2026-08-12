@@ -16,13 +16,24 @@ import 'package:openote/model/models.dart';
 import 'package:openote/model/tags.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
+import 'package:openote/sync/op_log.dart';
 
 import 'support/sqlite.dart';
 
-// Measured by elapsed time rather than by counting reads through a wrapper
-// repository: the thing that hurt users was wall-clock latency per keystroke,
-// so wall-clock is the honest assertion. A wrapper would also have to
-// re-implement Repository's whole surface to stay compiling.
+// Measured by COUNTING the work, not by timing it.
+//
+// These were wall-clock bars ("200 calls in under 50 ms"), on the reasoning
+// that latency per keystroke was what hurt users. True, but untestable: a
+// `flutter test` run executes files in parallel, so on a loaded machine — and
+// always on a two-core CI runner — the bar measured how much CPU was going
+// spare. It was red on all four app platforms while the caches worked
+// perfectly.
+//
+// What each cache actually promises is that the expensive call happens ONCE.
+// `Repository.debugSharedPageReads` and `OpLogStore.debugDirectoryListings` count
+// exactly those, on the one code path each cache exists to avoid: a working
+// cache adds zero, a broken one adds hundreds, and neither answer moves with
+// the weather.
 
 void main() {
   var haveSqlite = false;
@@ -79,17 +90,17 @@ void main() {
       expect(first.$2, greaterThan(0), reason: 'the fixture has cards');
 
       // Simulate what the command bar does: many rebuilds with no edit.
-      final sw = Stopwatch()..start();
+      final before = Repository.debugSharedPageReads;
       for (var i = 0; i < 200; i++) {
         app.study.deckCounts();
       }
-      sw.stop();
+      final reads = Repository.debugSharedPageReads - before;
 
-      // 200 uncached calls would be 200 × 12 page reads = 2400 SQLite queries
-      // plus JSON decodes. Cached, this is 200 map lookups.
-      expect(sw.elapsedMilliseconds, lessThan(50),
-          reason: '200 deck-count calls took ${sw.elapsedMilliseconds}ms — '
-              'the cache is not holding, and this runs per keystroke');
+      // 200 uncached calls would be 200 × 12 page reads = 2400 reads.
+      // Cached, this is 200 map lookups and not one read.
+      expect(reads, 0,
+          reason: '200 deck-count calls re-read $reads page(s) — the cache '
+              'is not holding, and this runs per keystroke');
     });
 
     test('the cache still invalidates when content changes', () async {
@@ -102,7 +113,7 @@ void main() {
         } catch (_) {}
       });
 
-      final before = app.study.deckCounts().$2;
+      final beforeCount = app.study.deckCounts().$2;
       // Tag another line on the open page — docRevision bumps, so the deck
       // must be rebuilt. A cache that never invalidates is worse than none.
       final b = app.blocks.first;
@@ -113,8 +124,18 @@ void main() {
       ]);
       app.docRevision++;
 
-      expect(app.study.deckCounts().$2, greaterThan(before),
+      // COUNTED as well as observed, so the sibling test's `expect(reads, 0)`
+      // cannot pass vacuously. If the counter were dead — never incremented, or
+      // reading a path these calls do not take — zero would be trivially true
+      // and the cache guard would be worthless. Here the same counter must
+      // MOVE, on the same call, for the same fixture.
+      final before = Repository.debugSharedPageReads;
+      expect(app.study.deckCounts().$2, greaterThan(beforeCount),
           reason: 'a new tagged line must produce a new card');
+      expect(Repository.debugSharedPageReads, greaterThan(before),
+          reason: 'an invalidated deck must actually re-read the notebook — '
+              'if this does not move, the counter is not watching this path '
+              'and the cached-case assertion proves nothing');
     });
   });
 
@@ -130,13 +151,13 @@ void main() {
       });
 
       expect(app.allTags(), isNotEmpty);
-      final sw = Stopwatch()..start();
+      final before = Repository.debugSharedPageReads;
       for (var i = 0; i < 200; i++) {
         app.allTags();
       }
-      sw.stop();
-      expect(sw.elapsedMilliseconds, lessThan(50),
-          reason: '200 allTags calls took ${sw.elapsedMilliseconds}ms');
+      final reads = Repository.debugSharedPageReads - before;
+      expect(reads, 0,
+          reason: '200 allTags calls re-read $reads page(s)');
     });
   });
 
@@ -163,13 +184,14 @@ void main() {
       app.study.setExamDate(section, now.add(const Duration(days: 10)));
       expect(app.planner.agenda(now: now), isNotEmpty);
 
-      final sw = Stopwatch()..start();
+      final before = Repository.debugSharedPageReads;
       for (var i = 0; i < 200; i++) {
         app.planner.sections(now: now);
       }
-      sw.stop();
-      expect(sw.elapsedMilliseconds, lessThan(80),
-          reason: '200 agenda builds took ${sw.elapsedMilliseconds}ms');
+      final reads = Repository.debugSharedPageReads - before;
+      expect(reads, 0,
+          reason: '200 agenda builds re-read $reads page(s) — an agenda '
+              'pulls a deck build in, so this is the expensive one');
     });
 
     test('but it notices when a date changes', () async {
@@ -208,13 +230,14 @@ void main() {
       // in a cloud folder that path is sync-client-backed — so uncached it was
       // filesystem I/O per character typed.
       app.syncDeviceCount(app.notebookId!);
-      final sw = Stopwatch()..start();
+      final before = OpLogStore.debugDirectoryListings;
       for (var i = 0; i < 500; i++) {
         app.syncDeviceCount(app.notebookId!);
       }
-      sw.stop();
-      expect(sw.elapsedMilliseconds, lessThan(50),
-          reason: '500 device-count calls took ${sw.elapsedMilliseconds}ms');
+      final listings = OpLogStore.debugDirectoryListings - before;
+      expect(listings, 0,
+          reason: '500 device-count calls listed the ops directory $listings '
+              'time(s) — that is filesystem I/O per keystroke');
     });
   });
 }

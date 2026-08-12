@@ -74,13 +74,27 @@ class _DoubleTapGate {
 
   /// True when this tap is the second of a double-click.
   bool tap() {
-    final now = DateTime.now();
+    final now = sidebarNow();
     final isDouble = _last != null &&
         now.difference(_last!) < const Duration(milliseconds: 300);
     _last = isDouble ? null : now;
     return isDouble;
   }
 }
+
+/// The clock [_DoubleTapGate] measures the double-click window against.
+///
+/// A seam, because the window is **wall-clock** and a widget test's clock is
+/// not. `tester.pump(Duration)` advances the fake clock; it does not advance
+/// `DateTime.now()`. So the probe that guards this affordance was really
+/// measuring how fast the machine could rebuild the sidebar between two taps —
+/// it passed where that took under 300 ms and failed where it did not, which is
+/// a test that reports the hardware rather than the code.
+///
+/// Production keeps real time, because a double-click IS a real-time gesture
+/// and the 300 ms window has to match the one the user's hand is aiming at.
+@visibleForTesting
+DateTime Function() sidebarNow = DateTime.now;
 
 /// Animated expand/collapse for tree groups (Eric: "an animation when
 /// opening and closing groups (both page and section)"). The child stays

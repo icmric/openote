@@ -491,6 +491,23 @@ class ImportWriterHandle {
   ///
   /// [result] completes with null once it has stopped.
   void cancel() => _cancel();
+
+  /// How many measurement round-trips the writer has asked the main isolate to
+  /// serve since this was last reset.
+  ///
+  /// A **counter, not a clock**, and it exists for one assertion: that pages
+  /// start landing before the whole notebook has been laid out. The shape this
+  /// import replaced measured every page up front and only then wrote, so the
+  /// first write necessarily came after the last measurement; the streaming
+  /// shape interleaves them, so the first write lands after one batch's worth.
+  ///
+  /// That claim used to be tested as a wall-clock ratio — first progress inside
+  /// the first quarter of the run — which passed alone and failed in a full
+  /// suite, because `flutter test` runs files in parallel and the ratio was
+  /// really measuring how much CPU the machine had left. On a two-core CI
+  /// runner it failed every time, on all four platforms. Counting the thing the
+  /// change actually altered depends on nothing but the code.
+  static int debugMeasureRequests = 0;
 }
 
 /// Spawn the writer and drive the conversation.
@@ -531,6 +548,7 @@ ImportWriterHandle startImportWriter(
 
   /// Lay out every page's flows, a frame's worth at a time.
   Future<void> answerMeasure(List<Object?> boxesPerPage) async {
+    ImportWriterHandle.debugMeasureRequests++;
     // `num?`, and the nulls are load-bearing. The parser omits `y` on a box
     // whose position it could not recover, and `importOneParsedPage` defaults
     // those to `AppState.contentTop`. Reporting a missing y as 0 would defeat

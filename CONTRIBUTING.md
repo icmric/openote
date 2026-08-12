@@ -4,7 +4,30 @@ Thank you for your interest in Openote — an open-source, cross-platform altern
 
 > **Current phase: implementation.** There is a working desktop app — Flutter/Dart in [`app/`](app/README.md) plus a native Rust core in [`rust/onote_core/`](rust/onote_core/README.md). Start with [`app/README.md`](app/README.md) to build and run it, and read [`INTEGRATION.md`](rust/onote_core/INTEGRATION.md) (including its **stale-DLL warning**) before touching the core. Design critique on [`docs/`](docs/README.md) is still very welcome.
 >
-> **Before submitting code:** `flutter analyze` must be clean of errors and warnings, `flutter test` (82 tests) and `cargo test` (26 tests) must pass, and `cargo clippy --all-targets` must be clean. Match the surrounding comment density — this codebase explains *why*, not *what*.
+> **Before submitting code:** `flutter analyze` must be clean of errors and warnings, `flutter test` (1,071 tests) and `cargo test` (53 tests) must pass, and `cargo clippy --all-targets` must be clean. Match the surrounding comment density — this codebase explains *why*, not *what*.
+
+> **Never assert on wall-clock time.** `flutter test` runs test files in
+> parallel, so a `Stopwatch` bar measures how much CPU the machine had going
+> spare — it passes alone, fails in a full suite, and fails *every* time on a
+> two-core CI runner. This has taken CI down twice: once on a study-cache ratio,
+> once on four per-keystroke bars and an import-progress ratio, each while the
+> code under test was working perfectly.
+>
+> Count the work instead, on the one code path the change exists to alter:
+> `Repository.debugSharedPageReads`, `Repository.debugPageDecodes`,
+> `OpLogStore.debugDirectoryListings` and
+> `ImportWriterHandle.debugMeasureRequests` all exist for this. A working cache
+> adds zero and a broken one adds hundreds, and neither answer moves with the
+> weather.
+>
+> **Pair every `expect(count, 0)` with a test that makes the same counter move.**
+> A counter watching the wrong layer reads zero for the wrong reason, and the
+> guard is then worthless while looking strict — which is exactly what happened
+> the first time these were converted.
+>
+> Wall-clock is equally untestable in *product* code that a widget test drives:
+> the sidebar's double-click window uses an injectable `sidebarNow` for the same
+> reason.
 >
 > **Licensing is ratified** ([ADR-0005](docs/adr/ADR-0005-licensing.md), 2026-07-27): **AGPL-3.0-or-later** for the app, **Apache-2.0** for `onote_core`, **CC0-1.0** for the format specs. Contributions are accepted under the licence of the directory they touch. See [LICENSING.md](LICENSING.md) — and note the invariant that **`onote_core` must never gain a copyleft dependency**.
 

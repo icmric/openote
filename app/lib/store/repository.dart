@@ -1120,7 +1120,24 @@ class Repository {
   /// treated as read-only** — mutating a block from it would corrupt what
   /// every later caller sees. Editors go through [readPage], which hands out
   /// fresh objects.
+  /// How many times a caller has asked for a page through the shared cache.
+  ///
+  /// Distinct from [debugPageDecodes], and the distinction is the whole point.
+  /// That one counts cache MISSES at this layer, so it answers "did we hit
+  /// SQLite?" — which a small fixture never does twice however broken the
+  /// callers are. This one counts the ASK, which is what the per-keystroke
+  /// caches upstream (deck counts, the tag rollup, the planner agenda) exist to
+  /// avoid making at all: each of them walks every page in the notebook, and a
+  /// cache that stopped holding would show up here as hundreds of reads and in
+  /// `debugPageDecodes` as zero.
+  ///
+  /// Found by writing the assertion the other way round first: a test that
+  /// required the decode counter to MOVE when a deck was invalidated failed,
+  /// which is what exposed the zero it was pairing with as vacuous.
+  static int debugSharedPageReads = 0;
+
   PageData readPageShared(String notebookId, String pageId) {
+    debugSharedPageReads++;
     final perNb = _decodedPages.putIfAbsent(notebookId, () => {});
     final hit = perNb[pageId];
     if (hit != null) return hit;

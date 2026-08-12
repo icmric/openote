@@ -149,8 +149,19 @@ class OpLogStore {
   }
 
   /// Device ids that have a log in this notebook.
+  /// How many times the ops directory has actually been listed.
+  ///
+  /// The same rule as [Repository.debugPageDecodes]: the status bar calls
+  /// `syncDeviceCount` on every rebuild — every keystroke — and once a notebook
+  /// lives in a cloud folder this is filesystem I/O against a sync-client-backed
+  /// path. The cache that stops that was pinned by a wall-clock bar, which on a
+  /// loaded runner measures the runner. A working cache does zero further
+  /// listings; a broken one does one per call, and neither depends on the clock.
+  static int debugDirectoryListings = 0;
+
   List<String> deviceIds() {
     if (!opsDir.existsSync()) return const [];
+    debugDirectoryListings++;
     return [
       for (final f in opsDir.listSync())
         if (f is File && f.path.endsWith('.oplog'))

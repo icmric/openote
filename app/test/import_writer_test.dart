@@ -520,9 +520,17 @@ void main() {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (_, app, ref) = await fixture('onote_writer_early_');
 
-    final sw = Stopwatch()..start();
-    int? firstProgressAt;
-    int? doneAt;
+    // COUNTED, not timed. This was a wall-clock ratio — first progress inside
+    // the first quarter of the run — and it measured the machine: it passed
+    // when run alone and failed inside a full suite, because `flutter test`
+    // runs files in parallel, so on a busy or small runner the first batch's
+    // share of the total blew past 25 %. It was red on all four CI platforms.
+    //
+    // The claim this test owns is an ORDERING one: the first page lands before
+    // the last page is measured. Counting measurement round-trips says exactly
+    // that and cannot be affected by how much CPU is going spare.
+    ImportWriterHandle.debugMeasureRequests = 0;
+    int? measuresAtFirstProgress;
     final handle = startImportWriter(
       config(
           ref,
@@ -531,20 +539,32 @@ void main() {
           ]),
           batchPages: 4),
       frameYield: tick,
-      onProgress: (_, __, ___) => firstProgressAt ??= sw.elapsedMicroseconds,
+      onProgress: (_, __, ___) => measuresAtFirstProgress ??=
+          ImportWriterHandle.debugMeasureRequests,
     );
-    await handle.result;
-    doneAt = sw.elapsedMicroseconds;
+    final result = await handle.result;
+    final measuresTotal = ImportWriterHandle.debugMeasureRequests;
     app.endExclusiveImport(ref.id);
 
-    expect(firstProgressAt, isNotNull);
-    // A quarter of the run is a generous bar that the old shape could not clear
-    // at any notebook size: it did every page's text layout before the first
-    // write, so the first progress necessarily landed past the halfway mark.
-    expect(firstProgressAt! / doneAt, lessThan(0.25),
-        reason: 'the first batch reported after '
-            '${(100 * firstProgressAt! / doneAt).round()}% of the import — '
-            'layout is being done up front again');
+    // Asserted FIRST, and separately, so an import that died under load says
+    // so instead of failing an arithmetic comparison between two counts that
+    // are both meaningless once it did.
+    expect(result, isNotNull, reason: 'the import did not finish');
+    expect(measuresAtFirstProgress, isNotNull, reason: 'progress never fired');
+    // 300 pages in batches of 4 is ~75 round-trips. Without batching there
+    // would be one, and everything below would be vacuous.
+    expect(measuresTotal, greaterThan(10),
+        reason: 'the measurement pass is not batched — it made only '
+            '$measuresTotal round-trip(s) for 300 pages');
+    // The BOUND, not merely "fewer than the total". The old shape measured
+    // every page before writing any, so its first progress landed after all
+    // ~75; this shape writes after the first batch, so it lands after one.
+    // Comparing against the total would also pass at 74, which is the old
+    // behaviour with one page left over.
+    expect(measuresAtFirstProgress, lessThanOrEqualTo(2),
+        reason: 'the first batch reported only after '
+            '$measuresAtFirstProgress of $measuresTotal measurement '
+            'round-trips — layout is being done up front again');
   });
 
   test('a discarded import leaves nothing behind, not even a log directory',
