@@ -175,7 +175,41 @@ jobs:
       - name: Test
         env:
           CI: 'true'
-        run: flutter test --reporter github
+        run: flutter test --reporter github --file-reporter json:test-results.json
+
+      # NAME the failing tests in an annotation of our own. The github
+      # reporter's only annotation is a count — "1069 passed, 1 failed" —
+      # and job LOGS require authentication even on a public repository, so
+      # a red Test step named nothing to anyone without push access. This
+      # was learned the slow way: a full day of diagnosing this workflow was
+      # done through the anonymous API, where step names and timings are
+      # public but the one line that says WHICH test failed is not.
+      # Annotations are public; put the answer there.
+      - name: Name the failing tests
+        if: failure()
+        shell: bash
+        run: |
+          # failure() is true when ANY earlier step failed; without the file
+          # this step would stack a FileNotFoundError on top of the real
+          # failure (a broken build, say) and point everyone the wrong way.
+          [ -f test-results.json ] || exit 0
+          python - <<'PY'
+          import json
+          names = {}
+          for line in open('test-results.json', encoding='utf-8'):
+              try:
+                  e = json.loads(line)
+              except ValueError:
+                  continue
+              if e.get('type') == 'testStart':
+                  t = e['test']
+                  names[t['id']] = (t.get('name', '?'), t.get('url') or '')
+              elif (e.get('type') == 'testDone'
+                    and e.get('result') != 'success'
+                    and not e.get('hidden')):
+                  n, u = names.get(e['testID'], ('?', ''))
+                  print(f'::error::FAILED: {n}  [{u}]')
+          PY
 
   # The Rust core (Apache-2.0 tier). Independent of Flutter by design — the core
   # is meant to be usable standalone, so CI proves it builds and tests without a

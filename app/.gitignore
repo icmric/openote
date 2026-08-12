@@ -34,3 +34,4 @@ web/
 # artifacts, not goldens: font rasterisation differs per machine, so committing
 # them would fail the comparison everywhere except the machine that made them.
 test/goldens/
+test-results.json
