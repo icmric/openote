@@ -91,9 +91,18 @@ jobs:
         working-directory: rust/onote_core
         run: cargo build --release
 
+      # PINNED, and the pin is the fix for a real outage. `channel: stable`
+      # resolves whatever is stable at run time, so when 3.44.9 shipped every
+      # push started analyzing against a compiler nobody had run locally —
+      # analyze went red on all four app jobs for two days while the same
+      # tree was clean on every dev machine. The lockfile pins the packages;
+      # this pins the other input. Upgrading the SDK is now a deliberate
+      # one-line bump, made together with whatever new diagnostics it brings
+      # (keep it in step with release.yml, which pins the same version so a
+      # tag never builds with a toolchain CI has not tested).
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: 3.44.8
           cache: true
 
       - run: flutter --version

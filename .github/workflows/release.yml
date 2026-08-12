@@ -104,9 +104,11 @@ jobs:
         working-directory: rust/onote_core
         run: cargo build --release
 
+      # Pinned to the version CI tests — see the comment in ci.yml. A tag
+      # must never build with a toolchain no push has been verified against.
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: 3.44.8
           cache: true
 
       - name: Build app
@@ -294,9 +296,11 @@ jobs:
         working-directory: rust/onote_core
         run: cargo build --release
 
+      # Pinned to the version CI tests — see the comment in ci.yml. A tag
+      # must never build with a toolchain no push has been verified against.
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: 3.44.8
           cache: true
 
       - name: Build app
@@ -426,9 +430,11 @@ jobs:
             target/aarch64-apple-darwin/release/libonote_core.dylib \
             target/x86_64-apple-darwin/release/libonote_core.dylib
 
+      # Pinned to the version CI tests — see the comment in ci.yml. A tag
+      # must never build with a toolchain no push has been verified against.
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: 3.44.8
           cache: true
 
       - name: Build app
