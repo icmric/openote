@@ -141,6 +141,23 @@ void main() {
         await sameWidth(t, '- [ ] a task', why: 'the box hangs');
         await sameWidth(t, '- [x] done', why: 'a ticked box hangs');
       });
+
+      testWidgets('a NESTED task lands where a nested bullet does', (t) async {
+        // The hole the top-level cases left: read used to add its 17+6px icon
+        // column on top of the FULL indent, so a nested task sat 23px right
+        // of a nested bullet and jumped that far left on click-in.
+        await sameWidth(t, '  - [ ] nested task', why: 'one level');
+        await sameWidth(t, '    - [x] deeper', why: 'two levels, ticked');
+      });
+
+      testWidgets('a task body starts where a bullet body does', (t) async {
+        // Same depth, same left edge — a mixed list must not look ragged.
+        final bullet = await widthOf(t, readView('  - xx', style));
+        final task = await widthOf(t, readView('  - [ ] xx', style));
+        expect(task - bullet, closeTo(0.0, 1.0),
+            reason: 'bullet=$bullet task=$task — the box and the bullet '
+                'share one gutter');
+      });
     });
 
     testWidgets('baseStyle pins it rather than inheriting', (t) async {

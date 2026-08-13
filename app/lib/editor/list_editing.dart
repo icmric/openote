@@ -226,7 +226,13 @@ TextEditingValue? handleListShiftEnter(TextEditingValue v) {
   final line = v.text.substring(ls, lineEndOf(v.text, sel.start));
   final p = parseListLine(line);
   if (p == null) return null;
-  final insert = '\n${' ' * p.bodyStart}';
+  // The item's OWN indent, not its body offset. Leading spaces are a nesting
+  // encoding — two spaces is one level — so padding to the body (`- [ ] `
+  // is six characters) declared three levels of nesting and threw the
+  // continuation 87px right of the text it belongs to. Matching the item's
+  // indent keeps it at the item's level; true alignment under the body is a
+  // hanging indent, which a run of spaces cannot express.
+  final insert = '\n${p.indent}';
   return _replace(v, sel.start, sel.end, insert, sel.start + insert.length);
 }
 

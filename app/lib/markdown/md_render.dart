@@ -366,9 +366,17 @@ class _MarkdownViewState extends State<MarkdownView> {
     final cb = _reCheckbox.firstMatch(line);
     if (cb != null) {
       final checked = cb.group(2)!.toLowerCase() == 'x';
+      // The box HANGS in the same gutter a bullet does, so a task's body
+      // lands on `max(indent, kBulletGutter)` — exactly where a bullet's
+      // does, and exactly where the live editor puts it. It used to add its
+      // 17+6px icon column ON TOP of the full indent, so a nested task's
+      // text sat 23px right of a nested bullet's when read and jumped that
+      // far left the moment the caret entered the block.
       return Padding(
         padding: EdgeInsets.only(
-            left: indentPx(cb.group(1)!.length, baseStyle.fontSize)),
+            left: (indentPx(cb.group(1)!.length, baseStyle.fontSize) -
+                    kBulletGutter)
+                .clamp(0.0, double.infinity)),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -382,12 +390,15 @@ class _MarkdownViewState extends State<MarkdownView> {
                           : lines[index].replaceFirst('[ ]', '[x]');
                       onToggleCheckbox!(lines.join('\n'));
                     },
-              child: Padding(
-                padding: const EdgeInsets.only(top: 3, right: 6),
-                child: Icon(
-                  checked ? Icons.check_box : Icons.check_box_outline_blank,
-                  size: 17,
-                  color: checked ? scheme.primary : OnoteColors.graphite400,
+              child: SizedBox(
+                width: kBulletGutter,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Icon(
+                    checked ? Icons.check_box : Icons.check_box_outline_blank,
+                    size: 17,
+                    color: checked ? scheme.primary : OnoteColors.graphite400,
+                  ),
                 ),
               ),
             ),

@@ -790,31 +790,45 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
             // ever delete real body text — a page whose body repeats its own
             // title as a heading (very common) silently lost that paragraph,
             // which then shifted everything below it.
+            // A box commonly opens with an empty paragraph in the source.
+            // Now that empties survive the walk, that would become a leading
+            // blank line in every imported box (the trailing end is already
+            // handled by `out.trim_end()` when the markdown is assembled).
+            //
+            // This runs BEFORE the title dedup below and again after it, and
+            // the order is the whole point: with a blank line first, the
+            // dedup's `lines.first()` was the blank, so it matched no title,
+            // stopped immediately, and the duplicated title one line down
+            // survived into the body — every such page then showed its title
+            // twice, once in the title band and once as the first line.
+            let trim_leading_blanks = |lines: &mut Vec<Line>| {
+                while lines.first().is_some_and(|l| {
+                    l.image.is_none()
+                        && l.math.is_none()
+                        && l.table.is_none()
+                        && l.plain().trim().is_empty()
+                }) {
+                    lines.remove(0);
+                }
+            };
+            trim_leading_blanks(&mut lines);
             if boxes.is_empty() {
-                // `!plain.is_empty()` guards the blank lines that now survive
-                // the walk: an empty Line's `plain()` is "", and if the title
+                // `!plain.trim().is_empty()` guards the blank lines that now
+                // survive: an empty Line's `plain()` is "", and if the title
                 // set ever held an empty string this loop would eat every
                 // leading blank in the body as a "duplicate title".
                 while lines.first().is_some_and(|l| {
                     let plain = l.plain();
-                    l.image.is_none() && !plain.trim().is_empty()
+                    l.image.is_none()
+                        && !plain.trim().is_empty()
                         && title_plains.contains(&plain)
                 }) {
                     lines.remove(0);
                 }
             }
-            // A box commonly opens with an empty paragraph in the source.
-            // Now that empties survive, that would become a leading blank
-            // line in every imported box — the trailing end is already
-            // trimmed by `out.trim_end()` when the markdown is assembled.
-            while lines.first().is_some_and(|l| {
-                l.image.is_none()
-                    && l.math.is_none()
-                    && l.table.is_none()
-                    && l.plain().trim().is_empty()
-            }) {
-                lines.remove(0);
-            }
+            // Again: a blank commonly sits between the repeated title and the
+            // body, and removing the title would otherwise expose it.
+            trim_leading_blanks(&mut lines);
             if lines.is_empty() {
                 continue;
             }

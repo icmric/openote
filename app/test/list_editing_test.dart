@@ -134,9 +134,15 @@ void main() {
       expect(handleListEnter(at('|')), isNull);
     });
 
-    test('Shift+Enter stays inside the item, aligned under its text', () {
-      final r = handleListShiftEnter(at('- first|'))!;
-      expect(r.text, '- first\n  ');
+    test('Shift+Enter stays inside the item, at the item\'s own level', () {
+      // NOT padded to the body offset: leading spaces are a NESTING encoding
+      // (two spaces = one level), so padding `- [ ] ` to six characters
+      // declared three levels and threw the continuation 87px right of the
+      // words it belongs to. True alignment under the body needs a hanging
+      // indent, which spaces cannot express.
+      expect(handleListShiftEnter(at('- first|'))!.text, '- first\n');
+      expect(handleListShiftEnter(at('  - deep|'))!.text, '  - deep\n  ');
+      expect(handleListShiftEnter(at('- [ ] task|'))!.text, '- [ ] task\n');
     });
   });
 

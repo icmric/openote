@@ -3813,22 +3813,45 @@ class AppState extends ChangeNotifier
     if (want == null) return null;
     final lineStart = lineStartOf(t, s);
     final lineEnd = math.max(lineStart, lineEndOf(t, e));
-    final line = t.substring(lineStart, lineEnd);
-    final lo = s - lineStart, hi = e - lineStart;
-    for (final m in mdInlineRe.allMatches(line)) {
-      final c = classifyInline(m);
-      final isBoth = c.kind == MdInline.boldItalic &&
-          (want == MdInline.bold || want == MdInline.italic);
-      if (c.kind != want && !isBoth) continue;
-      final innerStart = m.start + c.openLen, innerEnd = m.end - c.closeLen;
-      if (lo < innerStart || hi > innerEnd) continue;
-      // `***` minus bold is `*`; minus italic is `**`.
-      final strip = isBoth ? (want == MdInline.bold ? 2 : 1) : c.openLen;
-      return (
-        open: lineStart + m.start + (isBoth ? c.openLen - strip : 0),
-        close: lineStart + innerEnd,
-        strip: strip,
-      );
+    var scan = t.substring(lineStart, lineEnd);
+    var base = lineStart;
+    var lo = s - lineStart, hi = e - lineStart;
+    // DESCEND. `allMatches` only yields outermost runs, so with the caret in
+    // the `it` of `**bold *it* end**` the italic was never seen: the bold run
+    // was skipped for being the wrong kind and the toggle wrapped `it` a
+    // second time, producing `**bold **it** end**` — which then re-reads as
+    // one bold run with a literal `**` inside it and two visible asterisks.
+    // Re-scanning the enclosing match's inner text finds the nested one.
+    for (var depth = 0; depth < 8; depth++) {
+      MdMatch? enclosing;
+      RegExpMatch? enclosingMatch;
+      for (final m in mdInlineRe.allMatches(scan)) {
+        final c = classifyInline(m);
+        final isBoth = c.kind == MdInline.boldItalic &&
+            (want == MdInline.bold || want == MdInline.italic);
+        final innerStart = m.start + c.openLen, innerEnd = m.end - c.closeLen;
+        if (lo < innerStart || hi > innerEnd) continue;
+        if (c.kind == want || isBoth) {
+          // `***` minus bold is `*`; minus italic is `**`.
+          final strip = isBoth ? (want == MdInline.bold ? 2 : 1) : c.openLen;
+          return (
+            open: base + m.start + (isBoth ? c.openLen - strip : 0),
+            close: base + innerEnd,
+            strip: strip,
+          );
+        }
+        enclosing = c;
+        enclosingMatch = m;
+        break;
+      }
+      if (enclosing == null || enclosingMatch == null) return null;
+      // Step inside it and look again.
+      final innerStart = enclosingMatch.start + enclosing.openLen;
+      base += innerStart;
+      lo -= innerStart;
+      hi -= innerStart;
+      scan = enclosing.inner;
+      if (lo < 0 || hi > scan.length) return null;
     }
     return null;
   }
@@ -3851,14 +3874,28 @@ class AppState extends ChangeNotifier
     var lineEnd = t.indexOf('\n', sel.end);
     if (lineEnd < 0) lineEnd = t.length;
     if (lineStart > lineEnd) return const {};
-    final line = t.substring(lineStart, lineEnd);
-    final lo = sel.start - lineStart, hi = sel.end - lineStart;
+    var scan = t.substring(lineStart, lineEnd);
+    var lo = sel.start - lineStart, hi = sel.end - lineStart;
     final out = <MdInline>{};
-    for (final m in mdInlineRe.allMatches(line)) {
-      final c = classifyInline(m);
-      final innerStart = m.start + c.openLen;
-      final innerEnd = m.end - c.closeLen;
-      if (lo >= innerStart && hi <= innerEnd) out.add(c.kind);
+    // Descend, so a mark NESTED inside another still lights its button — the
+    // italic in `**bold *it* end**` read as off the instant you applied it.
+    for (var depth = 0; depth < 8; depth++) {
+      MdMatch? inner;
+      var innerAt = -1;
+      for (final m in mdInlineRe.allMatches(scan)) {
+        final c = classifyInline(m);
+        final s0 = m.start + c.openLen, e0 = m.end - c.closeLen;
+        if (lo < s0 || hi > e0) continue;
+        out.add(c.kind);
+        inner = c;
+        innerAt = s0;
+        break;
+      }
+      if (inner == null) break;
+      lo -= innerAt;
+      hi -= innerAt;
+      scan = inner.inner;
+      if (lo < 0 || hi > scan.length) break;
     }
     // Bold+italic lights BOTH buttons — it is both, and a student pressing
     // Ctrl+B on it expects the bold to come off.

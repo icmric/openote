@@ -200,6 +200,34 @@ void main() {
     });
   });
 
+  group('a mark nested inside another', () {
+    test('can be toggled off without corrupting the outer one', () {
+      if (!haveSqlite) return;
+      edit('**bold *it* end**');
+      c.selection = const TextSelection.collapsed(offset: 9); // in "it"
+      app.wrapSelection('*');
+      expect(c.text, '**bold it end**',
+          reason: 'it used to wrap again as `**bold **it** end**`, which '
+              'then re-reads as one bold run with literal asterisks in it');
+    });
+
+    test('lights its toolbar button', () {
+      if (!haveSqlite) return;
+      edit('**bold *it|* end**');
+      final marks = app.marksAtCaret();
+      expect(marks, contains(MdInline.italic),
+          reason: 'the italic read as OFF the instant it was applied');
+      expect(marks, contains(MdInline.bold));
+    });
+
+    test('highlight inside bold reports both', () {
+      if (!haveSqlite) return;
+      edit('**a ==hi|gh== b**');
+      final marks = app.marksAtCaret();
+      expect(marks, containsAll([MdInline.bold, MdInline.highlight]));
+    });
+  });
+
   group('a code cell is not prose', () {
     test('Ctrl+B does not inject Markdown into source code', () {
       if (!haveSqlite) return;
