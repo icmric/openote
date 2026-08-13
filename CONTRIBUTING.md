@@ -29,6 +29,23 @@ Thank you for your interest in Openote — an open-source, cross-platform altern
 > the sidebar's double-click window uses an injectable `sidebarNow` for the same
 > reason.
 >
+> **A timeout is the one number that should be generous.** It is a hang guard,
+> not a performance bar, so it must clear the slowest machine that will ever run
+> it. The `test` package's 30-second default is chosen for an ordinary unit
+> test; a case that spawns real subprocesses (the git suites run `init`,
+> `config`, `clone`, `commit`, `push`) takes 20 s on an idle sixteen-core
+> machine and simply does not fit. Those files carry
+> `@Timeout(Duration(minutes: 3))`, and the failure it prevents is the nastiest
+> kind: intermittent, one platform, one test at a time, reported as
+> "TimeoutException after 0:00:30" with nothing in it about git.
+
+> **Reproducing a CI-only failure: constrain the cores, don't add load.** GitHub
+> runners have about two. Piling burner threads onto a sixteen-core box does not
+> emulate that — the suite passed sixteen burners deep and still failed on CI.
+> Pinning the test process to two cores reproduced it on the first run
+> (`$p.ProcessorAffinity = [IntPtr]3` around `flutter test`), and turned one
+> intermittent failure into six deterministic ones.
+
 > **Licensing is ratified** ([ADR-0005](docs/adr/ADR-0005-licensing.md), 2026-07-27): **AGPL-3.0-or-later** for the app, **Apache-2.0** for `onote_core`, **CC0-1.0** for the format specs. Contributions are accepted under the licence of the directory they touch. See [LICENSING.md](LICENSING.md) — and note the invariant that **`onote_core` must never gain a copyleft dependency**.
 
 ## Ways to help right now

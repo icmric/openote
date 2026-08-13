@@ -1,3 +1,20 @@
+// A generous per-test timeout, because these spawn REAL git.
+//
+// The `test` package's default is 30 seconds, which was never a decision
+// about these — it is the framework's number for an ordinary unit test. One
+// case here runs `git init`, three `git config`s, a clone, a commit and a
+// push, each its own process: 20 s for this file on an idle sixteen-core
+// machine, and the ceiling is per test rather than per file. On a two-core CI
+// runner that is a coin flip, and it landed exactly as you would expect —
+// intermittently, on Windows, one test at a time, with an error
+// ("TimeoutException after 0:00:30") that says nothing about git.
+//
+// Three minutes is not a performance bar; it is a hang guard. A remote that
+// wants a password already fails fast (GIT_TERMINAL_PROMPT=0), so anything
+// still running at three minutes is genuinely stuck.
+@Timeout(Duration(minutes: 3))
+library;
+
 // Joining a notebook from a git URL — the other end of publishing one.
 //
 // "Seems like the push side of things works. Work on pulling from it now."
