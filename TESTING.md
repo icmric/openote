@@ -165,7 +165,66 @@ human is the end-to-end with a real client:
       0.7.1 — 0.7.0 should offer it, download, install and relaunch
       by itself. This is the whole update-through-app loop, live.
 
-### 2.7 Small recent things
+### 2.7 Text editing — the big round (NEW, all five of your reports)
+
+Lists, in a text box:
+
+- [ ] Type `- milk` and press **Enter** — the next bullet should already be
+      there. Same with `* `, `+ `, `1. ` and `- [ ] `.
+- [ ] **Enter on an empty bullet** leaves the list. If the bullet is
+      indented, each Enter steps out one level first.
+- [ ] **Tab** indents the item, **Shift+Tab** outdents. (Tab used to jump
+      out of the box entirely.) Tab on the FIRST item of a list correctly
+      does nothing — it would have no parent.
+- [ ] **Backspace** at the start of an item's text removes the bullet and
+      keeps the words; on a nested item it outdents first.
+- [ ] Make five numbered items: they should read 1–5 even though the
+      button writes "1." each time. Delete the middle one — the rest
+      renumber.
+- [ ] **Shift+Enter** gives a second line inside the same bullet.
+
+The jump you reported:
+
+- [ ] Click into a bulleted list. **Nothing should move sideways** — the
+      words should stay exactly where they were. Check a nested list too,
+      and a checkbox list, and a numbered one.
+
+Formatting:
+
+- [ ] Put the cursor in a word (no selection) and press **Ctrl+B** — that
+      word goes bold, and **no asterisks appear**. Press it again with the
+      cursor still in the word: the bold comes off.
+- [ ] The **Bold button should look switched on** whenever the cursor is
+      inside bold text. Same for italic, highlight, code, etc.
+- [ ] Ctrl+B then Ctrl+I on a word → it should be bold AND italic, with no
+      stray `*` anywhere.
+- [ ] Type `2 * 3 * 4` — the asterisks must stay visible and nothing goes
+      italic. Type `snake_case_name` — the underscores stay.
+- [ ] Ctrl+B inside a **code block** should do nothing at all.
+
+Import (needs a re-import of a OneNote section):
+
+- [ ] Blank lines you left between paragraphs should now come through.
+- [ ] Text that was **bold and italic** should arrive as both, with no
+      leftover asterisks around it.
+
+### 2.8 Code blocks — NEW
+
+- [ ] Type `(`, `[`, `{`, `"` — the closing one should appear with the
+      cursor between. Type the closing one yourself: it should step over,
+      not double up. Backspace between an empty pair removes both.
+- [ ] Type `{`, press Enter — you should land on a blank indented line with
+      the `}` on its own line below.
+- [ ] **Tab** indents (two spaces, four for C/C++/C#/Java), **Shift+Tab**
+      outdents; select several lines and try both.
+- [ ] Paste some Python (or C++, or SQL) into a fresh code block — the
+      language label should change by itself. Then pick a language from the
+      menu and paste something else: it must **not** override your choice.
+- [ ] Open the language menu: SQL and JavaScript should be at the top under
+      "Runs on this device" with a Run badge, then C → C++ → C#.
+- [ ] Ctrl+Z should undo a Tab indent and a language change.
+
+### 2.9 Small recent things
 
 - [ ] **Ctrl+/** — the keyboard shortcut reference, from anywhere including
       mid-typing. Same chord or Esc closes it; View tab has a button too.

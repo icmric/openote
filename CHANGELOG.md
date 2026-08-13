@@ -4,6 +4,91 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — lists work the way lists work everywhere
+
+- **Enter continues a list.** Type `- milk`, press Enter, and the next
+  bullet is already there — with the marker you used, the indent you were
+  at, and the next number if it is a numbered list. Enter on an empty item
+  leaves the list; on an empty *nested* item it steps out one level, so a
+  run of Enters walks back out of a deep outline instead of trapping you.
+- **Tab nests, Shift+Tab un-nests.** Tab used to leave the text box
+  entirely, which made outlining impossible.
+- **Backspace at the start of an item unwraps it** — outdenting first if
+  it is nested — instead of eating the marker one character at a time.
+- **Numbered lists count themselves.** They never renumbered before, so
+  the toolbar's "1. " on five lines rendered "1. 1. 1. 1. 1." and deleting
+  an item left a hole. A list you deliberately start at 7 still counts
+  7, 8, 9.
+- **Shift+Enter** adds a second line inside the same bullet.
+- `* item` and `+ item` are bullets too. They used to grey out like a real
+  marker while you typed and come back as plain text when you clicked
+  away — the editor promising something the page would not honour. No
+  setting was added for which character to use: Enter simply continues
+  with whichever one that line already has.
+
+### Fixed — the text stops moving when you click into it
+
+- Bulleted lines jumped sideways on entering edit mode, and the error grew
+  with every nesting level. The editor now hangs the bullet in the same
+  gutter the page uses, so the words start in exactly the same place
+  whether you are reading or writing — at any depth, for bullets, numbers
+  and tasks alike.
+
+### Fixed — bold, italic and the rest
+
+- **Ctrl+B with nothing selected now formats the word your cursor is in**
+  instead of writing a bare `****` into the note that no amount of typing
+  removes — and one Backspace could leave `***` behind. It can no longer
+  leave unbalanced markers at all.
+- **The toolbar lights up** for whatever is switched on where your cursor
+  is, which is how you can tell without the symbols being visible.
+- **Turning formatting off works from inside the word**, not only when you
+  select it exactly. Before, a cursor inside bold text plus Ctrl+B quietly
+  nested a second pair and everything typed afterwards came out un-bold.
+- **`***bold italic***` renders as both.** It came out bold with a stray
+  asterisk beside it — the imported-formatting bug, and reachable without
+  importing anything by pressing Ctrl+B then Ctrl+I.
+- Literal asterisks and underscores are safe: `2 * 3 * 4` and
+  `snake_case_name` keep their characters instead of silently becoming
+  emphasis and losing them.
+- Ctrl+B no longer injects Markdown into a **code block**, the heading
+  button no longer crashes at the very start of a block, the bullet button
+  no longer destroys a checkbox or eats indentation, and "blank out" now
+  actually saves (it wrote the change and threw it away one frame later).
+
+### Added — the code block types like a code editor
+
+- **Pairs close themselves.** Typing `(`, `[`, `{`, `"`, `'` or a backtick
+  adds the partner with the cursor between them; typing the closing one
+  when it is already there steps over it instead of doubling it; Backspace
+  between an empty pair removes both.
+- **Enter between `{` and `}`** opens a blank indented line and moves the
+  `}` down to its own line, at the right indent. Enter anywhere else keeps
+  the current line's indentation, and adds a level after a line that opens
+  a block (or ends in `:` in Python).
+- **Tab indents, Shift+Tab outdents** — including every line of a
+  multi-line selection.
+- **The language names itself.** A cell works out whether it is Python,
+  C++, SQL, JSON and so on from what you have typed, and never overrides a
+  language you picked yourself. It needs to be reasonably sure, so a
+  two-line snippet is left alone rather than guessed at.
+- **C++ and C# are supported**, with the tokens that actually distinguish
+  them (`#include`, `std::`, `nullptr`; `using System;`, `namespace`,
+  `[Attributes]`).
+- **The language list is grouped and ordered sensibly** — the two that
+  actually run on your device come first with a Run badge, then the C
+  family, then everything else — so what will execute is visible before
+  you type anything.
+- Fixed on the way through: indentation added with Tab could not be
+  undone, picking a language could not be undone, and a block imported as
+  ```javascript showed a Run button that then said "No runner for node".
+
+### Fixed — blank lines survive the OneNote import
+
+- An empty paragraph produced no line at all, so the gaps you left between
+  thoughts were gone before the page was built. Existing imports are not
+  rewritten; re-import to get the spacing back.
+
 ### Fixed
 - **CI is green again on all four app platforms — and the cause was not what it looked like.** The red Analyze step was one real `unused_field` warning left behind by the PDF rework, invisible on the dev machine because a local check filtered analyzer output down to nothing and reported success regardless. The field is gone. Two genuine hardenings came out of chasing it: the Flutter SDK is now **pinned** in CI and release (an SDK release could previously change what every branch built with, with no commit to bisect), and six tests that asserted on wall-clock time — "200 calls in under 50 ms", "first progress inside the first quarter of the import" — now count the work instead (page reads, directory listings, measurement round-trips), because `flutter test` runs files in parallel and a stopwatch bar measures the machine's spare CPU, not the code.
 - **The intermittent Windows CI failure is fixed.** The git suites spawn real git — `init`, `config`, `clone`, `commit`, `push`, each its own process — and were running under the test framework's default 30-second timeout, which was never a decision about them. They take 20 seconds on an idle sixteen-core machine, so on a two-core CI runner one test crossing the line was a coin flip. They now carry a three-minute hang guard.

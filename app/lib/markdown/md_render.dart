@@ -6,6 +6,7 @@ import 'package:flutter_math_fork/flutter_math.dart';
 import '../core/platform_open.dart';
 import '../model/tags.dart';
 import '../theme/onote_theme.dart';
+import 'md_syntax.dart';
 import 'md_table.dart';
 import '../editor/flashcard_view.dart';
 import '../study/flashcards.dart' show inlineCardRe;
@@ -24,37 +25,23 @@ import '../study/flashcards.dart' show inlineCardRe;
 // `_renderLine`, i.e. eight `RegExp`s per line — ~4000 allocations to parse a
 // 500-line imported text block, re-paid on every edit of that block.
 final _reHeading = RegExp(r'^(#{1,3})\s+(.*)$');
-final _reCheckbox = RegExp(r'^(\s*)- \[( |x|X)\]\s?(.*)$');
+final _reCheckbox = mdCheckboxRe;
 final _reCheckMark = RegExp(r'\[(x|X)\]');
-final _reBullet = RegExp(r'^(\s*)-\s+(.*)$');
-final _reNumbered = RegExp(r'^(\s*)(\d+)\.\s+(.*)$');
+// `* item` and `+ item` are bullets too — this used to accept only `-`,
+// so the editor greyed a `* ` marker the reader then ignored.
+final _reBullet = mdBulletRe;
+final _reNumbered = mdNumberedRe;
 final _reImage =
     RegExp(r'^(\s*)!\[([^\]]*)\]\(([^)\s]+)(?:\s+=(\d+)x(\d+))?\)\s*$');
 final _reQuote = RegExp(r'^>\s?(.*)$');
 final _reDisplayMath = RegExp(r'^\s*\$\$(.+)\$\$\s*$');
-final _reDivider = RegExp(r'^\s*(-{3,}|\*{3,})\s*$');
+final _reDivider = mdDividerRe;
 // A plain paragraph carrying the 2-spaces-per-level indent encoding. Only
 // matched after every other line form, so lists/checkboxes/images (which do
 // their own indent handling) never reach it.
 final _rePlainIndent = RegExp(r'^( +)(\S.*)$');
-// The 12-branch inline alternation, also compiled once per process rather than
-// once per rendered line.
-final _reInline = RegExp(
-    r'(\[\[([^\]|]+)(?:\|([^\]]+))?\]\])|(\*\*(.+?)\*\*)|(\*(.+?)\*)|(`(.+?)`)|(~~(.+?)~~)|(==(.+?)==)|(\$([^$\n]+?)\$)|(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})'
-    // Groups 19-21: an external link `[label](url)`. Kept AFTER the wiki-link
-    // branch so `[[Page]]` still wins, and appended at the end of the
-    // alternation so the existing group numbers above are untouched.
-    r'|(\[([^\]\[]+)\]\((https?://[^)\s]+|mailto:[^)\s]+)\))'
-    // Group 22-23: `++underline++`. Markdown has no underline and `__x__` means
-    // bold, so the dialect borrows the `==highlight==` shape (Data Model §5.2).
-    r'|(\+\+(.+?)\+\+)'
-    // Groups 24-25: a BARE url, autolinked. A URL typed or pasted into a note
-    // is a link in every other app; requiring `[label](url)` syntax to make it
-    // clickable is a Markdown detail nobody asked to learn. Last in the
-    // alternation so an explicit `[label](url)` (group 19) always wins at the
-    // same position, and the lookbehind keeps it from firing mid-word or on the
-    // `(url)` half of a link the scanner has already stepped over.
-    r'|((?:^|(?<=[\s(<]))(https?://[^\s)\]<]+))');
+// The inline alternation now lives in md_syntax.dart, shared with the live
+// editor so reading and writing cannot drift apart.
 
 /// Indent per nesting level, as a multiple of the text's font size.
 ///
@@ -421,13 +408,22 @@ class _MarkdownViewState extends State<MarkdownView> {
       );
     }
 
+    // A rule BEFORE a bullet. Now that `*` and `+` are bullet characters,
+    // `* * *` would otherwise parse as a bullet whose body is `* *`.
+    if (_reDivider.hasMatch(line)) return const Divider(height: 12);
+
     // Bullet / numbered
     final bullet = _reBullet.firstMatch(line);
     final numbered = _reNumbered.firstMatch(line);
     if (bullet != null || numbered != null) {
       final indent =
           indentPx((bullet ?? numbered)!.group(1)!.length, baseStyle.fontSize);
-      final marker = bullet != null ? '•' : '${numbered!.group(2)}.';
+      // The delimiter the writer used, not a decreed one: `2) item` used to
+      // draw as `2.` when read and `2)` while editing, so the glyph changed
+      // under the caret.
+      final marker = bullet != null
+          ? '•'
+          : '${numbered!.group(2)}${line.trimLeft().startsWith(RegExp(r'\d+\)')) ? ')' : '.'}';
       final body = bullet != null ? bullet.group(2)! : numbered!.group(3)!;
       return Padding(
         // The marker HANGS in the left gutter, so the body text lands exactly on
@@ -558,10 +554,7 @@ class _MarkdownViewState extends State<MarkdownView> {
       );
     }
 
-    // Divider
-    if (_reDivider.hasMatch(line)) {
-      return const Divider(height: 12);
-    }
+    // (The divider is matched above, before bullets can claim `* * *`.)
 
     // Indented plain paragraph: leading spaces are an INDENT ENCODING
     // (2 spaces = 1 level, same as lists), not content. Rendering them as
@@ -596,106 +589,117 @@ class _MarkdownViewState extends State<MarkdownView> {
 List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
     [void Function(String label, String? id)? onWikiLink]) {
   final spans = <InlineSpan>[];
-  final pattern = _reInline;
+  final pattern = mdInlineRe;
   var last = 0;
   for (final m in pattern.allMatches(text)) {
     if (m.start > last) {
       spans.add(TextSpan(text: text.substring(last, m.start)));
     }
-    if (m.group(1) != null) {
-      // Wiki-link [[label|id]]
-      final label = m.group(2)!;
-      final id = m.group(3);
-      spans.add(WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: _WikiLink(
-          label: label,
-          onTap: onWikiLink == null ? null : () => onWikiLink(label, id),
-          color: dark ? OnoteColors.ink300 : OnoteColors.ink600,
-        ),
-      ));
-    } else if (m.group(16) != null) {
-      // Coloured text {{#RRGGBB[AA] text}}
-      final hx = m.group(17)!;
-      final v = int.parse(hx, radix: 16);
-      spans.add(TextSpan(
-        text: m.group(18),
-        style: TextStyle(
-            color: hx.length == 8
-                ? Color(((v & 0xFF) << 24) | (v >> 8))
-                : Color(0xFF000000 | v)),
-      ));
-    } else if (m.group(14) != null) {
-      // Inline math $…$
-      spans.add(WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: Math.tex(
-          m.group(15)!,
-          textStyle: base,
-          onErrorFallback: (e) => Text(m.group(15)!,
-              style: const TextStyle(
-                  fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, color: OnoteColors.graphite400)),
-        ),
-      ));
-    } else if (m.group(19) != null) {
-      // External link [label](url) — opened with the OS default browser.
-      final label = m.group(20)!;
-      final url = m.group(21)!;
-      spans.add(WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: _ExternalLink(
+    // One classifier, shared with the live editor (markdown/md_syntax.dart),
+    // so reading and writing can never disagree about what a run of text is.
+    final c = classifyInline(m);
+    switch (c.kind) {
+      case MdInline.wikiLink:
+        final label = c.label!;
+        final id = c.target;
+        spans.add(WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: _WikiLink(
             label: label,
-            url: url,
-            base: base,
-            color: dark ? OnoteColors.ink300 : OnoteColors.ink600),
-      ));
-    } else if (m.group(24) != null) {
-      // A bare URL. Trailing sentence punctuation belongs to the writer, not
-      // to the address — "see https://a.test/x." must not link the full stop.
-      final raw = m.group(25)!;
-      final url = raw.replaceFirst(RegExp(r'[.,;:!?]+$'), '');
-      spans.add(WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: _ExternalLink(
-            label: _shortUrl(url),
-            url: url,
-            base: base,
-            color: dark ? OnoteColors.ink300 : OnoteColors.ink600),
-      ));
-      if (url.length < raw.length) {
-        spans.add(TextSpan(text: raw.substring(url.length)));
-      }
-    } else if (m.group(22) != null) {
-      spans.add(TextSpan(
-          text: m.group(23),
-          style: const TextStyle(decoration: TextDecoration.underline)));
-    } else if (m.group(4) != null) {
-      spans.add(TextSpan(
-          text: m.group(5), style: const TextStyle(fontWeight: FontWeight.w600)));
-    } else if (m.group(6) != null) {
-      spans.add(TextSpan(
-          text: m.group(7), style: const TextStyle(fontStyle: FontStyle.italic)));
-    } else if (m.group(8) != null) {
-      spans.add(TextSpan(
-        text: m.group(9),
-        style: TextStyle(
-          fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback,
-          fontSize: (base.fontSize ?? 14) * 0.9,
-          color: dark ? OnoteColors.ink300 : OnoteColors.ink700,
-          backgroundColor: dark ? OnoteColors.night100 : OnoteColors.paper100,
-        ),
-      ));
-    } else if (m.group(10) != null) {
-      spans.add(TextSpan(
-          text: m.group(11),
-          style: const TextStyle(decoration: TextDecoration.lineThrough)));
-    } else if (m.group(12) != null) {
-      spans.add(TextSpan(
-          text: m.group(13),
+            onTap: onWikiLink == null ? null : () => onWikiLink(label, id),
+            color: dark ? OnoteColors.ink300 : OnoteColors.ink600,
+          ),
+        ));
+      case MdInline.colour:
+        final hx = c.target!;
+        final v = int.parse(hx, radix: 16);
+        spans.add(TextSpan(
+          text: c.inner,
           style: TextStyle(
-              backgroundColor: dark
-                  ? OnoteColors.brass700.withValues(alpha: .45)
-                  : const Color(0xFFF7E27A))));
+              color: hx.length == 8
+                  ? Color(((v & 0xFF) << 24) | (v >> 8))
+                  : Color(0xFF000000 | v)),
+        ));
+      case MdInline.math:
+        spans.add(WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Math.tex(
+            c.inner,
+            textStyle: base,
+            onErrorFallback: (e) => Text(c.inner,
+                style: const TextStyle(
+                    fontFamily: 'JetBrains Mono',
+                    fontFamilyFallback: onoteFontFallback,
+                    color: OnoteColors.graphite400)),
+          ),
+        ));
+      case MdInline.extLink:
+        spans.add(WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: _ExternalLink(
+              label: c.label!,
+              url: c.target!,
+              base: base,
+              color: dark ? OnoteColors.ink300 : OnoteColors.ink600),
+        ));
+      case MdInline.bareUrl:
+        // Trailing sentence punctuation belongs to the writer, not to the
+        // address — "see https://a.test/x." must not link the full stop.
+        final raw = c.target!;
+        final url = raw.replaceFirst(RegExp(r'[.,;:!?]+$'), '');
+        spans.add(WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: _ExternalLink(
+              label: _shortUrl(url),
+              url: url,
+              base: base,
+              color: dark ? OnoteColors.ink300 : OnoteColors.ink600),
+        ));
+        if (url.length < raw.length) {
+          spans.add(TextSpan(text: raw.substring(url.length)));
+        }
+      case MdInline.underline:
+        spans.add(TextSpan(
+            text: c.inner,
+            style: const TextStyle(decoration: TextDecoration.underline)));
+      case MdInline.boldItalic:
+        // `***both***`. Without this branch the `**` alternative claimed it
+        // as `***both**`, which rendered bold with a stray asterisk — the
+        // reported import bug, and reachable by pressing Ctrl+B then Ctrl+I.
+        spans.add(TextSpan(
+            text: c.inner,
+            style: const TextStyle(
+                fontWeight: FontWeight.w600, fontStyle: FontStyle.italic)));
+      case MdInline.bold:
+        spans.add(TextSpan(
+            text: c.inner,
+            style: const TextStyle(fontWeight: FontWeight.w600)));
+      case MdInline.italic:
+        spans.add(TextSpan(
+            text: c.inner,
+            style: const TextStyle(fontStyle: FontStyle.italic)));
+      case MdInline.code:
+        spans.add(TextSpan(
+          text: c.inner,
+          style: TextStyle(
+            fontFamily: 'JetBrains Mono',
+            fontFamilyFallback: onoteFontFallback,
+            fontSize: (base.fontSize ?? 14) * 0.9,
+            color: dark ? OnoteColors.ink300 : OnoteColors.ink700,
+            backgroundColor: dark ? OnoteColors.night100 : OnoteColors.paper100,
+          ),
+        ));
+      case MdInline.strike:
+        spans.add(TextSpan(
+            text: c.inner,
+            style: const TextStyle(decoration: TextDecoration.lineThrough)));
+      case MdInline.highlight:
+        spans.add(TextSpan(
+            text: c.inner,
+            style: TextStyle(
+                backgroundColor: dark
+                    ? OnoteColors.brass700.withValues(alpha: .45)
+                    : const Color(0xFFF7E27A))));
     }
     last = m.end;
   }

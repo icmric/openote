@@ -4,7 +4,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../markdown/md_render.dart' show indentPx;
+import '../markdown/md_render.dart' show indentPx, kBulletGutter;
+import '../markdown/md_syntax.dart';
 import '../theme/onote_theme.dart';
 import '../study/flashcards.dart' show inlineCardRe;
 import '../theme/tokens.dart';
@@ -130,17 +131,16 @@ class LiveMarkdownController extends TextEditingController {
     onSelfEdit?.call();
   }
 
-  // Inline: **b** __b__ *i* _i_ `c` ~~s~~ ==h== ++u++ {{#hex text}}
-  // `++u++` is appended LAST so the group numbers the dispatch below relies on
-  // are unchanged.
-  static final _inlineRe = RegExp(
-      r'(\*\*(.+?)\*\*)|(__(.+?)__)|(\*(.+?)\*)|(_(.+?)_)|(`(.+?)`)|(~~(.+?)~~)|(==(.+?)==)|(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})'
-      r'|(\+\+(.+?)\+\+)');
-  static final _headingRe = RegExp(r'^(#{1,6})( +)');
+  // The inline grammar lives in markdown/md_syntax.dart, shared with the read
+  // renderer. `#{1,3}`, not `#{1,6}`: the reader draws three levels, so a
+  // fourth hash used to look like a heading while typing and print its hashes
+  // when read.
+  static final _inlineRe = mdInlineRe;
+  static final _headingRe = mdHeadingRe;
 
   /// The same line shapes md_render gives extra vertical room to — kept
   /// textually in step with `_reCheckbox` / `_reQuote` there.
-  static final _checkboxLineRe = RegExp(r'^(\s*)- \[( |x|X)\]');
+  static final _checkboxLineRe = RegExp(r'^([ 	]*)[-*+] \[( |x|X)\]');
   static final _quoteLineRe = RegExp(r'^>\s?');
 
   /// A whole line that is nothing but an image reference — the in-flow form
@@ -149,7 +149,15 @@ class LiveMarkdownController extends TextEditingController {
   /// Groups: 1 indent, 2 alt, 3 src, 4 width, 5 height.
   static final _imageLineRe =
       RegExp(r'^(\s*)!\[([^\]]*)\]\(([^)\s]+)(?:\s+=(\d+)x(\d+))?\)\s*$');
-  static final _prefixRe = RegExp(r'^(\s*)(- \[[ xX]\] |[-*] |\d+\. |> )');
+  // Every marker the reader honours — `+` and `1)` were missing, so those
+  // lines were styled as prose while typing and as lists when read.
+  // The gap is `[ \t]+`, matching the shared line grammar. Demanding exactly
+  // ONE space made a tab-gapped or double-spaced list line prose to the
+  // editor and a list to the reader and to the key engine — so it still
+  // jumped sideways on click-in, and Enter continued a list the editor did
+  // not believe existed.
+  static final _prefixRe = RegExp(
+      r'^([ \t]*)([-*+] \[[ xX]\][ \t]+|[-*+][ \t]+|\d{1,9}[.)][ \t]+|>[ \t]?)');
 
   @override
   TextSpan buildTextSpan(
@@ -323,6 +331,20 @@ class LiveMarkdownController extends TextEditingController {
   TextStyle _dim(TextStyle base) =>
       base.copyWith(color: OnoteColors.graphite400);
 
+  /// What the read renderer draws in the gutter for this marker, or null for
+  /// a shape that keeps its literal prefix (a quote, which has its own rail).
+  ///
+  /// A checkbox shows its state as a box, so a task looks the same whether or
+  /// not the caret is in it — the completed-task strikethrough used to vanish
+  /// the moment you clicked in.
+  static String? _markerGlyph(String marker) {
+    if (marker.startsWith('>')) return null;
+    final m = marker.trimRight();
+    if (m.endsWith(']')) return m.contains(RegExp('[xX]')) ? '☑' : '☐';
+    if (RegExp(r'^\d').hasMatch(m)) return m; // `12.` keeps its number
+    return '•';
+  }
+
   void _buildLine(String line, int lineStart, TextStyle base, int lo, int hi,
       List<InlineSpan> out) {
     final lineEnd = lineStart + line.length;
@@ -456,10 +478,76 @@ class LiveMarkdownController extends TextEditingController {
       return;
     }
 
-    // List / quote / checkbox: keep the prefix (dimmed) so items stay aligned.
-    final p = _prefixRe.firstMatch(line);
+    // ── List lines: the marker HANGS, exactly as it does when reading ──
+    //
+    // The read renderer indents a list line by `indentPx(spaces)` and then
+    // hangs its bullet in a 22px gutter, so the body starts at
+    // `max(indent, 22)`. This used to emit the raw prefix as dimmed literal
+    // text — about 9px for `- ` — so every bulleted line jumped ~13px
+    // sideways on click-in, and every nesting level added 36.75px when
+    // reading against 8.94px (two literal spaces) when writing: 27.81px of
+    // drift per level. That was the reported "large amount of content
+    // movement with dot points".
+    //
+    // The fix uses the placeholder trick this file already relies on for
+    // pictures and cards: a WidgetSpan occupies ONE code unit, so it stands
+    // for the prefix's FIRST character and the rest trails hidden. The line
+    // keeps exactly as many code units as the source, so not one caret
+    // offset moves — the coverage check above proves it on every keystroke.
+    // A divider is not a list, however much `- - -` looks like one to a
+    // bullet regex. It drew a bullet while editing and a horizontal rule
+    // when read.
+    final p = mdDividerRe.hasMatch(line) ? null : _prefixRe.firstMatch(line);
     if (p != null) {
-      out.add(TextSpan(text: line.substring(0, p.end), style: _dim(base)));
+      final prefix = line.substring(0, p.end);
+      final indent = indentPx(p.group(1)!.length, base.fontSize);
+      final marker = p.group(2)!;
+      // A quote keeps its own rail in the read renderer, so only the three
+      // list shapes hang. Anything else falls back to the literal prefix.
+      final glyph = _markerGlyph(marker);
+      if (glyph != null) {
+        final bodyStart = math.max(indent, kBulletGutter);
+        // BASELINE alignment, not `top`: a top-aligned placeholder is laid
+        // out against the top of the font and the line's half-leading sits
+        // above it, which grew every list line by 5-12px and broke the
+        // vertical parity these renderers already had. Sitting the glyph on
+        // the text baseline keeps the line box exactly the height the text
+        // alone would have made it.
+        out.add(_SourceSpan(
+          source: prefix.substring(0, 1),
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: SizedBox(
+            width: bodyStart,
+            child: Padding(
+              padding: EdgeInsets.only(
+                  left: (bodyStart - kBulletGutter).clamp(0.0, double.infinity)),
+              child: Text(glyph,
+                  maxLines: 1,
+                  style: base.copyWith(color: OnoteColors.graphite500)),
+            ),
+          ),
+        ));
+        out.add(TextSpan(text: prefix.substring(1), style: _hidden(base)));
+        // A DONE task keeps its strikethrough and its grey while the caret is
+        // in it. Drawing only the ticked box meant a completed task lost both
+        // the moment you clicked on the line — the comment above claimed the
+        // parity that this line actually provides.
+        final done = glyph == '☑';
+        _inline(
+            line.substring(p.end),
+            lineStart + p.end,
+            done
+                ? base.copyWith(
+                    decoration: TextDecoration.lineThrough,
+                    color: OnoteColors.graphite400)
+                : base,
+            lo,
+            hi,
+            out);
+        return;
+      }
+      out.add(TextSpan(text: prefix, style: _dim(base)));
       _inline(line.substring(p.end), lineStart + p.end, base, lo, hi, out);
       return;
     }
@@ -478,44 +566,56 @@ class LiveMarkdownController extends TextEditingController {
       final absEnd = regionStart + m.end;
       final reveal = _touches(absStart, absEnd, lo, hi);
 
-      var openLen = 2, closeLen = 2;
-      TextStyle inner;
-      if (m.group(1) != null) {
-        inner = cBase.copyWith(fontWeight: FontWeight.w700);
-      } else if (m.group(3) != null) {
-        inner = cBase.copyWith(fontWeight: FontWeight.w700);
-      } else if (m.group(5) != null) {
-        openLen = closeLen = 1;
-        inner = cBase.copyWith(fontStyle: FontStyle.italic);
-      } else if (m.group(7) != null) {
-        openLen = closeLen = 1;
-        inner = cBase.copyWith(fontStyle: FontStyle.italic);
-      } else if (m.group(9) != null) {
-        openLen = closeLen = 1;
-        inner = cBase.copyWith(
-            fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback,
-            color: dark ? OnoteColors.ink300 : OnoteColors.ink700,
-            backgroundColor:
-                dark ? OnoteColors.night100 : OnoteColors.paper100);
-      } else if (m.group(11) != null) {
-        inner = cBase.copyWith(decoration: TextDecoration.lineThrough);
-      } else if (m.group(13) != null) {
-        inner = cBase.copyWith(
-            backgroundColor: dark
-                ? OnoteColors.brass700.withValues(alpha: .45)
-                : const Color(0xFFF7E27A));
-      } else if (m.group(18) != null) {
-        inner = cBase.copyWith(decoration: TextDecoration.underline);
-      } else {
-        // {{#RRGGBB[AA] text}} — asymmetric markers ('{{#'+hex+' ' … '}}')
-        final hex = m.group(16)!;
-        openLen = hex.length + 4;
-        closeLen = 2;
-        final v = int.parse(hex, radix: 16);
-        inner = cBase.copyWith(
-            color: hex.length == 8
-                ? Color(((v & 0xFF) << 24) | (v >> 8))
-                : Color(0xFF000000 | v));
+      // One classifier, shared with the read renderer (markdown/md_syntax.dart)
+      // — the two used to carry hand-numbered copies of the alternation and
+      // disagreed about `***both***`, `_italic_` and `snake_case`.
+      final c = classifyInline(m);
+      var openLen = c.openLen, closeLen = c.closeLen;
+      final TextStyle inner;
+      switch (c.kind) {
+        case MdInline.boldItalic:
+          inner = cBase.copyWith(
+              fontWeight: FontWeight.w600, fontStyle: FontStyle.italic);
+        case MdInline.bold:
+          // w600 — the read renderer's weight. It used to be w700 here, so
+          // bold text physically changed shape on entering edit mode.
+          inner = cBase.copyWith(fontWeight: FontWeight.w600);
+        case MdInline.italic:
+          inner = cBase.copyWith(fontStyle: FontStyle.italic);
+        case MdInline.code:
+          inner = cBase.copyWith(
+              fontFamily: 'JetBrains Mono',
+              fontFamilyFallback: onoteFontFallback,
+              fontSize: (cBase.fontSize ?? 14) * 0.9,
+              color: dark ? OnoteColors.ink300 : OnoteColors.ink700,
+              backgroundColor:
+                  dark ? OnoteColors.night100 : OnoteColors.paper100);
+        case MdInline.strike:
+          inner = cBase.copyWith(decoration: TextDecoration.lineThrough);
+        case MdInline.highlight:
+          inner = cBase.copyWith(
+              backgroundColor: dark
+                  ? OnoteColors.brass700.withValues(alpha: .45)
+                  : const Color(0xFFF7E27A));
+        case MdInline.underline:
+          inner = cBase.copyWith(decoration: TextDecoration.underline);
+        case MdInline.colour:
+          final hex = c.target!;
+          final v = int.parse(hex, radix: 16);
+          inner = cBase.copyWith(
+              color: hex.length == 8
+                  ? Color(((v & 0xFF) << 24) | (v >> 8))
+                  : Color(0xFF000000 | v));
+        case MdInline.wikiLink:
+        case MdInline.extLink:
+        case MdInline.bareUrl:
+        case MdInline.math:
+          // The editor has no live form for these yet, so they stay legible
+          // source. Zero-width markers would hide half a URL and leave the
+          // caret walking through characters nobody can see.
+          openLen = closeLen = 0;
+          inner = cBase.copyWith(
+              color: dark ? OnoteColors.ink300 : OnoteColors.ink600);
       }
 
       final markStyle = reveal ? _dim(cBase) : _hidden(cBase);
@@ -604,6 +704,7 @@ class _SourceSpan extends WidgetSpan {
     required this.source,
     required super.child,
     super.alignment,
+    super.baseline,
   });
 
   /// The raw text this placeholder was emitted in place of.

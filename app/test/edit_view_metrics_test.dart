@@ -97,6 +97,52 @@ void main() {
       }
     });
 
+    // ── Horizontal parity for LISTS ──────────────────────────────────────
+    //
+    // The reported bug: "editing mode still has a large amount of content
+    // movement with dot points — when editing they are much closer to the
+    // left than when viewing". Only vertical height and the width of PLAIN
+    // sentences were pinned before, which is exactly why a 10px jump on
+    // every bullet and 28px per nesting level went unnoticed.
+    //
+    // Width is the measurable proxy: both renderers lay out the same body
+    // text, so if their intrinsic widths agree, the body starts at the same
+    // x. Read mode hangs its marker in a gutter; edit mode now does too.
+    group('a list line does not move sideways on click-in', () {
+      const style = TextStyle(fontSize: 15, height: 1.5, letterSpacing: 0.25);
+
+      Future<void> sameWidth(WidgetTester t, String text,
+          {required String why}) async {
+        final read = await widthOf(t, readView(text, style));
+        final edit = await widthOf(t, editField(text, style));
+        // Same 3px caret reservation the plain-text case allows for.
+        expect(edit - read, closeTo(3.0, 2.5),
+            reason: '$why — read=$read edit=$edit for "$text"');
+      }
+
+      testWidgets('a top-level bullet', (t) async {
+        await sameWidth(t, '- milk', why: 'the 22px hanging gutter');
+      });
+
+      testWidgets('every bullet character lands identically', (t) async {
+        for (final m in ['-', '*', '+']) {
+          await sameWidth(t, '$m milk', why: '"$m " must hang like "- "');
+        }
+      });
+
+      testWidgets('nesting steps by the same amount in both', (t) async {
+        await sameWidth(t, '  - one level', why: 'indentPx per level');
+        await sameWidth(t, '    - two levels', why: 'error compounds');
+        await sameWidth(t, '      - three levels', why: 'error compounds');
+      });
+
+      testWidgets('numbered items and tasks hang too', (t) async {
+        await sameWidth(t, '1. first', why: 'the number hangs');
+        await sameWidth(t, '- [ ] a task', why: 'the box hangs');
+        await sameWidth(t, '- [x] done', why: 'a ticked box hangs');
+      });
+    });
+
     testWidgets('baseStyle pins it rather than inheriting', (t) async {
       // If this ever goes back to null, all three paths diverge again.
       final b = Block(

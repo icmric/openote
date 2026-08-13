@@ -16,6 +16,8 @@ import '../export/pdf_export.dart';
 import '../export/pdf_vector_export.dart';
 import '../export/pdf_import.dart';
 import '../export/print_page.dart';
+import '../editor/list_editing.dart';
+import '../markdown/md_syntax.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
@@ -326,10 +328,17 @@ class _CommandBarState extends State<CommandBar> {
   Widget _homeRow(BuildContext context) {
     // Enable from state, not child build order (fixes the greyed-out bug).
     final canFormat = app.canFormatText;
-    Widget fmt(IconData icon, String tip, VoidCallback fn) => IconButton(
+    // What is switched ON at the caret. With the markers collapsed to nothing
+    // in the editor, these buttons are the ONLY thing that can tell a student
+    // whether the word they are in is already bold — "just have it appear in
+    // the toolbar as on" was the whole request.
+    final active = app.marksAtCaret();
+    Widget fmt(IconData icon, String tip, VoidCallback fn, [MdInline? mark]) =>
+        IconButton(
           icon: Icon(icon, size: 18),
           tooltip: tip,
           visualDensity: VisualDensity.compact,
+          isSelected: mark != null && active.contains(mark),
           onPressed: canFormat ? fn : null,
         );
     final lcv = int.tryParse(app.lastColor, radix: 16) ?? 0;
@@ -363,26 +372,29 @@ class _CommandBarState extends State<CommandBar> {
       // command holds its position always; the ones that need a caret are
       // greyed, and the hint at the end of the row — which only ever appears
       // AFTER the last control, so it displaces nothing — says why.
-      fmt(Icons.format_bold, 'Bold  (Ctrl+B)', () => app.wrapSelection('**')),
+      fmt(Icons.format_bold, 'Bold  (Ctrl+B)', () => app.wrapSelection('**'),
+          MdInline.bold),
       fmt(Icons.format_italic, 'Italic  (Ctrl+I)',
-          () => app.wrapSelection('*')),
+          () => app.wrapSelection('*'), MdInline.italic),
       fmt(Icons.format_underlined, 'Underline  (Ctrl+U)',
-          () => app.wrapSelection('++')),
+          () => app.wrapSelection('++'), MdInline.underline),
       fmt(Icons.strikethrough_s, 'Strikethrough',
-          () => app.wrapSelection('~~')),
-      fmt(Icons.code, 'Inline code', () => app.wrapSelection('`')),
-      fmt(Icons.border_color, 'Highlight', () => app.wrapSelection('==')),
+          () => app.wrapSelection('~~'), MdInline.strike),
+      fmt(Icons.code, 'Inline code', () => app.wrapSelection('`'),
+          MdInline.code),
+      fmt(Icons.border_color, 'Highlight', () => app.wrapSelection('=='),
+          MdInline.highlight),
       const _Div(),
       fmt(Icons.title, 'Heading 1', () => app.toggleLinePrefix('# ')),
       _TextBtn('H2', canFormat, () => app.toggleLinePrefix('## ')),
       _TextBtn('H3', canFormat, () => app.toggleLinePrefix('### ')),
       const _Div(),
       fmt(Icons.format_list_bulleted, 'Bullet list',
-          () => app.toggleLinePrefix('- ')),
+          () => app.toggleList(ListKind.bullet)),
       fmt(Icons.format_list_numbered, 'Numbered list',
-          () => app.toggleLinePrefix('1. ')),
+          () => app.toggleList(ListKind.numbered)),
       fmt(Icons.check_box_outlined, 'Checkbox',
-          () => app.toggleLinePrefix('- [ ] ')),
+          () => app.toggleList(ListKind.checkbox)),
       fmt(Icons.format_quote, 'Quote', () => app.toggleLinePrefix('> ')),
       const _Div(),
       // Tags (TEXT-5). OneNote users organise around these, so they get a

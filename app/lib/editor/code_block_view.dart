@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../code/code_runner.dart';
 import '../model/models.dart';
+import 'code_languages.dart';
 import 'wrap_selection.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -19,7 +20,13 @@ import '../ui/onote_dialog.dart';
 /// (or Ctrl+Enter while editing) executes the source in a sandboxed isolate
 /// — see code/code_runner.dart for the rules — and the output persists under
 /// the source, so the page reads like a finished notebook without re-running
-/// anything.
+/// anything. The picker groups those two under "Runs on this device" and
+/// badges them, so what will execute is visible before anything is typed.
+///
+/// The field types like an IDE — pairs close, Tab indents, Enter keeps the
+/// indent and pushes `}` down a line — and the language names itself from
+/// the source unless somebody chose one. All of that is
+/// `editor/code_languages.dart`; this file only wires it up.
 class CodeBlockView extends StatefulWidget {
   const CodeBlockView({super.key, required this.block, required this.app});
   final Block block;
@@ -62,8 +69,10 @@ class _CodeBlockViewState extends State<CodeBlockView> {
     return r.getPositionForPoint(global).offset;
   }
 
-  bool get _runnable =>
-      isRunnableLanguage(widget.block.content['language'] as String?);
+  CodeLanguage get _language =>
+      languageFor(widget.block.content['language'] as String?);
+
+  bool get _runnable => _language.runnable;
 
   /// One click, one run: gather the page's table blocks, hand everything to
   /// the sandboxed runner, persist what came back. The output is part of the
@@ -93,7 +102,9 @@ class _CodeBlockViewState extends State<CodeBlockView> {
           ),
     ];
     final out = await runCode(
-      language: b.content['language'] as String? ?? 'text',
+      // The resolved id, not the raw one: a block imported as ```javascript
+      // or ```node shows a Run button, so it has to reach a runner too.
+      language: _language.id,
       source: b.content['source'] as String? ?? '',
       tables: tables,
     );
@@ -153,7 +164,7 @@ class _CodeBlockViewState extends State<CodeBlockView> {
       height: 1.45,
       color: dark ? OnoteColors.moon100 : OnoteColors.graphite700,
     );
-    final language = widget.block.content['language'] as String? ?? 'text';
+    final lang = _language;
     final source = widget.block.content['source'] as String? ?? '';
     if (!editing && _controller.text != source) _controller.text = source;
 
@@ -172,11 +183,23 @@ class _CodeBlockViewState extends State<CodeBlockView> {
               children: [
                 InkWell(
                   onTap: editing ? _pickLanguage : null,
-                  child: Text(language,
-                      style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: OnoteColors.graphite400)),
+                  borderRadius: BorderRadius.circular(4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // The display name, not the id: a student reads "C++",
+                      // never "cpp".
+                      Text(lang.name,
+                          style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: OnoteColors.graphite400)),
+                      // Only while editing, because only then is it a button.
+                      if (editing)
+                        const Icon(Icons.arrow_drop_down,
+                            size: 14, color: OnoteColors.graphite400),
+                    ],
+                  ),
                 ),
                 const Spacer(),
                 if (_runnable)
@@ -235,22 +258,31 @@ class _CodeBlockViewState extends State<CodeBlockView> {
                     focusNode: _focus..requestFocus(),
                     maxLines: null,
                     style: mono,
-                    // Same wrap-on-selection as the text editor — typing (
-                    // over a selected word wraps it, never replaces it.
-                    // Brackets and quotes only: * is a character in code.
-                    inputFormatters: const [
-                      WrapSelectionFormatter(
+                    // Two halves of one behaviour: with a selection, typing (
+                    // WRAPS it (same formatter as every other field); with
+                    // none, CodeTypingFormatter pairs, steps over a closer
+                    // and indents after Enter. Order matters — the wrap
+                    // formatter runs first and the pairing one then sees a
+                    // selection it must keep its hands off.
+                    inputFormatters: [
+                      const WrapSelectionFormatter(
                           pairs: WrapSelectionFormatter.bracketPairs,
-                          autoCloseFences: false)
+                          autoCloseFences: false),
+                      CodeTypingFormatter(lang),
                     ],
-                    decoration:
-                        OnoteInput.bare.copyWith(hintText: '// code'),
+                    decoration: OnoteInput.bare.copyWith(
+                        hintText: lang.lineComment.isEmpty
+                            ? 'code'
+                            : '${lang.lineComment} code'),
                     onChanged: (v) {
                       if (!_undoPushed) {
                         widget.app.pushUndo();
                         _undoPushed = true;
                       }
+                      final was =
+                          widget.block.content['source'] as String? ?? '';
                       widget.block.content['source'] = v;
+                      _autoDetect(was, v);
                       widget.block.updatedAt = nowMs();
                       widget.app.markDirty();
                     },
@@ -270,7 +302,7 @@ class _CodeBlockViewState extends State<CodeBlockView> {
                         style: mono,
                         children: source.isEmpty
                             ? [const TextSpan(text: ' ')]
-                            : highlightCode(source, language, dark),
+                            : highlightCode(source, lang.id, dark),
                       ),
                       onTap: () {
                         widget.app.pendingCaretGlobal = _readPressGlobal;
@@ -349,10 +381,10 @@ class _CodeBlockViewState extends State<CodeBlockView> {
                       ? cellStyle.copyWith(color: OnoteColors.danger)
                       : cellStyle),
             if (out.truncated)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
                 child: Text('Showing the first $kMaxOutputRows rows.',
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 10, color: OnoteColors.graphite400)),
               ),
           ],
@@ -361,9 +393,47 @@ class _CodeBlockViewState extends State<CodeBlockView> {
     ];
   }
 
-  /// Tab inserts two spaces at the caret instead of moving focus (Tab isn't
-  /// consumed by EditableText, so it bubbles here first). Ctrl+Enter runs —
-  /// Jupyter's muscle memory.
+  /// Write an edit the keyboard made, as one undo step and one save.
+  ///
+  /// The old Tab handler set `_controller.text` and then `.selection`, which
+  /// is two notifications and a caret that lands at the end in between — and
+  /// it never pushed undo, so tabbed-in indentation could not be undone.
+  void _apply(TextEditingValue v) {
+    if (!_undoPushed) {
+      widget.app.pushUndo();
+      _undoPushed = true;
+    }
+    _controller.value = v;
+    widget.block.content['source'] = v.text;
+    widget.block.updatedAt = nowMs();
+    widget.app.markDirty();
+  }
+
+  /// Name the language from the source, unless somebody already named it.
+  void _autoDetect(String was, String now) {
+    final c = widget.block.content;
+    final found = autoLanguageFor(
+      current: c['language'] as String?,
+      userPicked: c['languagePicked'] == true,
+      autoSet: c['languageAuto'] == true,
+      previousSource: was,
+      source: now,
+    );
+    if (found == null) return;
+    setState(() {
+      c['language'] = found;
+      // Remembered so a later paste may revise this guess, while a language
+      // that came in with the content is left alone.
+      c['languageAuto'] = true;
+    });
+  }
+
+  /// Tab indents instead of moving focus (Tab isn't consumed by EditableText,
+  /// so it bubbles here first), Shift+Tab outdents, and a selection spanning
+  /// lines moves all of them. Ctrl+Enter runs — Jupyter's muscle memory.
+  ///
+  /// Pairing and Enter are NOT here: they arrive through the text input
+  /// service, so they are input formatters (see code_languages.dart).
   KeyEventResult _onKey(FocusNode node, KeyEvent e) {
     if (e is KeyDownEvent &&
         e.logicalKey == LogicalKeyboardKey.enter &&
@@ -372,37 +442,89 @@ class _CodeBlockViewState extends State<CodeBlockView> {
       _run();
       return KeyEventResult.handled;
     }
-    if (e is KeyDownEvent && e.logicalKey == LogicalKeyboardKey.tab) {
-      final sel = _controller.selection;
-      if (!sel.isValid) return KeyEventResult.ignored;
-      final at = sel.start;
-      _controller.text = _controller.text.replaceRange(sel.start, sel.end, '  ');
-      _controller.selection = TextSelection.collapsed(offset: at + 2);
-      widget.block.content['source'] = _controller.text;
-      widget.block.updatedAt = nowMs();
-      widget.app.markDirty();
+    if ((e is KeyDownEvent || e is KeyRepeatEvent) &&
+        e.logicalKey == LogicalKeyboardKey.tab) {
+      final next = handleCodeTab(_controller.value, _language,
+          outdent: HardwareKeyboard.instance.isShiftPressed);
+      // Handled either way: Shift+Tab at column 0 does nothing, and doing
+      // nothing must not mean "leave the code cell".
+      if (next != null) _apply(next);
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
   }
 
   Future<void> _pickLanguage() async {
-    const langs = ['text', 'dart', 'python', 'js', 'ts', 'rust', 'c', 'cpp',
-      'java', 'kotlin', 'sql', 'bash', 'json', 'yaml', 'html', 'css'];
+    final current = _language.id;
     final choice = await showOnoteDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
         title: const Text('Language'),
         children: [
-          for (final l in langs)
-            SimpleDialogOption(
-                onPressed: () => Navigator.pop(ctx, l), child: Text(l)),
+          for (final group in codeLanguageMenu) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 2),
+              child: Text(group.title,
+                  style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: OnoteColors.graphite400)),
+            ),
+            // Indented under their heading, so C, C++ and C# read as one
+            // family rather than three unrelated rows.
+            for (final l in group.languages)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(ctx, l.id),
+                padding: const EdgeInsets.fromLTRB(36, 8, 20, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(l.name,
+                          style: TextStyle(
+                              fontWeight: l.id == current
+                                  ? FontWeight.w700
+                                  : FontWeight.w400)),
+                    ),
+                    if (l.runnable) _runsHereBadge(context),
+                    if (l.id == current)
+                      const Padding(
+                        padding: EdgeInsets.only(left: 8),
+                        child: Icon(Icons.check, size: 16),
+                      ),
+                  ],
+                ),
+              ),
+          ],
         ],
       ),
     );
-    if (choice != null) {
-      widget.block.content['language'] = choice;
-      widget.app.updateBlock(widget.block);
-    }
+    if (choice == null || choice == current) return;
+    widget.app.pushUndo();
+    widget.block.content['language'] = choice;
+    // A pick is a decision: detection never second-guesses it again, and
+    // picking again is the whole of "undoing" a detection.
+    widget.block.content['languagePicked'] = true;
+    widget.block.content.remove('languageAuto');
+    widget.app.updateBlock(widget.block);
+  }
+
+  /// The mark on the languages that actually execute here. Plain words and
+  /// the same play arrow as the Run button, so the promise the menu makes is
+  /// the button the block will grow.
+  Widget _runsHereBadge(BuildContext context) {
+    final c = Theme.of(context).colorScheme.primary;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(5, 1, 7, 1),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.play_arrow, size: 11, color: c),
+        Text('Run',
+            style: TextStyle(
+                fontSize: 10, fontWeight: FontWeight.w600, color: c)),
+      ]),
+    );
   }
 }

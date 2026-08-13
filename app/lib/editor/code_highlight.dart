@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/onote_theme.dart';
+import 'code_languages.dart';
 
 /// Dependency-free syntax highlighter (CODE-1). A single-pass tokenizer that
 /// classifies comments, strings, numbers, keywords and types across a set of
@@ -8,7 +9,9 @@ import '../theme/onote_theme.dart';
 /// grammar package — so it always compiles and stays fast for note-sized
 /// snippets. Swappable for re_highlight later without touching call sites.
 List<TextSpan> highlightCode(String src, String language, bool dark) {
-  final cfg = _langs[language] ?? _defaultCfg;
+  // Through the registry, so an imported ```c++ or ```javascript fence gets
+  // the same colours a pick from the menu would.
+  final cfg = _langs[languageFor(language).id] ?? _defaultCfg;
 
   final kwStyle = TextStyle(color: dark ? OnoteColors.ink300 : OnoteColors.ink600);
   final typeStyle =
@@ -43,6 +46,40 @@ List<TextSpan> highlightCode(String src, String language, bool dark) {
   while (i < n) {
     final c = src.codeUnitAt(i);
 
+    // Preprocessor line: #include, #define, #pragma, #region. The directive
+    // reads as the keyword it is, and an #include's <header> as a string —
+    // without this the first line of every C and C++ snippet is grey.
+    if (cfg.preproc && c == 0x23 && _lineBlankBefore(src, i)) {
+      var j = i + 1;
+      while (j < n && _isIdChar(src.codeUnitAt(j))) {
+        j++;
+      }
+      final directive = src.substring(i + 1, j);
+      emit(src.substring(i, j), kwStyle);
+      i = j;
+      if (directive == 'include') {
+        var k = i;
+        while (k < n && (src.codeUnitAt(k) == 0x20 || src.codeUnitAt(k) == 0x09)) {
+          k++;
+        }
+        final close = k < n && src.codeUnitAt(k) == 0x3C ? src.indexOf('>', k) : -1;
+        if (close > 0 && close < _toEol(src, k)) {
+          emit(src.substring(i, k), null);
+          emit(src.substring(k, close + 1), strStyle);
+          i = close + 1;
+        }
+      }
+      continue;
+    }
+    // A line opening with [Attribute] — C#'s [Serializable], [TestMethod].
+    if (cfg.attributes && c == 0x5B && _lineBlankBefore(src, i)) {
+      final close = src.lastIndexOf(']', _toEol(src, i));
+      if (close > i) {
+        emit(src.substring(i, close + 1), typeStyle);
+        i = close + 1;
+        continue;
+      }
+    }
     // Line comment: // or (hash langs) #
     if (cfg.cLike && c == 0x2F && i + 1 < n && src.codeUnitAt(i + 1) == 0x2F) {
       final j = _toEol(src, i);
@@ -115,9 +152,11 @@ List<TextSpan> highlightCode(String src, String language, bool dark) {
         j++;
       }
       final word = src.substring(i, j);
+      // `std::`, `Solver::run` — whatever is being scoped INTO is a type,
+      // which is how C++ reads without a symbol table.
       final style = cfg.keywords.contains(word)
           ? kwStyle
-          : cfg.types.contains(word)
+          : cfg.types.contains(word) || (cfg.scopeOp && src.startsWith('::', j))
               ? typeStyle
               : null;
       emit(word, style);
@@ -137,6 +176,17 @@ int _toEol(String s, int i) {
     j++;
   }
   return j;
+}
+
+/// Is [i] the first non-blank character on its line? A `#` or `[` only starts
+/// a directive or an attribute there — `a[0]` and `x #= 1` are not.
+bool _lineBlankBefore(String s, int i) {
+  for (var j = i - 1; j >= 0; j--) {
+    final c = s.codeUnitAt(j);
+    if (c == 0x0A) return true;
+    if (c != 0x20 && c != 0x09) return false;
+  }
+  return true;
 }
 
 bool _isDigit(int c) => c >= 0x30 && c <= 0x39;
@@ -159,12 +209,24 @@ class _LangCfg {
     this.cLike = true,
     this.hash = false,
     this.dashComment = false,
+    this.preproc = false,
+    this.scopeOp = false,
+    this.attributes = false,
   });
   final Set<String> keywords;
   final Set<String> types;
   final bool cLike;
   final bool hash;
   final bool dashComment;
+
+  /// `#include`, `#define`, `#region` at the start of a line.
+  final bool preproc;
+
+  /// `Name::` scopes into a type.
+  final bool scopeOp;
+
+  /// `[Attribute]` on its own line.
+  final bool attributes;
 }
 
 const _defaultCfg = _LangCfg({});
@@ -228,13 +290,52 @@ final Map<String, _LangCfg> _langs = {
     'i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64', 'usize', 'isize',
     'f32', 'f64', 'bool', 'char', 'str', 'String', 'Vec', 'Option', 'Result'
   }),
-  'c': const _LangCfg(_cKeywords, types: _cTypes),
+  'c': const _LangCfg(_cKeywords, types: _cTypes, preproc: true),
+  // C++ over C: the tokens a student's snippet actually opens with —
+  // `#include <iostream>`, `std::`, `nullptr`, `using namespace std`.
   'cpp': const _LangCfg({
     ..._cKeywords, 'class', 'public', 'private', 'protected', 'virtual',
     'namespace', 'using', 'template', 'typename', 'new', 'delete', 'this',
     'try', 'catch', 'throw', 'nullptr', 'true', 'false', 'auto', 'constexpr',
-    'override', 'final'
-  }, types: {..._cTypes, 'string', 'vector', 'map', 'set', 'auto'}),
+    'override', 'final', 'operator', 'friend', 'explicit', 'mutable',
+    'noexcept', 'static_cast', 'dynamic_cast', 'const_cast', 'reinterpret_cast',
+    'nullptr_t', 'concept', 'requires', 'co_await', 'co_return', 'co_yield'
+  }, types: {
+    ..._cTypes, 'string', 'vector', 'map', 'set', 'auto', 'std', 'wstring',
+    'ostream', 'istream', 'pair', 'unique_ptr', 'shared_ptr', 'size_type'
+  }, preproc: true, scopeOp: true),
+  // C#: `var`, `async`, `string`, `namespace`, and attributes such as
+  // `[Serializable]`, which the tokenizer colours by position.
+  'csharp': const _LangCfg({
+    'abstract', 'as', 'async', 'await', 'base', 'break', 'case', 'catch',
+    'checked', 'class', 'const', 'continue', 'default', 'delegate', 'do',
+    'else', 'enum', 'event', 'explicit', 'extern', 'false', 'finally', 'fixed',
+    'for', 'foreach', 'get', 'goto', 'if', 'implicit', 'in', 'init',
+    'interface', 'internal', 'is', 'lock', 'namespace', 'new', 'null',
+    'operator', 'out', 'override', 'params', 'partial', 'private', 'protected',
+    'public', 'readonly', 'record', 'ref', 'return', 'sealed', 'set', 'sizeof',
+    'stackalloc', 'static', 'struct', 'switch', 'this', 'throw', 'true', 'try',
+    'typeof', 'unchecked', 'unsafe', 'using', 'var', 'virtual', 'void',
+    'volatile', 'where', 'while', 'yield'
+  }, types: {
+    'bool', 'byte', 'char', 'decimal', 'double', 'float', 'int', 'long',
+    'object', 'sbyte', 'short', 'string', 'uint', 'ulong', 'ushort',
+    'Console', 'String', 'Task', 'List', 'Dictionary', 'IEnumerable', 'Array',
+    'DateTime', 'Exception'
+  }, preproc: true, attributes: true),
+  'php': const _LangCfg({
+    'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch',
+    'class', 'clone', 'const', 'continue', 'declare', 'default', 'do', 'echo',
+    'else', 'elseif', 'empty', 'enum', 'extends', 'final', 'finally', 'fn',
+    'for', 'foreach', 'function', 'global', 'if', 'implements', 'include',
+    'instanceof', 'interface', 'isset', 'list', 'match', 'namespace', 'new',
+    'or', 'print', 'private', 'protected', 'public', 'readonly', 'require',
+    'return', 'static', 'switch', 'throw', 'trait', 'try', 'unset', 'use',
+    'var', 'while', 'yield', 'true', 'false', 'null'
+  }, types: {
+    'int', 'float', 'string', 'bool', 'array', 'object', 'mixed', 'void',
+    'self', 'static'
+  }, hash: true, scopeOp: true),
   'java': const _LangCfg({
     'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char',
     'class', 'const', 'continue', 'default', 'do', 'double', 'else', 'enum',

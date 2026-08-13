@@ -137,16 +137,51 @@ Consistency/UX
     Hovering over a box makes its background solid, this makes aligning with other objects more difficult and is different to how it will be rendered
 
 Code editor
-    Auto detect language
-    clearly mark languages that can be run locally
-    typing experience more like VS code or traditional IDEs - tab adds spaces, (, ", etc creates a pair, typing () or {} then pretting enter while inside creates a new line but adds the tab indentation and moves } to a new line below the cursor
-    c++ and c# support
-    More logical ordering, maybe grouping/indenting? c -> c++, c#
+    → ALL SHIPPED (editor/code_languages.dart is the registry: id, display
+      name, aliases, group, indent width, comment syntax, pairs, runnable).
+      · IDE typing: pairs close and step over, Backspace clears an empty
+        pair, Enter between braces pushes the closer to its own line at the
+        right indent, Tab/Shift+Tab indent and outdent whole selections.
+        Implemented as an input formatter, not a key handler, because a
+        newline arrives through the text-input service — a key handler
+        works on desktop and silently does nothing on a tablet.
+      · Language auto-detection from the source, with negative weights so C
+        stops claiming C++ and a JS object literal stops claiming JSON, and
+        a confidence floor so an ambiguous two-liner is left alone rather
+        than guessed at. It never overrides a language the user picked.
+      · c++ and c# highlighting, plus the picker grouped Runs-on-this-device
+        (badged) → C family → common → web → data → terminal → plain.
+    Remaining: HTML tag auto-closing, and string/comment awareness in the
+    pairing rules (typing a quote inside a comment still pairs).
 
 General text editing
-    Editing mode still has a large amount of content movement with dot points - when editing they are much closer to the left than when viewing. Should always be the same, ideally same as viewing or somewhere in between
-    pressing ctrl + b for example inserts **** for bolding, however backspacing one should delete all 4. Ideally we dont even show the **** for bolding, just have it appear in the toolbar as on. Still allow users to type it as an aditional shortcut (in which case it should maintin its current behaviour). Same deal with italics, headings, colours, etc.
-    If imported text is both bold AND italic, it will bold it but will still end up with *around* the word, with all that being bold
-    Extra blank lines arent respected or included in import
-    * and a space should auto turn into bullet list
-        Bullet list currently uses - as default rather than *, no way to change it?
+    → ALL FIVE SHIPPED. The lasting change is that there is now ONE grammar
+      (markdown/md_syntax.dart) and ONE list engine (editor/list_editing.dart)
+      instead of five files each with their own idea of what a bullet or a
+      marker is — which is what let reading and writing disagree in the first
+      place.
+      · Dot points no longer move: the editor hangs the marker in the same
+        22px gutter the reader uses, so the body text starts at the same x at
+        every nesting level (edit_view_metrics_test now pins it horizontally,
+        which is why this went unnoticed — only height was pinned before).
+      · Ctrl+B with no selection formats the WORD the caret is in instead of
+        writing a bare **** into the note, toggling off works from inside a
+        run, and the toolbar buttons light up for whatever is on at the caret.
+      · ***bold italic*** now parses as one run. The importer was already
+        emitting it correctly; both Dart parsers lacked the branch, so it
+        degraded to bold plus a stray asterisk — reachable without importing
+        by pressing Ctrl+B then Ctrl+I.
+      · Blank lines survive the import (an empty paragraph pushed no Line at
+        all, so the gap was gone before Dart saw it).
+      · `* ` and `+ ` are real bullets everywhere. No preference was added —
+        Enter continues with whichever marker that line already uses, which
+        removes the decision rather than adding a setting.
+      Also, because the same investigation turned them up: Enter continues a
+      list and exits an empty one, Tab/Shift+Tab nest, Backspace unwraps an
+      item, ordered lists renumber themselves, and the list buttons stopped
+      crashing at offset 0, destroying checkboxes and eating indentation.
+    Remaining in this area, deliberately deferred: a hanging indent for
+    WRAPPED list lines (needs a custom RenderParagraph), live preview for
+    tables/fences/$$math$$/links, recursive inline nesting (**==x==**), rich
+    paste that keeps structure from Word or a web page, and replacing the
+    private {{#hex text}} colour syntax with portable HTML.

@@ -21,6 +21,8 @@ import '../ink/ink_codec.dart';
 import '../ink/ink_storage.dart';
 import '../sync/materializer.dart';
 import '../sync/git_sync.dart';
+import '../editor/list_editing.dart';
+import '../markdown/md_syntax.dart';
 import '../api/mcp_connect.dart';
 import '../api/mcp_server.dart';
 import '../update/app_update.dart';
@@ -2992,6 +2994,10 @@ class AppState extends ChangeNotifier
       selection: TextSelection.collapsed(offset: z + 4),
       composing: TextRange.empty,
     );
+    // COMMIT it. This wrote the blank into the controller and stopped,
+    // so the block still held the old text and the next rebuild threw the
+    // edit away — the feature looked like it worked and then undid itself.
+    _commitActiveEditor();
     // Blanking only means something on a line that is already a card.
     if (tagsAtCaret().isEmpty) toggleTagOnSelection(TagKind.question);
     markDirty();
@@ -3390,13 +3396,43 @@ class AppState extends ChangeNotifier
       {OnoteEditSession? session}) {
     activeEditor = (controller: c, block: b, contentKey: key);
     if (session != null) activeSession = session;
+    // Watch the caret so the toolbar can light up. Nothing rebuilt when the
+    // selection moved, so any caret-derived state was stale by construction —
+    // which is why there was never any point computing it before.
+    if (!identical(c, _watchedEditor)) {
+      _watchedEditor?.removeListener(_onEditorChanged);
+      _watchedEditor = c..addListener(_onEditorChanged);
+      _lastMarks = null;
+    }
     // No notify: called during build; enablement rides the select() notify.
+  }
+
+  TextEditingController? _watchedEditor;
+  Set<MdInline>? _lastMarks;
+
+  /// Notify ONLY when the set of active marks actually changed. A rebuild of
+  /// the shell per keystroke would be far more expensive than the one-line
+  /// scan that decides whether it is needed.
+  void _onEditorChanged() {
+    final now = marksAtCaret();
+    final was = _lastMarks;
+    if (was != null && was.length == now.length && was.containsAll(now)) return;
+    _lastMarks = now;
+    // Post-frame: this fires from inside the controller's own notification,
+    // which can land during a build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_disposed) return;
+      notifyListeners();
+    });
   }
 
   void clearActiveEditor(String blockId) {
     if (activeEditor?.block.id == blockId) {
       activeEditor = null;
       activeSession = null;
+      _watchedEditor?.removeListener(_onEditorChanged);
+      _watchedEditor = null;
+      _lastMarks = null;
     }
   }
 
@@ -3606,41 +3642,255 @@ class AppState extends ChangeNotifier
     select(b.id, edit: true);
   }
 
+  /// The word surrounding [at], or null when the caret is not in one.
+  ///
+  /// "Word" is deliberately generous — letters, digits, apostrophes and
+  /// hyphens — so `don't` and `well-known` bold whole rather than in pieces.
+  static ({int start, int end})? _wordAt(String t, int at) {
+    // Apostrophes are in (so `don't` bolds whole) but hyphens are NOT: with
+    // the caret at the start of `- item`, a hyphen-inclusive word would
+    // reach back and bold the bullet marker itself.
+    bool isWord(int i) =>
+        i >= 0 && i < t.length && RegExp(r"[\w']").hasMatch(t[i]);
+    var s = at, e = at;
+    while (isWord(s - 1)) {
+      s--;
+    }
+    while (isWord(e)) {
+      e++;
+    }
+    return s == e ? null : (start: s, end: e);
+  }
+
   /// Toggle-wrap the live selection with markers (Ctrl+B/I, command bar).
+  ///
+  /// Three behaviours, and the first two are the reported bug:
+  ///
+  /// * **A caret with no selection formats the WORD it sits in.** It used to
+  ///   insert a bare `****` at the caret — which no renderer matches, so the
+  ///   asterisks stayed visible in the note forever, and one Backspace ate a
+  ///   single marker and left `***` behind.
+  /// * **Toggling off works from INSIDE a run**, not only when the selection
+  ///   exactly equals it. Before, a caret inside bold text and Ctrl+B nested
+  ///   a second empty pair and everything typed after came out un-bold.
+  /// * A code cell is left alone: Markdown markers are not source code.
   void wrapSelection(String mark, [String? closeMark]) {
     final ae = activeEditor;
     if (ae == null) return;
+    // `**` means multiplication in a code cell, not bold. This used to inject
+    // literal Markdown into somebody's source.
+    if (ae.block.type != BlockType.text) return;
     final c = ae.controller;
     final sel = c.selection;
     if (!sel.isValid) return;
     final close = closeMark ?? mark;
-    final s = math.min(sel.baseOffset, sel.extentOffset);
-    final e = math.max(sel.baseOffset, sel.extentOffset);
     final t = c.text;
-    pushUndo();
-    final already = s >= mark.length &&
-        e + close.length <= t.length &&
-        t.substring(s - mark.length, s) == mark &&
-        t.substring(e, e + close.length) == close;
-    if (already) {
-      c.text = t
-          .replaceRange(e, e + close.length, '')
-          .replaceRange(s - mark.length, s, '');
-      c.selection = TextSelection(
-          baseOffset: s - mark.length, extentOffset: e - mark.length);
+    var s = math.min(sel.baseOffset, sel.extentOffset);
+    var e = math.max(sel.baseOffset, sel.extentOffset);
+
+    if (s == e) {
+      // Ask about the CARET first, before expanding to a word. `_` is a word
+      // character, so the word around the caret in `__bold__` is the whole
+      // thing INCLUDING its markers — which no longer sits inside the run,
+      // so the toggle missed and wrapped it again as `**__bold__**`.
+      final atCaret = _runAround(t, s, s, mark);
+      if (atCaret != null) {
+        pushUndo();
+        final inner =
+            t.substring(atCaret.open + atCaret.strip, atCaret.close);
+        c.value = TextEditingValue(
+          text: t.replaceRange(
+              atCaret.open, atCaret.close + atCaret.strip, inner),
+          selection: TextSelection.collapsed(
+              offset: (s - atCaret.strip).clamp(0, t.length)),
+          composing: TextRange.empty,
+        );
+        _commitActiveEditor();
+        notifyListeners();
+        return;
+      }
+      final w = _wordAt(t, s);
+      // Nothing to format and nothing to un-format: better to do nothing
+      // than to write markers into the file and hope the user types.
+      if (w == null) return;
+      s = w.start;
+      e = w.end;
     } else {
-      c.text = t.replaceRange(s, e, '$mark${t.substring(s, e)}$close');
-      c.selection = TextSelection(
-          baseOffset: s + mark.length, extentOffset: e + mark.length);
+      // Shrink the selection off its own whitespace and newlines. A marker
+      // may not sit against a space (that is the flanking rule that keeps
+      // `2 * 3 * 4` literal), and the grammar is line-based, so wrapping
+      // " word " or a selection spanning two lines would emit markers no
+      // renderer can ever match — permanently visible asterisks, which is
+      // the bug this whole command was rewritten to stop producing.
+      while (s < e && RegExp(r'\s').hasMatch(t[s])) {
+        s++;
+      }
+      while (e > s && RegExp(r'\s').hasMatch(t[e - 1])) {
+        e--;
+      }
+      final nl = t.substring(s, e).indexOf('\n');
+      if (nl >= 0) {
+        // Multi-line: format each line's own text, so every marker pair
+        // opens and closes on one line.
+        _wrapEachLine(c, s, e, mark, close);
+        return;
+      }
+      if (s == e) return;
+    }
+
+    pushUndo();
+    // Ask the GRAMMAR what encloses this range rather than searching for the
+    // marker characters. `*` is a prefix of `**`, so a plain string search
+    // found the inner asterisk of a bold run and "un-italicised" it — the
+    // caret inside `**word**` plus Ctrl+I produced `*word*`.
+    final run = _runAround(t, s, e, mark);
+    if (run != null) {
+      final inner = t.substring(run.open + run.strip, run.close);
+      c.value = TextEditingValue(
+        text: t.replaceRange(run.open, run.close + run.strip, inner),
+        selection: TextSelection(
+            baseOffset: (s - run.strip).clamp(0, t.length),
+            extentOffset: (e - run.strip).clamp(0, t.length)),
+        composing: TextRange.empty,
+      );
+    } else {
+      c.value = TextEditingValue(
+        text: t.replaceRange(s, e, '$mark${t.substring(s, e)}$close'),
+        selection: TextSelection(
+            baseOffset: s + mark.length, extentOffset: e + mark.length),
+        composing: TextRange.empty,
+      );
     }
     _commitActiveEditor();
     notifyListeners();
   }
 
-  /// Toggle a line prefix (headings, lists, checkboxes) on the selected lines.
+  /// Wrap each line of a multi-line selection separately, skipping blanks
+  /// and keeping each line's own leading/trailing space outside the markers.
+  void _wrapEachLine(
+      TextEditingController c, int s, int e, String mark, String close) {
+    final t = c.text;
+    final region = t.substring(s, e);
+    final out = <String>[];
+    for (final line in region.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) {
+        out.add(line);
+        continue;
+      }
+      final lead = line.substring(0, line.indexOf(trimmed[0]));
+      final tail = line.substring(lead.length + trimmed.length);
+      out.add('$lead$mark$trimmed$close$tail');
+    }
+    final next = out.join('\n');
+    c.value = TextEditingValue(
+      text: t.replaceRange(s, e, next),
+      selection: TextSelection(baseOffset: s, extentOffset: s + next.length),
+      composing: TextRange.empty,
+    );
+    _commitActiveEditor();
+    notifyListeners();
+  }
+
+  static const _markKinds = <String, MdInline>{
+    '**': MdInline.bold,
+    '*': MdInline.italic,
+    '++': MdInline.underline,
+    '~~': MdInline.strike,
+    '`': MdInline.code,
+    '==': MdInline.highlight,
+  };
+
+  /// The run of [mark]'s kind enclosing [s]..[e], with how many characters to
+  /// strip from each end to remove exactly that mark.
+  ///
+  /// Stripping is kind-aware: turning bold off inside `***word***` removes
+  /// two asterisks a side and leaves `*word*` still italic, rather than
+  /// removing the lot.
+  static ({int open, int close, int strip})? _runAround(
+      String t, int s, int e, String mark) {
+    final want = _markKinds[mark];
+    if (want == null) return null;
+    final lineStart = lineStartOf(t, s);
+    final lineEnd = math.max(lineStart, lineEndOf(t, e));
+    final line = t.substring(lineStart, lineEnd);
+    final lo = s - lineStart, hi = e - lineStart;
+    for (final m in mdInlineRe.allMatches(line)) {
+      final c = classifyInline(m);
+      final isBoth = c.kind == MdInline.boldItalic &&
+          (want == MdInline.bold || want == MdInline.italic);
+      if (c.kind != want && !isBoth) continue;
+      final innerStart = m.start + c.openLen, innerEnd = m.end - c.closeLen;
+      if (lo < innerStart || hi > innerEnd) continue;
+      // `***` minus bold is `*`; minus italic is `**`.
+      final strip = isBoth ? (want == MdInline.bold ? 2 : 1) : c.openLen;
+      return (
+        open: lineStart + m.start + (isBoth ? c.openLen - strip : 0),
+        close: lineStart + innerEnd,
+        strip: strip,
+      );
+    }
+    return null;
+  }
+
+  static bool _enclosedBy(String t, int s, int e, String mark, String close) =>
+      _runAround(t, s, e, mark) != null;
+
+  /// Which inline marks apply at the caret — what lights the toolbar up.
+  ///
+  /// With markers collapsed to nothing, the buttons are the ONLY thing that
+  /// can tell a student whether the next thing they type will be bold, which
+  /// is why "just have it appear in the toolbar as on" is the whole ask.
+  Set<MdInline> marksAtCaret() {
+    final ae = activeEditor;
+    if (ae == null || ae.block.type != BlockType.text) return const {};
+    final sel = ae.controller.selection;
+    if (!sel.isValid) return const {};
+    final t = ae.controller.text;
+    final lineStart = t.lastIndexOf('\n', sel.start > 0 ? sel.start - 1 : 0) + 1;
+    var lineEnd = t.indexOf('\n', sel.end);
+    if (lineEnd < 0) lineEnd = t.length;
+    if (lineStart > lineEnd) return const {};
+    final line = t.substring(lineStart, lineEnd);
+    final lo = sel.start - lineStart, hi = sel.end - lineStart;
+    final out = <MdInline>{};
+    for (final m in mdInlineRe.allMatches(line)) {
+      final c = classifyInline(m);
+      final innerStart = m.start + c.openLen;
+      final innerEnd = m.end - c.closeLen;
+      if (lo >= innerStart && hi <= innerEnd) out.add(c.kind);
+    }
+    // Bold+italic lights BOTH buttons — it is both, and a student pressing
+    // Ctrl+B on it expects the bold to come off.
+    if (out.contains(MdInline.boldItalic)) {
+      out..add(MdInline.bold)..add(MdInline.italic);
+    }
+    return out;
+  }
+
+  /// Turn the selected lines into a list of [kind], or back into prose.
+  ///
+  /// Routed through the list engine rather than pasting a literal prefix, so
+  /// it keeps indentation (`  item` became `-   item` before, losing the
+  /// level), swaps a marker instead of stacking one (the bullet button used
+  /// to destroy a checkbox), numbers a new ordered list 1, 2, 3 instead of
+  /// writing `1. ` onto every line, and leaves the caret with its words
+  /// instead of teleporting it to the end of the region.
+  void toggleList(ListKind kind) {
+    final ae = activeEditor;
+    if (ae == null || ae.block.type != BlockType.text) return;
+    final c = ae.controller;
+    if (!c.selection.isValid) return;
+    pushUndo();
+    c.value = toggleListOverSelection(c.value, kind);
+    _commitActiveEditor();
+    notifyListeners();
+  }
+
+  /// Toggle a line prefix (headings, quotes) on the selected lines.
   void toggleLinePrefix(String prefix, {bool exclusive = true}) {
     final ae = activeEditor;
-    if (ae == null) return;
+    if (ae == null || ae.block.type != BlockType.text) return;
     final c = ae.controller;
     final sel = c.selection;
     if (!sel.isValid) return;
@@ -3648,9 +3898,11 @@ class AppState extends ChangeNotifier
     final t = c.text;
     final s = math.min(sel.baseOffset, sel.extentOffset);
     final e = math.max(sel.baseOffset, sel.extentOffset);
-    final lineStart = t.lastIndexOf('\n', math.max(0, s - 1)) + 1;
-    var lineEnd = t.indexOf('\n', e);
-    if (lineEnd < 0) lineEnd = t.length;
+    // `lineStartOf`, not a hand-rolled lastIndexOf: with the caret at offset
+    // 0 of text beginning with a newline, the old arithmetic produced a start
+    // AFTER the end and `substring` threw a RangeError on the spot.
+    final lineStart = lineStartOf(t, s);
+    final lineEnd = math.max(lineStart, lineEndOf(t, e));
     final region = t.substring(lineStart, lineEnd);
     final stripRe = exclusive
         ? RegExp(r'^(#{1,3} |- \[[ xX]\] |[-*] |\d+\. |> )')

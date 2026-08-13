@@ -791,12 +791,29 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
             // title as a heading (very common) silently lost that paragraph,
             // which then shifted everything below it.
             if boxes.is_empty() {
-                while lines
-                    .first()
-                    .is_some_and(|l| l.image.is_none() && title_plains.contains(&l.plain()))
-                {
+                // `!plain.is_empty()` guards the blank lines that now survive
+                // the walk: an empty Line's `plain()` is "", and if the title
+                // set ever held an empty string this loop would eat every
+                // leading blank in the body as a "duplicate title".
+                while lines.first().is_some_and(|l| {
+                    let plain = l.plain();
+                    l.image.is_none() && !plain.trim().is_empty()
+                        && title_plains.contains(&plain)
+                }) {
                     lines.remove(0);
                 }
+            }
+            // A box commonly opens with an empty paragraph in the source.
+            // Now that empties survive, that would become a leading blank
+            // line in every imported box — the trailing end is already
+            // trimmed by `out.trim_end()` when the markdown is assembled.
+            while lines.first().is_some_and(|l| {
+                l.image.is_none()
+                    && l.math.is_none()
+                    && l.table.is_none()
+                    && l.plain().trim().is_empty()
+            }) {
+                lines.remove(0);
             }
             if lines.is_empty() {
                 continue;
@@ -2880,6 +2897,26 @@ fn collect_inner(
                     image: None,
                 });
             }
+        } else {
+            // An EMPTY paragraph is content: it is the blank line the writer
+            // put between two thoughts. Gating the whole Line on non-empty
+            // text meant no Line was pushed, and since the outline emits one
+            // `\n` per Line the blank was gone before Dart ever saw it —
+            // "extra blank lines arent respected or included in import".
+            //
+            // `is_list: false` deliberately: inheriting the surrounding list
+            // context would emit a bare `- ` on the blank line, which reads as
+            // an empty bullet rather than as a gap.
+            out.push(Line {
+                depth,
+                tags: Vec::new(),
+                is_list: false,
+                bullet: String::new(),
+                runs: Vec::new(),
+                math: None,
+                table: None,
+                image: None,
+            });
         }
     }
 
@@ -3392,12 +3429,19 @@ fn outline_markdown_tagged(
             }
             continue;
         }
-        out.push_str(&"  ".repeat(level));
-        if l.is_list {
-            out.push_str(&l.bullet);
-            out.push(' ');
+        // A blank line carries no indentation. Emitting `"  ".repeat(level)`
+        // for one would write trailing whitespace that the reader shows as an
+        // indented empty paragraph and that every diff of the exported
+        // Markdown would flag.
+        let blank = l.runs.is_empty() && l.math.is_none() && l.table.is_none();
+        if !blank {
+            out.push_str(&"  ".repeat(level));
+            if l.is_list {
+                out.push_str(&l.bullet);
+                out.push(' ');
+            }
+            out.push_str(&render_runs(&l.runs));
         }
-        out.push_str(&render_runs(&l.runs));
         out.push('\n');
         for t in &l.tags {
             tags.push(BoxTag {

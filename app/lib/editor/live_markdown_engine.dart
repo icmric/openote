@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../markdown/md_render.dart';
 import '../model/models.dart';
@@ -8,6 +9,7 @@ import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'list_editing.dart';
 import 'live_markdown_controller.dart';
 import 'onote_text_editor.dart';
 import 'unicode_input.dart';
@@ -128,6 +130,66 @@ class _LiveMarkdownSession extends OnoteEditSession {
   void scheduleInitialSpellCheck() =>
       _scheduleSpellCheck(delay: const Duration(milliseconds: 50));
 
+  // ── List keystrokes (list_editing.dart) ─────────────────────────────────
+  //
+  // Enter continues the list, Enter on an empty item leaves it, Tab nests and
+  // Shift+Tab un-nests, Backspace at the start of an item unwraps it. Before
+  // this the field had no key handling at all beyond Alt+X, so the single
+  // most common thing anyone does while taking notes — bullet, Enter, Tab —
+  // did nothing, and Tab actually left the text box.
+  //
+  // Intercepted here rather than in an input formatter because Tab never
+  // reaches the field as text, and because the embedder composes a character
+  // only for a key the framework reports UNHANDLED — which is what lets
+  // `handled` suppress the newline the field would otherwise insert.
+
+  /// Commit a programmatic edit the way a keystroke would: the field's own
+  /// `onChanged` never fires for one, so the block would otherwise render the
+  /// change and never save it.
+  void _applyEdit(TextEditingValue next) {
+    controller.value = next;
+    onChanged(next.text);
+    _scheduleSpellCheck(delay: const Duration(milliseconds: 10));
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (isAltXChord(event) && _applyAltX()) return KeyEventResult.handled;
+    // A REPEAT counts. Holding Enter on `- item` fires one down event and
+    // then repeats, and skipping those let the field insert plain newlines
+    // between the handled ones — stranding a bare `- ` marker mid-run.
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final hw = HardwareKeyboard.instance;
+    // A chord is somebody else's (Ctrl+B, Ctrl+Enter, the canvas nudges).
+    if (hw.isControlPressed || hw.isMetaPressed || hw.isAltPressed) {
+      return KeyEventResult.ignored;
+    }
+    final k = event.logicalKey;
+    final TextEditingValue? next;
+    if (k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) {
+      next = hw.isShiftPressed
+          ? handleListShiftEnter(controller.value)
+          : handleListEnter(controller.value);
+    } else if (k == LogicalKeyboardKey.tab) {
+      next = handleListTab(controller.value, outdent: hw.isShiftPressed);
+      // Tab is ALWAYS consumed inside a text box, even when the engine
+      // declines to change anything — Shift+Tab at the left margin, or Tab
+      // on a list's first item, which has no parent to nest under. Falling
+      // through returns `ignored`, and Flutter's focus traversal then moves
+      // the caret out of the box entirely: the exact behaviour this handler
+      // exists to remove, reappearing on the one keystroke that declines.
+      if (next == null) return KeyEventResult.handled;
+    } else if (k == LogicalKeyboardKey.backspace) {
+      next = hw.isShiftPressed ? null : handleListBackspace(controller.value);
+    } else {
+      return KeyEventResult.ignored;
+    }
+    if (next == null) return KeyEventResult.ignored;
+    _applyEdit(next);
+    return KeyEventResult.handled;
+  }
+
   bool _disposed = false;
 
   /// Set by the host from app state; a plain field so the session doesn't need
@@ -237,11 +299,11 @@ class _LiveMarkdownSession extends OnoteEditSession {
     return Padding(
       padding: s.inset,
       child: Focus(
-        // Alt+X is intercepted above the field so it runs before the character
-        // would be typed. Returning `ignored` when no rule applies keeps the
-        // chord available to anything else rather than swallowing it.
-        onKeyEvent: (_, event) =>
-            isAltXChord(event) && _applyAltX() ? KeyEventResult.handled : KeyEventResult.ignored,
+        // Chords are intercepted above the field so they run before the
+        // character would be typed — the embedder only composes text for a
+        // key the framework reported unhandled. Returning `ignored` when no
+        // rule applies keeps every other key available to whoever wants it.
+        onKeyEvent: _onKey,
         child: TextField(
           controller: controller,
           focusNode: _focus,
