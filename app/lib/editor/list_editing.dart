@@ -283,7 +283,6 @@ TextEditingValue? handleListTab(TextEditingValue v, {required bool outdent}) {
 
   final next = out.join('\n');
   final firstDelta = out.first.length - lines.first.length;
-  final delta = next.length - region.length;
   return renumberValue(TextEditingValue(
     text: v.text.replaceRange(firstLs, lastLe, next),
     // Shift the START of the selection by what happened to its OWN line and
@@ -550,7 +549,6 @@ TextEditingValue toggleListOverSelection(TextEditingValue v, ListKind kind) {
   }
 
   final next = out.join('\n');
-  final delta = next.length - region.length;
   // Keep the caret with its words instead of teleporting it to the end of
   // the region, which is what the old toggle did — and preserve the
   // selection's DIRECTION, or a backwards drag came back inverted and

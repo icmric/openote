@@ -3856,8 +3856,6 @@ class AppState extends ChangeNotifier
     return null;
   }
 
-  static bool _enclosedBy(String t, int s, int e, String mark, String close) =>
-      _runAround(t, s, e, mark) != null;
 
   /// Which inline marks apply at the caret — what lights the toolbar up.
   ///

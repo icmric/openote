@@ -191,9 +191,31 @@ class OnoteCore {
   /// [textNeedsFieldRepair] first: it is a substring test on text already in
   /// memory, so clean pages pay nothing.
   String repairFieldCodes(String text) {
-    final tp = text.toNativeUtf8();
+    // **Strip NULs before crossing.** `toNativeUtf8` writes a Dart U+0000 as
+    // a literal zero byte and the Rust side reads the pointer with
+    // `CStr::from_ptr`, i.e. `strlen` — so one interior NUL silently
+    // amputates everything after it, and the caller writes that PREFIX back
+    // over the note and saves it. Imported OneNote prose really does carry
+    // interior NULs (the parser strips only a TRAILING one, deliberately, so
+    // run-index offsets stay valid), and the repair fires on any text holding
+    // a `$` or a field marker. That is a page "cutting off mid sentence" —
+    // not at import, but the first time it is opened, permanently.
+    //
+    // A NUL is never legitimate note text, so removing it here is a repair in
+    // its own right rather than a workaround.
+    final clean = text.contains('\u0000') ? text.replaceAll('\u0000', '') : text;
+    final tp = clean.toNativeUtf8();
     try {
-      return _takeString(_repairFields(tp));
+      final fixed = _takeString(_repairFields(tp));
+      // Belt and braces. If a result ever comes back as a strict PREFIX of
+      // text that contained a NUL, something truncated it — drop the repair
+      // rather than persist a shortened page.
+      if (text != clean &&
+          fixed.length < clean.length &&
+          clean.startsWith(fixed)) {
+        return clean;
+      }
+      return fixed;
     } finally {
       malloc.free(tp);
     }

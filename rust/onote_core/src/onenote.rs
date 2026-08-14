@@ -1135,12 +1135,16 @@ kind: "table".into(),
             .filter(|t| !t.is_empty())
             // Fallback: the on-page title box's first line (same text the tab
             // shows) — better than a generic label when correlation misses.
+            // The first NON-BLANK line, not simply the first. Now that empty
+            // paragraphs survive the walk, a title box that opens with one —
+            // which is common — handed this an empty string, so the page fell
+            // through to the generic label and lost its real name.
             .or_else(|| {
                 date_text
                     .lines()
-                    .next()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
+                    .map(|s| s.trim())
+                    .find(|s| !s.is_empty())
+                    .map(|s| s.to_string())
             })
             .unwrap_or_else(|| "Imported page".into());
         let level = meta.map(|m| m.1).unwrap_or(0);
@@ -2557,7 +2561,15 @@ fn color_hex(color: u32) -> Option<String> {
 /// Render one styled run as Markdown, applying bold/italic/strike (Openote's
 /// live-Markdown dialect) and the `{{#RRGGBB …}}` colour extension.
 fn run_markdown(run: &SRun) -> String {
-    let mut s = run.text.replace('\r', "");
+    // NULs go with the carriage returns. `styled_runs` strips only a TRAILING
+    // NUL — deliberately, so run-index offsets stay valid — which leaves
+    // interior ones in prose. Every other emit path already strips them (tag
+    // labels, maths runs, display equations, bullets, titles); prose was the
+    // gap. They are not text, they render as nothing, and downstream they are
+    // actively destructive: the app's field-code repair hands note text to a
+    // C API as a NUL-terminated string, so one interior NUL amputated the
+    // rest of the page the first time it was opened, permanently.
+    let mut s: String = run.text.chars().filter(|c| *c != '\r' && *c != '\0').collect();
     if s.trim().is_empty() {
         return s;
     }
