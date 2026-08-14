@@ -2923,27 +2923,22 @@ fn collect_inner(
                     image: None,
                 });
             }
-        } else {
-            // An EMPTY paragraph is content: it is the blank line the writer
-            // put between two thoughts. Gating the whole Line on non-empty
-            // text meant no Line was pushed, and since the outline emits one
-            // `\n` per Line the blank was gone before Dart ever saw it —
-            // "extra blank lines arent respected or included in import".
-            //
-            // `is_list: false` deliberately: inheriting the surrounding list
-            // context would emit a bare `- ` on the blank line, which reads as
-            // an empty bullet rather than as a gap.
-            out.push(Line {
-                depth,
-                tags: Vec::new(),
-                is_list: false,
-                bullet: String::new(),
-                runs: Vec::new(),
-                math: None,
-                table: None,
-                image: None,
-            });
         }
+        // An empty paragraph deliberately produces NO Line.
+        //
+        // "Extra blank lines arent respected or included in import" is a real
+        // complaint, and emitting a Line for every empty rich-text object is
+        // NOT the way to answer it. Measured on a real section rather than
+        // reasoned about: OneNote keeps an empty-text object alongside
+        // essentially every paragraph, so that rule double-spaced the whole
+        // notebook — 24 lines of content came back separated by 31 blank
+        // lines, and section breaks became triple gaps.
+        //
+        // Whatever distinguishes "the writer pressed Enter twice" from "the
+        // format keeps a terminator object" is not the emptiness of the text.
+        // Until that signal is found this stays off: no gaps is a much
+        // smaller wrong than every line double-spaced, and the layout damage
+        // from the taller boxes was worse than the missing gaps.
     }
 
     for cid in children {
