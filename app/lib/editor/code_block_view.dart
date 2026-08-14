@@ -149,6 +149,10 @@ class _CodeBlockViewState extends State<CodeBlockView> {
 
   @override
   void dispose() {
+    // Same reason as text_block_view: a page or notebook switch replaces this
+    // element outright, so `_handleExitTransition` never runs and nothing else
+    // tells AppState the controller it holds is about to be disposed.
+    widget.app.releaseEditor(_controller);
     _controller.dispose();
     _focus.dispose();
     super.dispose();

@@ -3436,6 +3436,44 @@ class AppState extends ChangeNotifier
     }
   }
 
+  /// Give the registration back when [c] is about to be disposed.
+  ///
+  /// **Keyed on the controller, not the block id**, and that difference is the
+  /// bug it fixes. [clearActiveEditor] is called from the editing → not-editing
+  /// transition in `build`, where the block id is the right question. A page or
+  /// notebook switch never reaches that transition: `BlockView` is keyed
+  /// `'<id>#<docRevision>'` and `selectPage` bumps `docRevision`, so every
+  /// block's element is thrown away wholesale and only `State.dispose` runs.
+  /// The session — and the `TextEditingController` inside it — was disposed
+  /// there while `activeEditor` and `_watchedEditor` went on pointing at it.
+  ///
+  /// A disposed controller reads fine ([marksAtCaret] only looks at `value`),
+  /// so nothing complained; the WRITERS are where it bites. Insert ▸ Image and
+  /// Insert ▸ Flashcard gate on `activeEditor != null` alone, so either one,
+  /// pressed after switching notebooks and before clicking into a new box,
+  /// called `notifyListeners` on a dead controller: "A TextEditingController
+  /// was used after being disposed".
+  ///
+  /// Identity also settles the ordering. Flutter builds the new page's editor
+  /// (which registers) BEFORE it disposes the old page's, so by the time the
+  /// old one lets go the registration has already moved on — matching on the
+  /// block id would have been checking the wrong question, and matching on
+  /// "something is registered" would clear the live editor. `identical` cannot
+  /// be wrong either way.
+  void releaseEditor(TextEditingController c) {
+    if (identical(_watchedEditor, c)) {
+      // Safe on a disposed notifier: `removeListener` is explicitly allowed
+      // after dispose, precisely so a listener's owner can outlive it.
+      c.removeListener(_onEditorChanged);
+      _watchedEditor = null;
+      _lastMarks = null;
+    }
+    if (identical(activeEditor?.controller, c)) {
+      activeEditor = null;
+      activeSession = null;
+    }
+  }
+
   /// Where the click that is about to open an editor landed. Consumed once by
   /// the session on its first build.
   Offset? pendingCaretGlobal;
@@ -5903,6 +5941,11 @@ class AppState extends ChangeNotifier
   @override
   void dispose() {
     _disposed = true;
+    // The caret watcher outlives nothing. A widget test builds and tears down
+    // an AppState per case, and a listener left on a controller from the last
+    // one is a leak that only shows up as a confusing failure in the next.
+    _watchedEditor?.removeListener(_onEditorChanged);
+    _watchedEditor = null;
     _stopWatching();
     unawaited(_mcpServer?.stop());
     _housekeepingTimer?.cancel();

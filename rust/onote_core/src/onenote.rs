@@ -311,7 +311,11 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
     let mut visited = HashSet::new();
     let mut next_space = 0usize;
     let mut cur_rev = 0usize;
-    walk(&r, root, &mut wo, &mut visited, 0, 0, &mut next_space, &mut cur_rev);
+    let mut in_version = false;
+    walk(
+        &r, root, &mut wo, &mut visited, 0, 0, &mut next_space, &mut cur_rev,
+        &mut in_version,
+    );
     let objs = wo.objs;
 
     // ── Group objects by object space ──────────────────────────────────────
@@ -337,14 +341,14 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
         let Some(&si) = idxs
             .iter()
             .filter(|&&i| objs[i].jcid == JCID_SECTION_NODE)
-            .max_by_key(|&&i| objs[i].stp)
+            .max_by_key(|&&i| currency(&objs[i]))
         else {
             continue;
         };
         let mut latest: HashMap<u32, usize> = HashMap::new();
         for &i in idxs {
             let e = latest.entry(objs[i].own_oid).or_insert(i);
-            if objs[i].stp > objs[*e].stp {
+            if currency(&objs[i]) > currency(&objs[*e]) {
                 *e = i;
             }
         }
@@ -453,7 +457,7 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
         for &i in idxs {
             if let Some(c) = canon_of(&objs[i]) {
                 let ent = by_canon.entry(c).or_insert(i);
-                if objs[i].stp > objs[*ent].stp {
+                if currency(&objs[i]) > currency(&objs[*ent]) {
                     *ent = i;
                 }
             }
@@ -505,17 +509,20 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
                 Some(c) => c as u64,
                 None => (1u64 << 32) | i as u64,
             };
-            // Choose the RICHEST declaration of this outline, not the newest.
+            // Live content first, then the RICHEST declaration of this outline,
+            // and only then file order.
             //
             // A revision's declaration can be a partial stub: on a real page the
-            // newest declaration listed 2 paragraphs while an earlier one listed
-            // the page's full content (and OneNote itself still shows all of it).
-            // Preferring "has any 0x1C20 children" over "latest" already fixed
-            // the title-only-stub case; this is the same trap one level down, so
-            // rank by child count and only fall back to file order to break ties.
+            // newest-by-offset declaration listed 2 paragraphs while an earlier
+            // one listed the page's full content (and OneNote itself still shows
+            // all of it). That symptom is what [currency] explains — the fuller
+            // declaration was the live revision and the stub a page-version
+            // snapshot — but child count stays as the second key, because it
+            // costs nothing and it is the one rule that cannot lose text.
             let e = latest_outline.entry(key).or_insert(i);
             let rank = |k: usize| {
                 (
+                    currency(&objs[k]).0,
                     read_propset(&r, objs[k].stp, objs[k].cb).oids(0x001C20).len(),
                     objs[k].stp,
                 )
@@ -534,7 +541,7 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
         if let Some(&ti) = idxs
             .iter()
             .filter(|&&i| objs[i].jcid == JCID_TITLE)
-            .max_by_key(|&&i| objs[i].stp)
+            .max_by_key(|&&i| currency(&objs[i]))
         {
             let mut lines = Vec::new();
             let mut guard = HashSet::new();
@@ -1402,6 +1409,21 @@ struct Obj {
     /// tables), so the same CompactID means different objects in different
     /// revisions — resolving globally mixes them (lost text on revised pages).
     rev: usize,
+    /// This declaration belongs to a revision that carries a **revision
+    /// context** — a stored PAGE VERSION, not the page as it stands. See
+    /// [FNID_REV_MANIFEST_START7].
+    versioned: bool,
+}
+
+/// How current a declaration of an object is; the greatest wins.
+///
+/// File offset alone was the whole answer, and it is the wrong one: ONESTORE is
+/// a revision store over a free-chunk allocator, so "further down the file" is
+/// not "newer", and OneNote's page-version snapshots are interleaved with live
+/// content. Live content therefore outranks every version snapshot, and file
+/// order only breaks ties within one of those two groups.
+fn currency(o: &Obj) -> (bool, usize) {
+    (!o.versioned, o.stp)
 }
 
 /// FileNode ID that introduces a new object space's manifest list
@@ -1420,6 +1442,31 @@ const FNID_GID_TABLE_ENTRY2: u16 = 0x025;
 /// GlobalIdTableEntry3FNDX: `{ from_start: u32, count: u32, to_start: u32 }` —
 /// bulk-copy a range of entries from the previous table.
 const FNID_GID_TABLE_ENTRY3: u16 = 0x026;
+
+/// RevisionManifestStart4FND / …6FND — a revision with NO revision context:
+/// the object space as it currently stands.
+const FNID_REV_MANIFEST_START4: u16 = 0x01B;
+const FNID_REV_MANIFEST_START6: u16 = 0x01E;
+/// RevisionManifestStart7FND — a 6FND **plus a `gctxid`** (revision context).
+///
+/// This is OneNote's page-version history, and reading it as content is how a
+/// page loses a whole section. A revision context names a stored *past* state
+/// of the object space; the space as it stands is the one revision whose
+/// manifest declares no context at all. Measured on the reference notebook:
+/// every one of its 56 object spaces has **exactly one** context-free manifest
+/// and up to five context-bearing ones, and the context-bearing revisions are
+/// scattered through the file — the last one physically is routinely not the
+/// newest logically, because ONESTORE is a revision store with a free-chunk
+/// allocator. Picking the declaration with the highest file offset therefore
+/// resurrected an arbitrary old version: on "Logic: Tautologies…" it replaced
+/// the outline's 21-paragraph child list with an 18-paragraph one from a
+/// version snapshot, deleting the page's last five lines.
+const FNID_REV_MANIFEST_START7: u16 = 0x01F;
+/// RevisionManifestEndFND — closes the manifest opened above.
+const FNID_REV_MANIFEST_END: u16 = 0x01C;
+/// Body offset of `gctxid` inside a RevisionManifestStart7FND: rid (20) +
+/// ridDependent (20) + RevisionRole (4) + odcsDefault (2).
+const REV7_GCTXID_OFFSET: usize = 46;
 
 /// Everything the file-node walk collects.
 #[derive(Default)]
@@ -1451,6 +1498,7 @@ fn walk(
     space: usize,
     next_space: &mut usize,
     cur_rev: &mut usize,
+    in_version: &mut bool,
 ) {
     // The `visited` set stops cycles, but a crafted file can still nest
     // distinct sub-lists thousands deep. Cap recursion depth (like
@@ -1509,7 +1557,10 @@ fn walk(
                     } else {
                         space
                     };
-                    walk(r, sub, out, visited, depth + 1, child_space, next_space, cur_rev);
+                    walk(
+                        r, sub, out, visited, depth + 1, child_space, next_space, cur_rev,
+                        in_version,
+                    );
                 }
             } else if base_type == 1 {
                 // Object declaration: BlobRef → ObjectSpaceObjectPropSet, then
@@ -1523,11 +1574,29 @@ fn walk(
                         cb: blob.cb as usize,
                         space,
                         rev: *cur_rev,
+                        versioned: *in_version,
                     });
                 }
             } else if base_type == 0 {
                 let body = o + 4;
                 match id {
+                    // Which revision this declaration belongs to: the space as
+                    // it stands (no context), or a stored page version (7FND's
+                    // `gctxid`). See [FNID_REV_MANIFEST_START7].
+                    FNID_REV_MANIFEST_START4 | FNID_REV_MANIFEST_START6 => {
+                        *in_version = false;
+                    }
+                    FNID_REV_MANIFEST_START7 => {
+                        let g = body + REV7_GCTXID_OFFSET;
+                        // A 7FND whose context is nil is still current content —
+                        // read the bytes rather than assuming the shape implies
+                        // the meaning.
+                        *in_version =
+                            g + 20 > r.d.len() || r.d[g..g + 20].iter().any(|&b| b != 0);
+                    }
+                    FNID_REV_MANIFEST_END => {
+                        *in_version = false;
+                    }
                     // A new revision's global-id table begins EMPTY (MS-ONESTORE
                     // §2.5.10): entries come from explicit 0x024 declarations and
                     // selective copies (0x025/0x026) from the previous table.
@@ -4172,7 +4241,11 @@ pub fn dump_structure(bytes: &[u8]) -> String {
     let mut visited = HashSet::new();
     let mut next_space = 0usize;
     let mut cur_rev = 0usize;
-    walk(&r, root, &mut wo, &mut visited, 0, 0, &mut next_space, &mut cur_rev);
+    let mut in_version = false;
+    walk(
+        &r, root, &mut wo, &mut visited, 0, 0, &mut next_space, &mut cur_rev,
+        &mut in_version,
+    );
     let objs = wo.objs;
 
     // Per-space JCID histogram — the space boundaries ARE the page/box
@@ -4229,7 +4302,11 @@ pub fn dump_sections(bytes: &[u8]) -> String {
     let mut visited = HashSet::new();
     let mut next_space = 0usize;
     let mut cur_rev = 0usize;
-    walk(&r, root, &mut wo, &mut visited, 0, 0, &mut next_space, &mut cur_rev);
+    let mut in_version = false;
+    walk(
+        &r, root, &mut wo, &mut visited, 0, 0, &mut next_space, &mut cur_rev,
+        &mut in_version,
+    );
     let objs = wo.objs;
 
     let mut spaces: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
@@ -4241,7 +4318,7 @@ pub fn dump_sections(bytes: &[u8]) -> String {
         let mut m: HashMap<u32, usize> = HashMap::new();
         for &i in idxs {
             let e = m.entry(objs[i].own_oid).or_insert(i);
-            if objs[i].stp > objs[*e].stp {
+            if currency(&objs[i]) > currency(&objs[*e]) {
                 *e = i;
             }
         }
@@ -4273,7 +4350,7 @@ pub fn dump_sections(bytes: &[u8]) -> String {
         let Some(&si) = idxs
             .iter()
             .filter(|&&i| objs[i].jcid == JCID_SECTION_NODE)
-            .max_by_key(|&&i| objs[i].stp)
+            .max_by_key(|&&i| currency(&objs[i]))
         else {
             continue;
         };
@@ -4359,7 +4436,11 @@ pub fn dump_revisions(bytes: &[u8], want_space: usize) -> String {
     let mut visited = HashSet::new();
     let mut next_space = 0usize;
     let mut cur_rev = 0usize;
-    walk(&r, root, &mut wo, &mut visited, 0, 0, &mut next_space, &mut cur_rev);
+    let mut in_version = false;
+    walk(
+        &r, root, &mut wo, &mut visited, 0, 0, &mut next_space, &mut cur_rev,
+        &mut in_version,
+    );
     let objs = &wo.objs;
 
     let exg = |oid: u32, rev: usize| -> Option<[u8; 20]> {
@@ -4377,7 +4458,7 @@ pub fn dump_revisions(bytes: &[u8], want_space: usize) -> String {
         }
         if let Some(e) = exg(o.own_oid, o.rev) {
             let ent = by_exg.entry(e).or_insert(i);
-            if o.stp > objs[*ent].stp {
+            if currency(o) > currency(&objs[*ent]) {
                 *ent = i;
             }
         }
@@ -4453,7 +4534,11 @@ pub fn dump_ink(bytes: &[u8], limit: usize) -> String {
     let mut visited = HashSet::new();
     let mut next_space = 0usize;
     let mut cur_rev = 0usize;
-    walk(&r, root, &mut wo, &mut visited, 0, 0, &mut next_space, &mut cur_rev);
+    let mut in_version = false;
+    walk(
+        &r, root, &mut wo, &mut visited, 0, 0, &mut next_space, &mut cur_rev,
+        &mut in_version,
+    );
     let objs = wo.objs;
 
     // True span of a delta channel: cumsum (first value = absolute start),

@@ -168,8 +168,16 @@ class _NotebookManagerState extends State<_NotebookManager> {
             icon: const Icon(Icons.add, size: 18),
             label: const Text('New'),
             onPressed: () async {
-              final title = await _promptNotebookName(context,
-                  title: 'New notebook', okLabel: 'Create');
+              // Through the shared prompt, which owns the field's controller in
+              // the dialog's own State. This used to build the field and
+              // dispose its controller in a `finally` right after the await —
+              // 150 ms before the route's exit transition had finished
+              // unmounting the field. That is what crashed the app on Enter;
+              // see [promptForText].
+              final title = await promptForText(context,
+                  title: 'New notebook',
+                  okLabel: 'Create',
+                  hintText: 'Notebook name');
               if (title == null || !mounted) return;
               await app.createNotebook(title);
               if (mounted) setState(() {});
@@ -579,39 +587,6 @@ Future<bool> _confirmPurge(BuildContext context, NotebookRef nb) async {
     ),
   );
   return ok == true;
-}
-
-/// Single-field name prompt used by "New notebook".
-Future<String?> _promptNotebookName(BuildContext context,
-    {required String title, required String okLabel, String? initial}) async {
-  final controller = TextEditingController(text: initial);
-  controller.selection =
-      TextSelection(baseOffset: 0, extentOffset: controller.text.length);
-  try {
-    final v = await showOnoteDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Notebook name'),
-          onSubmitted: (s) => Navigator.pop(ctx, s),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, controller.text),
-              child: Text(okLabel)),
-        ],
-      ),
-    );
-    final t = v?.trim();
-    return (t == null || t.isEmpty) ? null : t;
-  } finally {
-    controller.dispose(); // the old prompt leaked one of these per invocation
-  }
 }
 
 // ── Import entry points ────────────────────────────────────────────────────

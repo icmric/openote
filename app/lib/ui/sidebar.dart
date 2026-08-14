@@ -1954,34 +1954,19 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
 }
 
 Future<void> _promptSaveTemplate(BuildContext context, AppState app) async {
-  final controller = TextEditingController();
-  final name = await showOnoteDialog<String>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Save as template'),
-      content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Template name'),
-          onSubmitted: (v) => Navigator.pop(ctx, v)),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-        FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('Save')),
-      ],
-    ),
-  );
-  // The dialog closing does not dispose its controller; this leaked one
-  // TextEditingController per save-as-template.
-  controller.dispose();
-  if (name != null && name.trim().isNotEmpty) {
-    app.saveCurrentAsTemplate(name.trim());
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Template "${name.trim()}" saved')));
-    }
+  // Through [promptForText], which owns the field's controller in the dialog's
+  // own State. This used to build the field here and `controller.dispose()`
+  // straight after the await — the route is popped by then but its 150 ms exit
+  // transition has not finished, so the field was still mounted and still
+  // rebuilding against a dead controller. Same defect as the new-notebook
+  // prompt, which is what crashed the app.
+  final name = await promptForText(context,
+      title: 'Save as template', okLabel: 'Save', hintText: 'Template name');
+  if (name == null) return;
+  app.saveCurrentAsTemplate(name);
+  if (context.mounted) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('Template "$name" saved')));
   }
 }
 
