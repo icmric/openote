@@ -809,12 +809,7 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
             // survived into the body — every such page then showed its title
             // twice, once in the title band and once as the first line.
             let trim_leading_blanks = |lines: &mut Vec<Line>| {
-                while lines.first().is_some_and(|l| {
-                    l.image.is_none()
-                        && l.math.is_none()
-                        && l.table.is_none()
-                        && l.plain().trim().is_empty()
-                }) {
+                while lines.first().is_some_and(Line::is_blank) {
                     lines.remove(0);
                 }
             };
@@ -1245,7 +1240,7 @@ fn emit_boxes(
     // equations.
     let base_depth = lines
         .iter()
-        .filter(|l| l.math.is_none() && l.table.is_none())
+        .filter(|l| l.math.is_none() && l.table.is_none() && !l.is_blank())
         .map(|l| l.depth)
         .min()
         .unwrap_or(0);
@@ -2761,6 +2756,23 @@ impl Line {
         }
         self.runs.iter().map(|r| r.text.as_str()).collect()
     }
+
+    /// True for a line that renders as an empty paragraph — a blank line the
+    /// writer typed (see the `JCID_RICHTEXT_RUN` branch in [collect_inner]).
+    ///
+    /// Kept as one predicate because three places have to agree on it, and
+    /// they disagreed once already: a blank still carries the `depth` of the
+    /// paragraph it sat in, so when `emit_boxes` let it into the indent
+    /// baseline a blank one level out from the text re-based the whole box and
+    /// pushed every line right — measured on five pages of the reference
+    /// notebook ("Pigeonhole Principle", "Permutations", …). A blank emits no
+    /// indent of its own, so it must not define the indent of its neighbours.
+    fn is_blank(&self) -> bool {
+        self.image.is_none()
+            && self.math.is_none()
+            && self.table.is_none()
+            && self.runs.iter().all(|r| r.text.trim().is_empty())
+    }
 }
 
 /// Reduce a table object to a rectangular grid of per-cell Markdown.
@@ -2992,22 +3004,44 @@ fn collect_inner(
                     image: None,
                 });
             }
+        } else if o.jcid == JCID_RICHTEXT_RUN {
+            // An empty TEXT RUN is a blank line the writer typed. An empty
+            // RichText is not — it is the paragraph node, and it is textless by
+            // construction.
+            //
+            // "The blank lines ive added havent once been respected" is a real
+            // complaint, and an earlier attempt answered it by emitting a Line
+            // for every empty rich-text object of either type. That
+            // double-spaced the whole notebook: 24 lines of content came back
+            // separated by 31 blank lines, so it was reverted with the note
+            // that emptiness of the text was the wrong signal. Half right — the
+            // missing half is WHICH object is empty.
+            //
+            // Measured on two real files (the reference notebook's
+            // `Discrete Mathematics.one` and a single-page export): every
+            // paragraph is a PAIR — a RichText (0x0D) container followed by its
+            // one RichText_Run (0x0E) child — and of the 1600 RichText objects
+            // across both, **not one** carries text; every one of the 1588
+            // text runs is a 0x0E. So a blank 0x0D is structural noise once per
+            // paragraph (which is exactly where the doubling came from), while
+            // a blank 0x0E — a run with no 0x3498/0x1C22 property at all — is
+            // the paragraph the writer left empty.
+            //
+            // Keying on the object type rather than on "is the text empty"
+            // takes the Logic: Tautologies page from 24 content lines + 31
+            // blanks to 24 + 4, which is what OneNote's own PDF export of that
+            // page shows.
+            out.push(Line {
+                depth,
+                tags,
+                is_list: ctx,
+                bullet: bullet.clone(),
+                runs: Vec::new(),
+                math: None,
+                table: None,
+                image: None,
+            });
         }
-        // An empty paragraph deliberately produces NO Line.
-        //
-        // "Extra blank lines arent respected or included in import" is a real
-        // complaint, and emitting a Line for every empty rich-text object is
-        // NOT the way to answer it. Measured on a real section rather than
-        // reasoned about: OneNote keeps an empty-text object alongside
-        // essentially every paragraph, so that rule double-spaced the whole
-        // notebook — 24 lines of content came back separated by 31 blank
-        // lines, and section breaks became triple gaps.
-        //
-        // Whatever distinguishes "the writer pressed Enter twice" from "the
-        // format keeps a terminator object" is not the emptiness of the text.
-        // Until that signal is found this stays off: no gaps is a much
-        // smaller wrong than every line double-spaced, and the layout damage
-        // from the taller boxes was worse than the missing gaps.
     }
 
     for cid in children {
@@ -3503,8 +3537,17 @@ fn outline_markdown_tagged(
     img_idx: &HashMap<u32, String>,
     base_depth: Option<usize>,
 ) -> (String, Vec<BoxTag>) {
-    let min_depth = base_depth
-        .unwrap_or_else(|| lines.iter().map(|l| l.depth).min().unwrap_or(0));
+    // Blank lines are excluded from the baseline for the same reason as in
+    // [emit_boxes]: they carry a depth but render no indent, so letting one set
+    // the minimum indents every real line beside it.
+    let min_depth = base_depth.unwrap_or_else(|| {
+        lines
+            .iter()
+            .filter(|l| !l.is_blank())
+            .map(|l| l.depth)
+            .min()
+            .unwrap_or(0)
+    });
     let mut out = String::new();
     let mut tags = Vec::new();
     let mut emitted = 0usize;
@@ -3523,8 +3566,7 @@ fn outline_markdown_tagged(
         // for one would write trailing whitespace that the reader shows as an
         // indented empty paragraph and that every diff of the exported
         // Markdown would flag.
-        let blank = l.runs.is_empty() && l.math.is_none() && l.table.is_none();
-        if !blank {
+        if !l.is_blank() {
             out.push_str(&"  ".repeat(level));
             if l.is_list {
                 out.push_str(&l.bullet);
@@ -4918,6 +4960,201 @@ mod tests {
             table: None,
             image: None,
         }
+    }
+
+    fn blank_line(depth: usize) -> Line {
+        Line {
+            depth,
+            tags: Vec::new(),
+            is_list: false,
+            bullet: String::new(),
+            runs: Vec::new(),
+            math: None,
+            table: None,
+            image: None,
+        }
+    }
+
+    /// One paragraph as OneNote actually stores it: a RichText (0x0D) container
+    /// whose single OID child is a RichText_Run (0x0E). `run_text` of `None`
+    /// makes the run textless — the shape of a line the writer left empty.
+    ///
+    /// Returns the walked lines, so a test can assert how many the PAIR
+    /// produced. That count is the whole ballgame: one line per pair is
+    /// correct, two is the double-spacing defect.
+    fn walk_paragraph_pair(run_text: Option<&str>) -> Vec<Line> {
+        let container = propset_blob(&[0x0000_0002], &[]);
+        let run = match run_text {
+            Some(t) => {
+                let mut data = (t.len() as u32).to_le_bytes().to_vec();
+                data.extend_from_slice(t.as_bytes());
+                propset_blob(&[], &[(PID_TEXT_UTF8, 0x07, data)])
+            }
+            None => propset_blob(&[], &[]),
+        };
+        let mut blob = container.clone();
+        let run_at = blob.len();
+        blob.extend_from_slice(&run);
+
+        let objs = vec![
+            Obj {
+                own_oid: 0x0000_0001,
+                jcid: JCID_RICHTEXT,
+                stp: 0,
+                cb: container.len(),
+                space: 0,
+                rev: 0,
+                versioned: false,
+            },
+            Obj {
+                own_oid: 0x0000_0002,
+                jcid: JCID_RICHTEXT_RUN,
+                stp: run_at,
+                cb: run.len(),
+                space: 0,
+                rev: 0,
+                versioned: false,
+            },
+        ];
+        // One revision whose guidIndex 0 is some GUID; CompactID = idx<<8 | n.
+        let guid = [7u8; 16];
+        let rev_tables = vec![HashMap::from([(0u32, guid)])];
+        let exg = |n: u8| {
+            let mut e = [0u8; 20];
+            e[..16].copy_from_slice(&guid);
+            e[16] = n;
+            e
+        };
+        let registry = HashMap::from([(exg(1), 0u32), (exg(2), 1u32)]);
+        let res = Resolver {
+            objs: &objs,
+            rev_tables: &rev_tables,
+            registry: &registry,
+            by_canon: HashMap::from([(CANON_BIT, 0usize), (1 | CANON_BIT, 1usize)]),
+        };
+        let r = Reader { d: &blob };
+        let mut out = Vec::new();
+        let mut guard = HashSet::new();
+        collect_tree(&r, &objs[0], &res, 0, &mut out, &mut guard);
+        out
+    }
+
+    /// The blank-line discriminator, pinned at the object level.
+    ///
+    /// Reported: "across every page ive checked the blank lines ive added
+    /// havent once been respected and are always ignored in the import" — and
+    /// the earlier attempt to honour them keyed on "is the text empty", which
+    /// double-spaced everything (24 content lines came back separated by 31
+    /// blanks) and had to be reverted.
+    ///
+    /// The signal is WHICH object is empty, not that it is. A paragraph is
+    /// always a 0x0D container plus a 0x0E run, and the container is textless
+    /// by construction — of the 1600 RichText objects across the two reference
+    /// files, none carried text. So the container must never produce a line and
+    /// the run always must.
+    #[test]
+    fn an_empty_text_run_is_a_blank_line_but_its_container_is_not() {
+        let lines = walk_paragraph_pair(None);
+        // ONE line, not two: the container contributed nothing. Two here is
+        // exactly the double-spacing that got the first attempt reverted.
+        assert_eq!(lines.len(), 1, "a paragraph pair must yield one line");
+        assert!(lines[0].is_blank(), "the empty run should read as a blank line");
+    }
+
+    /// The same pair with text: still one line, and it is the text. Guards the
+    /// other direction — suppressing the container must not cost the content.
+    #[test]
+    fn a_paragraph_pair_with_text_yields_exactly_one_content_line() {
+        let lines = walk_paragraph_pair(Some("Tautology"));
+        assert_eq!(lines.len(), 1, "a paragraph pair must yield one line");
+        assert!(!lines[0].is_blank());
+        assert_eq!(lines[0].plain(), "Tautology");
+    }
+
+    /// A blank renders as a genuinely empty row — no indent, no bullet. Trailing
+    /// whitespace here reads as an indented empty paragraph and shows up in
+    /// every diff of the exported Markdown.
+    ///
+    /// **This covers the TABLE-CELL path, not the import path.** `base_depth:
+    /// None` is [outline_markdown_tagged]'s own fallback minimum, and the only
+    /// caller that passes `None` is [parse_table], once per cell. Every page
+    /// outline arrives from `emit_boxes` with `Some(base_depth)` already
+    /// computed, so the two minimums are separate code and need separate tests
+    /// — see [a_blank_outdented_from_the_prose_does_not_re_base_the_box] for
+    /// the one that guards the import path.
+    #[test]
+    fn a_blank_in_a_table_cell_renders_empty_and_does_not_re_base_the_cell() {
+        let lines = [
+            text_line(2, "Can be seen in a truth table as a column of 0s", false),
+            blank_line(1),
+            text_line(2, "Variables", false),
+        ];
+        let refs: Vec<&Line> = lines.iter().collect();
+        let md = outline_markdown(&refs, &HashMap::new(), None);
+        assert_eq!(
+            md.lines().collect::<Vec<_>>(),
+            ["Can be seen in a truth table as a column of 0s", "", "Variables"]
+        );
+    }
+
+    /// The indent baseline for a page outline is computed in `emit_boxes`, and
+    /// it has to be measured over the lines that actually render an indent.
+    ///
+    /// A blank keeps the `depth` of the paragraph it was typed in, so a writer
+    /// who presses Enter at the outer level between two indented paragraphs
+    /// leaves a blank one level OUT from its neighbours. Letting that into the
+    /// minimum re-bases the WHOLE box, because the base is taken once for the
+    /// whole outline: measured across the reference notebook, honouring blanks
+    /// without excluding them here pushed 130 lines in 14 boxes on 12 pages one
+    /// level right — two spaces each — including "Permutations", "Methods of
+    /// Proof: Principle of Mathematical Induction" and "Finite and Infinite
+    /// Countable Sets".
+    ///
+    /// Goes through `emit_boxes` deliberately. It is the only caller that
+    /// computes this minimum; `outline_markdown`'s own fallback is reached from
+    /// a table cell alone, so a test written against that one leaves the line
+    /// that does the work here unguarded (it did, and deleting the filter kept
+    /// the suite green).
+    #[test]
+    fn a_blank_outdented_from_the_prose_does_not_re_base_the_box() {
+        let lines = [
+            text_line(2, "Can be seen in a truth table as a column of 0s", false),
+            blank_line(1), // Enter pressed at the outer level
+            text_line(2, "Variables", false),
+        ];
+        let mut boxes = Vec::new();
+        emit_boxes(&lines, 100.0, 50.0, None, &mut boxes, &HashMap::new(), 1);
+        assert_eq!(boxes.len(), 1, "prose and its blank stay one text box");
+        assert_eq!(
+            boxes[0].markdown.lines().collect::<Vec<_>>(),
+            ["Can be seen in a truth table as a column of 0s", "", "Variables"],
+            "a blank emits no indent, so it must not set the indent of the box"
+        );
+    }
+
+    /// The same trap one segment further in. `emit_boxes` splits an outline at
+    /// every math line but shares ONE base depth across the pieces, so a blank
+    /// admitted to the minimum shifts the segments after the equation too — the
+    /// mechanism by which a single stray blank moved lines on pages whose gap
+    /// and whose indented prose were nowhere near each other.
+    #[test]
+    fn the_shared_base_depth_survives_a_math_split_with_a_blank_in_it() {
+        let mut math = text_line(1, "", false);
+        math.math = Some("x^2".into());
+        let lines = [
+            text_line(2, "before the equation", false),
+            blank_line(1),
+            math,
+            text_line(2, "after the equation", false),
+        ];
+        let mut boxes = Vec::new();
+        emit_boxes(&lines, 0.0, 0.0, None, &mut boxes, &HashMap::new(), 1);
+        let text: Vec<&str> = boxes
+            .iter()
+            .filter(|b| b.kind == "text")
+            .map(|b| b.markdown.as_str())
+            .collect();
+        assert_eq!(text, ["before the equation", "after the equation"]);
     }
 
     /// Regression for the last known layout defect: non-list paragraphs used
