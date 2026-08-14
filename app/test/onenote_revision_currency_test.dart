@@ -27,10 +27,17 @@ import 'package:path/path.dart' as p;
 import 'package:openote/core/onote_ffi.dart';
 
 /// A page OneNote exported on its own, and a phrase that identifies the same
-/// page inside the package. The phrase has to be unique across the notebook,
-/// because the package's page TITLES are not reliable for this — two of these
-/// pages carry each other's titles in the package, which is the file's own
-/// doing and a separate question from this one.
+/// page inside the package. The page is found by CONTENT, not by title, so that
+/// the title is left free to be checked rather than assumed.
+///
+/// It used to be checked and found wanting: two of these pages carried each
+/// other's titles in the package, and this file recorded that as the file's own
+/// doing. It was ours. A page series lists its pages in display order and their
+/// metadata in creation order, and the importer paired the two arrays by index,
+/// so any section with a reordered page handed titles to the wrong pages — 16
+/// of the notebook's 329. The titles are matched by page identity now, and the
+/// assertion below is the guard: OneNote's own export says what the page is
+/// called.
 const _cases = <({String file, String marker})>[
   (
     file: 'Logic Tautologies, Contradictions and Quantifiers.one',
@@ -109,6 +116,14 @@ void main() {
       expect(_content(matches.single), expected,
           reason: 'the package copy of "${c.file}" lost or changed content — '
               'a page-version snapshot has been read as live content again');
+      // The page OneNote exported under this name must come out of the package
+      // under the same name. Before page metadata was matched by page identity,
+      // the page holding "Negation of Quantified Statements" came back titled
+      // "Truth Tables, Compound Statements and Implication" — the title of the
+      // page before it.
+      expect(matches.single['title'], soloPages.single['title'],
+          reason: 'the package copy of "${c.file}" is wearing another page\'s '
+              'title — page metadata has been paired by position again');
     }
   });
 }

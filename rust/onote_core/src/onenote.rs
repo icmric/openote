@@ -65,6 +65,63 @@ const JCID_PAGE_SERIES: u32 = 0x00060008;
 const PID_ELEMENT_CHILDREN: u32 = 0x001C20; // section → page-series refs
 const PID_PAGE_METADATA: u32 = 0x003442; // page-series → PageMetadata refs
 const PID_PAGE_SPACES: u32 = 0x001D63; // page-series → page object-space refs
+/// PageMetadata object. Two copies of each exist: one in the section directory
+/// space (the tab: title + subpage level) and one inside the page's own object
+/// space. Both carry the same [PID_PAGE_GUID], which is what ties them together.
+const JCID_PAGE_METADATA: u32 = 0x00020030;
+/// The page's identity GUID on a PageMetadata object. This — not the position
+/// of the metadata in the page-series array — says which page a title belongs
+/// to; see the pairing in [import_one].
+const PID_PAGE_GUID: u32 = 0x001C30;
+
+/// The page a PageMetadata object names, if it names one.
+fn page_guid(r: &Reader, o: &Obj) -> Option<[u8; 16]> {
+    match read_propset(r, o.stp, o.cb).get(PID_PAGE_GUID) {
+        Some(PVal::Str(b)) if b.len() == 16 => {
+            let mut g = [0u8; 16];
+            g.copy_from_slice(b);
+            Some(g)
+        }
+        _ => None,
+    }
+}
+
+/// Which PageMetadata object each page of a section takes its title and subpage
+/// level from — **by the page's identity, not by its position**.
+///
+/// `metas`: every metadata object this section's page series reference, as (the
+/// page GUID it names, object index). `pages`: the section's pages in display
+/// order, as (the page's own identity GUID, the metadata the k-th-with-k-th
+/// pairing would give it). Returns one metadata per page, in the same order.
+///
+/// Position is only the fallback. `0x1D63` lists a series' pages in display
+/// order while `0x3442` lists its metadata in creation order, so on any section
+/// whose pages have been reordered the two arrays are a permutation apart and
+/// pairing them by index hands pages each other's titles.
+fn pair_page_metadata(
+    metas: &[([u8; 16], usize)],
+    pages: &[(Option<[u8; 16]>, Option<usize>)],
+) -> Vec<Option<usize>> {
+    let mut by_page: HashMap<[u8; 16], usize> = HashMap::new();
+    // A GUID two different metadata objects both claim names no one page; such
+    // a page keeps the positional pairing rather than guessing between them.
+    let mut ambiguous: HashSet<[u8; 16]> = HashSet::new();
+    for &(g, mi) in metas {
+        if by_page.insert(g, mi).is_some_and(|prev| prev != mi) {
+            ambiguous.insert(g);
+        }
+    }
+    pages
+        .iter()
+        .map(|(own, by_index)| {
+            own.filter(|g| !ambiguous.contains(g))
+                .and_then(|g| by_page.get(&g).copied())
+                // No identity to go on (or it names nothing we hold): an
+                // approximate title beats no title at all.
+                .or(*by_index)
+        })
+        .collect()
+}
 
 // ── MS-ONE object types (JCID) we navigate ─────────────────────────────────
 const JCID_OUTLINE: u32 = 0x0006000B;
@@ -333,7 +390,23 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
     // running global ordinal — that is the tab order the user sees. Each page:
     // resolve its object-space ID (guidIndex high 24 | n low 8) through the
     // space's global-id table to a GUID, matched against the gosid captured for
-    // every content space; read the parallel PageMetadata for title + level.
+    // every content space; then find the PageMetadata that names THAT page.
+    //
+    // The two arrays are NOT parallel. Reading the k-th metadata for the k-th
+    // page space is what put other pages' titles on pages: 0x1D63 is the page
+    // list in DISPLAY order, while 0x3442 keeps the order the metadata objects
+    // were created, so moving a page inside a section leaves the arrays
+    // permuted against each other. Measured on the reference notebook, **16 of
+    // 329 pages** paired with the wrong metadata — "Dominance and Big-O
+    // Notation" and "Uncountable Sets and Cantor's Diagonalisation Argument"
+    // wore each other's titles, and five consecutive "Maths 1" pages were
+    // rotated by one.
+    //
+    // The link that IS reliable is the page's own identity GUID: every page
+    // object space carries a PageMetadata object (0x00020030) whose 0x1C30 is
+    // that page's GUID, and the section directory's copy of that page's
+    // metadata repeats it. Matching on the GUID reproduced the page's own title
+    // outline on all 16 of those pages and disagreed with it on none.
     let mut space_meta: HashMap<usize, (String, u32, usize)> = HashMap::new();
     let mut global_ord = 0usize;
     for (&dir_sp, idxs) in &spaces {
@@ -354,6 +427,14 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
         }
         let table = wo.gid_tables.get(&dir_sp);
         let section = read_propset(&r, objs[si].stp, objs[si].cb);
+        // Pass 1: the section's pages in display order — each with its own
+        // identity GUID and with the metadata the positional pairing would give
+        // it — plus every metadata object the page series reference. Only
+        // referenced metadata goes in, so a re-pairing can never pull in a
+        // title from outside the section's own page list.
+        let mut page_list: Vec<(Option<[u8; 16]>, Option<usize>)> = Vec::new();
+        let mut page_spaces_in_order: Vec<usize> = Vec::new();
+        let mut metas: Vec<([u8; 16], usize)> = Vec::new();
         for series_oid in section.oids(PID_ELEMENT_CHILDREN) {
             let Some(&pi) = latest.get(&series_oid) else { continue };
             if objs[pi].jcid != JCID_PAGE_SERIES {
@@ -362,6 +443,12 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
             let series = read_propset(&r, objs[pi].stp, objs[pi].cb);
             let page_spaces = series.osids(PID_PAGE_SPACES);
             let page_metas = series.oids(PID_PAGE_METADATA);
+            for oid in &page_metas {
+                let Some(&mi) = latest.get(oid) else { continue };
+                if let Some(g) = page_guid(&r, &objs[mi]) {
+                    metas.push((g, mi));
+                }
+            }
             for (k, osid) in page_spaces.iter().enumerate() {
                 let (n, gidx) = (osid & 0xFF, osid >> 8);
                 let Some(guid) = table.and_then(|t| t.get(&gidx)) else {
@@ -373,18 +460,36 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
                 }) else {
                     continue;
                 };
-                let (mut title, mut level) = (String::new(), 0u32);
-                if let Some(&mi) = page_metas.get(k).and_then(|oid| latest.get(oid)) {
-                    let ps = read_propset(&r, objs[mi].stp, objs[mi].cb);
-                    title = ps.utf16(PID_TITLE).unwrap_or_default();
-                    // OneNote PageLevel is 1-based (1 = top-level page, 2/3 =
-                    // sub/sub-sub). Openote's subpage indent is 0-based, so
-                    // shift down; a missing level defaults to top-level.
-                    level = ps.u32(PID_PAGE_LEVEL).unwrap_or(1).saturating_sub(1).min(2);
-                }
-                space_meta.insert(sp, (title, level, global_ord));
-                global_ord += 1;
+                // The page's own copy of its PageMetadata — its identity.
+                let own = spaces
+                    .get(&sp)
+                    .and_then(|page_idxs| {
+                        page_idxs
+                            .iter()
+                            .filter(|&&i| objs[i].jcid == JCID_PAGE_METADATA)
+                            .max_by_key(|&&i| currency(&objs[i]))
+                    })
+                    .and_then(|&i| page_guid(&r, &objs[i]));
+                page_spaces_in_order.push(sp);
+                page_list.push((own, page_metas.get(k).and_then(|oid| latest.get(oid)).copied()));
             }
+        }
+        // Pass 2: title + level from the metadata that names THIS page.
+        for (&sp, chosen) in page_spaces_in_order
+            .iter()
+            .zip(pair_page_metadata(&metas, &page_list))
+        {
+            let (mut title, mut level) = (String::new(), 0u32);
+            if let Some(mi) = chosen {
+                let ps = read_propset(&r, objs[mi].stp, objs[mi].cb);
+                title = ps.utf16(PID_TITLE).unwrap_or_default();
+                // OneNote PageLevel is 1-based (1 = top-level page, 2/3 =
+                // sub/sub-sub). Openote's subpage indent is 0-based, so
+                // shift down; a missing level defaults to top-level.
+                level = ps.u32(PID_PAGE_LEVEL).unwrap_or(1).saturating_sub(1).min(2);
+            }
+            space_meta.insert(sp, (title, level, global_ord));
+            global_ord += 1;
         }
     }
 
@@ -5747,5 +5852,92 @@ mod tests {
     #[test]
     fn a_page_with_no_identified_root_keeps_all_of_its_ink() {
         assert_eq!(select_ink(&[], false), vec![5, 6]);
+    }
+
+    /// Distinct page-identity GUID for page `n`.
+    fn pg(n: u8) -> [u8; 16] {
+        let mut g = [0u8; 16];
+        g[0] = n;
+        g
+    }
+
+    /// "Week 6: More sets and Algorithms" of the reference notebook's Discrete
+    /// Mathematics section, reduced to the two arrays that pair a title to a
+    /// page. Six pages; `metas` is the section's `0x3442` array in FILE order
+    /// and `pages` is the `0x1D63` display order — measured, they are a
+    /// permutation apart, so the k-th metadata belongs to the k-th page on only
+    /// two of the six.
+    ///
+    /// Metadata object indices are 100 + their position in the `0x3442` array,
+    /// which is exactly what the old positional pairing handed each page.
+    fn week6() -> (Vec<([u8; 16], usize)>, Vec<(Option<[u8; 16]>, Option<usize>)>) {
+        // 0x3442, in file order: the pages it names are 0, 5, 4, 3, 2, 1.
+        let named = [0u8, 5, 4, 3, 2, 1];
+        let metas: Vec<([u8; 16], usize)> =
+            named.iter().enumerate().map(|(i, &p)| (pg(p), 100 + i)).collect();
+        // 0x1D63, in display order: page k, paired positionally with meta k.
+        let pages: Vec<(Option<[u8; 16]>, Option<usize>)> =
+            (0..6).map(|k| (Some(pg(k as u8)), Some(100 + k))).collect();
+        (metas, pages)
+    }
+
+    /// Reported: "in a few cases the titles are swaped with another one a few
+    /// pages after it… the content is on the right page… but the title is
+    /// wrong" — "Dominance and Big O, and Uncountable sets" naming each other.
+    ///
+    /// The page series' two arrays are not parallel: `0x1D63` lists a section's
+    /// pages in DISPLAY order while `0x3442` lists their metadata in the order
+    /// those objects were created, so reordering a page inside a section leaves
+    /// the arrays permuted and the k-th-with-k-th pairing gives pages each
+    /// other's titles. Measured on the reference notebook, 16 of 329 pages;
+    /// matching on the page's identity GUID instead reproduced the page's own
+    /// title outline on all 16 and disagreed with it on none.
+    #[test]
+    fn a_page_takes_the_title_of_the_metadata_that_names_it_not_the_one_beside_it() {
+        let (metas, pages) = week6();
+        assert_eq!(
+            pair_page_metadata(&metas, &pages),
+            vec![Some(100), Some(105), Some(104), Some(103), Some(102), Some(101)],
+            "each page must get the metadata naming it, whatever its position"
+        );
+        // And that is genuinely not the positional answer, or this proves
+        // nothing: four of the six pages move.
+        let positional: Vec<Option<usize>> = pages.iter().map(|p| p.1).collect();
+        assert_eq!(
+            pair_page_metadata(&metas, &pages)
+                .iter()
+                .zip(&positional)
+                .filter(|(a, b)| a != b)
+                .count(),
+            4
+        );
+    }
+
+    /// Every page must still end up with a title. A page space we could not read
+    /// an identity GUID out of keeps the positional pairing — approximate beats
+    /// "Untitled", which is what dropping the page's metadata would produce.
+    #[test]
+    fn a_page_with_no_identity_falls_back_to_its_position() {
+        let (metas, mut pages) = week6();
+        pages[1].0 = None;
+        assert_eq!(pair_page_metadata(&metas, &pages)[1], Some(101));
+        // An identity that names no metadata we hold falls back the same way.
+        pages[1].0 = Some(pg(200));
+        assert_eq!(pair_page_metadata(&metas, &pages)[1], Some(101));
+    }
+
+    /// Two metadata objects claiming the same page name no page between them.
+    /// Guessing would be how one page's title lands on another again, so an
+    /// ambiguous GUID falls back to position for every page that carries it.
+    #[test]
+    fn a_guid_two_metadata_objects_claim_decides_nothing() {
+        let (mut metas, pages) = week6();
+        metas.push((pg(1), 106)); // a second claim on page 1
+        let paired = pair_page_metadata(&metas, &pages);
+        assert_eq!(paired[1], Some(101), "the contested page keeps its position");
+        assert_eq!(paired[5], Some(101), "…and so does the page that held it");
+        // The pages nobody contests are still matched by identity.
+        assert_eq!(paired[2], Some(104));
+        assert_eq!(paired[4], Some(102));
     }
 }
