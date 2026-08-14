@@ -909,16 +909,8 @@ kind: "table".into(),
         // ── Ink: container → data node → stroke nodes → packed paths ────────
         let mut ink: Vec<ImportedStroke> = Vec::new();
         let mut dropped_strokes: u32 = 0;
-        let mut seen_ink = HashSet::new();
-        for &i in idxs {
+        for i in live_ink_containers(&r, &res, idxs, &root_is) {
             let o = &objs[i];
-            if o.jcid != JCID_INK_CONTAINER {
-                continue;
-            }
-            match canon_of(o) {
-                Some(c) if res.by_canon.get(&c) == Some(&i) && seen_ink.insert(c) => {}
-                _ => continue, // not the current declaration, or a duplicate
-            }
             let cps = read_propset(&r, o.stp, o.cb);
             // Ink-space → half-inch page units. When the container carries no
             // explicit scaling, raw units are HIMETRIC-like (2540/inch →
@@ -2914,6 +2906,85 @@ fn is_zero(v: &u32) -> bool {
 fn table_width(g: &TableGrid) -> Option<f32> {
     let total: f32 = g.col_w.iter().sum();
     (total > 1.0).then_some(total)
+}
+
+/// Every object canonically reachable from `roots`, following object references
+/// exactly as [collect_tree] does (`parse_obj` children, resolved through the
+/// referencing object's revision by [Resolver]).
+///
+/// This is what tells LIVE page content from content the page no longer has.
+/// Erasing ink in OneNote does **not** remove the ink objects from the file — it
+/// writes a new revision whose page node simply stops referencing them, and the
+/// orphaned objects stay behind forever. A flat scan of the object space
+/// therefore resurrects every stroke ever erased on a page: measured on the
+/// reference notebook, the "Symbols" page imported 39 strokes that OneNote does
+/// not show, because its live page node lists 6 children while a stored page
+/// VERSION lists 43. Across that notebook 356 of 64 645 strokes were such
+/// ghosts, and not one of them was referenced by any live-revision object.
+///
+/// Reachability subsumes [currency] for this purpose: you can only reach what
+/// the current page points at. The reverse test — "does this object have a
+/// declaration outside a version revision?" — is NOT equivalent and must not be
+/// substituted: 180 containers on the same notebook hold live ink whose only
+/// stored declaration sits inside a version revision (unchanged since, so no
+/// newer copy was ever written), and dropping those would delete ink the user
+/// can still see.
+fn reachable_canons(r: &Reader, res: &Resolver, roots: &[usize]) -> HashSet<u32> {
+    let mut seen: HashSet<u32> = HashSet::new();
+    let mut stack: Vec<usize> = roots.to_vec();
+    while let Some(i) = stack.pop() {
+        let o = res.obj(i);
+        // Every referenced OID, not a hand-picked list of properties: ink can
+        // hang off a table cell, an outline group or an image just as well as
+        // off the page node, and a PID allow-list would silently delete it.
+        let (_text, kids) = parse_obj(r, o.stp, o.cb);
+        for k in kids {
+            if seen.insert(res.canon(k, o.rev)) {
+                if let Some(ki) = res.get(k, o.rev) {
+                    stack.push(ki);
+                }
+            }
+        }
+    }
+    seen
+}
+
+/// The ink containers a page should import: the current declaration of every
+/// container the LIVE page tree still reaches, in file order.
+///
+/// `roots` are the page's live content containers (the same ones the text walk
+/// descends). An EMPTY `roots` disables the reachability filter entirely: with
+/// no live tree to test against we have no evidence either way, and failing to
+/// identify a page's root must not silently delete all of its ink.
+fn live_ink_containers(
+    r: &Reader,
+    res: &Resolver,
+    idxs: &[usize],
+    roots: &[usize],
+) -> Vec<usize> {
+    let live = (!roots.is_empty()).then(|| reachable_canons(r, res, roots));
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for &i in idxs {
+        let o = res.obj(i);
+        if o.jcid != JCID_INK_CONTAINER {
+            continue;
+        }
+        // An object's own CompactID resolved through its own revision is its
+        // canonical id; unresolvable ones fall back to the raw id, which is
+        // never a key of `by_canon`, so they drop out here as they always did.
+        let c = res.canon(o.own_oid, o.rev);
+        if res.by_canon.get(&c) != Some(&i) {
+            continue; // not the current declaration of this container
+        }
+        if live.as_ref().is_some_and(|l| !l.contains(&c)) {
+            continue; // erased in OneNote: the live page no longer reaches it
+        }
+        if seen.insert(c) {
+            out.push(i);
+        }
+    }
+    out
 }
 
 /// Depth-first walk of an object subtree in reading order. A paragraph node
@@ -5561,5 +5632,120 @@ mod tests {
             decode_8bit_text("¬ already utf-8 ∧".as_bytes()),
             "¬ already utf-8 ∧"
         );
+    }
+
+    /// A page's object space reduced to the shape that resurrected erased ink,
+    /// and run through [live_ink_containers]. Returns the CompactIDs of the
+    /// containers selected for import.
+    ///
+    /// Modelled on the measured file. ONE canonical page node with TWO
+    /// declarations: the live one lists only the table, the page-VERSION
+    /// snapshot also lists a second ink container. Both containers are still in
+    /// the file — erasing ink in OneNote removes the reference, never the
+    /// object — so a flat scan of the space finds both.
+    ///
+    /// The live stroke sits three hops down, inside a table cell, because ink
+    /// is not always a direct child of the page node and a walk that only
+    /// looked at the root's own children would delete it.
+    ///
+    /// * `roots` — the live containers the text walk descends, by object index.
+    /// * `live_ink_versioned` — whether the surviving container's only stored
+    ///   declaration sits inside a version revision (the real case that rules
+    ///   out judging ink by [currency] alone).
+    fn select_ink(roots: &[usize], live_ink_versioned: bool) -> Vec<u32> {
+        // cid = guidIndex << 8 | n; one revision whose guidIndex 0 is `guid`,
+        // so each object's CompactID is just its `n`.
+        let guid = [7u8; 16];
+        let exg = |n: u8| {
+            let mut e = [0u8; 20];
+            e[..16].copy_from_slice(&guid);
+            e[16] = n;
+            e
+        };
+        // (own cid, jcid, referenced cids, versioned)
+        let decls: [(u32, u32, &[u32], bool); 7] = [
+            (1, JCID_OUTLINE, &[2], false),      // 0: live page node
+            (1, JCID_OUTLINE, &[2, 6], true),    // 1: stored page VERSION
+            (2, JCID_TABLE, &[3], false),        // 2
+            (3, JCID_TABLE_ROW, &[4], false),    // 3
+            (4, JCID_TABLE_CELL, &[5], false),   // 4
+            (5, JCID_INK_CONTAINER, &[], live_ink_versioned), // 5: still drawn
+            (6, JCID_INK_CONTAINER, &[], true),  // 6: erased
+        ];
+        let mut blob = Vec::new();
+        let mut objs = Vec::new();
+        for (oid, jcid, kids, versioned) in decls {
+            let bytes = propset_blob(kids, &[]);
+            objs.push(Obj {
+                own_oid: oid,
+                jcid,
+                stp: blob.len(),
+                cb: bytes.len(),
+                space: 0,
+                rev: 0,
+                versioned,
+            });
+            blob.extend_from_slice(&bytes);
+        }
+        let rev_tables = vec![HashMap::from([(0u32, guid)])];
+        let registry: HashMap<[u8; 20], u32> =
+            (1u8..=6).map(|n| (exg(n), n as u32 - 1)).collect();
+        // Latest declaration per canonical id, ranked by `currency` exactly as
+        // the importer builds it — so the page node resolves to the LIVE one.
+        let mut by_canon: HashMap<u32, usize> = HashMap::new();
+        for (i, o) in objs.iter().enumerate() {
+            let c = (registry[&exg(o.own_oid as u8)]) | CANON_BIT;
+            let e = by_canon.entry(c).or_insert(i);
+            if currency(o) > currency(&objs[*e]) {
+                *e = i;
+            }
+        }
+        let res = Resolver { objs: &objs, rev_tables: &rev_tables, registry: &registry, by_canon };
+        let r = Reader { d: &blob };
+        let idxs: Vec<usize> = (0..objs.len()).collect();
+        live_ink_containers(&r, &res, &idxs, roots)
+            .into_iter()
+            .map(|i| objs[i].own_oid)
+            .collect()
+    }
+
+    /// Reported: "on some pages (like symbols in DM) there is some inking there
+    /// i guess was there originally in some old version but it isnt there if i
+    /// open up onenote."
+    ///
+    /// It was. Ink was collected by a FLAT SCAN of the object space that asked
+    /// only "is this the newest declaration of this container?" and never "does
+    /// the live page still reference it at all" — so every stroke ever erased on
+    /// a page came back. Measured on the reference notebook: 356 of 64 645
+    /// strokes across 8 pages, including all 39 on "Symbols", whose live page
+    /// node lists 6 children while a stored version lists 43.
+    #[test]
+    fn ink_the_live_page_no_longer_references_is_not_imported() {
+        // Root = the live page node (index 0), as `root_is` would supply it.
+        assert_eq!(
+            select_ink(&[0], false),
+            vec![5],
+            "the erased container (6) must not come back, and the live one must survive"
+        );
+    }
+
+    /// The other direction, and the one that makes this fix safe: ink whose only
+    /// stored declaration sits inside a version revision is still LIVE if the
+    /// page reaches it — OneNote simply never rewrote an object that had not
+    /// changed. 180 containers on the reference notebook are exactly this, so
+    /// judging ink by [currency] instead of reachability would delete strokes
+    /// the user can still see.
+    #[test]
+    fn ink_declared_only_in_a_version_revision_survives_if_the_page_reaches_it() {
+        assert_eq!(select_ink(&[0], true), vec![5]);
+    }
+
+    /// No live root means no evidence either way. A page whose content root we
+    /// fail to identify must keep its ink rather than silently lose all of it —
+    /// resurrecting an old stroke is a blemish, deleting a real one is data
+    /// loss.
+    #[test]
+    fn a_page_with_no_identified_root_keeps_all_of_its_ink() {
+        assert_eq!(select_ink(&[], false), vec![5, 6]);
     }
 }

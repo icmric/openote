@@ -48,7 +48,18 @@ void main() {
             'Eric - Computing Science (Honours).onepkg'));
     final core = OnoteCore.instance;
     if (core == null || !onepkg.existsSync()) {
-      markTestSkipped('native core or sample .onepkg not available');
+      final why = core == null
+          ? 'the native core is not built'
+          : 'the sample notebook is not at ${onepkg.path}';
+      // A skipped test is RECORDED AS A SUCCESS, so a silent skip would let
+      // this file go green having asserted nothing at all. Say so loudly.
+      // ignore: avoid_print
+      print('!!! NOT VERIFIED: onenote_import_e2e_test asserted NOTHING — '
+          '$why. Page order, subpage nesting AND the erased-ink ground truth '
+          'below are all unchecked in this run. To check them, build the core '
+          '(cargo build --release in rust/onote_core) and put the exported '
+          'notebook at ${onepkg.path}, then re-run.');
+      markTestSkipped('$why — see the NOT VERIFIED line above');
       return;
     }
 
@@ -152,5 +163,98 @@ void main() {
       }
     }
     expect(sawNesting, true, reason: 'the notebook does use subpages');
-  }, timeout: const Timeout(Duration(minutes: 3)));
+
+    // ── Erased ink stays erased ────────────────────────────────────────────
+    // Reported: "on some pages (like symbols in DM) there is some inking there
+    // i guess was there originally in some old version but it isnt there if i
+    // open up onenote."
+    //
+    // Ink used to be collected by a FLAT SCAN of the section's object space,
+    // which asked only "is this the newest declaration of this container?" and
+    // never "does the live page still reference it at all". Erasing ink in
+    // OneNote removes the reference from the page tree and leaves the object in
+    // the file forever, so every stroke ever erased came back on import. Ink is
+    // now imported only when the live page still reaches it.
+    //
+    // GROUND TRUTH is the notebook's owner, checking these three pages in
+    // OneNote: "Yep no ink on that page [Symbols]. That will be because i used
+    // it for lots of quick notes where it was just erased. There is some text
+    // and stuff on the cheatsheet page (and nothing on questions) but no ink on
+    // either of them in onenote, so its all historic and has been erased."
+    List<Block> blocksOf(String sectionTitle, String pageTitle) {
+      final sec = nodes.firstWhere(
+          (n) => n.kind == NodeKind.section && n.title == sectionTitle);
+      final page = nodes.firstWhere((n) =>
+          n.kind == NodeKind.page &&
+          n.parentId == sec.id &&
+          n.title == pageTitle);
+      return repo.readPage(nb.id, page.id).blocks;
+    }
+
+    // "Foundation Mathamatics" is spelled that way in the notebook — it is the
+    // real section name, not a typo in this test.
+    for (final (section, page, marker) in const [
+      ('Discrete Mathematics', 'Symbols', 'Set of all integers'),
+      ('Foundation Mathamatics', 'Cheat Sheet notes', 'Integration'),
+      ('Foundation Mathamatics', 'Questions', 'tangent line'),
+    ]) {
+      final blocks = blocksOf(section, page);
+      final strokes = blocks
+          .where((b) => b.type == BlockType.ink)
+          .fold<int>(
+              0,
+              (n, b) =>
+                  n + (((b.content['strokes'] as List?) ?? const []).length));
+      expect(strokes, 0,
+          reason: 'the owner confirms "$page" shows no ink in OneNote — all of '
+              'it was erased, and a flat scan of the object space resurrected '
+              'it (39 strokes on "Symbols" alone)');
+
+      // The other direction: dropping erased ink must not drop the page. Each
+      // of these three keeps the content OneNote does still show, so a filter
+      // that swung too far and took live objects with it fails here.
+      final text = blocks
+          .where((b) => b.type == BlockType.text)
+          .map((b) => b.content['text'] as String? ?? '')
+          .join('\n');
+      expect(text, contains(marker),
+          reason: '"$page" keeps its text boxes — only the ink was erased');
+    }
+    // "Symbols" is the page that was reported, and its live content is a set of
+    // text boxes plus a maths block: 6 live children where a stored page
+    // VERSION lists 43.
+    expect(blocksOf('Discrete Mathematics', 'Symbols').length,
+        greaterThanOrEqualTo(6),
+        reason: 'Symbols keeps all of its live boxes');
+
+    // Images too, not just text. The screenshot on "Questions" is pasted into
+    // that page's text flow, so it rides the box instead of becoming its own
+    // block — asserted on the parse, which is where images live before layout.
+    final questions = ((sections.firstWhere(
+                    (s) => (s as Map)['name'] == 'Foundation Mathamatics')
+                as Map)['section'] as Map)['pages'] as List;
+    final qPage = (questions.firstWhere((p) => (p as Map)['title'] == 'Questions')
+            as Map)
+        .cast<String, dynamic>();
+    expect((qPage['images'] as List?) ?? const [], hasLength(1),
+        reason: 'the image on "Questions" is not ink and must survive');
+
+    // And the notebook at large keeps its ink. This is the assertion that
+    // catches the tempting-but-wrong rule "drop ink declared only inside a
+    // version revision": 180 containers here hold ink the user can still see
+    // whose only stored declaration is exactly that, because OneNote never
+    // rewrites an object that has not changed.
+    var totalStrokes = 0;
+    for (final n in nodes.where((n) => n.kind == NodeKind.page)) {
+      for (final b in repo.readPage(nb.id, n.id).blocks) {
+        if (b.type == BlockType.ink) {
+          totalStrokes +=
+              ((b.content['strokes'] as List?) ?? const []).length;
+        }
+      }
+    }
+    expect(totalStrokes, greaterThan(60000),
+        reason: 'the notebook is mostly handwritten — 64 260 strokes survive '
+            'the filter, and only 0.55 % of the raw scan was erased ink');
+  }, timeout: const Timeout(Duration(minutes: 5)));
 }
