@@ -531,6 +531,12 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
     const MY: f32 = 0.0;
     /// Fallback stacking start (below Openote's title band).
     const CONTENT_TOP: f32 = 92.0;
+    /// What one dropped leading blank paragraph is worth in y. The same 22px
+    /// pitch [emit_boxes] costs every other source line at, and within half a
+    /// pixel of what OneNote itself left for one: on the reference notebook the
+    /// gap between an element with a leading blank and its blank-less siblings
+    /// measures 22.38px (0.373 units) at 11pt.
+    const BLANK_LINE_H: f32 = 22.0;
     // Collected as (display order, page); sorted after the loop.
     let mut pages: Vec<(usize, ImportedPage)> = Vec::new();
     let mut img_counter = 0usize;
@@ -789,8 +795,78 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
         // One pass per outline container. `seen_box` guards against the same
         // paragraph object being reachable from two containers.
         let mut seen_box: HashSet<u32> = HashSet::new();
+        // Containers that sit INSIDE another container's element. Their
+        // paragraphs are already emitted, at OneNote's own coordinates, by the
+        // outer container's walk — `live_box_roots` finds every outline and
+        // outline group on the page, and a group nested under an
+        // OutlineElement qualifies exactly like a page-level one.
+        //
+        // Walking a nested group as a page-level container emitted its
+        // paragraphs a SECOND time. The duplicate carries no offsets of its own
+        // (the position lives on the enclosing OutlineElement), so it fell to
+        // `stack_y` at x = 0 and drew on top of the correctly-placed copy —
+        // measured on the reference notebook, 55 such boxes across 21 pages,
+        // every one of them line-for-line already present in another box on its
+        // own page. `seen_box` cannot see it: the duplicate's target is the
+        // RichText, the original's is the OutlineElement above it, and those are
+        // two different canonical objects.
+        //
+        // Only the box walk is filtered. Images and ink are placed from
+        // `abs_offset`, which sums the whole parent chain and is already right
+        // for a nested group's children; `root_children` (which decides whether
+        // an image floats or rides a text flow) keeps the unfiltered list.
+        let nested_containers: HashSet<u32> = {
+            let mut nested = HashSet::new();
+            let mut seen: HashSet<u32> = HashSet::new();
+            for &ri in &root_is {
+                let rev = objs[ri].rev;
+                // A CompactID only means anything inside the revision that
+                // declared it, so the revision follows the object down the
+                // tree (as `collect_inner` does). Resolving every level
+                // against the ROOT's revision stopped the walk at the first
+                // container declared in another one, and left its nested
+                // groups looking page-level.
+                let mut stack: Vec<(u32, usize)> = read_propset(&r, objs[ri].stp, objs[ri].cb)
+                    .oids(0x001C20)
+                    .into_iter()
+                    .map(|c| (c, rev))
+                    .collect();
+                while let Some((cid, crev)) = stack.pop() {
+                    let canon = res.canon(cid, crev);
+                    if !seen.insert(canon) {
+                        continue; // already walked (or a cycle)
+                    }
+                    let Some(ci) = res.get(cid, crev) else { continue };
+                    let o = res.obj(ci);
+                    match o.jcid {
+                        JCID_OUTLINE | JCID_OUTLINE_GROUP => {
+                            nested.insert(canon);
+                        }
+                        // Descend through elements and paragraphs, but no
+                        // further: an indented sub-list hangs its group off the
+                        // PARAGRAPH above it, and stopping at paragraphs left
+                        // six such groups looking page-level. Everything else
+                        // (ink, images, tables) is skipped, which is what keeps
+                        // this cheap on the pages whose outline lists tens of
+                        // thousands of ink containers.
+                        JCID_OUTLINE_ELEMENT | JCID_RICHTEXT => {}
+                        _ => continue,
+                    }
+                    stack.extend(
+                        read_propset(&r, o.stp, o.cb)
+                            .oids(0x001C20)
+                            .into_iter()
+                            .map(|c| (c, o.rev)),
+                    );
+                }
+            }
+            nested
+        };
         let mut box_targets: Vec<(u32, usize)> = Vec::new();
         for &ri in &root_is {
+            if res.own_canon(&objs[ri]).is_some_and(|c| nested_containers.contains(&c)) {
+                continue;
+            }
             let ps = read_propset(&r, objs[ri].stp, objs[ri].cb);
             let rev = objs[ri].rev;
             for cid in ps.oids(0x001C20) {
@@ -860,9 +936,23 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
             // stopped immediately, and the duplicated title one line down
             // survived into the body — every such page then showed its title
             // twice, once in the title band and once as the first line.
-            let trim_leading_blanks = |lines: &mut Vec<Line>| {
+            //
+            // Dropping them has to be PAID FOR in y. OneNote's recorded offset
+            // is the top of the element's FIRST line, blank or not, and the
+            // content below it starts one line lower — so deleting the blank
+            // while keeping the offset rides the real content up by a line, on
+            // top of whatever OneNote put there. On "Natural Language and Intro
+            // to Truth Tables" that is exactly what happened: the AND table's
+            // element opens with an empty paragraph, so the table landed at
+            // y=628.25 — its own caption's y — while the OR and NOT tables,
+            // whose elements have no leading blank, sit correctly at 650.63,
+            // one 22px line lower. The table drew straight through the word
+            // "AND".
+            let mut blank_lead = 0.0f32;
+            let mut trim_leading_blanks = |lines: &mut Vec<Line>| {
                 while lines.first().is_some_and(Line::is_blank) {
                     lines.remove(0);
+                    blank_lead += BLANK_LINE_H;
                 }
             };
             trim_leading_blanks(&mut lines);
@@ -890,7 +980,7 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
             // real text measurement (see `PageBox::flow`). Ids start at 1 so 0
             // stays "not in a flow".
             flow_id += 1;
-            let end_y = emit_boxes(&lines, x, y, w, &mut boxes, &img_idx, flow_id);
+            let end_y = emit_boxes(&lines, x, y + blank_lead, w, &mut boxes, &img_idx, flow_id);
             stack_y = stack_y.max(end_y) + 24.0;
         }
 
@@ -6986,5 +7076,225 @@ mod tests {
         assert_eq!(p.title, "Working out");
         assert_eq!(page_lines(p), Vec::<String>::new(), "the snapshot's text must stay gone");
         assert!(p.ink.is_empty(), "the snapshot's ink must stay gone");
+    }
+
+    /// An element's page offset: 0x1C14/0x1C15 in half-inch units, which the
+    /// importer multiplies by [UNIT_PX]. Written as a 4-byte property whose
+    /// bits are an f32, which is how a real file stores them.
+    fn offset_props(x: f32, y: f32) -> Vec<(u32, u8, Vec<u8>)> {
+        vec![
+            (PID_IMG_POSX, 0x05, x.to_bits().to_le_bytes().to_vec()),
+            (PID_IMG_POSY, 0x05, y.to_bits().to_le_bytes().to_vec()),
+        ]
+    }
+
+    /// A positioned OutlineElement: the children an element lists, plus the
+    /// offset OneNote recorded for it.
+    fn placed_kids_blob(kids: &[u8], x: f32, y: f32) -> Vec<u8> {
+        let oids: Vec<u32> = kids.iter().map(|&n| cid(n)).collect();
+        let mut props = offset_props(x, y);
+        props.push((
+            PID_ELEMENT_CHILDREN,
+            0x09,
+            (kids.len() as u32).to_le_bytes().to_vec(),
+        ));
+        propset_blob(&oids, &props)
+    }
+
+    /// One OneNote paragraph, at CompactIDs `n` (the RichText container) and
+    /// `n + 1` (its one text run) — the PAIR every real paragraph is.
+    ///
+    /// `text: None` is the blank line a writer typed: a run carrying no text
+    /// property at all. The container is textless either way, because it is
+    /// textless by construction in every real file.
+    fn para(n: u8, text: Option<&str>) -> Vec<Decl> {
+        vec![
+            decl(n, JCID_RICHTEXT, kids_blob(&[n + 1])),
+            decl(
+                n + 1,
+                JCID_RICHTEXT_RUN,
+                match text {
+                    Some(t) => run_blob(t),
+                    None => propset_blob(&[], &[]),
+                },
+            ),
+        ]
+    }
+
+    /// The markdown of a page's boxes with blank lines KEPT — [page_lines]
+    /// filters them out, and a blank line is the whole subject here.
+    fn box_markdown(page: &ImportedPage) -> Vec<&str> {
+        page.boxes.iter().map(|b| b.markdown.as_str()).collect()
+    }
+
+    /// Backlog #56, "collisions across flow groups", half one: the same
+    /// paragraphs came out TWICE, and the second copy landed on top of the
+    /// first.
+    ///
+    /// [live_box_roots] collects every outline and outline group the live page
+    /// reaches, which is right for a page that hangs its content off a group —
+    /// and wrong for a group nested inside another container's element, whose
+    /// paragraphs the outer container already walks. The nested copy carries no
+    /// offset of its own (the position lives on the enclosing OutlineElement),
+    /// so it fell to the `stack_y` fallback at x = 0 and drew straight through
+    /// the correctly-placed original. `seen_box` cannot catch it: the two
+    /// targets are different objects — a RichText here, an OutlineElement there.
+    ///
+    /// Measured on the reference notebook: 55 such boxes across 21 pages, every
+    /// one of them line-for-line already present in another box on its own
+    /// page ("Set Theory", "Subsets and Empty Sets", "Intro to Graph Theory"…).
+    #[test]
+    fn a_group_nested_in_an_element_does_not_emit_its_paragraphs_a_second_time() {
+        let mut f = OneFile::new();
+        let (space_guid, page_guid, dir_guid) = ([0xC3; 16], [0x51; 16], [0xDE; 16]);
+        let mut live = vec![
+            decl(1, JCID_PAGE_NODE, kids_blob(&[2])),
+            decl(2, JCID_OUTLINE, kids_blob(&[3])),
+            // The element OneNote placed, at 1.0 x 2.0 units = 60 x 120 px.
+            decl(3, JCID_OUTLINE_ELEMENT, placed_kids_blob(&[4], 1.0, 2.0)),
+        ];
+        // Its paragraph, which hangs an indented sub-group off itself — the
+        // shape an indented sub-list takes, and the one six of the reference
+        // notebook's duplicates had.
+        live.push(decl(4, JCID_RICHTEXT, kids_blob(&[5, 20])));
+        live.push(decl(5, JCID_RICHTEXT_RUN, run_blob("Set: a collection of objects")));
+        live.push(decl(20, JCID_OUTLINE_GROUP, kids_blob(&[21, 23])));
+        live.extend(para(21, Some("Element: an object inside the set")));
+        live.extend(para(23, Some("Cardinality: how many distinct elements")));
+        live.push(decl(9, JCID_PAGE_METADATA, page_id_blob(&page_guid)));
+        let page = f.space(space_guid, &[Rev::live(&[1], live)]);
+        let dir = dir_space(&mut f, dir_guid, &[(space_guid, page_guid, "Set Theory")], &[0]);
+        let root = f.root(&[(dir, dir_guid), (page, space_guid)]);
+        let section = import_one(&f.finish(root));
+
+        assert!(section.ok, "the synthetic section must parse: {:?}", section.error);
+        let p = &section.pages[0];
+        // Nothing is lost: all three paragraphs are on the page…
+        assert_eq!(
+            page_lines(p),
+            [
+                "Set: a collection of objects",
+                "Element: an object inside the set",
+                "Cardinality: how many distinct elements",
+            ],
+            "the nested group's paragraphs must still import, through the \
+             outer container"
+        );
+        // …once each, in ONE box, at the offset OneNote recorded for the
+        // element that holds them.
+        assert_eq!(p.boxes.len(), 1, "one placed element is one box: {:?}", box_markdown(p));
+        assert_eq!((p.boxes[0].x, p.boxes[0].y), (60.0, 120.0));
+        // The failure this prevents is positional, so assert on the position:
+        // the duplicate had no offset and landed at the left edge, above the
+        // page's own content.
+        assert!(
+            !p.boxes.iter().any(|b| b.x == 0.0),
+            "a box at x = 0 is the unpositioned duplicate: {:?}",
+            p.boxes.iter().map(|b| (b.x, b.y)).collect::<Vec<_>>()
+        );
+    }
+
+    /// Backlog #56, half two: an element whose first paragraph is blank had its
+    /// content pulled a line UP the page.
+    ///
+    /// OneNote's recorded offset is the top of the element's FIRST line, blank
+    /// or not. The importer drops leading blanks (so a box does not open on an
+    /// empty line) but kept the offset, so everything below the blank rode up
+    /// by one line and ran into whatever OneNote had put there.
+    ///
+    /// On "Natural Language and Intro to Truth Tables" that is exactly what
+    /// happened: the AND table's element opens with an empty paragraph, so the
+    /// table landed at y = 628.25 — its own caption's y — while the OR and NOT
+    /// tables, whose elements carry no leading blank, sat correctly at 650.63,
+    /// one line lower. The table drew through the word "AND".
+    ///
+    /// Two elements at the SAME y here, one with a leading blank and one
+    /// without, because the bug is a difference between them and a test on one
+    /// alone would pass on any constant.
+    #[test]
+    fn a_dropped_leading_blank_is_paid_for_in_y() {
+        let mut f = OneFile::new();
+        let (space_guid, page_guid, dir_guid) = ([0xC4; 16], [0x61; 16], [0xDF; 16]);
+        let mut live = vec![
+            decl(1, JCID_PAGE_NODE, kids_blob(&[2])),
+            decl(2, JCID_OUTLINE, kids_blob(&[3, 4])),
+            // Both elements start at 10.0 units down = 600 px.
+            decl(3, JCID_OUTLINE_ELEMENT, placed_kids_blob(&[10, 12], 1.0, 10.0)),
+            decl(4, JCID_OUTLINE_ELEMENT, placed_kids_blob(&[20], 5.0, 10.0)),
+        ];
+        live.extend(para(10, None)); // the blank line the writer typed
+        live.extend(para(12, Some("Below the blank")));
+        live.extend(para(20, Some("No blank above me")));
+        live.push(decl(9, JCID_PAGE_METADATA, page_id_blob(&page_guid)));
+        let page = f.space(space_guid, &[Rev::live(&[1], live)]);
+        let dir = dir_space(&mut f, dir_guid, &[(space_guid, page_guid, "Truth Tables")], &[0]);
+        let root = f.root(&[(dir, dir_guid), (page, space_guid)]);
+        let section = import_one(&f.finish(root));
+
+        assert!(section.ok, "the synthetic section must parse: {:?}", section.error);
+        let p = &section.pages[0];
+        assert_eq!(p.boxes.len(), 2, "two elements, two boxes: {:?}", box_markdown(p));
+        let with_blank = p.boxes.iter().find(|b| b.x == 60.0).expect("the first element's box");
+        let without = p.boxes.iter().find(|b| b.x == 300.0).expect("the second element's box");
+        assert_eq!(
+            without.y, 600.0,
+            "an element with no leading blank keeps OneNote's offset verbatim"
+        );
+        assert_eq!(
+            with_blank.y, 622.0,
+            "the dropped blank occupied a line, so the content below it starts \
+             one line lower — not at the element's own offset"
+        );
+        // The blank is dropped, not rendered: paying for it in y is the whole
+        // point, and leaving it in the markdown would double-count it.
+        assert!(
+            with_blank.markdown.starts_with("Below the blank"),
+            "the leading blank must not survive into the box: {:?}",
+            with_blank.markdown
+        );
+    }
+
+    /// The blank-line fix from the bytes up.
+    ///
+    /// A OneNote paragraph is a PAIR — a RichText container (0x0D) and its one
+    /// text run (0x0E) — and the fix turns on WHICH of the two is empty: a
+    /// blank RUN is a line the writer typed, a blank CONTAINER is structural
+    /// noise present once per paragraph. Keying on emptiness alone instead of
+    /// on the object type is what double-spaced the notebook the first time
+    /// this shipped (24 lines of content came back separated by 31 blanks) and
+    /// got it reverted.
+    ///
+    /// Until now that discriminator was only pinned by tests that hand-build
+    /// `Line` values, which is one layer ABOVE the code that reads the
+    /// objects — so breaking the read itself was invisible. This one starts at
+    /// the bytes: three real paragraph pairs, the middle run empty. It fails in
+    /// BOTH directions — drop the branch and the blank disappears, widen it to
+    /// the container and three textless containers add three more blanks.
+    #[test]
+    fn a_blank_run_is_a_blank_line_and_a_blank_container_is_not() {
+        let mut f = OneFile::new();
+        let (space_guid, page_guid, dir_guid) = ([0xC5; 16], [0x71; 16], [0xE0; 16]);
+        let mut live = vec![
+            decl(1, JCID_PAGE_NODE, kids_blob(&[2])),
+            decl(2, JCID_OUTLINE, kids_blob(&[3])),
+            decl(3, JCID_OUTLINE_ELEMENT, kids_blob(&[10, 12, 14])),
+        ];
+        live.extend(para(10, Some("Above the gap")));
+        live.extend(para(12, None)); // the run the writer left empty
+        live.extend(para(14, Some("Below the gap")));
+        live.push(decl(9, JCID_PAGE_METADATA, page_id_blob(&page_guid)));
+        let page = f.space(space_guid, &[Rev::live(&[1], live)]);
+        let dir = dir_space(&mut f, dir_guid, &[(space_guid, page_guid, "Tautologies")], &[0]);
+        let root = f.root(&[(dir, dir_guid), (page, space_guid)]);
+        let section = import_one(&f.finish(root));
+
+        assert!(section.ok, "the synthetic section must parse: {:?}", section.error);
+        let p = &section.pages[0];
+        assert_eq!(
+            box_markdown(p),
+            ["Above the gap\n\nBelow the gap"],
+            "the empty RUN is one blank line, and the three textless \
+             CONTAINERS are none"
+        );
     }
 }
