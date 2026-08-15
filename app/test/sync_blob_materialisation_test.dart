@@ -55,8 +55,17 @@ void main() {
     return (repo, app, nb.id, ws, cloud);
   }
 
-  OpLogStore logOf(Repository repo, String nb) =>
-      OpLogStore.forNotebook(repo.notebooks.firstWhere((n) => n.id == nb).file);
+  /// The notebook's log, wherever it actually is.
+  ///
+  /// **Through `logDir`, not the container's sibling.** Since v0.17 Step 4 a
+  /// notebook moved into a sync folder leaves its container in the workspace
+  /// and sends only the `.onotebook`, so deriving the log path from `.file`
+  /// finds an empty directory beside the container and every assertion below
+  /// silently passes on nothing.
+  OpLogStore logOf(Repository repo, String nb) {
+    final ref = repo.notebooks.firstWhere((n) => n.id == nb);
+    return OpLogStore.forNotebook(ref.file, logDir: ref.logDir);
+  }
 
   Uint8List image(int seed) =>
       Uint8List.fromList(List.generate(4096, (i) => (i * seed) & 0xFF));

@@ -5,6 +5,7 @@
 // across volumes — so it is copy, verify, then delete, and these tests pin
 // that a failure at any step leaves the notebook intact somewhere.
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -53,7 +54,13 @@ void main() {
   });
 
   group('moving a notebook into a synced folder', () {
-    test('moves the container AND its op log, and repoints the registry',
+    // v0.17 Step 4. This test used to be called "moves the container AND its op
+    // log" and asserted the container had arrived in the cloud folder. That
+    // was the bug: on the owner's real Drive it meant 31,954,368 bytes of live
+    // WAL SQLite (`.onote` + `-wal` + `-shm`) being replicated file by file by
+    // a client with no per-file ignore — ADR-0006 §2's torn-database hazard,
+    // happening rather than threatened.
+    test('SQLITE NEVER ENTERS THE SYNCED FOLDER — only the append-only half goes',
         () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final tmp = Directory.systemTemp.createTempSync('onote_move_');
@@ -82,16 +89,31 @@ void main() {
       final cloud = Directory(p.join(tmp.path, 'FakeDrive'))..createSync();
       final newPath = await app.moveNotebookToFolder(nb.id, cloud.path);
 
+      // The `.onotebook` went: append-only logs, one writer per file, plus
+      // content-addressed blobs.
       expect(p.isWithin(cloud.path, newPath), isTrue);
-      expect(File(newPath).existsSync(), isTrue);
-      expect(File(oldPath).existsSync(), isFalse, reason: 'original removed');
-      // The log must travel too, or the notebook arrives without the very
-      // thing that makes it syncable.
-      expect(Directory('${p.withoutExtension(newPath)}.onotebook').existsSync(),
-          isTrue);
-      expect(oldLog.existsSync(), isFalse);
-      // Registry repointed, and the content still reads.
-      expect(repo.notebooks.firstWhere((n) => n.id == nb.id).file, newPath);
+      expect(Directory(newPath).existsSync(), isTrue);
+      expect(oldLog.existsSync(), isFalse, reason: 'the logs really moved');
+      expect(repo.notebooks.firstWhere((n) => n.id == nb.id).logDir, newPath);
+
+      // THE ASSERTION OF RECORD. Nothing SQLite can write may exist anywhere
+      // under the synced folder — not the container, not its `-wal`, not its
+      // `-shm`, at any depth. Named as a shape rather than as three paths so a
+      // future rename cannot slip past it.
+      final sqliteInCloud = cloud
+          .listSync(recursive: true)
+          .whereType<File>()
+          .map((f) => p.basename(f.path))
+          .where((n) => RegExp(r'\.onote(-wal|-shm)?$').hasMatch(n))
+          .toList();
+      expect(sqliteInCloud, isEmpty,
+          reason: 'a WAL database in a replicated folder is ADR-0006 §2');
+
+      // The container stayed put, still open, still readable — this is a
+      // notebook that syncs, not one that moved house.
+      expect(File(oldPath).existsSync(), isTrue,
+          reason: 'the working file belongs on this computer');
+      expect(repo.notebooks.firstWhere((n) => n.id == nb.id).file, oldPath);
       final data = repo.readPage(nb.id, app.pageId!);
       expect(data.blocks.single.content['text'], 'before');
     });
@@ -679,8 +701,10 @@ void _deletingASharedNotebook(bool Function() haveSqlite) {
           reason: "device B deleting its copy must not remove device A's ops");
       expect(photograph(), before,
           reason: 'not one byte of the shared folder changed');
-      expect(File(a.path).existsSync(), isTrue,
-          reason: "the shared container is device A's notebook, not B's");
+      expect(File(a.repo.notebooks.firstWhere((n) => n.id == a.id).file)
+              .existsSync(),
+          isTrue,
+          reason: "device A's own working file is not B's to delete");
       // B's own private copy is gone, which is what the user asked for.
       expect(File(joined.file).existsSync(), isFalse);
       expect(File('${joined.file}-wal').existsSync(), isFalse);
@@ -758,14 +782,17 @@ void _deletingASharedNotebook(bool Function() haveSqlite) {
       expect(File('${ref.file}-shm').existsSync(), isFalse);
     });
 
-    test('MOVING A NOTEBOOK FOLDS ITS WRITE-AHEAD LOG IN FIRST', () async {
+    test('GETTING THE WORKING FILE OUT OF DRIVE FOLDS ITS -WAL IN FIRST',
+        () async {
       if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
-      // The move byte-copies the `.onote` and then deletes the original. In
-      // WAL mode the `.onote` is not the notebook: measured on a freshly
-      // written one, the container was 4,096 bytes and all 238,992 bytes of
-      // content were in the `-wal`. The length check compares main file to
-      // main file, so it agreed the copy was perfect — and the move destroyed
-      // the notebook while reporting success.
+      // v0.17 Step 4's second proof, on the one path that still copies a
+      // container. In WAL mode the `.onote` is not the notebook: measured on a
+      // freshly written one, the container was 4,096 bytes and all 238,992
+      // bytes of content were in the `-wal`, and on the owner's real notebook
+      // a 4,128,272-byte `-wal` held 2 whole pages and newer revisions of 6
+      // more. A copy of the main file alone plus a delete of the sidecars is a
+      // "successful" move that produces an empty notebook — and the result
+      // passes `PRAGMA integrity_check`.
       final ws = Directory(p.join(root.path, 'ws'))..createSync();
       final repo = await Repository.openAt(ws);
       final nb = await repo.createNotebook('Mover');
@@ -778,6 +805,7 @@ void _deletingASharedNotebook(bool Function() haveSqlite) {
       app.markDirty();
       await app.flushSave();
       final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+      final logs = Directory(ref.logDirPath);
 
       // Take the un-checkpointed pair off disk exactly as it stands, then put
       // it back after a clean close has folded it in. That is the state the
@@ -787,39 +815,72 @@ void _deletingASharedNotebook(bool Function() haveSqlite) {
       final walBytes = File('${ref.file}-wal').readAsBytesSync();
       expect(mainBytes.length, lessThan(walBytes.length),
           reason: 'the notebook is IN the wal, which is the whole point');
+      await repo.flushWorkspace();
       repo.dispose();
-      File(ref.file).writeAsBytesSync(mainBytes);
-      File('${ref.file}-wal').writeAsBytesSync(walBytes);
-      try {
-        File('${ref.file}-shm').deleteSync(); // SQLite rebuilds it
-      } catch (_) {}
+
+      // **THE STATE A PRE-v0.17 BUILD LEFT ON DISK**, reproduced exactly:
+      // container, `-wal` and `.onotebook` all sitting in the cloud folder,
+      // with the registry pointing at the container there. This is the
+      // notebook the owner has in `G:\My Drive\Openote` right now.
+      final inDrive = p.join(shared.path, 'Mover.onote');
+      File(inDrive).writeAsBytesSync(mainBytes);
+      File('$inDrive-wal').writeAsBytesSync(walBytes);
+      for (final f in [ref.file, '${ref.file}-wal', '${ref.file}-shm']) {
+        try {
+          File(f).deleteSync();
+        } catch (_) {}
+      }
+      final logsInDrive = Directory(p.join(shared.path, 'Mover.onotebook'));
+      logsInDrive.createSync(recursive: true);
+      for (final e in logs.listSync(recursive: true).whereType<File>()) {
+        final target = p.join(
+            logsInDrive.path, p.relative(e.path, from: logs.path));
+        Directory(p.dirname(target)).createSync(recursive: true);
+        e.copySync(target);
+      }
+      logs.deleteSync(recursive: true);
+      final wsFile = File(p.join(ws.path, 'workspace.json'));
+      final j = jsonDecode(wsFile.readAsStringSync()) as Map<String, dynamic>;
+      ((j['notebooks'] as List).single as Map)['file'] = inDrive;
+      wsFile.writeAsStringSync(jsonEncode(j));
 
       // A session that has never opened this notebook — so `_open` holds no
       // handle for it and nothing has checkpointed.
       final repo2 = await Repository.openAt(ws);
       addTearDown(repo2.dispose);
       final app2 = AppState(repo2);
-      final moved = await app2.moveNotebookToFolder(nb.id, shared.path);
+      addTearDown(app2.dispose);
+      app2.rememberSyncRoot(shared.path);
+      expect(app2.containerSyncFolder(nb.id)?.path, shared.path,
+          reason: 'the app has to be able to SEE the problem before it offers '
+              'to fix it');
 
-      // The moved file is the notebook, not an empty database.
+      final moved = await app2.moveContainerOutOfSyncFolder(nb.id);
+
+      // The file that arrived is the notebook, not an empty database.
+      expect(p.isWithin(ws.path, moved), isTrue);
       expect(File(moved).lengthSync(), greaterThan(mainBytes.length),
           reason: 'a container the size it was is the WAL left behind');
-      final repoC = await Repository.openAt(
-          Directory(p.join(root.path, 'check'))..createSync());
-      addTearDown(repoC.dispose);
-      final copy = await repoC.openExistingNotebook(moved, title: 'Check');
+      // Identical page count AND identical page content, which is the half a
+      // size check cannot see.
       final pages =
-          repoC.loadNodes(copy.id).where((n) => n.kind == NodeKind.page);
-      expect(pages, isNotEmpty, reason: 'the moved notebook still has pages');
-      expect(repoC.readPage(copy.id, pages.first.id).blocks.single
+          repo2.loadNodes(nb.id).where((n) => n.kind == NodeKind.page).toList();
+      expect(pages, hasLength(1));
+      expect(repo2.readPage(nb.id, pages.first.id).blocks.single
           .content['text'], 'in the wal');
-      // …and the source keeps nothing.
+
+      // Drive keeps the notes and loses the database. Nothing SQLite writes is
+      // left there, at any depth; the `.onotebook` is untouched.
       expect(
-          ws
-              .listSync()
-              .map((e) => p.basename(e.path))
-              .where((n) => n.startsWith('Mover')),
+          shared
+              .listSync(recursive: true)
+              .whereType<File>()
+              .map((f) => p.basename(f.path))
+              .where((n) => RegExp(r'\.onote(-wal|-shm)?$').hasMatch(n)),
           isEmpty);
+      expect(logsInDrive.existsSync(), isTrue);
+      expect(repo2.notebooks.single.logDir, logsInDrive.path,
+          reason: 'the notebook still syncs through the same folder');
     });
   });
 }

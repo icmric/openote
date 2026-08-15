@@ -1993,8 +1993,13 @@ class AppState extends ChangeNotifier
 
   // ── Cloud sync: a synced folder is the transport ─────────────────────
 
-  /// Move a notebook into [targetDir] (a Drive/OneDrive/iCloud/Syncthing
-  /// folder) so other devices see it. Returns the new path.
+  /// Move a notebook's shared half into [targetDir] (a
+  /// Drive/OneDrive/iCloud/Syncthing folder) so other devices see it. Returns
+  /// the new `.onotebook` path.
+  ///
+  /// The `.onote` stays on this computer — see [Repository.moveNotebookTo] for
+  /// why putting a WAL database in a replicated folder is the one thing this
+  /// design exists to avoid.
   ///
   /// No OAuth and no tokens by design: those providers' desktop clients
   /// already present the cloud as a local folder, and one-writer-per-file
@@ -2021,6 +2026,40 @@ class AppState extends ChangeNotifier
     // about to be someone else's only copy, so write them out now rather than
     // whenever this notebook next happens to be opened.
     materialiseBlobsIfShared(nb);
+    if (nb == notebookId) {
+      await _loadNotebook();
+      _startWatching();
+    }
+    notifyListeners();
+    return path;
+  }
+
+  /// The cloud folder this notebook's **container** is sitting in, or null.
+  ///
+  /// Non-null only for notebooks an older build moved: until the v0.17 fix,
+  /// sharing a notebook copied the `.onote` into the folder along with the
+  /// logs, and a WAL SQLite database being replicated by a consumer sync client
+  /// is the torn-database hazard ADR-0006 §2 describes. Nothing acts on this
+  /// automatically — it is what the sync dialog offers a button for, and the
+  /// user decides.
+  CloudFolder? containerSyncFolder(String nb) {
+    final path = notebookPath(nb);
+    if (path == null) return null;
+    return cloudFolderContaining(p.dirname(path), also: _syncRoots);
+  }
+
+  /// Copy this notebook's container back onto this computer and remove it from
+  /// the cloud folder. The notes themselves — the `.onotebook` — do not move
+  /// and keep syncing.
+  Future<String> moveContainerOutOfSyncFolder(String nb) async {
+    await flushSave();
+    // The recorder holds the old container path, and `logDirPath` is about to
+    // stop being derivable from it. Dropping it means the next mutation opens a
+    // recorder that reads the registry fresh.
+    _recorders.remove(nb);
+    await _stopWatching();
+    final path = await _repo.moveContainerOutOfSyncFolder(nb);
+    _invalidateSyncStatus();
     if (nb == notebookId) {
       await _loadNotebook();
       _startWatching();
@@ -4890,12 +4929,53 @@ class AppState extends ChangeNotifier
   /// Open a `.onote` that already exists on disk — the second-device flow.
   Future<void> openExistingNotebook(String path) async {
     await flushSave();
-    final ref = await _repo.openExistingNotebook(path);
+    // **A `.onotebook` DIRECTORY IS THE NORMAL SHAPE FROM v0.17 ON.** Sharing a
+    // notebook now moves only the logs into the folder and leaves the container
+    // on the machine that made it (v0.17 plan, Step 4), so what the second
+    // device is handed is a directory, not a file. `openExistingNotebook` in
+    // the repository cannot serve it — it byte-copies a container — and
+    // `adoptLogDirectory` is exactly the path a git clone already uses: create
+    // the container empty here and let the first pull fill it in.
+    final NotebookRef ref;
+    if (Directory(path).existsSync() && p.extension(path) == '.onotebook') {
+      ref = await _repo.adoptLogDirectory(path, title: _titleOfLogDir(path));
+    } else {
+      ref = await _repo.openExistingNotebook(path);
+    }
     // Joining a notebook from a folder is the other moment the user tells us
     // where their sync lives — this device's logs go into that folder, so it
     // is a sync root by definition.
     rememberSyncRoot(p.dirname(path));
     await selectNotebook(ref.id);
+    // The container an adopt creates is EMPTY; only the pull makes it a
+    // notebook. `selectNotebook` alone would show a blank sidebar and look
+    // exactly like a join that silently failed.
+    await syncPull(ref.id);
+    reloadNodes();
+    await _loadNotebook();
+    notifyListeners();
+  }
+
+  /// The name a shared log directory gives itself, or its folder name.
+  ///
+  /// The manifest is the notebook's own name for itself and it is better than
+  /// the directory's: the same reasoning as the git-clone path, where "Year
+  /// 12 — Physics" came back as "Year-12-Physics" from the repository name.
+  String _titleOfLogDir(String path) {
+    try {
+      final mf = File(p.join(path, 'manifest.json'));
+      if (mf.existsSync()) {
+        final j = jsonDecode(mf.readAsStringSync());
+        if (j is Map) {
+          final t = j['title'];
+          if (t is String && t.trim().isNotEmpty) return t.trim();
+        }
+      }
+    } catch (_) {
+      // A missing or unreadable manifest is not fatal — the logs are the
+      // notebook, and the name is cosmetic.
+    }
+    return p.basenameWithoutExtension(path);
   }
 
   Future<void> renameNotebook(String id, String title) async {

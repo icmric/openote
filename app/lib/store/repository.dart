@@ -11,6 +11,7 @@ import 'package:sqlite3/sqlite3.dart';
 import '../core/ids.dart';
 import '../ink/ink_storage.dart';
 import '../model/models.dart';
+import '../sync/device_identity.dart';
 import 'database.dart';
 import 'notebook_writer.dart';
 
@@ -478,16 +479,31 @@ class Repository {
 
   // ── Notebooks ──────────────────────────────────────────────────────────
 
-  /// Move a notebook's container and its `.onotebook` log directory to
-  /// [targetDir], and point the registry at the new location.
+  /// Move a notebook's `.onotebook` log directory into [targetDir] — a folder
+  /// Drive, OneDrive, Dropbox, iCloud or Syncthing replicates — and point the
+  /// registry at the new location.
   ///
   /// Copy-then-verify-then-delete, never a bare rename: the destination is
-  /// usually a *different volume* (a cloud provider's folder), where rename
-  /// isn't atomic and can't be, and a half-moved notebook is the worst
-  /// possible outcome. The original is removed only after every byte is
-  /// confirmed at the destination.
+  /// usually a *different volume*, where rename isn't atomic and can't be, and
+  /// a half-moved notebook is the worst possible outcome. The original is
+  /// removed only after every byte is confirmed at the destination — by hash,
+  /// see [_copyDirectory].
   ///
-  /// Returns the new container path.
+  /// **The container does NOT go.** It used to, for a notebook this device
+  /// created, and that put a live WAL SQLite database into a directory four
+  /// consumer sync clients copy file by file with no per-file ignore between
+  /// them: 31,954,368 bytes of `.onote` + `-wal` + `-shm` were being replicated
+  /// out of the owner's own Drive, measured. That is ADR-0006 §2's torn-database
+  /// hazard happening rather than threatened, and it is the same shape as the
+  /// two-devices-one-container corruption the joined branch below has always
+  /// refused to create. Half the fix was present and correct; this is the other
+  /// half (v0.17 plan, Step 4).
+  ///
+  /// What travels is the append-only half — one log file per device, plus
+  /// content-addressed blobs — which is the only part of a notebook that is
+  /// safe for a dumb file-copying service to replicate.
+  ///
+  /// Returns the new log directory path.
   Future<String> moveNotebookTo(String notebookId, String targetDir) async {
     final ref = notebooks.firstWhere((n) => n.id == notebookId);
     final src = File(ref.file);
@@ -519,71 +535,72 @@ class Repository {
       return to.path;
     }
 
+    // A notebook this device CREATED. Same move as the joined branch above —
+    // the logs go, the container stays — the only differences being that this
+    // one may not have a log directory yet, and that its [NotebookRef.logDir]
+    // has to start being set, because the container is about to stop being the
+    // `.onotebook`'s neighbour.
+    final srcLog = Directory(ref.logDirPath);
+    // A notebook whose recorder has never run (sync log switched off, a
+    // notebook created seconds ago) has nothing on disk to move. Create it
+    // rather than refuse: the user has just said this notebook is shared, and
+    // an empty `.onotebook` in the folder is exactly what the second device
+    // joins — the ops arrive on the first save.
+    if (!srcLog.existsSync()) srcLog.createSync(recursive: true);
+
     final base = p.basenameWithoutExtension(ref.file);
-    var destFile = p.join(targetDir, '$base.onote');
-    // Never overwrite something already there.
+    var destLog = p.join(targetDir, '$base.onotebook');
+    // Never overwrite something already there. Only the directory matters now:
+    // a stray `.onote` left in the folder by an older build is somebody else's
+    // leftover, not a name this notebook has to dodge.
     var n = 2;
-    while (File(destFile).existsSync() ||
-        Directory(p.join(targetDir, '$base.onotebook')).existsSync()) {
-      destFile = p.join(targetDir, '$base ($n).onote');
-      if (!File(destFile).existsSync() &&
-          !Directory(p.join(targetDir, '$base ($n).onotebook')).existsSync()) {
-        break;
-      }
+    while (Directory(destLog).existsSync()) {
+      destLog = p.join(targetDir, '$base ($n).onotebook');
       n++;
       if (n > 500) throw StateError('cannot find a free name in that folder');
     }
-    final destBase = p.withoutExtension(destFile);
 
-    // Close our handle first: SQLite must not be mid-write while the file is
-    // copied, and on Windows an open handle blocks the delete outright.
-    //
-    // **CHECKPOINTED, and opened in order to be checkpointed if it was
-    // closed.** In WAL mode the `.onote` is not the notebook — the `-wal`
-    // beside it is, until something folds it back in. Measured on a freshly
-    // written notebook: the container was **4,096 bytes** and all 238,992
-    // bytes of content sat in the WAL. The copy below takes only the `.onote`,
-    // and the length check underneath compares main file to main file, so it
-    // agreed the copy was perfect. Then `src.deleteSync()` removed the
-    // original AND left the WAL behind: a "successful" move that produced an
-    // empty notebook. `_open` is only populated for notebooks this session has
-    // actually opened, so the notebook you had not looked at yet was the one
-    // it destroyed.
-    final open = _open.remove(notebookId);
-    checkpointAndClose(open ??
-        openOnote(ref.file, notebookId: notebookId, title: ref.title));
-    _decodedPages.remove(notebookId);
-
-    await src.copy(destFile);
-    if (File(destFile).lengthSync() != src.lengthSync()) {
-      throw StateError('copy did not complete — the notebook was NOT moved');
-    }
-
-    // The log directory travels with the container, or the notebook arrives
-    // without the very thing that makes it syncable.
-    final srcLog = Directory(ref.logDirPath);
-    if (srcLog.existsSync()) {
-      await _copyDirectory(srcLog, Directory('$destBase.onotebook'));
-    }
-
-    // Only now is it safe to remove the originals — the container, the two
-    // files SQLite keeps beside it, and the logs. The sidecars were left
-    // behind before this, which is how a workspace accumulates a `-wal` and a
-    // `-shm` for a notebook that has not been there for weeks.
+    await _copyDirectory(srcLog, Directory(destLog));
     try {
-      _deleteContainerFiles(ref.file);
-      if (srcLog.existsSync()) srcLog.deleteSync(recursive: true);
+      srcLog.deleteSync(recursive: true);
     } catch (_) {
-      // Copy succeeded but cleanup didn't (a lock, a permission). The notebook
-      // is intact at the destination; leaving a stale original is far better
-      // than failing the move after the data has already landed.
+      // The copy is verified and complete; a lock or a permission on the
+      // original must not fail the move after the data has already landed.
+      // Same reasoning as the joined branch above.
     }
 
-    ref.file = destFile;
+    ref.logDir = destLog;
     _scheduleSaveWorkspace();
-    return destFile;
+    return destLog;
   }
 
+  /// Whether two files hold exactly the same bytes.
+  ///
+  /// **A length check is not a copy check, and this used to be one.**
+  /// [moveNotebookTo] compared `lengthSync()` on the container and deleted the
+  /// original when the numbers agreed. A copy torn in the middle — a crash, a
+  /// full disk, a cloud client that grabbed the file — has exactly the right
+  /// length and passes; a copy that stopped early because the destination
+  /// filled up does not, but a copy of a file whose tail was never flushed
+  /// does. That function's own comment already records a previous version of
+  /// its check passing *while destroying the notebook*. Hashing is the only
+  /// check that can tell a complete copy from a plausible one, and the
+  /// primitive is already here for blobs (v0.17 plan, Step 4).
+  ///
+  /// Both files are read whole. That is a transient allocation the size of the
+  /// largest blob (a video), paid once per move, and it buys the one guarantee
+  /// that matters: nothing is deleted on the strength of a number a broken copy
+  /// also produces.
+  @visibleForTesting
+  static bool sameBytes(String a, String b) =>
+      sha256Hex(File(a).readAsBytesSync()) ==
+      sha256Hex(File(b).readAsBytesSync());
+
+  /// Copy [from] to [to], and prove every file arrived byte for byte before
+  /// the caller deletes anything.
+  ///
+  /// Throws on the first file that does not match, before any deletion, so a
+  /// failed move leaves the original where it was.
   static Future<void> _copyDirectory(Directory from, Directory to) async {
     to.createSync(recursive: true);
     for (final entity in from.listSync(recursive: true)) {
@@ -594,8 +611,85 @@ class Repository {
       } else if (entity is File) {
         Directory(p.dirname(target)).createSync(recursive: true);
         await entity.copy(target);
+        if (!sameBytes(entity.path, target)) {
+          throw StateError(
+              '$rel did not copy completely — nothing has been deleted');
+        }
       }
     }
+  }
+
+  /// Bring a notebook's container back out of a folder something else
+  /// replicates, leaving its `.onotebook` exactly where it is.
+  ///
+  /// **For notebooks an older build already moved.** Until the fix in
+  /// [moveNotebookTo], "share this notebook" copied the `.onote` into Drive
+  /// alongside the logs, and it is still sitting there — a WAL SQLite database
+  /// being replicated file by file, which ADR-0006 §2 calls a live risk and
+  /// which measurably is one. Nothing calls this automatically: the file is in
+  /// the user's own cloud folder, and moving or deleting anything there without
+  /// being asked is not a thing this app gets to do. It is one button, and the
+  /// user presses it.
+  ///
+  /// The notebook keeps syncing afterwards, unchanged: the logs never moved,
+  /// and [NotebookRef.logDir] now names them explicitly instead of implying
+  /// them from a container that is no longer their neighbour.
+  ///
+  /// Returns the container's new path.
+  Future<String> moveContainerOutOfSyncFolder(String notebookId) async {
+    final ref = notebooks.firstWhere((n) => n.id == notebookId);
+    final src = File(ref.file);
+    if (!src.existsSync()) throw StateError('notebook file is missing');
+    // Captured BEFORE `ref.file` changes: with `logDir` unset, `logDirPath` is
+    // derived from the container's path, so reading it afterwards would name a
+    // directory in the workspace that has never existed.
+    final logs = ref.logDirPath;
+    // Already home. Idempotent on purpose: the button that calls this is driven
+    // by a folder scan, and pressing it twice must not manufacture a second
+    // container beside the first.
+    if (p.isWithin(workspaceDir.path, ref.file)) return ref.file;
+    final dest = _freeNotebookPath(ref.title);
+
+    // **CHECKPOINTED, and opened in order to be checkpointed if it was
+    // closed.** In WAL mode the `.onote` is not the notebook — the `-wal`
+    // beside it is, until something folds it back in. Measured on the owner's
+    // own notebooks: My Notebook's 4,128,272-byte `-wal` held 2 whole pages,
+    // newer revisions of 6 more, 1 of 5 blobs and 5 of 22 `page_versions`; the
+    // Drive notebook's 247 KB `-wal` held newer revisions of 4 pages. Copying
+    // the main file and deleting the sidecars without this throws all of that
+    // away, and the result passes `PRAGMA integrity_check`. `_open` only holds
+    // notebooks this session actually opened, so the notebook you had not
+    // looked at yet is the one that gets destroyed.
+    final open = _open.remove(notebookId);
+    checkpointAndClose(open ??
+        openOnote(ref.file, notebookId: notebookId, title: ref.title));
+    _decodedPages.remove(notebookId);
+
+    await src.copy(dest);
+    // By hash, not by length. See [sameBytes] — and this is the copy that
+    // matters most, because what follows it deletes the only other copy.
+    if (!sameBytes(src.path, dest)) {
+      try {
+        File(dest).deleteSync();
+      } catch (_) {/* best effort; the original is untouched either way */}
+      throw StateError(
+          'the copy did not complete — nothing was moved or deleted');
+    }
+
+    // Only now, and only inside the cloud folder's own name: the container and
+    // the two sidecars SQLite keeps beside it. The `.onotebook` is untouched.
+    try {
+      _deleteContainerFiles(ref.file);
+    } catch (_) {
+      // The notebook is safe at the destination. A stale original left in
+      // Drive is a leftover the "Find leftovers…" scan already knows how to
+      // report; failing the move after the data has landed is not.
+    }
+
+    ref.logDir = logs;
+    ref.file = dest;
+    await _saveNow();
+    return dest;
   }
 
   Future<NotebookRef> createNotebook(String title) async {
@@ -1053,21 +1147,55 @@ class Repository {
   ///   * **inside the workspace** — [freeLogDirPath] puts a git-cloned
   ///     notebook's logs there, and a local notebook's logs are simply its
   ///     container's sibling; nothing else can be writing to them; and
-  ///   * **the sibling of this notebook's own container** — the matched pair
-  ///     this device created, wherever it now lives. This covers the device
-  ///     that MOVED its notebook into a cloud folder: container and logs went
-  ///     there together, and deleting one without the other is precisely what
-  ///     left a dead `.onote` in Drive.
+  ///   * **a directory holding nobody's log but ours.** A log file is named
+  ///     after the device that writes it and exactly one device ever appends
+  ///     to it, so "every `*.oplog` under `ops/` is this installation's" means
+  ///     there is no other machine's history in there to lose.
   ///
-  /// Anything else means the logs are somewhere this device merely joined, so
-  /// other machines write their own files into that directory and it is not
-  /// ours to remove. Purging then means "take it off this computer" — which is
-  /// what the user asked for, and all we can honestly deliver.
+  /// Anything else means other machines write their own files into that
+  /// directory and it is not ours to remove. Purging then means "take it off
+  /// this computer" — which is what the user asked for, and all we can
+  /// honestly deliver.
+  ///
+  /// **Amended for v0.17 Step 4.** The second rule used to be "the sibling of
+  /// this notebook's own container", on the reasoning that a device which
+  /// *moved* its notebook into Drive sent the container and the logs there
+  /// together. Step 4 stops the container going, so that test now answers
+  /// "someone else's" for every notebook this device shared itself — which
+  /// would strand this machine's own `.onotebook` in Drive for ever, the exact
+  /// leftover [purgeNotebook] was written to stop. Asking whose logs are in
+  /// there is a stronger rule than the pairing was in any case: it also
+  /// refuses when a second computer has joined a folder this device created,
+  /// which the old rule got wrong in the dangerous direction.
   bool _mayDeleteLogDir(NotebookRef ref) {
     if (_logDirIsShared(ref)) return false;
     final logs = ref.logDirPath;
     if (p.isWithin(workspaceDir.path, logs)) return true;
-    return p.equals(logs, '${p.withoutExtension(ref.file)}.onotebook');
+    return _logsAreAllOurs(logs);
+  }
+
+  /// Whether every device log in [logDir] was written by this installation.
+  ///
+  /// A listing, never an open: this runs on a directory in someone's Drive and
+  /// answering the question must not create a file there.
+  ///
+  /// An empty `ops/` is ours (there is nothing to lose). A workspace with no
+  /// device id has never recorded anything, so any log it finds belongs to
+  /// somebody else — and an unreadable directory is not one to start deleting
+  /// from.
+  bool _logsAreAllOurs(String logDir) {
+    try {
+      final ops = Directory(p.join(logDir, 'ops'));
+      if (!ops.existsSync()) return true;
+      final mine = getSetting(DeviceIdentity.settingsKey) as String?;
+      for (final f in ops.listSync(followLinks: false).whereType<File>()) {
+        if (p.extension(f.path) != '.oplog') continue;
+        if (p.basenameWithoutExtension(f.path) != mine) return false;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Whether deleting [id] for good would leave a shared folder untouched.

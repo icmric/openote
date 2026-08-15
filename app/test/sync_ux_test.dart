@@ -37,8 +37,17 @@ void main() {
     });
 
     final made = await repo.createNotebook('Lectures');
+    // What lands in the shared folder is the `.onotebook` and nothing else —
+    // v0.17 Step 4. The container is a WAL SQLite database and stays here.
     final moved = await repo.moveNotebookTo(made.id, shared.path);
-    expect(File(moved).existsSync(), isTrue);
+    expect(Directory(moved).existsSync(), isTrue);
+    expect(
+        shared
+            .listSync(recursive: true)
+            .whereType<File>()
+            .map((f) => p.basename(f.path))
+            .where((n) => RegExp(r'\.onote(-wal|-shm)?$').hasMatch(n)),
+        isEmpty);
 
     // A second workspace, as a second machine would have.
     final tmp2 = Directory.systemTemp.createTempSync('onote_open_b_');
@@ -49,7 +58,10 @@ void main() {
         tmp2.deleteSync(recursive: true);
       } catch (_) {}
     });
-    final ref = await repo2.openExistingNotebook(moved);
+    // The join path for a folder that holds only logs — the same one a git
+    // clone uses. `openExistingNotebook` byte-copies a container and there is
+    // deliberately no container to copy.
+    final ref = await repo2.adoptLogDirectory(moved, title: 'Lectures');
     expect(ref.title, 'Lectures');
     expect(repo2.notebooks.any((n) => n.id == ref.id), isTrue);
 
@@ -63,12 +75,12 @@ void main() {
     expect(p.isWithin(tmp2.path, ref.file), isTrue,
         reason: 'its container belongs in its own workspace');
     expect(File(ref.file).existsSync(), isTrue);
-    expect(ref.logDir, '${p.withoutExtension(moved)}.onotebook',
+    expect(ref.logDir, moved,
         reason: 'the logs, and only the logs, are shared');
 
     // Joining twice must not fork the registry into two devices for one
     // machine — matched on the shared log dir, not the path.
-    final again = await repo2.openExistingNotebook(moved);
+    final again = await repo2.adoptLogDirectory(moved, title: 'Lectures');
     expect(again.id, ref.id);
     expect(repo2.notebooks.length, 1);
   });
@@ -99,7 +111,13 @@ void main() {
     final reopened = await Repository.openAt(tmp);
     addTearDown(reopened.dispose);
     expect(reopened.notebooks.length, 1, reason: 'the notebook disappeared');
-    expect(reopened.notebooks.single.file, moved);
+    // Since v0.17 Step 4 the path that points OUT of the workspace is the log
+    // directory rather than the container, and it is the one the registry has
+    // to write absolutely. Written as a basename it would re-join against the
+    // workspace folder on load, resolve to a directory that is not there, and
+    // the notebook would silently stop syncing.
+    expect(reopened.notebooks.single.logDir, moved);
+    expect(File(reopened.notebooks.single.file).existsSync(), isTrue);
   });
 
   test('opening a path with nothing there fails loudly', () async {
@@ -200,10 +218,10 @@ void main() {
     await repo.createNotebook('Other'); // so trashing is allowed
     final moved = await repo.moveNotebookTo(made.id, shared.path);
 
-    final joined = await repo.openExistingNotebook(moved);
+    final joined = await repo.adoptLogDirectory(moved, title: 'Shared');
     final countAfterJoin = repo.notebooks.length;
     await repo.trashNotebook(joined.id);
-    final again = await repo.openExistingNotebook(moved);
+    final again = await repo.adoptLogDirectory(moved, title: 'Shared');
 
     expect(again.id, joined.id, reason: 'the same notebook, not a new copy');
     expect(repo.notebooks.length, countAfterJoin);

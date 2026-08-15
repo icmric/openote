@@ -236,6 +236,7 @@ class _SyncDialogState extends State<_SyncDialog> {
               // status chip down.
               if (status.isFolderSynced) _linkedCard(status, path),
               if (status.isFolderSynced) const SizedBox(height: 4),
+              _containerInCloudCard(),
               if (!status.isFolderSynced)
                 const Text(
                   'Openote syncs through a folder your cloud already keeps in '
@@ -438,6 +439,113 @@ class _SyncDialogState extends State<_SyncDialog> {
   /// The "you are already set up" card. Answering "where is it, is anything
   /// else using it, and how do I change it" in one glance is the whole job —
   /// re-offering the folder chooser instead read as "nothing happened".
+  /// One button for a notebook an older build moved bodily into the cloud
+  /// folder — the working file and all.
+  ///
+  /// **Nothing here happens on its own.** The file is in the user's Drive, and
+  /// Openote does not move or delete things in someone's cloud folder without
+  /// being asked. So this is an offer, in plain words, with the reason a year
+  /// 10 student can act on ("a sync app can damage it") and every technical
+  /// word — WAL, SQLite, container, torn database — behind Advanced, matching
+  /// `open_notice_dialog.dart` and `save_problem_dialog.dart`.
+  Widget _containerInCloudCard() {
+    final folder = app.containerSyncFolder(nb);
+    if (folder == null) return const SizedBox.shrink();
+    final path = app.notebookPath(nb);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      decoration: BoxDecoration(
+        color: OnoteColors.danger.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.warning_amber_rounded,
+                size: 16, color: OnoteColors.danger),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('This notebook keeps a working file in ${folder.name}',
+                  style: OnoteType.uiStrong),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          Text(
+            'Openote uses that file to open this notebook quickly. It is not '
+            'the notes themselves, and it should stay on this computer: while '
+            '${folder.name} is copying it, Openote may be writing to it, and '
+            'that can damage the notebook.\n\n'
+            'Moving it out changes nothing you can see. Your notes stay in '
+            '${folder.name} and keep syncing to your other devices exactly as '
+            'they do now.',
+            style: const TextStyle(fontSize: 12.5, height: 1.45),
+          ),
+          const SizedBox(height: 8),
+          Row(children: [
+            FilledButton.icon(
+              onPressed: _busy ? null : _moveContainerOut,
+              icon: const Icon(Icons.drive_file_move_outline, size: 18),
+              label: Text('Move the working file out of ${folder.name}'),
+            ),
+          ]),
+          if (path != null)
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              shape: const Border(),
+              title: const Text('Details (advanced)',
+                  style: TextStyle(fontSize: 12.5)),
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SelectableText(
+                    '$path\n\n'
+                    'The container is a WAL SQLite database. Its -wal and -shm '
+                    'sidecars are replicated independently of the main file, '
+                    'so a client that copies them out of step can produce a '
+                    'torn database that still passes PRAGMA integrity_check '
+                    '(ADR-0006 §2). Moving it copies the file into your '
+                    'workspace, checkpoints the WAL first, compares SHA-256 of '
+                    'both copies, and only then deletes the original and its '
+                    'sidecars. The .onotebook directory is not touched.',
+                    style: const TextStyle(
+                        fontFamily: 'JetBrains Mono',
+                        fontFamilyFallback: onoteFontFallback,
+                        fontSize: 11),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _moveContainerOut() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await app.moveContainerOutOfSyncFolder(nb);
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        duration: Duration(seconds: 6),
+        content: Text('Done — the working file is back on this computer, and '
+            'your notes are still syncing.'),
+      ));
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = '$e';
+        });
+      }
+    }
+  }
+
   Widget _linkedCard(SyncStatus status, String? path) {
     final folder = status.folder!;
     return Container(
@@ -1092,7 +1200,8 @@ IconData _iconFor(CloudKind k) => switch (k) {
 /// what the sync dialog itself creates, shallow enough not to walk somebody's
 /// whole Drive.
 ///
-/// **A `.onote` is only offered when its `.onotebook` is beside it.**
+/// **A `.onote` is only offered when its `.onotebook` is beside it — and a
+/// lone `.onotebook` is offered on its own.**
 ///
 /// Reported: "there were a bunch of files left over in the folder from deleted
 /// notebooks … which meant that when i was running through the setup process
@@ -1103,6 +1212,13 @@ IconData _iconFor(CloudKind k) => switch (k) {
 /// never something to join. It is a leftover, and on the real machine there
 /// was one 35.9 MB of it, offered beside the live notebook under a name one
 /// character different.
+///
+/// The lone-directory case is the normal one from v0.17 on: sharing a notebook
+/// moves the `.onotebook` into the folder and deliberately leaves the container
+/// on the machine that made it (v0.17 plan, Step 4). Without this the second
+/// device would find nothing at all in a folder that is syncing perfectly well.
+/// It still has to *look* like a notebook — `manifest.json` or an `ops/`
+/// directory — so an ordinary folder someone named `.onotebook` is not offered.
 ///
 /// Checked by looking rather than by opening: the candidate lives in someone's
 /// Drive, and opening a SQLite file to interrogate it writes to it (schema
@@ -1121,6 +1237,25 @@ List<({String name, String path, CloudFolder folder})> findExistingNotebooks({
       if (!dir.existsSync()) continue;
       try {
         for (final e in dir.listSync(followLinks: false)) {
+          if (e is Directory && p.extension(e.path) == '.onotebook') {
+            // Its container's device is the one that shares it; if that device
+            // is running an older build the `.onote` is beside it and the
+            // branch below offers that instead, so this must not double up.
+            if (File('${p.withoutExtension(e.path)}.onote').existsSync()) {
+              continue;
+            }
+            if (!File(p.join(e.path, 'manifest.json')).existsSync() &&
+                !Directory(p.join(e.path, 'ops')).existsSync()) {
+              continue;
+            }
+            if (!seen.add(e.path)) continue;
+            out.add((
+              name: p.basenameWithoutExtension(e.path),
+              path: e.path,
+              folder: cloud
+            ));
+            continue;
+          }
           if (e is! File || p.extension(e.path) != '.onote') continue;
           if (!Directory('${p.withoutExtension(e.path)}.onotebook')
               .existsSync()) {

@@ -85,17 +85,46 @@ The layout that satisfies dumb file sync, real merging, and live collaboration
 at once:
 
 ```
-MyNotebook.onotebook/          ← a directory, not a file
-  manifest.json                ← notebook id, format version, device registry
-  ops/
-    <device-id>.oplog          ← append-only. ONE writer, ever.
-    <device-id>.oplog
-  blobs/
-    <sha256>                   ← content-addressed, immutable
-  snapshots/
-    <device-id>-<seq>.snap     ← optional compaction, never authoritative
-  cache.onote                  ← local-only SQLite; never synced
+<the synced folder>/           ← what Drive/OneDrive/Dropbox/Syncthing replicate
+  MyNotebook.onotebook/        ← a directory, not a file
+    manifest.json              ← notebook id, format version, device registry
+    ops/
+      <device-id>.oplog        ← append-only. ONE writer, ever.
+      <device-id>.oplog
+    blobs/
+      <sha256>                 ← content-addressed, immutable
+
+<this device's workspace>/     ← never synced, never shared
+  MyNotebook.onote             ← local-only SQLite cache (+ -wal, -shm)
 ```
+
+> **Amended 2026-08-15 (v0.17 plan, Step 4).** As first drawn, this diagram put
+> `cache.onote` **inside** `MyNotebook.onotebook/`, and listed a `snapshots/`
+> directory beside it. Both are withdrawn.
+>
+> §8 below — written six days after this section — made that same directory the
+> git repository root and the thing every consumer sync client replicates. A
+> live WAL SQLite database inside the replicated tree re-creates precisely the
+> torn-database hazard §2 exists to prevent, and it was not hypothetical: the
+> owner's Google Drive was replicating a 31,674,368-byte container, a
+> 247,232-byte `-wal` and a 32,768-byte `-shm` for an open notebook. git
+> tolerates it (`git_sync.dart` writes a `.gitignore` naming `*.onote`); **the
+> four consumer providers have no per-file ignore at all.**
+>
+> The code always did the right thing — the container is a sibling, or lives in
+> the local workspace — so this was the ADR being wrong, and leaving the diagram
+> as drawn invited a future implementer to "finish the job" by moving a WAL
+> database into a cloud folder. `Repository.moveNotebookTo` did exactly that for
+> notebooks this device created, until Step 4.
+>
+> `snapshots/` goes for a different reason: the v0.17 investigation measured a
+> full rebuild of the largest real notebook at 54 ms of CPU (329 pages, 2,780
+> ops), so there is nothing for a snapshot to optimise — and superseding one
+> would mean *deleting* a file inside the synced set, which is the one thing the
+> one-writer-per-file property does not cover.
+>
+> The identical diagram in **spec §11** (`docs/specs/10-file-format-spec.md`)
+> needs the same amendment and has not had it yet.
 
 The load-bearing property is **one writer per file**. A device only ever appends
 to its own log, so two devices can never produce conflicting versions of the same
@@ -107,10 +136,12 @@ Merging is then *reading*: concatenate the logs, order the operations, apply. Th
 result is identical on every device regardless of arrival order, which is what
 makes it conflict-free rather than conflict-resolved.
 
-`cache.onote` keeps the current SQLite container as a **local materialised view**
+The container keeps the current SQLite database as a **local materialised view**
 — it stays the fast path for queries and rendering, is rebuildable from the logs
-at any time, and is explicitly excluded from sync. That also retires the WAL
-tearing risk, because the synced set contains no SQLite files at all.
+at any time, and is explicitly excluded from sync by living **outside** the
+replicated directory rather than by being ignored inside it. That is what
+retires the WAL tearing risk: the synced set contains no SQLite files at all,
+and no ignore rule has to be honoured by anything to keep it that way.
 
 ### Consequences
 

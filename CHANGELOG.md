@@ -4,6 +4,28 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed — sharing a notebook now leaves its working file on your computer
+
+- **Sharing a notebook through Drive, OneDrive, Dropbox, iCloud or Syncthing
+  used to put Openote's own working file in the shared folder too.** Your
+  notes were never the problem: the working file is a database Openote writes
+  to constantly, and a sync app copying it while Openote is in the middle of
+  writing can damage it. From now on only your notes go into the folder, and
+  the working file stays on this computer — nothing you can see changes, and
+  every device still gets everything.
+- **If one of your notebooks already has its working file in a shared folder,
+  Openote leaves it exactly where it is and offers to move it.** It will not
+  move or delete anything in your cloud folder on its own. Open the sync
+  window for that notebook and there is one button, in plain words, that does
+  it: the file is copied out, checked, and only then removed from the folder.
+  Your notes stay in the folder and keep syncing.
+- **Openote now finds a shared notebook on your second computer even though
+  there is no working file beside it**, and joining one this way gives that
+  computer its own working file, as joining always has.
+- **Setting up sharing checks every copied file, rather than just its size.**
+  A copy that was interrupted halfway can be exactly the right size, and the
+  old check called that finished.
+
 ### Fixed — a notebook made by a newer Openote can be read, and cannot be damaged
 
 - **Openote used to read changes it did not understand as though it did.** If
