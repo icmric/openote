@@ -1066,9 +1066,21 @@ class Repository {
 
   /// Purge soft-deleted nodes in [notebookId] past their retention window.
   void purgeExpiredNodes(String notebookId) {
-    _db(notebookId).execute(
+    final db = _db(notebookId);
+    db.execute(
         'DELETE FROM nodes WHERE deleted_at IS NOT NULL AND deleted_at < ?',
         [_retentionCutoff()]);
+    // The other of the only two places a `nodes` row is hard-deleted, and so
+    // the other half of the same hole [NotebookWriter.purgeNode] closes:
+    // `page_versions` has no foreign key onto `nodes`, so an expired page's
+    // snapshots outlive it for good. Measured leaking 1,002,020 bytes for one
+    // expired page of average size.
+    //
+    // Written as the orphan predicate rather than `page_id=?` because the
+    // statement above deletes whole subtrees through `nodes.parent_id`'s
+    // cascade and never names the pages it took with it.
+    db.execute(
+        'DELETE FROM page_versions WHERE page_id NOT IN (SELECT id FROM nodes)');
   }
 
   // ── Tree nodes ─────────────────────────────────────────────────────────
@@ -1121,7 +1133,10 @@ class Repository {
     }
   }
 
-  /// Permanently delete a node and its subtree (FK cascade clears page data).
+  /// Permanently delete a node and its subtree. FK cascade clears `page_mirror`
+  /// and `blob_refs`; `page_versions` has no such key and is cleared explicitly
+  /// inside [NotebookWriter.purgeNode], which is why that is the funnel rather
+  /// than here — the import writer calls it directly, from its own isolate.
   void purgeNode(String notebookId, String nodeId) {
     _writer(notebookId).purgeNode(nodeId);
     // A purged page must not survive in the decoded cache: a page recreated

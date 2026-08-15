@@ -4,6 +4,15 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — deleting a page for good takes its version history with it
+
+- **Deleting a page or a section permanently used to leave its saved
+  Version history sitting on disk for ever** — up to 30 copies of the page,
+  which on a big imported notebook is megabytes apiece. It goes with the
+  page now, and anything an older version of Openote left behind is cleared
+  up the next time you open the notebook. Pages in the recycle bin are not
+  touched: they keep every version until you empty it.
+
 ### Added — get the space back from videos you no longer use
 
 - **Notebook ▸ Sync ▸ "Where the files are" now has "Check for videos you no

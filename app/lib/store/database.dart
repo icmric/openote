@@ -140,7 +140,73 @@ Database openOnote(String path, {required String notebookId, required String tit
   if (freshFile) {
     _seedNotebook(db, notebookId: notebookId, title: title);
   }
+  _sweepOrphanedVersions(db);
   return db;
+}
+
+/// Drop `page_versions` rows whose page no longer exists.
+///
+/// **A repair, placed here because the schema above cannot perform it.**
+/// `page_mirror` and `blob_refs` both declare
+/// `REFERENCES nodes(id) ON DELETE CASCADE`, so a purged page takes them with
+/// it; `page_versions` never declared one, so up to thirty full page snapshots
+/// per purged page stayed for good. [NotebookWriter.purgeNode] now deletes them
+/// as it goes, but that only helps from here on: `CREATE TABLE IF NOT EXISTS`
+/// does not alter a table that already exists, so it is not enough to fix the
+/// schema for new notebooks — the rows already sitting in every notebook on
+/// disk have to be swept, and this is the one line every open of every notebook
+/// goes through. The comment on [_ensureSchema] states the same principle for
+/// tables; this is its equivalent for rows.
+///
+/// **Why "no matching node" is only ever "the page was purged".** This is the
+/// check the sweep stands or falls on, because deleting a snapshot that is
+/// still restorable would destroy history no undo can bring back:
+///
+///  * A `page_versions` row can only be CREATED by
+///    [Repository.maybeSnapshotVersion], which requires a `page_mirror` row —
+///    and `page_mirror.page_id` is itself a foreign key onto `nodes(id)` with
+///    `foreign_keys=ON`. So a snapshot cannot exist before its node does.
+///  * Version history is container-local. There is no `OpKind` for it, so it
+///    never arrives from another device ahead of the node it belongs to, the
+///    way a page written before its section can (see the ordering note in
+///    `AppState`'s pull).
+///  * A page in the recycle bin KEEPS its `nodes` row — `softDeleteNode` only
+///    stamps `deleted_at` — so a trashed page is not an orphan and its thirty
+///    days of restorable history are not touched here. This is the same
+///    deliberate absence of a `deleted_at` filter that
+///    [Repository.everyStoredPageText] documents for the video sweep.
+///  * A `nodes` row is hard-deleted in exactly two places, both permanent and
+///    both user-or-retention driven: [NotebookWriter.purgeNode] and
+///    [Repository.purgeExpiredNodes].
+///
+/// **Probe first, and best-effort, for the reason [checkpointAndClose] is.**
+/// The import isolate opens its own connection to this same file, so a write
+/// lock can legitimately be held while the main isolate opens it. The probe is
+/// a read, which never blocks a WAL database; the DELETE only runs when there
+/// is something to delete, which after the first sweep is never. A container
+/// that is busy right now is a deferral to the next open — never a notebook
+/// that refuses to open, which would be a far worse bug than the one being
+/// fixed.
+///
+/// Measured on a 322 MB container holding 9,840 snapshots, the worst shape the
+/// owner's 328-page imported notebook could reach: 19.6 ms on the first open
+/// and 0.06 ms warm with nothing to sweep — the steady state, paid for ever —
+/// and 364 ms for the one pass that actually deletes all 9,840. Single
+/// statements, so neither can interleave with a write or yield mid-way; both
+/// are a different order of magnitude from the 3.2 s and 10–20 s freezes that
+/// 7851c3d and 75e0380 fixed. `auto_vacuum=INCREMENTAL` is already on, so the
+/// freed pages return to the file when the user next reclaims space.
+void _sweepOrphanedVersions(Database db) {
+  try {
+    final any = db.select('SELECT EXISTS(SELECT 1 FROM page_versions '
+        'WHERE page_id NOT IN (SELECT id FROM nodes)) AS x').first['x'] as int;
+    if (any == 0) return;
+    db.execute(
+        'DELETE FROM page_versions WHERE page_id NOT IN (SELECT id FROM nodes)');
+  } catch (_) {
+    // Locked by the import isolate, most likely. The next open tries again,
+    // and nothing is at risk in the meantime beyond the space itself.
+  }
 }
 
 /// Fold the write-ahead log back into the database, then close.
