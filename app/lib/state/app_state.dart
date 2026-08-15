@@ -2800,11 +2800,71 @@ class AppState extends ChangeNotifier
   ///
   /// Saves are flushed first — VACUUM on a database with pending work in the
   /// write-ahead log does that work twice.
-  Future<int> reclaimFreeSpace(String nb) async {
+  Future<SpaceReclaim> reclaimFreeSpace(String nb) async {
     await flushSave();
-    final freed = _repo.reclaimFreeSpace(nb);
-    if (freed > 0) notifyListeners();
-    return freed;
+    final r = _repo.reclaimFreeSpace(nb);
+    if (r.freed > 0) notifyListeners();
+    return r;
+  }
+
+  /// Remove the notebook file's second copy of every picture and drawing
+  /// (v0.17 Step 7), keeping the copy in the notebook's own folder.
+  ///
+  /// **The gate that has to be here rather than in [Repository].** Step 5's
+  /// proof is the log-side half, it lives on [SyncRecorder], and — this is the
+  /// part that decides the ordering — **its repair source is the container**.
+  /// A blob file holding the wrong bytes is discarded and rewritten from the
+  /// `blobs` table, which is precisely what the next paragraph deletes. So the
+  /// proof runs first, on a notebook that can still be repaired, and a notebook
+  /// that cannot be proved is never reclaimed.
+  ///
+  /// A missing recorder is a refusal, not a pass. [proveBlobBytes] answers
+  /// `checked: 0` with empty sets when the log will not open, and `ok` on that
+  /// is `true` — a notebook whose log is broken would otherwise sail through
+  /// the strictest gate in the plan by having nothing to check.
+  Future<BlobReclaim> reclaimContainerBlobs(String nb) async {
+    await flushSave();
+    if (notebookIsReadOnly(nb)) {
+      return const BlobReclaim(
+          refusal: 'This notebook was written by a newer version of Openote, '
+              'so this one is only showing it to you. Nothing will be changed.');
+    }
+    // The backfill is what puts the bytes in `blobs/` in the first place;
+    // reclaiming while it is still running would be measuring a hole it is in
+    // the middle of filling.
+    await awaitBlobBackfill(nb);
+    final r = await warmRecorder(nb);
+    if (r == null) {
+      return const BlobReclaim(
+          refusal: "Openote could not open this notebook's own folder, so it "
+              'cannot check that your pictures are safely copied there. '
+              'Nothing has been changed.',
+          details: 'no SyncRecorder for the notebook; see the save problem '
+              'reported separately');
+    }
+    final proof = await proveBlobBytes(nb);
+    if (!proof.ok) {
+      return BlobReclaim(
+          refusal: 'Openote will not do this yet. ${proof.holes} of this '
+              "notebook's pictures and drawings are missing or damaged in the "
+              "notebook's own folder, and that is the copy this would leave "
+              'you with. Nothing has been changed.',
+          details: '$proof\n'
+              'missing: ${_someHashes(proof.missing)}\n'
+              'unrepairable: ${_someHashes(proof.damaged)}');
+    }
+    final out = await _repo.reclaimContainerBlobs(nb);
+    if (out.done) notifyListeners();
+    return out;
+  }
+
+  /// Put the notebook file's copies back — Step 7's inverse, and the answer for
+  /// anyone who hits a problem in the field.
+  Future<BlobRefill> refillContainerBlobs(String nb) async {
+    await flushSave();
+    final out = await _repo.refillContainerBlobs(nb);
+    notifyListeners();
+    return out;
   }
 
   /// Notebooks that look like repeated imports of the same source.
@@ -2884,6 +2944,15 @@ class AppState extends ChangeNotifier
   /// (plus its `Openote` subfolder), which is where the app's own flows put
   /// things. Deliberately not a whole-disk scan.
   Future<List<OrphanFile>> findOrphanFiles() async {
+    // **Silent while a reclaim holds the workspace** (v0.17 Step 7). This scan
+    // marks an unclaimed workspace `.onote` `safeToDelete: true`, and treats a
+    // `-wal`/`-shm` whose `.onote` is absent as an orphan — which is exactly
+    // the state a migration creates for its own duration. Offering a student
+    // their own half-migrated notebook as a leftover to delete is the one way
+    // this feature could destroy a notebook, so it returns nothing at all
+    // rather than something filtered: a filter has to be right about every
+    // path, and "nothing" cannot be wrong.
+    if (_repo.reclaimInProgress) return const [];
     final claimed = <String>{};
     for (final n in [..._repo.notebooks, ..._repo.trashedNotebooks]) {
       claimed

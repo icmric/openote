@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
@@ -9,12 +11,14 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../core/ids.dart';
+import '../ink/ink_codec.dart' show inkMimeType;
 import '../ink/ink_storage.dart';
 import '../model/history.dart';
 import '../model/models.dart';
 import '../sync/device_identity.dart';
 import '../sync/op_log.dart';
 import 'database.dart';
+import 'free_space.dart';
 import 'history_store.dart';
 import 'notebook_writer.dart';
 
@@ -34,6 +38,92 @@ import 'notebook_writer.dart';
 /// and baked **before** any release moves a container (v0.17 plan, Step 8),
 /// which is why it lands first with nothing yet depending on it.
 const int workspaceFormat = 1;
+
+/// What a `VACUUM` did — **and whether it happened at all**.
+///
+/// A plain `int` could not say the second thing, which is v0.17 Step 7 item 5:
+/// a compaction that failed on a full disk returned 0, the same as a notebook
+/// with nothing to give back, and the button said *"Nothing to reclaim"* for
+/// both.
+class SpaceReclaim {
+  const SpaceReclaim({required this.freed, this.problem, this.details});
+
+  /// Bytes the container plus its write-ahead log gave back.
+  final int freed;
+
+  /// Plain words for why nothing ran, or null when it did. Never an exception.
+  final String? problem;
+
+  /// The exception, for the Advanced fold.
+  final String? details;
+
+  bool get ran => problem == null;
+}
+
+/// What emptying a container's `blobs` table did — or, far more often, the
+/// reason it refused to.
+///
+/// Refusal is the normal outcome and is not an error: every gate exists because
+/// something without it destroyed real data, so a `refusal` is the machinery
+/// working. Only [details] may contain a path, a hash or an exception; the
+/// [refusal] sentence itself is what a year 10 student reads.
+class BlobReclaim {
+  const BlobReclaim({
+    this.done = false,
+    this.rowsRemoved = 0,
+    this.checked = 0,
+    this.freed = 0,
+    this.beforeBytes = 0,
+    this.afterBytes = 0,
+    this.refusal,
+    this.details,
+  });
+
+  /// True only when the rows really are gone and the file really did shrink.
+  final bool done;
+
+  /// Rows removed from `blobs`.
+  final int rowsRemoved;
+
+  /// Blob files re-hashed by the gates. Not files seen — the number that
+  /// separates this from a directory listing.
+  final int checked;
+
+  final int freed;
+  final int beforeBytes;
+  final int afterBytes;
+
+  /// Why nothing was done, in plain words. Null when [done].
+  final String? refusal;
+
+  /// Hashes, counts and exceptions, for "Details (advanced)".
+  final String? details;
+
+  @override
+  String toString() => done
+      ? 'removed $rowsRemoved row(s), checked $checked blob file(s), '
+          '$beforeBytes → $afterBytes bytes'
+      : 'refused: $refusal';
+}
+
+/// What putting the container's copies back achieved (Step 7's inverse).
+class BlobRefill {
+  const BlobRefill({required this.restored, required this.missing});
+
+  /// Rows written back into `blobs`.
+  final int restored;
+
+  /// Hashes `blob_refs` names that `blobs/` could not supply — no file, or a
+  /// file whose bytes are not what its name says. A non-empty set here means
+  /// the rollback is incomplete and the user must be told, not a number to be
+  /// rounded off.
+  final Set<String> missing;
+
+  bool get ok => missing.isEmpty;
+
+  @override
+  String toString() => 'restored $restored, could not restore ${missing.length}';
+}
 
 /// Workspace + notebook persistence. One SQLite Database handle per open
 /// .onote (File Format Spec §2); workspace.json registry per spec §7.
@@ -130,6 +220,10 @@ class Repository {
   }
 
   Future<void> _loadWorkspace() async {
+    // One call site, and it is here rather than in the two `open*` factories so
+    // that the production path and the test path cannot drift: a marker cleared
+    // only in `openAt` would be proved by the suite and broken in the app.
+    _clearStaleReclaimMarker();
     // Try the live registry, then the `.bak` written before the last replace.
     // A registry we can't parse must never look like "you have no notebooks".
     Map<String, dynamic>? j;
@@ -941,11 +1035,19 @@ class Repository {
   /// VACUUM works on both, and this runs from an explicit user action rather
   /// than on a timer, so its cost is one the user asked for.
   ///
-  /// Returns the bytes reclaimed, which is the only number worth showing.
-  int reclaimFreeSpace(String notebookId) {
+  /// Returns the bytes reclaimed, and — separately — whether it ran at all.
+  ///
+  /// **"Could not run" used to be spelled `0`** (v0.17 plan, Step 7 item 5).
+  /// The bare `catch` below returned zero, so a `VACUUM` that died of a full
+  /// disk, a read-only volume or a second process holding the file was
+  /// indistinguishable from a tidy notebook with nothing to give back — and the
+  /// button said *"Nothing to reclaim"* either way. That is the same failure
+  /// this whole step is written against, one layer up: an operation that could
+  /// not be performed reported to the user as a successful no-op.
+  SpaceReclaim reclaimFreeSpace(String notebookId) {
     final ref = notebooks.where((n) => n.id == notebookId).firstOrNull ??
         trashedNotebooks.where((n) => n.id == notebookId).firstOrNull;
-    if (ref == null) return 0;
+    if (ref == null) return const SpaceReclaim(freed: 0);
     final file = File(ref.file);
     final before = file.existsSync() ? file.lengthSync() : 0;
     final wal = File('${ref.file}-wal');
@@ -958,16 +1060,427 @@ class Repository {
       db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
       db.execute('VACUUM;');
       db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
-    } catch (_) {
-      // A locked database or a read-only volume. Nothing is lost — this is
-      // housekeeping — and reporting zero reclaimed is the honest answer.
-      return 0;
+    } catch (e) {
+      // Still not a data-loss path — VACUUM either completes or leaves the
+      // original — but the user asked for something and did not get it, so
+      // they are told, rather than being shown a cheerful zero.
+      debugPrint('[openote/store] could not compact $notebookId: $e');
+      return SpaceReclaim(
+          freed: 0,
+          problem: 'Openote could not tidy up this notebook just now. It is '
+              'usually because the file is open somewhere else, or the disk '
+              'is full. Nothing was lost — try again in a moment.',
+          details: '$e');
     }
     final after = file.existsSync() ? file.lengthSync() : 0;
     final walAfter = wal.existsSync() ? wal.lengthSync() : 0;
     final freed = (before - after) + (walBefore - walAfter);
-    return freed > 0 ? freed : 0;
+    return SpaceReclaim(freed: freed > 0 ? freed : 0);
   }
+
+  // ── v0.17 Step 7: reclaim the container's copy of the blob bytes ──────
+
+  /// The one file that says a reclaim is running, for the whole workspace.
+  ///
+  /// **Not inside the `.onotebook`**, which is the directory Drive/OneDrive/
+  /// Syncthing replicate: a marker that syncs would tell every other device
+  /// that *it* had a migration in flight. It sits beside `workspace.json`,
+  /// where nothing replicates it and where [AppState.findOrphanFiles] — which
+  /// already lists this directory — can see it for free.
+  File get _reclaimMarkerFile =>
+      File(p.join(workspaceDir.path, 'reclaim-in-progress.json'));
+
+  /// True while a reclaim holds the workspace.
+  ///
+  /// Two jobs. It is the concurrency gate (a second window, a second reclaim),
+  /// and it is what makes the leftovers scan go quiet: `findOrphanFiles` marks
+  /// an unclaimed workspace `.onote` `safeToDelete: true` and treats a
+  /// `-wal`/`-shm` without its `.onote` as an orphan — **which is a state a
+  /// migration creates for its own duration**. A student pressing "Find
+  /// leftovers" at the wrong second would be offered their own notebook to
+  /// delete.
+  bool get reclaimInProgress => _reclaimMarkerFile.existsSync();
+
+  /// What the marker says, for a message or a log line. Empty when there is
+  /// none, or when it cannot be read.
+  Map<String, dynamic> readReclaimMarker() {
+    try {
+      final f = _reclaimMarkerFile;
+      if (!f.existsSync()) return const {};
+      final j = jsonDecode(f.readAsStringSync());
+      return j is Map<String, dynamic> ? j : const {};
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  void _writeReclaimMarker(String notebookId, String step) {
+    final tmp = File('${_reclaimMarkerFile.path}.tmp');
+    tmp.writeAsStringSync(
+        jsonEncode({
+          'step': step,
+          'notebookId': notebookId,
+          'startedAt': nowMs(),
+          'pid': pid,
+        }),
+        flush: true);
+    tmp.renameSync(_reclaimMarkerFile.path);
+  }
+
+  void _clearReclaimMarker() {
+    try {
+      final f = _reclaimMarkerFile;
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {
+      // Leaving it is survivable — the next process start clears it — where
+      // throwing here would turn a completed reclaim into a reported failure.
+    }
+  }
+
+  /// Drop a marker left behind by a process that was killed.
+  ///
+  /// **Deliberately unconditional, and this is the judgement call in the
+  /// design.** A marker that outlives its process must not become a permanent
+  /// refusal: it would disable the leftovers scan for ever and refuse every
+  /// future reclaim, on a notebook that is *fine*. And it is safe to drop
+  /// precisely because of what Step 7 does — the `DELETE` is one transaction
+  /// that rolls back, and `VACUUM` either completes or leaves the original
+  /// untouched, so both crash outcomes are states a normal open settles. The
+  /// marker is a record and a lock, never a repair instruction.
+  ///
+  /// A `Repository` is constructed once per process, so anything here now was
+  /// written by an earlier run.
+  void _clearStaleReclaimMarker() {
+    if (!_reclaimMarkerFile.existsSync()) return;
+    debugPrint('[openote/store] clearing a reclaim marker left by an earlier '
+        'run: ${readReclaimMarker()}');
+    _clearReclaimMarker();
+  }
+
+  /// Empty this notebook's `blobs` table, having first proved that nothing in
+  /// it is the only copy of anything (v0.17 Step 7).
+  ///
+  /// **This is the one operation in the storage plan that destroys bytes.**
+  /// Everything before it can be undone by reverting a commit. So it is written
+  /// as a wall of refusals with a small action at the end, and the refusals are
+  /// the feature: a spike skipped them, printed `MIGRATION COMPLETE`, left a
+  /// container whose `integrity_check` said `ok`, and had permanently broken
+  /// 193 image blocks across 40 pages.
+  ///
+  /// The caller supplies the log-side half of the proof — see
+  /// `AppState.reclaimContainerBlobs`, which runs `SyncRecorder.proveBlobs`
+  /// first because that proof *repairs from the container*, and the container
+  /// is what this deletes.
+  ///
+  /// Its inverse is [refillContainerBlobs], in this same file, because a
+  /// rollback that ships a release later is not a rollback.
+  Future<BlobReclaim> reclaimContainerBlobs(String notebookId) async {
+    BlobReclaim refuse(String why, [String? details]) =>
+        BlobReclaim(refusal: why, details: details);
+
+    final ref = notebooks.where((n) => n.id == notebookId).firstOrNull;
+    if (ref == null) {
+      return refuse('That notebook is not open, so there is nothing to tidy.');
+    }
+
+    // ── Gate 5, first half: nothing else is doing this right now. ──────
+    if (reclaimInProgress) {
+      return refuse(
+          'Openote is already tidying up a notebook. Let that finish first.',
+          'marker: ${readReclaimMarker()}');
+    }
+
+    final db = _db(notebookId);
+    final store = _blobStore(notebookId);
+
+    // Everything this container knows a blob by. The `blobs` rows are the bytes
+    // about to be deleted; the `blob_refs` rows are ADR-0007's reachability
+    // root set — the hashes a page actually shows. Neither set contains the
+    // other: a row with no ref is an orphan (measured: 18 on Honours-2, 3 on
+    // Honours-4, 2 on My Notebook), and every blob written since Step 6 has a
+    // ref and no row.
+    final tableHashes = <String>{
+      for (final r in db.select('SELECT hash FROM blobs'))
+        (r['hash'] as String).replaceFirst('sha256:', '')
+    };
+    final refHashes = <String>{
+      for (final r in db.select('SELECT DISTINCT hash FROM blob_refs'))
+        (r['hash'] as String).replaceFirst('sha256:', '')
+    };
+
+    // ── Gates 2 and 3: every one of them has a byte-identical file. ────
+    //
+    // Re-hashed, not counted and not `existsSync`'d. `hasBlob` passes against a
+    // file whose bytes were replaced by the same number of different ones,
+    // which is what a half-finished cloud download leaves behind, and Step 5
+    // found 378 of the owner's 488 blobs with no file at all. This is the last
+    // moment either can be told from a healthy notebook.
+    final all = <String>{...tableHashes, ...refHashes}.toList()..sort();
+    final absent = <String>[];
+    final wrong = <String>[];
+    var checked = 0;
+    for (var i = 0; i < all.length; i += _hashBatch) {
+      final slice = all.sublist(i, math.min(i + _hashBatch, all.length));
+      final actual =
+          await _hashFiles([for (final h in slice) store.blobFile(h).path]);
+      for (var j = 0; j < slice.length; j++) {
+        checked++;
+        if (!store.hasBlob(slice[j])) {
+          absent.add(slice[j]);
+        } else if (actual[j] != slice[j]) {
+          wrong.add(slice[j]);
+        }
+      }
+      // A real millisecond, never `Duration.zero`: on Windows a zero timer is
+      // posted work due immediately, so the message loop never goes idle and
+      // input starves for the whole run (same reasoning as `proveBlobs`).
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+    if (absent.isNotEmpty || wrong.isNotEmpty) {
+      return refuse(
+          "Openote will not do this yet. ${absent.length + wrong.length} of "
+          "this notebook's ${all.length} pictures and drawings do not have a "
+          "good copy in the notebook's own folder, and that copy is the one "
+          'that would be left. Open the notebook, leave it open for a minute '
+          'so Openote can finish copying, then try again.',
+          'no file: ${_fewHashes(absent)}\n'
+          'wrong bytes: ${_fewHashes(wrong)}\n'
+          'blobs rows ${tableHashes.length}, blob_refs hashes '
+          '${refHashes.length}, checked $checked');
+    }
+
+    // ── Gate 4: nothing was read out of the container this session. ────
+    //
+    // Step 6's registers, and the only gate that can see the pictures the
+    // *running app* has actually been serving from the table. A hash here is a
+    // picture that would go blank the moment the rows are deleted.
+    final served = blobsServedFromContainer(notebookId);
+    final nowhere = blobsWithNoBytes(notebookId);
+    if (served.isNotEmpty || nowhere.isNotEmpty) {
+      return refuse(
+          'Openote is still reading some of this notebook’s pictures out '
+          'of the notes file rather than out of the folder beside it. Close '
+          'the notebook and open it again, then try this once more.',
+          'served from the container: ${_fewHashes(served.toList())}\n'
+          'no bytes anywhere: ${_fewHashes(nowhere.toList())}');
+    }
+
+    // ── The 2.0× precheck, before anything is touched. ─────────────────
+    final file = File(ref.file);
+    final wal = File('${ref.file}-wal');
+    final before = file.existsSync() ? file.lengthSync() : 0;
+    final walBefore = wal.existsSync() ? wal.lengthSync() : 0;
+    final need = (before + walBefore) * 2;
+    final free = FreeSpace.bytesFor(ref.file);
+    if (free == null) {
+      return refuse(
+          'Openote could not check how much room is left on this disk, and it '
+          'will not delete anything without knowing. Nothing has been changed.',
+          'FreeSpace.bytesFor returned null for ${p.dirname(ref.file)}; '
+          'needed ${_mb(need)}');
+    }
+    if (free < need) {
+      return refuse(
+          'There is not enough free space to do this safely. Tidying up needs '
+          '${_mb(need)} free for a moment while it works, and this disk has '
+          '${_mb(free)}. Nothing has been changed — free up some room and '
+          'try again.',
+          'need ${need}B (2.0 × (${before}B container + ${walBefore}B '
+          'write-ahead log)), free ${free}B');
+    }
+
+    // Past here we are going to write. The marker goes down first, so the
+    // leftovers scan is silent for the duration and a second reclaim refuses.
+    _writeReclaimMarker(notebookId, 'empty-blobs-table');
+    try {
+      // ── Gate 5, second half: the file is settled and ready. ──────────
+      //
+      // Checkpoint before touching a row: the container must never be emptied
+      // while a `-wal` still holds pages. On the owner's My Notebook that
+      // `-wal` was 2 whole pages plus newer revisions of 6 more, and the
+      // damaged result still passed `PRAGMA integrity_check`.
+      final cp = db.select('PRAGMA wal_checkpoint(TRUNCATE);').first;
+      // Exactly 1 means "another connection is holding pages". A database that
+      // is not in WAL mode answers -1, which is not a refusal.
+      if ((cp['busy'] as int? ?? 0) == 1) {
+        return refuse(
+            'Something else is using this notebook at the moment. Close any '
+            'other Openote window and try again.',
+            'wal_checkpoint(TRUNCATE) busy=${cp['busy']}');
+      }
+      // Step 6 rewrote `blob_refs` to drop `REFERENCES blobs(hash)`, and this
+      // asserts it rather than assuming it. The plan's own item 4 proposed
+      // adding `ON DELETE CASCADE` here instead — which would silently empty
+      // `blob_refs`, ADR-0007's garbage-collection root set, after which a
+      // collector classifies every blob file as unreferenced and deletes the
+      // lot. If the constraint is somehow still there, stop.
+      final ddl = db.select("SELECT sql FROM sqlite_master WHERE type='table' "
+          "AND name='blob_refs'").first['sql'] as String;
+      if (ddl.contains('REFERENCES blobs')) {
+        return refuse(
+            'This notebook needs to be opened once by this version of Openote '
+            'before it can be tidied up. Close it and open it again.',
+            'blob_refs still declares REFERENCES blobs(hash); '
+            '_dropBlobRefsBlobsFk has not run');
+      }
+
+      final refsBefore = _count(db, 'blob_refs');
+      db.execute('BEGIN IMMEDIATE;');
+      db.execute('DELETE FROM blobs;');
+      db.execute('COMMIT;');
+
+      // The root set is byte-identical, asserted. This is the half of the
+      // plan's item 4 that survives Step 6.
+      final refsAfter = _count(db, 'blob_refs');
+      if (refsAfter != refsBefore) {
+        throw StateError('blob_refs went from $refsBefore to $refsAfter rows; '
+            'the garbage-collection root set must not move');
+      }
+
+      db.execute('VACUUM;');
+      db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
+
+      // **A VACUUM that did not happen must not report success.** The plan's
+      // own hazard list is headed by exactly this, and `VACUUM` on a full disk
+      // raises SQLITE_FULL — caught below, never smoothed into a zero.
+      final left = _count(db, 'blobs');
+      if (left != 0) {
+        throw StateError('$left blob row(s) survived the delete');
+      }
+      final after = file.existsSync() ? file.lengthSync() : 0;
+      final walAfter = wal.existsSync() ? wal.lengthSync() : 0;
+      final freed = (before - after) + (walBefore - walAfter);
+      debugPrint('[openote/store] $notebookId: removed ${tableHashes.length} '
+          'blob row(s), $before → $after bytes');
+      return BlobReclaim(
+        done: true,
+        rowsRemoved: tableHashes.length,
+        checked: checked,
+        freed: freed > 0 ? freed : 0,
+        beforeBytes: before + walBefore,
+        afterBytes: after + walAfter,
+      );
+    } catch (e) {
+      return refuse(
+          'Openote could not finish tidying up this notebook. Your pictures '
+          'and drawings are safe — they are all in the folder beside the '
+          'notebook, and nothing was removed from there.',
+          '$e');
+    } finally {
+      _clearReclaimMarker();
+    }
+  }
+
+  /// Put the container's copy of every reachable blob back (v0.17 Step 7's
+  /// inverse).
+  ///
+  /// **The rollback, shipped in the same change as the thing it rolls back**,
+  /// because an inverse that has never been executed is a paragraph rather than
+  /// a rollback. It is only *possible* because Step 5 proved coverage: the
+  /// bytes come from `blobs/`, and every one is re-hashed on the way in so a
+  /// damaged file cannot be laundered into the container and then trusted.
+  ///
+  /// Driven by `blob_refs`, which is the plan's own definition and the right
+  /// one: an old build reads pictures by following `blob_refs` into `blobs`, so
+  /// restoring that set is exactly what makes it work again. Rows with no
+  /// `blob_refs` entry — orphans, measured at 18 / 3 / 2 on the owner's
+  /// notebooks — are **not** restored, and that asymmetry is deliberate rather
+  /// than an oversight: nothing can reach them.
+  Future<BlobRefill> refillContainerBlobs(String notebookId) async {
+    final ref = notebooks.where((n) => n.id == notebookId).firstOrNull;
+    if (ref == null) return const BlobRefill(missing: {}, restored: 0);
+    final db = _db(notebookId);
+    final store = _blobStore(notebookId);
+    final wanted = <String>{
+      for (final r in db.select('SELECT DISTINCT hash FROM blob_refs'))
+        (r['hash'] as String).replaceFirst('sha256:', '')
+    };
+    final have = <String>{
+      for (final r in db.select('SELECT hash FROM blobs'))
+        (r['hash'] as String).replaceFirst('sha256:', '')
+    };
+    var restored = 0;
+    final missing = <String>{};
+    for (final hash in wanted) {
+      if (have.contains(hash)) continue;
+      final bytes = store.readBlob(hash);
+      if (bytes == null || sha256Hex(bytes) != hash) {
+        // Never insert bytes that are not what their name says. A refill is a
+        // rescue, and a rescue that copies rubbish into the authoritative store
+        // is worse than one that reports the hole.
+        missing.add(hash);
+        continue;
+      }
+      db.execute(
+          'INSERT OR IGNORE INTO blobs(hash,bytes,mime,size,created_at) '
+          'VALUES(?,?,?,?,?)',
+          [hash, bytes, _sniffMime(bytes), bytes.length, nowMs()]);
+      restored++;
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+    db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
+    debugPrint('[openote/store] $notebookId: put $restored blob(s) back into '
+        'the notebook file, ${missing.length} could not be restored');
+    return BlobRefill(restored: restored, missing: missing);
+  }
+
+  /// The mime a blob's bytes announce.
+  ///
+  /// The `blobs` row carried one and the reclaim deleted it with the row, so on
+  /// the way back it is read from the content. Only [blobIndex] — the Step 5
+  /// backfill — ever consumes it, so an unrecognised type costs a generic
+  /// label and nothing else; guessing wrong from a filename would cost more.
+  static String _sniffMime(Uint8List b) {
+    bool starts(List<int> magic, {int at = 0}) {
+      if (b.length < at + magic.length) return false;
+      for (var i = 0; i < magic.length; i++) {
+        if (b[at + i] != magic[i]) return false;
+      }
+      return true;
+    }
+
+    if (starts([0x89, 0x50, 0x4e, 0x47])) return 'image/png';
+    if (starts([0xff, 0xd8, 0xff])) return 'image/jpeg';
+    if (starts([0x47, 0x49, 0x46, 0x38])) return 'image/gif';
+    if (starts([0x52, 0x49, 0x46, 0x46]) &&
+        starts([0x57, 0x45, 0x42, 0x50], at: 8)) {
+      return 'image/webp';
+    }
+    if (starts([0x4f, 0x49, 0x53, 0x31])) return inkMimeType; // 'OIS1'
+    return 'application/octet-stream';
+  }
+
+  static int _count(Database db, String table) =>
+      db.select('SELECT count(*) c FROM $table').first['c'] as int;
+
+  /// How many blob files one background hash costs, matching
+  /// `SyncRecorder._proveBatch`: big enough that isolate spawn is noise against
+  /// the hashing, small enough that a batch of huge ink blobs cannot make the
+  /// app feel stuck.
+  static const int _hashBatch = 32;
+
+  /// Read and SHA-256 each path off this isolate. Measured on the owner's
+  /// Honours-4: re-hashing all 488 blobs is 2.8 s of CPU, and its worst single
+  /// file — 1.8 MB of binary ink — is a 164 ms block that no per-file yield can
+  /// divide. Null for anything unreadable, which matches no hash.
+  static Future<List<String?>> _hashFiles(List<String> paths) =>
+      Isolate.run(() => [
+            for (final path in paths)
+              () {
+                try {
+                  return sha256Hex(File(path).readAsBytesSync());
+                } catch (_) {
+                  return null;
+                }
+              }()
+          ]);
+
+  /// A few hashes for the Advanced fold — never the whole list, which on a
+  /// broken import is hundreds of lines.
+  static String _fewHashes(List<String> h) =>
+      h.isEmpty ? 'none' : '${h.length}: ${h.take(5).join(', ')}';
+
+  static String _mb(int b) => '${(b / (1024 * 1024)).toStringAsFixed(1)} MB';
 
   /// A free `<base>.onotebook` directory in the workspace, for a notebook
   /// arriving as logs rather than as a container.

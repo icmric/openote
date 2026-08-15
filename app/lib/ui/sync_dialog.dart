@@ -19,6 +19,7 @@ import 'package:path/path.dart' as p;
 import '../core/platform_open.dart';
 import '../state/app_state.dart';
 import '../store/media_gc.dart' show VideoSweep;
+import '../store/repository.dart' show BlobReclaim, SpaceReclaim;
 import '../sync/cloud_folders.dart';
 import '../sync/github_api.dart';
 import '../sync/mirrors.dart';
@@ -807,12 +808,12 @@ class _StorageSectionState extends State<_StorageSection> {
                 : () async {
                     setState(() => _reclaiming = true);
                     // Off the frame: VACUUM rewrites the whole database.
-                    final freed = await Future(
+                    final r = await Future(
                         () => app.reclaimFreeSpace(widget.notebookId));
                     if (!mounted) return;
                     setState(() {
                       _reclaiming = false;
-                      _reclaimed = freed;
+                      _reclaimed = r;
                       _storage = app.storageFor(widget.notebookId);
                     });
                   },
@@ -827,10 +828,18 @@ class _StorageSectionState extends State<_StorageSection> {
                     ? 'Compacting…'
                     : _reclaimed == null
                         ? 'Reclaim space'
-                        : _reclaimed == 0
-                            ? 'Nothing to reclaim'
-                            : '${_bytes(_reclaimed!)} reclaimed',
-                style: const TextStyle(fontSize: 12)),
+                        // "Could not run" is no longer spelled the same as
+                        // "nothing to do": a compaction that died on a full
+                        // disk or a locked file used to say "Nothing to
+                        // reclaim" and the user had no way to tell.
+                        : !_reclaimed!.ran
+                            ? 'Could not tidy up'
+                            : _reclaimed!.freed == 0
+                                ? 'Nothing to reclaim'
+                                : '${_bytes(_reclaimed!.freed)} reclaimed',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: _reclaimed?.ran == false ? OnoteColors.danger : null)),
           ),
           if (_orphans == null)
             TextButton.icon(
@@ -926,13 +935,128 @@ class _StorageSectionState extends State<_StorageSection> {
             );
           },
         ),
+        _tidyPictures(),
         if (_orphans != null) _orphanList(),
       ],
     );
   }
 
   bool _reclaiming = false;
-  int? _reclaimed;
+  SpaceReclaim? _reclaimed;
+
+  bool _tidying = false;
+  BlobReclaim? _tidied;
+
+  /// The button that removes the notebook file's second copy of every picture
+  /// (v0.17 Step 7), and the sentence that goes with whatever happened.
+  ///
+  /// **This is the only control in Openote that deletes bytes on purpose**, so
+  /// the copy is written to the same rule as the rest of the app — plain words,
+  /// no jargon, technical detail folded away — with one addition: it says what
+  /// is removed *and* what is kept, before it is pressed, because "reclaim
+  /// space" tells a student nothing about what they are about to lose.
+  ///
+  /// Refusals are shown in exactly the same place as successes, in full. Every
+  /// gate exists because something without it destroyed real data, and a
+  /// refusal a user cannot read is a bug report that never gets filed.
+  Widget _tidyPictures() {
+    final r = _tidied;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextButton.icon(
+            onPressed: _tidying ? null : _confirmTidyPictures,
+            icon: _tidying
+                ? const SizedBox(
+                    width: 13,
+                    height: 13,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.photo_library_outlined, size: 16),
+            label: Text(
+                _tidying
+                    ? 'Checking your pictures…'
+                    : 'Stop keeping pictures twice…',
+                style: const TextStyle(fontSize: 12)),
+          ),
+          if (r != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 12, right: 4),
+              child: Text(
+                  r.done
+                      ? 'Done. ${_bytes(r.freed)} freed, and all '
+                          '${r.checked} of your pictures and drawings are '
+                          "safe in this notebook's own folder."
+                      : r.refusal!,
+                  style: TextStyle(
+                      fontSize: 11,
+                      height: 1.35,
+                      color: r.done
+                          ? context.surfaces.textSecondary
+                          : OnoteColors.danger)),
+            ),
+          if (r?.details != null)
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              shape: const Border(),
+              title: const Text('Details (advanced)',
+                  style: TextStyle(fontSize: 12.5)),
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SelectableText(r!.details!,
+                      style: const TextStyle(
+                          fontFamily: 'JetBrains Mono', fontSize: 11)),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmTidyPictures() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Stop keeping pictures twice?'),
+        content: const Text(
+          'Every picture and drawing in this notebook is stored twice at the '
+          "moment: once inside the notes file, and once in the notebook's own "
+          'folder beside it.\n\n'
+          'Openote will remove the copy inside the notes file. The copy in the '
+          "notebook's folder is kept — that is the one your notes point at, "
+          'the one that reaches your other devices, and the one your backups '
+          'copy.\n\n'
+          'It checks every picture first, and stops without changing anything '
+          'if even one of them is not safely in that folder. If you ever need '
+          'the second copy back, Openote can put it there again.',
+          style: TextStyle(fontSize: 13, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Remove the extra copy')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      _tidying = true;
+      _tidied = null;
+    });
+    final out = await app.reclaimContainerBlobs(widget.notebookId);
+    if (!mounted) return;
+    setState(() {
+      _tidying = false;
+      _tidied = out;
+      _storage = app.storageFor(widget.notebookId);
+    });
+  }
 
   /// The video sweep, once asked for. Null until the user presses the button —
   /// scanning reads every page, every saved version and every device's log,

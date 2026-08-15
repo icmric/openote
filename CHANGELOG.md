@@ -23,6 +23,23 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   longer turns into a broken image you cannot get rid of; the other computer
   simply sends it again.
 
+### Changed — your notebook can now take about half the room it did
+
+- **There is one button that stops Openote keeping every picture and drawing
+  twice, and it gives you back about half the space the notebook was using.**
+  On two real notebooks it took them from 63 MB down to 33 MB apiece. What it
+  removes is the copy inside Openote's own working file; the copy in the
+  notebook's own folder is kept — that is the one your notes point at, the one
+  your other computers read, and the one your backups pick up. You will find it
+  in the sharing window under Storage, and it says what it will remove and what
+  it will keep before you press it.
+- **It checks every single picture and drawing first, and changes nothing at
+  all unless every one of them is already safe in that folder.** It also stops
+  if there is not enough free space on your disk to do the job safely. When it
+  stops it tells you why in a sentence, and not one picture has been touched.
+- **If you ever want the second copies back, Openote can put them there
+  again**, and it checks each one on the way in.
+
 ### Added — see who changed what, and get recent deletions back
 
 - **Openote now keeps track of who last changed each part of a page.** Open the
