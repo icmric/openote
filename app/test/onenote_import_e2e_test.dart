@@ -193,10 +193,20 @@ void main() {
 
     // "Foundation Mathamatics" is spelled that way in the notebook — it is the
     // real section name, not a typo in this test.
+    //
+    // A `null` marker means the owner says the page is EMPTY. "Questions" used
+    // to be listed here with the marker 'tangent line', because the ink fix
+    // read "nothing on questions" as "no INK on questions" and assumed the note
+    // it was importing was live. It was not: that note, and the screenshot
+    // beside it, are unreachable from the page's live root and no live-revision
+    // object in the file references either of them. They were resurrections of
+    // the same kind as the 121 erased ink containers on the same page — found
+    // by a different scan, which is the only reason they outlived the ink fix.
+    // The owner's sentence was right the first time.
     for (final (section, page, marker) in const [
       ('Discrete Mathematics', 'Symbols', 'Set of all integers'),
       ('Foundation Mathamatics', 'Cheat Sheet notes', 'Integration'),
-      ('Foundation Mathamatics', 'Questions', 'tangent line'),
+      ('Foundation Mathamatics', 'Questions', null),
     ]) {
       final blocks = blocksOf(section, page);
       final strokes = blocks
@@ -210,15 +220,21 @@ void main() {
               'it was erased, and a flat scan of the object space resurrected '
               'it (39 strokes on "Symbols" alone)');
 
-      // The other direction: dropping erased ink must not drop the page. Each
-      // of these three keeps the content OneNote does still show, so a filter
-      // that swung too far and took live objects with it fails here.
+      // The other direction: dropping erased ink must not drop the page. The
+      // pages the owner says still show text keep it, so a filter that swung
+      // too far and took live objects with it fails here.
       final text = blocks
           .where((b) => b.type == BlockType.text)
           .map((b) => b.content['text'] as String? ?? '')
           .join('\n');
-      expect(text, contains(marker),
-          reason: '"$page" keeps its text boxes — only the ink was erased');
+      if (marker == null) {
+        expect(text.trim(), isEmpty,
+            reason: 'the owner says "$page" is empty in OneNote — everything '
+                'the file still holds for it is unreachable from its live root');
+      } else {
+        expect(text, contains(marker),
+            reason: '"$page" keeps its text boxes — only the ink was erased');
+      }
     }
     // "Symbols" is the page that was reported, and its live content is a set of
     // text boxes plus a maths block: 6 live children where a stored page
@@ -227,17 +243,70 @@ void main() {
         greaterThanOrEqualTo(6),
         reason: 'Symbols keeps all of its live boxes');
 
-    // Images too, not just text. The screenshot on "Questions" is pasted into
-    // that page's text flow, so it rides the box instead of becoming its own
-    // block — asserted on the parse, which is where images live before layout.
+    // Images too, not just text — and on THIS page the screenshot goes with the
+    // note it was pasted beside. Its image object is declared only inside a
+    // version revision and nothing live points at it, exactly like the note and
+    // the ink. This assertion used to demand the picture survive, on the theory
+    // that "not ink" meant "not erased"; deleting a picture in OneNote unlinks
+    // it in precisely the same way, and one page cannot be half-alive.
     final questions = ((sections.firstWhere(
                     (s) => (s as Map)['name'] == 'Foundation Mathamatics')
                 as Map)['section'] as Map)['pages'] as List;
     final qPage = (questions.firstWhere((p) => (p as Map)['title'] == 'Questions')
             as Map)
         .cast<String, dynamic>();
-    expect((qPage['images'] as List?) ?? const [], hasLength(1),
-        reason: 'the image on "Questions" is not ink and must survive');
+    expect((qPage['images'] as List?) ?? const [], isEmpty,
+        reason: 'the picture on "Questions" was deleted along with the note');
+
+    // The page that showed the ink fix was not finished. Two pages in "Maths 1"
+    // are called "Working out" and the owner cleared one of them: its live
+    // outline lists no children, while a stored VERSION of that same outline
+    // still lists 180 ink containers. Reachability was being measured from
+    // whichever outline declaration a scan of the object space turned up — the
+    // version's, because the live one is empty and an empty declaration was
+    // skipped — so the filter walked straight into the 180 erased strokes and
+    // called them live. Measured from the page's own live root it reaches the
+    // empty outline and stops. The other "Working out" is untouched, which is
+    // why this is a pair: one page must lose all its ink and one must keep all
+    // of it, and a rule that cannot tell them apart fails whichever way it errs.
+    {
+      final maths = ((sections.firstWhere((s) => (s as Map)['name'] == 'Maths 1')
+              as Map)['section'] as Map)['pages'] as List;
+      final workings = [
+        for (final p in maths)
+          if ((p as Map)['title'] == 'Working out')
+            ((p['ink'] as List?) ?? const []).length
+      ];
+      expect(workings, hasLength(2),
+          reason: 'the section really does have two pages of this name');
+      expect(workings.where((n) => n == 0), hasLength(1),
+          reason: 'the cleared "Working out" imports no ink at all');
+      expect(workings.where((n) => n > 0), hasLength(1),
+          reason: 'and the other one keeps every stroke it still has');
+    }
+
+    // A deleted box is not always an empty page — usually it is a DUPLICATE.
+    // The Euler page carried an outline group, declared only inside a version
+    // revision, holding five bullets that the page's live outline also holds;
+    // it imported as five extra boxes stacked below the real ones. Each of
+    // those lines must appear exactly once now, and — the other half of the
+    // claim — must still appear.
+    {
+      final text = blocksOf('Discrete Mathematics',
+              'Euler Paths and Circuits, and the Königsberg Bridge Problem')
+          .where((b) => b.type == BlockType.text)
+          .map((b) => b.content['text'] as String? ?? '')
+          .join('\n');
+      for (final line in const [
+        'is a path which uses every edge exactly once',
+        'is an Euler path which is also a circuit',
+        'If every node has an (non-zero) even degree, it contains an Euler circuit',
+      ]) {
+        expect(line.allMatches(text).length, 1,
+            reason: 'the Euler page should hold "$line" exactly once — a '
+                'deleted outline group repeated five of its bullets below it');
+      }
+    }
 
     // And the notebook at large keeps its ink. This is the assertion that
     // catches the tempting-but-wrong rule "drop ink declared only inside a
@@ -254,7 +323,7 @@ void main() {
       }
     }
     expect(totalStrokes, greaterThan(60000),
-        reason: 'the notebook is mostly handwritten — 64 260 strokes survive '
-            'the filter, and only 0.55 % of the raw scan was erased ink');
+        reason: 'the notebook is mostly handwritten — 64 080 strokes survive '
+            'the filter, and only 0.83 % of the raw scan was erased ink');
   }, timeout: const Timeout(Duration(minutes: 5)));
 }

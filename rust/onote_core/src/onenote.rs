@@ -61,6 +61,9 @@ const PID_PAGE_LEVEL: u32 = 0x001DFF;
 // order gives the true page order (the earlier code read a single series, so
 // order was wrong and only that series' subpage levels applied).
 const JCID_SECTION_NODE: u32 = 0x00060007;
+/// PageNode — the top of a page object space's content tree, and what a page
+/// space's live role-1 root resolves to. See [live_anchor].
+const JCID_PAGE_NODE: u32 = 0x00060037;
 const JCID_PAGE_SERIES: u32 = 0x00060008;
 const PID_ELEMENT_CHILDREN: u32 = 0x001C20; // section → page-series refs
 const PID_PAGE_METADATA: u32 = 0x003442; // page-series → PageMetadata refs
@@ -531,6 +534,9 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
     // Collected as (display order, page); sorted after the loop.
     let mut pages: Vec<(usize, ImportedPage)> = Vec::new();
     let mut img_counter = 0usize;
+    // Live image objects that found no pixel data. See the leftover-blob pass
+    // at the end of the import.
+    let mut unmatched_images = 0usize;
 
     // ── Canonical object identity across revisions ──────────────────────────
     // The global-id table is PER-REVISION, so the same CompactID names
@@ -574,71 +580,19 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
             by_canon,
         };
 
-        // The page's content root is the PageNode (JCID 0x0006000B) declaration
-        // with actual 0x1C20 content children and the highest file offset. The
-        // literal latest revision of a page can be a title-only stub with no
-        // 0x1C20 — picking it drops the whole page's text.
-        // ALL of the page's outline containers, not just one.
-        //
-        // A OneNote page stores its content in several outlines (a page with
-        // separate text areas has one per area). We used to take a single
-        // `max_by_key(stp)` outline, which silently discarded the rest: measured
-        // on one real section, pages had up to **5** qualifying outlines while we
-        // read 1, and 11 pages had *no* qualifying outline at all and so imported
-        // completely empty despite holding text. That is the "content beyond the
-        // first couple of lines is missing" report.
-        //
-        // Taking all of them cannot duplicate anything, because `by_canon`
-        // already collapses each object's per-revision copies to its latest
-        // declaration — so this iterates distinct outlines, each at its current
-        // revision.
-        // Scan EVERY object in the space (not `by_canon`, which only holds
-        // objects with a resolvable ExGuid and so misses outlines entirely), then
-        // collapse each outline's per-revision copies to its latest declaration.
-        // Identity is the canonical ExGuid where there is one, else the object
-        // itself — an un-canonicalisable outline is still real content.
-        let mut latest_outline: HashMap<u64, usize> = HashMap::new();
-        for &i in idxs {
-            let o = &objs[i];
-            // OutlineGroup counts as a container too: a page can hang its
-            // content off a group rather than a plain outline, and scanning only
-            // for JCID_OUTLINE left those pages empty. `seen_box` below stops a
-            // group that IS reachable from an outline being emitted twice.
-            if o.jcid != JCID_OUTLINE && o.jcid != JCID_OUTLINE_GROUP {
-                continue;
-            }
-            if read_propset(&r, o.stp, o.cb).oids(0x001C20).is_empty() {
-                continue;
-            }
-            let key = match canon_of(o) {
-                Some(c) => c as u64,
-                None => (1u64 << 32) | i as u64,
-            };
-            // Live content first, then the RICHEST declaration of this outline,
-            // and only then file order.
-            //
-            // A revision's declaration can be a partial stub: on a real page the
-            // newest-by-offset declaration listed 2 paragraphs while an earlier
-            // one listed the page's full content (and OneNote itself still shows
-            // all of it). That symptom is what [currency] explains — the fuller
-            // declaration was the live revision and the stub a page-version
-            // snapshot — but child count stays as the second key, because it
-            // costs nothing and it is the one rule that cannot lose text.
-            let e = latest_outline.entry(key).or_insert(i);
-            let rank = |k: usize| {
-                (
-                    currency(&objs[k]).0,
-                    read_propset(&r, objs[k].stp, objs[k].cb).oids(0x001C20).len(),
-                    objs[k].stp,
-                )
-            };
-            if rank(i) > rank(*e) {
-                *e = i;
-            }
-        }
-        let mut root_is: Vec<usize> = latest_outline.into_values().collect();
-        // File order keeps boxes in a stable, roughly top-down sequence.
-        root_is.sort_unstable_by_key(|&i| objs[i].stp);
+        // ── The one authority: what this space's LIVE root still reaches ─────
+        // Text boxes, images, tables and ink were each collected by their own
+        // flat scan of the object space, and each therefore resurrected its own
+        // kind of deleted content — on ONE page of the reference notebook a
+        // deleted note came back as the whole body, a deleted picture came back
+        // beside it, and 121 erased ink containers came back under both. They
+        // are found by different scans; they are dead for the same reason. Every
+        // collector below now answers to this one set. `None` = the file gave us
+        // no root we could resolve, and each collector falls back to the scan it
+        // used before rather than emitting nothing.
+        let anchor = live_anchor(&r, &res, wo.live_roots.get(&sp), &registry);
+
+        let root_is = live_box_roots(&r, &res, idxs, anchor.as_ref());
 
         // Title/date: the title outline; its text feeds page metadata, never a box.
         let mut date_text = String::new();
@@ -714,20 +668,7 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
         let mut img_idx: HashMap<u32, String> = HashMap::new(); // canonical → placeholder
         let mut fallback_y = CONTENT_TOP;
         // Image objects (latest per canonical), in file order for determinism.
-        let mut img_objs: Vec<(u32, usize)> = Vec::new();
-        let mut seen_img = HashSet::new();
-        for &i in idxs {
-            let o = &objs[i];
-            if o.jcid != JCID_IMAGE {
-                continue;
-            }
-            if let Some(c) = canon_of(o) {
-                if seen_img.insert(c) {
-                    img_objs.push((c, res.by_canon[&c]));
-                }
-            }
-        }
-        img_objs.sort_by_key(|&(_, i)| objs[i].stp);
+        let img_objs = live_objects(&res, idxs, JCID_IMAGE, anchor.as_ref());
         for (canon, i) in img_objs {
             let o = &objs[i];
             let ps = read_propset(&r, o.stp, o.cb);
@@ -768,7 +709,13 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
                 });
             let png = match best {
                 Some(k) => &mut pngs[k],
-                None => continue, // no pixel data recovered for this object
+                None => {
+                    // A live image object whose pixels we did not recover. The
+                    // only evidence that an unclaimed blob might still belong on
+                    // a page — see the leftover pass after the loop.
+                    unmatched_images += 1;
+                    continue;
+                }
             };
             png.used = true;
             let (mut dw, mut dh) = (png.w as f32, png.h as f32);
@@ -980,14 +927,13 @@ pub(crate) fn import_one(bytes: &[u8]) -> ImportedSection {
                 .filter(|b| b.kind == "table")
                 .map(|b| b.cells.clone())
                 .collect();
-            let mut orphans: Vec<usize> = res
-                .by_canon
-                .values()
-                .copied()
-                .filter(|&i| objs[i].jcid == JCID_TABLE)
-                .collect();
-            orphans.sort_unstable_by_key(|&i| objs[i].stp);
-            for i in orphans {
+            // "No outline reached it" must not mean "the page does not have
+            // it": a deleted table is unreachable for the same reason erased ink
+            // is, and this pass would put it back. Measured on the reference
+            // notebook this changes nothing — all 22 tables the pass considers
+            // are live — but the mechanism is the one that resurrected
+            // everything else.
+            for (_, i) in live_objects(&res, idxs, JCID_TABLE, anchor.as_ref()) {
                 let grid = parse_table(&r, &objs[i], &res, &img_idx);
                 if grid.is_empty() || emitted.contains(&grid.cells) {
                     continue;
@@ -1014,7 +960,16 @@ kind: "table".into(),
         // ── Ink: container → data node → stroke nodes → packed paths ────────
         let mut ink: Vec<ImportedStroke> = Vec::new();
         let mut dropped_strokes: u32 = 0;
-        for i in live_ink_containers(&r, &res, idxs, &root_is) {
+        // Without an anchor, fall back to what this page had before: reachable
+        // from the outline containers the scan found. Anchoring on the page's
+        // own root is strictly better — a scan can land on a stale declaration,
+        // and on "Working out" it did — but a page whose root we cannot read
+        // must keep its ink rather than silently lose all of it.
+        let ink_live = match &anchor {
+            Some(a) => Some(a.clone()),
+            None => (!root_is.is_empty()).then(|| reachable_canons(&r, &res, &root_is)),
+        };
+        for i in live_ink_containers(&res, idxs, ink_live.as_ref()) {
             let o = &objs[i];
             let cps = read_propset(&r, o.stp, o.cb);
             // Ink-space → half-inch page units. When the container carries no
@@ -1261,24 +1216,36 @@ kind: "table".into(),
     keyed.sort_by_key(|(ord, i, _)| (*ord, *i));
     let mut pages: Vec<ImportedPage> = keyed.into_iter().map(|(_, _, p)| p).collect();
 
-    // Any PNGs no object claimed: append to the first page's fallback column so
-    // the pixels are never silently dropped.
-    if let Some(first) = pages.first_mut() {
-        let mut fy = 40.0f32;
-        for p in pngs.iter().filter(|p| !p.used) {
-            img_counter += 1;
-            first.images.push(ImportedImage {
-                name: format!("onenote-image-{img_counter}.{}", ext_of(p.mime)),
-                x: 980.0,
-                y: fy,
-                disp_w: p.w as f32,
-                disp_h: p.h as f32,
-                width: p.w,
-                height: p.h,
-                in_flow: false,
-                data_base64: base64_encode(&p.bytes),
-            });
-            fy += p.h as f32 + 24.0;
+    // PNGs no image object claimed. A blob is in the file's data store whether
+    // or not any page still shows it, so the leftovers are mostly pictures that
+    // were deleted years ago — dumping them all on page 1 put 11 of them across
+    // three sections of the reference notebook, including 8 photos stacked 4000
+    // pixels down "Maths 1"'s otherwise-empty divider page.
+    //
+    // But the leftovers are also where a LIVE image lands when the object→blob
+    // match fails, and losing a picture the user still has is the worse error.
+    // So the evidence decides: while every live image object found its pixels
+    // (measured: all 365 of them), nothing on any page is missing and the
+    // leftovers are dead. Let one live image go unmatched and the whole
+    // leftover pile comes back, exactly as before.
+    if unmatched_images > 0 {
+        if let Some(first) = pages.first_mut() {
+            let mut fy = 40.0f32;
+            for p in pngs.iter().filter(|p| !p.used) {
+                img_counter += 1;
+                first.images.push(ImportedImage {
+                    name: format!("onenote-image-{img_counter}.{}", ext_of(p.mime)),
+                    x: 980.0,
+                    y: fy,
+                    disp_w: p.w as f32,
+                    disp_h: p.h as f32,
+                    width: p.w,
+                    height: p.h,
+                    in_flow: false,
+                    data_base64: base64_encode(&p.bytes),
+                });
+                fy += p.h as f32 + 24.0;
+            }
         }
     }
 
@@ -1556,6 +1523,22 @@ const FNID_REV_MANIFEST_START6: u16 = 0x01E;
 const FNID_REV_MANIFEST_START7: u16 = 0x01F;
 /// RevisionManifestEndFND — closes the manifest opened above.
 const FNID_REV_MANIFEST_END: u16 = 0x01C;
+/// RootObjectReference3FND (MS-ONESTORE): `{ oidRoot: ExtendedGUID(20),
+/// RootRole: u32 }`. A revision manifest names its own roots with these — the
+/// file's own answer to "what does this revision consider the top of the tree",
+/// which the importer used to guess at by scanning the space for outline
+/// declarations instead. Read from the manifest with no revision context, it
+/// names the LIVE root. See [live_anchor].
+const FNID_ROOT_OBJECT_REF3: u16 = 0x05A;
+/// Body offset of `RootRole` inside a RootObjectReference3FND: after the
+/// 20-byte ExtendedGUID.
+const ROOT_REF3_ROLE_OFFSET: usize = 20;
+/// The RootRole that names an object space's CONTENT root. Measured on the
+/// reference notebook: role 1 resolves to a PageNode on all 329 pages and to a
+/// SectionNode on all 25 section directories, with no space naming two. The
+/// other roles name the page's metadata and the revision's, and anchoring on
+/// either of those would reach no content at all.
+const ROOT_ROLE_CONTENT: u32 = 1;
 /// Body offset of `gctxid` inside a RevisionManifestStart7FND: rid (20) +
 /// ridDependent (20) + RevisionRole (4) + odcsDefault (2).
 const REV7_GCTXID_OFFSET: usize = 46;
@@ -1575,6 +1558,10 @@ struct WalkOut {
     /// PER-REVISION global-id tables (guidIndex → GUID). `objs[i].rev` indexes
     /// this; a CompactID on that object resolves via `rev_tables[rev]`.
     rev_tables: Vec<HashMap<u32, [u8; 16]>>,
+    /// space index → every role-1 root ExtendedGUID declared by a revision
+    /// manifest of that space that carries NO revision context, i.e. the space
+    /// as it currently stands. See [FNID_ROOT_OBJECT_REF3] and [live_anchor].
+    live_roots: HashMap<usize, Vec<[u8; 20]>>,
 }
 
 /// Walk the file-node graph, collecting every object declaration as an [Obj]
@@ -1688,6 +1675,21 @@ fn walk(
                     }
                     FNID_REV_MANIFEST_END => {
                         *in_version = false;
+                    }
+                    // The revision's own declaration of its content root. Only
+                    // the context-free (live) manifest's is recorded: a stored
+                    // page version names the root of the tree AS IT WAS, which
+                    // is precisely the tree whose erased content must not come
+                    // back.
+                    FNID_ROOT_OBJECT_REF3 => {
+                        if !*in_version
+                            && body + ROOT_REF3_ROLE_OFFSET + 4 <= r.d.len()
+                            && r.u32(body + ROOT_REF3_ROLE_OFFSET) == ROOT_ROLE_CONTENT
+                        {
+                            let mut e = [0u8; 20];
+                            e.copy_from_slice(&r.d[body..body + 20]);
+                            out.live_roots.entry(space).or_default().push(e);
+                        }
                     }
                     // A new revision's global-id table begins EMPTY (MS-ONESTORE
                     // §2.5.10): entries come from explicit 0x024 declarations and
@@ -1804,6 +1806,17 @@ impl<'a> Resolver<'a> {
     /// CompactID + referencing revision → the object it names, if present.
     fn get(&self, cid: u32, rev: usize) -> Option<usize> {
         self.by_canon.get(&self.canon(cid, rev)).copied()
+    }
+    /// An object's OWN canonical id — its identity, not a reference to one.
+    /// `None` when the revision tables do not name it: such an object cannot be
+    /// compared against any reference, so a caller must not read its absence
+    /// from a reachable set as "the page does not have it".
+    fn own_canon(&self, o: &Obj) -> Option<u32> {
+        let g = self.rev_tables.get(o.rev)?.get(&(o.own_oid >> 8))?;
+        let mut e = [0u8; 20];
+        e[..16].copy_from_slice(g);
+        e[16] = (o.own_oid & 0xFF) as u8;
+        self.registry.get(&e).map(|&n| n | CANON_BIT)
     }
     fn obj(&self, idx: usize) -> &Obj {
         &self.objs[idx]
@@ -3024,8 +3037,11 @@ fn table_width(g: &TableGrid) -> Option<f32> {
 /// therefore resurrects every stroke ever erased on a page: measured on the
 /// reference notebook, the "Symbols" page imported 39 strokes that OneNote does
 /// not show, because its live page node lists 6 children while a stored page
-/// VERSION lists 43. Across that notebook 356 of 64 645 strokes were such
+/// VERSION lists 43. Across that notebook 536 of 64 616 strokes were such
 /// ghosts, and not one of them was referenced by any live-revision object.
+/// (356 of those went when reachability was first measured from the outline
+/// containers a scan found; the last 180 needed [live_anchor], because on one
+/// page the scan's own starting point was a version snapshot.)
 ///
 /// Reachability subsumes [currency] for this purpose: you can only reach what
 /// the current page points at. The reverse test — "does this object have a
@@ -3054,20 +3070,208 @@ fn reachable_canons(r: &Reader, res: &Resolver, roots: &[usize]) -> HashSet<u32>
     seen
 }
 
-/// The ink containers a page should import: the current declaration of every
-/// container the LIVE page tree still reaches, in file order.
+/// Everything the object space's LIVE root still reaches: the single authority
+/// the text, image, table and ink collectors all answer to.
 ///
-/// `roots` are the page's live content containers (the same ones the text walk
-/// descends). An EMPTY `roots` disables the reachability filter entirely: with
-/// no live tree to test against we have no evidence either way, and failing to
-/// identify a page's root must not silently delete all of its ink.
-fn live_ink_containers(
+/// Every revision manifest names its own roots ([FNID_ROOT_OBJECT_REF3]), and
+/// the manifest with no revision context names the space AS IT STANDS. That is
+/// the file's own answer to "what is on this page", and the importer used to
+/// guess at it instead — each collector with a different flat scan of the space,
+/// so each resurrected a different kind of deleted content. Measured on the
+/// reference notebook: **329 of 329 pages** resolve exactly one live role-1
+/// root, a PageNode, and 664 objects sit in those spaces that the roots do not
+/// reach — not one of which is referenced by any live-revision declaration
+/// anywhere in the file.
+///
+/// The walk descends through [Resolver::get], so every hop lands on the object's
+/// CURRENT declaration. That is what a root-anchored walk buys over rooting on
+/// whatever declaration a scan happened to find: on "Working out" the live
+/// outline lists no children while a stored version of it lists 180 ink
+/// containers, and a scan that starts at the version's declaration walks
+/// straight into 180 erased strokes.
+///
+/// `None` — no roots, roots that disagree, or a root we cannot resolve to a
+/// PageNode/SectionNode declaration — means we have no evidence about this
+/// space, and every caller must then fall back to its unanchored behaviour. No
+/// evidence is not evidence of absence, and deleting a page's content because we
+/// failed to read its root is far worse than importing something stale.
+fn live_anchor(
+    r: &Reader,
+    res: &Resolver,
+    roots: Option<&Vec<[u8; 20]>>,
+    registry: &HashMap<[u8; 20], u32>,
+) -> Option<HashSet<u32>> {
+    let roots = roots?;
+    let first = *roots.first()?;
+    // A space that names two different live content roots tells us nothing we
+    // can act on; guessing between them is how a page loses the wrong half.
+    if roots.iter().any(|e| *e != first) {
+        return None;
+    }
+    // Object identity is keyed on a CompactID's 8-bit `n` (see [Resolver]), so
+    // an ExtendedGUID whose `n` needs more than a byte cannot be matched back to
+    // a declaration — better no anchor than the wrong object.
+    if u32::from_le_bytes([first[16], first[17], first[18], first[19]]) > 0xFF {
+        return None;
+    }
+    let mut key = first;
+    key[17..20].fill(0);
+    let canon = registry.get(&key).map(|&n| n | CANON_BIT)?;
+    let i = res.by_canon.get(&canon).copied()?;
+    // The role names a content root; if it does not resolve to one of the two
+    // objects that can BE a content root, we have misread something and the
+    // reachable set would be arbitrary.
+    if !matches!(res.obj(i).jcid, JCID_PAGE_NODE | JCID_SECTION_NODE) {
+        return None;
+    }
+    let mut set = reachable_canons(r, res, &[i]);
+    set.insert(canon); // the root is on the page too (ink can hang off it)
+    Some(set)
+}
+
+/// The page's outline containers: the current declaration of every outline or
+/// outline group the LIVE root still reaches, in file order. These are the roots
+/// the text walk descends, one box per child.
+///
+/// ALL of the page's containers, not just one. A OneNote page stores its
+/// content in several outlines (a page with separate text areas has one per
+/// area), and this used to take a single `max_by_key(stp)` outline, silently
+/// discarding the rest: measured on one real section, pages had up to **5**
+/// qualifying outlines while we read 1, and 11 pages had *no* qualifying outline
+/// at all and so imported completely empty despite holding text. That is the
+/// "content beyond the first couple of lines is missing" report. An OutlineGroup
+/// counts as a container for the same reason — a page can hang its content off a
+/// group rather than a plain outline, and scanning only for JCID_OUTLINE left
+/// those pages empty.
+///
+/// Taking all of them cannot duplicate anything: each canonical container
+/// appears once, at one declaration, and `seen_box` in the caller covers a group
+/// that is also reachable from an outline.
+///
+/// `live` is the page's [live_anchor]; `None` disables both anchor-dependent
+/// rules and restores exactly the scan this had before.
+fn live_box_roots(
     r: &Reader,
     res: &Resolver,
     idxs: &[usize],
-    roots: &[usize],
+    live: Option<&HashSet<u32>>,
 ) -> Vec<usize> {
-    let live = (!roots.is_empty()).then(|| reachable_canons(r, res, roots));
+    let children = |i: usize| {
+        let o = res.obj(i);
+        read_propset(r, o.stp, o.cb).oids(PID_ELEMENT_CHILDREN).len()
+    };
+    // Live content first, then the RICHEST declaration of this container, and
+    // only then file order.
+    //
+    // A revision's declaration can be a partial stub: on a real page the
+    // newest-by-offset declaration listed 2 paragraphs while an earlier one
+    // listed the page's full content (and OneNote itself still shows all of it).
+    // That symptom is what [currency] explains — the fuller declaration was the
+    // live revision and the stub a page-version snapshot — but child count stays
+    // as the second key, because it costs nothing and it is the one rule that
+    // cannot lose text.
+    let rank = |i: usize| (currency(res.obj(i)).0, children(i), res.obj(i).stp);
+    // Scan EVERY object in the space (not `by_canon`, which only holds objects
+    // with a resolvable ExGuid and so misses outlines entirely), then collapse
+    // each container's per-revision copies to one declaration. Identity is the
+    // canonical ExGuid where there is one, else the object itself — an
+    // un-canonicalisable outline is still real content.
+    let mut best: HashMap<u64, usize> = HashMap::new();
+    for &i in idxs {
+        let o = res.obj(i);
+        if o.jcid != JCID_OUTLINE && o.jcid != JCID_OUTLINE_GROUP {
+            continue;
+        }
+        // An empty declaration is no candidate at all — UNLESS the anchor can
+        // say which declaration is the live one, in which case the live one
+        // decides even when it is empty. On "Working out" the live outline lists
+        // no children while a stored version of it lists 180 ink containers:
+        // skipping empty declarations here left the version's as the only
+        // candidate, so the page's root became a snapshot of a page that has
+        // since been cleared, and 180 erased strokes came back on a page that is
+        // blank in OneNote.
+        if live.is_none() && children(i) == 0 {
+            continue;
+        }
+        let key = match res.own_canon(o) {
+            Some(c) => c as u64,
+            None => (1u64 << 32) | i as u64,
+        };
+        let e = best.entry(key).or_insert(i);
+        if rank(i) > rank(*e) {
+            *e = i;
+        }
+    }
+    let mut out: Vec<usize> = best
+        .into_values()
+        // Now that empty declarations reach here, drop the containers whose live
+        // state holds nothing.
+        .filter(|&i| children(i) > 0)
+        // Containers the live page no longer reaches: 2 of the reference
+        // notebook's 287 — five duplicated bullet boxes on the Euler page, and a
+        // deleted note that was appearing as the ENTIRE content of an
+        // otherwise-empty "Questions" page. An object we cannot canonicalise
+        // cannot be tested, and is kept: unprovable is not dead.
+        .filter(|&i| match (live, res.own_canon(res.obj(i))) {
+            (Some(l), Some(c)) => l.contains(&c),
+            _ => true,
+        })
+        .collect();
+    // File order keeps boxes in a stable, roughly top-down sequence.
+    out.sort_unstable_by_key(|&i| res.obj(i).stp);
+    out
+}
+
+/// Every object of one type the LIVE root still reaches, at its current
+/// declaration, in file order — the pictures and the tables.
+///
+/// Deleting a picture or a table in OneNote unlinks it exactly as erasing ink
+/// does; the object stays in the file forever. 3 of the reference notebook's 368
+/// image objects are these, and each was importing as a picture on the page AND
+/// as a stored blob nothing references. Its 22 tables are all live, but they
+/// were being collected by the same kind of flat scan, and a table is the one
+/// object big enough that resurrecting it would swamp a page.
+///
+/// `live` is the page's [live_anchor]; `None` keeps everything, as before.
+fn live_objects(
+    res: &Resolver,
+    idxs: &[usize],
+    jcid: u32,
+    live: Option<&HashSet<u32>>,
+) -> Vec<(u32, usize)> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for &i in idxs {
+        let o = res.obj(i);
+        if o.jcid != jcid {
+            continue;
+        }
+        let Some(c) = res.own_canon(o) else { continue };
+        if live.is_some_and(|l| !l.contains(&c)) {
+            continue;
+        }
+        if let Some(&cur) = res.by_canon.get(&c) {
+            if seen.insert(c) {
+                out.push((c, cur));
+            }
+        }
+    }
+    out.sort_by_key(|&(_, i)| res.obj(i).stp);
+    out
+}
+
+/// The ink containers a page should import: the current declaration of every
+/// container the LIVE page still reaches, in file order.
+///
+/// `live` is the page's [live_anchor]. `None` disables the reachability filter
+/// entirely: with no live tree to test against we have no evidence either way,
+/// and failing to identify a page's root must not silently delete all of its
+/// ink.
+fn live_ink_containers(
+    res: &Resolver,
+    idxs: &[usize],
+    live: Option<&HashSet<u32>>,
+) -> Vec<usize> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
     for &i in idxs {
@@ -3082,7 +3286,7 @@ fn live_ink_containers(
         if res.by_canon.get(&c) != Some(&i) {
             continue; // not the current declaration of this container
         }
-        if live.as_ref().is_some_and(|l| !l.contains(&c)) {
+        if live.is_some_and(|l| !l.contains(&c)) {
             continue; // erased in OneNote: the live page no longer reaches it
         }
         if seen.insert(c) {
@@ -5808,7 +6012,10 @@ mod tests {
         let res = Resolver { objs: &objs, rev_tables: &rev_tables, registry: &registry, by_canon };
         let r = Reader { d: &blob };
         let idxs: Vec<usize> = (0..objs.len()).collect();
-        live_ink_containers(&r, &res, &idxs, roots)
+        // What the importer's unanchored fallback passes: reachability from the
+        // containers the scan found, and no filter at all when it found none.
+        let live = (!roots.is_empty()).then(|| reachable_canons(&r, &res, roots));
+        live_ink_containers(&res, &idxs, live.as_ref())
             .into_iter()
             .map(|i| objs[i].own_oid)
             .collect()
@@ -5821,8 +6028,8 @@ mod tests {
     /// It was. Ink was collected by a FLAT SCAN of the object space that asked
     /// only "is this the newest declaration of this container?" and never "does
     /// the live page still reference it at all" — so every stroke ever erased on
-    /// a page came back. Measured on the reference notebook: 356 of 64 645
-    /// strokes across 8 pages, including all 39 on "Symbols", whose live page
+    /// a page came back. Measured on the reference notebook: 536 of 64 616
+    /// strokes across 9 pages, including all 39 on "Symbols", whose live page
     /// node lists 6 children while a stored version lists 43.
     #[test]
     fn ink_the_live_page_no_longer_references_is_not_imported() {
@@ -5852,6 +6059,182 @@ mod tests {
     #[test]
     fn a_page_with_no_identified_root_keeps_all_of_its_ink() {
         assert_eq!(select_ink(&[], false), vec![5, 6]);
+    }
+
+    /// The ExtendedGUID a revision manifest would write for object `n` of the
+    /// synthetic page space below: one GUID, `n` in the low byte.
+    fn root_exg(n: u8) -> [u8; 20] {
+        let mut e = [0u8; 20];
+        e[..16].copy_from_slice(&[9u8; 16]);
+        e[16] = n;
+        e
+    }
+
+    /// What the four collectors select, by object id.
+    #[derive(Debug, PartialEq)]
+    struct Selected {
+        anchored: bool,
+        boxes: Vec<u32>,
+        images: Vec<u32>,
+        ink: Vec<u32>,
+    }
+
+    /// A page object space carrying BOTH shapes the live-root anchor exists for,
+    /// run through the anchor and every collector that answers to it.
+    ///
+    /// Measured from the reference notebook and reduced. One canonical outline
+    /// with two declarations: the LIVE one lists nothing — the page was cleared —
+    /// while a stored page VERSION of it still lists a paragraph, a picture and
+    /// an ink container ("Working out", where the version lists 180 of them).
+    /// Beside it, an outline GROUP that only a version revision ever declared:
+    /// a note deleted from the page ("Questions", where it was importing as the
+    /// page's entire content). Clearing a page or deleting a note in OneNote
+    /// unlinks the objects; it never removes them, so a flat scan of the space
+    /// finds every one of them still there.
+    ///
+    /// `roots` is the space's role-1 root list as the revision manifests declare
+    /// it — empty for a file we could not read one out of.
+    fn select(roots: &[[u8; 20]]) -> Selected {
+        // (own cid, jcid, referenced cids, versioned)
+        let decls: [(u32, u32, &[u32], bool); 8] = [
+            (1, JCID_PAGE_NODE, &[2], false),      // 0: the live page root
+            (2, JCID_OUTLINE, &[], false),         // 1: …whose outline is empty now
+            (2, JCID_OUTLINE, &[4, 5, 6], true),   // 2: a stored version of it
+            (3, JCID_OUTLINE_GROUP, &[7], true),   // 3: a deleted note
+            (4, JCID_RICHTEXT, &[], true),         // 4
+            (5, JCID_IMAGE, &[], true),            // 5
+            (6, JCID_INK_CONTAINER, &[], true),    // 6
+            (7, JCID_RICHTEXT, &[], true),         // 7
+        ];
+        let mut blob = Vec::new();
+        let mut objs = Vec::new();
+        for (oid, jcid, kids, versioned) in decls {
+            // A container's children are an ArrayOfObjectIDs (0x09) under
+            // 0x1C20, whose data is the count and whose ids come out of the
+            // object's oid stream — the shape the real files use, because the
+            // root selection reads that property and reachability reads the
+            // stream, and only a declaration with both exercises both.
+            let bytes = propset_blob(
+                kids,
+                &if kids.is_empty() {
+                    vec![]
+                } else {
+                    vec![(
+                        PID_ELEMENT_CHILDREN,
+                        0x09,
+                        (kids.len() as u32).to_le_bytes().to_vec(),
+                    )]
+                },
+            );
+            objs.push(Obj {
+                own_oid: oid,
+                jcid,
+                stp: blob.len(),
+                cb: bytes.len(),
+                space: 0,
+                rev: 0,
+                versioned,
+            });
+            blob.extend_from_slice(&bytes);
+        }
+        let rev_tables = vec![HashMap::from([(0u32, [9u8; 16])])];
+        let registry: HashMap<[u8; 20], u32> =
+            (1u8..=7).map(|n| (root_exg(n), n as u32 - 1)).collect();
+        let mut by_canon: HashMap<u32, usize> = HashMap::new();
+        for (i, o) in objs.iter().enumerate() {
+            let c = registry[&root_exg(o.own_oid as u8)] | CANON_BIT;
+            let e = by_canon.entry(c).or_insert(i);
+            if currency(o) > currency(&objs[*e]) {
+                *e = i;
+            }
+        }
+        let res =
+            Resolver { objs: &objs, rev_tables: &rev_tables, registry: &registry, by_canon };
+        let r = Reader { d: &blob };
+        let idxs: Vec<usize> = (0..objs.len()).collect();
+        let roots = roots.to_vec();
+        let anchor = live_anchor(&r, &res, (!roots.is_empty()).then_some(&roots), &registry);
+        // The ink fallback the importer uses when there is no anchor.
+        let ink_live = match &anchor {
+            Some(a) => Some(a.clone()),
+            None => {
+                let rs = live_box_roots(&r, &res, &idxs, None);
+                (!rs.is_empty()).then(|| reachable_canons(&r, &res, &rs))
+            }
+        };
+        Selected {
+            anchored: anchor.is_some(),
+            boxes: live_box_roots(&r, &res, &idxs, anchor.as_ref())
+                .into_iter()
+                .map(|i| objs[i].own_oid)
+                .collect(),
+            images: live_objects(&res, &idxs, JCID_IMAGE, anchor.as_ref())
+                .into_iter()
+                .map(|(_, i)| objs[i].own_oid)
+                .collect(),
+            ink: live_ink_containers(&res, &idxs, ink_live.as_ref())
+                .into_iter()
+                .map(|i| objs[i].own_oid)
+                .collect(),
+        }
+    }
+
+    /// Reported: erased ink and deleted notes coming back on pages that are
+    /// empty in OneNote. Text boxes, pictures and ink were each collected by
+    /// their own flat scan of the object space, so each resurrected its own kind
+    /// of deleted content, and no scan ever asked the file the one question it
+    /// answers directly: what does this page's LIVE revision manifest say its
+    /// root is?
+    ///
+    /// Measured on the reference notebook: 329 of 329 pages name exactly one
+    /// live role-1 root, and 664 objects in those spaces are unreachable from
+    /// it — not one of them referenced by any live-revision declaration anywhere
+    /// in the file. Anchoring on the root drops all of them and nothing else.
+    #[test]
+    fn only_what_the_live_root_reaches_is_imported() {
+        assert_eq!(
+            select(&[root_exg(1)]),
+            Selected { anchored: true, boxes: vec![], images: vec![], ink: vec![] },
+            "the cleared page keeps nothing: not the version's paragraph, \
+             picture or ink, and not the deleted note beside them"
+        );
+    }
+
+    /// …and that is genuinely not what the scans said, or the test above proves
+    /// nothing. Without the anchor every one of them comes back — the outline at
+    /// its VERSION declaration (the live one is empty, so the scan skips it),
+    /// the deleted note as a second box, the picture, and the ink.
+    #[test]
+    fn without_a_live_root_the_old_scan_answers_and_it_answers_wrongly() {
+        assert_eq!(
+            select(&[]),
+            Selected { anchored: false, boxes: vec![2, 3], images: vec![5], ink: vec![6] }
+        );
+    }
+
+    /// The safety net, and the property that matters most: no evidence is not
+    /// evidence of absence. A root we cannot resolve — none declared, two that
+    /// disagree, an `n` too wide for the CompactID identity everything else is
+    /// keyed on, or one that does not land on an object that can BE a content
+    /// root — must leave the page exactly as the unanchored scan had it, not
+    /// empty it.
+    #[test]
+    fn a_root_we_cannot_resolve_leaves_the_page_alone() {
+        let unanchored =
+            Selected { anchored: false, boxes: vec![2, 3], images: vec![5], ink: vec![6] };
+        // Two live roots that disagree.
+        assert_eq!(select(&[root_exg(1), root_exg(3)]), unanchored);
+        // A root naming an object no declaration in the file matches.
+        assert_eq!(select(&[root_exg(99)]), unanchored);
+        // A root that resolves to an outline rather than a page or section node.
+        assert_eq!(select(&[root_exg(2)]), unanchored);
+        // An ExtendedGUID whose `n` needs more than the one byte a CompactID
+        // carries: identity cannot be matched, so it must not be guessed.
+        let mut wide = root_exg(1);
+        wide[17] = 1;
+        assert_eq!(select(&[wide]), unanchored);
+        // Two declarations of the SAME root still agree, and still anchor.
+        assert!(select(&[root_exg(1), root_exg(1)]).anchored);
     }
 
     /// Distinct page-identity GUID for page `n`.
