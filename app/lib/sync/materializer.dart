@@ -8,6 +8,7 @@
 /// observe.
 library;
 
+import '../model/models.dart' show nodeKindFromWire;
 import 'op.dart';
 
 /// A node as reconstructed from the log.
@@ -60,6 +61,19 @@ class Materializer {
   /// check, which would otherwise report a spurious mismatch as data loss.
   final List<Op> skipped = [];
 
+  /// The subset of [skipped] this build must not merely ignore: ops whose
+  /// **envelope** — not their kind — is beyond it.
+  ///
+  /// An unknown op *kind* is designed to be skippable ([OpKind.unknown]): a v1
+  /// device replaying a newer device's log skips what it cannot apply and
+  /// keeps everything it can. An unknown envelope is the opposite. `v: 2` means
+  /// the record itself is laid out differently, and `enc` means the payload is
+  /// ciphertext — in both cases this build cannot even tell what the op
+  /// touched, so anything it writes afterwards is written on top of a history
+  /// it has only half read. Callers use a non-empty list here to put the
+  /// notebook read-only.
+  final List<Op> unsupported = [];
+
   void applyAll(Iterable<Op> ops) {
     for (final op in ops) {
       apply(op);
@@ -67,6 +81,27 @@ class Materializer {
   }
 
   void apply(Op op) {
+    // **THE ENVELOPE GATE.** `Op.decode` has always read `v` and `enc` into
+    // [Op.version] and [Op.encryption], and nothing ever compared either of
+    // them to what this build can actually apply. Measured before this line
+    // existed: a hand-written `{"v":2,…,"op":"block.set"}` carrying the
+    // structured `{nodes:[…]}` model ADR-0006 §4 plans **was applied as if it
+    // were a v1 payload, with `skipped=0`** — a v1 device adopting a v2 record
+    // and then reporting the notebook as verified. An `{"enc":"aes-gcm"}` op
+    // decoded to an empty map and was dropped, also with `skipped=0`, so
+    // `SyncRecorder.verifyPage`'s "inconclusive rather than incomplete" escape
+    // hatch never fired and a real divergence would have been reported to the
+    // user as data loss. The container has had this gate since it existed
+    // (`database.dart` throws on `user_version > 1`); the log had none
+    // (v0.17 plan, Step 3).
+    //
+    // Strictly `>`: a v1 op is the entire population of every log on disk
+    // today and must go straight through.
+    if (op.version > opFormatVersion || op.encryption != 'none') {
+      unsupported.add(op);
+      skipped.add(op);
+      return;
+    }
     final d = op.map;
     switch (op.kind) {
       case OpKind.nodeUpsert:
@@ -77,7 +112,19 @@ class Materializer {
         // omission is what implements delete-wins (ADR-0006 §6a.3): an edit
         // that raced a delete cannot resurrect the node, no matter which one
         // sorts later. Only an explicit restore brings it back.
-        n.kind = d['kind'] as String? ?? n.kind;
+        // **An unrecognised kind is recorded, not coerced.** The string is kept
+        // verbatim — a re-serialised node still says what the writer said — and
+        // the op is reported as skipped so nothing downstream writes it out as
+        // something else. The fold in `AppState._syncPullLocked` used to map
+        // any unknown word to `NodeKind.page`, which is how `sectionGroup`
+        // turned six section groups per notebook into pages, and a page carries
+        // a `page_mirror` foreign key and a `level` that a section group has no
+        // business having (v0.17 plan, Step 3).
+        final wireKind = d['kind'] as String?;
+        if (wireKind != null && nodeKindFromWire(wireKind) == null) {
+          skipped.add(op);
+        }
+        n.kind = wireKind ?? n.kind;
         n.parentId = d.containsKey('parentId') ? d['parentId'] as String? : n.parentId;
         n.title = d['title'] as String? ?? n.title;
         n.position = d['position'] as String? ?? n.position;

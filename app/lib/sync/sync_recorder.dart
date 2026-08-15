@@ -232,10 +232,29 @@ class SyncRecorder {
         data: data,
       );
 
+  /// Ops in this notebook's log that this build cannot apply because their
+  /// **envelope** is newer or encrypted. Empty for every log in existence
+  /// today; see [Materializer.unsupported].
+  List<Op> get unsupportedOps => state.unsupported;
+
+  /// Whether this log has moved past what this build understands.
+  ///
+  /// When true the notebook is read-only: nothing may be appended to a history
+  /// that has already been half-read, because every op this recorder writes is
+  /// a diff against [state], and [state] is missing whatever the unreadable
+  /// ops did. An "edit" computed that way is not an edit, it is an undo of
+  /// changes the user never asked to lose (v0.17 plan, Step 3).
+  bool get logIsAhead => state.unsupported.isNotEmpty;
+
   /// Append [ops], apply them to the in-memory state, and remember the seq we
   /// reached so the fork check can spot another writer next time.
   void _commit(List<Op> ops) {
     if (ops.isEmpty) return;
+    // Silent here on purpose, and only here: the message is already on screen
+    // via `AppState.saveError`, and this is the backstop under the gates in
+    // `AppState` rather than the thing the user is told by. Same pattern as
+    // `Repository._saveWorkspace`'s `registryReadOnly` return.
+    if (logIsAhead) return;
     store.append(device.id, ops);
     for (final op in ops) {
       state.apply(op);
@@ -249,7 +268,11 @@ class SyncRecorder {
   void node(TreeNode n) => _commit([
         _op(OpKind.nodeUpsert, {
           'id': n.id,
-          'kind': n.kind.name,
+          // The SPEC spelling, not `n.kind.name`. See [nodeKindWire]: Dart says
+          // `sectionGroup`, the published format and the container's own CHECK
+          // constraint both say `section_group`, and the reader's fallback
+          // turned the difference into six pages per notebook.
+          'kind': nodeKindWire(n.kind),
           'parentId': n.parentId,
           'title': n.title,
           'position': n.position,

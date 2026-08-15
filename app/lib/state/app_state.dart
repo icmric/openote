@@ -1076,6 +1076,7 @@ class AppState extends ChangeNotifier
       // images, and doing it inline would stall the open.
       _startBlobBackfill(nb, r);
       _logError = null; // the log is reachable again
+      _noteLogAhead(nb, r);
       return r;
     } catch (e) {
       // Shadow mode must never be able to break saving. The container is still
@@ -1193,6 +1194,7 @@ class AppState extends ChangeNotifier
         _backfillTree(nb, r);
         _startBlobBackfill(nb, r);
         _logError = null; // the log is reachable again
+        _noteLogAhead(nb, r);
       }
       // Either way: a notebook with no ops directory when `_startWatching` ran
       // left the watcher unstarted, and opening a recorder — this one or the
@@ -1784,6 +1786,7 @@ class AppState extends ChangeNotifier
     final rooted = <String>{};
     var orphanNodes = 0;
     var orphanPages = 0;
+    var unknownKinds = 0;
     try {
       // **Nodes before pages.** `page_mirror.page_id` is a foreign key onto
       // `nodes(id)` and every container runs with `PRAGMA foreign_keys=ON`, so
@@ -1834,6 +1837,22 @@ class AppState extends ChangeNotifier
         // that touches the tree.
         final tree = <MatNode>[];
         for (final n in _parentsFirst(r.materialisedNodes())) {
+          // **A KIND THIS BUILD DOES NOT KNOW IS LEFT ALONE, NOT MADE A PAGE.**
+          // This loop used to end in `orElse: () => NodeKind.page`, which is
+          // what turned the writer's `sectionGroup` into six pages per
+          // notebook — and would flatten any future kind the same way, into a
+          // row with a `page_mirror` foreign key and a `level`. Skipped here
+          // rather than at the write below so `rooted` never claims a row that
+          // was not written: the page phase reads `rooted` to decide whether a
+          // mirror has a node to hang off, and a lie there is SQLITE
+          // constraint 787, a rolled-back slice, and a device wedged for good.
+          // The node is not lost — nothing deletes it, and the pull re-projects
+          // the whole live tree every time, so a build that understands the
+          // kind writes it (v0.17 plan, Step 3).
+          if (nodeKindFromWire(n.kind) == null) {
+            unknownKinds++;
+            continue;
+          }
           final parent = n.parentId;
           if (parent == null ||
               rooted.contains(parent) ||
@@ -1851,8 +1870,9 @@ class AppState extends ChangeNotifier
                   nb,
                   TreeNode(
                     id: n.id,
-                    kind: NodeKind.values.firstWhere((k) => k.name == n.kind,
-                        orElse: () => NodeKind.page),
+                    // Non-null by construction: the filter above dropped every
+                    // node whose kind this build cannot name.
+                    kind: nodeKindFromWire(n.kind)!,
                     parentId: n.parentId,
                     title: n.title,
                     position: n.position,
@@ -1938,6 +1958,11 @@ class AppState extends ChangeNotifier
       debugPrint('[openote/sync] skipped $orphanNodes node(s) and '
           '$orphanPages page(s) with no parent row in the container — '
           'deleted in this same batch, or their parent has not arrived yet');
+    }
+    if (unknownKinds > 0) {
+      debugPrint('[openote/sync] left $unknownKinds node(s) alone — their kind '
+          'was written by a newer version of Openote, and guessing "page" is '
+          'how six section groups per notebook became pages');
     }
 
     // Watermark per device, only after the writes landed — a crash mid-pull
@@ -2931,7 +2956,13 @@ class AppState extends ChangeNotifier
   }
 
   /// Upsert a node and record it. Every tree mutation funnels through here.
+  ///
+  /// A read-only notebook gets [n] straight back, unwritten. Callers all
+  /// re-read the tree from the container afterwards ([reloadNodes]), so the
+  /// section or page they thought they added simply never appears — which is
+  /// what "Openote is showing you this notebook without changing it" means.
   TreeNode _putNode(String nb, TreeNode n) {
+    if (notebookIsReadOnly(nb)) return n;
     final saved = _repo.upsertNode(nb, n);
     _recorderFor(nb)?.node(saved);
     return saved;
@@ -5833,6 +5864,7 @@ class AppState extends ChangeNotifier
       deletedNodes() => _repo.loadDeletedNodes(notebookId!);
 
   Future<void> restoreDeleted(String id) async {
+    if (notebookIsReadOnly(notebookId!)) return;
     _repo.restoreNode(notebookId!, id);
     // Restore is the ONLY thing that clears a delete (ADR-0006 §6a.3). An edit
     // must never resurrect a deleted node, or "delete wins" would silently
@@ -5843,6 +5875,7 @@ class AppState extends ChangeNotifier
   }
 
   void purgeDeleted(String id) {
+    if (notebookIsReadOnly(notebookId!)) return;
     _repo.purgeNode(notebookId!, id);
     _recorderFor(notebookId!)?.nodePurged(id);
     notifyListeners();
@@ -6008,6 +6041,9 @@ class AppState extends ChangeNotifier
   }
 
   Future<void> deleteNode(String id) async {
+    // Deleting is a write like any other. A notebook we can only half read is
+    // the last place to be removing things from — see [notebookIsReadOnly].
+    if (notebookIsReadOnly(notebookId!)) return;
     _repo.softDeleteNode(notebookId!, id);
     _recorderFor(notebookId!)?.nodeDeleted(id);
     reloadNodes();
@@ -6400,7 +6436,12 @@ class AppState extends ChangeNotifier
   /// knows nothing about, which is what a single field did.
   SaveProblem? get saveError {
     final locked = _repo.registryReadOnly;
-    return _pageSaveError ??
+    // The read-only notice comes FIRST. It is the only one of the four that
+    // says "nothing you type will be kept"; reporting a failed write underneath
+    // it would describe a symptom of it as if it were a separate problem.
+    final nb = notebookId;
+    return (nb == null ? null : _logAhead[nb]) ??
+        _pageSaveError ??
         _logError ??
         (locked == null
             ? null
@@ -6413,6 +6454,56 @@ class AppState extends ChangeNotifier
   SaveProblem? _pageSaveError;
   SaveProblem? _logError;
 
+  /// Notebooks whose history has moved past what this build can read, with the
+  /// sentence to say about each. Populated the moment a recorder is installed;
+  /// see [_noteLogAhead].
+  final Map<String, SaveProblem> _logAhead = {};
+
+  /// Whether Openote is only *showing* [nb] rather than changing it.
+  ///
+  /// True when the notebook's log contains operations written under an
+  /// envelope this build cannot decode — a newer format version, or an
+  /// encrypted payload. Everything the user can already see stays on screen;
+  /// what stops is writing, because every op this device would append is a
+  /// diff against a replay that is missing whatever those operations did.
+  bool notebookIsReadOnly(String nb) => _logAhead.containsKey(nb);
+
+  /// Look at a freshly opened recorder and decide whether its notebook is
+  /// readable but not writable.
+  ///
+  /// The message deliberately never says "envelope", "op", "v2" or
+  /// "encryption" — the audience is a year 10 student, and the version numbers
+  /// live in [SaveProblem.details] behind the Advanced fold, exactly as
+  /// `open_notice_dialog.dart` and `save_problem_dialog.dart` do it.
+  void _noteLogAhead(String nb, SyncRecorder r) {
+    final ahead = r.unsupportedOps;
+    if (ahead.isEmpty) {
+      if (_logAhead.remove(nb) != null && !_disposed) notifyListeners();
+      return;
+    }
+    final versions = {for (final op in ahead) op.version}.toList()..sort();
+    final encs = {
+      for (final op in ahead)
+        if (op.encryption != 'none') op.encryption
+    }.toList()
+      ..sort();
+    _logAhead[nb] = SaveProblem(
+      short: 'Read-only — made by a newer Openote',
+      message: 'This notebook has changes in it that were made by a newer '
+          'version of Openote, and this version cannot read them.\n\n'
+          'So Openote is showing you this notebook without changing it. '
+          'Everything in it is safe, and nothing you do here can damage it — '
+          'but anything you type now will not be kept.\n\n'
+          'Updating Openote to the latest version lets you edit it again.',
+      details: 'the log holds ${ahead.length} operation(s) this build cannot '
+          'apply\n'
+          'envelope version(s): ${versions.join(', ')} — this build writes and '
+          'understands $opFormatVersion\n'
+          'payload encryption: ${encs.isEmpty ? 'none' : encs.join(', ')}',
+    );
+    if (!_disposed) notifyListeners();
+  }
+
   Future<void> flushSave() async {
     _saveDebounce?.cancel();
     if (!_dirty || pageId == null || notebookId == null) return;
@@ -6424,6 +6515,12 @@ class AppState extends ChangeNotifier
     // a throwing save (disk full, DB locked) left the page marked clean and the
     // status bar claiming "Saved" while the change was never persisted.
     final id = pageId!, nb = notebookId!;
+    // Read-only: the container is a cache of the log, and writing this page
+    // into it while the log holds ops we cannot read would make the cache
+    // disagree with the only authority there is. `_dirty` stays true so the
+    // message keeps its "not kept" promise honest rather than the status bar
+    // quietly reading "Saved". See [notebookIsReadOnly].
+    if (notebookIsReadOnly(nb)) return;
     try {
       // Warm the recorder BEFORE anything that would open it synchronously.
       //

@@ -12,6 +12,42 @@ int nowMs() => DateTime.now().millisecondsSinceEpoch;
 
 enum NodeKind { sectionGroup, section, page }
 
+/// The name the **published file format** gives [kind].
+///
+/// `kind.name` was used for this, and Dart spells the enumerator
+/// `sectionGroup` — a word that appears nowhere in the CC0 spec (§3 documents
+/// only the snake_case set) and nowhere in the container's own
+/// `CHECK (kind IN ('section_group','section','page'))`. Measured on all four
+/// of the owner's real notebooks: **6 nodes each** written with a spelling the
+/// log reader then failed to recognise, so every section group came back as a
+/// **page** (v0.17 plan, Step 3).
+String nodeKindWire(NodeKind kind) => switch (kind) {
+      NodeKind.sectionGroup => 'section_group',
+      NodeKind.section => 'section',
+      NodeKind.page => 'page',
+    };
+
+/// [nodeKindWire]'s inverse, or **null** for a spelling this build does not
+/// know.
+///
+/// **Both spellings are accepted, for ever.** Every log written before the fix
+/// contains `sectionGroup`, and §4.1 of the v0.17 plan is absolute that nothing
+/// rewrites a log line — so dropping the old word would silently re-break the
+/// exact six nodes per notebook this fix exists to repair.
+///
+/// **Null rather than a `page` fallback.** The old
+/// `orElse: () => NodeKind.page` turned anything it did not recognise into a
+/// page, and a page is not a neutral default: it has a `page_mirror` foreign
+/// key, a `level`, and completely different semantics from a section group. A
+/// future kind would have been flattened into a page on every older device
+/// that read the log, permanently.
+NodeKind? nodeKindFromWire(String wire) => switch (wire) {
+      'section_group' || 'sectionGroup' => NodeKind.sectionGroup,
+      'section' => NodeKind.section,
+      'page' => NodeKind.page,
+      _ => null,
+    };
+
 class TreeNode {
   TreeNode({
     String? id,

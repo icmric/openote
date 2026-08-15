@@ -4,6 +4,21 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — a notebook made by a newer Openote can be read, and cannot be damaged
+
+- **Openote used to read changes it did not understand as though it did.** If
+  a newer version of Openote wrote something into a notebook's history that
+  this version has never heard of, this version would carry on regardless —
+  and anything typed here afterwards could quietly undo it. Openote now
+  notices, shows you the notebook without changing it, and says so in one
+  sentence: update Openote to edit it again. Notebooks written by this version
+  or any older one are completely unaffected.
+- **Section groups are now written down by the name the file format actually
+  uses.** Openote had been recording them under an internal name, so a section
+  group arriving from another one of your computers turned into a page. Both
+  names are understood when reading, for ever, so notebooks written by older
+  versions are read correctly.
+
 ### Fixed — Openote says so when a save did not make it into the notebook's history
 
 - **Openote could save your notes and then fail to add the change to this
