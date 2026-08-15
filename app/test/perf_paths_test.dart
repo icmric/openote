@@ -7,6 +7,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 import 'package:openote/model/models.dart';
 import 'package:openote/model/tags.dart';
@@ -106,6 +107,143 @@ void main() {
       expect(c.blocks.first.content['text'], 'edited',
           reason: 'a stale cache here would show pre-edit content in the '
               'rollup and the deck');
+    });
+
+    // The write funnel above is one of the two ways a page leaves the cache.
+    // The other is a purge, and it was only half wired: `purgeNode` evicted
+    // the id it was handed, but `nodes.parent_id` is
+    // `REFERENCES nodes(id) ON DELETE CASCADE`, so purging a SECTION deletes
+    // its pages' rows without those page ids ever reaching the eviction. The
+    // recycle bin purges sections and every import purges the seeded starter
+    // section, so that is the common shape rather than the rare one.
+    //
+    // What the eviction is FOR, in `purgeNode`'s own words: a page recreated
+    // later under the same id — a restore, or a `nodeUpsert` from a device
+    // that never saw the purge, since `Materializer` handles `nodePurge` with
+    // a bare `nodes.remove` and keeps no tombstone — would read as its dead
+    // predecessor. Half the tests below are therefore the more important
+    // half: that pages OUTSIDE the purged subtree are not evicted, because
+    // "clear the whole notebook's cache" would pass every assertion about
+    // staleness and quietly undo the structure this file exists to protect.
+    group('and the purge cascade', () {
+      /// A section with [titles] pages under it, each holding its own title as
+      /// text so a stale read is identifiable rather than merely non-identical.
+      /// Returns the section id followed by the page ids.
+      List<String> section(AppState app, String nb, String name,
+          List<String> titles,
+          {String? parent}) {
+        final s = app.importNode(
+            nb,
+            TreeNode(
+                kind: NodeKind.section,
+                parentId: parent,
+                title: name,
+                position: name));
+        final out = <String>[s.id];
+        for (final t in titles) {
+          final p = app.importNode(
+              nb,
+              TreeNode(
+                  kind: NodeKind.page,
+                  parentId: s.id,
+                  title: t,
+                  position: t));
+          app.importPage(
+              nb,
+              p.id,
+              [Block(type: BlockType.text, x: 0, y: 0, content: {'text': t})],
+              PageProps());
+          out.add(p.id);
+        }
+        return out;
+      }
+
+      test('purging a section evicts the pages inside it', () async {
+        if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+        final (repo, _, app, nb) = await notebook('onote_purgecache_', 1);
+        final ids = section(app, nb, 'doomed', ['inside']);
+        final inside = ids[1];
+
+        expect(repo.readPageShared(nb, inside).blocks.first.content['text'],
+            'inside');
+        repo.purgeNode(nb, ids[0]);
+
+        expect(repo.readPageShared(nb, inside).blocks, isEmpty,
+            reason: 'the page row went with the section through the cascade, '
+                'so the cache must not still be able to hand it out');
+      });
+
+      test('…however deep the subtree goes', () async {
+        if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+        final (repo, _, app, nb) = await notebook('onote_purgedeep_', 1);
+        final group = app.importNode(nb,
+            TreeNode(kind: NodeKind.sectionGroup, title: 'grp', position: 'g'));
+        final ids = section(app, nb, 'nested', ['deep'], parent: group.id);
+
+        expect(repo.readPageShared(nb, ids[1]).blocks, isNotEmpty);
+        repo.purgeNode(nb, group.id);
+
+        expect(repo.readPageShared(nb, ids[1]).blocks, isEmpty,
+            reason: 'the walk must follow parent links all the way down, not '
+                'one level');
+      });
+
+      test('and evicts NOTHING outside it', () async {
+        if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+        // The negative control. Clearing the whole per-notebook map would make
+        // the two tests above pass and would throw away every other page the
+        // rollup, the deck and the planner just decoded — the exact cost this
+        // cache exists to avoid, paid on every emptying of the recycle bin.
+        final (repo, _, app, nb) = await notebook('onote_purgekeep_', 1);
+        final doomed = section(app, nb, 'doomed', ['inside']);
+        final kept = section(app, nb, 'kept', ['neighbour']);
+        final flat = app.nodes.firstWhere((n) => n.title == 'Page 0').id;
+
+        final neighbour = repo.readPageShared(nb, kept[1]);
+        final other = repo.readPageShared(nb, flat);
+        repo.purgeNode(nb, doomed[0]);
+
+        expect(identical(repo.readPageShared(nb, kept[1]), neighbour), isTrue,
+            reason: 'a page in a different section was not purged and must '
+                'still be a cache hit');
+        expect(identical(repo.readPageShared(nb, flat), other), isTrue);
+        expect(repo.readPageShared(nb, kept[1]).blocks.first.content['text'],
+            'neighbour');
+      });
+
+      test('the retention sweep evicts the pages it expires', () async {
+        if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+        // `purgeExpiredNodes` is the other place a `nodes` row is hard-deleted,
+        // and it evicted nothing whatever — it names no ids, so every page it
+        // took stayed cached in full. It runs unattended at startup, so this
+        // needed no user action to happen.
+        final (repo, _, app, nb) = await notebook('onote_purgeexpiry_', 1);
+        final doomed = section(app, nb, 'expiring', ['gone']);
+        final kept = section(app, nb, 'staying', ['fresh']);
+        expect(repo.readPageShared(nb, doomed[1]).blocks, isNotEmpty);
+        final survivor = repo.readPageShared(nb, kept[1]);
+
+        repo.softDeleteNode(nb, doomed[0]);
+        repo.softDeleteNode(nb, kept[0]); // trashed, but not yet expired
+        final db = sqlite3.open(repo.notebooks.firstWhere((n) => n.id == nb).file);
+        db.execute('UPDATE nodes SET deleted_at=? WHERE id IN (?,?)', [
+          DateTime.now()
+              .subtract(
+                  const Duration(days: Repository.recycleRetentionDays + 10))
+              .millisecondsSinceEpoch,
+          doomed[0],
+          doomed[1],
+        ]);
+        db.dispose();
+
+        repo.purgeExpiredNodes(nb);
+
+        expect(repo.readPageShared(nb, doomed[1]).blocks, isEmpty);
+        // The half that matters: a page still inside the thirty-day window
+        // keeps its `nodes` row, so it is not expired and must not be evicted.
+        expect(identical(repo.readPageShared(nb, kept[1]), survivor), isTrue,
+            reason: 'a page in the recycle bin is restorable, not purged');
+      });
     });
   });
 

@@ -1081,6 +1081,27 @@ class Repository {
     // cascade and never names the pages it took with it.
     db.execute(
         'DELETE FROM page_versions WHERE page_id NOT IN (SELECT id FROM nodes)');
+    // …and the same for the copy of the page that lives in memory. This method
+    // evicted nothing at all, which is the same hole [purgeNode] had for its
+    // subtree, only wider: it names no ids, so a page whose retention ran out
+    // stayed in `_decodedPages` in full. Measured: read a page, trash it,
+    // backdate it past the window, run this — `readPageShared` still returned
+    // its blocks while `readPage` returned nothing. Nobody has to press
+    // anything for that; this runs by itself at startup.
+    //
+    // The orphan predicate again rather than a list of ids, for the reason
+    // above: the DELETE takes whole subtrees through the cascade and never
+    // names what it took. Safe as an eviction rule because `page_mirror.page_id`
+    // is `REFERENCES nodes(id)` with `foreign_keys=ON` — a cached page with no
+    // `nodes` row has no stored JSON either, so the only thing it can be
+    // holding is a dead page or the empty one [readPage] returns for a missing
+    // row, and both are re-read for free.
+    final cached = _decodedPages[notebookId];
+    if (cached == null || cached.isEmpty) return;
+    final live = {
+      for (final r in db.select('SELECT id FROM nodes')) r['id'] as String
+    };
+    cached.removeWhere((id, _) => !live.contains(id));
   }
 
   // ── Tree nodes ─────────────────────────────────────────────────────────
@@ -1138,11 +1159,30 @@ class Repository {
   /// inside [NotebookWriter.purgeNode], which is why that is the funnel rather
   /// than here — the import writer calls it directly, from its own isolate.
   void purgeNode(String notebookId, String nodeId) {
-    _writer(notebookId).purgeNode(nodeId);
     // A purged page must not survive in the decoded cache: a page recreated
     // later under the same id (a restore, a sync replay) would read as its
     // dead predecessor.
-    _decodedPages[notebookId]?.remove(nodeId);
+    //
+    // **Every id the purge took, not just the one we named.** `nodes.parent_id`
+    // is `REFERENCES nodes(id) ON DELETE CASCADE`, so purging a SECTION deletes
+    // its pages' rows without those page ids passing through here — and the
+    // recycle bin purges sections, which is the common case rather than the
+    // rare one. Evicting only [nodeId] left every page inside it cached:
+    // measured, purging a section and then asking `readPageShared` for a page
+    // that had been inside it returned that page's pre-purge blocks, while
+    // `readPage` — the same page, straight from SQLite — correctly returned
+    // nothing. Recreate the id from a device that never saw the purge
+    // (`Materializer` handles `nodePurge` with a bare `nodes.remove` and keeps
+    // no tombstone) and the new page reads as the dead one. This is the same
+    // cascade blind spot 1be2d28 closed for `page_versions`, through the same
+    // `_subtree` walk — which [NotebookWriter.purgeNode] now returns rather
+    // than have a second one written here.
+    final purged = _writer(notebookId).purgeNode(nodeId);
+    final cached = _decodedPages[notebookId];
+    if (cached == null) return;
+    for (final id in purged) {
+      cached.remove(id);
+    }
   }
 
   List<({String id, String kind, String title, int deletedAt})> loadDeletedNodes(

@@ -4,6 +4,18 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — a page that comes back after a permanent delete comes back empty, not old
+
+- **Deleting a section for good left Openote still holding the pages that were
+  inside it.** You could not see them in the notebook, but the summary
+  screens — the tags list, the flashcard deck, the planner — were reading from
+  that leftover copy. If a page from that section ever turned up again under
+  the same name, from another one of your computers or from a restore, it
+  would have shown you the deleted version of itself instead of what it
+  actually contains. The same thing happened by itself, with nothing pressed,
+  when a page's 30 days in the recycle bin ran out. Pages you did not delete
+  are untouched either way.
+
 ### Fixed — deleting a page for good takes its version history with it
 
 - **Deleting a page or a section permanently used to leave its saved

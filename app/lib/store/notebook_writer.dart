@@ -88,6 +88,16 @@ class NotebookWriter {
   /// the same id (a restore, a sync replay) would otherwise read as its dead
   /// predecessor.
   ///
+  /// **Returns every id deleted, not just [nodeId]**, so that eviction can
+  /// actually be carried out. It was not possible before: the caller was handed
+  /// one id and the cascade below silently took a whole subtree with it, so
+  /// [Repository.purgeNode] evicted the section it was given and left every
+  /// page inside it in `_decodedPages`. Reproduced: purge a section, and
+  /// `readPageShared` went on serving the child page's pre-purge blocks while
+  /// `readPage` — the same page, straight from SQLite — correctly returned
+  /// nothing. The list is the same `_subtree` walk the `page_versions` delete
+  /// needs, computed once and shared rather than walked twice.
+  ///
   /// The `page_versions` delete is that same eviction, for the copy of the page
   /// that lives in SQLite. `page_mirror` and `blob_refs` both declare
   /// `REFERENCES nodes(id) ON DELETE CASCADE` and so empty themselves here;
@@ -105,7 +115,7 @@ class NotebookWriter {
   /// would make a fresh-notebook regression test go green on the schema and
   /// stop guarding the Dart path those older notebooks are the only ones to
   /// take.
-  void purgeNode(String nodeId) {
+  List<String> purgeNode(String nodeId) {
     // **The subtree, not just this node.** `nodes.parent_id` is itself
     // `REFERENCES nodes(id) ON DELETE CASCADE`, so deleting a section deletes
     // its pages' rows too — and those page ids are never passed to this
@@ -122,15 +132,17 @@ class NotebookWriter {
     // purging a 328-page section — the size of the owner's imported one — is
     // 328 executions, and re-parsing the statement for each of them measured
     // 0.73 s against a full 9,840-snapshot table.
+    final ids = _subtree(nodeId);
     final stmt = db.prepare('DELETE FROM page_versions WHERE page_id=?');
     try {
-      for (final id in _subtree(nodeId)) {
+      for (final id in ids) {
         stmt.execute([id]);
       }
     } finally {
       stmt.dispose();
     }
     db.execute('DELETE FROM nodes WHERE id=?', [nodeId]);
+    return ids;
   }
 
   /// [nodeId] and every node beneath it. Read BEFORE the delete, because after
