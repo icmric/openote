@@ -130,6 +130,67 @@ void main() {
               'not be seen and no progress could be reported');
     });
 
+    // ── The `.one` SECTION path (task #41) ──────────────────────────────
+    //
+    // The package path above runs in the writer isolate. Importing a single
+    // `.one` into the notebook the user has open does not: it writes on the UI
+    // isolate, and it used to do so in one synchronous transaction over the
+    // whole section. Measured on the owner's notebook, the worst section (80
+    // pages) blocked the event loop for 4.9 s with ZERO turns given to anything
+    // else — the app frozen, and the busy dialog already popped because it only
+    // ever wrapped the parse.
+    test('a .one section yields between pages, so the app can paint and type',
+        () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, _, app, nb) = await fixture('onote_section_yield_');
+
+      var ticks = 0;
+      final timer =
+          Timer.periodic(const Duration(milliseconds: 1), (_) => ticks++);
+      addTearDown(timer.cancel);
+
+      final (count, first) = await importParsedSection(app, nb, 'Big',
+          [for (var i = 0; i < 60; i++) page('P$i', boxes: 3)]);
+
+      // 60 pages at one per slice is 59 yields of at least a millisecond each,
+      // so the counter cannot stay near zero. Unpaced, the whole section is a
+      // single turn of the event loop and this counter cannot move AT ALL.
+      expect(ticks, greaterThan(20),
+          reason: 'the write must give the window turns to paint and type in, '
+              'not run as one block');
+      // …and it still imported everything.
+      expect(count, 60);
+      expect(first, isNotNull);
+      expect(
+          repo
+              .loadNodes(nb)
+              .where((n) => n.kind == NodeKind.page && n.title.startsWith('P'))
+              .length,
+          60);
+    });
+
+    test('the section import says which page it is on', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (_, _, app, nb) = await fixture('onote_section_progress_');
+
+      // What the busy dialog renders. It could report nothing before this
+      // change — not because it was never asked, but because a write that
+      // never yields gives no frame in which a notifier's listeners can run.
+      final seen = <(int, int)>[];
+      await importParsedSection(
+          app, nb, 'Big', [for (var i = 0; i < 12; i++) page('P$i')],
+          onProgress: (done, total) => seen.add((done, total)));
+
+      expect(seen.length, 12, reason: 'one report per page');
+      expect(seen.first, (1, 12));
+      expect(seen.last, (12, 12));
+      // Monotonic, and never claims more than it has written.
+      for (var i = 0; i < seen.length; i++) {
+        expect(seen[i].$1, i + 1);
+        expect(seen[i].$2, 12);
+      }
+    });
+
     test('cancel stops at a batch boundary, not at the end', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (_, _, app, nb) = await fixture('onote_job_cancel_');

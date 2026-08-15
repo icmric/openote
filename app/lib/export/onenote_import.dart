@@ -493,31 +493,53 @@ Future<int?> importOneNoteFile(AppState app,
   // matters more now that the report says what ARRIVED and not only what did
   // not.
   resetImportReport();
-  Map<String, dynamic> result;
-  try {
-    // Structured: the isolate does the jsonDecode and the image base64 too.
-    // The old shape returned the JSON string, whose decode — seconds on a big
-    // section — then ran right here on the UI thread.
-    result = await _withBusyDialog(
-        progressContext,
-        ValueNotifier('Importing OneNote section…'),
-        () => compute(parseOneStructured, bytes));
-  } catch (_) {
-    return 0; // parser returned malformed/empty output — nothing to import
-  }
-  if (result['ok'] != true) return 0;
 
-  final pages = (result['pages'] as List?) ?? const [];
-  if (pages.isEmpty) return 0;
+  // **The dialog spans the WRITE as well as the parse**, and says which page it
+  // is on. It used to wrap only `compute`, so it was popped the moment the
+  // parse returned — and the write that followed is the long half (4.9 s on the
+  // owner's worst section, against ~1 s to parse one section), which meant the
+  // user watched a frozen app with nothing on screen at all. It could not have
+  // narrated anything before this change even if it had stayed up: the write
+  // never yielded, so no frame could paint between its first page and its last.
+  var imported = 0;
+  String? firstPageId;
+  final message = ValueNotifier<String>('Reading the section…');
+  await _withBusyDialog(progressContext, message, () async {
+    Map<String, dynamic> result;
+    try {
+      // Structured: the isolate does the jsonDecode and the image base64 too.
+      // The old shape returned the JSON string, whose decode — seconds on a big
+      // section — then ran right here on the UI thread.
+      result = await compute(parseOneStructured, bytes);
+    } catch (_) {
+      return; // parser returned malformed/empty output — nothing to import
+    }
+    if (result['ok'] != true) return;
 
-  final sectionTitle =
-      importTitleFromName(p.basenameWithoutExtension(file.name));
-  final (imported, firstPageId) =
-      importParsedSection(app, app.notebookId!, sectionTitle, pages);
+    final pages = (result['pages'] as List?) ?? const [];
+    if (pages.isEmpty) return;
+
+    final sectionTitle =
+        importTitleFromName(p.basenameWithoutExtension(file.name));
+    final (count, first) = await importParsedSection(
+        app, app.notebookId!, sectionTitle, pages,
+        // Plain words, and a count the user can watch move. "Page 12 of 80"
+        // is the whole story: how far in, and how far to go.
+        onProgress: (done, total) =>
+            message.value = 'Importing page $done of $total…');
+    imported = count;
+    firstPageId = first;
+  });
+  // Nothing usable in the file — the three `return`s above. Same answer, and
+  // same early exit, as before the dialog was widened to cover the write.
+  if (imported == 0) return 0;
 
   app.reloadNodes(); // nbId is the open notebook here
-  if (firstPageId != null) {
-    await app.selectPage(firstPageId);
+  // Read into a local: `firstPageId` is written inside the closure above, which
+  // is exactly what stops it promoting to non-null here.
+  final landOn = firstPageId;
+  if (landOn != null) {
+    await app.selectPage(landOn);
   } else {
     app.refresh();
   }
@@ -540,9 +562,14 @@ int lastDroppedStrokes = 0;
 /// file picker or a progress dialog — everything after the native parser, which
 /// is where tags, images, ink and layout are actually turned into blocks, and
 /// therefore the half worth testing end to end.
+/// [onProgress] is called after every slice with (pages written, total), for a
+/// progress surface to narrate. [yieldBetweenPages] replaces the pacing delay
+/// in tests that need the pause to be observable rather than real.
 @visibleForTesting
-(int, String?) importParsedSection(
-    AppState app, String nbId, String sectionTitle, List<dynamic> pages) {
+Future<(int, String?)> importParsedSection(
+    AppState app, String nbId, String sectionTitle, List<dynamic> pages,
+    {void Function(int done, int total)? onProgress,
+    Future<void> Function()? yieldBetweenPages}) async {
   final posBase = nowMs();
   var pos = 0;
   String next() => 'a${(posBase + pos++).toString().padLeft(15, '0')}';
@@ -553,7 +580,8 @@ int lastDroppedStrokes = 0;
     title: sectionTitle,
     position: next(),
   ));
-  final firstPageId = _importPagesIntoSection(sink, section.id, pages, next);
+  final firstPageId = await _importPagesPaced(sink, section.id, pages, next,
+      onProgress: onProgress, yieldBetween: yieldBetweenPages);
   return (pages.length, firstPageId);
 }
 
@@ -772,12 +800,90 @@ Future<({int pages, String? firstPageId})> writePackageInBatches(
   return (pages: written, firstPageId: firstPageId);
 }
 
-/// Import parsed pages into [sectionId]. Returns the first created page id.
-/// The whole section runs in ONE transaction — per-page commits measurably
-/// dominated large imports.
+/// Import parsed pages into [sectionId] in ONE transaction. Returns the first
+/// created page id.
+///
+/// Kept for [importPagesForTest], which drives one parsed section synchronously
+/// and wants no pacing in the way. **The app does not take this path any more**
+/// — see [_sectionPageChunk] for the measurement that moved it off.
+///
+/// This used to carry the note "per-page commits measurably dominated large
+/// imports". Re-measured, they do not (18 %, not domination), and that sentence
+/// was the whole justification for a write that froze the app for five seconds,
+/// so it is corrected here rather than left to be believed again.
 String? _importPagesIntoSection(ImportSink sink, String sectionId,
         List<dynamic> pages, String Function() next) =>
     sink.batch(() => _importPagesLocked(sink, sectionId, pages, next));
+
+/// Pages per transaction while a `.one` section is written into the notebook
+/// the user has open — and why it is **one**.
+///
+/// [_importPagesIntoSection] runs the whole section in a single transaction on
+/// the UI isolate with no yield anywhere in it. Measured on the owner's real
+/// notebook (25 sections, 329 pages): the worst section, Maths 1 at 80 pages,
+/// blocked the event loop for **4.9 s**, and a 1 ms timer running alongside it
+/// got **zero** turns — the app is frozen solid, not merely slow. The whole
+/// notebook's 329 pages are 14.5 s of blocked UI. Worse, nothing is on screen
+/// while it happens: the busy dialog wrapped only the parse, so it was already
+/// popped by the time the writing started.
+///
+/// The single transaction was justified with "per-page commits measurably
+/// dominated large imports". Re-measured on that same section they do not:
+/// 80 commits cost 3,511 ms against 2,966 ms for one, an 18 % tax. What the
+/// tax buys is a turn of the event loop every 43.9 ms on average instead of
+/// one every 4.9 s. Larger slices only spend that latency without winning the
+/// time back — four pages per commit measured 175 ms per slice and eight
+/// measured 352 ms, both for the same ~3.5 s total. So the page is the unit,
+/// which is the backlog item's own wording: yield between pages.
+///
+/// The cost of splitting is that a crash mid-import can now leave a section
+/// half-filled instead of empty. That is the trade the `.onepkg` path already
+/// makes (`writePackageInBatches` commits every four pages), the notes still
+/// exist in OneNote, and a half-filled section is visible and deletable —
+/// unlike a five-second freeze, which is not something the user can act on.
+const int _sectionPageChunk = 1;
+
+/// Write [pages] into [sectionId] a slice at a time, letting the app breathe
+/// between slices. Returns the first created page id, exactly as
+/// [_importPagesIntoSection] does.
+///
+/// **A REAL delay, not `Duration.zero`.** Same reason as `AppState._inChunks`
+/// and `ImportJob.appFrameYield`: on Windows the UI isolate lives on the Win32
+/// message loop, where posted messages are dispatched ahead of hardware input,
+/// so a zero-duration timer is work due immediately and the queue never goes
+/// idle — the window would still not answer the mouse. One millisecond makes
+/// the message loop actually wait, and the wait is when Win32 delivers input.
+Future<String?> _importPagesPaced(
+  ImportSink sink,
+  String sectionId,
+  List<dynamic> pages,
+  String Function() next, {
+  void Function(int done, int total)? onProgress,
+  Future<void> Function()? yieldBetween,
+}) async {
+  String? firstPageId;
+  for (var start = 0; start < pages.length; start += _sectionPageChunk) {
+    final end = (start + _sectionPageChunk) > pages.length
+        ? pages.length
+        : start + _sectionPageChunk;
+    final first = sink.batch(() {
+      String? firstInSlice;
+      for (var i = start; i < end; i++) {
+        final id = importOneParsedPage(
+            sink, sectionId, (pages[i] as Map).cast<String, dynamic>(), next);
+        firstInSlice ??= id;
+      }
+      return firstInSlice;
+    });
+    firstPageId ??= first;
+    onProgress?.call(end, pages.length);
+    if (end < pages.length) {
+      await (yieldBetween?.call() ??
+          Future<void>.delayed(const Duration(milliseconds: 1)));
+    }
+  }
+  return firstPageId;
+}
 
 /// The page-import path, reachable from a test with one parsed section.
 ///

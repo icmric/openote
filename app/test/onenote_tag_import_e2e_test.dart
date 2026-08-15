@@ -67,7 +67,7 @@ void main() {
     final json = jsonDecode(core.importOne(File(path).readAsBytesSync()))
         as Map<String, dynamic>;
     expect(json['ok'], isTrue, reason: 'the parser rejected the file');
-    final (pages, _) = importParsedSection(
+    final (pages, _) = await importParsedSection(
         app, nb.id, 'Tagged', (json['pages'] as List?) ?? const []);
     expect(pages, greaterThan(0), reason: 'nothing imported');
     app.reloadNodes();
