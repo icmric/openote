@@ -80,7 +80,22 @@ void main() {
         if (File(p.join(downloads, c.file)).existsSync()) c
     ];
     if (core == null || !pkg.existsSync() || present.isEmpty) {
-      markTestSkipped('native core or the sample notebook is not on this machine');
+      final why = core == null
+          ? 'the native core is not built'
+          : !pkg.existsSync()
+              ? 'the notebook package is not at ${pkg.path}'
+              : 'none of the single-page exports are in $downloads';
+      // A skipped test is RECORDED AS A SUCCESS, so staying quiet here would
+      // let this file go green in CI having asserted nothing at all — the same
+      // false confidence that let a version snapshot ship as live content.
+      // ignore: avoid_print
+      print('!!! NOT VERIFIED: onenote_revision_currency_test asserted '
+          'NOTHING — $why. Which revision of a page the importer treats as '
+          'current is unchecked in this run. To check it, put '
+          '"${p.basename(pkg.path)}" and at least one of '
+          '${_cases.map((c) => '"${c.file}"').join(', ')} in $downloads and '
+          're-run.');
+      markTestSkipped('$why — see the NOT VERIFIED line above');
       return;
     }
 

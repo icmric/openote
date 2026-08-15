@@ -5076,10 +5076,31 @@ mod tests {
     /// Header: oid count (bit 31 set = no object-space stream), the oid stream,
     /// then the property count, the property-id array, and the data.
     fn propset_blob(oids: &[u32], props: &[(u32, u8, Vec<u8>)]) -> Vec<u8> {
+        propset_blob_osids(oids, &[], props)
+    }
+
+    /// The same, with an object-SPACE id stream as well.
+    ///
+    /// A page series references its pages through one — 0x1D63 is an
+    /// ArrayOfObjectSpaceIDs — and CLEARING bit 31 of the header is the only
+    /// thing that tells [read_propset] the stream is there at all. With no
+    /// osids this emits byte-for-byte what [propset_blob] always did.
+    fn propset_blob_osids(
+        oids: &[u32],
+        osids: &[u32],
+        props: &[(u32, u8, Vec<u8>)],
+    ) -> Vec<u8> {
         let mut b = Vec::new();
-        b.extend_from_slice(&((oids.len() as u32) | 0x8000_0000).to_le_bytes());
+        let no_osids = if osids.is_empty() { 0x8000_0000 } else { 0 };
+        b.extend_from_slice(&((oids.len() as u32) | no_osids).to_le_bytes());
         for o in oids {
             b.extend_from_slice(&o.to_le_bytes());
+        }
+        if !osids.is_empty() {
+            b.extend_from_slice(&(osids.len() as u32).to_le_bytes());
+            for s in osids {
+                b.extend_from_slice(&s.to_le_bytes());
+            }
         }
         b.extend_from_slice(&(props.len() as u16).to_le_bytes());
         for (pid, ptype, _) in props {
@@ -6322,5 +6343,648 @@ mod tests {
         // The pages nobody contests are still matched by identity.
         assert_eq!(paired[2], Some(104));
         assert_eq!(paired[4], Some(102));
+    }
+
+    // ── A synthetic ONESTORE section, assembled byte for byte ───────────────
+    //
+    // Every test above this line hands a pure function a hand-built `Obj`
+    // vector. That pins the DECISION and leaves the read that FEEDS it
+    // unguarded — which is the same mistake, one layer up, as the import bugs
+    // themselves. It is measurable: reverting [currency] to rank declarations
+    // by file offset, or making [walk] never mark one versioned, puts back the
+    // two largest regressions this importer has had (16 % of the reference
+    // notebook, 73 pages, 12 sections) with the entire Rust suite still green.
+    //
+    // The files that would catch it are the owner's own study notes and must
+    // never be committed, so the bytes are synthesised instead: the 1 KB
+    // header, file-node-list fragments, revision manifests with and without a
+    // revision context, root-object references, global-id tables and object
+    // declarations — mirroring the constants the parser itself reads, so a
+    // change to one moves both. Nothing below contains a byte of anyone's
+    // notes, and it all goes in through [import_one]'s front door, so the
+    // container walk is under test alongside the decisions it feeds.
+
+    /// The `.one` `guidFileType` — the 16 bytes [Reader::is_one_section] looks
+    /// for, and the reason a synthetic file is recognised at all.
+    const ONE_GUID: [u8; 16] = [
+        0xe4, 0x52, 0x5c, 0x7b, 0x8c, 0xd8, 0xa7, 0x4d, 0xae, 0xb1, 0x53, 0x78, 0xd0, 0x29,
+        0x96, 0xd3,
+    ];
+    /// Where `fcrFileNodeListRoot` (a FileChunkReference64x32) sits in the
+    /// header — the offset [import_one] reads the whole graph from.
+    const FCR_ROOT_OFFSET: usize = 172;
+    /// ObjectDeclaration2RefCountFND. [walk] dispatches on `base_type`, not on
+    /// this id, but writing the real one keeps the file honest.
+    const FNID_OBJ_DECL2: u16 = 0x0A4;
+    /// StrokeProperties (the object a stroke's 0x3409 points at).
+    const JCID_STROKE_PROPS: u32 = 0x0012_0048;
+
+    /// One FileNode: `{ FileNodeID: 10 bits, Size: 13, StpFormat: 2,
+    /// CbFormat: 2, BaseType: 4 }` packed little-endian, then the body.
+    ///
+    /// `Size` counts the 4-byte header, which is what makes the walk's
+    /// `o += size` land on the next node rather than inside this one. Both
+    /// format fields stay 0 — an 8-byte offset and a 4-byte length, so
+    /// `ref_size(0, 0) == 12` and no reference this builder writes is ever
+    /// narrowed to something that cannot hold the offset.
+    fn fnode(id: u16, base_type: u8, body: &[u8]) -> Vec<u8> {
+        let size = 4 + body.len();
+        assert!(size < (1 << 13), "a FileNode's Size field is only 13 bits");
+        let h = id as u32 | ((size as u32) << 10) | ((base_type as u32) << 27);
+        let mut v = h.to_le_bytes().to_vec();
+        v.extend_from_slice(body);
+        v
+    }
+
+    /// A FileChunkReference64x32: a 64-bit offset then a 32-bit length.
+    fn fcr_bytes(stp: u64, cb: u32) -> Vec<u8> {
+        let mut v = stp.to_le_bytes().to_vec();
+        v.extend_from_slice(&cb.to_le_bytes());
+        v
+    }
+
+    /// An ExtendedGUID as ONESTORE stores it: the GUID, then `n` as a u32.
+    fn exguid(guid: [u8; 16], n: u8) -> [u8; 20] {
+        let mut e = [0u8; 20];
+        e[..16].copy_from_slice(&guid);
+        e[16] = n;
+        e
+    }
+
+    /// The CompactID of object `n`: `guidIndex << 8 | n`. Every synthetic
+    /// revision maps guidIndex 1 to its own space's GUID, so `n` alone names an
+    /// object within a space and the same `n` in two spaces is two objects.
+    fn cid(n: u8) -> u32 {
+        (1 << 8) | n as u32
+    }
+
+    /// One object declaration inside a synthetic revision.
+    struct Decl {
+        /// The object's CompactID `n` — see [cid].
+        n: u8,
+        jcid: u32,
+        /// Its ObjectSpaceObjectPropSet bytes, from [propset_blob].
+        blob: Vec<u8>,
+    }
+
+    fn decl(n: u8, jcid: u32, blob: Vec<u8>) -> Decl {
+        Decl { n, jcid, blob }
+    }
+
+    /// One revision manifest of a synthetic object space.
+    struct Rev {
+        /// A stored page VERSION — a RevisionManifestStart7FND carrying a
+        /// non-nil `gctxid` — rather than the space as it stands (a 6FND, no
+        /// context at all). This one bit is what [currency] reads, and getting
+        /// it out of the bytes is what these tests add over the ones above.
+        versioned: bool,
+        /// The role-1 content roots this manifest declares, by CompactID `n`.
+        /// [walk] records them only from a context-free manifest, so a
+        /// versioned revision may carry them and must be ignored.
+        roots: Vec<u8>,
+        /// Extra guidIndex → GUID entries for this revision's global-id table,
+        /// on top of guidIndex 1 → the space's own GUID. A section directory
+        /// needs one per page space, or its 0x1D63 ObjectSpaceIDs resolve to
+        /// nothing and the section lists no pages at all.
+        gids: Vec<(u32, [u8; 16])>,
+        decls: Vec<Decl>,
+    }
+
+    impl Rev {
+        /// The space as it stands: no revision context, and it names the roots.
+        fn live(roots: &[u8], decls: Vec<Decl>) -> Rev {
+            Rev { versioned: false, roots: roots.to_vec(), gids: Vec::new(), decls }
+        }
+        /// A stored page version of the same space.
+        fn version(decls: Vec<Decl>) -> Rev {
+            Rev { versioned: true, roots: Vec::new(), gids: Vec::new(), decls }
+        }
+    }
+
+    /// A synthetic `.one` section under construction.
+    ///
+    /// Blobs and fragments are appended in call order, so **the order things
+    /// are built IS their order in the file**. That is load-bearing, not
+    /// incidental: a page version declared after the live revision lands at a
+    /// higher file offset, which is exactly the arrangement that made "further
+    /// down the file" look like "newer" and cost the notebook 60 143
+    /// characters.
+    struct OneFile {
+        d: Vec<u8>,
+    }
+
+    impl OneFile {
+        fn new() -> Self {
+            // 1 KB header; everything in it but the type GUID and the root
+            // reference is zero, which is all the parser reads.
+            let mut d = vec![0u8; 1024];
+            d[..16].copy_from_slice(&ONE_GUID);
+            OneFile { d }
+        }
+
+        /// Place one property set and return the chunk reference to it.
+        fn blob(&mut self, b: &[u8]) -> (u64, u32) {
+            let stp = self.d.len() as u64;
+            self.d.extend_from_slice(b);
+            (stp, b.len() as u32)
+        }
+
+        /// Place a FileNodeListFragment around `nodes`: the magic, the list
+        /// header, the nodes, then the 20 trailing bytes the walk reserves for
+        /// the next-fragment reference and the footer. It reads that reference
+        /// at `frag_end - 20`, so those bytes are not optional padding.
+        fn fragment(&mut self, nodes: &[u8]) -> (u64, u32) {
+            let stp = self.d.len() as u64;
+            self.d.extend_from_slice(&MAGIC_FRAG_HEADER.to_le_bytes());
+            self.d.extend_from_slice(&1u32.to_le_bytes()); // FileNodeListID
+            self.d.extend_from_slice(&0u32.to_le_bytes()); // nFragmentSequence
+            self.d.extend_from_slice(nodes);
+            self.d.extend_from_slice(&fcr_bytes(u64::MAX, 0)); // nextFragment = nil
+            self.d.extend_from_slice(&0u64.to_le_bytes()); // footer
+            (stp, (self.d.len() as u64 - stp) as u32)
+        }
+
+        /// One object space: each revision's global-id table, its manifest, the
+        /// roots that manifest declares, and its object declarations — in that
+        /// order, because that is the order the walk depends on to know which
+        /// revision a declaration belongs to.
+        fn space(&mut self, guid: [u8; 16], revs: &[Rev]) -> (u64, u32) {
+            let mut nodes = Vec::new();
+            for rev in revs {
+                // A revision's table begins EMPTY (MS-ONESTORE §2.5.10), so
+                // every revision restates guidIndex 1. Two revisions both
+                // mapping it to this space's GUID is precisely what makes their
+                // declarations of object `n` two declarations of the SAME
+                // object rather than of two unrelated ones.
+                nodes.extend(fnode(FNID_GID_TABLE_START, 0, &[]));
+                let mut gids = vec![(1u32, guid)];
+                gids.extend(rev.gids.iter().copied());
+                for (idx, g) in gids {
+                    let mut body = idx.to_le_bytes().to_vec();
+                    body.extend_from_slice(&g);
+                    nodes.extend(fnode(FNID_GID_TABLE_ENTRY, 0, &body));
+                }
+                if rev.versioned {
+                    // rid(20) + ridDependent(20) + RevisionRole(4) +
+                    // odcsDefault(2) = REV7_GCTXID_OFFSET, then the gctxid
+                    // whose non-nil-ness is the whole signal.
+                    let mut body = vec![0u8; REV7_GCTXID_OFFSET];
+                    body.extend_from_slice(&exguid([0x5A; 16], 1));
+                    nodes.extend(fnode(FNID_REV_MANIFEST_START7, 0, &body));
+                } else {
+                    let body = [0u8; REV7_GCTXID_OFFSET];
+                    nodes.extend(fnode(FNID_REV_MANIFEST_START6, 0, &body));
+                }
+                for &n in &rev.roots {
+                    // RootObjectReference3FND: ExtendedGUID(20) + RootRole(u32).
+                    let mut body = exguid(guid, n).to_vec();
+                    body.extend_from_slice(&ROOT_ROLE_CONTENT.to_le_bytes());
+                    nodes.extend(fnode(FNID_ROOT_OBJECT_REF3, 0, &body));
+                }
+                for d in &rev.decls {
+                    let (stp, cb) = self.blob(&d.blob);
+                    // ObjectDeclaration2RefCountFND: the BlobRef to the property
+                    // set, then ObjectDeclaration2Body { oid, jcid, flags } and
+                    // a reference count. The walk reads oid and jcid at body+0
+                    // and body+4, immediately after the 12-byte reference.
+                    let mut body = fcr_bytes(stp, cb);
+                    body.extend_from_slice(&cid(d.n).to_le_bytes());
+                    body.extend_from_slice(&d.jcid.to_le_bytes());
+                    body.extend_from_slice(&[0, 1]); // flags, cRef
+                    nodes.extend(fnode(FNID_OBJ_DECL2, 1, &body));
+                }
+                nodes.extend(fnode(FNID_REV_MANIFEST_END, 0, &[]));
+            }
+            self.fragment(&nodes)
+        }
+
+        /// The root file-node list: one ObjectSpaceManifestListReference per
+        /// space, in the order the spaces are to be indexed. The 20 bytes right
+        /// after each chunk reference are the space's ExtendedGUID — the
+        /// durable identity a page series' 0x1D63 reference resolves to, and
+        /// without which a section lists no pages.
+        fn root(&mut self, spaces: &[((u64, u32), [u8; 16])]) -> (u64, u32) {
+            let mut nodes = Vec::new();
+            for &((stp, cb), guid) in spaces {
+                let mut body = fcr_bytes(stp, cb);
+                // `n` = 0 on the space itself; objects start at 1, so a space's
+                // identity can never collide with one of its own objects'.
+                body.extend_from_slice(&exguid(guid, 0));
+                nodes.extend(fnode(FNID_OBJECT_SPACE_LIST_REF, 2, &body));
+            }
+            self.fragment(&nodes)
+        }
+
+        /// Stamp the root reference into the header and hand back the bytes.
+        fn finish(mut self, root: (u64, u32)) -> Vec<u8> {
+            self.d[FCR_ROOT_OFFSET..FCR_ROOT_OFFSET + 12]
+                .copy_from_slice(&fcr_bytes(root.0, root.1));
+            self.d
+        }
+    }
+
+    /// A container declaration: the oid stream its children come out of AND the
+    /// 0x1C20 ElementChildNodes property that names them.
+    ///
+    /// Both, because the importer reads both — root selection counts the
+    /// property while reachability walks the stream — and a declaration
+    /// carrying only one of them would exercise only half of the code the
+    /// tests below are here to hold still.
+    fn kids_blob(kids: &[u8]) -> Vec<u8> {
+        let oids: Vec<u32> = kids.iter().map(|&n| cid(n)).collect();
+        let props = if kids.is_empty() {
+            Vec::new()
+        } else {
+            vec![(
+                PID_ELEMENT_CHILDREN,
+                0x09,
+                (kids.len() as u32).to_le_bytes().to_vec(),
+            )]
+        };
+        propset_blob(&oids, &props)
+    }
+
+    /// A string property's data: the 4-byte length, then the bytes.
+    fn str_data(b: &[u8]) -> Vec<u8> {
+        let mut v = (b.len() as u32).to_le_bytes().to_vec();
+        v.extend_from_slice(b);
+        v
+    }
+
+    /// The same, for a UTF-16 property (titles are stored this way).
+    fn utf16_data(s: &str) -> Vec<u8> {
+        let bytes: Vec<u8> = s.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        str_data(&bytes)
+    }
+
+    /// A text run (0x0E) carrying 8-bit body text — one visible line of a page.
+    fn run_blob(text: &str) -> Vec<u8> {
+        propset_blob(&[], &[(PID_TEXT_UTF8, 0x07, str_data(text.as_bytes()))])
+    }
+
+    /// A page's own PageMetadata object: the identity GUID that ties it to the
+    /// section directory's copy of its metadata.
+    fn page_id_blob(page_guid: &[u8; 16]) -> Vec<u8> {
+        propset_blob(&[], &[(PID_PAGE_GUID, 0x07, str_data(page_guid))])
+    }
+
+    /// MS-ISF multi-byte signed encoding: a varint holding twice the value
+    /// count, then one varint per value with the sign in the low bit.
+    /// [decode_multibyte_signed] is the reader this has to satisfy.
+    fn ink_path(values: &[i64]) -> Vec<u8> {
+        fn varint(out: &mut Vec<u8>, mut v: u64) {
+            loop {
+                let b = (v & 0x7F) as u8;
+                v >>= 7;
+                if v == 0 {
+                    out.push(b);
+                    return;
+                }
+                out.push(b | 0x80);
+            }
+        }
+        let mut out = Vec::new();
+        varint(&mut out, (values.len() as u64) << 1);
+        for &v in values {
+            varint(&mut out, if v < 0 { (((-v) as u64) << 1) | 1 } else { (v as u64) << 1 });
+        }
+        out
+    }
+
+    /// The four objects one ink stroke needs — container ─0x3415→ data node
+    /// ─0x3416→ stroke ─0x3409→ properties — at CompactIDs `n ..= n + 3`.
+    ///
+    /// `color` is a COLORREF (0x00BBGGRR), and it is how a test says WHICH
+    /// stroke survived rather than merely how many did. The X/Y dimension table
+    /// is declared so the decoder uses it instead of inferring a channel count,
+    /// making the three decoded points exactly the three written here.
+    fn ink_chain(n: u8, color: u32) -> Vec<Decl> {
+        let mut dims = Vec::new();
+        for g in [DIM_X, DIM_Y] {
+            dims.extend_from_slice(&g); // 32-byte entry: guid, lo, hi, padding
+            dims.extend_from_slice(&0i32.to_le_bytes());
+            dims.extend_from_slice(&32767i32.to_le_bytes());
+            dims.extend_from_slice(&[0u8; 8]);
+        }
+        vec![
+            decl(
+                n,
+                JCID_INK_CONTAINER,
+                propset_blob(&[cid(n + 1)], &[(PID_INK_DATA_REF, 0x08, Vec::new())]),
+            ),
+            decl(
+                n + 1,
+                JCID_INK_DATA,
+                propset_blob(
+                    &[cid(n + 2)],
+                    &[(PID_INK_STROKES, 0x09, 1u32.to_le_bytes().to_vec())],
+                ),
+            ),
+            decl(
+                n + 2,
+                JCID_INK_STROKE,
+                propset_blob(
+                    &[cid(n + 3)],
+                    &[
+                        // Two channels of three points: an absolute first value
+                        // then two deltas, X block followed by Y block.
+                        (
+                            PID_INK_PATH,
+                            0x07,
+                            str_data(&ink_path(&[100, 20, 20, 200, 20, 20])),
+                        ),
+                        (PID_INK_STROKE_PROPS, 0x08, Vec::new()),
+                    ],
+                ),
+            ),
+            decl(
+                n + 3,
+                JCID_STROKE_PROPS,
+                propset_blob(
+                    &[],
+                    &[
+                        (PID_INK_DIMENSIONS, 0x07, str_data(&dims)),
+                        (PID_INK_COLOR, 0x05, color.to_le_bytes().to_vec()),
+                    ],
+                ),
+            ),
+        ]
+    }
+
+    /// The section directory space: a SectionNode with one PageSeries listing
+    /// `pages` in DISPLAY order (0x1D63) and their PageMetadata objects in
+    /// `meta_order` (0x3442).
+    ///
+    /// The two orders are given separately because in a real file they are two
+    /// different orders — display versus creation — and pairing them by index
+    /// is what handed 16 of the reference notebook's pages each other's titles.
+    ///
+    /// `pages` is (the page's object-space GUID, its identity GUID, its title).
+    fn dir_space(
+        f: &mut OneFile,
+        guid: [u8; 16],
+        pages: &[([u8; 16], [u8; 16], &str)],
+        meta_order: &[usize],
+    ) -> (u64, u32) {
+        // CompactIDs here: 1 = the section, 2 = its page series, 3.. = one
+        // PageMetadata per page, declared in creation order.
+        let mut decls = vec![decl(1, JCID_SECTION_NODE, kids_blob(&[2]))];
+        // ObjectSpaceIDs, in display order. guidIndex 2.. are the page spaces'
+        // GUIDs (added to this revision's table below) and `n` matches the
+        // identity the root list wrote for each space.
+        let osids: Vec<u32> = (0..pages.len()).map(|k| (k as u32 + 2) << 8).collect();
+        let metas: Vec<u32> = meta_order.iter().map(|&k| cid(3 + k as u8)).collect();
+        decls.push(decl(
+            2,
+            JCID_PAGE_SERIES,
+            propset_blob_osids(
+                &metas,
+                &osids,
+                &[
+                    (PID_PAGE_SPACES, 0x0B, (osids.len() as u32).to_le_bytes().to_vec()),
+                    (PID_PAGE_METADATA, 0x09, (metas.len() as u32).to_le_bytes().to_vec()),
+                ],
+            ),
+        ));
+        for (k, (_, page_guid, title)) in pages.iter().enumerate() {
+            decls.push(decl(
+                3 + k as u8,
+                JCID_PAGE_METADATA,
+                propset_blob(
+                    &[],
+                    &[
+                        (PID_PAGE_GUID, 0x07, str_data(page_guid)),
+                        (PID_TITLE, 0x07, utf16_data(title)),
+                        // OneNote's PageLevel is 1-based; 1 = a top-level page.
+                        (PID_PAGE_LEVEL, 0x05, 1u32.to_le_bytes().to_vec()),
+                    ],
+                ),
+            ));
+        }
+        let gids: Vec<(u32, [u8; 16])> =
+            pages.iter().enumerate().map(|(k, p)| (k as u32 + 2, p.0)).collect();
+        f.space(guid, &[Rev { versioned: false, roots: vec![1], gids, decls }])
+    }
+
+    /// Every non-blank line of a parsed page, trimmed, across all of its boxes.
+    fn page_lines(page: &ImportedPage) -> Vec<String> {
+        page.boxes
+            .iter()
+            .flat_map(|b| b.markdown.lines())
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// Reported as pages losing their last lines, and measured at 60 143
+    /// characters across 73 pages and 12 sections: the parser chose between
+    /// competing declarations of an object by raw file offset, and ONESTORE is
+    /// a revision store over a free-chunk allocator, so "further down the file"
+    /// is not "newer". A stored page version sitting below the live content
+    /// silently replaced it — on "Logic: Tautologies…" a 21-paragraph outline
+    /// became an 18-paragraph one.
+    ///
+    /// Here the live revision lists five paragraphs and a version snapshot,
+    /// written afterwards and therefore at a HIGHER file offset, lists two. The
+    /// answer is five. Both the fix's halves are under this one assertion: the
+    /// bit [walk] sets from the 7FND's `gctxid`, and [currency] preferring it
+    /// over the offset.
+    #[test]
+    fn a_version_snapshot_further_down_the_file_does_not_replace_live_content() {
+        let mut f = OneFile::new();
+        let (space_guid, page_guid, dir_guid) = ([0xA1; 16], [0x11; 16], [0xD1; 16]);
+        // Live: the page node, its outline, and the outline element listing
+        // FIVE paragraphs. Built first, so all of it sits at a lower offset
+        // than the snapshot below.
+        let mut live = vec![
+            decl(1, JCID_PAGE_NODE, kids_blob(&[2])),
+            decl(2, JCID_OUTLINE, kids_blob(&[3])),
+            decl(3, JCID_OUTLINE_ELEMENT, kids_blob(&[4, 5, 6, 7, 8])),
+        ];
+        for k in 0..5u8 {
+            live.push(decl(4 + k, JCID_RICHTEXT_RUN, run_blob(&format!("Line {}", k + 1))));
+        }
+        live.push(decl(9, JCID_PAGE_METADATA, page_id_blob(&page_guid)));
+        // A stored version of the SAME outline element listing two paragraphs.
+        // Written after the live revision, so it wins on file offset — and has
+        // to lose anyway.
+        let version = vec![decl(3, JCID_OUTLINE_ELEMENT, kids_blob(&[4, 5]))];
+        let page = f.space(space_guid, &[Rev::live(&[1], live), Rev::version(version)]);
+        let dir = dir_space(&mut f, dir_guid, &[(space_guid, page_guid, "Currency")], &[0]);
+        let root = f.root(&[(dir, dir_guid), (page, space_guid)]);
+        let section = import_one(&f.finish(root));
+
+        assert!(section.ok, "the synthetic section must parse: {:?}", section.error);
+        assert_eq!(section.pages.len(), 1, "one page space, one page");
+        assert_eq!(
+            page_lines(&section.pages[0]),
+            ["Line 1", "Line 2", "Line 3", "Line 4", "Line 5"],
+            "the live revision's five paragraphs must survive a two-paragraph \
+             snapshot stored further down the file"
+        );
+    }
+
+    /// Reported: "in a few cases the titles are swaped with another one a few
+    /// pages after it… the content is on the right page… but the title is
+    /// wrong". A page series lists its pages in DISPLAY order (0x1D63) and
+    /// their metadata in CREATION order (0x3442), so any section with a
+    /// reordered page leaves the two arrays a permutation apart — and pairing
+    /// them by index gave 16 of the reference notebook's 329 pages each other's
+    /// titles.
+    ///
+    /// Three pages here, with the metadata array rotated against the display
+    /// order so that positional pairing gets ALL THREE wrong. The link that
+    /// works is the page's own identity: each page space carries a PageMetadata
+    /// of its own whose 0x1C30 the directory's copy repeats. That read is what
+    /// the pure-function pairing tests above cannot see.
+    #[test]
+    fn each_page_wears_the_title_of_the_metadata_that_names_it() {
+        let mut f = OneFile::new();
+        let titles = ["Alpha", "Beta", "Gamma"];
+        let space_guids: Vec<[u8; 16]> = (0..3).map(|k| [0xB0 + k as u8; 16]).collect();
+        let page_guids: Vec<[u8; 16]> = (0..3).map(|k| [0x20 + k as u8; 16]).collect();
+        let mut frags = Vec::new();
+        for k in 0..3 {
+            frags.push(f.space(
+                space_guids[k],
+                &[Rev::live(
+                    &[1],
+                    vec![
+                        decl(1, JCID_PAGE_NODE, kids_blob(&[2])),
+                        decl(2, JCID_OUTLINE, kids_blob(&[3])),
+                        decl(
+                            3,
+                            JCID_RICHTEXT_RUN,
+                            run_blob(&format!("Body of {}", titles[k])),
+                        ),
+                        // The page's own copy of its metadata — its identity.
+                        decl(4, JCID_PAGE_METADATA, page_id_blob(&page_guids[k])),
+                    ],
+                )],
+            ));
+        }
+        let pages: Vec<([u8; 16], [u8; 16], &str)> = (0..3)
+            .map(|k| (space_guids[k], page_guids[k], titles[k]))
+            .collect();
+        // 0x3442 rotated against 0x1D63: metadata 2, 0, 1 for pages 0, 1, 2.
+        let dir_guid = [0xDB; 16];
+        let dir = dir_space(&mut f, dir_guid, &pages, &[2, 0, 1]);
+        let mut spaces = vec![(dir, dir_guid)];
+        spaces.extend(frags.iter().zip(&space_guids).map(|(&fr, &g)| (fr, g)));
+        let root = f.root(&spaces);
+        let section = import_one(&f.finish(root));
+
+        assert!(section.ok, "the synthetic section must parse: {:?}", section.error);
+        assert_eq!(
+            section.pages.iter().map(|p| p.title.as_str()).collect::<Vec<_>>(),
+            titles,
+            "each page must take the title of the metadata that NAMES it"
+        );
+        // And the titles must sit on the right bodies, which is the form the
+        // complaint actually took: right content, wrong name above it.
+        for p in &section.pages {
+            assert_eq!(
+                page_lines(p),
+                [format!("Body of {}", p.title)],
+                "page \"{}\" is wearing another page's title",
+                p.title
+            );
+        }
+        // The positional pairing really is a different answer, or this proves
+        // nothing: all three pages move.
+        assert_eq!(
+            section
+                .pages
+                .iter()
+                .zip(["Gamma", "Alpha", "Beta"])
+                .filter(|(p, positional)| p.title == *positional)
+                .count(),
+            0,
+            "the permutation must be one that positional pairing gets wrong"
+        );
+    }
+
+    /// Reported: "on some pages… there is some inking there i guess was there
+    /// originally in some old version but it isnt there if i open up onenote."
+    /// Erasing ink in OneNote removes the REFERENCE and never the object, so a
+    /// flat scan of the object space finds every stroke ever erased — 536 of
+    /// the reference notebook's 64 616.
+    ///
+    /// One container the live page node still reaches and one only its stored
+    /// version reaches, both fully decodable and told apart by pen colour, so
+    /// this says which stroke survived and not merely how many did.
+    #[test]
+    fn ink_only_a_version_snapshot_reaches_is_not_imported() {
+        let mut f = OneFile::new();
+        let (space_guid, page_guid, dir_guid) = ([0xC1; 16], [0x31; 16], [0xDC; 16]);
+        let mut live = vec![
+            // The live page node reaches its outline and ONE ink container.
+            decl(1, JCID_PAGE_NODE, kids_blob(&[2, 4])),
+            decl(2, JCID_OUTLINE, kids_blob(&[3])),
+            decl(3, JCID_RICHTEXT_RUN, run_blob("Kept")),
+        ];
+        live.extend(ink_chain(4, 0x0000_00FF)); // red: still drawn
+        live.push(decl(9, JCID_PAGE_METADATA, page_id_blob(&page_guid)));
+        // The stored version of the page node lists a second container as well
+        // — ink the user has since erased. The object is still in the file.
+        let mut version = vec![decl(1, JCID_PAGE_NODE, kids_blob(&[2, 4, 10]))];
+        version.extend(ink_chain(10, 0x00FF_0000)); // blue: erased
+        let page = f.space(space_guid, &[Rev::live(&[1], live), Rev::version(version)]);
+        let dir = dir_space(&mut f, dir_guid, &[(space_guid, page_guid, "Symbols")], &[0]);
+        let root = f.root(&[(dir, dir_guid), (page, space_guid)]);
+        let section = import_one(&f.finish(root));
+
+        assert!(section.ok, "the synthetic section must parse: {:?}", section.error);
+        let p = &section.pages[0];
+        assert_eq!(page_lines(p), ["Kept"], "the page's text must import");
+        assert_eq!(p.dropped_strokes, 0, "both synthetic strokes must decode");
+        assert_eq!(
+            p.ink.iter().map(|s| s.color.as_str()).collect::<Vec<_>>(),
+            ["#FF0000"],
+            "the erased container must not come back, and the live one must stay"
+        );
+    }
+
+    /// The shape that survived the first ink fix, and the reason a page's root
+    /// has to be read rather than guessed at: on "Working out" the outline's
+    /// LIVE declaration lists 0 children while a stored version of it lists
+    /// 180 ink containers. Empty declarations were skipped before the
+    /// per-object pick, so the snapshot became the page's root and a
+    /// reachability filter rooted there called 180 erased strokes live.
+    ///
+    /// The file answers this directly: the revision manifest with no context
+    /// names the live role-1 root, and reading it makes the cleared page come
+    /// back cleared — text, ink and all — while still importing as a page,
+    /// because the section lists it.
+    #[test]
+    fn a_page_whose_live_root_shows_it_cleared_comes_back_cleared() {
+        let mut f = OneFile::new();
+        let (space_guid, page_guid, dir_guid) = ([0xC2; 16], [0x41; 16], [0xDD; 16]);
+        let live = vec![
+            decl(1, JCID_PAGE_NODE, kids_blob(&[2])),
+            // The live outline lists nothing at all: the page was cleared.
+            decl(2, JCID_OUTLINE, kids_blob(&[])),
+            decl(3, JCID_PAGE_METADATA, page_id_blob(&page_guid)),
+        ];
+        // A stored version of that same outline still lists the page's old
+        // content, and sits further down the file.
+        let mut version = vec![
+            decl(2, JCID_OUTLINE, kids_blob(&[4, 5, 6])),
+            decl(4, JCID_RICHTEXT_RUN, run_blob("Working out, line one")),
+            decl(5, JCID_RICHTEXT_RUN, run_blob("Working out, line two")),
+        ];
+        version.extend(ink_chain(6, 0x00FF_0000));
+        let page = f.space(space_guid, &[Rev::live(&[1], live), Rev::version(version)]);
+        let dir = dir_space(&mut f, dir_guid, &[(space_guid, page_guid, "Working out")], &[0]);
+        let root = f.root(&[(dir, dir_guid), (page, space_guid)]);
+        let section = import_one(&f.finish(root));
+
+        assert!(section.ok, "the synthetic section must parse: {:?}", section.error);
+        assert_eq!(section.pages.len(), 1, "a cleared page is still a page");
+        let p = &section.pages[0];
+        assert_eq!(p.title, "Working out");
+        assert_eq!(page_lines(p), Vec::<String>::new(), "the snapshot's text must stay gone");
+        assert!(p.ink.is_empty(), "the snapshot's ink must stay gone");
     }
 }

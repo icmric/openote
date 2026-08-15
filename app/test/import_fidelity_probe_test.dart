@@ -49,7 +49,19 @@ void main() {
         'Equivalence Relations, Partial Orders and Hasse Diagrams.one'));
     final core = OnoteCore.instance;
     if (core == null || !one.existsSync()) {
-      markTestSkipped('native core or the sample .one is not on this machine');
+      final why = core == null
+          ? 'the native core is not built'
+          : 'the sample export is not at ${one.path}';
+      // A skip is RECORDED AS A SUCCESS. This file is a probe rather than a
+      // guard, so a quiet skip is worse here than elsewhere: it produces a
+      // green run whose whole purpose — showing what an import actually landed
+      // — silently did not happen.
+      print('!!! NOT VERIFIED: import_fidelity_probe_test printed NOTHING — '
+          '$why. What the Dart import side actually lands for a real page is '
+          'unobserved in this run. To see it, export the OneNote page '
+          '"Equivalence Relations, Partial Orders and Hasse Diagrams" to '
+          '${one.path} and re-run.');
+      markTestSkipped('$why — see the NOT VERIFIED line above');
       return;
     }
 

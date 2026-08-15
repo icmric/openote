@@ -25,13 +25,32 @@ void main() {
   setUpAll(() => haveSqlite = initSqliteForTests());
 
   test('a tagged .one imports its tags onto the right lines', () async {
-    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-    final path = Platform.environment['ONOTE_TAGGED_ONE'];
-    if (path == null || !File(path).existsSync()) {
-      return markTestSkipped('set ONOTE_TAGGED_ONE to a tagged .one file');
+    // A skipped test is RECORDED AS A SUCCESS, so a quiet skip would make this
+    // file green in CI having asserted nothing — and note-tag import is exactly
+    // the path where a property-walk change once silently ate a tagged
+    // paragraph's text. Every gate below names what was missing, loudly.
+    void notVerified(String why) {
+      // ignore: avoid_print
+      print('!!! NOT VERIFIED: onenote_tag_import_e2e_test asserted NOTHING — '
+          '$why. Whether a tagged .one arrives with its tags on the right '
+          'lines is unchecked in this run. To check it, run: '
+          'ONOTE_TAGGED_ONE=/path/to/Tagged.one flutter test '
+          'test/onenote_tag_import_e2e_test.dart');
+      markTestSkipped('$why — see the NOT VERIFIED line above');
     }
+
+    if (!haveSqlite) return notVerified('sqlite is unavailable');
     final core = OnoteCore.instance;
-    if (core == null) return markTestSkipped('onote_core not built');
+    if (core == null) return notVerified('the native core is not built');
+    final path = Platform.environment['ONOTE_TAGGED_ONE'];
+    // Empty counts as unset: a CI that exports the variable without a value
+    // would otherwise get "names , which does not exist".
+    if (path == null || path.isEmpty) {
+      return notVerified('ONOTE_TAGGED_ONE is not set');
+    }
+    if (!File(path).existsSync()) {
+      return notVerified('ONOTE_TAGGED_ONE names $path, which does not exist');
+    }
 
     final tmp = Directory.systemTemp.createTempSync('onote_tag_e2e_');
     final repo = await Repository.openAt(tmp);
