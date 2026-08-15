@@ -388,6 +388,20 @@ class Stroke {
   /// was destroyed by simply opening and saving the page.
   final List<double> tx, ty;
   final List<int> t;
+
+  /// Epoch ms at pen-down, and the origin the per-point offsets in [t] are
+  /// measured from — `page_canvas` records `nowMs() - strokeStart` per sample,
+  /// and the area eraser carries it onto each surviving fragment so the split
+  /// runs keep the same origin. That is the whole of what reads it: nothing
+  /// replays, animates, orders or undoes by it, and the InkML exporter writes
+  /// [t], not this.
+  ///
+  /// The [nowMs] default is right for live capture and wrong for anything
+  /// synthesising strokes from a file, because this value is encoded into the
+  /// content-addressed ink blob. A writer that stamps the clock makes
+  /// byte-identical handwriting hash differently on every import — the OneNote
+  /// importer did, and re-importing one notebook stored its entire ink payload
+  /// again. Importers pass 0 for "no time known".
   final int strokeStart;
 
   Map<String, dynamic> toJson() => {

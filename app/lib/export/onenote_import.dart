@@ -1149,7 +1149,19 @@ String importOneParsedPage(ImportSink sink, String sectionId,
           'tx': const <double>[],
           'ty': const <double>[],
           't': const <int>[],
-          'strokeStart': nowMs(),
+          // 0 means "no time known", not "midnight 1970". OneNote's ink carries
+          // no timing whatsoever — the parser's stroke is `{x, y, p, color,
+          // size, opacity}` and `t` above is empty — so there is nothing here to
+          // derive a real start from, and inventing one is not free.
+          //
+          // This was `nowMs()`, and it goes INTO the content-addressed ink blob
+          // (`InkCodec.encode` writes every stroke's start). Measured on the
+          // owner's notebook, importing the same two sections twice: 82 blobs /
+          // 2,947,882 bytes, then 82 MORE blobs / 2,947,288 bytes, not one hash
+          // shared, with identical stroke geometry. Every re-import stored the
+          // whole handwriting payload again — in the container, and in the
+          // append-only op log that carries ink blob bytes.
+          'strokeStart': 0,
         });
       }
       if (strokes.isNotEmpty) {

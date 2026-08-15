@@ -4,6 +4,15 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — importing the same OneNote file twice no longer doubles up your handwriting
+
+- **Importing a OneNote file you had already imported saved a second copy of
+  every pen stroke in it.** The handwriting was the same handwriting, but
+  Openote kept the lot again — on a section with a lot of ink that is
+  megabytes of disk space for nothing, every time. It now recognises
+  handwriting it already has and keeps one copy. Anything you have written
+  yourself is untouched, and pages look exactly as they did.
+
 ### Fixed — a page that comes back after a permanent delete comes back empty, not old
 
 - **Deleting a section for good left Openote still holding the pages that were

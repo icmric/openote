@@ -57,7 +57,10 @@ void main(List<String> args) {
         'tx': const <double>[],
         'ty': const <double>[],
         't': const <int>[],
-        'strokeStart': nowMs(),
+        // Mirrors onenote_import.dart: OneNote ink has no timing, and a
+        // wall-clock value here would be encoded into the content-addressed
+        // blob and defeat its deduplication.
+        'strokeStart': 0,
       });
     }
     stdout.writeln('converted: ${strokes.length} strokes, '
