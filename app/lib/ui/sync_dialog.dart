@@ -285,6 +285,8 @@ class _SyncDialogState extends State<_SyncDialog> {
                     style:
                         const TextStyle(fontSize: 12, color: OnoteColors.danger)),
               ],
+              const SizedBox(height: 12),
+              _ComputerNameField(app: app, notebookId: nb),
               // ── The rest, folded away until asked for.
               //
               // These four are separate questions — "where are the files",
@@ -1657,4 +1659,81 @@ class _GitHubPublishState extends State<_GitHubPublish> {
       ),
     );
   }
+}
+
+/// What other people in this notebook see this computer called.
+///
+/// **The one genuinely new thing the simplified version history needs**
+/// (v0.17 plan, Step 8a). Attribution comes free out of the log — every op
+/// already carries the device that wrote it — but a device id is a uuid, and
+/// *"last changed by 019fdff4-8c31-7a2e-…"* is worse than saying nothing at
+/// all. One field, in the words a question would be asked in, and a default
+/// that means nobody has to answer it at first run.
+///
+/// **The sentence underneath is not decoration.** In a folder-shared notebook
+/// `manifest.json` is a synced file, so this name really is visible to everyone
+/// in the notebook, and someone typing their own name into it deserves to know
+/// that before they do rather than after.
+class _ComputerNameField extends StatefulWidget {
+  const _ComputerNameField({required this.app, required this.notebookId});
+  final AppState app;
+  final String notebookId;
+
+  @override
+  State<_ComputerNameField> createState() => _ComputerNameFieldState();
+}
+
+class _ComputerNameFieldState extends State<_ComputerNameField> {
+  // Owned by this State and disposed with it. Building the controller in the
+  // parent and disposing it beside an `await` is the defect
+  // `dialog_controller_lifetime_test.dart` exists for: the route is popped but
+  // its exit transition has not finished, so the field is still mounted and
+  // still rebuilding against a dead controller.
+  late final TextEditingController _c = TextEditingController(
+      text: widget.app.thisComputerLabel(widget.notebookId));
+  String? _problem;
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final ok =
+        widget.app.setThisComputerLabel(widget.notebookId, _c.text);
+    setState(() => _problem = ok
+        ? null
+        : "Openote couldn't save that name. Your notes are unaffected.");
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _c,
+            style: const TextStyle(fontSize: 13),
+            decoration: const InputDecoration(
+              isDense: true,
+              labelText: 'What should other people call this computer?',
+            ),
+            onEditingComplete: _save,
+            onTapOutside: (_) => _save(),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Changes you make are shown against this name, so everyone sharing '
+            'the notebook can see it.',
+            style: TextStyle(
+                fontSize: 11, height: 1.35, color: context.surfaces.textSecondary),
+          ),
+          if (_problem != null) ...[
+            const SizedBox(height: 4),
+            Text(_problem!,
+                style:
+                    const TextStyle(fontSize: 11, color: OnoteColors.danger)),
+          ],
+        ],
+      );
 }

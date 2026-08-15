@@ -10,10 +10,12 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../core/ids.dart';
 import '../ink/ink_storage.dart';
+import '../model/history.dart';
 import '../model/models.dart';
 import '../sync/device_identity.dart';
 import '../sync/op_log.dart';
 import 'database.dart';
+import 'history_store.dart';
 import 'notebook_writer.dart';
 
 /// The `workspace.json` layout this build writes and understands (spec §7's
@@ -1450,6 +1452,23 @@ class Repository {
         [pageId, at]).firstOrNull;
     return row == null ? null : utf8.decode(row['snapshot'] as Uint8List);
   }
+
+  // ── Simplified version history (v0.17 plan, Step 8a) ──────────────────
+  //
+  // Two thin delegates, and deliberately nothing more. All the behaviour is in
+  // `history_store.dart` and `model/history.dart`; this class owns the one
+  // thing they cannot reach, which is the container handle.
+
+  /// The derived attribution index and ten-deep deletion list, read back out of
+  /// [notebookId]'s container.
+  NotebookHistory loadHistory(String notebookId) =>
+      HistoryStore(_db(notebookId)).load();
+
+  /// Persist whatever [history] has folded since its last flush. Returns rows
+  /// touched — one per op the save was already recording, which is the "this
+  /// is free" claim made countable.
+  int flushHistory(String notebookId, NotebookHistory history) =>
+      HistoryStore(_db(notebookId)).flush(history);
 
   /// Distinct pages that link to [pageId] (backlinks, TEXT-8).
   List<String> backlinkPageIds(String notebookId, String pageId) {

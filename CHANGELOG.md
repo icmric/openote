@@ -23,6 +23,27 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   longer turns into a broken image you cannot get rid of; the other computer
   simply sends it again.
 
+### Added — see who changed what, and get recent deletions back
+
+- **Openote now keeps track of who last changed each part of a page.** Open the
+  page history button and every paragraph, picture and drawing you can see says
+  which computer it last came from and when. It costs nothing extra: Openote
+  works it out from the record of your edits it already keeps, so no notebook
+  gets bigger and nothing extra is synced.
+- **The last ten notable deletions are remembered, and you can put any of them
+  back with one click.** Notable means the things you would actually miss — a
+  deleted page, section or section group, a picture, recording, PDF, drawing or
+  file you removed, or a long stretch of writing. Ordinary typing and rubbing
+  things out with the eraser are not on the list; that is what undo is for.
+- **Anything still on that list keeps its files.** A video you deleted is not
+  cleared off your disk while it can still be put back — only once it has
+  dropped off the end of the ten.
+- **You can say what other people should call this computer.** There is one box
+  in the sharing window for it. Until you fill it in your computer goes by
+  something plain like "Windows computer", and a computer that has never been
+  named shows up as "another computer" — never as a string of letters and
+  numbers.
+
 ### Fixed — pictures and drawings always keep their second copy in the notebook's folder
 
 - **Openote keeps every picture and drawing twice: once in its working file,

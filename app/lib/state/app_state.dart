@@ -15,8 +15,11 @@ import '../core/onote_ffi.dart';
 import '../editor/onote_text_editor.dart';
 import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
+import '../model/history.dart';
 import '../model/models.dart';
 import '../store/database.dart' show NotebookFileProblem, notebookFileProblem;
+import '../store/history_store.dart';
+import '../sync/device_label.dart';
 import '../store/media_gc.dart';
 import '../store/media_store.dart';
 import '../ink/ink_codec.dart';
@@ -3017,6 +3020,14 @@ class AppState extends ChangeNotifier
     // and the name it carries only resolves in the one it was saved from.
     final t = _repo.getSetting('templates');
     if (t is Map) yield jsonEncode(t);
+    // **The ten notable deletions are a garbage-collection root** (v0.17 plan,
+    // Step 8a). `blob_refs` is rebuilt from CURRENT page content on every save
+    // (`NotebookWriter.writePage`), so a deleted video's file becomes
+    // collectable the moment the page saves — and "put it back" would then
+    // return a page with a hole in it. Bounded and explicit at ten, where
+    // `page_versions` pinned media by accident and for ever.
+    final pinned = _histories[nb]?.pinnedNames ?? const <String>{};
+    if (pinned.isNotEmpty) yield pinned.join('\n');
   }
 
   /// Delete the videos [files] names. Returns the bytes actually recovered.
@@ -5369,6 +5380,260 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  // ── Simplified version history (v0.17 plan, Step 8a) ───────────────────
+  //
+  // Who last changed each block you can see, and the last ten notable
+  // deletions. Both are folds of ops the app already writes — no new op kind,
+  // not one new byte in any log, nothing new synced. See `model/history.dart`.
+
+  final Map<String, NotebookHistory> _histories = {};
+  final Map<String, Future<void>> _historyCatchUps = {};
+
+  static String _historyOffsetKey(String nb, String device) =>
+      'historyAt:$nb:$device';
+
+  /// The index as it stands, without going to disk. Null before the first
+  /// [refreshHistory] — a caller that needs it fresh awaits that instead.
+  NotebookHistory? historyOf(String nb) => _histories[nb];
+
+  /// Fold whatever has been appended to any log since this index last looked.
+  ///
+  /// Cheap by construction: [HistoryCatchUp] reads from a stored byte offset,
+  /// so an ordinary autosave costs the one line it just wrote. Coalesced,
+  /// because the save path and an open dialog can both ask at once.
+  Future<NotebookHistory?> refreshHistory(String nb) async {
+    if (!syncLogEnabled) return null;
+    final store = _bareLog(nb);
+    if (store == null || !store.opsDir.existsSync()) return null;
+    final inFlight = _historyCatchUps[nb];
+    if (inFlight != null) {
+      await inFlight;
+      return _histories[nb];
+    }
+    final f = _catchUpHistory(nb, store);
+    _historyCatchUps[nb] = f;
+    try {
+      await f;
+    } finally {
+      _historyCatchUps.remove(nb);
+    }
+    return _histories[nb];
+  }
+
+  Future<void> _catchUpHistory(String nb, OpLogStore store) async {
+    final h = _histories.putIfAbsent(nb, () => _repo.loadHistory(nb));
+    try {
+      await HistoryCatchUp.run(
+        store: store,
+        history: h,
+        offsetOf: (dev) =>
+            (_repo.getSetting(_historyOffsetKey(nb, dev)) as num?)?.toInt() ?? 0,
+        remember: (dev, at) => _repo.setSetting(_historyOffsetKey(nb, dev), at),
+      );
+      if (h.hasPendingWrites) _repo.flushHistory(nb, h);
+      // Free, and only here: the label is what turns a device id into a name,
+      // and doing it on the save path means a student never meets a question
+      // about it at first run.
+      DeviceLabels.ensureNamed(store, localDeviceId());
+    } catch (e) {
+      // **Start over rather than limp.** Both tables are derived, so the
+      // repair for "we do not know how far we got" is to forget the offsets
+      // and re-fold from the beginning — which costs one log read and cannot
+      // lose a note. Carrying on from a half-advanced offset is the one
+      // outcome that would leave the index permanently missing ops.
+      debugPrint('[openote/history] rebuilding the change list: $e');
+      for (final dev in store.deviceIds()) {
+        _repo.setSetting(_historyOffsetKey(nb, dev), null);
+      }
+      _histories.remove(nb);
+    }
+  }
+
+  /// Who last changed each block on the open page, keyed by block id.
+  Map<String, BlockAuthor> pageAuthors() {
+    final nb = notebookId, pid = pageId;
+    if (nb == null || pid == null) return const {};
+    final h = _histories[nb];
+    if (h == null) return const {};
+    return {
+      for (final b in blocks)
+        if (h.authorOf(pid, b.id) != null) b.id: h.authorOf(pid, b.id)!
+    };
+  }
+
+  /// The last ten notable deletions, newest first.
+  List<NotableDeletion> recentDeletions() =>
+      notebookId == null ? const [] : (_histories[notebookId]?.deletions ?? const []);
+
+  /// The name each device goes by in [nb]'s manifest. Absent means unnamed,
+  /// which the interface renders as *"another computer"* and never as an id.
+  Map<String, String> deviceLabels(String nb) {
+    final store = _bareLog(nb);
+    return store == null ? const {} : DeviceLabels.read(store);
+  }
+
+  /// What other people in this notebook see this computer called.
+  String thisComputerLabel(String nb) {
+    final store = _bareLog(nb);
+    if (store == null) return DeviceLabels.defaultLabel();
+    return DeviceLabels.labelOf(store, localDeviceId()) ??
+        DeviceLabels.defaultLabel();
+  }
+
+  /// Rename this computer. False when the manifest could not be written.
+  bool setThisComputerLabel(String nb, String label) {
+    final store = _bareLog(nb);
+    if (store == null) return false;
+    final ok = DeviceLabels.set(store, localDeviceId(), label);
+    if (ok) notifyListeners();
+    return ok;
+  }
+
+  /// Put back something the deletions list remembers.
+  ///
+  /// **A query, not a stored copy.** §4.1 of the plan guarantees no log line is
+  /// ever rewritten, so a removed block's last content is still sitting in the
+  /// log as the last `block.set` naming it before the `block.remove`, and a
+  /// purged page's content is still every `block.set` for it. Nothing was
+  /// copied anywhere when it was deleted, and nothing needed to be.
+  ///
+  /// The restore itself is an **ordinary edit**: it goes through the same save
+  /// funnel as typing, so it reaches other devices and is itself undoable.
+  Future<bool> restoreDeletion(NotableDeletion d) async {
+    final nb = notebookId;
+    if (nb == null || notebookIsReadOnly(nb)) return false;
+    final store = _bareLog(nb);
+    if (store == null) return false;
+    final all = store.readAll();
+    final ok = d.isNode
+        ? _restoreDeletedNode(nb, d, all)
+        : await _restoreRemovedBlock(d, all);
+    if (ok) {
+      _histories[nb]?.forget(d.targetId);
+      final h = _histories[nb];
+      if (h != null && h.hasPendingWrites) _repo.flushHistory(nb, h);
+      notifyListeners();
+    }
+    return ok;
+  }
+
+  /// True when [op] happened strictly before the op that recorded [d] — the
+  /// same total order [Op.compare] defines, spelled against a stored row.
+  static bool _beforeDeletion(Op op, NotableDeletion d) {
+    if (op.lamport != d.lamport) return op.lamport < d.lamport;
+    final c = op.device.compareTo(d.device);
+    if (c != 0) return c < 0;
+    return op.seq < d.seq;
+  }
+
+  Future<bool> _restoreRemovedBlock(NotableDeletion d, List<Op> all) async {
+    final pid = d.pageId;
+    if (pid == null) return false;
+    Map<String, dynamic>? last;
+    // `readAll` is already in total order, so the last match wins — which is
+    // exactly "the newest content this block ever had before it went".
+    for (final op in all) {
+      if (op.kind != OpKind.blockSet || !_beforeDeletion(op, d)) continue;
+      if (op.map['pageId'] != pid) continue;
+      final b = op.map['block'];
+      if (b is Map && b['id'] == d.targetId) last = b.cast<String, dynamic>();
+    }
+    if (last == null) return false;
+    if (pageId != pid) await selectPage(pid);
+    if (pageId != pid) return false; // the page itself is gone
+    pushUndo();
+    blocks.add(Block.fromJson(last));
+    docRevision++;
+    markDirty();
+    return true;
+  }
+
+  bool _restoreDeletedNode(String nb, NotableDeletion d, List<Op> all) {
+    // Still in the recycle bin: the `nodes` row is there and only `deleted_at`
+    // is stamped, so the ordinary restore is the whole job.
+    if (_repo.loadDeletedNodes(nb).any((n) => n.id == d.targetId)) {
+      _repo.restoreNode(nb, d.targetId);
+      _recorderFor(nb)?.nodeRestored(d.targetId);
+      reloadNodes();
+      return true;
+    }
+    // Purged: there is no row to restore, so it is rebuilt from the log. The
+    // subtree is worked out from the `node.upsert` ops, then replayed with the
+    // delete and purge ops for that subtree left out.
+    final parents = <String, String?>{};
+    for (final op in all) {
+      if (op.kind != OpKind.nodeUpsert) continue;
+      final id = op.map['id'];
+      if (id is String) parents[id] = op.map['parentId'] as String?;
+    }
+    final subtree = <String>{d.targetId};
+    var grew = true;
+    while (grew) {
+      grew = false;
+      parents.forEach((id, parent) {
+        if (parent != null && subtree.contains(parent) && subtree.add(id)) {
+          grew = true;
+        }
+      });
+    }
+    final m = Materializer();
+    for (final op in all) {
+      final isRemoval =
+          op.kind == OpKind.nodeDelete || op.kind == OpKind.nodePurge;
+      if (isRemoval && subtree.contains(op.map['id'])) continue;
+      m.apply(op);
+    }
+    // Parents before children, or the foreign key on `nodes.parent_id` refuses
+    // the child and the page comes back detached from the section it was in.
+    final order = subtree.toList()
+      ..sort((a, b) => _depthOf(a, parents).compareTo(_depthOf(b, parents)));
+    var restored = 0;
+    for (final id in order) {
+      final n = m.nodes[id];
+      if (n == null) continue;
+      final kind = nodeKindFromWire(n.kind);
+      if (kind == null) continue; // a kind this build does not know: leave it
+      _putNode(
+          nb,
+          TreeNode(
+            id: id,
+            kind: kind,
+            parentId: n.parentId,
+            title: n.title,
+            position: n.position,
+            color: n.color,
+            level: n.level,
+            createdAt: n.createdAt,
+          ));
+      final page = m.pages[id];
+      if (page != null) {
+        final mirror = m.pageMirror(id);
+        importPage(
+          nb,
+          id,
+          [
+            for (final b in (mirror['blocks'] as List))
+              Block.fromJson((b as Map).cast<String, dynamic>())
+          ],
+          PageProps.fromJson((mirror['page'] as Map?)?.cast<String, dynamic>()),
+        );
+      }
+      restored++;
+    }
+    reloadNodes();
+    return restored > 0;
+  }
+
+  static int _depthOf(String id, Map<String, String?> parents) {
+    var depth = 0;
+    var at = parents[id];
+    while (at != null && depth < 64) {
+      depth++;
+      at = parents[at];
+    }
+    return depth;
+  }
+
   // ── Page templates (ORG-9) ─────────────────────────────────────────────
 
   /// Built-ins first, then the user's own. A user template that shares a
@@ -6776,6 +7041,11 @@ class AppState extends ChangeNotifier
       } catch (e) {
         _noteLogProblem('recording the save of $id failed', e);
       }
+      // Fold the line that save just appended into the change list (v0.17
+      // plan, Step 8a). It reads from a stored byte offset, so this is the
+      // ops that were written and nothing else — never a re-scan — and it is
+      // best-effort inside: a derived index must never fail a save.
+      await refreshHistory(nb);
       // Throttled inside; a mirror is a safety net, not a live replica.
       unawaited(runMirrors(nb));
     } catch (e) {

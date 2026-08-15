@@ -10,6 +10,7 @@ import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'exam_date.dart';
 import 'notebook_manager.dart';
+import 'page_history_dialog.dart';
 import 'protect_dialog.dart';
 import 'sync_dot.dart';
 import 'planner_format.dart';
@@ -1972,62 +1973,17 @@ Future<void> _promptSaveTemplate(BuildContext context, AppState app) async {
   }
 }
 
-/// Version history dialog (SYNC-8): restore any snapshot of the current page.
-Future<void> showVersionHistory(BuildContext context, AppState app) async {
-  final versions = app.pageVersions();
-  await showOnoteDialog<void>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Version history'),
-      content: SizedBox(
-        width: 340,
-        child: versions.isEmpty
-            ? const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Text(
-                    'No versions yet — snapshots are taken automatically as you edit (about every 10 minutes).'))
-            : ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 360),
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    for (final at in versions)
-                      ListTile(
-                        dense: true,
-                        leading: const Icon(Icons.history, size: 16),
-                        title: Text(_fmtWhen(at),
-                            style: const TextStyle(fontSize: 13)),
-                        trailing: TextButton(
-                          child: const Text('Restore'),
-                          onPressed: () async {
-                            await app.restoreVersion(at);
-                            if (ctx.mounted) Navigator.pop(ctx);
-                          },
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-      ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-      ],
-    ),
-  );
-}
-
-String _fmtWhen(int ms) {
-  final d = DateTime.fromMillisecondsSinceEpoch(ms);
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
-  final day = DateTime(d.year, d.month, d.day);
-  final hm =
-      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-  if (day == today) return 'Today $hm';
-  if (day == today.subtract(const Duration(days: 1))) return 'Yesterday $hm';
-  return '${d.day}/${d.month}/${d.year} $hm';
-}
+/// The page's change history.
+///
+/// **One door, three answers.** It used to be `page_versions` alone — up to
+/// thirty automatic snapshots of this page, and nothing at all about who made
+/// a change or what was deleted. Step 8a of the v0.17 plan adds the two things
+/// the owner actually asked for (*"keeping track of who made what edits (that
+/// are currently visible and maybe recent deletions, like the last 10 noteable
+/// deletions)"*) and they belong behind the same button, so the whole of
+/// "what happened to this page" is in one place rather than two.
+Future<void> showVersionHistory(BuildContext context, AppState app) =>
+    showPageHistory(context, app);
 
 /// The colour swatches inside a section's context menu.
 ///

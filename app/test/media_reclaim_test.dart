@@ -24,6 +24,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:openote/model/history.dart' show kRecentDeletionsKept;
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/media_gc.dart';
@@ -511,13 +512,23 @@ void main() {
       expectSurvived('cut', because: 'it can still be pasted');
     });
 
-    test('THE story: a video deleted from a saved page is reclaimed', () async {
+    test('THE story: a video deleted from a saved page is held for ten '
+        'deletions, then reclaimed', () async {
       // Put a lecture on a page, save, delete it weeks later, save. This is
       // what the button is for, and measuring it is what caught the design
       // being useless: the op log is append-only and nothing compacts it, so
       // this device's own log STILL names the video after the block is gone.
       // Counting that as a reference pinned every video that had ever been on
       // a saved page — the whole feature reclaimed nothing at all.
+      //
+      // **What changed, and why this test grew a second half (v0.17 Step 8a).**
+      // A deleted video is now held by the ten-deep notable-deletions list,
+      // deliberately: that list offers "put it back", and a restore that
+      // returns a page with a hole in it is worse than no restore. So the pin
+      // is real — and, unlike `page_versions`, it is BOUNDED. Ten more notable
+      // deletions push the entry out and the bytes become reclaimable, where a
+      // snapshot was evicted only by thirty newer snapshots of the same page
+      // and therefore pinned a video on a page you stopped editing FOR EVER.
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final app = AppState(repo)..notebookId = nb;
       addTearDown(app.cancelPendingSave);
@@ -546,7 +557,36 @@ void main() {
           isFalse,
           reason: 'the container does not');
 
-      final s = await app.findUnusedVideos(nb);
+      // Half one: it is on the "recently deleted" list, so it is held.
+      await app.refreshHistory(nb);
+      expect(app.recentDeletions().map((d) => d.pins).expand((p) => p),
+          contains(stored['finished']!));
+      var s = await app.findUnusedVideos(nb);
+      expect(s.refusal, isNull);
+      expect(s.unused, isEmpty,
+          reason: 'the deletions list can still put it back');
+
+      // Half two: ten more notable deletions, and the entry is gone.
+      for (var i = 0; i < kRecentDeletionsKept; i++) {
+        app.blocks = [
+          Block(
+              id: 'push$i',
+              type: BlockType.image,
+              x: 0,
+              y: 0,
+              content: {'blob': 'sha256:push$i'})
+        ];
+        app.markDirty();
+        await app.flushSave();
+        app.blocks = [];
+        app.markDirty();
+        await app.flushSave();
+      }
+      expect(app.recentDeletions().map((d) => d.pins).expand((p) => p),
+          isNot(contains(stored['finished']!)),
+          reason: 'the cap is the prune — ten rows cannot leak');
+
+      s = await app.findUnusedVideos(nb);
       expect(s.refusal, isNull);
       expect(s.unused.length, 1, reason: 'so it IS reclaimable');
       expect(await app.deleteUnusedVideos(s.unused), 4096);

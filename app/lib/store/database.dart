@@ -363,6 +363,47 @@ void _ensureSchema(Database db) {
       snapshot BLOB NOT NULL,
       label TEXT,
       PRIMARY KEY (page_id, version_at));
+    -- Simplified version history (v0.17 plan, Step 8a). Both tables are
+    -- DERIVED from the op log and neither is synced: dropping them costs a
+    -- rebuild, never a note. See `store/history_store.dart`.
+    --
+    -- `block_authors` holds ONE row per block that currently exists, which is
+    -- the whole difference from `page_versions` above — that table is bounded
+    -- by how long a notebook has been edited, i.e. by nothing, and this one by
+    -- how big the notebook is. It declares the `ON DELETE CASCADE` that
+    -- `page_versions` never did, so the orphan class commit 1be2d28 had to
+    -- sweep up cannot recur here; the need for that repair is designed out
+    -- rather than fixed again.
+    --
+    -- `block_kind`, `chars` and `pins` are not decoration. They are what makes
+    -- a LATER `block.remove` classifiable: without them, a lecture recording
+    -- deleted in a session after the one that added it is indistinguishable
+    -- from a deleted comma, and the ten-deep list would fill with editing.
+    CREATE TABLE IF NOT EXISTS block_authors (
+      page_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+      block_id TEXT NOT NULL,
+      device TEXT NOT NULL,
+      lamport INTEGER NOT NULL,
+      seq INTEGER NOT NULL,
+      changed_at INTEGER NOT NULL,
+      block_kind TEXT NOT NULL,
+      chars INTEGER NOT NULL,
+      pins TEXT NOT NULL,
+      PRIMARY KEY (page_id, block_id));
+    -- Deliberately NOT keyed on `nodes`: a purged page has no `nodes` row, and
+    -- that is precisely the entry a student most needs back. Its cap of ten is
+    -- its prune, so nothing here can leak the way `page_versions` did.
+    CREATE TABLE IF NOT EXISTS recent_deletions (
+      device TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      lamport INTEGER NOT NULL,
+      deleted_at INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      page_id TEXT,
+      what TEXT NOT NULL,
+      pins TEXT NOT NULL,
+      PRIMARY KEY (device, seq));
   ''');
   // `fts_pages` is likewise not created. It was created on every open and then
   // never written to or queried — sidebar search is a Dart `contains()` scan —
