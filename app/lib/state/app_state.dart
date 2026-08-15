@@ -16,6 +16,8 @@ import '../editor/onote_text_editor.dart';
 import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
+import '../store/database.dart' show NotebookFileProblem, notebookFileProblem;
+import '../store/media_gc.dart';
 import '../store/media_store.dart';
 import '../ink/ink_codec.dart';
 import '../ink/ink_storage.dart';
@@ -112,6 +114,56 @@ typedef TaggedLine = ({
   NoteTag tag,
   String text,
 });
+
+/// What came of being handed a notebook file from outside the app — the
+/// command line, or a double-click in the file manager.
+enum OpenNotebookOutcome {
+  /// It is on screen now.
+  opened,
+
+  /// It was already the notebook on screen. Nothing to do but come to the
+  /// front.
+  alreadyOpen,
+
+  /// It came from outside the workspace, so Openote took a copy — and the
+  /// user has to be told, because their edits now go to the copy.
+  copiedIn,
+
+  /// Nothing at that path.
+  notFound,
+
+  /// Something at that path, but not one of our notebooks.
+  notANotebook,
+
+  /// It should have worked and didn't. [OpenNotebookResult.details] carries
+  /// the technical reason.
+  failed,
+}
+
+/// The answer to "open this notebook", in the words the app will actually use.
+///
+/// Two fields on purpose. [message] is the whole story for the person reading
+/// it and contains no path, no exception and no jargon; [details] is the path
+/// and the raw error, which the UI puts behind an Advanced fold. A stack trace
+/// on screen is the failure mode this type exists to prevent.
+class OpenNotebookResult {
+  const OpenNotebookResult(this.outcome, this.message, {this.details});
+
+  final OpenNotebookOutcome outcome;
+
+  /// One or two plain sentences. Safe to show to anybody.
+  final String message;
+
+  /// The path, and the exception when there was one. Never shown unless asked
+  /// for.
+  final String? details;
+
+  /// True when the notebook the user named is now the open one.
+  bool get ok =>
+      outcome == OpenNotebookOutcome.opened ||
+      outcome == OpenNotebookOutcome.alreadyOpen ||
+      outcome == OpenNotebookOutcome.copiedIn;
+}
 
 /// App-wide state. Deliberately simple (ChangeNotifier) for the MVP; the
 /// domain layer beneath it is what carries forward.
@@ -2559,6 +2611,78 @@ class AppState extends ChangeNotifier
     return freed;
   }
 
+  /// Videos and recordings in [nb] that nothing points at any more.
+  ///
+  /// **User-initiated, never automatic, and that is a rule rather than a
+  /// preference.** The housekeeping note above states it: only work that is
+  /// reversible in effect happens on its own, and deleting does not qualify —
+  /// "the cost of being wrong is somebody's notes and the cost of asking is
+  /// one click". So this is a button, next to the two that already reclaim
+  /// space, and it shows what it found before anything goes.
+  ///
+  /// Refuses outright — reclaiming nothing and saying so — while the notebook
+  /// is in any state where the container and the log do not yet agree about
+  /// what exists:
+  ///
+  ///  * unsaved edits, where a block naming a video is in memory only;
+  ///  * a sync in flight or an import owning the log, either of which is
+  ///    actively rewriting the pages being scanned;
+  ///  * another device's operations still to fold in. This is the guard that
+  ///    matters most. `SyncRecorder.page` records nothing while
+  ///    `foreignPending` is true, so in that state the notebook's own recent
+  ///    edits are missing from the log — and a video whose only reference is
+  ///    an unfolded op is a video the scan would call unused. Folding first is
+  ///    the same fix the ink conversion needed for the same reason.
+  Future<VideoSweep> findUnusedVideos(String nb) async {
+    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull;
+    if (ref == null) return const VideoSweep();
+    if (_dirty || _pulling || _importingNotebooks.contains(nb)) {
+      return const VideoSweep(
+          refusal: 'This notebook is still saving. Try again in a moment.');
+    }
+    final rec = await warmRecorder(nb);
+    if (rec != null && rec.foreignPending) {
+      return const VideoSweep(
+          refusal: 'There are changes from another device still to fold in. '
+              'Try again in a moment.');
+    }
+    return MediaGc.sweep(
+      ref: ref,
+      containerText: () => _repo.everyStoredPageText(nb),
+      liveText: () => _volatileMediaText(nb),
+      // Our own log is the history of how this container got here, not a set
+      // of live references — see `MediaGc._eliminateInFiles`. Every other
+      // device's log is still read whole.
+      ownDevice: rec?.device.id,
+    );
+  }
+
+  /// Everything holding page content that is NOT in the container or the log.
+  ///
+  /// Each of these has been the whole of a video's existence at some moment:
+  /// the undo stack is how an accidental delete is taken back, the clipboard
+  /// survives switching notebook, [blocks] is the only copy during the save
+  /// debounce, and a template lives in the workspace rather than in any
+  /// notebook at all — so a template saved from THIS notebook's page is a
+  /// reference the container knows nothing about.
+  Iterable<String> _volatileMediaText(String nb) sync* {
+    if (notebookId == nb) {
+      yield _snapshot();
+      yield* _undo;
+      yield* _redo;
+    }
+    final clip = _blockClipboard;
+    if (clip != null) yield clip;
+    // Not scoped to this notebook: a template is appliable into any of them,
+    // and the name it carries only resolves in the one it was saved from.
+    final t = _repo.getSetting('templates');
+    if (t is Map) yield jsonEncode(t);
+  }
+
+  /// Delete the videos [files] names. Returns the bytes actually recovered.
+  Future<int> deleteUnusedVideos(Iterable<UnusedVideo> files) async =>
+      MediaGc.reclaim(files);
+
   int _fileBytes(String path) {
     try {
       final f = File(path);
@@ -4193,7 +4317,15 @@ class AppState extends ChangeNotifier
   /// status-bar chip. Null on the pure-Dart engine.
   String? get pageContentHash => engine.lastSavedHash;
 
-  Future<void> init() async {
+  /// Bring the workspace up.
+  ///
+  /// [notebookPath], when given, is the notebook Openote was launched to open
+  /// — `openote Physics.onote`, or a double-click on it in the file manager.
+  /// It is resolved HERE, in front of the last-session restore, rather than by
+  /// opening the last notebook and switching afterwards: switching would open
+  /// two notebooks' worth of pages and replay two op logs to show one of them,
+  /// and the user would watch the wrong notebook appear first.
+  Future<void> init({String? notebookPath}) async {
     // Session restore (§7a.5): theme, custom colours, per-page views, last loc.
     final tm = _repo.getSetting('themeMode') as String?;
     if (tm != null) themeMode = ThemeMode.values.asNameMap()[tm] ?? themeMode;
@@ -4266,9 +4398,27 @@ class AppState extends ChangeNotifier
     // odd registry into a startup that shows only an error screen. Making one
     // is always better than refusing to start.
     if (_repo.notebooks.isEmpty) await _repo.createNotebook('My notebook');
-    notebookId = _repo.notebooks.any((n) => n.id == lastNb)
-        ? lastNb!
-        : _repo.notebooks.first.id;
+    // A notebook named on the command line beats the last session's. Placed
+    // after `loadSyncRoots` above, because adopting a notebook out of a synced
+    // folder records that folder — and before the choice below, because being
+    // handed a notebook IS the choice.
+    String? asked;
+    if (notebookPath != null && notebookPath.trim().isNotEmpty) {
+      final resolved = await _resolveNotebookFile(notebookPath);
+      asked = resolved.ref?.id;
+      // A path that could not be opened must not end the launch: the app comes
+      // up on the last notebook, and the shell says what happened to the one
+      // that was asked for. Refusing to start because a shortcut points at a
+      // moved file is the silent-no-op's louder cousin.
+      pendingOpenNotice = resolved.problem ??
+          (resolved.copied
+              ? _copiedInNotice(resolved.ref!, notebookPath)
+              : null);
+    }
+    notebookId = asked ??
+        (_repo.notebooks.any((n) => n.id == lastNb)
+            ? lastNb!
+            : _repo.notebooks.first.id);
     // Clear out anything that has outlived the recycle-bin retention window.
     await _repo.purgeExpiredNotebooks();
     _repo.purgeExpiredNodes(notebookId!);
@@ -4376,6 +4526,159 @@ class AppState extends ChangeNotifier
     if (onboardingSeen) return;
     onboardingSeen = true;
     _repo.setSetting('onboardingSeen', true);
+  }
+
+  // ── Opening a notebook Openote was HANDED (task 43) ───────────────────
+  //
+  // Two doors, one funnel: `openote path/to/notebook.onote` from a terminal,
+  // and a double-click on a `.onote` in the file manager. The second is the
+  // one the audience uses — "a year 10 student wont know … how to run a
+  // command in their terminal" — so every answer below is a sentence, not an
+  // exception. The technical half (which path, which error) goes in
+  // [OpenNotebookResult.details], which the UI keeps behind an Advanced fold.
+
+  /// The notice the shell still has to show about a notebook we were handed:
+  /// null on the happy path, because a notebook that opened is its own
+  /// confirmation. Cleared by whoever displays it.
+  OpenNotebookResult? pendingOpenNotice;
+
+  /// Open the notebook stored at [path], switching to it if it is one of ours
+  /// and adopting it if it is not.
+  ///
+  /// Never throws for a bad path: the caller is a command line or a
+  /// double-click, and both deserve an answer rather than a crash.
+  Future<OpenNotebookResult> openNotebookFile(String path) async {
+    final resolved = await _resolveNotebookFile(path);
+    final problem = resolved.problem;
+    if (problem != null) {
+      pendingOpenNotice = problem;
+      notifyListeners();
+      return problem;
+    }
+    final ref = resolved.ref!;
+    if (ref.id == notebookId) {
+      // Not a failure and not worth a dialog — the notebook they asked for is
+      // the one already on screen. Raising the window (the caller's job) is
+      // the whole of the right response.
+      return OpenNotebookResult(
+          OpenNotebookOutcome.alreadyOpen, '"${ref.title}" is already open.');
+    }
+    await selectNotebook(ref.id);
+    if (!resolved.copied) {
+      notifyListeners();
+      return OpenNotebookResult(
+          OpenNotebookOutcome.opened, 'Opened "${ref.title}".');
+    }
+    final result = _copiedInNotice(ref, path);
+    pendingOpenNotice = result;
+    notifyListeners();
+    return result;
+  }
+
+  /// The one place this sentence is written.
+  ///
+  /// Both entry points — launch and hand-off — have to say it, and two copies
+  /// of a user-facing sentence is two copies that drift. It is not decoration:
+  /// a notebook opened from outside the workspace is COPIED in, so from that
+  /// moment the file the user double-clicked stops receiving their edits.
+  /// Saying nothing is how somebody emails a friend the original a week later
+  /// and wonders where their work went.
+  OpenNotebookResult _copiedInNotice(NotebookRef ref, String from) =>
+      OpenNotebookResult(
+          OpenNotebookOutcome.copiedIn,
+          'Openote made a copy of "${ref.title}" in your notebooks. Changes '
+          'you make are saved to the copy, not to the file you opened.',
+          details: 'Opened: $from\nCopy: ${ref.file}');
+
+  /// Turn a path into a registry entry, registering or copying as required.
+  ///
+  /// `copied` says the notebook was taken INTO the workspace rather than found
+  /// there, which is a fact the user has to be told: their edits stop going to
+  /// the file they double-clicked.
+  Future<({NotebookRef? ref, OpenNotebookResult? problem, bool copied})>
+      _resolveNotebookFile(String path) async {
+    // Absolute and normalised before anything compares it. `p.equals` against
+    // the registry, `p.isWithin` against the workspace and the sniff below all
+    // want a real path, and a relative one reaches here whenever the request
+    // came from the hand-off file rather than from `notebookPathFromArgs`.
+    final abs = p.normalize(p.absolute(path));
+
+    // Ours already? Then nothing is copied, nothing is validated and nothing
+    // is created — we just go there. This branch is the common case (the
+    // user's notebooks live in the workspace folder), and it has to come
+    // FIRST: the notebook that is open right now has its header change
+    // sitting in an un-checkpointed WAL, so sniffing it would be the one
+    // reading that could call a real notebook a stranger.
+    final known = _repo.notebookAt(abs);
+    if (known != null) {
+      if (_repo.trashedNotebooks.any((n) => n.id == known.id)) {
+        // Double-clicking a notebook you deleted is a restore request. The
+        // alternative — "that notebook is in the recycle bin" — is a dead end
+        // for a user who has the file right in front of them.
+        await _repo.restoreNotebook(known.id);
+      }
+      return (ref: known, problem: null, copied: false);
+    }
+
+    final problem = notebookFileProblem(abs);
+    if (problem != null) {
+      return (ref: null, problem: _describeProblem(problem, abs), copied: false);
+    }
+
+    try {
+      if (p.isWithin(_repo.workspaceDir.path, abs)) {
+        return (
+          ref: await _repo.adoptWorkspaceNotebook(abs),
+          problem: null,
+          copied: false
+        );
+      }
+      final ref = await _repo.openExistingNotebook(abs);
+      // Only when the shared log directory is really there. `openExistingNotebook`
+      // always POINTS `logDir` at a sibling `.onotebook`, and the onboarding
+      // flow — where the user has just browsed to their Drive folder — then
+      // records that folder as a sync location. Reaching the same call by
+      // double-clicking a notebook a friend emailed would record ~/Downloads
+      // as "where my notes sync", which is a lie the sync chip would then
+      // repeat every launch.
+      if (Directory('${p.withoutExtension(abs)}.onotebook').existsSync()) {
+        rememberSyncRoot(p.dirname(abs));
+      }
+      return (ref: ref, problem: null, copied: true);
+    } catch (e) {
+      return (
+        ref: null,
+        problem: OpenNotebookResult(OpenNotebookOutcome.failed,
+            "Openote couldn't open that notebook.",
+            details: '$abs\n\n$e'),
+        copied: false
+      );
+    }
+  }
+
+  /// One sentence per way this can go wrong, in the words the app will say.
+  OpenNotebookResult _describeProblem(NotebookFileProblem problem, String path) {
+    final (outcome, message) = switch (problem) {
+      NotebookFileProblem.missing => (
+          OpenNotebookOutcome.notFound,
+          "Openote couldn't find that notebook. It may have been moved, "
+              'renamed or deleted since you last opened it.'
+        ),
+      NotebookFileProblem.notAFile => (
+          OpenNotebookOutcome.notANotebook,
+          "That's a folder, not a notebook, so there is nothing to open."
+        ),
+      NotebookFileProblem.unreadable => (
+          OpenNotebookOutcome.failed,
+          "Openote couldn't read that file. Another program may have it open, "
+              'or it may be somewhere you do not have permission to read.'
+        ),
+      NotebookFileProblem.notANotebook => (
+          OpenNotebookOutcome.notANotebook,
+          "That file isn't an Openote notebook, so there is nothing to open."
+        ),
+    };
+    return OpenNotebookResult(outcome, message, details: path);
   }
 
   /// Open a `.onote` that already exists on disk — the second-device flow.

@@ -26,7 +26,7 @@ class Repository {
   final List<NotebookRef> trashedNotebooks = [];
 
   static Future<Repository> open() async {
-    final dir = await _resolveWorkspaceDir();
+    final dir = await resolveWorkspaceDir();
     final repo = Repository._(dir);
     await repo._loadWorkspace();
     if (repo.notebooks.isEmpty) {
@@ -48,7 +48,12 @@ class Repository {
   /// Prefer ~/Documents/Openote, but fall back to the app-support directory.
   /// On Windows the Documents "known folder" can be redirected (OneDrive) so
   /// the literal path may not exist — creating it then fails with errno 2.
-  static Future<Directory> _resolveWorkspaceDir() async {
+  ///
+  /// Public because `main()` needs the answer *before* it opens anything: the
+  /// single-instance lock lives in this folder, and a second Openote has to
+  /// find it and step aside before it paints a window (see
+  /// `core/single_instance.dart`).
+  static Future<Directory> resolveWorkspaceDir() async {
     Future<Directory?> tryCreate(Future<Directory> Function() base) async {
       try {
         final root = await base();
@@ -565,9 +570,7 @@ class Repository {
     if (!file.existsSync()) throw StateError('no notebook at $path');
     final sharedLog = '${p.withoutExtension(path)}.onotebook';
 
-    bool sameNotebook(NotebookRef n) =>
-        p.equals(n.file, path) ||
-        (n.logDir != null && p.equals(n.logDir!, sharedLog));
+    bool sameNotebook(NotebookRef n) => _isNotebookAt(n, path);
 
     final already = notebooks.where(sameNotebook).firstOrNull;
     if (already != null) return already;
@@ -595,6 +598,65 @@ class Repository {
         NotebookRef(id: id, file: local, title: name, logDir: sharedLog);
     notebooks.add(ref);
     _open[id] = openOnote(local, notebookId: id, title: name);
+    await _saveNow();
+    return ref;
+  }
+
+  /// Does registry entry [n] describe the notebook stored at [path]?
+  ///
+  /// The path, or the shared log directory that would sit beside it — because
+  /// a device that joined a notebook through a synced folder keeps its OWN
+  /// container in the workspace, so the paths differ and the log directory is
+  /// the only thing the two entries have in common.
+  bool _isNotebookAt(NotebookRef n, String path) =>
+      p.equals(n.file, path) ||
+      (n.logDir != null &&
+          p.equals(n.logDir!, '${p.withoutExtension(path)}.onotebook'));
+
+  /// The registry entry for the notebook stored at [path] — live or in the
+  /// recycle bin — or null when this workspace has never seen it.
+  ///
+  /// Exists for the *open this file* paths (the command line, a double-click
+  /// in the file manager), which have to answer "do I already have this?"
+  /// **before** deciding to copy anything. [openExistingNotebook] answers the
+  /// same question internally, but only after it has committed to the
+  /// copy-into-the-workspace semantics that folder sync needs and a plain
+  /// double-click does not.
+  NotebookRef? notebookAt(String path) =>
+      notebooks.where((n) => _isNotebookAt(n, path)).firstOrNull ??
+      trashedNotebooks.where((n) => _isNotebookAt(n, path)).firstOrNull;
+
+  /// Register a `.onote` that is ALREADY sitting in the workspace folder,
+  /// where it is, without copying it.
+  ///
+  /// The case is a file the user dropped into `Documents/Openote` by hand and
+  /// then double-clicked. [openExistingNotebook] would answer it by copying —
+  /// and since the obvious destination name is taken (by the source file
+  /// itself) the copy lands as `Physics-1.onote`, leaving the workspace
+  /// holding two containers for one notebook, the second of which is the one
+  /// the user's edits go to. That is the same shape of mess as the five
+  /// 95 MB copies described above, reached by an easier route.
+  ///
+  /// No [NotebookRef.logDir] either. A notebook in the workspace logs beside
+  /// itself, and pointing `logDir` at the workspace folder would quietly
+  /// declare the user's own notes directory a shared sync location.
+  Future<NotebookRef> adoptWorkspaceNotebook(String path, {String? title}) async {
+    if (!File(path).existsSync()) throw StateError('no notebook at $path');
+    if (!p.isWithin(workspaceDir.path, path)) {
+      throw StateError('$path is not inside the workspace');
+    }
+    final already = notebookAt(path);
+    if (already != null) {
+      if (trashedNotebooks.any((n) => n.id == already.id)) {
+        await restoreNotebook(already.id);
+      }
+      return already;
+    }
+    final id = newId();
+    final name = title ?? p.basenameWithoutExtension(path);
+    final ref = NotebookRef(id: id, file: path, title: name);
+    notebooks.add(ref);
+    _open[id] = openOnote(path, notebookId: id, title: name);
     await _saveNow();
     return ref;
   }
@@ -1275,6 +1337,38 @@ class Repository {
   }
 
   static final _blockIdRe = RegExp(r'"id":"([0-9a-f-]{36})"');
+
+  /// Every scrap of page content this container holds, as raw JSON text.
+  ///
+  /// For the video sweep, which has to answer "does anything anywhere still
+  /// name this file?" and where a missed reference deletes a lecture. Three
+  /// deliberate choices, each of which is a way the obvious query would be
+  /// wrong:
+  ///
+  ///  * **No `deleted_at` filter.** A page in the recycle bin keeps its
+  ///    `page_mirror` row untouched — only `nodes.deleted_at` is stamped — and
+  ///    it can be restored for thirty days. The usual
+  ///    `WHERE deleted_at IS NULL` would hide precisely the pages whose videos
+  ///    look unused, which is the deleted-page-comes-back-empty shape.
+  ///  * **`page_versions` too.** Up to thirty autosnapshots per page, each a
+  ///    complete copy of the page as it was and each restorable from the UI.
+  ///    A video removed from a page this morning is still named by every
+  ///    snapshot taken before that.
+  ///  * **Raw text, not decoded pages.** Decoding asks the schema's question;
+  ///    the sweep needs the bytes' question. It is also what keeps this from
+  ///    materialising a notebook's worth of `Block` objects to look for one
+  ///    string.
+  ///
+  /// Lazy: the caller stops as soon as every candidate has been accounted for.
+  Iterable<String> everyStoredPageText(String notebookId) sync* {
+    final db = _db(notebookId);
+    for (final r in db.select('SELECT json FROM page_mirror')) {
+      yield r['json'] as String;
+    }
+    for (final r in db.select('SELECT snapshot FROM page_versions')) {
+      yield utf8.decode(r['snapshot'] as Uint8List, allowMalformed: true);
+    }
+  }
 
   /// Run [fn] in ONE transaction on [notebookId]'s database. [writePage] uses
   /// savepoints so it nests; imports batch hundreds of page writes into a

@@ -18,6 +18,7 @@ import 'package:path/path.dart' as p;
 
 import '../core/platform_open.dart';
 import '../state/app_state.dart';
+import '../store/media_gc.dart' show VideoSweep;
 import '../sync/cloud_folders.dart';
 import '../sync/github_api.dart';
 import '../sync/mirrors.dart';
@@ -787,6 +788,34 @@ class _StorageSectionState extends State<_StorageSection> {
                 ),
             ]),
           ),
+        // Offered only on a notebook that HAS videos, for the same reason the
+        // handwriting button is: an action whose effect nobody can see
+        // beforehand reads as a risk rather than a saving.
+        //
+        // A button, not automatic housekeeping, and that is the rule stated at
+        // the top of `AppState`'s housekeeping section — only work that is
+        // reversible in effect happens on its own, and deleting does not
+        // qualify, because "the cost of being wrong is somebody's notes and
+        // the cost of asking is one click".
+        FutureBuilder<NotebookStorage>(
+          future: _storage,
+          builder: (_, snap) {
+            if ((snap.data?.mediaBytes ?? 0) == 0 && _videos == null) {
+              return const SizedBox.shrink();
+            }
+            if (_videos != null) return _videoList();
+            return Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: TextButton.icon(
+                onPressed: () => setState(
+                    () => _videos = app.findUnusedVideos(widget.notebookId)),
+                icon: const Icon(Icons.videocam_off_outlined, size: 16),
+                label: const Text('Check for videos you no longer use…',
+                    style: TextStyle(fontSize: 12)),
+              ),
+            );
+          },
+        ),
         if (_orphans != null) _orphanList(),
       ],
     );
@@ -794,6 +823,11 @@ class _StorageSectionState extends State<_StorageSection> {
 
   bool _reclaiming = false;
   int? _reclaimed;
+
+  /// The video sweep, once asked for. Null until the user presses the button —
+  /// scanning reads every page, every saved version and every device's log,
+  /// which is not work to do on the chance the dialog gets opened.
+  Future<VideoSweep>? _videos;
 
   bool _converting = false;
   InkConversionResult? _inkResult;
@@ -862,6 +896,104 @@ class _StorageSectionState extends State<_StorageSection> {
       ),
     ]);
   }
+
+  /// What the sweep found, in the words a fifteen-year-old reads once.
+  ///
+  /// No counts of references, no mention of logs, devices or snapshots: the
+  /// only two things the reader needs are how much space this is and what
+  /// would go. The caveat says what is being kept in terms of things they have
+  /// — a page, the bin, a template, another computer — because that is the
+  /// question anyone about to press Delete is actually asking.
+  Widget _videoList() => FutureBuilder<VideoSweep>(
+        future: _videos,
+        builder: (_, snap) {
+          final s = snap.data;
+          if (s == null) {
+            return Text('Looking through your notes…',
+                style: TextStyle(
+                    fontSize: 12, color: context.surfaces.textSecondary));
+          }
+          if (s.refusal != null) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(s.refusal!,
+                  style: const TextStyle(fontSize: 12, height: 1.35)),
+            );
+          }
+          if (s.unused.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                  'Every video in this notebook is still used somewhere. '
+                  'Nothing to free up.',
+                  style: TextStyle(
+                      fontSize: 12,
+                      height: 1.35,
+                      color: context.surfaces.textSecondary)),
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 4),
+              Text(
+                  '${s.unused.length} video${s.unused.length == 1 ? '' : 's'} '
+                  'nothing points at  ·  ${_bytes(s.freeableBytes)}',
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              for (final v in s.unused.take(8))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Row(children: [
+                    Icon(Icons.movie_outlined,
+                        size: 16, color: context.surfaces.textSecondary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text('${v.name}  ·  ${_bytes(v.bytes)}',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11)),
+                    ),
+                  ]),
+                ),
+              const SizedBox(height: 4),
+              Text(
+                'A video still on a page, in your deleted items, in an earlier '
+                'version of a page, in a template, or in use on another one of '
+                'your computers is left alone. So are videos added in the last '
+                'month. Deleting these cannot be undone.',
+                style: TextStyle(
+                    fontSize: 11,
+                    height: 1.35,
+                    color: context.surfaces.textSecondary),
+              ),
+              TextButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () async {
+                        setState(() => _busy = true);
+                        final freed = await app.deleteUnusedVideos(s.unused);
+                        if (!mounted) return;
+                        setState(() {
+                          _busy = false;
+                          _videos =
+                              app.findUnusedVideos(widget.notebookId);
+                          _storage = app.storageFor(widget.notebookId);
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Freed ${_bytes(freed)}')));
+                      },
+                icon: const Icon(Icons.delete_outline, size: 16),
+                label: Text(
+                    'Delete ${s.unused.length} video'
+                    '${s.unused.length == 1 ? '' : 's'} '
+                    '(${_bytes(s.freeableBytes)})',
+                    style: const TextStyle(fontSize: 12)),
+              ),
+            ],
+          );
+        },
+      );
 
   Widget _orphanList() => FutureBuilder<List<OrphanFile>>(
         future: _orphans,

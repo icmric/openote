@@ -4,6 +4,57 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — get the space back from videos you no longer use
+
+- **Notebook ▸ Sync ▸ "Where the files are" now has "Check for videos you no
+  longer use…".** It tells you how many there are and how much space they are
+  taking, and one button deletes them. Until now a video you copied in stayed
+  on disk for ever, even after you deleted the block that played it — a term of
+  lectures you had finished with was simply gone from your notes and still
+  gone from your disk space.
+- **It is careful to the point of being stubborn, and that is deliberate.** A
+  video is left alone if it is still on a page, still in a page you deleted (it
+  can come back for 30 days), named by an earlier version of a page, saved into
+  a template, still undoable, still on the clipboard, or in use on another one
+  of your computers. Videos added in the last month are left alone too. If any
+  part of the notebook cannot be read at that moment, it removes nothing and
+  says so rather than guessing.
+- **Nothing happens on its own.** Openote tidies some things quietly in the
+  background, but never deletes anything without being asked — the cost of
+  being wrong is your notes, and the cost of asking is one click.
+
+### Added — videos come with you when you export to Markdown
+
+- **Exporting a page to Markdown now carries the videos and recordings you
+  copied in.** They land in the `assets` folder beside the `.md`, under the
+  name *you* gave them rather than the long internal one, and the export links
+  to them — so opening the `.md` anywhere else gives you a link that plays.
+  Before this the video was not just left out, there was no sign in the export
+  that there had ever been one.
+- Two recordings you happened to call the same thing stay two files. A video
+  whose file is not on this computer yet leaves a link and your writing intact
+  rather than failing the export.
+
+### Added — double-click a notebook and it opens
+
+- **Your `.onote` files open when you double-click them.** Windows and Linux
+  now know Openote is what a notebook is for: the icon is right, the Type
+  column says "Openote notebook", and double-clicking one opens *that*
+  notebook. It used to open the app showing whichever notebook you had last —
+  which is why the association was left unclaimed until now.
+- **One Openote, not two.** Double-clicking a second notebook while Openote is
+  open switches the one you already have to it and brings it to the front,
+  rather than starting a second copy. Two copies would have been sharing one
+  set of files: whichever saved last would have won, and notebooks made in one
+  window would have disappeared when the other saved.
+- **From a terminal, if that is your thing:** `openote path/to/notebook.onote`.
+  Relative paths, folder names with spaces, all of it.
+- **It tells you when it can't.** A shortcut pointing at a notebook you have
+  since moved, or a file that only looks like a notebook, gets a sentence
+  saying so — and Openote still starts, on the notebook you were last using.
+  A file from outside your Openote folder is copied in, and it says that too,
+  because from then on your changes are saved to the copy.
+
 ### Added — lists work the way lists work everywhere
 
 - **Enter continues a list.** Type `- milk`, press Enter, and the next
