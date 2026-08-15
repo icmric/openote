@@ -896,6 +896,17 @@ class _ReminderDialogState extends State<_ReminderDialog> {
         title: '',
         when: _at,
         allDay: true);
+    // Enter in the field IS the "Remind me" button. The field is
+    // autofocused, so typing the reminder and pressing Enter is what anyone
+    // will try first; without this it did nothing at all and the only way
+    // out was to find the button with the mouse (phase-3 audit). Empty text
+    // does nothing, the same rule that greys the button out.
+    void submit() {
+      final t = _text.text.trim();
+      if (t.isEmpty) return;
+      Navigator.pop(context, (text: t, at: _at));
+    }
+
     return AlertDialog(
       title: const Text('Remind me', style: TextStyle(fontSize: 15)),
       content: SizedBox(
@@ -913,6 +924,7 @@ class _ReminderDialogState extends State<_ReminderDialog> {
                 isDense: true,
               ),
               onChanged: (_) => setState(() {}),
+              onSubmitted: (_) => submit(),
             ),
             const SizedBox(height: 14),
             Wrap(spacing: 6, runSpacing: 6, children: [
@@ -954,9 +966,7 @@ class _ReminderDialogState extends State<_ReminderDialog> {
         TextButton(
             onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
         FilledButton(
-          onPressed: _text.text.trim().isEmpty
-              ? null
-              : () => Navigator.pop(context, (text: _text.text.trim(), at: _at)),
+          onPressed: _text.text.trim().isEmpty ? null : submit,
           child: const Text('Remind me'),
         ),
       ],

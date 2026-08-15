@@ -54,7 +54,8 @@ Future<void> showPdfViewerDialog(
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall),
                 ),
-                const Text('Drag to select text · Ctrl+C copies',
+                const Text(
+                    'PgUp / PgDn turns pages · drag to select, Ctrl+C copies',
                     style: TextStyle(
                         fontSize: 11, color: OnoteColors.graphite400)),
                 const SizedBox(width: 8),
@@ -73,6 +74,17 @@ Future<void> showPdfViewerDialog(
                 controller: controller,
                 initialPageNumber: initialPage + 1,
                 params: PdfViewerParams(
+                  // pdfrx already turns pages on PgUp/PgDn/Space, jumps with
+                  // Home/End, scrolls on the arrows and zooms on Ctrl+= /
+                  // Ctrl+- — but its key handler only listens while its own
+                  // focus node holds the keyboard, and that node defaults to
+                  // `autofocus: false` and is otherwise claimed only by a
+                  // POINTER landing in the viewer. So the whole set was
+                  // there and unreachable: open the reader by keyboard and
+                  // no key turned a page (phase-4 audit). One flag, and the
+                  // reader is usable the moment it opens.
+                  keyHandlerParams:
+                      const PdfViewerKeyHandlerParams(autofocus: true),
                   // Selection is the point of this dialog existing.
                   textSelectionParams:
                       const PdfTextSelectionParams(enabled: true),

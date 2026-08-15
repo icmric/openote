@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
@@ -227,7 +228,24 @@ class _EditCardDialogState extends State<_EditCardDialog> {
       Navigator.of(context).pop((front: _front.text, back: _back.text));
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => CallbackShortcuts(
+        // Ctrl+Enter (Cmd on a Mac) saves. Both fields are `maxLines: null`
+        // so a card can hold several lines, which means plain Enter must go
+        // on making them — and that left the dialog with NO keyboard way to
+        // save at all: the `onSubmitted` that used to be on the answer field
+        // could never fire on a multi-line field (phase-3 audit). Ctrl+Enter
+        // is the "I'm done with this box" chord everywhere else it appears.
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.enter, control: true):
+              _submit,
+          const SingleActivator(LogicalKeyboardKey.enter, meta: true): _submit,
+          const SingleActivator(LogicalKeyboardKey.numpadEnter, control: true):
+              _submit,
+        },
+        child: _body(context),
+      );
+
+  Widget _body(BuildContext context) => AlertDialog(
         title: const Text('Edit card'),
         content: SizedBox(
           width: 420,
@@ -266,7 +284,6 @@ class _EditCardDialogState extends State<_EditCardDialog> {
                       autoCloseFences: false)
                 ],
                 decoration: const InputDecoration(isDense: true),
-                onSubmitted: (_) => _submit(),
               ),
             ],
           ),

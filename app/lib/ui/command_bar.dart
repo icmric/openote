@@ -1946,7 +1946,20 @@ class _MediaCopyDialog extends StatelessWidget {
   final VoidCallback onCancel;
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => CallbackShortcuts(
+        // Escape IS Cancel here. `barrierDismissible: false` is deliberate —
+        // a stray click on the scrim must not abandon a half-written file —
+        // but it also switches off the framework's Escape handling
+        // wholesale, which left the one real way out of this dialog
+        // mouse-only (phase-3 audit).
+        bindings: {const SingleActivator(LogicalKeyboardKey.escape): onCancel},
+        child: Focus(
+          autofocus: true,
+          child: _body(context),
+        ),
+      );
+
+  Widget _body(BuildContext context) => AlertDialog(
         title: const Text('Copying into the notebook'),
         content: SizedBox(
           width: 420,

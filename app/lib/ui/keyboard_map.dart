@@ -36,8 +36,14 @@ const List<KeySection> keyboardMap = [
     KeyBinding('Ctrl+N', 'New page after this one'),
     KeyBinding('Ctrl+Shift+N', 'New sub-page of this one'),
     KeyBinding('Ctrl+\\', 'Hide or show the sidebar'),
-    KeyBinding('Esc',
-        'One step back per press: close find, stop editing, clear selection'),
+    KeyBinding(
+        'F6 / Shift+F6',
+        'Jump between the sidebar, the toolbar, the page, the open panel and '
+        'a reminder that has popped up'),
+    KeyBinding(
+        'Esc',
+        'One step back per press: close find, stop editing, clear selection, '
+        'dismiss a reminder'),
   ]),
   KeySection('While writing', [
     KeyBinding('Ctrl+B / Ctrl+I / Ctrl+U', 'Bold / italic / underline'),
@@ -83,8 +89,31 @@ const List<KeySection> keyboardMap = [
     KeyBinding('Ctrl+Enter', 'Run'),
     KeyBinding('Tab', 'Indent (two spaces)'),
   ]),
+  KeySection('On a task board', [
+    KeyBinding('Enter', 'Step into the board — then Enter again edits a card'),
+    KeyBinding('↑ ↓ ← →', 'Move between cards and columns'),
+    KeyBinding('Ctrl+↑↓←→',
+        'Take the card with you — up or down the list, or to the next column'),
+    KeyBinding('Enter on “Add a card”', 'Write a new card at the foot'),
+    KeyBinding('Del', 'Remove the card you are on (Ctrl+Z brings it back)'),
+    KeyBinding('Esc', 'Leave the board'),
+  ]),
   KeySection('Studying flashcards', [
     KeyBinding('Space', 'Reveal the answer; again marks it Good'),
     KeyBinding('1 / 2 / 3 / 4', 'Grade: Again, Hard, Good, Easy'),
+    KeyBinding('Ctrl+Enter', 'Save the card you are writing'),
+  ]),
+  KeySection('Reading a PDF', [
+    KeyBinding('PgUp / PgDn / Space', 'Previous / next page'),
+    KeyBinding('Home / End', 'First / last page'),
+    KeyBinding('↑ ↓ ← →', 'Scroll around the page'),
+    KeyBinding('Ctrl+= / Ctrl+-', 'Zoom in / out'),
+    KeyBinding('Ctrl+A / Ctrl+C', 'Select all the text / copy it'),
+    KeyBinding('Esc', 'Close the reader'),
+  ]),
+  KeySection('Finding text on the page', [
+    KeyBinding('Ctrl+F', 'Open the find bar'),
+    KeyBinding('Enter / Shift+Enter', 'Next / previous match'),
+    KeyBinding('Esc', 'Close it'),
   ]),
 ];

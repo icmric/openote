@@ -194,6 +194,12 @@ class _ExamWhenDialogState extends State<_ExamWhenDialog> {
         TextButton(
             onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
         FilledButton(
+          // The only dialog in the app with no text field to carry Enter:
+          // every control here is a picker, so without a default button
+          // Enter did nothing and "Set" was mouse-only (phase-3 audit).
+          // Autofocus is safe on this one — it confirms a date you can see
+          // and change again, it does not delete anything.
+          autofocus: true,
           onPressed: () => Navigator.pop(context, _ExamWhen(_day, _minute)),
           child: const Text('Set'),
         ),

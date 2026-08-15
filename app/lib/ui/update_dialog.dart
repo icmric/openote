@@ -22,7 +22,13 @@ Future<void> showUpdateDialog(BuildContext context, AppState app) {
   if (info == null) return Future.value();
   return showOnoteDialog<void>(
     context: context,
-    barrierDismissible: false,
+    // Dismissible, with the `PopScope` below doing the real gating. It was
+    // `false`, which switches OFF the framework's Escape handling entirely
+    // (`_DismissModalAction.isEnabled` IS `route.barrierDismissible`) — so an
+    // update notice that appears on startup could not be waved away by
+    // keyboard at all, even before anything was downloading. `maybePop`
+    // honours `canPop`, so the barrier is still solid mid-download, which is
+    // the only moment it needed to be.
     builder: (_) => _UpdateDialog(app: app, info: info),
   );
 }

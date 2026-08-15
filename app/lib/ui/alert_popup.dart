@@ -43,9 +43,19 @@ const int alertStackMax = 3;
 
 /// The floating alert stack. Sits in a `Stack` above the shell.
 class AlertPopup extends StatelessWidget {
-  const AlertPopup({super.key, required this.app});
+  const AlertPopup({super.key, required this.app, this.regionFocus});
 
   final AppState app;
+
+  /// Marks the card stack as an F6 region (v0.16 phase 3).
+  ///
+  /// This was the one popup in the app with NO keyboard route of any kind:
+  /// it is not a route, so nothing in the framework dismissed it, and it is
+  /// not in the Tab order of anything you can get to. So a reminder sat in
+  /// the corner until a mouse arrived. Attached here, below the `Positioned`
+  /// — a `Positioned` has to be a direct child of its `Stack`, so the shell
+  /// cannot wrap this widget the way it wraps the other regions.
+  final FocusNode? regionFocus;
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +73,7 @@ class AlertPopup extends StatelessWidget {
       // state — hiding the one strip whose entire job is telling you the app
       // is fine while something new demands attention.
       bottom: OnoteSize.statusBar + OnoteSpace.x4,
-      child: ConstrainedBox(
+      child: _region(ConstrainedBox(
         // Wide enough for a lecture title and a room, narrow enough that it
         // never reads as a panel. Matches the snackbar width set in the theme,
         // so the two floating surfaces agree with each other.
@@ -86,8 +96,17 @@ class AlertPopup extends StatelessWidget {
               ),
           ],
         ),
-      ),
+      )),
     );
+  }
+
+  /// `skipTraversal`: the marker is where F6 ARRIVES, not a Tab stop of its
+  /// own — Tab should land on Done, not on an invisible wrapper first.
+  Widget _region(Widget child) {
+    final node = regionFocus;
+    return node == null
+        ? child
+        : Focus(focusNode: node, skipTraversal: true, child: child);
   }
 }
 

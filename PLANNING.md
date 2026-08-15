@@ -56,11 +56,15 @@ accesability
       docs/specs/14-external-api-mcp.md, whose §2 rule ("the file format IS
       the API") is what keeps future block types API-visible automatically —
       consult §7's checklist in any PR that touches the model.
-      Keyboard control phases 1+2 SHIPPED (docs/planning/v0.16): one
-      keyboard map in code, Ctrl+/ renders it, and the canvas traverses —
-      Tab/arrows/Enter/Escape, Ctrl+arrows nudge. Remaining: phase 3 (F6
-      region cycling + dialog Enter/Escape audit) and phase 4 (board/panel
-      internals). i18n follows, pending the which-languages decision.
+      Keyboard control SHIPPED, all four phases (docs/planning/v0.16): one
+      keyboard map in code, Ctrl+/ renders it, the canvas traverses —
+      Tab/arrows/Enter/Escape, Ctrl+arrows nudge — F6/Shift+F6 jumps
+      between the sidebar, toolbar, page and open panel with a ring showing
+      where you are, the task board walks and moves its cards on the
+      arrows, the PDF reader turns pages, find goes backwards on
+      Shift+Enter, and every dialog that can be confirmed or cancelled now
+      has an Enter or an Escape that does it. i18n is the last of the trio,
+      pending the which-languages decision.
 
 Local code
     Write and execute code like JS, SQL, etc — similar to juniper notebook

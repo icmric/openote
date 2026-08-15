@@ -56,6 +56,17 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_onKey);
+    // One listener, four regions: the moment focus leaves the region F6 put
+    // it in, the ring is a lie and goes away.
+    for (final n in [
+      _canvasFocus,
+      _sidebarRegion,
+      _toolbarRegion,
+      _panelRegion,
+      _alertRegion
+    ]) {
+      n.addListener(_regionFocusChanged);
+    }
     // Post-frame: the welcome flow needs a Navigator, and there isn't one
     // until this shell is mounted.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -66,7 +77,18 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onKey);
-    _canvasFocus.dispose();
+    for (final n in [
+      _canvasFocus,
+      _sidebarRegion,
+      _toolbarRegion,
+      _panelRegion,
+      _alertRegion
+    ]) {
+      n.removeListener(_regionFocusChanged);
+      n.dispose();
+    }
+    _panelEntry.dispose();
+    _ring.dispose();
     super.dispose();
   }
 
@@ -102,6 +124,14 @@ class _AppShellState extends State<AppShell> {
         Navigator.of(context, rootNavigator: true).pop();
         return true;
       }
+      // Everything below is the SHELL's Escape ladder, and none of it may
+      // run while a dialog owns the screen. This handler fires regardless of
+      // what is on top, and a HardwareKeyboard handler's `true` does not stop
+      // the framework popping the dialog on the same keystroke — so one
+      // Escape aimed at a dialog was ALSO toggling find off and unfocusing
+      // the dialog's own text field on the way past. Traversal already
+      // checked this; the ladder never did.
+      if (_routeOnTop) return false;
       if (app.findOpen) {
         app.toggleFind();
         return true;
@@ -120,7 +150,24 @@ class _AppShellState extends State<AppShell> {
         _canvasFocus.requestFocus();
         return true;
       }
+      // Deliberately NOT a rung for the reminder cards, though they were the
+      // one popup with no keyboard route at all (phase-3 audit). Dismissing a
+      // reminder writes through to the store — `PlannerState.dismissAlert`
+      // calls `reminders.dismiss`, which persists — so it is an action with a
+      // consequence, not a step back, and a third idle Escape would silently
+      // lose a reminder that had never been read. They join the F6 rotation
+      // instead, which puts Done, Snooze and Dismiss all under the keyboard.
       return false;
+    }
+
+    // F6 / Shift+F6 — walk the window's big areas. Sits with the navigator
+    // chords BEFORE the typing early-return on purpose: getting out of the
+    // box you are writing in is most of what it is for, and no text field
+    // types a character for F6.
+    if (k == LogicalKeyboardKey.f6 &&
+        !ctrl &&
+        !HardwareKeyboard.instance.isAltPressed) {
+      return _cycleRegion(shift ? -1 : 1);
     }
 
     // Navigator chords, BEFORE the editable early-return: none of these can
@@ -270,7 +317,14 @@ class _AppShellState extends State<AppShell> {
     // additionally step aside when the selection is a box you can TYPE
     // into: there, a letter means "start writing" (type-through, handled
     // on the canvas focus node), not "switch tool".
-    if (!_selectedTypeable) {
+    //
+    // `editingBlockId == null` on both branches below, and not just
+    // `editable`: a block can be under the keyboard without a TEXT FIELD
+    // being under the keyboard. The board (phase 4) walks its cards on its
+    // own focus node, and this handler runs BEFORE the widget tree — so
+    // without the guard, Delete on a board card deleted the whole board and
+    // P while choosing a card switched to the pen.
+    if (!_selectedTypeable && app.editingBlockId == null) {
       if (k == LogicalKeyboardKey.keyV) return _tool(Tool.select);
       if (k == LogicalKeyboardKey.keyT) return _tool(Tool.text);
       if (k == LogicalKeyboardKey.keyP) return _tool(Tool.pen);
@@ -278,7 +332,7 @@ class _AppShellState extends State<AppShell> {
       if (k == LogicalKeyboardKey.keyE) return _tool(Tool.eraser);
     }
     if (k == LogicalKeyboardKey.delete || k == LogicalKeyboardKey.backspace) {
-      if (app.selectedIds.isNotEmpty) {
+      if (app.editingBlockId == null && app.selectedIds.isNotEmpty) {
         app.removeSelected();
         return true;
       }
@@ -374,6 +428,167 @@ class _AppShellState extends State<AppShell> {
       ),
     );
   }
+
+  // ── Region cycling (v0.16 phase 3) ─────────────────────────────────────
+  //
+  // F6 / Shift+F6 walk the window's big areas: sidebar → toolbar → page →
+  // open panel. This is the ONLY keyboard route to the toolbar or a panel:
+  // the canvas binds Tab to block traversal (above), so Tab never leaves the
+  // page, and `_canvasFocus` is `skipTraversal`, so once focus has left, Tab
+  // cannot bring it back either. Everything in the toolbar and the panels
+  // was already a focusable Material control — it was simply unreachable.
+  //
+  // F6 because it is the key every desktop already uses for this (Windows
+  // Explorer's panes, every browser's address-bar/page cycle). A guessable
+  // key beats a clever one; nobody has to be taught it twice.
+
+  final FocusNode _sidebarRegion =
+      FocusNode(debugLabel: 'region-sidebar', skipTraversal: true);
+  final FocusNode _toolbarRegion =
+      FocusNode(debugLabel: 'region-toolbar', skipTraversal: true);
+  final FocusNode _panelRegion =
+      FocusNode(debugLabel: 'region-panel', skipTraversal: true);
+
+  /// Where F6 lands INSIDE the open panel — attached around the panel body by
+  /// [SidePanel] (see [PanelEntryFocus]), never around the header.
+  final FocusNode _panelEntry =
+      FocusNode(debugLabel: 'region-panel-body', skipTraversal: true);
+
+  /// The floating reminder stack — attached by [AlertPopup] itself, because
+  /// a `Positioned` must be a direct child of its `Stack` and so cannot be
+  /// wrapped from here.
+  final FocusNode _alertRegion =
+      FocusNode(debugLabel: 'region-alerts', skipTraversal: true);
+
+  /// Which region wears the focus ring, or null for none.
+  final ValueNotifier<_Region?> _ring = ValueNotifier<_Region?>(null);
+
+  List<_Region> _regions() => [
+        _Region.sidebar,
+        _Region.toolbar,
+        _Region.page,
+        // Asked of the focus tree rather than re-derived from the build's
+        // conditions: a panel that is open but not currently BUILT (outline
+        // and links need a page) must not be a stop that swallows F6.
+        if (_panelRegion.context != null) _Region.panel,
+        // Last, and only while a reminder is actually showing: it is a
+        // transient card, not a place you live.
+        if (_alertRegion.context != null) _Region.alerts,
+      ];
+
+  FocusNode _regionNode(_Region r) => switch (r) {
+        _Region.sidebar => _sidebarRegion,
+        _Region.toolbar => _toolbarRegion,
+        _Region.page => _canvasFocus,
+        _Region.panel => _panelRegion,
+        _Region.alerts => _alertRegion,
+      };
+
+  /// `hasFocus`, not `hasPrimaryFocus`: a block editor deep inside the canvas
+  /// still means "you are on the page".
+  _Region? _currentRegion() =>
+      _regions().where((r) => _regionNode(r).hasFocus).firstOrNull;
+
+  bool _cycleRegion(int dir) {
+    if (_routeOnTop) return false;
+    final regions = _regions();
+    if (regions.length < 2) return false;
+    final cur = _currentRegion();
+    // Focus nowhere we recognise (a snackbar, a just-closed dialog): step in
+    // from the near end rather than doing nothing.
+    final i = cur == null ? (dir > 0 ? -1 : 0) : regions.indexOf(cur);
+    final next = regions[(i + dir + regions.length) % regions.length];
+    if (next == _Region.page) {
+      // The canvas node is skipTraversal, so it is never a candidate below —
+      // and it is the right target anyway: focusing it is what turns block
+      // traversal back on.
+      _canvasFocus.requestFocus();
+    } else {
+      _focusFirstIn(next == _Region.panel && _panelEntry.context != null
+          ? _panelEntry
+          : _regionNode(next));
+    }
+    _ring.value = next;
+    return true;
+  }
+
+  /// Focus the first control in [region], in READING ORDER — the same
+  /// y-then-x rule the canvas traverses blocks by, so "first" means the same
+  /// thing everywhere in the app.
+  ///
+  /// Not `traversalDescendants.first`: that list is built post-order (a
+  /// node's children are added before the node itself), so its first entry is
+  /// the most deeply nested widget rather than the top-left one. In the study
+  /// panel that is a grade button, and the Space that should have revealed a
+  /// card would have graded one the reader had not seen.
+  void _focusFirstIn(FocusNode region) {
+    final candidates = region.traversalDescendants
+        .where((n) => !n.rect.isEmpty)
+        .toList()
+      ..sort((a, b) {
+        final dy = a.rect.top.compareTo(b.rect.top);
+        return dy != 0 ? dy : a.rect.left.compareTo(b.rect.left);
+      });
+    (candidates.firstOrNull ?? region).requestFocus();
+  }
+
+  /// The ring tracks focus rather than only the F6 press: click away, or Tab
+  /// out of the region, and the marker stops claiming you are still there.
+  void _regionFocusChanged() {
+    final r = _ring.value;
+    if (r != null && !_regionNode(r).hasFocus) _ring.value = null;
+  }
+
+  /// Marks a region for F6 and paints its ring.
+  ///
+  /// The ring is an OVERLAY inside the region, not a border on it: a border
+  /// would resize the child, and a two-pixel reflow of the canvas moves the
+  /// line you are reading. It is drawn only for keyboard navigation and
+  /// cleared by the next click — the rule the web's `:focus-visible` follows,
+  /// because a permanent outline around whatever you last clicked is noise.
+  Widget _regionWrap(_Region r, Widget child) {
+    final marked = r == _Region.page
+        ? child // the canvas already owns _canvasFocus, one node one Focus
+        : Focus(focusNode: _regionNode(r), skipTraversal: true, child: child);
+    return Stack(
+      // `passthrough`, so wrapping a region cannot change its size. The
+      // default `loose` would hand the canvas — which arrives with TIGHT
+      // constraints from its `Expanded` — loose ones instead, and a page
+      // that sized itself to its content rather than to the window is not a
+      // focus ring, it is a layout bug wearing one.
+      fit: StackFit.passthrough,
+      children: [
+      marked,
+      Positioned.fill(
+        child: IgnorePointer(
+          child: ValueListenableBuilder<_Region?>(
+            valueListenable: _ring,
+            builder: (context, active, _) => active != r
+                ? const SizedBox.shrink()
+                : DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                          color: Theme.of(context).colorScheme.primary,
+                          width: 2),
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    ]);
+  }
+
+  /// The one open panel, or null. A single switch rather than five `if`s in
+  /// the Row so the F6 marker is applied in exactly one place — a panel that
+  /// grew its own `if` would quietly drop out of the rotation.
+  Widget? _openPanel(TreeNode? page) => switch (app.openPanel) {
+        SidePanelKind.study => StudyPanel(app: app),
+        SidePanelKind.planner => PlannerPanel(app: app),
+        SidePanelKind.tags => _TagsPanel(app: app),
+        SidePanelKind.outline => page == null ? null : _TocPanel(app: app),
+        SidePanelKind.links => page == null ? null : _LinksPanel(app: app),
+        null => null,
+      };
 
   /// True when any route (dialog, viewer, menu) sits above the shell. The
   /// global handler fires regardless, so every canvas-traversal key checks
@@ -659,20 +874,26 @@ class _AppShellState extends State<AppShell> {
       listenable: app,
       builder: (context, _) {
         final page = app.nodes.where((n) => n.id == app.pageId).firstOrNull;
+        final panel = _openPanel(page);
         return Scaffold(
           // A `Stack`, so a reminder floats OVER the page rather than pushing
           // it. An alert that reflowed the canvas would move the line you were
           // typing on, which is a worse interruption than the one it is
           // delivering.
-          body: Stack(children: [
+          // Any click means "I am steering with the mouse now", so the F6
+          // ring stops advertising a region the user has left. `deferToChild`
+          // so this changes no hit testing — it only listens on the way past.
+          body: Listener(
+            onPointerDown: (_) => _ring.value = null,
+            child: Stack(children: [
             Row(
             children: [
-              _navigator(),
+              _regionWrap(_Region.sidebar, _navigator()),
               const VerticalDivider(width: 1),
               Expanded(
                 child: Column(
                   children: [
-                    CommandBar(app: app),
+                    _regionWrap(_Region.toolbar, CommandBar(app: app)),
                     if (app.findOpen) _FindBar(app: app),
                     // The breadcrumb is CONTEXT, not a second navigator
                     // (§7d). With the navigator expanded it repeats what is
@@ -692,33 +913,22 @@ class _AppShellState extends State<AppShell> {
                             // it is on screen — the policy expires, or "Lock
                             // now" is pressed — and gating only the click
                             // would leave the content sitting there.
-                            child: page == null
-                                ? _EmptyState(app: app)
-                                : app.isLocked(page.id)
-                                    ? _LockedPage(app: app, page: page)
-                                    : _canvasKeys(PageCanvas(
-                                        key: ValueKey(app.pageId),
-                                        state: app)),
+                            child: _regionWrap(
+                                _Region.page,
+                                page == null
+                                    ? _EmptyState(app: app)
+                                    : app.isLocked(page.id)
+                                        ? _LockedPage(app: app, page: page)
+                                        : _canvasKeys(PageCanvas(
+                                            key: ValueKey(app.pageId),
+                                            state: app))),
                           ),
-                          if (app.showStudyPanel) ...[
+                          if (panel != null) ...[
                             const VerticalDivider(width: 1),
-                            StudyPanel(app: app),
-                          ],
-                          if (app.showPlannerPanel) ...[
-                            const VerticalDivider(width: 1),
-                            PlannerPanel(app: app),
-                          ],
-                          if (app.showTagsPanel) ...[
-                            const VerticalDivider(width: 1),
-                            _TagsPanel(app: app),
-                          ],
-                          if (app.showTocPanel && page != null) ...[
-                            const VerticalDivider(width: 1),
-                            _TocPanel(app: app),
-                          ],
-                          if (app.showLinksPanel && page != null) ...[
-                            const VerticalDivider(width: 1),
-                            _LinksPanel(app: app),
+                            PanelEntryFocus(
+                              node: _panelEntry,
+                              child: _regionWrap(_Region.panel, panel),
+                            ),
                           ],
                         ],
                       ),
@@ -729,9 +939,10 @@ class _AppShellState extends State<AppShell> {
               ),
             ],
           ),
-            AlertPopup(app: app),
+            AlertPopup(app: app, regionFocus: _alertRegion),
             ImportProgressCard(app: app),
           ]),
+          ),
         );
       },
     );
@@ -826,16 +1037,36 @@ class _FindBarState extends State<_FindBar> {
           const Icon(Icons.search, size: 16),
           const SizedBox(width: 8),
           Expanded(
-            child: TextField(
-              autofocus: true,
-              decoration: const InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                hintText: 'Find on this page…',
+            // Enter and Shift+Enter walk the matches — forward and back, the
+            // convention every browser and editor already uses.
+            //
+            // Shortcuts, NOT `onSubmitted`, and that is a fix rather than a
+            // style choice. A single-line field's Enter arrives as
+            // `TextInputAction.done`, and `EditableText._finalizeEditing`
+            // UNFOCUSES the field for it — so Enter jumped to match 2 and
+            // then killed its own field, and a second Enter did nothing at
+            // all. Catching the key here means the field keeps focus, Enter
+            // keeps cycling, and you can still edit the query afterwards.
+            // `onSubmitted` also cannot tell Enter from Shift+Enter.
+            child: CallbackShortcuts(
+              bindings: {
+                const SingleActivator(LogicalKeyboardKey.enter): () =>
+                    app.findNext(1),
+                const SingleActivator(LogicalKeyboardKey.numpadEnter): () =>
+                    app.findNext(1),
+                const SingleActivator(LogicalKeyboardKey.enter, shift: true):
+                    () => app.findNext(-1),
+              },
+              child: TextField(
+                autofocus: true,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  hintText: 'Find on this page…',
+                ),
+                style: const TextStyle(fontSize: 13),
+                onChanged: app.setFindQuery,
               ),
-              style: const TextStyle(fontSize: 13),
-              onChanged: app.setFindQuery,
-              onSubmitted: (_) => app.findNext(1),
             ),
           ),
           Text(
@@ -844,14 +1075,18 @@ class _FindBarState extends State<_FindBar> {
                 : '${app.findIndex + 1} of ${app.findMatches.length}',
             style: TextStyle(fontSize: 12, color: context.surfaces.textSecondary),
           ),
+          // The two buttons that had no tooltip at all: the chord is the
+          // faster route and the button is where anyone would look for it.
           IconButton(
             icon: const Icon(Icons.keyboard_arrow_up, size: 18),
             visualDensity: VisualDensity.compact,
+            tooltip: 'Previous match (Shift+Enter)',
             onPressed: app.findMatches.isEmpty ? null : () => app.findNext(-1),
           ),
           IconButton(
             icon: const Icon(Icons.keyboard_arrow_down, size: 18),
             visualDensity: VisualDensity.compact,
+            tooltip: 'Next match (Enter)',
             onPressed: app.findMatches.isEmpty ? null : () => app.findNext(1),
           ),
           IconButton(
@@ -1481,6 +1716,10 @@ class _LockedPage extends StatelessWidget {
     );
   }
 }
+
+/// The window's big areas, in the order F6 walks them — which is the order
+/// they are read on screen: left, top, middle, right.
+enum _Region { sidebar, toolbar, page, panel, alerts }
 
 /// An action that exists only while the canvas node itself is focused —
 /// the moment focus moves into any editor (or anywhere else), it reports

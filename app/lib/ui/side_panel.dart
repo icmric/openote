@@ -17,6 +17,26 @@ import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
 
+/// Where F6 should land when it cycles into the panel region.
+///
+/// The shell provides the node; [SidePanel] attaches it around the panel's
+/// BODY, deliberately not around the whole panel. Landing on the first
+/// focusable thing in the panel as a whole means landing on the header's
+/// Close button — and then Space, the key a student presses to reveal a
+/// flashcard, closes the panel instead. The body is what F6 is for.
+class PanelEntryFocus extends InheritedWidget {
+  const PanelEntryFocus({super.key, required this.node, required super.child});
+
+  final FocusNode node;
+
+  static FocusNode? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<PanelEntryFocus>()
+      ?.node;
+
+  @override
+  bool updateShouldNotify(PanelEntryFocus old) => old.node != node;
+}
+
 /// A right-hand panel: title, optional actions, body, optional footer.
 class SidePanel extends StatelessWidget {
   const SidePanel({
@@ -57,6 +77,10 @@ class SidePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = context.surfaces;
+    // `skipTraversal`: this node marks where F6 arrives, it is not itself a
+    // Tab stop — otherwise Tab through the panel would pause on an invisible
+    // wrapper before reaching the first real control.
+    final entry = PanelEntryFocus.maybeOf(context);
     return Container(
       width: OnoteSize.panelWidth,
       // `chrome`, never `canvas`: in dark mode a panel on the canvas colour
@@ -68,7 +92,10 @@ class SidePanel extends StatelessWidget {
           PanelHeader(
               title: title, icon: icon, actions: actions, onClose: onClose),
           if (banner != null) banner!,
-          Expanded(child: child),
+          Expanded(
+              child: entry == null
+                  ? child
+                  : Focus(focusNode: entry, skipTraversal: true, child: child)),
           if (footer != null) ...[
             Divider(height: 1, color: s.border),
             footer!,
