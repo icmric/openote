@@ -361,6 +361,131 @@ void main() {
         reason: 'a torn registry must never present as "no notebooks"');
     expect(repo2.workspaceRecoveryNote, isNotNull);
   });
+
+  // The registry's forward-compatibility guard (v0.17 plan, Step 1; CI matrix
+  // cell G2).
+  //
+  // The hazard it exists for is not a crash and leaves nothing corrupt behind.
+  // `_loadWorkspace` skips any entry whose file it cannot see, and
+  // `_saveWorkspace` then rewrites the registry from what survived — so a
+  // student who upgrades the laptop in October and the desktop at Christmas
+  // opens the old build on a migrated workspace, sees an empty sidebar, creates
+  // one notebook, and permanently prunes all the others. This number has to be
+  // in the field BEFORE any release moves a container, which is why it ships
+  // with nothing yet depending on it.
+  group('the workspace registry format guard', () {
+    /// Build a workspace, then rewrite its `format` field to [format] (or drop
+    /// it entirely when null). Returns the registry file and its exact bytes.
+    Future<(Directory, File, String)> registryWith(
+        String prefix, Object? format) async {
+      final tmp = Directory.systemTemp.createTempSync(prefix);
+      final repo = await Repository.openAt(tmp);
+      await repo.createNotebook('Alpha');
+      await repo.flushWorkspace();
+      repo.dispose();
+
+      final ws = File(p.join(tmp.path, 'workspace.json'));
+      final j = jsonDecode(ws.readAsStringSync()) as Map<String, dynamic>;
+      if (format == null) {
+        j.remove('format');
+      } else {
+        j['format'] = format;
+      }
+      ws.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(j));
+      return (tmp, ws, ws.readAsStringSync());
+    }
+
+    test('a registry from a newer Openote is read but never rewritten',
+        () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (tmp, ws, before) =
+          await registryWith('onote_ws_new_', {'major': 99, 'minor': 0});
+      final repo = await Repository.openAt(tmp);
+      addTearDown(() {
+        repo.dispose();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      expect(repo.registryReadOnly, isNotNull,
+          reason: 'format 99 is newer than anything this build understands');
+      expect(repo.notebooks, hasLength(1),
+          reason: 'read-only is not the same as empty — the notebooks this '
+              'build CAN see are still real and still openable');
+
+      // The pruning move, exactly as a student would perform it.
+      await repo.createNotebook('Beta');
+      await repo.flushWorkspace();
+
+      expect(ws.readAsStringSync(), before,
+          reason: 'not one byte of a newer build\'s registry may be rewritten '
+              'from what this build happened to load');
+    });
+
+    test('the message it shows names no version and no file', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (tmp, _, _) =
+          await registryWith('onote_ws_words_', {'major': 99, 'minor': 0});
+      final repo = await Repository.openAt(tmp);
+      addTearDown(() {
+        repo.dispose();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      // "A year 10 student wont know what an MCP is." The sentence has to say
+      // what happened and what to do; the numbers belong behind Advanced.
+      final lock = repo.registryReadOnly!;
+      for (final jargon in ['format', 'workspace.json', 'JSON', '99']) {
+        expect(lock.message, isNot(contains(jargon)),
+            reason: 'the plain sentence must not contain "$jargon"');
+      }
+      expect(lock.message, contains('newer version of Openote'));
+      expect(lock.message, contains('Updating Openote'));
+      expect(lock.details, contains('99'),
+          reason: 'the technical half still exists, folded away');
+    });
+
+    // NEGATIVE CONTROL. A guard that refuses too much is the same harm it was
+    // built to prevent, arriving from the other direction: every workspace on
+    // disk today carries `{"major":1,"minor":0}`, and some hand-edited ones
+    // carry no `format` at all. If either read as "unknown, therefore newer",
+    // this release would lock every existing user out of their own notebook
+    // list on first launch.
+    for (final (name, format) in <(String, Object?)>[
+      ('the shape every existing workspace already has', {
+        'major': 1,
+        'minor': 0
+      }),
+      ('a flat integer, as a future build may write it', 1),
+      ('no format field at all', null),
+    ]) {
+      test('negative control — $name still saves', () async {
+        if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+        final (tmp, ws, before) =
+            await registryWith('onote_ws_ok_', format);
+        final repo = await Repository.openAt(tmp);
+        addTearDown(() {
+          repo.dispose();
+          try {
+            tmp.deleteSync(recursive: true);
+          } catch (_) {}
+        });
+
+        expect(repo.registryReadOnly, isNull);
+        await repo.createNotebook('Beta');
+        await repo.flushWorkspace();
+
+        expect(ws.readAsStringSync(), isNot(before));
+        final back = jsonDecode(ws.readAsStringSync()) as Map<String, dynamic>;
+        expect((back['notebooks'] as List), hasLength(2));
+        expect((back['format'] as Map)['major'], workspaceFormat,
+            reason: 'and it is stamped, so the NEXT build has the guard');
+      });
+    }
+  });
 }
 
 /// Count `blob_refs` rows for a page by reading the notebook file directly

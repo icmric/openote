@@ -8,6 +8,7 @@
 // installations sharing a device id. None of those produce an error; they
 // produce replicas that quietly disagree.
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -421,6 +422,116 @@ void main() {
       s.append(me.id, [_op(me.id, 1, 1, OpKind.nodePurge, {'id': 'x'})]);
       settings[DeviceIdentity.seqKey('nb1')] = 1;
       expect(resolve(s).forked, isFalse);
+    });
+  });
+
+  // A torn log is the NORMAL shape of an append-only file, not an exceptional
+  // one: a crash, a cloud client copying mid-write, a laptop lid. `Op.decode`'s
+  // doc comment states the promise these cells hold the reader to — **a torn
+  // tail costs the last line and nothing else** — and two separate bugs broke
+  // it in opposite directions. Both were silent: one stopped sync with an
+  // exception nobody surfaced, the other quietly returned fewer ops.
+  //
+  // Cells F1, F2 and F3 of the v0.17 CI matrix.
+  group('a torn log costs the last line and nothing else', () {
+    late Directory tmp;
+    setUp(() => tmp = Directory.systemTemp.createTempSync('onote_torn_'));
+    tearDown(() {
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    OpLogStore storeAt(String name) =>
+        OpLogStore.forNotebook(p.join(tmp.path, '$name.onote'))
+          ..ensureInitialised(notebookId: 'nb1', title: name);
+
+    /// Every op the format PROMISES back from a prefix of a log: one per
+    /// complete, newline-terminated line. Counting terminators is the whole
+    /// definition — it is what makes "one lost byte costs one op" checkable
+    /// rather than a slogan.
+    int completeLinesIn(Uint8List prefix) =>
+        prefix.where((b) => b == 0x0A).length;
+
+    void assertNoCompleteOpLost(OpLogStore s, Uint8List prefix) {
+      final want = completeLinesIn(prefix);
+      final got = s.readAll(); // never throws — that is half the assertion
+      expect(got.length, greaterThanOrEqualTo(want),
+          reason: '$want complete lines in the prefix, ${got.length} ops read');
+      expect([for (final o in got.take(want)) o.seq],
+          List.generate(want, (i) => i + 1),
+          reason: 'ops before the cut must come back in order, none missing');
+    }
+
+    test('F1: truncated at every 1 KiB boundary, readAll never throws', () {
+      final s = storeAt('kib');
+      // Text the owner's notes are actually full of, so the 1 KiB boundaries
+      // land inside multi-byte sequences the way they do on the real log.
+      s.append('d', [
+        for (var i = 1; i <= 400; i++)
+          _op('d', i, i, OpKind.blockSet, {
+            'pageId': 'p1',
+            'block': {'id': 'b$i', 'text': 'let ℝ ∋ x ∃ y ∈ ℕ — note $i'}
+          })
+      ]);
+      final f = s.logFor('d');
+      final whole = f.readAsBytesSync();
+      expect(whole.length, greaterThan(16 * 1024),
+          reason: 'the cell is meaningless without several boundaries to cut');
+
+      for (var cut = 1024; cut < whole.length; cut += 1024) {
+        final prefix = Uint8List.sublistView(whole, 0, cut);
+        f.writeAsBytesSync(prefix, flush: true);
+        assertNoCompleteOpLost(s, prefix);
+      }
+    });
+
+    test('F2: truncated inside a multi-byte character, at every byte', () {
+      // The minimal reproduction. `readAsStringSync` decodes UTF-8 strictly and
+      // throws `FileSystemException` on a partial sequence, and `readAll`,
+      // `highestLamport` and `lastSeq` all routed through it. Measured on the
+      // real 1,523,044-byte log, 2 of 1,487 1 KiB cuts threw; on a small log
+      // this dense, 6 of 316 did. One half-written `ℝ` stopped sync outright.
+      final s = storeAt('utf8');
+      s.append('d', [
+        for (var i = 1; i <= 4; i++)
+          _op('d', i, i, OpKind.pageProps, {'title': 'ℝ ∃ ∈ ℕ ∀ ⊆ №$i'})
+      ]);
+      final f = s.logFor('d');
+      final whole = f.readAsBytesSync();
+
+      for (var cut = 1; cut < whole.length; cut++) {
+        final prefix = Uint8List.sublistView(whole, 0, cut);
+        f.writeAsBytesSync(prefix, flush: true);
+        assertNoCompleteOpLost(s, prefix);
+      }
+    });
+
+    test('F3: an append that lost only its newline loses no op at all', () {
+      // `append` wrote `ops.join('\n') + '\n'` in one call, so a tear one byte
+      // from the end left a COMPLETE record with no terminator — and the next
+      // append welded its first record onto it, making one unparseable line out
+      // of two valid ones. Measured before the fix: seqs [1, 2, 5]. Two ops
+      // lost for one lost byte, where the format promises one.
+      final s = storeAt('glue');
+      s.append('d', [
+        for (var i = 1; i <= 3; i++)
+          _op('d', i, i, OpKind.nodePurge, {'id': 'n$i'})
+      ]);
+      final f = s.logFor('d');
+      final bytes = f.readAsBytesSync();
+      f.writeAsBytesSync(Uint8List.sublistView(bytes, 0, bytes.length - 1),
+          flush: true);
+
+      s.append('d', [
+        for (var i = 4; i <= 5; i++)
+          _op('d', i, i, OpKind.nodePurge, {'id': 'n$i'})
+      ]);
+
+      expect([for (final o in s.readDevice('d')) o.seq], [1, 2, 3, 4, 5],
+          reason: 'the record that lost its newline was never damaged, only '
+              'unterminated — gluing the terminator back on recovers it, and '
+              'the record after it was never in danger');
     });
   });
 }

@@ -4,6 +4,15 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — Openote says so when a save did not make it into the notebook's history
+
+- **Openote could save your notes and then fail to add the change to this
+  notebook's history without saying a word.** The notes were safe on this
+  computer, but the history is the copy your other devices, your backups and
+  your shared folders read from — so those quietly fell behind while the
+  status bar still said "Saved". It now tells you, in plain words, and keeps
+  trying every time you save.
+
 ### Fixed — syncing that has stopped between your computers starts again by itself
 
 - **If another one of your computers made a page and deleted it again before

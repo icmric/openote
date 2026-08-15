@@ -174,11 +174,27 @@ class OpLogStore {
   ///
   /// Unparseable lines are skipped, not fatal — see [Op.decode]. A log whose
   /// last append was interrupted is the normal case, not an exceptional one.
+  ///
+  /// **Bytes, then a tolerant decode — not `readAsStringSync`.** That helper
+  /// decodes UTF-8 *strictly* and throws `FileSystemException` the moment a
+  /// file ends part-way through a multi-byte character, which is exactly what a
+  /// torn append looks like when the last op contained a non-ASCII glyph.
+  /// [readAll], [highestLamport] and [lastSeq] all route through here, so one
+  /// half-written `ℝ` stopped sync outright — and after the container is demoted
+  /// to a cache it would be the notebook refusing to open. Measured on the
+  /// owner's real 1,523,044-byte log: of 1,487 cuts at every 1 KiB boundary,
+  /// **2 made `readAll()` throw**; on a 317-byte log dense with the maths
+  /// symbols these notes are full of (ℝ ∃ ∈), **6 of 316 cuts threw**.
+  /// [readDeviceFrom] has always decoded the identical bytes with
+  /// `allowMalformed: true` (see the `utf8.decode` below in that method); this
+  /// now matches it, so the paced and unpaced readers can no longer disagree
+  /// about whether a log is readable.
   List<Op> readDevice(String device) {
     final f = logFor(device);
     if (!f.existsSync()) return const [];
     final ops = <Op>[];
-    for (final line in const LineSplitter().convert(f.readAsStringSync())) {
+    final text = utf8.decode(f.readAsBytesSync(), allowMalformed: true);
+    for (final line in const LineSplitter().convert(text)) {
       final op = Op.decode(line);
       if (op != null) ops.add(op);
     }
@@ -336,15 +352,44 @@ class OpLogStore {
   /// Append-only, so no temp-and-rename dance is needed: a torn append damages
   /// only the final line, which the reader discards. `flush: true` because the
   /// whole point of the log is to survive the crash that loses the container.
+  ///
+  /// **The missing newline is glued back on first.** A tear one byte from the
+  /// end leaves a *complete* JSON record with no terminator, and the next
+  /// append used to concatenate straight onto it — welding two valid records
+  /// into one unparseable line. Measured: append 3 ops, drop one byte, append 2
+  /// more, and [readDevice] returned seqs **[1, 2, 5]**. Two ops lost for one
+  /// lost byte, where this format's whole promise ([Op.decode]) is that a torn
+  /// tail costs the last line and nothing else. With the terminator restored
+  /// the same sequence returns all five: the record that lost only its newline
+  /// was never damaged, just unterminated.
   void append(String device, List<Op> ops) {
     if (ops.isEmpty) return;
     opsDir.createSync(recursive: true);
-    final sink = logFor(device).openSync(mode: FileMode.append);
+    final f = logFor(device);
+    final glue = _endsMidLine(f) ? '\n' : '';
+    final sink = f.openSync(mode: FileMode.append);
     try {
-      sink.writeStringSync('${ops.map((o) => o.encode()).join('\n')}\n');
+      sink.writeStringSync('$glue${ops.map((o) => o.encode()).join('\n')}\n');
       sink.flushSync();
     } finally {
       sink.closeSync();
+    }
+  }
+
+  /// Whether [f] ends in something other than a line terminator — i.e. whether
+  /// the previous append was cut short. One byte read, only on append, so this
+  /// costs nothing next to the `flushSync` it precedes.
+  static bool _endsMidLine(File f) {
+    if (!f.existsSync()) return false;
+    final len = f.lengthSync();
+    if (len == 0) return false;
+    final raf = f.openSync();
+    try {
+      raf.setPositionSync(len - 1);
+      final last = raf.readSync(1);
+      return last.isNotEmpty && last[0] != 0x0A;
+    } finally {
+      raf.closeSync();
     }
   }
 }

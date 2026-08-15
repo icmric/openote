@@ -17,8 +17,10 @@
 // warm.
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -172,6 +174,126 @@ void main() {
           reason: 'the writer isolate owns the log; a recorder here would be '
               'a second writer on the same file');
       app.endExclusiveImport(nb);
+    });
+  });
+
+  // v0.17 plan, Step 1: "a save that could not be recorded says so".
+  //
+  // `_recorderFor`, `_warmAndInstall` and `_startBlobBackfill` each caught
+  // every exception, wrote a `debugPrint`, and carried on. That is *correct*
+  // while the container is authoritative — a log we cannot write is a degraded
+  // check, not lost data, and failing the user's save to protect a shadow would
+  // be an absurd trade — but it is silence, and all three are reachable today:
+  // a full disk, a permission error, a cloud client holding the file. The
+  // moment the log becomes the format rather than its shadow, each is permanent
+  // loss nobody was told about.
+  //
+  // A FILE where the `.onotebook` directory belongs is the stand-in used here:
+  // it makes `opsDir.createSync(recursive: true)` fail deterministically on
+  // every platform, where "chmod the folder" is flaky on Windows and a planted
+  // undecodable `.oplog` no longer throws at all (Step 2 fixed that).
+  group('a save that could not be recorded says so', () {
+    String logDirOf(Repository repo, String nb) =>
+        '${p.withoutExtension(repo.notebooks.firstWhere((n) => n.id == nb).file)}'
+        '.onotebook';
+
+    test('a log that cannot be opened surfaces, instead of printing', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, app, nb, _) = await fixture('onote_logfail_');
+      File(logDirOf(repo, nb)).writeAsStringSync('not a directory');
+
+      app.pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+      app.blocks = [
+        Block(type: BlockType.text, x: 0, y: 0, content: {'text': 'hello'})
+      ];
+      expect(app.saveError, isNull);
+
+      app.markDirty();
+      await app.flushSave();
+
+      expect(app.saveError, isNotNull,
+          reason: 'this is the whole of Step 1: the failure used to be a '
+              'debugPrint and nothing else');
+      expect(app.hasUnsavedChanges, isFalse,
+          reason: 'and the page itself still saved — the container is still '
+              'authoritative, so a log that will not open must never fail '
+              "the user's save");
+    });
+
+    test('the synchronous fallback open reports it too', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, app, nb, _) = await fixture('onote_logsync_');
+      File(logDirOf(repo, nb)).writeAsStringSync('not a directory');
+
+      // `syncMissingBlobs` goes through `_recorderFor` — the synchronous open
+      // a mutation falls back to when no warm has landed, and a separate
+      // `catch` from the background one.
+      expect(app.syncMissingBlobs(nb), isEmpty);
+      expect(app.saveError, isNotNull,
+          reason: 'the synchronous open swallowed its exception too, and it '
+              'is the path every mutation falls back to');
+    });
+
+    test('what it says is plain words, with the error folded away', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, app, nb, _) = await fixture('onote_logwords_');
+      final where = logDirOf(repo, nb);
+      File(where).writeAsStringSync('not a directory');
+
+      await app.warmRecorder(nb);
+      final problem = app.saveError!;
+
+      // "A year 10 student wont know what an MCP is." Nothing in the sentence
+      // may be a path, an exception class or a file extension.
+      for (final jargon in [
+        'Exception',
+        'errno',
+        '.onotebook',
+        '.oplog',
+        'null',
+        where
+      ]) {
+        expect(problem.message, isNot(contains(jargon)),
+            reason: 'the plain sentence must not contain "$jargon"');
+      }
+      expect(problem.message, contains('saved your notes on this computer'),
+          reason: 'it has to say what actually happened…');
+      expect(problem.message, contains('disk is not full'),
+          reason: '…and what the reader can do about it');
+      expect('$problem', problem.message,
+          reason: 'interpolating a problem must not be able to leak the error, '
+              "which is exactly how the status bar used to print one");
+
+      // The technical half still exists — behind the Advanced fold, and only
+      // there.
+      expect(problem.details, isNotNull);
+      expect(problem.details, contains(nb));
+      expect(problem.short.length, lessThan(40),
+          reason: 'the status bar chip has room for a few words');
+    });
+
+    test('a blob backfill that cannot write reports it, not zero', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, app, nb, _) = await fixture('onote_blobfail_');
+
+      // A picture in the container, then a notebook that has just started
+      // syncing — the exact moment `backfillBlobs` copies bytes into `blobs/`.
+      app.importBlob(nb, Uint8List.fromList(List.filled(64, 7)), 'image/png');
+      await app.settleBackgroundWork();
+      app.debugSetGitSetting(nb, 'https://example.invalid/notes.git');
+
+      // Occupy `blobs/` with a file, so the copy cannot be made.
+      File(p.join(logDirOf(repo, nb), 'blobs'))
+          .writeAsStringSync('not a directory');
+
+      app.materialiseBlobsIfShared(nb);
+      await app.awaitBlobBackfill(nb);
+
+      expect(app.saveError, isNotNull,
+          reason: 'a backfill that stopped used to return 0 — the same answer '
+              'as "nothing to copy". A spike stopped this at 100 of 488 blobs '
+              'and the migration still printed MIGRATION COMPLETE, having '
+              'destroyed 193 image blocks across 40 pages');
     });
   });
 }

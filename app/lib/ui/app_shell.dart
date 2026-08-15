@@ -19,6 +19,7 @@ import 'open_notice_dialog.dart';
 import 'planner_panel.dart';
 import 'side_panel.dart';
 import 'protect_dialog.dart';
+import 'save_problem_dialog.dart';
 import 'shortcut_overlay.dart';
 import 'sidebar.dart';
 import '../export/print_page.dart';
@@ -1431,7 +1432,13 @@ class _StatusBar extends StatelessWidget {
     final rust = app.engineLabel.startsWith('Rust');
     final hash = app.pageContentHash;
     // A failed save must never read as "Saved" — it stays dirty and says so.
-    final failed = app.saveError != null;
+    //
+    // The chip carries the SHORT form and the tooltip the whole sentence;
+    // neither is allowed to contain the exception, which is what
+    // `'${app.saveError}'` used to put on the status bar. Clicking opens the
+    // dialog that keeps the technical half behind an Advanced fold.
+    final problem = app.saveError;
+    final failed = problem != null;
     return Container(
       height: 24,
       // Tighter at the trailing edge than the leading one, on purpose. The
@@ -1449,39 +1456,43 @@ class _StatusBar extends StatelessWidget {
         children: [
           Tooltip(
             message: failed
-                ? "Openote couldn't save this page:\n${app.saveError}\n\n"
-                    'Your changes are still in memory and will be retried on the '
-                    'next edit. Check free disk space and that the notebook file '
-                    'is not open elsewhere.'
+                ? '${problem.message}\n\nClick to see more.'
                 : saved
                     ? 'This page is saved to your local .onote file.'
                     : 'Saving…',
-            child: Row(children: [
-              Icon(
-                  failed
-                      ? Icons.error_outline
-                      : saved
-                          ? Icons.check_circle_outline
-                          : Icons.sync,
-                  size: OnoteIcon.sm,
-                  color: failed
-                      ? OnoteColors.danger
-                      : saved
-                          ? OnoteColors.success
-                          : context.surfaces.textSecondary),
-              const SizedBox(width: 5),
-              Text(
-                  failed
-                      ? "Couldn't save — changes kept in memory"
-                      : saved
-                          ? 'Saved on this device'
-                          : 'Saving…',
-                  style: TextStyle(
-                      fontSize: 11,
+            child: MouseRegion(
+              cursor: failed ? SystemMouseCursors.click : MouseCursor.defer,
+              child: GestureDetector(
+                onTap:
+                    failed ? () => showSaveProblemDialog(context, problem) : null,
+                child: Row(children: [
+                  Icon(
+                      failed
+                          ? Icons.error_outline
+                          : saved
+                              ? Icons.check_circle_outline
+                              : Icons.sync,
+                      size: OnoteIcon.sm,
                       color: failed
                           ? OnoteColors.danger
-                          : context.surfaces.textSecondary)),
-            ]),
+                          : saved
+                              ? OnoteColors.success
+                              : context.surfaces.textSecondary),
+                  const SizedBox(width: 5),
+                  Text(
+                      failed
+                          ? problem.short
+                          : saved
+                              ? 'Saved on this device'
+                              : 'Saving…',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: failed
+                              ? OnoteColors.danger
+                              : context.surfaces.textSecondary)),
+                ]),
+              ),
+            ),
           ),
           const SizedBox(width: 12),
           // Sync (ADR-0006). Shown only once a second device has touched this

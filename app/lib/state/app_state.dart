@@ -165,6 +165,33 @@ class OpenNotebookResult {
       outcome == OpenNotebookOutcome.copiedIn;
 }
 
+/// Something Openote could not write down, in the words it will actually use.
+///
+/// The same three-part split as [OpenNotebookResult], for the same reason: a
+/// student reading `FileSystemException: ... errno = 13` learns nothing they
+/// can act on. [short] is the status-bar chip, [message] says what happened
+/// and what to do about it, and [details] is the raw error — behind an
+/// Advanced fold, never on the bar.
+///
+/// [toString] deliberately returns [message], so that any surface which
+/// interpolates a problem into a string still cannot leak an exception.
+class SaveProblem {
+  const SaveProblem(
+      {required this.short, required this.message, this.details});
+
+  /// A few words for the status bar. No path, no exception.
+  final String short;
+
+  /// One to three plain sentences: what happened, what it costs, what to do.
+  final String message;
+
+  /// The exception, for the Advanced fold and for a bug report.
+  final String? details;
+
+  @override
+  String toString() => message;
+}
+
 /// App-wide state. Deliberately simple (ChangeNotifier) for the MVP; the
 /// domain layer beneath it is what carries forward.
 class AppState extends ChangeNotifier
@@ -1048,16 +1075,67 @@ class AppState extends ChangeNotifier
       // background either way: on a real imported notebook this is hundreds of
       // images, and doing it inline would stall the open.
       _startBlobBackfill(nb, r);
+      _logError = null; // the log is reachable again
       return r;
     } catch (e) {
       // Shadow mode must never be able to break saving. The container is still
       // authoritative, so a log we cannot write is a degraded check, not lost
       // data — and failing the user's save to protect a shadow would be an
-      // absurd trade.
-      debugPrint('[openote/sync] log unavailable for $nb: $e');
+      // absurd trade. That half of the reasoning still holds; the SILENCE does
+      // not, and never did.
+      //
+      // This is the first of three reachable ways a save stops being recorded
+      // with nothing whatever on screen (v0.17 plan, Step 1): a full disk, a
+      // permission error, a cloud client holding the file, or an `.oplog`
+      // truncated inside a multi-byte character. Today the container catches
+      // the fall. After the demotion it does not, and every one of them becomes
+      // permanent loss the user was never told about. So: still never throw,
+      // but always say so.
+      _noteLogProblem('log unavailable for $nb', e);
       return null;
     }
   }
+
+  /// Record that a notebook's change history could not be kept up to date.
+  ///
+  /// Never throws and never fails a save: the container is still authoritative,
+  /// so the notes themselves are on disk. What they are not is *recorded* — so
+  /// the message describes that consequence (other devices and backups fall
+  /// behind) rather than reciting the exception, which is [SaveProblem.details]'
+  /// job.
+  ///
+  /// Safe to call from a synchronous mutation path: `_recorderFor` already
+  /// carries a "nothing that runs during a build may call it" invariant, so
+  /// this notification can never land mid-frame.
+  void _noteLogProblem(String where, Object e) {
+    debugPrint('[openote/sync] $where: $e');
+    _logError = SaveProblem(
+      short: 'Saved, but not recorded',
+      message: 'Openote saved your notes on this computer, but it could not '
+          "add the change to this notebook's history.\n\n"
+          'The history is the copy your other devices, your backups and your '
+          'shared folders read from, so those may fall behind until this '
+          'works again. Nothing you have written has been lost.\n\n'
+          "Check that the disk is not full, that the notebook's folder is not "
+          'set to read-only, and that a cloud app such as OneDrive or Google '
+          'Drive has finished with it. Openote tries again every time you '
+          'save.',
+      details: '$where\n$e',
+    );
+    if (!_disposed) notifyListeners();
+  }
+
+  /// A page save that could not be written to the notebook file at all.
+  static SaveProblem _pageSaveFailed(Object e) => SaveProblem(
+        short: "Couldn't save — changes kept in memory",
+        message: 'Openote could not save this page to your computer.\n\n'
+            'Your changes are still on screen and Openote will try again the '
+            'next time you type, so nothing is lost yet — but close the app '
+            'now and they would be.\n\n'
+            'Check that the disk is not full and that the notebook is not '
+            'open in another program.',
+        details: '$e',
+      );
 
   /// In-flight background opens, so two callers don't replay the same log
   /// twice.
@@ -1114,6 +1192,7 @@ class AppState extends ChangeNotifier
         r.seedTitle(ref.title);
         _backfillTree(nb, r);
         _startBlobBackfill(nb, r);
+        _logError = null; // the log is reachable again
       }
       // Either way: a notebook with no ops directory when `_startWatching` ran
       // left the watcher unstarted, and opening a recorder — this one or the
@@ -1125,7 +1204,11 @@ class AppState extends ChangeNotifier
       }
       return winner;
     } catch (e) {
-      debugPrint('[openote/sync] background log open for $nb failed: $e');
+      // Second of Step 1's three silent paths, and the one that swallows most
+      // of them in practice: `flushSave` warms the recorder before it does
+      // anything else, so this is where a log that cannot be opened is first
+      // met on the save path.
+      _noteLogProblem('background log open for $nb failed', e);
       return null;
     } finally {
       _recorderWarms.remove(nb);
@@ -1266,7 +1349,16 @@ class AppState extends ChangeNotifier
       read: (h) => _repo.getBlob(nb, h),
     )
         .catchError((Object e) {
-      debugPrint('[openote/sync] blob backfill for $nb stopped: $e');
+      // Third of Step 1's three silent paths, and the most expensive one.
+      // `backfillBlobs` is what puts image BYTES into `blobs/`; a failure here
+      // leaves a log that names pictures the folder does not contain, which on
+      // another device is a notebook whose images are all missing, and after
+      // the demotion is the only copy of those bytes. A spike stopped this at
+      // 100 of 488 blobs and the migration still printed MIGRATION COMPLETE —
+      // 193 image blocks across 40 pages destroyed, `integrity_check` ok.
+      // Returning 0 to a `debugPrint` made that indistinguishable from
+      // "nothing to copy".
+      _noteLogProblem('blob backfill for $nb stopped', e);
       return 0;
     });
     // Kept so a mirror run can wait for it. Without that, configuring a backup
@@ -6292,9 +6384,34 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  /// The last save failure, or null when the last save succeeded. Surfaced in
-  /// the status bar — a silent failed save used to read as "Saved".
-  Object? saveError;
+  /// The last save failure, or null when everything the app owes the disk has
+  /// landed. Surfaced in the status bar — a silent failed save used to read as
+  /// "Saved".
+  ///
+  /// **Three sources, one surface, in order of how much they cost the user.**
+  /// [_pageSaveError] is the container write, and means the notes on screen are
+  /// not on disk. [_logError] is the operation log — the notes ARE on disk but
+  /// the history other devices and backups read from is behind. The registry
+  /// lock means the notebook *list* cannot be written, so a rename or a new
+  /// notebook will not survive a restart.
+  ///
+  /// They are separate fields rather than one because they are cleared by
+  /// different events: a successful page save must not wipe a log failure it
+  /// knows nothing about, which is what a single field did.
+  SaveProblem? get saveError {
+    final locked = _repo.registryReadOnly;
+    return _pageSaveError ??
+        _logError ??
+        (locked == null
+            ? null
+            : SaveProblem(
+                short: 'Your notebook list is locked',
+                message: locked.message,
+                details: locked.details));
+  }
+
+  SaveProblem? _pageSaveError;
+  SaveProblem? _logError;
 
   Future<void> flushSave() async {
     _saveDebounce?.cancel();
@@ -6336,7 +6453,7 @@ class AppState extends ChangeNotifier
       // save whose hash is unchanged is skipped). See RustEngine/MirrorEngine.
       await engine.savePage(nb, id, toSave, pageProps);
       _dirty = false;
-      saveError = null;
+      _pageSaveError = null;
       // Record AFTER the container write succeeds, so the log never claims a
       // change the notebook doesn't have. The reverse order would be worse than
       // useless: rebuild-from-log would then differ from the container on every
@@ -6359,12 +6476,27 @@ class AppState extends ChangeNotifier
       // here specifically because the container write above has already
       // succeeded — the log is a shadow of it, and recording a moment later
       // changes nothing about what is durable.
-      rec?.page(id, toSave, pageProps);
+      //
+      // Guarded separately from the container write above, because the two
+      // failures cost the user completely different things. The page is
+      // already durable by the time this runs, so an append that throws must
+      // NOT report "changes kept in memory" (they are not in memory, they are
+      // saved) and must not leave the page dirty for a retry that would rewrite
+      // a container that is already correct.
+      try {
+        rec?.page(id, toSave, pageProps);
+        // The recording landed, so whatever stopped the last one has cleared.
+        // Without this the message is sticky: a cloud client holding the file
+        // for one second would keep saying "not recorded" all session.
+        if (rec != null) _logError = null;
+      } catch (e) {
+        _noteLogProblem('recording the save of $id failed', e);
+      }
       // Throttled inside; a mirror is a safety net, not a live replica.
       unawaited(runMirrors(nb));
     } catch (e) {
       // Stay dirty so the next edit (or exit flush) retries, and tell the user.
-      saveError = e;
+      _pageSaveError = _pageSaveFailed(e);
       notifyListeners();
       return;
     }

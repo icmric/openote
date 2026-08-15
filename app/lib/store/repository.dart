@@ -14,6 +14,23 @@ import '../model/models.dart';
 import 'database.dart';
 import 'notebook_writer.dart';
 
+/// The `workspace.json` layout this build writes and understands (spec §7's
+/// `format.major`).
+///
+/// **Why this number is now read and not merely written.** [_loadWorkspace]
+/// skips any registry entry whose file is not there
+/// (`if (File(file).existsSync())`), and [_saveWorkspace] then rewrites the
+/// whole registry from whatever survived. So a student who upgrades the laptop
+/// in October and the desktop at Christmas opens the old build on a migrated
+/// workspace, sees an empty sidebar, creates one notebook — and *permanently
+/// prunes all the others*. Nothing on disk was corrupt; the old build simply
+/// wrote down what it could see.
+///
+/// This is the only mechanical guard against that, and it has to be shipped
+/// and baked **before** any release moves a container (v0.17 plan, Step 8),
+/// which is why it lands first with nothing yet depending on it.
+const int workspaceFormat = 1;
+
 /// Workspace + notebook persistence. One SQLite Database handle per open
 /// .onote (File Format Spec §2); workspace.json registry per spec §7.
 class Repository {
@@ -81,6 +98,33 @@ class Repository {
   /// the workspace is empty.
   String? workspaceRecoveryNote;
 
+  /// Non-null when `workspace.json` was written by a newer Openote than this
+  /// one, in which case this build reads the registry and **never rewrites
+  /// it** — see [workspaceFormat] for the notebook-pruning disaster that
+  /// prevents.
+  ///
+  /// Two fields for the same reason `OpenNotebookResult` has two: `message` is
+  /// plain sentences safe to put in front of anybody, `details` is the version
+  /// numbers, which belong behind an Advanced fold and nowhere else.
+  ({String message, String details})? registryReadOnly;
+
+  /// The registry's layout number, tolerant of every shape this file has had.
+  ///
+  /// Before the guard existed the field was written — and documented in spec
+  /// §7 — as `{"major": 1, "minor": 0}`, and that is what every workspace on
+  /// disk today still carries. A bare integer is accepted too so that a future
+  /// build which flattens the field is still guarded by this one. **An
+  /// unrecognised shape means "written by a build that predates the guard",
+  /// which is by definition not newer than us**: guessing "newer" there would
+  /// lock every existing user out of their own notebook list, which is the
+  /// exact harm the guard exists to prevent.
+  static int _formatOf(Map<String, dynamic> j) {
+    final f = j['format'];
+    if (f is num) return f.toInt();
+    if (f is Map && f['major'] is num) return (f['major'] as num).toInt();
+    return workspaceFormat;
+  }
+
   Future<void> _loadWorkspace() async {
     // Try the live registry, then the `.bak` written before the last replace.
     // A registry we can't parse must never look like "you have no notebooks".
@@ -128,6 +172,22 @@ class Repository {
         await _saveNow();
       }
       return;
+    }
+    final found = _formatOf(j);
+    if (found > workspaceFormat) {
+      // Load everything below as usual — the entries this build CAN see are
+      // still real notebooks and the user should be able to open them. What it
+      // must not do is write the list back.
+      registryReadOnly = (
+        message: 'This list of notebooks was last used by a newer version of '
+            'Openote, so Openote is only reading it, not changing it. '
+            'Notebooks you add, rename or delete now will be forgotten when '
+            'you next start up.\n\n'
+            'Updating Openote to the latest version fixes this. Nothing '
+            'already in the list can be lost in the meantime.',
+        details: 'workspace.json is format $found; this build writes and '
+            'understands format $workspaceFormat.',
+      );
     }
     _settings = (j['settings'] as Map?)?.cast<String, dynamic>() ?? {};
     for (final n in (j['notebooks'] as List? ?? const [])) {
@@ -253,8 +313,14 @@ class Repository {
   Future<void> _saveWorkspace() async {
     if (_disposed) return; // the workspace may no longer exist
     _writePending = false;
+    // A registry written by a newer build is read, never rewritten. Rewriting
+    // it from what THIS build managed to load is the pruning disaster
+    // [workspaceFormat] documents, and it is one `createNotebook` away. Silent
+    // here on purpose: the message is already on screen, via
+    // `AppState.saveError`.
+    if (registryReadOnly != null) return;
     await _writeAtomic(const JsonEncoder.withIndent('  ').convert({
-      'format': {'major': 1, 'minor': 0},
+      'format': {'major': workspaceFormat, 'minor': 0},
       'workspace_id': _workspaceId ??= newId(),
       'notebooks': [
         for (final n in notebooks)
