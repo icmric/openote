@@ -72,8 +72,8 @@ install -m644 "$REPO/LICENSE" "$ROOT/usr/share/doc/openote/copyright"
 # ── .deb ────────────────────────────────────────────────────────────────────
 # Depends is hand-written rather than auto-generated. `dpkg-shlibdeps` would
 # pin the exact library versions present on the BUILD machine, which is a
-# pinned Ubuntu chosen deliberately (see release.yml's linux job) — those
-# versions would then be unsatisfiable on the distros the pin exists to reach.
+# debian:12 container chosen deliberately (see release.yml's linux job) —
+# those versions would then be unsatisfiable on the distros it exists to reach.
 #
 # libmpv is how video plays inside the app, and it is a LINK-time dependency,
 # not a dlopen. media_kit_video's Linux plugin does
@@ -86,9 +86,11 @@ install -m644 "$REPO/LICENSE" "$ROOT/usr/share/doc/openote/copyright"
 # covered both Ubuntu generations and covered neither honestly: the binary
 # needs exactly ONE soname, so offering an alternative that cannot satisfy it
 # just means apt installs the wrong library and reports success. The release is
-# built on noble (mpv 0.37, libmpv.so.2), so .so.2 is what this asks for, and
-# release.yml's "Verify shared-library dependencies" step asserts the built
-# binary agrees rather than trusting this line to stay in step.
+# built in a debian:12 container (mpv 0.35.1, libmpv.so.2), so .so.2 is what
+# this asks for, and release.yml's "Verify shared-library dependencies" step
+# asserts the built binary agrees rather than trusting this line to stay in
+# step. Bookworm is picked for its glibc 2.36 floor; that it also gives .so.2
+# is the reason bookworm and not an older Debian.
 echo "==> building .deb"
 install -d "$ROOT/DEBIAN"
 cat > "$ROOT/DEBIAN/control" <<EOF

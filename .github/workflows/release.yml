@@ -242,12 +242,12 @@ jobs:
   linux:
     name: linux x64
     needs: version
-    # Pinned, not `ubuntu-latest`, and the pin is now 24.04 — it was 22.04, and
-    # moving it was forced. TWO properties of this host are inherited by the
-    # artifact and they pull in opposite directions:
+    # Built INSIDE a debian:12 (bookworm) container rather than on a runner
+    # image. TWO properties of the build host are inherited by the artifact,
+    # and on the stock runner images they pull in opposite directions:
     #
     #   * glibc. A binary inherits the build host's floor, so an OLDER base
-    #     reaches more distros. 22.04 gave 2.35; 24.04 gives 2.39.
+    #     reaches more distros. ubuntu-22.04 gave 2.35; ubuntu-24.04 gives 2.39.
     #   * libmpv's SONAME. media_kit_video's Linux plugin LINKS libmpv
     #     (`target_link_libraries(... PkgConfig::mpv ...)`), so whichever
     #     libmpv-dev this host has is baked in and resolved by ld.so before
@@ -255,38 +255,105 @@ jobs:
     #     libmpv.so.2.
     #
     # Nothing currently shipping outside 22.04 has libmpv.so.1 — Ubuntu 24.04,
-    # Debian 12/13, Mint 22, Fedora and openSUSE are all .so.2. Staying on
-    # jammy would therefore have produced packages that INSTALL cleanly on
-    # those distros (the declared dependency is satisfied) and then die at exec
-    # with "error while loading shared libraries: libmpv.so.1". Not degraded
-    # video — no launch at all, on the majority of the machines the .deb and
-    # .rpm target. The soname wins; the glibc floor is the price.
+    # Debian 12/13, Mint 22, Fedora and openSUSE are all .so.2. So jammy was
+    # never really available: its packages INSTALL cleanly on those distros
+    # (the declared dependency is satisfied) and then die at exec with "error
+    # while loading shared libraries: libmpv.so.1" — not degraded video, no
+    # launch at all. But noble's 2.39 floor was the other half of the same
+    # trap: it locked Debian 12 and Ubuntu 22.04 out of 0.4.2 completely, and
+    # what those users saw was the loader's own "version `GLIBC_2.38' not
+    # found", which names no package and suggests no fix.
     #
-    # What that price is: Debian 12 (glibc 2.36) and Ubuntu 22.04 (2.35) cannot
-    # run 0.4.2. They stay on 0.4.1. Getting both properties would mean
-    # building inside a `container: debian:12` — glibc 2.36 AND libmpv.so.2 —
-    # which is the right answer if those users matter and is a rewrite of this
-    # job rather than a label change. It also decouples the floor from GitHub's
-    # image lifecycle, which the 22.04 deprecation on 2026-09-17 makes a
-    # question that has to be answered anyway.
+    # debian:12 is the base that has BOTH, which is the whole reason for the
+    # container: glibc 2.36 (libc6 2.36-9+deb12u*) AND libmpv-dev 0.35.1-4,
+    # whose runtime package is `libmpv2` → libmpv.so.2 — exactly what
+    # packaging/linux/build-packages.sh already declares in Depends. Bookworm
+    # is also the OLDEST Debian that pairs them: bullseye would drop the floor
+    # to glibc 2.31, but its mpv is 0.32 → libmpv.so.1, straight back to the
+    # no-launch failure above.
     #
-    # The "Verify shared-library dependencies" step below asserts the soname
-    # rather than trusting this comment to stay true.
-    runs-on: ubuntu-24.04
+    # A container also decouples the floor from GitHub's image lifecycle. The
+    # runner label now only has to host Docker, so the ubuntu-22.04 removal on
+    # 2026-09-17 — and every deprecation after it — stops being a question the
+    # release has to answer.
+    #
+    # Two steps below assert all of this instead of trusting this comment to
+    # stay true: "Verify the glibc floor" pins the 2.36 ceiling, and "Verify
+    # shared-library dependencies" pins the soname.
+    runs-on: ubuntu-latest
+    container:
+      image: debian:12
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      # Every step here runs as root in a bare image, so an apt that stopped to
+      # ask a configuration question would hang the job rather than fail it.
+      DEBIAN_FRONTEND: noninteractive
     steps:
+      # BEFORE actions/checkout, deliberately: debian:12 ships no git, and
+      # checkout without one silently falls back to unpacking a source tarball.
+      # That leaves no .git, and Flutter runs git against its own SDK.
+      #
+      # Note there is no `sudo` anywhere in this job. The image does not
+      # include it and these steps are already root, so the `sudo apt-get` this
+      # job used to run would now be "sudo: command not found".
+      - name: Install the build toolchain
+        run: |
+          set -eux
+          apt-get update
+          # What each group is for. The base image has no compiler, no CA
+          # bundle and no VCS, so all of it has to be named:
+          #   ca-certificates   TWO plugins download a prebuilt pdfium over
+          #                     HTTPS during CMake configure (printing's
+          #                     DownloadProject, pdfium_flutter's
+          #                     file(DOWNLOAD)). With no CA bundle in the image
+          #                     the TLS handshake fails and the build dies in
+          #                     cmake, long before any Dart runs.
+          #   curl              rustup's installer and flutter-action fetch.
+          #   git               see above, plus Flutter's own version probe.
+          #   unzip zip xz-utils file
+          #                     Flutter's documented Linux prerequisites; the
+          #                     SDK unpacks its engine artifacts with them.
+          #   zstd              actions/cache reaches for it first and falls
+          #                     back to gzip with a warning when it is absent.
+          #                     Both caches in this job (flutter-action's and
+          #                     rust-cache's) would otherwise take the slow
+          #                     path on every release.
+          #   build-essential   gcc/g++ (Rust needs `cc` to link at all) and
+          #                     binutils, whose objdump the two verify steps
+          #                     below depend on.
+          #   clang cmake ninja-build pkg-config liblzma-dev libstdc++-12-dev
+          #                     the `flutter build linux` toolchain proper.
+          #                     gcc 12 is bookworm's default, so -12- is the
+          #                     matching libstdc++ dev package on this base.
+          #   libgtk-3-dev      GTK itself, and also the gtk+-unix-print-3.0
+          #                     .pc file that the printing plugin looks up with
+          #                     pkg_check_modules(... REQUIRED ...) — that one
+          #                     is a hard configure failure, not a silent one.
+          #   libmpv-dev libepoxy-dev
+          #                     media_kit_video's: its Linux plugin links both
+          #                     through pkg-config, and pkg_check_modules is
+          #                     NOT REQUIRED there — so without them the plugin
+          #                     builds against nothing and ships a release
+          #                     where video silently does not work.
+          #   rpm               provides rpmbuild for build-packages.sh.
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git unzip zip xz-utils zstd file \
+            build-essential clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            libmpv-dev libepoxy-dev \
+            rpm
+          # The workspace is bind-mounted from the runner (uid 1001) while this
+          # container is root, so git sees a tree owned by someone else and
+          # refuses it with "detected dubious ownership" — which would take out
+          # checkout and Flutter's SDK probe alike.
+          git config --global --add safe.directory '*'
+
       - uses: actions/checkout@v4
 
-      - name: Install Linux desktop toolchain
-        run: |
-          sudo apt-get update
-          # libmpv-dev and libepoxy-dev are media_kit_video's: its Linux plugin
-          # links against both through pkg-config, and pkg_check_modules is not
-          # REQUIRED there — so without them the plugin builds against nothing
-          # and ships a release where video silently does not work.
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libmpv-dev libepoxy-dev
-
+      # In the container too, so the core links against bookworm's glibc like
+      # everything else. A Rust core built outside would be the one .so in the
+      # bundle with a 2.39 floor, and the app would fail to load at startup on
+      # the exact machines this job exists to reach.
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -337,6 +404,36 @@ jobs:
             exit 1
           fi
 
+      # The container tag is the INTENT; this is the measurement. A binary's
+      # real floor is the highest versioned glibc symbol anything in the bundle
+      # references — a property of what the compiler emitted, not of the image
+      # name — so a dependency that starts calling a newer symbol, or an edit
+      # to the base above, is caught here rather than by a student whose app
+      # will not start. That failure gives them "version `GLIBC_2.38' not
+      # found" and nothing else to go on.
+      #
+      # This checks the bundled prebuilt .so files too (pdfium, mpv's deps):
+      # they are loaded at startup like everything else, so their floor is the
+      # app's floor.
+      - name: Verify the glibc floor
+        run: |
+          set -euo pipefail
+          bundle=app/build/linux/x64/release/bundle
+          floor="$(
+            { objdump -T "$bundle/openote" "$bundle/libonote_core.so" "$bundle"/lib/*.so 2>/dev/null || true; } \
+              | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -uV | tail -1 || true
+          )"
+          echo "highest glibc symbol version required by this bundle: ${floor:-none found}"
+          # 2.36 is bookworm's. Higher means the build escaped the container's
+          # baseline and Debian 12 is shut out again.
+          if [ -n "$floor" ] && [ "$(printf '%s\n2.36\n' "$floor" | sort -V | tail -1)" != "2.36" ]; then
+            echo "::error::this bundle needs glibc ${floor}, above debian:12's 2.36."
+            echo "::error::Debian 12 and Fedora 37/38 users would get a loader error naming GLIBC_${floor} and no app."
+            echo "::error::Something is being built or bundled outside the container — check that step."
+            exit 1
+          fi
+          echo "floor is at or below 2.36: Debian 12+, Ubuntu 24.04+, Mint 22+, Fedora 37+ can run this"
+
       # Fallback artifact: always produced, works everywhere tar does.
       - name: Package tar.gz
         run: |
@@ -357,12 +454,11 @@ jobs:
       # (Arch, NixOS, a locked-down machine), so dropping the AppImage narrows
       # convenience, not reach.
       #
-      # `rpm` provides rpmbuild; it is not on the runner by default. Both
-      # packages are built from ONE staged tree by the script, so they cannot
-      # drift apart.
-      - name: Install packaging tools
-        run: sudo apt-get install -y rpm
-
+      # rpmbuild comes from the `rpm` package. It is installed with the rest of
+      # the toolchain at the top of this job rather than in a separate `sudo
+      # apt-get` step here, because the container has no sudo — one apt call,
+      # in one place, is also one fewer thing to forget. Both packages are
+      # built from ONE staged tree by the script, so they cannot drift apart.
       - name: Package .deb and .rpm
         run: |
           chmod +x packaging/linux/build-packages.sh

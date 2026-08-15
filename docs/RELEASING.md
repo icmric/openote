@@ -359,7 +359,20 @@ That is now an explicit decision rather than an accident (see the comment in
 `app/macos/Runner/Release.entitlements`), but it is reasoned, not measured.
 **Someone still has to run the dmg.**
 
-**The Linux runner pin expires.** `ubuntu-22.04` is deliberate — the build
-inherits the build host's glibc floor — but GitHub begins deprecating that
-image on **2026-09-17**, with brownouts that fail jobs using the label. Revisit
-before then; the options are in the comment above the pin.
+**The Linux job builds in a container, not on the runner.** A Linux binary
+inherits its build host's glibc floor, so the host is a shipping decision, not
+an implementation detail — and a runner label made it GitHub's decision on
+GitHub's schedule. The job now runs in `debian:12` (bookworm), which pairs
+**glibc 2.36** with **libmpv 0.35.1 → libmpv.so.2**; nothing else does, which
+is why that tag and not another. Bullseye would drop the floor to 2.31 but
+regress the mpv soname to `.so.1`, and the app would not launch at all.
+
+Practical effect: **glibc 2.36 or newer** — Debian 12/13, Ubuntu 24.04+,
+Mint 22+, Fedora 37+, RHEL 10, openSUSE Leap 15.6+, Arch. Ubuntu 22.04 and
+Mint 21 remain out, on the mpv soname rather than on glibc. The release job
+measures the real floor (`Verify the glibc floor`) instead of trusting the
+image tag, so this paragraph cannot quietly go stale.
+
+This also retires the runner-pin expiry that used to live here: the label is
+now only a Docker host, so the `ubuntu-22.04` deprecation on **2026-09-17**,
+and every image deprecation after it, no longer touches what ships.
