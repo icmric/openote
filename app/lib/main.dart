@@ -58,7 +58,10 @@ Future<void> main(List<String> args) async {
   // play something: on a Linux box without it, `MediaKit.ensureInitialized`
   // throws, and a throw inside a widget build is a red screen where a "you
   // need to install mpv-libs" card belongs. See media/video_playback.dart.
-  VideoPlayback.probe();
+  // Awaited: on Windows this also resolves whether the downloaded engine is
+  // present, and a page that renders its video cards before that answer is
+  // known shows "needs the video player" to somebody who already has it.
+  await VideoPlayback.probe();
   // Paint a window IMMEDIATELY; open the workspace behind it. Blocking runApp
   // on Repository.open + init left the window invisible until SQLite and the
   // restored page were fully loaded ("the app takes ages to appear").

@@ -20,7 +20,7 @@ import 'package:media_kit_video/media_kit_video.dart' show Video;
 
 import 'package:openote/editor/file_block_view.dart';
 import 'package:openote/editor/video_block_view.dart';
-import 'package:openote/media/video_playback.dart';
+import 'package:openote/media/video_playback.dart' show VideoPlayback, VideoUnavailable;
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/media_store.dart';
@@ -147,7 +147,14 @@ void main() {
     // Every test in here runs as a machine WITHOUT libmpv unless it says
     // otherwise: that is the state a widget test is really in, and it is also
     // the state of a Linux box that never installed mpv-libs.
-    setUp(() => VideoPlayback.debugSetAvailable(false));
+    //
+    // The reason is now stated rather than inferred. Since the video engine
+    // was split out of the Windows download (media/video_engine.dart) there
+    // are two ways to have no player — a distribution package that was never
+    // installed, and a one-off download that has not happened — and they get
+    // different cards. These tests are the first one.
+    setUp(() => VideoPlayback.debugSetAvailable(false,
+        reason: VideoUnavailable.missingSystemLibrary));
 
     Future<AppState> newApp(WidgetTester t) async {
       late AppState app;

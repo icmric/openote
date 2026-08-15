@@ -119,8 +119,63 @@ jobs:
           # package documents this command for release builds.
           dart run pdfrx:remove_wasm_modules
           dart run tool/strip_web_assets.dart
+          # 48,423,670 B of libmpv and ANGLE — 48% of the whole download —
+          # stop being copied next to openote.exe and become the one-off
+          # fetch in lib/media/video_engine.dart. The next step packages them.
+          dart run tool/split_video_engine.dart
           flutter build windows --release --build-name=$env:VERSION
           dart run tool/shake_icons.dart windows
+
+      # The download the app fetches the first time somebody plays a video.
+      #
+      # Built from the very DLLs this build would otherwise have shipped, and
+      # CHECKED against the hashes the app pins. Those two must agree or every
+      # student's download is refused with a hash mismatch and video simply
+      # stops working — an upgrade of media_kit is exactly how that happens,
+      # and it must fail here, in the release, not in the field.
+      - name: Package the video player
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = 'app/build/windows/x64'
+          $manifest = Get-Content app/lib/media/video_engine.dart -Raw
+          # EngineFile('name.dll', 123, 'hash') — across the line break the
+          # formatter puts in.
+          $pins = [regex]::Matches(
+            $manifest,
+            "EngineFile\('([^']+)',\s*(\d+),\s*\r?\n?\s*'([0-9a-f]{64})'\)")
+          if ($pins.Count -lt 7) {
+            throw "Only $($pins.Count) engine files found in video_engine.dart — the pinned manifest could not be read, so nothing here is verified."
+          }
+          $stage = New-Item -ItemType Directory -Force -Path video-engine
+          foreach ($m in $pins) {
+            $name = $m.Groups[1].Value
+            $bytes = [int64]$m.Groups[2].Value
+            $want = $m.Groups[3].Value
+            $found = Get-ChildItem -Path $src -Filter $name -Recurse -File |
+              Select-Object -First 1
+            if (-not $found) { throw "$name is not under $src — did split_video_engine run before the build?" }
+            $got = (Get-FileHash $found.FullName -Algorithm SHA256).Hash.ToLower()
+            if ($got -ne $want -or $found.Length -ne $bytes) {
+              throw "$name does not match what the app pins ($got / $($found.Length) vs $want / $bytes). Update the manifest in app/lib/media/video_engine.dart, or the first video anybody plays will refuse the download."
+            }
+            Copy-Item $found.FullName $stage
+          }
+          Compress-Archive -Path "$($stage.FullName)/*" `
+            -DestinationPath "openote-$env:VERSION-video-engine-windows-x64.zip"
+
+      # And the shipped bundle must NOT contain them, or the split saved
+      # nothing and the release notes are wrong about the download size.
+      - name: Verify the engine is not in the bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $rel = 'app/build/windows/x64/runner/Release'
+          $leaked = Get-ChildItem $rel -File |
+            Where-Object { $_.Name -in @('libmpv-2.dll','libEGL.dll','libGLESv2.dll','d3dcompiler_47.dll','vk_swiftshader.dll','vulkan-1.dll','zlib.dll') }
+          if ($leaked) {
+            throw "The video engine is still in the bundle: $($leaked.Name -join ', '). split_video_engine.dart did not take effect."
+          }
 
       # The FFI loader (app/lib/core/onote_ffi.dart) looks next to the exe
       # first — the DLL must sit beside openote.exe in the zip. The CMake hook
@@ -238,6 +293,10 @@ jobs:
             openote-*.zip
             openote-*-setup.exe
           if-no-files-found: error
+      # `openote-*.zip` above already picks up the video-player archive; it is
+      # named so that it can never end with `-setup.exe`, which is the exact
+      # string the in-app updater matches on to find the installer
+      # (app/lib/update/app_update.dart, and video_engine_test.dart pins it).
 
   linux:
     name: linux x64

@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../core/platform_open.dart';
+import '../media/video_engine_dialog.dart';
 import '../media/video_playback.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
@@ -128,9 +129,28 @@ class _VideoBlockViewState extends State<VideoBlockView> {
   /// The resting state: video-shaped, so the page reads as having a recording
   /// on it rather than a row of buttons, and cheap, because nothing here has
   /// touched a decoder.
+  /// Offer the one-off download, then play. The video is already on this
+  /// computer, so this is the only thing standing between the card and a
+  /// picture — and if the student says no, or is on a train with no signal,
+  /// the card carries on exactly as it was.
+  Future<void> _getPlayerThenPlay(BuildContext context) async {
+    if (await showGetVideoPlayer(context)) {
+      if (mounted) await _play();
+    } else if (mounted) {
+      setState(() {}); // the card's wording depends on what probe now says
+    }
+  }
+
   Widget _poster(BuildContext context) {
     final file = _file;
     final playable = file != null && VideoPlayback.available;
+    // A video whose player is one click away is NOT the same as a video whose
+    // file is missing, and the card must not use the same icon for both: one
+    // is a download, the other is a file that did not travel with the
+    // notebook. Only the second is bad news.
+    final fetchable = file != null &&
+        !VideoPlayback.available &&
+        VideoPlayback.reason == VideoUnavailable.needsDownload;
     return Container(
       decoration: BoxDecoration(
         color: OnoteColors.graphite900,
@@ -147,12 +167,19 @@ class _VideoBlockViewState extends State<VideoBlockView> {
                     tooltip: 'Play here',
                     onPressed: _play,
                   )
-                : Icon(
-                    file == null
-                        ? Icons.videocam_off_outlined
-                        : Icons.movie_outlined,
-                    size: 40,
-                    color: OnoteColors.graphite500),
+                : fetchable
+                    ? IconButton(
+                        icon: const Icon(Icons.play_circle_outline,
+                            size: 52, color: OnoteColors.graphite400),
+                        tooltip: 'Play here — gets the video player first',
+                        onPressed: () => _getPlayerThenPlay(context),
+                      )
+                    : Icon(
+                        file == null
+                            ? Icons.videocam_off_outlined
+                            : Icons.movie_outlined,
+                        size: 40,
+                        color: OnoteColors.graphite500),
           ),
           Positioned(
             left: 0,
@@ -197,7 +224,12 @@ class _VideoBlockViewState extends State<VideoBlockView> {
                       tooltip: 'Save a copy…',
                       onPressed: () => _saveCopy(context, file),
                     ),
-                    if (!VideoPlayback.available)
+                    // Only the Linux case. "Which package to install" is the
+                    // wrong answer to "the download has not happened yet",
+                    // and offering it there would send a Windows user hunting
+                    // for a package manager they do not have.
+                    if (VideoPlayback.reason ==
+                        VideoUnavailable.missingSystemLibrary)
                       IconButton(
                         icon: const Icon(Icons.help_outline,
                             size: 16, color: OnoteColors.graphite400),
@@ -222,6 +254,15 @@ class _VideoBlockViewState extends State<VideoBlockView> {
           : 'The file is not in this copy of the notebook';
     }
     if (_failure != null) return 'That would not play: $_failure';
+    // The words a student reads when the engine has not been downloaded yet.
+    // "Saved on this computer" comes FIRST and the download comes second,
+    // because the only wrong conclusion available here is "my lecture is
+    // gone" — and on a train, with no signal, this sentence is the whole of
+    // what they get to read.
+    if (VideoPlayback.reason == VideoUnavailable.needsDownload) {
+      return '${formatBytes(_size)} · saved on this computer · '
+          'needs the video player once';
+    }
     if (!VideoPlayback.available) {
       return '${formatBytes(_size)} · plays in your usual player';
     }

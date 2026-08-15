@@ -4,6 +4,21 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed — Openote's download is about half the size
+
+- **Openote's download is about half the size it was.** Openote used to carry
+  a video player around inside it, and everybody paid for that in download and
+  disk space whether or not they ever played a video. It is now fetched
+  separately — once, the first time you play one — and that takes about 48 MB
+  off the download.
+- **Your videos stay on your computer either way.** A video you have added is
+  saved inside your notebook exactly as before, and nothing about it changes.
+  If the player has not been fetched yet, the card on the page says so and
+  there is one button to get it. Opening the video in your usual player, or
+  saving a copy of it, works with no download at all.
+- **If you are updating from an older Openote, you do not need to download
+  anything** — the player that came with your existing copy keeps working.
+
 ### Changed — sharing a notebook now leaves its working file on your computer
 
 - **Sharing a notebook through Drive, OneDrive, Dropbox, iCloud or Syncthing
