@@ -560,7 +560,7 @@ void main() {
           reason: 'the container has not been given their block');
 
       // Asking arms the guard — and every fold path asks first.
-      expect(recorder.pendingForeignOps(repo.getSetting), hasLength(1));
+      expect(await recorder.pendingForeignOps(repo.getSetting), hasLength(1));
       expect(recorder.foreignPending, isTrue);
 
       // ── The keystroke. The page is saved as the CONTAINER knows it.

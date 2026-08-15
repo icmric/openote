@@ -1535,7 +1535,10 @@ class AppState extends ChangeNotifier
         // already async, so it can simply wait for the background open.
         final r = await warmRecorder(nb);
         if (r == null) break;
-        final pending = r.pendingForeignOps(_repo.getSetting);
+        // Awaited: the parse is paced now (see `OpLogStore.readDeviceFrom`),
+        // so the ~1 s a first read of a 64.6 MB log costs is spent in ~8 ms
+        // slices the window can paint and type between instead of one block.
+        final pending = await r.pendingForeignOps(_repo.getSetting);
         if (pending.isEmpty) continue;
         total += await _syncPullLocked(nb, r, pending);
       } while (_pullAgain);

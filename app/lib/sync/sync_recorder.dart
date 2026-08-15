@@ -382,9 +382,32 @@ class SyncRecorder {
   /// The watermark is per foreign device, stored locally. It is not "what
   /// exists" but "what I have folded into my container" — those differ exactly
   /// when another device has synced a log in, which is the whole point.
-  List<Op> pendingForeignOps(Object? Function(String key) readSetting) {
+  ///
+  /// **A STAGING BUFFER, SORTED ONCE, APPLIED AS ONE BATCH.**
+  /// `OpLogStore.readDeviceFrom`
+  /// is paced — it hands the event loop back every half megabyte — so this
+  /// method now spans many turns instead of blocking for the ~1,008 ms one
+  /// 64.6 MB log costs to parse. What it must NOT become is a per-device read
+  /// cap: reading "the next N ops from each device" and folding them would
+  /// apply ops in ARRIVAL order, and [Materializer.apply] is last-writer-wins
+  /// by application order. Two devices whose logs arrived in different orders
+  /// would then hold different content for the same page, for ever, with
+  /// nothing to notice it — far worse than a slow fold.
+  ///
+  /// What keeps that from happening is structural: every op that any device
+  /// contributed to this batch is in `out` before the sort runs, the sort is
+  /// [Op.compare] (the deterministic total order), and the caller applies the
+  /// returned list and nothing else. So the value returned here is the same
+  /// list it was when the parse ran in one block — the yields move when the
+  /// work happens, not what the answer is.
+  Future<List<Op>> pendingForeignOps(
+      Object? Function(String key) readSetting) async {
     final out = <Op>[];
-    _resumeAt.clear();
+    // Built locally and swapped in at the end. The parse yields now, so a
+    // second caller could land inside this loop; a half-filled `_resumeAt`
+    // would hand [markForeignSeen] an offset past ops the container never
+    // received, which is data loss that no later pull would ever repair.
+    final resumeAt = <String, int>{};
     for (final dev in store.deviceIds()) {
       if (dev == device.id) continue;
       final seen =
@@ -401,13 +424,20 @@ class SyncRecorder {
       // shrunken file simply means more re-reading, never a wrong answer.
       final from =
           (readSetting(foreignOffsetKey(notebookId, dev)) as num?)?.toInt() ?? 0;
-      final r = store.readDeviceFrom(dev, from);
-      _resumeAt[dev] = r.next;
+      final r = await store.readDeviceFrom(dev, from);
+      resumeAt[dev] = r.next;
       for (final op in r.ops) {
         if (op.seq > seen) out.add(op);
       }
     }
+    // THE WHOLE BATCH, IN ONE SORT, BEFORE ANYTHING IS APPLIED. Measured at
+    // 24 ms for 138,657 ops — 2% of the parse it follows — so there is nothing
+    // to gain by chunking it and everything to lose: a partially ordered fold
+    // is exactly the divergence this guards against.
     out.sort(Op.compare);
+    _resumeAt
+      ..clear()
+      ..addAll(resumeAt);
     // Asking the question is what arms the guard. Every path that folds
     // foreign ops in goes through here first, so this is the one place that
     // reliably knows the answer — and it is answered fresh from disk each

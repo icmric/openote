@@ -4,6 +4,14 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — a big notebook stays usable while it catches up with another computer
+
+- **Picking up changes made on another one of your computers could freeze
+  Openote for about a second at a time**, on notebooks with a long history.
+  It now reads those changes in small pieces, so the window keeps drawing and
+  you can keep typing while it catches up. You get exactly the same notes at
+  the end of it either way.
+
 ### Fixed — importing the same OneNote file twice no longer doubles up your handwriting
 
 - **Importing a OneNote file you had already imported saved a second copy of

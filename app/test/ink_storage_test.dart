@@ -340,7 +340,7 @@ void main() {
       // RAISE THE FLAG the way the running app does: the watcher fires a pull,
       // which asks pendingForeignOps, which sets foreignPending — and from
       // that moment SyncRecorder.page records nothing at all.
-      expect(r!.pendingForeignOps(repo.getSetting), isNotEmpty);
+      expect(await r!.pendingForeignOps(repo.getSetting), isNotEmpty);
       expect(r.foreignPending, isTrue,
           reason: 'this is the state a syncing notebook is usually in');
 

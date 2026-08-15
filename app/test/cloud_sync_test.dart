@@ -339,6 +339,7 @@ void main() {
 
   _pullStaysInteractive(() => haveSqlite);
   _deletingASharedNotebook(() => haveSqlite);
+  _convergesWhateverOrderLogsArriveIn(() => haveSqlite);
 }
 
 // ── "the app to fully lock up for 10-20s as it works" ────────────────────
@@ -827,3 +828,220 @@ String _onlyLog(String container) => Directory(
     .listSync()
     .map((e) => p.basename(e.path))
     .firstWhere((n) => n.endsWith('.oplog'));
+
+// ── The fold parses across yields now. It must still SORT before it applies ──
+
+/// Two devices holding the same logs must reach byte-identical content, no
+/// matter which order the logs were read in.
+///
+/// **This is the guard on the pacing, and it is worth more than the speed.**
+/// `pendingForeignOps` no longer parses the pending set in one block — the
+/// read hands the event loop back every half megabyte. The tempting next step
+/// is to cap how much is read per device per fold, and that step is a
+/// convergence bug: ops would then be applied in ARRIVAL order (device by
+/// device, whatever `deviceIds()` listed first) instead of Lamport order, and
+/// `Materializer.apply` is last-writer-wins by application order. Two devices
+/// whose logs happened to be listed differently would hold different text for
+/// the same block, permanently, with nothing anywhere to notice it.
+///
+/// So the property under test is exactly that one: **arrival order must not
+/// reach the materialiser.** The staging buffer is filled device by device,
+/// then sorted once by [Op.compare], then applied as a single batch — so
+/// permuting which log each op lands in cannot change the result.
+///
+/// What is deliberately NOT claimed here: that folding the same logs in
+/// several separate PULLS converges. It does not, and never has — the
+/// watermark makes a pull the unit, and an op that turns up in a later pull
+/// carrying a LOWER Lamport than one already applied is applied after it.
+/// That is a property of incremental sync predating all of this; pacing the
+/// parse neither causes nor cures it, and a test asserting otherwise would be
+/// asserting a bug.
+void _convergesWhateverOrderLogsArriveIn(bool Function() haveSqlite) {
+  group('CONVERGENCE: arrival order must not survive the fold', () {
+    late Directory tmp;
+    late Repository repo;
+
+    setUp(() async {
+      if (!haveSqlite()) return;
+      tmp = Directory.systemTemp.createTempSync('onote_converge_');
+      repo = await Repository.openAt(tmp);
+    });
+    tearDown(() {
+      if (!haveSqlite()) return;
+      repo.dispose();
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    /// One shared history, spread over three foreign logs named [ids].
+    ///
+    /// Nine writes to the SAME block, round-robin: `ids[i % 3]` writes the
+    /// i-th. Lamports are 20, 21, … 28 — strictly increasing and all distinct,
+    /// so [Op.compare] never reaches its device-id tie-break and permuting
+    /// [ids] changes ONLY which log each op lands in, never the order they
+    /// sort into. The correct answer is always the last write, `v8`.
+    ///
+    /// Arrival order, by contrast, is `deviceIds()` order, which is
+    /// alphabetical — so `['a', 'b', 'c']` reads the writer of `v8` last and
+    /// `['c', 'b', 'a']` reads it FIRST. Applied unsorted those two give `v8`
+    /// and `v6`. That is the divergence, and it is what the sort removes.
+    void seedInterleaved(String file, String sectionId, List<String> ids) {
+      final store = OpLogStore.forNotebook(file);
+      final seq = <String, int>{for (final d in ids) d: 0};
+      final ops = <String, List<Op>>{for (final d in ids) d: []};
+      void add(String dev, int lamport, OpKind kind, Map<String, dynamic> d) {
+        seq[dev] = seq[dev]! + 1;
+        ops[dev]!.add(Op(
+            device: dev,
+            seq: seq[dev]!,
+            lamport: lamport,
+            timestamp: lamport,
+            kind: kind,
+            data: d));
+      }
+
+      // The tree first, from the log — a joined notebook has no container to
+      // copy, so these rows are inserts and `page_mirror.page_id`'s foreign
+      // key needs them before any page write.
+      const pageIds = ['shared', 'quiet'];
+      for (var i = 0; i < pageIds.length; i++) {
+        add(ids[i], 10 + i, OpKind.nodeUpsert, {
+          'id': pageIds[i],
+          'kind': 'page',
+          'parentId': sectionId,
+          'title': 'Page ${pageIds[i]}',
+          'position': 'a$i',
+        });
+      }
+      // THE CONTESTED BLOCK. Nine last-writer-wins overwrites of one block.
+      for (var i = 0; i < 9; i++) {
+        add(ids[i % 3], 20 + i, OpKind.blockSet, {
+          'pageId': 'shared',
+          'block': {
+            'id': 'blk',
+            'type': 'text',
+            'x': 0,
+            'y': 0,
+            'w': 600,
+            'content': {'text': 'v$i'}
+          }
+        });
+      }
+      // Contested page PROPS too: a whole-map replace, so the loser leaves no
+      // trace and a wrong order is visible in the container's mirror.
+      const backgrounds = ['blank', 'grid', 'dotted'];
+      for (var i = 0; i < 3; i++) {
+        add(ids[i], 40 + i, OpKind.pageProps, {
+          'pageId': 'shared',
+          'props': {'background': backgrounds[i]}
+        });
+      }
+      // And uncontested writes on a second page, one block per device, so the
+      // comparison covers more than the single racing block.
+      for (var i = 0; i < 3; i++) {
+        add(ids[i], 50 + i, OpKind.blockSet, {
+          'pageId': 'quiet',
+          'block': {
+            'id': 'q$i',
+            'type': 'text',
+            'x': 0,
+            'y': 30.0 * i,
+            'w': 600,
+            'content': {'text': 'from slot $i'}
+          }
+        });
+      }
+      for (final d in ids) {
+        store.append(d, ops[d]!);
+      }
+    }
+
+    /// Everything the container holds for this notebook, canonically encoded.
+    /// Key order and block order cannot make two equal notebooks look
+    /// different — see [canonicalJson] — so a difference here is a real one.
+    String contentOf(String nbId) => canonicalJson({
+          for (final pid in const ['shared', 'quiet'])
+            pid: {
+              'blocks': [
+                for (final b in repo.readPage(nbId, pid).blocks.toList()
+                  ..sort((x, y) => x.id.compareTo(y.id)))
+                  {'id': b.id, 'content': b.content}
+              ],
+              'props': repo.readPage(nbId, pid).props.toJson(),
+            },
+          // Only the nodes the LOG created. `createNotebook` also makes a
+          // "Section 1" and an "Untitled page" whose ids are fresh uuidv7s per
+          // notebook, so including them would make every snapshot differ for a
+          // reason that has nothing to do with sync. The count goes in so a
+          // fold that invented or lost a node still shows up.
+          'nodes': [
+            for (final n in repo.loadNodes(nbId))
+              if (n.id == 'shared' || n.id == 'quiet') '${n.id}/${n.title}'
+          ],
+          'nodeCount': repo.loadNodes(nbId).length,
+        });
+
+    /// Create a notebook, give it the three logs under [ids], fold once.
+    Future<({String id, List<Op> pending})> fold(
+        String title, List<String> ids) async {
+      final nb = await repo.createNotebook(title);
+      final app = AppState(repo)..notebookId = nb.id;
+      app.reloadNodes();
+      final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+      seedInterleaved(ref.file, section.id, ids);
+      // The batch as the fold sees it, captured before the pull consumes it.
+      // Reading it does not consume it: only `markForeignSeen` moves the
+      // watermark, and only the pull calls that.
+      final r = await app.warmRecorder(nb.id);
+      final pending = await r!.pendingForeignOps(repo.getSetting);
+      await app.syncPull(nb.id);
+      return (id: nb.id, pending: pending);
+    }
+
+    test('THREE LOGS, EVERY READ ORDER, ONE RESULT', () async {
+      if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
+      // Six notebooks, one per permutation of which device wrote which slot.
+      // `deviceIds()` sorts, so the read order is always a→b→c and the
+      // permutation is entirely a permutation of ARRIVAL.
+      const perms = [
+        ['a-dev', 'b-dev', 'c-dev'],
+        ['a-dev', 'c-dev', 'b-dev'],
+        ['b-dev', 'a-dev', 'c-dev'],
+        ['b-dev', 'c-dev', 'a-dev'],
+        ['c-dev', 'a-dev', 'b-dev'],
+        ['c-dev', 'b-dev', 'a-dev'],
+      ];
+      final snapshots = <String, String>{};
+      for (var i = 0; i < perms.length; i++) {
+        final r = await fold('Perm$i', perms[i]);
+        // The batch handed to `applyForeign` must already be in total order.
+        // This is the guarantee itself, stated directly: whatever order the
+        // logs were read in, the list that reaches the materialiser is sorted.
+        final sorted = [...r.pending]..sort(Op.compare);
+        expect(r.pending.map((o) => o.lamport), sorted.map((o) => o.lamport),
+            reason: 'the staging buffer must be sorted before it is applied — '
+                'arrival order reaching the materialiser is the divergence '
+                'this whole design exists to prevent');
+        snapshots['${perms[i]}'] = contentOf(r.id);
+      }
+
+      // BYTE-IDENTICAL, all six.
+      final first = snapshots.values.first;
+      for (final e in snapshots.entries) {
+        expect(e.value, first,
+            reason: 'two devices folding the same logs reached different '
+                'content; the one that read ${snapshots.keys.first} and the '
+                'one that read ${e.key} disagree');
+      }
+      // …and it is the RIGHT answer, not six copies of the same wrong one.
+      // Unsorted, these come out as v8 or v6 depending on the permutation.
+      expect(first, contains('"v8"'),
+          reason: 'the highest-Lamport write to the contested block wins');
+      expect(first, contains('dotted'),
+          reason: 'and the highest-Lamport page.props with it');
+      expect(first, contains('from slot 2'));
+    }, timeout: const Timeout(Duration(minutes: 3)));
+  });
+}

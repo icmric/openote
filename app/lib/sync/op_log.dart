@@ -17,6 +17,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
@@ -204,48 +205,98 @@ class OpLogStore {
   /// resume offset is the end of the last COMPLETE line — a log being written
   /// by a cloud client routinely ends mid-line, and resuming inside that line
   /// next time would silently lose the op it belongs to.
-  ({List<Op> ops, int next}) readDeviceFrom(String device, int from) {
+  ///
+  /// **Paced, because the offset alone did not make the first read cheap.**
+  /// Once a log has never been read (a git join, a restored offset, a device
+  /// that just joined the folder) `from` is 0 and this reads the whole thing.
+  /// Measured on a generated 64.6 MB log, 138,657 ops: **1,008 ms in one
+  /// uninterrupted block**, broken down as read 30 ms, utf8 26 ms, line split
+  /// 206 ms, `Op.decode` 764 ms. That is a frozen window, on the UI thread,
+  /// and it is what remained after 7851c3d paced everything downstream of it.
+  ///
+  /// So the bytes are decoded a window at a time with the event loop let go
+  /// between windows. **The ops still come back as one list and the caller
+  /// still sorts the whole batch before applying any of it** — pacing changes
+  /// only when the work happens, never which ops are in the answer or what
+  /// order they end up in. See `SyncRecorder.pendingForeignOps`.
+  Future<({List<Op> ops, int next})> readDeviceFrom(
+      String device, int from) async {
     final f = logFor(device);
-    if (!f.existsSync()) return (ops: const [], next: 0);
+    if (!f.existsSync()) return (ops: const <Op>[], next: 0);
     final len = f.lengthSync();
     // A file that SHRANK is not the file we had an offset into — a fresh
     // clone, a restore, a compaction. Start over rather than read from a
     // meaningless position.
-    var start = (from > 0 && from <= len) ? from : 0;
-    if (start >= len) return (ops: const [], next: len);
+    final start = (from > 0 && from <= len) ? from : 0;
+    // The overwhelmingly common pull: nothing new. No read, no yield, no cost.
+    if (start >= len) return (ops: const <Op>[], next: len);
 
+    final ops = <Op>[];
+    // Where the last COMPLETE line ended. Stays at [start] until one is found,
+    // which reproduces the old "no complete line in this window yet" answer.
+    var next = start;
+
+    // ONE handle held across the whole windowed read, deliberately. The
+    // offsets we hand back are only meaningful against the file we started
+    // from, and the log is append-only with a single writer, so bytes at or
+    // below `len` cannot change under us — appends past `len` are simply next
+    // pull's business.
     final raf = f.openSync();
-    final Uint8List bytes;
     try {
-      raf.setPositionSync(start);
-      bytes = raf.readSync(len - start);
+      var pos = start;
+      // Bytes of a line that straddled a window boundary. A single op can be
+      // several megabytes (an ink block.set), so this is allowed to outgrow
+      // the window rather than being treated as a torn tail.
+      final carry = BytesBuilder();
+      while (pos < len) {
+        raf.setPositionSync(pos);
+        final chunk = raf.readSync(math.min(_parseWindow, len - pos));
+        if (chunk.isEmpty) break; // truncated under us; take what we have
+        pos += chunk.length;
+
+        var lastNl = -1;
+        for (var i = chunk.length - 1; i >= 0; i--) {
+          if (chunk[i] == 0x0A) {
+            lastNl = i;
+            break;
+          }
+        }
+        if (lastNl >= 0) {
+          carry.add(Uint8List.sublistView(chunk, 0, lastNl + 1));
+          final complete = carry.takeBytes();
+          carry.add(Uint8List.sublistView(chunk, lastNl + 1));
+          next += complete.length;
+          final text = utf8.decode(complete, allowMalformed: true);
+          for (final line in const LineSplitter().convert(text)) {
+            final op = Op.decode(line);
+            if (op != null) ops.add(op);
+          }
+        } else {
+          carry.add(chunk);
+        }
+
+        // A REAL delay, not `Duration.zero`. Same lesson as
+        // `SyncRecorder.backfillBlobs` and `AppState._inChunks`: on Windows
+        // the UI isolate lives on the Win32 message loop, where posted
+        // messages outrank hardware input, so a zero-duration timer is work
+        // due immediately and the queue never goes idle — the window would
+        // still not answer the mouse. One millisecond lets it actually wait.
+        if (pos < len) {
+          await Future<void>.delayed(const Duration(milliseconds: 1));
+        }
+      }
     } finally {
       raf.closeSync();
     }
-
-    // Where the last newline is, so a torn tail is left for next time.
-    var lastNl = -1;
-    for (var i = bytes.length - 1; i >= 0; i--) {
-      if (bytes[i] == 0x0A) {
-        lastNl = i;
-        break;
-      }
-    }
-    if (lastNl < 0) {
-      // No complete line in this window yet.
-      return (ops: const [], next: start);
-    }
-
-    final text = utf8.decode(
-        Uint8List.sublistView(bytes, 0, lastNl + 1),
-        allowMalformed: true);
-    final ops = <Op>[];
-    for (final line in const LineSplitter().convert(text)) {
-      final op = Op.decode(line);
-      if (op != null) ops.add(op);
-    }
-    return (ops: ops, next: start + lastNl + 1);
+    return (ops: ops, next: next);
   }
+
+  /// Bytes decoded per turn of the event loop by [readDeviceFrom].
+  ///
+  /// Measured at ~16 ms per megabyte (1,058 ms for 64.6 MB, three quarters of
+  /// it `jsonDecode`), so half a megabyte is ~8 ms — inside a frame with room
+  /// for the frame itself, the same budget `AppState._pullPageChunk` picked.
+  static const int _parseWindow = 512 * 1024;
 
   /// The union of every device's log, in deterministic total order.
   /// This is the merge: there is no conflict resolution step, only a sort.

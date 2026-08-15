@@ -11,6 +11,7 @@
 // `FileSystemMoveEvent.path` is the SOURCE, not the destination.
 //
 // So these tests write logs the way a cloud client actually writes them.
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -190,7 +191,7 @@ void _incremental() {
     } catch (_) {}
   });
 
-  test('resuming from an offset returns only what is new', () {
+  test('resuming from an offset returns only what is new', () async {
     // The cost this removes: `pendingForeignOps` ran `readDevice`, parsing the
     // whole file to discard everything under the watermark — 1,977 ms for one
     // real 64.6 MB log, on the UI thread, on every single pull.
@@ -205,22 +206,22 @@ void _incremental() {
         data: {'pageId': 'p', 'block': {'id': 'b$seq'}});
 
     store.append('them', [op(1), op(2)]);
-    final first = store.readDeviceFrom('them', 0);
+    final first = await store.readDeviceFrom('them', 0);
     expect(first.ops.map((o) => o.seq), [1, 2]);
     expect(first.next, greaterThan(0));
 
     store.append('them', [op(3)]);
-    final second = store.readDeviceFrom('them', first.next);
+    final second = await store.readDeviceFrom('them', first.next);
     expect(second.ops.map((o) => o.seq), [3],
         reason: 'only the appended op is parsed');
 
     // Idempotent: nothing new means nothing returned and no movement.
-    final third = store.readDeviceFrom('them', second.next);
+    final third = await store.readDeviceFrom('them', second.next);
     expect(third.ops, isEmpty);
     expect(third.next, second.next);
   });
 
-  test('a torn final line is left for next time, not lost', () {
+  test('a torn final line is left for next time, not lost', () async {
     // A cloud client's file routinely ends mid-line. Resuming inside that line
     // would drop the op it belongs to for good.
     final store = OpLogStore.forNotebook('${dir.path}/N.onote');
@@ -230,19 +231,113 @@ void _incremental() {
         '"enc":"none","op":"block.set","d":{"pageId":"p","block":{"id":"b1"}}}\n'
         '{"v":1,"dev":"them","seq":2,"lc":2,"ts":2,"enc":"none","op":"blo');
 
-    final r = store.readDeviceFrom('them', 0);
+    final r = await store.readDeviceFrom('them', 0);
     expect(r.ops.map((o) => o.seq), [1], reason: 'only the complete line');
 
     // The rest arrives; resuming must produce op 2 whole.
     f.writeAsStringSync(
         'ck.set","d":{"pageId":"p","block":{"id":"b2"}}}\n',
         mode: FileMode.append);
-    final r2 = store.readDeviceFrom('them', r.next);
+    final r2 = await store.readDeviceFrom('them', r.next);
     expect(r2.ops.map((o) => o.seq), [2],
         reason: 'the torn op is recovered, not skipped');
   });
 
-  test('a log that shrank is re-read from the start', () {
+  test('an op bigger than one parse window survives being split across it',
+      () async {
+    // The parse reads in half-megabyte windows now, and a window that contains
+    // no newline at all is NOT a torn tail — it is the middle of one enormous
+    // line. Ink is exactly that: `OpKind.inkStrokes` exists because the
+    // importer puts a whole page's strokes in one block, "up to several MB
+    // serialized". Treating that window as tail would silently drop the op and
+    // leave a page of handwriting behind on the other device.
+    final store = OpLogStore.forNotebook('${dir.path}/N.onote');
+    store.ensureInitialised(notebookId: 'nb', title: 'N');
+    final huge = Op(
+        device: 'them',
+        seq: 1,
+        lamport: 1,
+        timestamp: 1,
+        kind: OpKind.blockSet,
+        data: {
+          'pageId': 'p',
+          'block': {
+            'id': 'ink',
+            'type': 'ink',
+            'content': {'blob': 'z' * (3 * 1024 * 1024)}
+          }
+        });
+    final after = Op(
+        device: 'them',
+        seq: 2,
+        lamport: 2,
+        timestamp: 2,
+        kind: OpKind.blockSet,
+        data: {
+          'pageId': 'p',
+          'block': {'id': 'small'}
+        });
+    store.append('them', [huge, after]);
+
+    final r = await store.readDeviceFrom('them', 0);
+    expect(r.ops.map((o) => o.seq), [1, 2],
+        reason: 'a multi-window line is one op, not a torn tail');
+    expect(
+        ((r.ops.first.map['block'] as Map)['content'] as Map)['blob'],
+        hasLength(3 * 1024 * 1024),
+        reason: 'and it came back whole, not spliced at a window boundary');
+    expect(r.next, store.logFor('them').lengthSync(),
+        reason: 'the resume offset must clear both ops');
+  });
+
+  test('THE PARSE YIELDS INSTEAD OF BLOCKING', () async {
+    // The offset alone did not make the FIRST read cheap. A git join, a
+    // restored offset, a device that just appeared: `from` is 0 and this reads
+    // the whole log. Measured on a generated 64.6 MB log, 138,657 ops — 1,008
+    // ms in ONE uninterrupted block on the UI thread (read 30 ms, utf8 26 ms,
+    // line split 206 ms, `Op.decode` 764 ms). That is the freeze 7851c3d left
+    // behind when it paced everything downstream of the parse.
+    //
+    // **Counted, never clocked**, for the same reason as
+    // `cloud_sync_test`'s fold test: a wall-clock bar here measures the
+    // runner's weather. What the pacing changes is whether the parse is ONE
+    // turn of the event loop or many, so that is what is asserted. Unpaced,
+    // a timer running alongside cannot fire at all.
+    final store = OpLogStore.forNotebook('${dir.path}/N.onote');
+    store.ensureInitialised(notebookId: 'nb', title: 'N');
+    final f = File('${store.opsDir.path}/them.oplog');
+    final sink = f.openWrite();
+    final filler = 'x' * 400;
+    for (var seq = 1; seq <= 8000; seq++) {
+      sink.write('${Op(
+        device: 'them',
+        seq: seq,
+        lamport: seq,
+        timestamp: seq,
+        kind: OpKind.blockSet,
+        data: {
+          'pageId': 'p${seq % 50}',
+          'block': {'id': 'b$seq', 'type': 'text', 'content': {'text': filler}}
+        },
+      ).encode()}\n');
+    }
+    await sink.flush();
+    await sink.close();
+    // Several parse windows' worth, or the test proves nothing.
+    expect(f.lengthSync(), greaterThan(3 * 1024 * 1024));
+
+    var turns = 0;
+    final t = Timer.periodic(const Duration(milliseconds: 1), (_) => turns++);
+    final r = await store.readDeviceFrom('them', 0);
+    t.cancel();
+
+    expect(r.ops, hasLength(8000), reason: 'and it still parsed everything');
+    expect(turns, greaterThan(3),
+        reason: 'the parse must give the window turns to paint and type in, '
+            'not run as one block');
+  });
+
+  test('a log that shrank is re-read from the start', () async {
     // A fresh clone, a restore, a future compaction: an old offset points at
     // a meaningless position and must not be trusted.
     final store = OpLogStore.forNotebook('${dir.path}/N.onote');
@@ -250,7 +345,7 @@ void _incremental() {
     final f = File('${store.opsDir.path}/them.oplog');
     f.writeAsStringSync('{"v":1,"dev":"them","seq":9,"lc":9,"ts":9,'
         '"enc":"none","op":"block.set","d":{"pageId":"p","block":{"id":"x"}}}\n');
-    final r = store.readDeviceFrom('them', 9000000);
+    final r = await store.readDeviceFrom('them', 9000000);
     expect(r.ops.map((o) => o.seq), [9],
         reason: 'an offset past the end means start over, not read nothing');
   });
