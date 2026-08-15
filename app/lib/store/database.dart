@@ -11,10 +11,93 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:sqlite3/sqlite3.dart';
 
 const onoteApplicationId = 0x4F4E4F54; // "ONOT"
 const onoteFormatMajor = 1;
+
+/// Why a file handed to Openote from OUTSIDE the app — the command line, a
+/// double-click in the file manager — cannot be opened as a notebook.
+enum NotebookFileProblem {
+  /// Nothing at that path.
+  missing,
+
+  /// A folder, or a device — not a file we can read.
+  notAFile,
+
+  /// It is there, but this process cannot read it.
+  unreadable,
+
+  /// Readable, and not one of ours.
+  notANotebook,
+}
+
+/// Sniff [path] and say why it could not be a notebook, or null when it looks
+/// like one.
+///
+/// **This runs BEFORE anything opens or copies the file, and that ordering is
+/// the whole point.** [openOnote] treats an `application_id` of zero as "a
+/// fresh file" and seeds a brand-new notebook into it, and
+/// `Repository.openExistingNotebook` copies its argument into the workspace
+/// *first* and opens it *second*. Point the two of them at a stray empty file
+/// — trivially reachable, because Explorer will happily hand us anything the
+/// user renamed to `.onote` — and the result is a mystery blank notebook
+/// permanently in the sidebar. Point them at a `.txt` and the copy has already
+/// landed in the workspace by the time SQLite objects.
+///
+/// The test is the container's own identity, and deliberately the SAME rule
+/// `packaging/linux/openote.xml` gives the desktop: "SQLite format 3" at
+/// offset 0 *and* `application_id` = "ONOT" at offset 68, which is where
+/// SQLite keeps that field. Matching only the SQLite magic would claim every
+/// database on the machine.
+///
+/// The one concession is an `application_id` of zero **with a `-wal` file
+/// beside it**. Notebooks are opened `journal_mode=WAL`, so a container whose
+/// header change has not been checkpointed back yet still reads as zeros here;
+/// `checkpointAndClose` means that only survives a crash, but calling a real
+/// notebook "not a notebook" because the app died once is the wrong way to be
+/// wrong. The real open decides that case.
+NotebookFileProblem? notebookFileProblem(String path) {
+  final type = FileSystemEntity.typeSync(path, followLinks: true);
+  if (type == FileSystemEntityType.notFound) return NotebookFileProblem.missing;
+  if (type != FileSystemEntityType.file) return NotebookFileProblem.notAFile;
+
+  Uint8List head;
+  try {
+    final handle = File(path).openSync();
+    try {
+      head = handle.readSync(_headerBytes);
+    } finally {
+      handle.closeSync();
+    }
+  } catch (_) {
+    return NotebookFileProblem.unreadable;
+  }
+  if (head.length < _headerBytes) return NotebookFileProblem.notANotebook;
+  for (var i = 0; i < _sqliteMagic.length; i++) {
+    if (head[i] != _sqliteMagic[i]) return NotebookFileProblem.notANotebook;
+  }
+  // Big-endian, like every multi-byte field in a SQLite header.
+  final appId = (head[68] << 24) | (head[69] << 16) | (head[70] << 8) | head[71];
+  if (appId == onoteApplicationId) return null;
+  if (appId == 0 && File('$path-wal').existsSync()) return null;
+  return NotebookFileProblem.notANotebook;
+}
+
+/// Offset 68 holds `application_id`; 72 is the first byte past it.
+const int _headerBytes = 72;
+
+/// The 16 bytes every SQLite file starts with: `SQLite format 3` and a NUL.
+/// Spelled as bytes rather than as a string literal because the sixteenth byte
+/// is a zero — a literal is the one way to write this that either hides a real
+/// NUL in the source or, worse, quietly puts a space there instead.
+const List<int> _sqliteMagic = [
+  0x53, 0x51, 0x4C, 0x69, 0x74, 0x65, 0x20, 0x66, // "SQLite f"
+  0x6F, 0x72, 0x6D, 0x61, 0x74, 0x20, 0x33, 0x00, // "ormat 3" + NUL
+];
 
 Database openOnote(String path, {required String notebookId, required String title}) {
   final db = sqlite3.open(path);

@@ -35,6 +35,11 @@ Grab the latest build from **[openote.org](https://openote.org)** or the
 Your notes are written to your own machine in an open, documented format. There
 is no account, and nothing is uploaded anywhere.
 
+On Windows and Linux, the installer also teaches your file manager what a
+notebook is: double-click any `.onote` and it opens, in the Openote you already
+have running if there is one. From a terminal, `openote path/to/notebook.onote`
+does the same thing.
+
 ### Your operating system will warn you. Here's why, honestly.
 
 Openote isn't code-signed. Certificates cost a few hundred dollars a year per

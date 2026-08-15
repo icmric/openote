@@ -1,16 +1,52 @@
+import 'dart:io' show exit;
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 
+import 'core/single_instance.dart';
+import 'core/startup_args.dart';
 import 'media/video_playback.dart';
 import 'state/app_state.dart';
 import 'store/repository.dart';
 import 'theme/onote_theme.dart';
 import 'ui/app_shell.dart';
 
-void main() {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The notebook we were launched to open: `openote Physics.onote`, or a
+  // double-click on a .onote in the file manager. Parsed before anything else
+  // because the single-instance hand-off below needs to know what to hand
+  // over. See core/startup_args.dart.
+  final requested = notebookPathFromArgs(args);
+
+  // BEFORE runApp, and this ordering is the whole point: if another Openote is
+  // already running on this workspace it takes the notebook and we exit
+  // without ever painting. A window that appears and immediately vanishes
+  // would be worse than either outcome.
+  //
+  // The cost is that the first frame now waits on resolving the workspace
+  // folder and one file lock — a `mkdir` and an `open` — which is a few
+  // milliseconds against the "the app takes ages to appear" work below. There
+  // is no way to know whether this process is allowed to exist without asking.
+  SingleInstance? instance;
+  var handedOver = false;
+  try {
+    final dir = await Repository.resolveWorkspaceDir();
+    instance = await SingleInstance.claim(dir, openPath: requested);
+    handedOver = instance == null;
+  } catch (_) {
+    // The workspace folder could not even be resolved. Say nothing here and
+    // carry on: `Repository.open()` is about to fail the same way, and it
+    // fails into the in-window error screen below instead of into a process
+    // that dies with no window at all.
+    instance = null;
+  }
+  // Outside the try on purpose. A null `instance` means "we handed over, stop"
+  // on one path and "carry on without a claim" on the other, so the decision
+  // is spelled with its own flag rather than left for a reader to infer.
+  if (handedOver) exit(0);
+
   // pdfrx wires its own statics (asset loader, and the cache directory pdfium
   // needs for its font cache) inside this call. Its *widgets* do it implicitly
   // in initState, but Openote drives the document API directly and never
@@ -26,14 +62,21 @@ void main() {
   // Paint a window IMMEDIATELY; open the workspace behind it. Blocking runApp
   // on Repository.open + init left the window invisible until SQLite and the
   // restored page were fully loaded ("the app takes ages to appear").
-  runApp(const OpenoteBoot());
+  runApp(OpenoteBoot(notebookPath: requested, instance: instance));
 }
 
 /// Boots the workspace behind a lightweight splash, then swaps in the app.
 /// Never fails invisibly: a startup error renders in-window (PLAT-9 in
 /// spirit) instead of leaving a ghost process.
 class OpenoteBoot extends StatefulWidget {
-  const OpenoteBoot({super.key});
+  const OpenoteBoot({super.key, this.notebookPath, this.instance});
+
+  /// The notebook named on the command line, absolute — or null.
+  final String? notebookPath;
+
+  /// Our claim on this workspace, when we got one. Held here so it lives as
+  /// long as the app and is released on the way out.
+  final SingleInstance? instance;
 
   @override
   State<OpenoteBoot> createState() => _OpenoteBootState();
@@ -54,13 +97,17 @@ class _OpenoteBootState extends State<OpenoteBoot> {
     try {
       final repo = await Repository.open();
       final app = AppState(repo);
-      await app.init();
+      await app.init(notebookPath: widget.notebookPath);
+      // Every LATER double-click arrives here, as a request file the new
+      // process left behind before exiting. See core/single_instance.dart.
+      widget.instance?.listen(app.openNotebookFile);
       // Persist before the process goes away. Autosave is debounced, so without
       // this the last edits before a window close were silently lost — and the
       // SQLite handles never got a clean close (no WAL checkpoint).
       _lifecycle = AppLifecycleListener(
         onExitRequested: () async {
           await app.shutdown();
+          await widget.instance?.dispose();
           return AppExitResponse.exit;
         },
       );
@@ -73,6 +120,10 @@ class _OpenoteBootState extends State<OpenoteBoot> {
   @override
   void dispose() {
     _lifecycle?.dispose();
+    // Stops the request poll. The lock itself is released by the OS when the
+    // process goes, so this is about not leaving a timer behind in a hot
+    // reload rather than about correctness on exit.
+    widget.instance?.dispose();
     _app?.dispose();
     super.dispose();
   }

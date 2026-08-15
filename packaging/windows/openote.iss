@@ -24,6 +24,10 @@
 #define AppPublisher "Openote"
 #define AppUrl "https://github.com/icmric/openote"
 #define AppExe "openote.exe"
+; The ProgID is the registry name for "a thing Openote opens". Versioned-looking
+; on purpose (this is the convention Windows expects) and, like AppId, never
+; changed once shipped: it is what an existing association points at.
+#define ProgId "Openote.Notebook.1"
 
 [Setup]
 ; A stable GUID identifies the *product* across versions — it is what makes an
@@ -78,6 +82,12 @@ CloseApplications=yes
 CloseApplicationsFilter=*.exe,*.dll
 RestartApplications=no
 
+; Tells Inno to call SHChangeNotify(SHCNE_ASSOCCHANGED) when it finishes, so
+; Explorer picks up the .onote association below without a sign-out. Without
+; it the icon and the double-click behaviour appear at some unpredictable
+; later moment, which reads as "the installer didn't work".
+ChangesAssociations=yes
+
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
@@ -100,6 +110,63 @@ Source: "{#StageDir}\*"; DestDir: "{app}"; \
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
+
+[Registry]
+; ── Double-click a .onote and it opens ───────────────────────────────────
+;
+; The point of the whole feature: "A year 10 student wont know what an MCP is
+; or how to run a command in their terminal", so the file-manager route is the
+; one that matters and the command line is the power-user spelling of it.
+;
+; `HKA` (HKEY_AUTO) resolves to HKEY_CURRENT_USER here, because
+; PrivilegesRequired=lowest above means this install never has the rights to
+; write HKEY_LOCAL_MACHINE. HKCU\Software\Classes is a first-class association
+; on every supported Windows — it just belongs to the person rather than to the
+; machine, which is right for a per-user install of personal software.
+;
+; `uninsdeletevalue` on the extension and `uninsdeletekey` on the ProgID: an
+; uninstall must leave no ".onote opens with a program that is gone" behind.
+; Note the asymmetry — the extension key gets its VALUE removed, not the key,
+; because another program may have added its own entries under it.
+Root: HKA; Subkey: "Software\Classes\.onote"; ValueType: string; \
+  ValueName: ""; ValueData: "{#ProgId}"; Flags: uninsdeletevalue
+; The MIME type Openote already declares to Linux desktops
+; (packaging/linux/openote.xml). Kept identical so a notebook mailed between
+; platforms is described the same way at both ends.
+Root: HKA; Subkey: "Software\Classes\.onote"; ValueType: string; \
+  ValueName: "Content Type"; ValueData: "application/x-onote"; \
+  Flags: uninsdeletevalue
+; What Explorer calls it in the Type column. Plain words, no file format.
+Root: HKA; Subkey: "Software\Classes\{#ProgId}"; ValueType: string; \
+  ValueName: ""; ValueData: "Openote notebook"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\{#ProgId}\DefaultIcon"; ValueType: string; \
+  ValueName: ""; ValueData: "{app}\{#AppExe},0"
+; The quoting is load-bearing. `"%1"` — the inner quotes are part of the
+; registry value — is what keeps `C:\My Notes\Term 1.onote` a single argument;
+; without them Windows hands over `C:\My`, and every notebook in a folder with
+; a space in its name fails to open. (In an Inno string, `""` is one literal
+; quote.)
+Root: HKA; Subkey: "Software\Classes\{#ProgId}\shell\open\command"; \
+  ValueType: string; ValueName: ""; \
+  ValueData: """{app}\{#AppExe}"" ""%1"""
+; "Open with ▸ Openote" even when something else owns the default — the way
+; back for anyone who has pointed .onote somewhere else, without hunting for
+; the exe. `uninsdeletevalue` again: this key is shared with every other
+; program that has ever offered to open a .onote.
+Root: HKA; Subkey: "Software\Classes\.onote\OpenWithProgids"; \
+  ValueType: string; ValueName: "{#ProgId}"; ValueData: ""; \
+  Flags: uninsdeletevalue
+; The per-application registration behind that entry. `uninsdeletekey` sits on
+; the ROOT of this little tree, not on the command key: put it on the leaf and
+; the uninstall takes `\shell\open\command` away and leaves `SupportedTypes`
+; behind, which is a half-registered application in the shell forever.
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}"; \
+  ValueType: none; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\shell\open\command"; \
+  ValueType: string; ValueName: ""; \
+  ValueData: """{app}\{#AppExe}"" ""%1"""
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\SupportedTypes"; \
+  ValueType: string; ValueName: ".onote"; ValueData: ""
 
 [Run]
 Filename: "{app}\{#AppExe}"; \

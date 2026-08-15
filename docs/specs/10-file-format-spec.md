@@ -199,6 +199,15 @@ If a future major version changes CRDT engine or encoding, migration MUST be one
 ```
 Notebooks are discoverable without the registry (directory scan); the registry adds ordering, colors, and id→file resolution for cross-notebook refs.
 
+Two further files may appear in the workspace root, both **runtime state, not data**. A third-party reader MUST ignore them, and deleting them while Openote is closed loses nothing:
+
+| File | What it is |
+|---|---|
+| `.instance-lock` | Held open, and exclusively locked, by the one running Openote for this workspace. Its contents are that process's id, for diagnosis only — the lock, not the number, is the claim, so a crashed process releases it automatically. |
+| `.open-request` | Present for a moment only: a second launch writes `{"path": …, "at": …}` here to hand a double-clicked notebook to the instance that holds the lock, and the holder deletes it as its acknowledgement. |
+
+Why the workspace is single-instance at all: this container is a WAL SQLite database rewritten on every save, and `workspace.json` above is rewritten wholesale. Two processes over one workspace lose notebooks (last writer wins the registry) and risk the container corruption §11 and ADR-0006 §3 describe. Associating `.onote` with the app made a second process one double-click away, so the lock arrived with the association.
+
 ## 8. Open-folder export ("materialize")
 
 Every implementation MUST offer a lossless-where-possible export of a notebook to a plain folder:

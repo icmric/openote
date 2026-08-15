@@ -8,18 +8,31 @@ Comment=Open-source, natively cross-platform alternative to OneNote
 # launchers resolve the entry without the user's PATH, and the failure is a
 # menu icon that does nothing when clicked.
 #
-# No `%F`, and no `MimeType=` — deliberately. Both would tell the desktop that
-# Openote can be handed a file to open, and it cannot: `main()` in
-# app/lib/main.dart takes no arguments and always restores the last session.
-# Declaring the association would make double-clicking a .onote launch Openote
-# showing a DIFFERENT notebook, which is worse than not offering it. The MIME
-# type itself is still installed (openote.xml), so a .onote is still described
-# and iconed correctly in the file manager — it just is not claimed as
-# something this build can open.
-Exec=/opt/openote/openote
+# `%f` — ONE file, as a path. It is what makes double-clicking a .onote in the
+# file manager open that notebook. This used to be deliberately absent, with
+# the comment that "`main()` in app/lib/main.dart takes no arguments and always
+# restores the last session", so claiming the association would have launched
+# Openote showing a DIFFERENT notebook. That is fixed: `main(List<String> args)`
+# reads the path (app/lib/core/startup_args.dart) and opens it, and a second
+# double-click while Openote is running is handed to the running copy rather
+# than starting a second one (app/lib/core/single_instance.dart).
+#
+# `%f` and not `%F` or `%U`. `%F` offers a list, and Openote has one workspace
+# window, so the second and third files would be silently dropped — better not
+# to claim them. `%U` would hand over a URL for a file the desktop had to mount
+# first, which is a promise this app cannot keep. (The argument parser still
+# accepts a `file://` URL, because some launchers send one regardless of what
+# the entry asked for.)
+Exec=/opt/openote/openote %f
 Icon=openote
 Categories=Office;Utility;
 Terminal=false
+# The type declared by openote.xml, which the package installs into
+# /usr/share/mime/packages. Declaring it here is the half that makes this app
+# the HANDLER; the .xml on its own only made a .onote described and iconed.
+# Both are refreshed by the postinst's `update-desktop-database` and
+# `update-mime-database`, so the association is live without a logout.
+MimeType=application/x-onote;
 # Must match what the running window actually reports, or the launcher shows a
 # second, generic icon beside the real one instead of highlighting it.
 # app/linux/runner/my_application.cc:138 calls `g_set_prgname(APPLICATION_ID)`,

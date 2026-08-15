@@ -117,12 +117,12 @@ packages. Roughly 12–18 minutes end to end, most of it macOS.
 
 | Platform | File | What the user does |
 |---|---|---|
-| Windows | `openote-X.Y.Z-windows-x64-setup.exe` | Runs it. Wizard, Start-menu entry, uninstaller. **No administrator password** — it installs per-user into `%LOCALAPPDATA%`. |
-| Windows | `openote-X.Y.Z-windows-x64.zip` | Unzips it, runs `openote.exe`. Kept for locked-down machines, USB sticks, and people who want to look inside first. |
+| Windows | `openote-X.Y.Z-windows-x64-setup.exe` | Runs it. Wizard, Start-menu entry, uninstaller, and `.onote` files start opening in Openote. **No administrator password** — it installs per-user into `%LOCALAPPDATA%`. |
+| Windows | `openote-X.Y.Z-windows-x64.zip` | Unzips it, runs `openote.exe`. Kept for locked-down machines, USB sticks, and people who want to look inside first. **No file association** — that lives in the installer's registry entries, so double-clicking a `.onote` does nothing here. |
 | Linux | `openote-X.Y.Z-linux-amd64.deb` | Double-click on Ubuntu/Debian/Mint. Installs to `/opt`, adds a menu entry and the `.onote` association. |
 | Linux | `openote-X.Y.Z-linux-x86_64.rpm` | Same, for Fedora/RHEL/openSUSE. |
-| Linux | `openote-X.Y.Z-linux-x64.tar.gz` | Extracts, runs `openote`. The fallback for distros that use neither package format. |
-| macOS | `openote-X.Y.Z-macos-universal.dmg` | Opens, drags to Applications. Universal — one file for Intel and Apple Silicon. |
+| Linux | `openote-X.Y.Z-linux-x64.tar.gz` | Extracts, runs `openote`. The fallback for distros that use neither package format. No desktop entry, so no association either. |
+| macOS | `openote-X.Y.Z-macos-universal.dmg` | Opens, drags to Applications. Universal — one file for Intel and Apple Silicon. **No `.onote` association yet** — macOS delivers files through `application(_:open:)` rather than as an argument, which needs `Runner/Info.plist` and `AppDelegate.swift` work that belongs with the macOS packaging item. |
 
 ### ⚠️ 1a. Publishing the draft — manual
 
@@ -267,10 +267,21 @@ flutter build windows --release   # or: linux / macos
 
 Output lands in `app/build/<platform>/…`. The one rule that matters: **the
 native library must sit next to the executable** (`onote_core.dll` /
-`libonote_core.so` / inside `Contents/MacOS/`). The CMake hook does this on
-Windows and Linux; macOS has no hook, so the workflow copies it manually and
-then **re-signs ad-hoc** — inserting a file breaks Flutter's signature seal and
-the app is killed on launch otherwise.
+`libonote_core.so` / inside `Contents/MacOS/`). All three platforms now do this
+for you: CMake on Windows and Linux, and on macOS a Run Script build phase on
+the Runner target (`app/macos/build_onote_core.sh`) that builds one Rust target
+per architecture in `$ARCHS` and `lipo`s them together, so a universal Release
+app gets a universal dylib.
+
+The macOS hook has **not been run on a Mac** — see the checklist in
+[`app/README.md`](../app/README.md). Until someone confirms it, the manual
+fallback is still the documented one: `cargo build --release`, copy the dylib
+into `Contents/MacOS/`, then **re-sign ad-hoc** — inserting a file into an
+already-signed bundle breaks its seal and the app is killed on launch. That is
+also exactly what the release workflow does, and it is deliberately left in
+place: the workflow's own `cargo`/`lipo`/re-sign steps run whether or not the
+build phase works, so a tag cannot ship a coreless dmg because of an untested
+script.
 
 To build the Windows installer locally you need [Inno Setup](https://jrsoftware.org/isdl.php) 6:
 

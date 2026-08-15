@@ -15,6 +15,7 @@ import 'alert_popup.dart';
 import 'import_progress.dart';
 import 'command_bar.dart';
 import 'onboarding.dart';
+import 'open_notice_dialog.dart';
 import 'planner_panel.dart';
 import 'side_panel.dart';
 import 'protect_dialog.dart';
@@ -67,16 +68,49 @@ class _AppShellState extends State<AppShell> {
     ]) {
       n.addListener(_regionFocusChanged);
     }
+    // A notebook we were HANDED can arrive at any moment: at launch (from the
+    // command line) or minutes later, when another double-click hands this
+    // instance a file through core/single_instance.dart. One listener covers
+    // both, so the second case cannot quietly go unreported the way a
+    // launch-only check would leave it.
+    app.addListener(_openNoticeChanged);
     // Post-frame: the welcome flow needs a Navigator, and there isn't one
     // until this shell is mounted.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) maybeShowOnboarding(context, app);
+      if (!mounted) return;
+      // The hand-off notice takes the slot when there is one. On a fresh
+      // install whose shortcut points at a moved notebook BOTH would fire, and
+      // two modal dialogs stacked on first run is a worse first minute than
+      // either alone.
+      if (app.pendingOpenNotice != null) {
+        _openNoticeChanged();
+      } else {
+        maybeShowOnboarding(context, app);
+      }
     });
+  }
+
+  /// True while the notice dialog is up, so a notify that arrives underneath
+  /// it cannot stack a second copy.
+  bool _noticeShowing = false;
+
+  Future<void> _openNoticeChanged() async {
+    if (_noticeShowing || !mounted) return;
+    final notice = app.pendingOpenNotice;
+    if (notice == null) return;
+    app.pendingOpenNotice = null; // consumed — shown once, never on rebuild
+    _noticeShowing = true;
+    try {
+      await showOpenNotebookNotice(context, notice);
+    } finally {
+      _noticeShowing = false;
+    }
   }
 
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onKey);
+    app.removeListener(_openNoticeChanged);
     for (final n in [
       _canvasFocus,
       _sidebarRegion,
