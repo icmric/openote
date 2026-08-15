@@ -517,6 +517,17 @@ jobs:
       # Flutter's macOS release build is universal by default; the dylib must
       # match or Intel Macs silently lose the Rust core through a Rosetta
       # arch mismatch.
+      #
+      # KEPT ON PURPOSE even though app/macos/build_onote_core.sh now does the
+      # same work inside `flutter build macos`. That build phase has never run
+      # on a Mac (it was written on a Windows machine — see app/README.md), and
+      # a tag is the worst possible place to discover it is wrong: the app
+      # would still build and still launch, just without OneNote import,
+      # because the loader falls back to the Dart engine on purpose. These
+      # steps make the shipped dmg independent of that question. Delete them
+      # once the hook has been confirmed on real hardware, not before.
+      # The two are consistent by construction: same crate, same two targets,
+      # same lipo, and the copy below overwrites whatever the hook placed.
       - name: Build Rust core (universal)
         working-directory: rust/onote_core
         run: |

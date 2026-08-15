@@ -47,13 +47,61 @@ burned several sessions (fixes appearing to do nothing because an old library
 was still being loaded). If `cargo` is not on `PATH` the hook prints a warning
 and skips it, and the app runs on the Dart engine.
 
-**macOS has no equivalent hook** — Flutter drives it through Xcode rather than
-our CMake — so a local `flutter build macos` produces an app without the core,
-and therefore without OneNote import. The release workflow does it explicitly
+**macOS now has the same hook, written but never run.** Flutter drives macOS
+through Xcode rather than our CMake, so the equivalent is a Run Script build
+phase on the Runner target that calls
+[`macos/build_onote_core.sh`](macos/build_onote_core.sh). It mirrors the CMake
+hooks deliberately: always `cargo build --release`, no cargo means a warning
+rather than a failure, a broken crate fails the build, and the phase is
+declared last so nothing Flutter does can overwrite what it copied in.
+
+It differs from the CMake hooks in one place, and it is the interesting one:
+**architecture**. The script reads Xcode's `$ARCHS` and builds one Rust target
+per entry — `aarch64-apple-darwin` for `arm64`, `x86_64-apple-darwin` for
+`x86_64` — then `lipo`s them into one dylib. A Debug run builds only your own
+machine's architecture (Debug sets `ONLY_ACTIVE_ARCH = YES`); a Release or
+Profile build gets both, because `flutter build macos --release` produces a
+universal app. This is not tidiness: a universal app carrying an arm64-only
+dylib loses the Rust core on every Intel Mac, and loses it *silently*, since
+the loader is built to fall back to the Dart engine when `dlopen` fails.
+
+The release workflow still does the same work explicitly
 (`.github/workflows/release.yml` builds both architectures, `lipo`s them, drops
-the dylib into `Contents/MacOS/` and re-signs), so **release** builds are fine;
-only local mac development needs the manual step. See
+the dylib into `Contents/MacOS/` and re-signs). That is now redundant on paper
+and is staying until the build phase has been confirmed on real hardware — a
+tag must not be the first thing to find out this script is wrong. See
 [`rust/onote_core/INTEGRATION.md`](../rust/onote_core/INTEGRATION.md).
+
+#### Verifying the macOS hook (nobody has yet)
+
+The script and the Xcode phase were written on a Windows machine. What was
+checked there: shell syntax under `bash -n` and `sh -n`, every branch driven
+with stub `cargo`/`rustup`/`lipo`/`codesign` (including a checkout path with a
+space in it), the target triples, the crate's output paths, and that
+`Runner.xcodeproj/project.pbxproj` still parses with its object graph intact.
+What was not checked: that any of it runs. On the first Mac to try it:
+
+1. `rustup target add aarch64-apple-darwin x86_64-apple-darwin`.
+2. `cd app && flutter build macos --release`. The build log should carry an
+   `onote_core: libonote_core.dylib (…) -> …/openote.app/Contents/MacOS` line.
+3. `lipo -info build/macos/Build/Products/Release/openote.app/Contents/MacOS/libonote_core.dylib`
+   → must list **both** `x86_64` and `arm64`.
+4. `codesign --verify --strict --verbose=2` on the `.app` → must pass. This is
+   the assumption most worth testing: the script copies the dylib in *during*
+   the build on the belief that Xcode's own code-signing step runs after all
+   build phases, so no manual re-sign is needed. If that is wrong, the app will
+   be killed on launch and the script needs to re-sign the bundle itself.
+5. Open the app. The status bar should show the green **`Rust core v0.1.0`**
+   chip, not `Dart engine`.
+6. `flutter run -d macos` (Debug) — same chip, and step 3 lists one
+   architecture, your own.
+7. If the phase never runs at all, check the exec bit: the phase invokes
+   `/bin/bash "$SRCROOT/build_onote_core.sh"` precisely so the script does not
+   need one, because the file was authored on Windows where git records mode
+   `100644`.
+
+Then delete the "UNVERIFIED" banner at the top of the script, and this
+paragraph.
 
 `sync-core.bat` in the repo root remains for Windows, and still works: it builds
 Rust, then Flutter, then copies the DLL, in that order.

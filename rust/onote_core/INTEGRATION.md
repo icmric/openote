@@ -66,8 +66,10 @@ double-check the folder, or use step 2 to have the build place it for you.
 > DLL by mtime, so a fresh `cargo build` is often picked up without the copy; and
 > the status-bar chip shows the loaded core's version.
 >
-> **As of 2026-07-27 this trap is CLOSED on Windows and Linux** — see §2. The
-> warning above is retained for anyone building macOS by hand, and as history.
+> **As of 2026-07-27 this trap is CLOSED on Windows and Linux** — see §2. macOS
+> has a hook too now, but it has never been run on a Mac, so treat the warning
+> above as live there until someone has worked through the checklist in
+> `app/README.md`.
 
 ## 2. Automatic build — **WIRED** on Windows and Linux (2026-07-27)
 
@@ -92,14 +94,29 @@ Three properties of the wiring worth knowing:
   failing loudly beats silently running a stale core, which is exactly the bug
   class this document exists to warn about.
 
-**macOS is manual for now** (`app/macos` is Xcode, not CMake): `cargo build
---release`, copy `target/release/libonote_core.dylib` into
-`openote.app/Contents/MacOS/`, then **re-sign ad-hoc**
-(`codesign --force --deep --sign - <app>`) — inserting a dylib breaks the
-bundle's signature seal and the app is killed on launch without it. The release
-workflow does exactly this, universal via `lipo`. Proper wiring later: a Run
-Script phase on the Runner target after Flutter's own, "based on dependency
-analysis" unchecked.
+**macOS has the wiring this section used to describe as "later" — untested.**
+It is what was sketched here: a Run Script phase on the Runner target, declared
+after Flutter's own, with "based on dependency analysis" unchecked
+(`alwaysOutOfDate = 1`), calling `app/macos/build_onote_core.sh`. It adds one
+thing the sketch did not cover, because macOS is the only platform where it
+arises: it builds a **Rust target per architecture in Xcode's `$ARCHS`** and
+`lipo`s them, so a universal Release app cannot end up with a single-slice
+dylib that silently drops the core on Intel.
+
+It was written on a Windows machine and **has never been run**. Until it has
+(checklist in `app/README.md`), the manual route stays valid and is what the
+release workflow still does: `cargo build --release`, copy
+`target/release/libonote_core.dylib` into `openote.app/Contents/MacOS/`, then
+**re-sign ad-hoc** — inserting a dylib breaks the bundle's signature seal and
+the app is killed on launch without it. Note `--deep` is deprecated by Apple
+and also silently re-signs with no entitlements; sign the dylib, then the
+bundle with `--entitlements`, the way `release.yml` does.
+
+One structural difference worth knowing, because it is the assumption most
+likely to be wrong: the build phase copies the dylib in **during** the build,
+before Xcode's own code-signing step, so it should need no re-sign at all. The
+manual route and the workflow copy it in *after* signing, which is why they
+must.
 
 `sync-core.bat` remains useful only as the fast path for Rust-only iteration
 (`sync-core.bat rust`); its build-then-copy choreography is otherwise
