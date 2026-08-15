@@ -2,15 +2,22 @@
 ///
 /// Two doors lead here and only one of them matters to the audience:
 ///
-/// * **Double-clicking a `.onote` in the file manager.** Windows Explorer runs
-///   `openote.exe "C:\...\Physics.onote"`, and a Linux desktop runs
-///   `/opt/openote/openote /home/.../Physics.onote` (the `%f` in
-///   `packaging/linux/org.openote.openote.desktop`). Both arrive as an
-///   ordinary argument. This is the path a year-10 student actually uses.
-/// * **`openote path/to/notebook.onote`** from a terminal, for people who
+/// * **Double-clicking a notebook in the file manager.** Windows Explorer runs
+///   `openote.exe "C:\...\Physics.onotebook\Open this notebook.onotelink"`,
+///   and a Linux desktop runs `/opt/openote/openote /home/.../Physics.onotebook`
+///   (the `%f` in `packaging/linux/org.openote.openote.desktop`). Both arrive
+///   as an ordinary argument. This is the path a year-10 student actually uses.
+/// * **`openote path/to/notebook.onotebook`** from a terminal, for people who
 ///   live there.
 ///
 /// Both end up in the same one-element list, so there is one parser.
+///
+/// **A directory is an ordinary argument, and that is the point.** From v0.17
+/// the notebook IS the `.onotebook` directory (plan Step 8b, decision 2), so
+/// what arrives here is often a folder path. Every rule below — switches,
+/// `--`, `file://` URLs, relative paths — applies to it unchanged, which is
+/// why this file needed no new case. What the path turns out to be is
+/// `core/open_target.dart`'s question, asked after this one is answered.
 ///
 /// **Why this is a separate, dependency-free file.** `main()` receives raw
 /// argv, and every interesting case in it — a relative path, a path with

@@ -36,9 +36,11 @@ Your notes are written to your own machine in an open, documented format. There
 is no account, and nothing is uploaded anywhere.
 
 On Windows and Linux, the installer also teaches your file manager what a
-notebook is: double-click any `.onote` and it opens, in the Openote you already
-have running if there is one. From a terminal, `openote path/to/notebook.onote`
-does the same thing.
+notebook is. A notebook is a folder — `Physics.onotebook` — and inside it there
+is a file called **Open this notebook**. Double-click that and your notebook
+opens, in the Openote you already have running if there is one. On some Linux
+desktops you can double-click the folder itself. From a terminal,
+`openote path/to/Physics.onotebook` does the same thing.
 
 ### Your operating system will warn you. Here's why, honestly.
 

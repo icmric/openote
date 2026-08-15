@@ -4,6 +4,32 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed — your notebook is the folder, and there is one thing to double-click
+
+- **Your notebook is a folder — `Physics.onotebook` — and everything inside it
+  belongs to that notebook.** Inside it there is now a file called **Open this
+  notebook**. Double-click that and your notebook opens, in the Openote you
+  already have running if there is one. It is put there for every notebook,
+  including the ones you already have, the next time Openote opens them. If you
+  rename the folder, nothing breaks: the file is only a door, and Openote reads
+  the folder it is sitting in rather than anything written inside it.
+- **On some Linux desktops you can double-click the notebook folder itself.**
+  Whether that works depends on which file manager you use, and we have not yet
+  been able to check them all. The **Open this notebook** file inside works
+  either way.
+- **Openote now says so, plainly, if you try to open its working file by
+  mistake.** The file that sits beside your notebook is Openote's own scratch
+  copy, not your notes — opening it used to look as though it had worked. It
+  now tells you to open the notebook folder instead.
+- **Openote no longer puts itself in charge of `.onote` files**, and updating
+  takes that away again rather than leaving it behind. You can still open one
+  from inside Openote, and it is still copied into a notebook folder for you,
+  exactly as before.
+- **On a Mac, double-clicking a notebook still does not open it.** That needs
+  work inside the Mac app which has not been done, and shipping only half of it
+  would have made Openote open the wrong notebook. Open your notebooks from
+  inside Openote there for now.
+
 ### Changed — your pictures and drawings now live in the notebook's own folder
 
 - **Openote used to keep every picture and drawing in two places at once: one

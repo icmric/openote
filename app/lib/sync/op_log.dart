@@ -26,6 +26,7 @@ import 'package:path/path.dart' as p;
 // rather than re-implemented: a second SHA-256 would be a second chance to
 // disagree with the one that MINTED these names, and the whole point of
 // [blobBytesMatch] is that the two must be the same function.
+import '../core/open_target.dart' show ensureNotebookPointer;
 import '../store/notebook_writer.dart' show sha256Hex;
 import 'op.dart';
 
@@ -141,6 +142,12 @@ class OpLogStore {
   /// Create the directory and manifest if absent. Idempotent.
   void ensureInitialised({required String notebookId, required String title}) {
     opsDir.createSync(recursive: true);
+    // The one thing a student can double-click (v0.17 plan, Step 8b). Written
+    // HERE because this is the single place every `.onotebook` comes into
+    // existence — created fresh, moved into Drive, adopted from a git clone —
+    // and a pointer file that only some notebooks had would be worse than none
+    // at all. Best-effort and never rewritten; see core/open_target.dart.
+    ensureNotebookPointer(dir.path, title: title);
     if (!manifestFile.existsSync()) {
       _writeManifest({
         'format': {'major': 1, 'minor': 0},

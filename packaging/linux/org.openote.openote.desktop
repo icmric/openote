@@ -8,8 +8,12 @@ Comment=Open-source, natively cross-platform alternative to OneNote
 # launchers resolve the entry without the user's PATH, and the failure is a
 # menu icon that does nothing when clicked.
 #
-# `%f` — ONE file, as a path. It is what makes double-clicking a .onote in the
-# file manager open that notebook. This used to be deliberately absent, with
+# `%f` — ONE file, as a path. It is what makes double-clicking a notebook in
+# the file manager open it. A DIRECTORY arrives through `%f` as an ordinary
+# path too, which is what makes the `inode/directory` subclass in openote.xml
+# worth declaring at all: `main()` notices the path is a `.onotebook` and routes
+# it to the join path rather than to the container opener
+# (app/lib/core/open_target.dart). This used to be deliberately absent, with
 # the comment that "`main()` in app/lib/main.dart takes no arguments and always
 # restores the last session", so claiming the association would have launched
 # Openote showing a DIFFERENT notebook. That is fixed: `main(List<String> args)`
@@ -27,12 +31,19 @@ Exec=/opt/openote/openote %f
 Icon=openote
 Categories=Office;Utility;
 Terminal=false
-# The type declared by openote.xml, which the package installs into
-# /usr/share/mime/packages. Declaring it here is the half that makes this app
-# the HANDLER; the .xml on its own only made a .onote described and iconed.
-# Both are refreshed by the postinst's `update-desktop-database` and
-# `update-mime-database`, so the association is live without a logout.
-MimeType=application/x-onote;
+# The types declared by openote.xml, which the package installs into
+# /usr/share/mime/packages. Declaring them here is the half that makes this app
+# the HANDLER; the .xml on its own only makes them described and iconed. Both
+# are refreshed by the postinst's `update-desktop-database` and
+# `update-mime-database`, so the association is live without a logout — and the
+# same refresh is what RETIRES `application/x-onote`, which this line used to
+# claim and which openote.xml no longer declares.
+#
+# The notebook folder first, the pointer file second. The order is the
+# preference a desktop reads when both could apply, and the folder is the
+# notebook; the pointer file inside it is the fallback for shells that will not
+# open a directory as a document.
+MimeType=application/x-onote-notebook;application/x-onote-link;
 # Must match what the running window actually reports, or the launcher shows a
 # second, generic icon beside the real one instead of highlighting it.
 # app/linux/runner/my_application.cc:138 calls `g_set_prgname(APPLICATION_ID)`,

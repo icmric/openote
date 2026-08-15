@@ -1,23 +1,53 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  The `.onote` container, declared to the desktop so a double-click opens it and
-  the file manager shows the Openote icon rather than a blank page.
+  The two things a student can double-click, declared to the desktop so the file
+  manager shows the Openote icon and opens them with Openote.
 
-  The magic bytes are the container's own identity: a `.onote` is a SQLite
-  database whose `application_id` pragma is 0x4F4E4F54 ("ONOT", see
-  app/lib/store/database.dart). SQLite writes that field at byte offset 68, so
-  matching "SQLite format 3" at 0 AND "ONOT" at 68 identifies an Openote
-  notebook specifically rather than any SQLite file on the machine.
+  ── What changed in v0.17, and why ──────────────────────────────────────────
+
+  This file used to declare `application/x-onote`: a `*.onote` glob plus a magic
+  match on "SQLite format 3" at offset 0 and "ONOT" at offset 68. Both are gone,
+  and the MAGIC MATCH is the reason it had to be a removal rather than a
+  narrowing. From v0.17 the `.onote` container is a local-only working copy
+  named `cache.onote` whose blobs table is emptied (plan Step 7), and that magic
+  identifies a working copy exactly as well as it identified a notebook — SQLite
+  writes `application_id` into every one of them. A student who opened a working
+  copy through this association would get a notebook with every picture missing
+  that still passed an integrity check.
+
+  Removing the type here really does remove it from the machine, unlike the
+  Windows half: the package replaces this file in /usr/share/mime/packages and
+  the postinst runs `update-mime-database`, which rebuilds the whole database
+  from the packages present. A type nothing declares any more stops existing.
+
+  ── The notebook itself is a directory ──────────────────────────────────────
+
+  `inode/directory` with a `*.onotebook` glob is the freedesktop way to say "a
+  folder of this shape is a document". **Whether GNOME Files and Dolphin honour
+  it on a double-click, rather than always opening the folder, is UNPROVEN** —
+  it is the claim Step 8b's per-platform table exists to test, and it has to be
+  tested in both file managers on a real desktop. The `.onotelink` pointer file
+  below is what works if they do not, and it is what Windows uses regardless,
+  so a notebook is openable on Linux either way.
 -->
 <mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
-  <mime-type type="application/x-onote">
+  <mime-type type="application/x-onote-notebook">
     <comment>Openote notebook</comment>
+    <sub-class-of type="inode/directory"/>
     <icon name="openote"/>
-    <glob pattern="*.onote"/>
-    <magic priority="60">
-      <match type="string" value="SQLite format 3" offset="0">
-        <match type="string" value="ONOT" offset="68"/>
-      </match>
-    </magic>
+    <glob pattern="*.onotebook"/>
+  </mime-type>
+  <!--
+    The pointer file Openote writes inside every notebook folder
+    (app/lib/core/open_target.dart). "Shortcut" and not "notebook" on purpose:
+    the notebook is the folder around it, and describing both the same way is
+    how somebody sends a friend the wrong one. No magic match — it is plain
+    prose that nothing parses, and claiming a magic for prose would claim other
+    people's text files.
+  -->
+  <mime-type type="application/x-onote-link">
+    <comment>Openote notebook shortcut</comment>
+    <icon name="openote"/>
+    <glob pattern="*.onotelink"/>
   </mime-type>
 </mime-info>

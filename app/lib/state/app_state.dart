@@ -12,6 +12,8 @@ import '../canvas/canvas_controller.dart';
 import '../core/engine.dart';
 import '../core/ids.dart';
 import '../core/onote_ffi.dart';
+import '../core/open_target.dart'
+    show isOpenoteWorkingCopy, notebookFolderNamedBy;
 import '../editor/onote_text_editor.dart';
 import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
@@ -4975,6 +4977,53 @@ class AppState extends ChangeNotifier
   /// Never throws for a bad path: the caller is a command line or a
   /// double-click, and both deserve an answer rather than a crash.
   Future<OpenNotebookResult> openNotebookFile(String path) async {
+    // ── v0.17 Step 8b: what arrives here is no longer always a container ────
+    //
+    // Since decision 2 ("register the folder instead") the thing a student
+    // double-clicks is the `.onotebook` DIRECTORY, or the pointer file inside
+    // it. Without this branch the sniff below answers `notAFile` and the app
+    // says "That's a folder, not a notebook, so there is nothing to open" —
+    // about the notebook itself.
+    final folder = notebookFolderNamedBy(path);
+    if (folder != null) {
+      try {
+        // [openExistingNotebook] already tells a `.onotebook` from a container
+        // and routes it to `adoptLogDirectory`, which is idempotent: a folder
+        // already in the registry comes back as the entry it already has, and
+        // one in the recycle bin is restored rather than cloned.
+        await openExistingNotebook(folder);
+      } catch (e) {
+        final failed = OpenNotebookResult(OpenNotebookOutcome.failed,
+            "Openote couldn't open that notebook.", details: '$folder\n\n$e');
+        pendingOpenNotice = failed;
+        notifyListeners();
+        return failed;
+      }
+      // Never `copiedIn`: nothing was copied. The folder they double-clicked
+      // IS the notebook and goes on receiving their edits, which is the whole
+      // reason the association moved onto it.
+      final opened = _repo.notebooks.where((n) => n.id == notebookId);
+      final title = opened.isEmpty
+          ? p.basenameWithoutExtension(folder)
+          : opened.first.title;
+      return OpenNotebookResult(
+          OpenNotebookOutcome.opened, 'Opened "$title".');
+    }
+    // The container is a working copy nobody should be able to open by hand.
+    // After Step 7 its `blobs` table is empty, so a clone of one is a notebook
+    // with every picture missing that still passes `integrity_check` — and the
+    // sniff below would call it a notebook, because a cache satisfies the
+    // SQLite magic and the `application_id` exactly as a notebook does.
+    if (isOpenoteWorkingCopy(path)) {
+      final refused = OpenNotebookResult(
+          OpenNotebookOutcome.notANotebook,
+          "This is Openote's working copy, not your notebook. Open the "
+          'notebook folder instead.',
+          details: path);
+      pendingOpenNotice = refused;
+      notifyListeners();
+      return refused;
+    }
     final resolved = await _resolveNotebookFile(path);
     final problem = resolved.problem;
     if (problem != null) {

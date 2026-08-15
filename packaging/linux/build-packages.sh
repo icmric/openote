@@ -16,7 +16,7 @@
 #   /usr/bin/openote                                     symlink onto PATH
 #   /usr/share/applications/org.openote.openote.desktop  the menu entry + icon
 #   /usr/share/icons/hicolor/512x512/apps/               the icon itself
-#   /usr/share/mime/packages/openote.xml                 describes a .onote
+#   /usr/share/mime/packages/openote.xml                 describes a notebook
 #
 # The desktop entry is named for the GTK application id, not "openote". Modern
 # desktops — Wayland in particular — match a running window to its entry by
