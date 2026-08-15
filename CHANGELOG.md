@@ -4,6 +4,24 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — pictures and drawings always keep their second copy in the notebook's folder
+
+- **Openote keeps every picture and drawing twice: once in its working file,
+  and once as an ordinary file in the notebook's own folder.** The second copy
+  is the one that travels — it is what another computer reads, and what ends up
+  in a backup or in a copy of the folder. Until now Openote only wrote it for
+  notebooks you had already shared, so a picture added to a notebook you had
+  not shared yet had no travelling copy, and could come up blank later on. It
+  is written for every notebook now, whatever you go on to do with it.
+- **Openote checks the copies really are there, and really are right.** When a
+  notebook opens, Openote reads back every picture and drawing in the folder
+  and compares it with what it should be. Anything missing is written again,
+  and anything that does not match is replaced. It happens quietly in the
+  background and you can carry on working while it does.
+- **Notebooks you already have are filled in the first time you open them**,
+  from what is already inside the notebook. Nothing you have written is
+  touched.
+
 ### Changed — Openote's download is about half the size
 
 - **Openote's download is about half the size it was.** Openote used to carry

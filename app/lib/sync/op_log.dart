@@ -22,6 +22,11 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
+// The content-addressing primitive, vendored in the store layer. Imported
+// rather than re-implemented: a second SHA-256 would be a second chance to
+// disagree with the one that MINTED these names, and the whole point of
+// [blobBytesMatch] is that the two must be the same function.
+import '../store/notebook_writer.dart' show sha256Hex;
 import 'op.dart';
 
 class OpLogStore {
@@ -73,6 +78,13 @@ class OpLogStore {
   /// Written via temp + rename because, unlike the append-only logs, a torn
   /// blob is not a recoverable tail — it is a corrupt image that would look
   /// like a decoding bug forever after.
+  /// **"Always already correct" is an assumption, and [blobBytesMatch] is what
+  /// checks it.** Temp+rename means nothing this code writes is ever torn, but
+  /// it says nothing about a file a cloud client copied in half, a disk that
+  /// went bad, or a hand-edited folder. Because the skip below is unconditional
+  /// on existence, such a file is never repaired by any amount of re-running:
+  /// `hasBlob` says yes, `missingBlobs()` says the notebook is complete, and
+  /// the picture is broken for ever. See [SyncRecorder.proveBlobs].
   void writeBlob(String hash, Uint8List bytes) {
     if (hasBlob(hash)) return;
     blobsDir.createSync(recursive: true);
@@ -80,6 +92,39 @@ class OpLogStore {
     final tmp = File('${target.path}.tmp');
     tmp.writeAsBytesSync(bytes, flush: true);
     tmp.renameSync(target.path);
+  }
+
+  /// Whether [hash]'s file exists **and its bytes really are [hash]**.
+  ///
+  /// [hasBlob] is an `existsSync` and nothing more. Counting files, or checking
+  /// their lengths, passes against a file whose bytes were replaced with the
+  /// same number of different ones — which is exactly what a half-completed
+  /// cloud download or a bad sector leaves behind. Only re-hashing can tell
+  /// the difference, and Step 7 of the v0.17 plan deletes the container's copy
+  /// on the strength of this answer, so a false "yes" here is data loss later.
+  bool blobBytesMatch(String hash) {
+    final f = blobFile(hash);
+    if (!f.existsSync()) return false;
+    try {
+      return sha256Hex(f.readAsBytesSync()) == hash.replaceFirst('sha256:', '');
+    } catch (_) {
+      // Unreadable — a permission error, a file the cloud client has locked.
+      // "I could not check" must never read as "it matched".
+      return false;
+    }
+  }
+
+  /// Delete a blob file whose bytes are not what its name says.
+  ///
+  /// The one and only caller is the repair in [SyncRecorder.proveBlobs], and it
+  /// exists solely because [writeBlob] refuses to overwrite: without a way to
+  /// remove the wrong file first, a blob that fails [blobBytesMatch] can never
+  /// be put right. Deliberately not exposed as "delete a blob" — nothing in
+  /// Openote deletes content-addressed bytes, and blob GC (ADR-0007) is a
+  /// separate, unbuilt thing.
+  void discardBlob(String hash) {
+    final f = blobFile(hash);
+    if (f.existsSync()) f.deleteSync();
   }
 
   /// Hashes present in `blobs/`.

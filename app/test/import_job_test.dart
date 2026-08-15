@@ -25,6 +25,7 @@ import 'package:openote/export/onenote_import.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
+import 'package:openote/sync/op_log.dart';
 
 import 'package:openote/export/import_writer.dart';
 
@@ -337,6 +338,42 @@ void main() {
       // And the seq the isolate reached was persisted here — without it the
       // next open forks this device's id.
       expect(repo.getSetting('deviceSeq:${imported.id}'), isNotNull);
+    });
+
+    test('an imported picture has its bytes in the notebook folder, not only '
+        'in the notebook file', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, _, app, _) = await fixture('onote_jobrun_blob_');
+      final png = Uint8List.fromList(List.generate(300, (i) => (i * 7) & 0xff));
+      final withImage = page('Diagram')
+        ..['images'] = [
+          {
+            'data_base64': base64Encode(png),
+            'in_flow': false,
+            'x': 10.0,
+            'y': 120.0
+          }
+        ];
+
+      final job = ImportJob.start(app, 'Pictures.onepkg', 'ignored.onepkg',
+          debugOverrides: overrides(packageJson([
+            section('W1', [withImage])
+          ])));
+      await settle(job!);
+      expect(job.state, ImportJobState.done);
+
+      // **This is where the owner's 26.3 MB hole came from.** The writer
+      // isolate used to be handed `materialiseBlobs: app.notebookIsShared(nb)`,
+      // and an import into the local workspace is never shared at that moment —
+      // so 378 of 488 pictures went into the container alone, and the log named
+      // bytes that were nowhere on disk. An import is also the cheapest place
+      // to get this right: the bytes are already in hand.
+      final ref = repo.notebooks.firstWhere((n) => n.title == 'Pictures');
+      final store = OpLogStore.forNotebook(ref.file, logDir: ref.logDir);
+      final index = repo.blobIndex(ref.id);
+      expect(index, hasLength(1));
+      expect(store.readBlob(index.single.hash), png,
+          reason: 'the same bytes, not merely a file of the right name');
     });
 
     test('a partial import says which sections did not make it', () async {

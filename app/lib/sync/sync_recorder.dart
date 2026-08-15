@@ -13,16 +13,60 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:isolate';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
 import '../model/models.dart';
 import '../ink/ink_codec.dart';
+import '../store/notebook_writer.dart' show sha256Hex;
 import 'device_identity.dart';
 import 'materializer.dart';
 import 'op.dart';
 import 'op_log.dart';
+
+/// The result of [SyncRecorder.proveBlobs] — the invariant every later step of
+/// the v0.17 storage plan is gated on, stated as a value rather than a boolean
+/// so a failure can say *which* blobs and *how* they failed.
+class BlobProof {
+  const BlobProof({
+    required this.checked,
+    required this.missing,
+    required this.repaired,
+    required this.damaged,
+  });
+
+  /// Blob files whose bytes were re-hashed. Not "files seen" — the number that
+  /// distinguishes this from a count of directory entries.
+  final int checked;
+
+  /// Named by the log, no bytes on disk, and the container could not supply
+  /// them either.
+  final Set<String> missing;
+
+  /// Found holding the wrong bytes and rewritten correctly from the container.
+  /// Not a failure: this is the repair working, and it is worth logging because
+  /// it means something outside Openote damaged the folder.
+  final Set<String> repaired;
+
+  /// Found holding the wrong bytes and NOT repairable. The worst outcome, and
+  /// the one a count of files reports as success.
+  final Set<String> damaged;
+
+  /// True when a rebuild from this log could reconstruct every picture, drawing
+  /// and attachment byte for byte. **This is the Step 7 gate.**
+  bool get ok => missing.isEmpty && damaged.isEmpty;
+
+  /// How many blobs the notebook cannot supply. What the user is told about.
+  int get holes => missing.length + damaged.length;
+
+  @override
+  String toString() => 'checked $checked, missing ${missing.length}, '
+      'wrong bytes repaired ${repaired.length}, '
+      'wrong bytes unrepairable ${damaged.length}';
+}
 
 class SyncRecorder {
   SyncRecorder._({
@@ -397,6 +441,116 @@ class SyncRecorder {
     }
     return copied;
   }
+
+  /// Re-read every blob the log names and check its bytes against its name.
+  ///
+  /// **A count is not a proof.** `missingBlobs()` asks `existsSync`, and
+  /// `backfillBlobs` skips any hash that already has a file, so a blob written
+  /// short by a full disk, or copied in half by a cloud client, is invisible to
+  /// both: the notebook reports complete coverage while one of its pictures is
+  /// rubbish. A spike stopped a backfill at 100 of 488 blobs, ran the v0.17
+  /// migration to completion and it printed MIGRATION COMPLETE with
+  /// `integrity_check` ok, having destroyed 193 image blocks across 40 pages —
+  /// and that hole was merely *absent* bytes, which is the easy case to notice.
+  /// Step 7 deletes the container's copy on the strength of this answer, so
+  /// this is the last moment the wrong bytes can be told from the right ones.
+  ///
+  /// [read] supplies replacement bytes for a file that fails — the container's
+  /// `blobs` table while it is still authoritative. A file whose bytes are
+  /// wrong is **deleted and rewritten** from it (the only way, since
+  /// `writeBlob` refuses to overwrite), and if that cannot be done the hash is
+  /// reported [BlobProof.damaged] rather than being left to look fine.
+  ///
+  /// **The hashing runs off this isolate, and that is not the usual pacing
+  /// argument.** `backfillBlobs` yields a real millisecond per blob because its
+  /// cost is a write and an fsync, and one blob is a short block. Hashing is
+  /// CPU: measured on the owner's Honours-4, re-reading and re-hashing all 488
+  /// blobs is 2.8 s of computation, and its worst SINGLE file — 1.8 MB of
+  /// binary ink — is a 164 ms block on its own. A per-file yield cannot divide
+  /// that, because one file is one block. So the read and the hash both go to a
+  /// background isolate in batches, and the UI isolate does only the comparison
+  /// and any repair.
+  Future<BlobProof> proveBlobs({
+    Uint8List? Function(String hash)? read,
+  }) async {
+    final missing = <String>{};
+    final repaired = <String>{};
+    final damaged = <String>{};
+    final present = <String>[];
+    for (final ref in state.blobs) {
+      final hash = ref.replaceFirst('sha256:', '');
+      if (store.hasBlob(hash)) {
+        present.add(hash);
+      } else {
+        // No bytes at all. Repair is `backfillBlobs`' job and it has already
+        // run; still absent here means the container could not supply them
+        // either, which is the one outcome Step 7 must never proceed through.
+        missing.add(hash);
+      }
+    }
+    var checked = 0;
+    for (var i = 0; i < present.length; i += _proveBatch) {
+      final slice =
+          present.sublist(i, math.min(i + _proveBatch, present.length));
+      final actual =
+          await _hashFiles([for (final h in slice) store.blobFile(h).path]);
+      for (var j = 0; j < slice.length; j++) {
+        final hash = slice[j];
+        checked++;
+        if (actual[j] == hash) continue;
+        // Wrong bytes, or unreadable. Either way the name is a lie, and
+        // `writeBlob` would skip it for ever, so the file goes first.
+        final fresh = read?.call(hash);
+        if (fresh != null && sha256Hex(fresh) == hash) {
+          try {
+            store.discardBlob(hash);
+            store.writeBlob(hash, fresh);
+            repaired.add(hash);
+          } catch (_) {
+            // A read-only folder, a full disk. The wrong file may now be gone,
+            // and that is deliberate: a hash with no bytes is honestly reported
+            // by `missingBlobs()`, where a hash with the wrong bytes is not.
+            damaged.add(hash);
+          }
+        } else {
+          damaged.add(hash);
+        }
+      }
+      // The `await` above already hands the loop back, so this is belt and
+      // braces for the repair path's writes — and a REAL millisecond, never
+      // `Duration.zero`: on Windows a zero timer is posted work due
+      // immediately, so the Win32 message loop never goes idle and input
+      // starves for the whole run.
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+    return BlobProof(
+        checked: checked,
+        missing: missing,
+        repaired: repaired,
+        damaged: damaged);
+  }
+
+  /// How many blob files one background hash costs. Big enough that isolate
+  /// spawn is noise against the hashing, small enough that a batch of huge ink
+  /// blobs cannot make the notebook feel stuck at open.
+  static const int _proveBatch = 32;
+
+  /// Read and SHA-256 each path, off this isolate, in order.
+  ///
+  /// Returns null for a path it could not read — a permission error, a file a
+  /// cloud client has locked. "I could not check" must never come back looking
+  /// like a match, and null matches no hash.
+  static Future<List<String?>> _hashFiles(List<String> paths) =>
+      Isolate.run(() => [
+            for (final path in paths)
+              () {
+                try {
+                  return sha256Hex(File(path).readAsBytesSync());
+                } catch (_) {
+                  return null;
+                }
+              }()
+          ]);
 
   // ── Ingestion: other devices' logs ───────────────────────────────────
 

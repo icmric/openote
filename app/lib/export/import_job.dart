@@ -218,7 +218,14 @@ class ImportJob extends ChangeNotifier {
           title: ref.title,
           logDir: ref.logDir,
           deviceId: app.localDeviceId(),
-          materialiseBlobs: app.notebookIsShared(nb),
+          // **Unconditional** (v0.17 plan, Step 5). This one line is where the
+          // owner's measured 378-of-488 hole came from: an import into the
+          // local workspace wrote 26.3 MB of PNGs into the container and none
+          // of them into `blobs/`, so the log named 488 blobs and could supply
+          // 110. Doing it here is also strictly cheaper than the backfill that
+          // would otherwise have to re-read all 26.3 MB back out at the next
+          // open — the bytes are already in hand.
+          materialiseBlobs: true,
           batchPages: _batchPages,
           syncLogEnabled: AppState.syncLogEnabled,
           sqliteLibrary: o?.sqliteLibrary,

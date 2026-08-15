@@ -276,20 +276,25 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, app, nb, _) = await fixture('onote_blobfail_');
 
-      // A picture in the container, then a notebook that has just started
-      // syncing — the exact moment `backfillBlobs` copies bytes into `blobs/`.
-      app.importBlob(nb, Uint8List.fromList(List.filled(64, 7)), 'image/png');
+      // A picture in the container and nowhere else — a notebook made before
+      // v0.17 Step 5, which is the only state `backfillBlobs` has real work to
+      // do in now that materialisation is unconditional. Written straight
+      // through Repository so nothing writes `blobs/` on the way in.
+      await app.warmRecorder(nb); // creates `.onotebook/`, copies nothing
       await app.settleBackgroundWork();
-      app.debugSetGitSetting(nb, 'https://example.invalid/notes.git');
+      repo.putBlob(nb, Uint8List.fromList(List.filled(64, 7)), 'image/png');
 
       // Occupy `blobs/` with a file, so the copy cannot be made.
       File(p.join(logDirOf(repo, nb), 'blobs'))
           .writeAsStringSync('not a directory');
 
-      app.materialiseBlobsIfShared(nb);
-      await app.awaitBlobBackfill(nb);
+      // A fresh session is what runs a backfill against the container index.
+      final app2 = AppState(repo)..notebookId = nb;
+      addTearDown(app2.settleBackgroundWork);
+      await app2.warmRecorder(nb);
+      await app2.awaitBlobBackfill(nb);
 
-      expect(app.saveError, isNotNull,
+      expect(app2.saveError, isNotNull,
           reason: 'a backfill that stopped used to return 0 — the same answer '
               'as "nothing to copy". A spike stopped this at 100 of 488 blobs '
               'and the migration still printed MIGRATION COMPLETE, having '

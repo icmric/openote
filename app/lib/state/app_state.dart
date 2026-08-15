@@ -1064,9 +1064,16 @@ class AppState extends ChangeNotifier
         logDir: ref.logDir,
         readSetting: _repo.getSetting,
         writeSetting: _repo.setSetting,
-        // The 2× disk cost of shadow mode is only worth paying when something
-        // other than this device will read the bytes. See [notebookIsShared].
-        materialiseBlobs: notebookIsShared(nb),
+        // **Always, not only when the notebook looks shared** (v0.17 plan,
+        // Step 5). `notebookIsShared` was a disk trade that quietly made the
+        // log unable to rebuild the notebook it describes: measured on the
+        // owner's real import, 378 of the 488 blobs its log names — 26.3 MB,
+        // every one of them a PNG — had no bytes in `blobs/`, so a rebuild
+        // produced a structurally perfect notebook (same=329 differing=0) with
+        // 271 of 271 image blocks broken across 44 pages. Nothing on screen
+        // said so, because a page that references a picture by hash is
+        // byte-identical to the same page with its bytes intact.
+        materialiseBlobs: true,
       );
       _recorders[nb] = r;
       _backfillTree(nb, r);
@@ -1178,7 +1185,8 @@ class AppState extends ChangeNotifier
         logDir: ref.logDir,
         readSetting: _repo.getSetting,
         writeSetting: _repo.setSetting,
-        materialiseBlobs: notebookIsShared(nb),
+        // Unconditional, exactly as in `_recorderFor` — see the note there.
+        materialiseBlobs: true,
       );
       final lostTheRace = _disposed ||
           _recorders.containsKey(nb) ||
@@ -1273,14 +1281,20 @@ class AppState extends ChangeNotifier
     return url is String && url.isNotEmpty ? url : null;
   }
 
-  /// Materialise this notebook's blob bytes into `blobs/` if it has become
-  /// shared since its recorder was opened.
+  /// Make sure this notebook's blob bytes are on their way into `blobs/` now
+  /// that it is shared.
+  ///
+  /// **Since Step 5 of the v0.17 plan the flag is unconditional**, so the
+  /// flip below is a no-op on any recorder this build opened, and what remains
+  /// is the *warm*: a notebook that has never had a recorder opened has never
+  /// run a backfill either, and a mirror configured seconds later would copy
+  /// out a `blobs/` that is still empty. The flip is kept rather than deleted
+  /// because a recorder can still be constructed with the flag off — the
+  /// import writer's config default, and the fixture shape the plan's matrix
+  /// row B6 exists to test.
   ///
   /// Call after anything that can change [notebookIsShared] — moving a notebook
-  /// into a sync folder, adding a mirror, remembering a sync root. Without it a
-  /// notebook that starts syncing mid-session keeps deferring its bytes until
-  /// the next launch, and the other device sees a notebook whose images are all
-  /// missing.
+  /// into a sync folder, adding a mirror, remembering a sync root.
   ///
   /// The reverse transition is deliberately not handled: nothing here deletes
   /// bytes. Moving a notebook back out of a sync folder stops *new* blobs being
@@ -1362,6 +1376,16 @@ class AppState extends ChangeNotifier
       // "nothing to copy".
       _noteLogProblem('blob backfill for $nb stopped', e);
       return 0;
+    }).then((copied) async {
+      // **The backfill's completion is asserted, not inferred** (v0.17 plan,
+      // Step 5). Returning without throwing proves nothing: `backfillBlobs`
+      // returns 0 when it was not allowed to look, skips any hash that already
+      // has a file whatever that file contains, and a container row it cannot
+      // read is a `continue`. The only honest answer comes from re-reading
+      // `blobs/` and re-hashing it.
+      if (_disposed) return copied;
+      _noteBlobProof(nb, await r.proveBlobs(read: (h) => _repo.getBlob(nb, h)));
+      return copied;
     });
     // Kept so a mirror run can wait for it. Without that, configuring a backup
     // on a notebook whose blobs have never been materialised would copy out a
@@ -1374,6 +1398,72 @@ class AppState extends ChangeNotifier
   }
 
   final Map<String, Future<int>> _blobBackfills = {};
+
+  /// Record what [SyncRecorder.proveBlobs] found, and tell the user if the
+  /// notebook's second copy of its pictures is not complete.
+  ///
+  /// Per notebook, like [_logAhead] rather than like [_logError]: a clean proof
+  /// of one notebook must not clear a hole reported in another, and the user
+  /// can only act on the one they are looking at.
+  void _noteBlobProof(String nb, BlobProof proof) {
+    if (proof.repaired.isNotEmpty) {
+      // Worth a line even though nothing is wrong any more: Openote's own
+      // writes are temp+rename and cannot tear, so a wrong-bytes file means
+      // something ELSE damaged the folder — a cloud client, a bad disk, a
+      // restore from a broken backup — and that tends to recur.
+      debugPrint('[openote/sync] ${proof.repaired.length} blob file(s) in $nb '
+          'held bytes that were not what their name said, and were rewritten '
+          'from the notebook file');
+    }
+    if (proof.ok) {
+      _blobHole.remove(nb);
+    } else {
+      _blobHole[nb] = SaveProblem(
+        short: 'Some pictures did not get copied',
+        message: 'Openote keeps a second copy of every picture and drawing '
+            "inside this notebook's own folder, so your other devices and your "
+            'backups can show them too.\n\n'
+            'For ${proof.holes} of them that second copy is missing or '
+            'damaged. The pictures are still fine on this computer — but on '
+            'another device, or in a backup, they would come up blank.\n\n'
+            'Check that the disk is not full and that the folder is not set to '
+            'read-only, then close the notebook and open it again. Openote '
+            'tries again every time you open it.',
+        details: '$nb\n$proof\n'
+            'missing: ${_someHashes(proof.missing)}\n'
+            'unrepairable: ${_someHashes(proof.damaged)}',
+      );
+    }
+    if (!_disposed) notifyListeners();
+  }
+
+  /// A few hashes for the Advanced fold — enough to look one up, never the
+  /// whole list, which on a broken import is hundreds of lines.
+  static String _someHashes(Set<String> hashes) =>
+      hashes.isEmpty ? 'none' : hashes.take(5).join(', ');
+
+  /// Notebooks whose blob bytes are not fully materialised, with the sentence
+  /// to say about each. Empty is the invariant Steps 6 and 7 are gated on.
+  final Map<String, SaveProblem> _blobHole = {};
+
+  /// Prove that every blob this notebook's log names has bytes on disk **whose
+  /// content really is what the name claims**, repairing from the container
+  /// where it can.
+  ///
+  /// The gate for the rest of the v0.17 storage work, exposed so a migration —
+  /// and the tests that stand in for one — can refuse rather than proceed.
+  /// Forces a synchronous log replay if no recorder is open; see
+  /// [_recorderFor], and never call it during a build.
+  Future<BlobProof> proveBlobBytes(String nb) async {
+    final r = _recorderFor(nb);
+    if (r == null) {
+      return const BlobProof(
+          checked: 0, missing: {}, repaired: {}, damaged: {});
+    }
+    final proof = await r.proveBlobs(read: (h) => _repo.getBlob(nb, h));
+    _noteBlobProof(nb, proof);
+    return proof;
+  }
 
   /// Wait for any in-flight blob materialisation for [nb]. Cheap when there is
   /// none, which is the common case.
@@ -6523,6 +6613,11 @@ class AppState extends ChangeNotifier
     return (nb == null ? null : _logAhead[nb]) ??
         _pageSaveError ??
         _logError ??
+        // Below the two write failures and above the registry lock: the notes
+        // themselves are safe on this computer, so this is not a lost save —
+        // but it is the one that costs a picture on the OTHER device, silently,
+        // and nothing else on screen would ever mention it.
+        (nb == null ? null : _blobHole[nb]) ??
         (locked == null
             ? null
             : SaveProblem(
