@@ -1678,6 +1678,20 @@ class AppState extends ChangeNotifier
     // time rather than skipping it. That was already true of the blob copy
     // above, which has always run outside the transaction.
     _applyingPull = Completer<void>();
+    // **THE PHASES DO NOT AGREE ABOUT WHICH NODES EXIST, AND THREE FOREIGN
+    // KEYS POINT AT `nodes(id)`** — `nodes.parent_id`, `page_mirror.page_id`
+    // and `blob_refs.page_id`. The node phase writes only LIVE nodes, while
+    // both it and the page phase can carry rows naming a node it left out.
+    // That is `SqliteException(787)`, a rolled-back slice, and an exception
+    // that escapes the pull BEFORE the watermark moves — so the batch stays
+    // pending and the NEXT pull replays it and throws in the same place.
+    // Sync does not fail once, it fails for ever on that device, with nothing
+    // on screen to say so. [rooted] is the running answer to "will this id
+    // have a `nodes` row by the time the page phase runs", filled by the node
+    // phase and consulted by the page phase.
+    final rooted = <String>{};
+    var orphanNodes = 0;
+    var orphanPages = 0;
     try {
       // **Nodes before pages.** `page_mirror.page_id` is a foreign key onto
       // `nodes(id)` and every container runs with `PRAGMA foreign_keys=ON`, so
@@ -1707,8 +1721,38 @@ class AppState extends ChangeNotifier
         // whose parent was in an earlier slice is fine too (already
         // committed), because `_parentsFirst` never puts a child before its
         // parent in the list.
-        await _inChunks(_parentsFirst(r.materialisedNodes()), _pullNodeChunk,
-            (slice) {
+        //
+        // **A LIVE NODE WHOSE PARENT IS NOT BEING WRITTEN CANNOT BE WRITTEN
+        // EITHER.** `nodeDelete` marks exactly the node it names — the
+        // materialiser does not cascade — so deleting a SECTION leaves that
+        // section's pages live in the log's state, pointing at a parent
+        // `liveNodes()` no longer returns. On a container that already holds
+        // the section that is harmless: the row is there, merely soft-deleted,
+        // and a foreign key does not care. A section created and deleted
+        // inside ONE fold has no row at all, and `upsertNode` then fails
+        // `nodes.parent_id` with SQLITE constraint 787 — observed on a batch
+        // of upsert(section), upsert(page under it), delete(section).
+        //
+        // Dropping the child is what the delete already meant: the deleting
+        // device soft-deletes the whole subtree (`softDeleteNode` walks the
+        // descendants), so a page whose section is gone must not appear here
+        // either. Nothing is stranded by it — this phase re-projects the
+        // WHOLE live tree on every pull, not a delta, so a node dropped
+        // because its parent had not arrived yet is written by the next pull
+        // that touches the tree.
+        final tree = <MatNode>[];
+        for (final n in _parentsFirst(r.materialisedNodes())) {
+          final parent = n.parentId;
+          if (parent == null ||
+              rooted.contains(parent) ||
+              _repo.hasNode(nb, parent)) {
+            rooted.add(n.id);
+            tree.add(n);
+          } else {
+            orphanNodes++;
+          }
+        }
+        await _inChunks(tree, _pullNodeChunk, (slice) {
           _repo.runInTransaction(nb, () {
             for (final n in slice) {
               _repo.upsertNode(
@@ -1731,6 +1775,33 @@ class AppState extends ChangeNotifier
       await _inChunks(changed.pages.toList(), _pullPageChunk, (slice) {
         _repo.runInTransaction(nb, () {
           for (final pageId in slice) {
+            // **NO NODE ROW, NO MIRROR ROW.** `changed.pages` is every page an
+            // op touched, which includes one CREATED AND DELETED inside this
+            // same fold — and the phase above writes only live nodes, so that
+            // page has no row and never will. `page_mirror.page_id` is a
+            // foreign key onto `nodes(id)`, so the insert fails 787 and takes
+            // the whole slice — every other page in it — down with it, then
+            // wedges the device for good as described above. Observed on a
+            // batch of upsert(page), blockSet, delete(page).
+            //
+            // Skipped rather than fixed by writing the deleted node too. The
+            // end state is identical — the very next phase deletes it, and
+            // `page_mirror` goes with it by cascade — but writing it would put
+            // a node the log says is GONE into the tree, and the phases now
+            // yield the event loop between slices, so that is a window the
+            // user can see and anything failing after it makes the
+            // resurrection permanent. Delete-LOSES is exactly what
+            // `materialisedDeletedIds` exists to prevent, and a fix must not
+            // reintroduce it to dodge a constraint. A page that is NOT deleted
+            // is unaffected: its node is live, so it is in [rooted].
+            //
+            // Same shape and the same answer as `blob_refs` one level down in
+            // `NotebookWriter.writePage`, which likewise records only what the
+            // container actually holds.
+            if (!rooted.contains(pageId) && !_repo.hasNode(nb, pageId)) {
+              orphanPages++;
+              continue;
+            }
             final mirror = r.materialisedPage(pageId);
             final blocks = [
               for (final b in (mirror['blocks'] as List? ?? const []))
@@ -1766,6 +1837,15 @@ class AppState extends ChangeNotifier
     if (pulledBlobs > 0) {
       debugPrint(
           '[openote/sync] pulled $pulledBlobs blob(s) into the container');
+    }
+    if (orphanNodes > 0 || orphanPages > 0) {
+      // Said out loud because it is the only trace either skip leaves: what
+      // used to happen here was a 787 that stopped this device syncing
+      // permanently, so a line in the log is the difference between "we
+      // deliberately left these out" and a silent hole.
+      debugPrint('[openote/sync] skipped $orphanNodes node(s) and '
+          '$orphanPages page(s) with no parent row in the container — '
+          'deleted in this same batch, or their parent has not arrived yet');
     }
 
     // Watermark per device, only after the writes landed — a crash mid-pull

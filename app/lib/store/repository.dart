@@ -1112,6 +1112,16 @@ class Repository {
   TreeNode upsertNode(String notebookId, TreeNode n) =>
       _writer(notebookId).upsertNode(n);
 
+  /// Does this container hold a row for [nodeId] — deleted or not?
+  ///
+  /// Deliberately NOT `loadNodes().any(...)`: that returns only live nodes,
+  /// and the question every caller here is actually asking is "will a foreign
+  /// key onto `nodes(id)` be satisfied", which a soft-deleted row satisfies
+  /// perfectly well. Used by the sync pull to decide whether a page it is
+  /// about to mirror has somewhere to hang; see `_syncPullLocked`.
+  bool hasNode(String notebookId, String nodeId) =>
+      _db(notebookId).select('SELECT 1 FROM nodes WHERE id=?', [nodeId]).isNotEmpty;
+
   List<String> _descendants(Database db, String id) {
     final out = <String>[id];
     final queue = [id];

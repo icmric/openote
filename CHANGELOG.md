@@ -4,6 +4,14 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — syncing that has stopped between your computers starts again by itself
+
+- **If another one of your computers made a page and deleted it again before
+  Openote next synced, syncing could stop on this one for good** — with no
+  message and nothing to press, so the only sign was that your notes quietly
+  went out of date. It now takes that in its stride, and a copy of Openote
+  that is already stuck picks itself up the next time it syncs.
+
 ### Fixed — a big notebook stays usable while it catches up with another computer
 
 - **Picking up changes made on another one of your computers could freeze

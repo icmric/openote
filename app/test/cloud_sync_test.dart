@@ -17,6 +17,7 @@ import 'package:openote/sync/cloud_folders.dart';
 import 'package:openote/sync/folder_watch.dart';
 import 'package:openote/sync/op.dart';
 import 'package:openote/sync/op_log.dart';
+import 'package:openote/sync/sync_recorder.dart';
 import 'package:openote/ui/sync_dialog.dart' show findExistingNotebooks;
 
 import 'support/sqlite.dart';
@@ -340,6 +341,7 @@ void main() {
   _pullStaysInteractive(() => haveSqlite);
   _deletingASharedNotebook(() => haveSqlite);
   _convergesWhateverOrderLogsArriveIn(() => haveSqlite);
+  _oneFoldThatCreatesAndDeletes(() => haveSqlite);
 }
 
 // ── "the app to fully lock up for 10-20s as it works" ────────────────────
@@ -1042,6 +1044,199 @@ void _convergesWhateverOrderLogsArriveIn(bool Function() haveSqlite) {
       expect(first, contains('dotted'),
           reason: 'and the highest-Lamport page.props with it');
       expect(first, contains('from slot 2'));
+    }, timeout: const Timeout(Duration(minutes: 3)));
+  });
+}
+
+// ── One fold that both creates and deletes ───────────────────────────────
+
+/// A batch that creates something and then deletes it must not wedge sync.
+///
+/// **THE WEDGE, NOT THE EXCEPTION, IS THE BUG.** The pull applies in phases
+/// and the node phase writes only LIVE nodes, so anything created and deleted
+/// inside a single fold has no `nodes` row — while the page phase still holds
+/// its page id and a live child still names it as a parent. Three foreign keys
+/// point at `nodes(id)`, so the write failed with `SqliteException(787)`, the
+/// slice rolled back, and the exception escaped `_syncPullLocked` BEFORE the
+/// watermark advanced. The batch therefore stayed pending, and every later
+/// pull replayed it and threw in exactly the same place: syncing stopped on
+/// that device permanently, with nothing on screen to say why.
+///
+/// So each test here pulls TWICE. A fix that quietly dropped the whole batch
+/// would pass "it did not throw"; it cannot pass "the watermark moved and the
+/// next pull delivered the next edit".
+void _oneFoldThatCreatesAndDeletes(bool Function() haveSqlite) {
+  group('a fold that creates AND deletes leaves sync working', () {
+    late Directory tmp;
+    late Repository repo;
+
+    setUp(() async {
+      if (!haveSqlite()) return;
+      tmp = Directory.systemTemp.createTempSync('onote_ghost_');
+      repo = await Repository.openAt(tmp);
+    });
+    tearDown(() {
+      if (!haveSqlite()) return;
+      repo.dispose();
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    Op op(int s, OpKind k, Map<String, dynamic> d) =>
+        Op(device: 'other', seq: s, lamport: s, timestamp: s, kind: k, data: d);
+
+    Map<String, dynamic> textBlock(String id, String text) => {
+          'id': id,
+          'type': 'text',
+          'x': 0,
+          'y': 0,
+          'w': 600,
+          'content': {'text': text}
+        };
+
+    int? watermark(String nb) =>
+        (repo.getSetting(SyncRecorder.foreignSeqKey(nb, 'other')) as num?)
+            ?.toInt();
+
+    test('A PAGE CREATED AND DELETED IN ONE FOLD DOES NOT WEDGE SYNC',
+        () async {
+      if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
+      final nb = await repo.createNotebook('Ghost');
+      final app = AppState(repo)..notebookId = nb.id;
+      app.reloadNodes();
+      final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+      final store = OpLogStore.forNotebook(ref.file);
+
+      store.append('other', [
+        // A page that survives the batch, in the SAME page-phase slice as the
+        // one that does not — the rollback took whatever it was sharing a
+        // transaction with, so this is how "the exception dropped notes that
+        // were nothing to do with it" gets pinned.
+        op(1, OpKind.nodeUpsert, {
+          'id': 'keep',
+          'kind': 'page',
+          'parentId': section.id,
+          'title': 'Keep',
+          'position': 'a0',
+        }),
+        op(2, OpKind.blockSet,
+            {'pageId': 'keep', 'block': textBlock('k0', 'kept')}),
+        // …and one created, written to, and deleted before we ever pulled.
+        op(3, OpKind.nodeUpsert, {
+          'id': 'ghost',
+          'kind': 'page',
+          'parentId': section.id,
+          'title': 'Ghost',
+          'position': 'a1',
+        }),
+        op(4, OpKind.blockSet,
+            {'pageId': 'ghost', 'block': textBlock('g0', 'gone')}),
+        op(5, OpKind.nodeDelete, {'id': 'ghost', 'deletedAt': 5}),
+      ]);
+
+      expect(await app.syncPull(nb.id), 5);
+      expect(watermark(nb.id), 5,
+          reason: 'the watermark MUST move: leaving it behind is what makes '
+              'this permanent rather than a one-off failure');
+
+      // DELETE WINS, and takes nothing else with it.
+      expect(repo.loadNodes(nb.id).where((n) => n.id == 'ghost'), isEmpty,
+          reason: 'a page deleted on the other device must not appear here');
+      expect(repo.readPage(nb.id, 'ghost').blocks, isEmpty);
+      expect(repo.loadNodes(nb.id).where((n) => n.id == 'keep'), hasLength(1),
+          reason: 'the page that was NOT deleted must still be here');
+      expect(repo.readPage(nb.id, 'keep').blocks.single.content['text'], 'kept',
+          reason: 'and with its content — dropping the whole batch would also '
+              'stop the exception, and would also be wrong');
+
+      // THE SECOND PULL IS THE POINT. Against the wedge this replays the
+      // poisoned batch and throws again, for ever.
+      store.append('other', [
+        op(6, OpKind.blockSet,
+            {'pageId': 'keep', 'block': textBlock('k1', 'the next edit')}),
+      ]);
+      expect(await app.syncPull(nb.id), 1);
+      expect(watermark(nb.id), 6);
+      expect(
+          repo
+              .readPage(nb.id, 'keep')
+              .blocks
+              .where((b) => b.content['text'] == 'the next edit'),
+          hasLength(1),
+          reason: 'later edits keep arriving; sync did not stop at the batch '
+              'it could not apply');
+    }, timeout: const Timeout(Duration(minutes: 3)));
+
+    test('A SECTION CREATED AND DELETED IN ONE FOLD TAKES ITS PAGES WITH IT',
+        () async {
+      if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
+      // The same fault one phase earlier, and the one that is easy to miss:
+      // `nodeDelete` marks only the node it names, so the deleted section's
+      // pages are still LIVE in the log's state — pointing at a parent the
+      // node phase is not writing. `nodes.parent_id` is a foreign key too.
+      final nb = await repo.createNotebook('Doomed section');
+      final app = AppState(repo)..notebookId = nb.id;
+      app.reloadNodes();
+      final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+      final store = OpLogStore.forNotebook(ref.file);
+
+      store.append('other', [
+        op(1, OpKind.nodeUpsert, {
+          'id': 'sec',
+          'kind': 'section',
+          'title': 'Doomed',
+          'position': 'b0',
+          'level': 0,
+        }),
+        op(2, OpKind.nodeUpsert, {
+          'id': 'child',
+          'kind': 'page',
+          'parentId': 'sec',
+          'title': 'Child',
+          'position': 'b1',
+          'level': 1,
+        }),
+        op(3, OpKind.blockSet,
+            {'pageId': 'child', 'block': textBlock('c0', 'inside the doomed')}),
+        // Only the section is deleted. The child is never mentioned again.
+        op(4, OpKind.nodeDelete, {'id': 'sec', 'deletedAt': 4}),
+        // A page in a section that is NOT going anywhere, to prove the drop
+        // is confined to the deleted subtree.
+        op(5, OpKind.nodeUpsert, {
+          'id': 'safe',
+          'kind': 'page',
+          'parentId': section.id,
+          'title': 'Safe',
+          'position': 'b2',
+        }),
+        op(6, OpKind.blockSet,
+            {'pageId': 'safe', 'block': textBlock('s0', 'still here')}),
+      ]);
+
+      expect(await app.syncPull(nb.id), 6);
+      expect(watermark(nb.id), 6);
+
+      final ids = repo.loadNodes(nb.id).map((n) => n.id).toSet();
+      expect(ids, isNot(contains('sec')));
+      expect(ids, isNot(contains('child')),
+          reason: 'deleting a section soft-deletes its whole subtree on the '
+              'device that did it, so a page under a section that is gone '
+              'must not surface here as a stray');
+      expect(ids, contains('safe'));
+      expect(repo.readPage(nb.id, 'safe').blocks.single.content['text'],
+          'still here');
+
+      // And the next batch still arrives.
+      store.append('other', [
+        op(7, OpKind.blockSet,
+            {'pageId': 'safe', 'block': textBlock('s1', 'and still syncing')}),
+      ]);
+      expect(await app.syncPull(nb.id), 1);
+      expect(watermark(nb.id), 7);
+      expect(repo.readPage(nb.id, 'safe').blocks, hasLength(2));
     }, timeout: const Timeout(Duration(minutes: 3)));
   });
 }
