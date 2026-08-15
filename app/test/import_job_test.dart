@@ -277,7 +277,15 @@ void main() {
       ]);
       expect(r.pages, 2);
       // One blob, stored once — identical bytes share a hash by design.
-      expect(repo.blobIndex(nb).length, 1);
+      // Counted in `blobs/`, not in the container's `blobs` table: from v0.17
+      // Step 6 the container takes no blob bytes at all, so `blobIndex` is
+      // empty for anything written since and would make this assertion pass
+      // for the wrong reason if it were `0` we were checking.
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb);
+      final store = OpLogStore.forNotebook(ref.file, logDir: ref.logDir);
+      expect(store.blobHashes(), hasLength(1));
+      expect(repo.blobIndex(nb), isEmpty,
+          reason: 'the container is not where pictures live any more');
     });
   });
 
@@ -370,10 +378,13 @@ void main() {
       // to get this right: the bytes are already in hand.
       final ref = repo.notebooks.firstWhere((n) => n.title == 'Pictures');
       final store = OpLogStore.forNotebook(ref.file, logDir: ref.logDir);
-      final index = repo.blobIndex(ref.id);
-      expect(index, hasLength(1));
-      expect(store.readBlob(index.single.hash), png,
+      final hashes = store.blobHashes();
+      expect(hashes, hasLength(1));
+      expect(store.readBlob(hashes.single), png,
           reason: 'the same bytes, not merely a file of the right name');
+      expect(repo.blobIndex(ref.id), isEmpty,
+          reason: 'and only there — v0.17 Step 6 stopped the container '
+              'taking a second copy');
     });
 
     test('a partial import says which sections did not make it', () async {

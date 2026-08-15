@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -12,6 +12,7 @@ import '../core/ids.dart';
 import '../ink/ink_storage.dart';
 import '../model/models.dart';
 import '../sync/device_identity.dart';
+import '../sync/op_log.dart';
 import 'database.dart';
 import 'notebook_writer.dart';
 
@@ -1646,14 +1647,134 @@ class Repository {
 
   // ── Blobs (content-addressed) ──────────────────────────────────────────
 
-  String putBlob(String notebookId, Uint8List bytes, String mime) =>
-      _writer(notebookId).putBlob(bytes, mime);
+  /// Where this notebook's blob **bytes** live: `<log dir>/blobs/<sha256>`.
+  ///
+  /// Built per call rather than cached, for the same reason [_writer] is: the
+  /// answer moves under us. `moveNotebookTo` and `adoptLogDirectory` both
+  /// rewrite [NotebookRef.logDir], and a cached store would go on writing
+  /// pictures into the folder the notebook used to be in.
+  OpLogStore _blobStore(String notebookId) {
+    final nb = notebooks.firstWhere((n) => n.id == notebookId);
+    return OpLogStore.forNotebook(nb.file, logDir: nb.logDir);
+  }
 
+  /// Store bytes and return their content hash. **The container is not
+  /// touched** (v0.17 Step 6).
+  ///
+  /// The hash is derived from the bytes, never taken on trust, because that is
+  /// the whole of content-addressing: the same picture must produce the same
+  /// filename on every device, which is what lets blobs skip merging.
+  ///
+  /// Deliberately not routed through the op-log recorder. The recorder writes
+  /// the same file (idempotently) *and* records the `blob.put` op, but
+  /// `AppState._recorderFor` can legitimately return null — a log that would
+  /// not open, logging switched off in a test — and after Step 6 that would
+  /// mean bytes landing nowhere at all. The op can be missed and recovered; the
+  /// bytes cannot.
+  String putBlob(String notebookId, Uint8List bytes, String mime) {
+    final hash = sha256Hex(bytes);
+    _blobStore(notebookId).writeBlob(hash, bytes);
+    return hash;
+  }
+
+  /// Write a blob the way builds before v0.17 Step 6 did: into the container's
+  /// `blobs` table, and nowhere else.
+  ///
+  /// **The only way left to construct the state every existing notebook is
+  /// actually in**, which is the state Step 6's read path exists for — Step 5
+  /// measured 378 of 488 blobs on the owner's own notebooks with bytes here and
+  /// no file. [putBlob] cannot build it any more, so without this the backfill,
+  /// the repair and the read-through fallback would all be tested only against
+  /// notebooks that never had the problem.
+  ///
+  /// Test-only, and deliberately so: nothing that ships may put bytes back into
+  /// the container. (Step 7's `refillContainerBlobs` inverse will need this
+  /// same statement, and this is where it starts.)
+  @visibleForTesting
+  String putContainerBlobForTest(
+      String notebookId, Uint8List bytes, String mime) {
+    final hash = sha256Hex(bytes);
+    _db(notebookId).execute(
+        'INSERT OR IGNORE INTO blobs(hash,bytes,mime,size,created_at) '
+        'VALUES(?,?,?,?,?)',
+        [hash, bytes, mime, bytes.length, nowMs()]);
+    return hash;
+  }
+
+  /// Bytes of a blob: `blobs/` first, the container's legacy `blobs` table
+  /// second (v0.17 Step 6).
+  ///
+  /// **The fallback is the whole point of shipping Step 6 before Step 7.** Step
+  /// 5 measured 378 of 488 blobs missing from `blobs/` on the owner's own
+  /// notebooks; they are backfilled in the background on first open, so for the
+  /// first few seconds of every upgraded notebook's life a read that finds no
+  /// file is *normal* and the bytes are still in the container. Reading
+  /// file-only would blank those pictures for the duration of the backfill;
+  /// reading table-first would leave the file path untested in the field, which
+  /// is exactly what this step exists to test.
+  ///
+  /// **Every fallback is recorded**, because Step 7 empties the table: a hash
+  /// in [blobsServedFromContainer] is a picture that would come up blank the
+  /// day that happens, and a migration must refuse while any remain. Silence
+  /// here is the failure mode a spike already reproduced — `MIGRATION COMPLETE`
+  /// over 193 destroyed image blocks.
+  ///
+  /// **Not verified on read.** Re-hashing costs 2.8 s across a real notebook's
+  /// 488 blobs, which cannot be paid per repaint. `SyncRecorder.proveBlobs`
+  /// (Step 5) is the verifier and it runs at every open; the sync pull checks
+  /// each newly arrived file before it is ever read.
   Uint8List? getBlob(String notebookId, String hash) {
+    final bare = hash.replaceFirst('sha256:', '');
+    final fromFile = _blobStore(notebookId).readBlob(bare);
+    if (fromFile != null) {
+      // Both registers are "as of now", not "ever": the backfill and a cloud
+      // client both land files while the app is running, and a Step 7 gate that
+      // could never be cleared without a restart would refuse for ever.
+      _blobsFromContainer[notebookId]?.remove(bare);
+      _blobsNowhere[notebookId]?.remove(bare);
+      return fromFile;
+    }
+    final bytes = containerBlob(notebookId, bare);
+    final seen = (bytes == null ? _blobsNowhere : _blobsFromContainer)
+        .putIfAbsent(notebookId, () => <String>{});
+    if (seen.add(bare)) {
+      debugPrint(bytes == null
+          ? '[openote/store] blob $bare has no bytes in $notebookId — not in '
+              "the notebook's folder and not in the notebook file"
+          : '[openote/store] blob $bare came from the notebook file; the copy '
+              "in the notebook's folder is not there yet");
+    }
+    return bytes;
+  }
+
+  /// Bytes from the container's legacy `blobs` table alone.
+  ///
+  /// Kept separate from [getBlob] on purpose, for the two callers that must
+  /// *not* see `blobs/`: the backfill, whose job is to copy what exists only in
+  /// the container, and `proveBlobs`' repair, which replaces a blob file whose
+  /// bytes are wrong — handed the file's own bytes it would compare them
+  /// against themselves, find no match, and report an unrepairable blob where
+  /// the container was holding a perfect copy all along.
+  Uint8List? containerBlob(String notebookId, String hash) {
     final rows = _db(notebookId).select(
         'SELECT bytes FROM blobs WHERE hash=?', [hash.replaceFirst('sha256:', '')]);
     return rows.isEmpty ? null : rows.first['bytes'] as Uint8List;
   }
+
+  /// Hashes this session served from the container because `blobs/` had no
+  /// file. **The Step 7 gate, from the read side.** Empty is the state a
+  /// reclaim may run in; anything here is a picture the reclaim would erase.
+  Set<String> blobsServedFromContainer(String notebookId) =>
+      Set.unmodifiable(_blobsFromContainer[notebookId] ?? const <String>{});
+
+  /// Hashes with no bytes in either place. Not necessarily an error — a shared
+  /// notebook's log routinely arrives before its pictures do — but never
+  /// silent.
+  Set<String> blobsWithNoBytes(String notebookId) =>
+      Set.unmodifiable(_blobsNowhere[notebookId] ?? const <String>{});
+
+  final Map<String, Set<String>> _blobsFromContainer = {};
+  final Map<String, Set<String>> _blobsNowhere = {};
 
   /// Pages whose content contains [query], with a snippet around the first hit.
   ///

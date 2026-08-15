@@ -282,7 +282,8 @@ void main() {
       // through Repository so nothing writes `blobs/` on the way in.
       await app.warmRecorder(nb); // creates `.onotebook/`, copies nothing
       await app.settleBackgroundWork();
-      repo.putBlob(nb, Uint8List.fromList(List.filled(64, 7)), 'image/png');
+      repo.putContainerBlobForTest(
+          nb, Uint8List.fromList(List.filled(64, 7)), 'image/png');
 
       // Occupy `blobs/` with a file, so the copy cannot be made.
       File(p.join(logDirOf(repo, nb), 'blobs'))

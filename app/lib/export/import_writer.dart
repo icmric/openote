@@ -72,6 +72,7 @@ import '../ink/ink_storage.dart';
 import '../model/models.dart';
 import '../store/database.dart';
 import '../store/notebook_writer.dart';
+import '../sync/op_log.dart';
 import '../sync/sync_recorder.dart';
 import 'import_sink.dart';
 import 'onenote_import.dart';
@@ -392,13 +393,21 @@ void importWriterMain((SendPort, Map<Object?, Object?>) message) {
 /// (container first, then the op — a log entry for a write that failed would
 /// make rebuild-from-log differ on every disk error, ADR-0006 §7).
 class IsolateImportSink implements ImportSink {
-  IsolateImportSink(this.writer, this.recorder);
+  IsolateImportSink(this.writer, this.recorder, this.blobs);
 
   /// Open a sink over an already-open container, attaching an op-log recorder
   /// unless logging is off.
   factory IsolateImportSink.open(Database db, ImportWriterConfig config) {
     final writer = NotebookWriter(db);
-    if (!config.syncLogEnabled) return IsolateImportSink(writer, null);
+    // **Built even with the log switched off.** From v0.17 Step 6 the
+    // container stores no blob bytes, so this store is the only place an
+    // imported picture's bytes can go; a sink without one would import a
+    // notebook of blocks that name hashes nothing on the machine holds.
+    final blobs =
+        OpLogStore.forNotebook(config.notebookPath, logDir: config.logDir);
+    if (!config.syncLogEnabled) {
+      return IsolateImportSink(writer, null, blobs);
+    }
     // Settings are Repository's, and Repository is not here. A map is enough:
     // the only setting `SyncRecorder.open` reads is the device id (passed in)
     // and the only one it writes is this device's seq, which travels home in
@@ -414,11 +423,14 @@ class IsolateImportSink implements ImportSink {
       writeSetting: (k, v) => settings[k] = v,
       materialiseBlobs: config.materialiseBlobs,
     );
-    return IsolateImportSink(writer, recorder).._settings = settings;
+    return IsolateImportSink(writer, recorder, blobs).._settings = settings;
   }
 
   final NotebookWriter writer;
   final SyncRecorder? recorder;
+
+  /// Where imported blob bytes go now the container does not take them.
+  final OpLogStore blobs;
 
   Map<String, Object?> _settings = const {};
 
@@ -458,7 +470,12 @@ class IsolateImportSink implements ImportSink {
 
   @override
   String blob(Uint8List bytes, String mime) {
-    final hash = writer.putBlob(bytes, mime);
+    // The hash comes from the bytes, never from a caller. `recorder.blob`
+    // writes the same file again, idempotently — content-addressed writes are
+    // temp+rename and skip a name that already exists — so the two orderings
+    // agree and a null recorder costs the op, not the picture.
+    final hash = sha256Hex(bytes);
+    blobs.writeBlob(hash, bytes);
     recorder?.blob(hash, mime, bytes.length, bytes);
     return hash;
   }

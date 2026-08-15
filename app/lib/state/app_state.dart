@@ -1361,8 +1361,14 @@ class AppState extends ChangeNotifier
     if (_disposed || !r.materialiseBlobs) return;
     final f = r
         .backfillBlobs(
+      // `containerBlob`, not `getBlob`: this is the copy OUT of the container,
+      // and the ordinary read path now answers from `blobs/` first (v0.17
+      // Step 6). Handed that, the backfill would read each file it is meant to
+      // be creating and write it back over itself, and a blob the container
+      // alone holds — the entire 378-of-488 hole this exists to close — would
+      // never be seen.
       index: _repo.blobIndex(nb),
-      read: (h) => _repo.getBlob(nb, h),
+      read: (h) => _repo.containerBlob(nb, h),
     )
         .catchError((Object e) {
       // Third of Step 1's three silent paths, and the most expensive one.
@@ -1384,7 +1390,8 @@ class AppState extends ChangeNotifier
       // read is a `continue`. The only honest answer comes from re-reading
       // `blobs/` and re-hashing it.
       if (_disposed) return copied;
-      _noteBlobProof(nb, await r.proveBlobs(read: (h) => _repo.getBlob(nb, h)));
+      _noteBlobProof(
+          nb, await r.proveBlobs(read: (h) => _repo.containerBlob(nb, h)));
       return copied;
     });
     // Kept so a mirror run can wait for it. Without that, configuring a backup
@@ -1460,7 +1467,11 @@ class AppState extends ChangeNotifier
       return const BlobProof(
           checked: 0, missing: {}, repaired: {}, damaged: {});
     }
-    final proof = await r.proveBlobs(read: (h) => _repo.getBlob(nb, h));
+    // `containerBlob`: the repair replaces a blob file whose bytes are wrong,
+    // and the ordinary read path would hand it that same wrong file to check
+    // against itself — reporting an unrepairable blob while the container held
+    // a perfect copy (v0.17 Step 6).
+    final proof = await r.proveBlobs(read: (h) => _repo.containerBlob(nb, h));
     _noteBlobProof(nb, proof);
     return proof;
   }
@@ -1732,18 +1743,30 @@ class AppState extends ChangeNotifier
     }
   }
 
-  /// Copy the bytes of every blob these ops mention into this device's
-  /// container, from the shared folder's content-addressed store.
+  /// Check the bytes of every blob these ops name, and throw out any file whose
+  /// contents are not what its name says.
   ///
-  /// Returns how many were copied. Skips ones already held (blobs are immutable
-  /// and content-addressed, so "same hash" really is "same bytes") and ones
-  /// whose file has not arrived yet — a cloud client syncs the log and the
-  /// blobs independently, so a reference can legitimately land first. That case
-  /// is not an error and must not fail the pull; the page renders without the
-  /// image until the file turns up, and `SyncRecorder.missingBlobs` is how the
-  /// UI can say so.
-  int _ingestForeignBlobs(String nb, SyncRecorder r, List<Op> pending) {
-    var copied = 0;
+  /// **This used to copy those bytes into the container** — the two halves of a
+  /// blob travel separately (an op carries hash, mime and size; the bytes go
+  /// beside the log as `blobs/<sha256>`) and nothing re-joined them, so a page
+  /// arrived referencing bytes the container did not hold and `blob_refs`'
+  /// foreign key failed the whole pull. From v0.17 Step 6 there is nothing to
+  /// copy: the shared folder's `blobs/` **is** this device's blob store, the
+  /// read path answers from it directly, and the foreign key is gone.
+  ///
+  /// What is left is the check that copy was quietly performing. `putBlob`
+  /// re-derived the hash from the bytes, so a truncated download stored itself
+  /// under a different name and the page went on showing nothing. Reading
+  /// straight from the file would instead *serve* those bytes — a corrupted
+  /// picture rendered as if it were real. So a file that fails its own name is
+  /// discarded here, which puts it back in `SyncRecorder.missingBlobs()` where
+  /// the UI can say so, and lets the cloud client's next copy replace it.
+  ///
+  /// A blob whose file has simply not arrived is **not** an error and must not
+  /// fail the pull: a cloud client syncs the log and the blobs independently,
+  /// so a reference routinely lands first. Returns how many files were rejected.
+  int _rejectBadForeignBlobs(String nb, SyncRecorder r, List<Op> pending) {
+    var rejected = 0;
     for (final op in pending) {
       if (op.kind != OpKind.blobPut) continue;
       // `Op.data` is Object? — a hand-edited or future log can put anything
@@ -1752,25 +1775,14 @@ class AppState extends ChangeNotifier
       if (d is! Map) continue;
       final hash = d['hash'];
       if (hash is! String || hash.isEmpty) continue;
-      if (_repo.getBlob(nb, hash) != null) continue;
-      final bytes = r.store.readBlob(hash);
-      if (bytes == null) continue; // not arrived yet — not an error
-      // `putBlob` re-derives the hash from the bytes rather than trusting the
-      // op, which is the point of content-addressing — but it also means a file
-      // that does not match its claimed name would be stored under a DIFFERENT
-      // hash, leaving the page still referencing nothing and the FK still
-      // failing. Check rather than discover that later: a mismatch means a
-      // truncated or corrupted download, so skip it and say so.
-      final actual = _repo.putBlob(
-          nb, bytes, d['mime'] as String? ?? 'application/octet-stream');
-      if ('sha256:$actual' != hash && actual != hash) {
-        debugPrint('[openote/sync] blob $hash does not match its bytes '
-            '(got $actual) — skipping; the file is probably still copying');
-        continue;
-      }
-      copied++;
+      if (!r.store.hasBlob(hash)) continue; // not arrived yet — not an error
+      if (r.store.blobBytesMatch(hash)) continue;
+      r.store.discardBlob(hash);
+      rejected++;
+      debugPrint('[openote/sync] blob $hash does not match its bytes — '
+          'discarded; the file was probably still copying');
     }
-    return copied;
+    return rejected;
   }
 
   /// Pages written per transaction while a pull is applying.
@@ -1821,23 +1833,22 @@ class AppState extends ChangeNotifier
 
     final changed = r.applyForeign(pending);
 
-    // **Bring the bytes across before the pages that reference them.**
+    // **Settle the bytes before the pages that reference them.**
     //
     // A blob op carries only hash/mime/size; the bytes travel as a
     // content-addressed file in the shared folder. Nothing was reading them
     // back, so an image made on another device arrived as a reference to
-    // nothing — and not merely as a broken picture: `blob_refs.hash` is a
+    // nothing — and not merely as a broken picture: `blob_refs.hash` was a
     // foreign key onto `blobs`, so `writePage` threw a constraint violation and
     // took the WHOLE pull down with it. One shared notebook with one image in
     // it stopped that device syncing at all.
     //
-    // Before the pages, so a crash can never leave a page referencing bytes
-    // that are not there. (Before, not *inside*: this has always run outside
-    // the transaction, and the comment here used to claim otherwise. Copying
-    // files is not something a SQLite transaction can roll back anyway, and
-    // the watermark below is what actually makes a half-done pull safe — it
-    // does not move, so the next pull redoes the whole thing.)
-    final pulledBlobs = _ingestForeignBlobs(nb, r, pending);
+    // Both halves of that are now different. The bytes need no copying — from
+    // v0.17 Step 6 the shared folder's `blobs/` IS this device's blob store —
+    // and the foreign key is gone. What still has to happen before any page is
+    // written is rejecting a file whose bytes are not what its name claims,
+    // because the read path will otherwise hand those bytes to the screen.
+    final badBlobs = _rejectBadForeignBlobs(nb, r, pending);
 
     // **Written in chunks, with the event loop let go between them.**
     //
@@ -2036,9 +2047,9 @@ class AppState extends ChangeNotifier
       gate?.complete();
     }
 
-    if (pulledBlobs > 0) {
-      debugPrint(
-          '[openote/sync] pulled $pulledBlobs blob(s) into the container');
+    if (badBlobs > 0) {
+      debugPrint('[openote/sync] threw out $badBlobs blob file(s) whose bytes '
+          'were not what their name said');
     }
     if (orphanNodes > 0 || orphanPages > 0) {
       // Said out loud because it is the only trace either skip leaves: what
@@ -3079,8 +3090,9 @@ class AppState extends ChangeNotifier
     if (r == null) return 0;
     r.materialiseBlobs = true;
     return r.backfillBlobs(
+      // Container-only, for the reason given in [_startBlobBackfill].
       index: _repo.blobIndex(nb),
-      read: (h) => _repo.getBlob(nb, h),
+      read: (h) => _repo.containerBlob(nb, h),
     );
   }
 

@@ -98,7 +98,8 @@ void main() {
       // the log has never been told about and that `blobs/` does not hold.
       // Written straight through Repository so no op is recorded either.
       final hashes = [
-        for (var i = 0; i < 6; i++) repo.putBlob(nb, picture(i), 'image/png')
+        for (var i = 0; i < 6; i++)
+          repo.putContainerBlobForTest(nb, picture(i), 'image/png')
       ];
       final store = logOf(repo, nb);
       for (final h in hashes) {
@@ -160,6 +161,13 @@ void main() {
 
       final good = picture(3, size: 400);
       final hash = app.importBlob(nb, good, 'image/png');
+      // The container's copy, put there explicitly. Until v0.17 Step 6 every
+      // `importBlob` wrote one as a side effect; now the container takes no
+      // blob bytes at all, so the second copy this repair reads from has to be
+      // built on purpose. A blob with NO second copy is a different outcome —
+      // `damaged`, not `repaired` — and `blob_read_through_test.dart` proves
+      // that one.
+      repo.putContainerBlobForTest(nb, good, 'image/png');
       await app.settleBackgroundWork();
 
       final f = logOf(repo, nb).blobFile(hash);
@@ -335,7 +343,7 @@ void main() {
       // so the open has 40 files to write and then 40 to re-hash. On the real
       // notebook that is 378 files and 26.3 MB, all of it on the UI isolate.
       for (var i = 0; i < 40; i++) {
-        repo.putBlob(nb, picture(i, size: 4096), 'image/png');
+        repo.putContainerBlobForTest(nb, picture(i, size: 4096), 'image/png');
       }
       await app.settleBackgroundWork();
 

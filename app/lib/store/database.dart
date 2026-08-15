@@ -14,6 +14,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:sqlite3/sqlite3.dart';
 
 const onoteApplicationId = 0x4F4E4F54; // "ONOT"
@@ -137,11 +138,80 @@ Database openOnote(String path, {required String notebookId, required String tit
   // by an earlier build that predates a table (e.g. refs, fts_pages,
   // page_versions) gains it here rather than throwing on first write.
   _ensureSchema(db);
+  _dropBlobRefsBlobsFk(db);
   if (freshFile) {
     _seedNotebook(db, notebookId: notebookId, title: title);
   }
   _sweepOrphanedVersions(db);
   return db;
+}
+
+/// Rewrite `blob_refs` without its foreign key onto `blobs(hash)`.
+///
+/// **The one schema change v0.17 Step 6 could not avoid**, and the plan says
+/// this step needs no migration at all — it does. Step 6 stops the container
+/// storing blob bytes, so from that release on there is no `blobs` row for any
+/// new picture. `writePage` records the page's blob references unconditionally
+/// now (it has to: `blob_refs` is ADR-0007's GC root set, and a root set that
+/// can only name bytes the container holds names nothing once the container
+/// holds nothing). With the key still present that INSERT raises a constraint
+/// violation *inside `writePage`'s savepoint*, which fails the whole page save
+/// — the same shape as the sync-pull failure `sync_blobs_test.dart` was
+/// written for, but on every save of every page with an image.
+///
+/// `CREATE TABLE IF NOT EXISTS` does not alter a table that already exists, so
+/// changing the DDL above fixes new notebooks only; every notebook already on
+/// disk has to be rewritten here. SQLite cannot drop a constraint in place, so
+/// this is the documented twelve-step procedure
+/// (<https://sqlite.org/lang_altertable.html>) reduced to what applies: build
+/// the replacement, copy, drop, rename.
+///
+/// **Not a format bump.** `user_version` stays 1 deliberately — v2 is Step 8's,
+/// and a build that predates this one opens a rewritten container perfectly
+/// well: its `writePage` uses the old `SELECT … FROM blobs` form, which simply
+/// records fewer rows, exactly as it does today.
+///
+/// Best-effort by design. A read-only volume or a full disk must still open the
+/// notebook and show it (matrix row D5), and [NotebookWriter.writePage] falls
+/// back to the old conditional INSERT when it meets the key still in place, so
+/// a container this could not rewrite keeps saving.
+void _dropBlobRefsBlobsFk(Database db) {
+  try {
+    final rows = db.select(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='blob_refs'");
+    final ddl = rows.isEmpty ? null : rows.first['sql'] as String?;
+    if (ddl == null || !ddl.contains('REFERENCES blobs')) return;
+    // Outside any transaction, and off while the table is swapped: with
+    // enforcement ON, `DROP TABLE blob_refs` would be checked against the very
+    // rows being carried across.
+    db.execute('PRAGMA foreign_keys=OFF;');
+    try {
+      db.execute('BEGIN;');
+      db.execute('''
+        CREATE TABLE blob_refs_new (
+          page_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+          hash TEXT NOT NULL,
+          PRIMARY KEY (page_id, hash));
+      ''');
+      db.execute('INSERT OR IGNORE INTO blob_refs_new(page_id,hash) '
+          'SELECT page_id,hash FROM blob_refs;');
+      db.execute('DROP TABLE blob_refs;');
+      db.execute('ALTER TABLE blob_refs_new RENAME TO blob_refs;');
+      db.execute('COMMIT;');
+    } catch (_) {
+      try {
+        db.execute('ROLLBACK;');
+      } catch (_) {/* nothing was open */}
+      rethrow;
+    } finally {
+      db.execute('PRAGMA foreign_keys=ON;');
+    }
+  } catch (e) {
+    // Said out loud rather than swallowed: the fallback in `writePage` keeps
+    // saves working, but a container stuck here has an under-recorded GC root
+    // set, and Step 7 must not run against one.
+    debugPrint('[openote/store] blob_refs could not be rewritten: $e');
+  }
 }
 
 /// Drop `page_versions` rows whose page no longer exists.
@@ -267,9 +337,19 @@ void _ensureSchema(Database db) {
     CREATE TABLE IF NOT EXISTS blobs (
       hash TEXT PRIMARY KEY, bytes BLOB NOT NULL, mime TEXT NOT NULL,
       size INTEGER NOT NULL, created_at INTEGER NOT NULL);
+    -- **No foreign key on `hash`.** It used to be
+    -- `REFERENCES blobs(hash)`, which made this table mean "blobs this page
+    -- reaches THAT THIS CONTAINER HOLDS". From v0.17 Step 6 the container
+    -- holds none: bytes go to `.onotebook/blobs/<sha256>` and the `blobs`
+    -- table is legacy-only. With the key still in place every page carrying a
+    -- picture would fail its INSERT — inside `writePage`'s savepoint, so the
+    -- whole save — and `blob_refs` would be permanently empty, which is
+    -- ADR-0007's garbage-collection root set. Existing containers are
+    -- rewritten by [_dropBlobRefsBlobsFk]; the meaning is now simply "blobs
+    -- this page reaches".
     CREATE TABLE IF NOT EXISTS blob_refs (
       page_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-      hash TEXT NOT NULL REFERENCES blobs(hash),
+      hash TEXT NOT NULL,
       PRIMARY KEY (page_id, hash));
     CREATE TABLE IF NOT EXISTS refs (
       src_page_id TEXT NOT NULL, src_block_id TEXT NOT NULL,

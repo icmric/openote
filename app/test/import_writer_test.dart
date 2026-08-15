@@ -293,7 +293,7 @@ void main() {
     expect(repo.getSetting('deviceSeq:${ref.id}'), result.lastSeq);
   });
 
-  test('a local-only import writes no blob bytes into the log (wave 1a)',
+  test('even a local-only import writes its blob bytes out (v0.17 Step 6)',
       () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (repo, app, ref) = await fixture('onote_writer_hollow_');
@@ -311,11 +311,19 @@ void main() {
       frameYield: tick,
     ).result;
 
+    // **The opposite of what this test used to assert.** Storage wave 1a
+    // deferred the bytes for a notebook nothing else reads, on the grounds
+    // that the container held them anyway; v0.17 Step 5 measured what that
+    // cost (378 of 488 pictures with no copy in the folder) and Step 6 stopped
+    // the container holding them at all. So `materialiseBlobs: false` can no
+    // longer mean "write them nowhere" — there is nowhere else.
     final store = OpLogStore.forNotebook(ref.file);
-    expect(store.blobsDir.existsSync(), isFalse,
-        reason: 'a notebook nothing else reads stores its images once');
-    // ...but the op naming them is there, so turning sync on knows what to
-    // fetch out of the container.
+    expect(store.blobHashes(), hasLength(1),
+        reason: 'the container takes no blob bytes now, so a deferred write '
+            'would be a picture with no bytes anywhere on the machine');
+    expect(store.readBlob(store.blobHashes().single), bytes,
+        reason: 'the same bytes, not merely a file of the right name');
+    // ...and the op naming them is there too.
     expect(
         store.readAll().where((o) => o.kind == OpKind.blobPut), hasLength(1));
 

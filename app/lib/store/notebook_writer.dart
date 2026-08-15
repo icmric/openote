@@ -207,22 +207,22 @@ class NotebookWriter {
       // Maintain blob_refs projection: image/file blocks plus in-flow images
       // referenced from text markdown (`![alt](sha256:<hash>)`, Data Model §5.1).
       //
-      // **Only for blobs this container actually holds**, hence the SELECT
-      // rather than VALUES. `blob_refs.hash` is a foreign key onto `blobs`, and
-      // a page referencing bytes we do not have is a legitimate, ordinary
-      // state: a cloud client copies the op log and the content-addressed blob
-      // files independently, so the reference routinely lands first. With a
-      // plain INSERT that raised a constraint violation *inside the sync
-      // pull's transaction* — so one shared notebook with one image in it
-      // stopped that device syncing at all, and not merely for the page with
-      // the picture.
+      // **What this table means changed with v0.17 Step 6.** It used to say
+      // "blobs this page reaches that this container holds" — hence a
+      // `SELECT … FROM blobs` rather than VALUES, because `blob_refs.hash` was
+      // a foreign key onto `blobs` and a page referencing bytes we do not hold
+      // is a legitimate, ordinary state (a cloud client copies the op log and
+      // the content-addressed blob files independently, so the reference
+      // routinely lands first). A plain INSERT raised a constraint violation
+      // *inside the sync pull's transaction*, and one shared notebook with one
+      // image in it stopped that device syncing at all.
       //
-      // Under-recording is safe here in a way that over-recording would not
-      // be: this table is a projection of "which stored blobs does this page
-      // reach", and a blob we do not store cannot be reached. Garbage
-      // collection deliberately does not trust it either — ADR-0007 chose
-      // recompute-by-scanning precisely because one missed mutation path in a
-      // maintained count silently deletes someone's content.
+      // From Step 6 the container holds no blob bytes, so that meaning names
+      // nothing at all — and this table is ADR-0007's garbage-collection root
+      // set. It now says "blobs this page reaches", full stop, which is the
+      // question a collector actually has to answer. The foreign key is gone
+      // (see `_dropBlobRefsBlobsFk`), and [_addBlobRef] carries the fallback
+      // for a container the rewrite could not reach.
       db.execute('DELETE FROM blob_refs WHERE page_id=?', [pageId]);
       for (final b in blocks) {
         // `blob` on images/files, `pdf` on on-demand slide references
@@ -231,30 +231,19 @@ class NotebookWriter {
         // a sweep that cannot see that reference collects the whole deck.
         for (final key in const ['blob', 'pdf']) {
           final hash = b.content[key];
-          if (hash is String) {
-            db.execute(
-                'INSERT OR IGNORE INTO blob_refs(page_id,hash) '
-                'SELECT ?, hash FROM blobs WHERE hash=?',
-                [pageId, hash.replaceFirst('sha256:', '')]);
-          }
+          if (hash is String) _addBlobRef(pageId, hash);
         }
         // Ink now lives in blobs too, and a page that does not declare its
         // handwriting here is a page whose handwriting a scanning garbage
         // collector cannot see. ADR-0007's GC recomputes what is reachable, so
         // a missing row would collect the entire notebook's ink.
         for (final ref in InkStorage.refsOf(b.content)) {
-          db.execute(
-              'INSERT OR IGNORE INTO blob_refs(page_id,hash) '
-              'SELECT ?, hash FROM blobs WHERE hash=?',
-              [pageId, ref.replaceFirst('sha256:', '')]);
+          _addBlobRef(pageId, ref);
         }
         final text = b.content['text'];
         if (text is String && text.contains('](sha256:')) {
           for (final m in _inlineImgRe.allMatches(text)) {
-            db.execute(
-                'INSERT OR IGNORE INTO blob_refs(page_id,hash) '
-                'SELECT ?, hash FROM blobs WHERE hash=?',
-                [pageId, m.group(1)!.toLowerCase()]);
+            _addBlobRef(pageId, m.group(1)!.toLowerCase());
           }
         }
       }
@@ -303,12 +292,34 @@ class NotebookWriter {
     }
   }
 
-  String putBlob(Uint8List bytes, String mime) {
-    final hash = sha256Hex(bytes);
-    db.execute(
-        'INSERT OR IGNORE INTO blobs(hash,bytes,mime,size,created_at) VALUES(?,?,?,?,?)',
-        [hash, bytes, mime, bytes.length, nowMs()]);
-    return hash;
+  /// Record that [pageId] reaches [hash], for ADR-0007's reachability sweep.
+  ///
+  /// (There is no `putBlob` beside this any more. v0.17 Step 6 moved blob
+  /// **bytes** out of the container and into `.onotebook/blobs/<sha256>`, and
+  /// writing a file is not this class's job — `Repository.putBlob` and the
+  /// import sink each own their own [OpLogStore]. What stayed here is the
+  /// *reference*, because it is part of `writePage`'s transaction.)
+  ///
+  /// The fallback is not decoration. `_dropBlobRefsBlobsFk` rewrites the table
+  /// without its foreign key onto `blobs`, but it is best-effort — a read-only
+  /// volume or a full disk leaves the key in place — and with the key in place
+  /// this INSERT raises a constraint violation for every hash the container has
+  /// no row for, which after Step 6 is every hash. A foreign-key violation
+  /// behaves like ON CONFLICT ABORT: it backs out this statement only, never
+  /// the enclosing savepoint, so catching it and recording what the old schema
+  /// *can* record leaves the save intact and the table merely under-recorded —
+  /// which is what an older build does with the same container anyway.
+  void _addBlobRef(String pageId, String hash) {
+    final bare = hash.replaceFirst('sha256:', '');
+    try {
+      db.execute('INSERT OR IGNORE INTO blob_refs(page_id,hash) VALUES(?,?)',
+          [pageId, bare]);
+    } on SqliteException {
+      db.execute(
+          'INSERT OR IGNORE INTO blob_refs(page_id,hash) '
+          'SELECT ?, hash FROM blobs WHERE hash=?',
+          [pageId, bare]);
+    }
   }
 }
 

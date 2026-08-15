@@ -220,7 +220,7 @@ void main() {
     // Written straight to the container, as every notebook created before the
     // op log existed was.
     final bytes = Uint8List.fromList(List.filled(32, 7));
-    final hash = repo.putBlob(nb.id, bytes, 'image/png');
+    final hash = repo.putContainerBlobForTest(nb.id, bytes, 'image/png');
 
     final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
     final store = OpLogStore.forNotebook(ref.file);
