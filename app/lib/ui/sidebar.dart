@@ -1313,8 +1313,9 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
                                         size: 16, color: OnoteColors.danger),
                                     tooltip: 'Delete permanently',
                                     onPressed: () async {
-                                      final ok =
-                                          await _confirmPurgeNotebook(ctx, nb);
+                                      final ok = await _confirmPurgeNotebook(
+                                          ctx, nb,
+                                          caveat: app.purgeCaveat(nb.id));
                                       if (ok) {
                                         await app.purgeNotebook(nb.id);
                                         setLocal(() {});
@@ -1378,14 +1379,15 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
   );
 }
 
-Future<bool> _confirmPurgeNotebook(BuildContext context, NotebookRef nb) async {
+Future<bool> _confirmPurgeNotebook(BuildContext context, NotebookRef nb,
+    {String? caveat}) async {
   final ok = await showOnoteDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('Delete permanently?'),
       content: Text(
           '“${nb.title}” and all its pages will be removed for good. This can\'t '
-          'be undone.'),
+          'be undone.${caveat == null ? '' : '\n\n$caveat'}'),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(ctx, false),

@@ -466,7 +466,21 @@ class Repository {
 
     // Close our handle first: SQLite must not be mid-write while the file is
     // copied, and on Windows an open handle blocks the delete outright.
-    _open.remove(notebookId)?.dispose();
+    //
+    // **CHECKPOINTED, and opened in order to be checkpointed if it was
+    // closed.** In WAL mode the `.onote` is not the notebook — the `-wal`
+    // beside it is, until something folds it back in. Measured on a freshly
+    // written notebook: the container was **4,096 bytes** and all 238,992
+    // bytes of content sat in the WAL. The copy below takes only the `.onote`,
+    // and the length check underneath compares main file to main file, so it
+    // agreed the copy was perfect. Then `src.deleteSync()` removed the
+    // original AND left the WAL behind: a "successful" move that produced an
+    // empty notebook. `_open` is only populated for notebooks this session has
+    // actually opened, so the notebook you had not looked at yet was the one
+    // it destroyed.
+    final open = _open.remove(notebookId);
+    checkpointAndClose(open ??
+        openOnote(ref.file, notebookId: notebookId, title: ref.title));
     _decodedPages.remove(notebookId);
 
     await src.copy(destFile);
@@ -481,9 +495,12 @@ class Repository {
       await _copyDirectory(srcLog, Directory('$destBase.onotebook'));
     }
 
-    // Only now is it safe to remove the originals.
+    // Only now is it safe to remove the originals — the container, the two
+    // files SQLite keeps beside it, and the logs. The sidecars were left
+    // behind before this, which is how a workspace accumulates a `-wal` and a
+    // `-shm` for a notebook that has not been there for weeks.
     try {
-      src.deleteSync();
+      _deleteContainerFiles(ref.file);
       if (srcLog.existsSync()) srcLog.deleteSync(recursive: true);
     } catch (_) {
       // Copy succeeded but cleanup didn't (a lock, a permission). The notebook
@@ -848,23 +865,94 @@ class Repository {
   /// notebook still writes to: a device that joined a shared folder points
   /// its `logDir` there while keeping a private container, so two entries can
   /// legitimately name the same logs.
+  ///
+  /// **And "another notebook" includes another COMPUTER.** `_logDirIsShared`
+  /// only ever asked this workspace, which cannot see the other device at all,
+  /// so purging a folder-joined notebook deleted the shared `.onotebook`
+  /// outright — the other machine's `<device>.oplog` and every blob in it —
+  /// while leaving the shared `.onote` behind, because on a joined notebook
+  /// `ref.file` names this device's PRIVATE copy in the workspace and the
+  /// shared container was never a registry entry at all. Measured, and it is
+  /// the on-disk state the report described: `G:\My Drive\Openote` held
+  /// `Eric - Computing Science Honours.onote` (35.9 MB) with its `-wal` and
+  /// `-shm` and **no `.onotebook`** — a dead container the setup screen then
+  /// offered as a notebook to join. Exactly the wrong half of the pair was
+  /// removed, and the half that survived was the one nobody could use.
+  ///
+  /// See [_mayDeleteLogDir] for the rule that replaced it, and note the sync
+  /// dialog's leftovers panel already reasoned this way — it refuses to delete
+  /// anything outside the workspace because "a leftover in a SHARED folder may
+  /// be another device's notebook". Purge simply did not agree with it.
   Future<void> purgeNotebook(String id) async {
     final i = trashedNotebooks.indexWhere((n) => n.id == id);
     if (i < 0) return;
     final ref = trashedNotebooks.removeAt(i);
     _open.remove(id)?.dispose();
     _decodedPages.remove(id);
-    try {
-      final f = File(ref.file);
-      if (f.existsSync()) f.deleteSync();
-    } catch (_) {/* best-effort; the workspace entry is already gone */}
-    try {
-      final logs = Directory(ref.logDirPath);
-      if (logs.existsSync() && !_logDirIsShared(ref)) {
-        logs.deleteSync(recursive: true);
-      }
-    } catch (_) {/* a lock or a permission must not fail the purge */}
+    _deleteContainerFiles(ref.file);
+    if (_mayDeleteLogDir(ref)) {
+      try {
+        final logs = Directory(ref.logDirPath);
+        if (logs.existsSync()) logs.deleteSync(recursive: true);
+      } catch (_) {/* a lock or a permission must not fail the purge */}
+    }
     await _saveNow();
+  }
+
+  /// A container and the two files SQLite keeps beside it.
+  ///
+  /// Deleting the `.onote` alone strands its `-wal` and `-shm`, and they are
+  /// not small: the real workspace held a 32 KB `-shm` and a 4.1 MB `-wal` for
+  /// a notebook that no longer existed, and `findOrphanFiles` had to grow a
+  /// case for them because nothing ever cleaned them up at the source. The
+  /// `-wal` is the worse of the two — it holds committed pages that never made
+  /// it into the main file, so a stranded one is real content in a file
+  /// nothing will ever open again.
+  static void _deleteContainerFiles(String container) {
+    for (final path in [container, '$container-wal', '$container-shm']) {
+      try {
+        final f = File(path);
+        if (f.existsSync()) f.deleteSync();
+      } catch (_) {/* best-effort; the workspace entry is already gone */}
+    }
+  }
+
+  /// Whether this device owns [ref]'s log directory outright, and may delete
+  /// it.
+  ///
+  /// Two shapes are private to this machine and safe to remove:
+  ///
+  ///   * **inside the workspace** — [freeLogDirPath] puts a git-cloned
+  ///     notebook's logs there, and a local notebook's logs are simply its
+  ///     container's sibling; nothing else can be writing to them; and
+  ///   * **the sibling of this notebook's own container** — the matched pair
+  ///     this device created, wherever it now lives. This covers the device
+  ///     that MOVED its notebook into a cloud folder: container and logs went
+  ///     there together, and deleting one without the other is precisely what
+  ///     left a dead `.onote` in Drive.
+  ///
+  /// Anything else means the logs are somewhere this device merely joined, so
+  /// other machines write their own files into that directory and it is not
+  /// ours to remove. Purging then means "take it off this computer" — which is
+  /// what the user asked for, and all we can honestly deliver.
+  bool _mayDeleteLogDir(NotebookRef ref) {
+    if (_logDirIsShared(ref)) return false;
+    final logs = ref.logDirPath;
+    if (p.isWithin(workspaceDir.path, logs)) return true;
+    return p.equals(logs, '${p.withoutExtension(ref.file)}.onotebook');
+  }
+
+  /// Whether deleting [id] for good would leave a shared folder untouched.
+  ///
+  /// The confirmation dialog needs this BEFORE the click: "and all its pages
+  /// will be removed for good" is a promise this cannot keep for a notebook
+  /// joined from a folder, and saying so is the difference between a user who
+  /// thinks their notes are gone everywhere and one who knows where they are.
+  bool purgeKeepsSharedFolder(String id) {
+    final ref = [...notebooks, ...trashedNotebooks]
+        .where((n) => n.id == id)
+        .firstOrNull;
+    return ref != null && !_mayDeleteLogDir(ref);
   }
 
   /// Remove a live notebook and its files outright, bypassing the recycle bin.

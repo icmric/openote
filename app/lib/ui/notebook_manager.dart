@@ -539,7 +539,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
           child: const Text('Restore'),
         ),
         _act(Icons.delete_forever, 'Delete permanently', () async {
-          final ok = await _confirmPurge(context, nb);
+          final ok =
+              await _confirmPurge(context, nb, caveat: app.purgeCaveat(nb.id));
           if (!ok || !mounted) return;
           await app.purgeNotebook(nb.id);
           if (mounted) setState(() {});
@@ -567,13 +568,14 @@ String _daysLeft(int deletedAt, int retentionDays) {
   return days <= 0 ? 'Deletes soon' : 'Deletes in $days day${days == 1 ? '' : 's'}';
 }
 
-Future<bool> _confirmPurge(BuildContext context, NotebookRef nb) async {
+Future<bool> _confirmPurge(BuildContext context, NotebookRef nb,
+    {String? caveat}) async {
   final ok = await showOnoteDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('Delete permanently?'),
       content: Text('“${nb.title}” and all its pages will be removed for good. '
-          "This can't be undone."),
+          "This can't be undone.${caveat == null ? '' : '\n\n$caveat'}"),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(ctx, false),

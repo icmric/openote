@@ -4,6 +4,7 @@
 // The move is the risky operation — it relocates a user's whole notebook
 // across volumes — so it is copy, verify, then delete, and these tests pin
 // that a failure at any step leaves the notebook intact somewhere.
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +17,7 @@ import 'package:openote/sync/cloud_folders.dart';
 import 'package:openote/sync/folder_watch.dart';
 import 'package:openote/sync/op.dart';
 import 'package:openote/sync/op_log.dart';
+import 'package:openote/ui/sync_dialog.dart' show findExistingNotebooks;
 
 import 'support/sqlite.dart';
 
@@ -334,4 +336,494 @@ void main() {
       expect(w.stop, returnsNormally);
     });
   });
+
+  _pullStaysInteractive(() => haveSqlite);
+  _deletingASharedNotebook(() => haveSqlite);
 }
+
+// ── "the app to fully lock up for 10-20s as it works" ────────────────────
+
+/// A pull writes the container in slices with the event loop let go between
+/// them, so a big fold is a slow moment rather than a frozen window.
+///
+/// **Counted, never clocked.** A wall-clock threshold here would be measuring
+/// the runner's weather; what the fix actually changes is whether the apply is
+/// ONE turn of the event loop or many, so that is what is asserted. Before
+/// pacing, a timer scheduled alongside the pull got 2 or 3 turns — the awaits
+/// that already existed before the write — and the whole 2,000-page fold went
+/// past in a single block. After, it gets one per chunk.
+void _pullStaysInteractive(bool Function() haveSqlite) {
+  group('a big pull stays interactive', () {
+    late Directory tmp;
+    late Repository repo;
+
+    setUp(() async {
+      if (!haveSqlite()) return;
+      tmp = Directory.systemTemp.createTempSync('onote_pull_pace_');
+      repo = await Repository.openAt(tmp);
+    });
+    tearDown(() {
+      if (!haveSqlite()) return;
+      repo.dispose();
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    /// [pages] remote pages of [blocksPerPage] blocks each, appended as one
+    /// foreign device's log.
+    void seedForeign(String file, String sectionId,
+        {required int pages,
+        int blocksPerPage = 4,
+        int firstSeq = 0,
+        String idPrefix = 'rp'}) {
+      final store = OpLogStore.forNotebook(file);
+      final ops = <Op>[];
+      var seq = firstSeq;
+      for (var i = 0; i < pages; i++) {
+        final pid = '$idPrefix$i';
+        ops.add(Op(
+            device: 'other',
+            seq: ++seq,
+            lamport: seq,
+            timestamp: 1,
+            kind: OpKind.nodeUpsert,
+            data: {
+              'id': pid,
+              'kind': 'page',
+              'parentId': sectionId,
+              'title': 'Remote $i',
+              'position': 'a${i.toString().padLeft(5, '0')}',
+            }));
+        for (var b = 0; b < blocksPerPage; b++) {
+          ops.add(Op(
+              device: 'other',
+              seq: ++seq,
+              lamport: seq,
+              timestamp: 1,
+              kind: OpKind.blockSet,
+              data: {
+                'pageId': pid,
+                'block': {
+                  'id': 'b$i-$b',
+                  'type': 'text',
+                  'x': 0,
+                  'y': b * 30,
+                  'w': 600,
+                  'content': {'text': 'remote $i-$b'}
+                }
+              }));
+        }
+      }
+      store.append('other', ops);
+    }
+
+    test('THE FOLD YIELDS INSTEAD OF BLOCKING', () async {
+      if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
+      final nb = await repo.createNotebook('Big');
+      final app = AppState(repo)..notebookId = nb.id;
+      app.reloadNodes();
+      final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+
+      // A tiny fold FIRST, so the recorder is open and its background replay
+      // is paid for. Without this the isolate spawn alone hands the counter
+      // dozens of turns and the measurement says nothing about the apply —
+      // which is exactly how the first version of this test passed against
+      // the unpaced code.
+      seedForeign(ref.file, section.id, pages: 1);
+      await app.syncPull(nb.id);
+
+      seedForeign(ref.file, section.id,
+          pages: 400, firstSeq: 1000, idPrefix: 'q');
+      var turns = 0;
+      final t = Timer.periodic(const Duration(milliseconds: 1), (_) => turns++);
+      final folded = await app.syncPull(nb.id);
+      t.cancel();
+
+      expect(folded, greaterThan(0));
+      // 400 pages at eight per slice is ~50 yields, plus the node slices.
+      // Unpaced, everything from `applyForeign` to the last `writePage` is one
+      // turn of the event loop and this counter cannot move at all.
+      expect(turns, greaterThan(20),
+          reason: 'the apply must give the window turns to paint and type in, '
+              'not run as one block');
+      // …and it still applied everything.
+      expect(repo.loadNodes(nb.id).where((n) => n.id.startsWith('q')).length,
+          400);
+    }, timeout: const Timeout(Duration(minutes: 3)));
+
+    test('A REMOTE DELETE LANDS, AND TAKES NOTHING ELSE WITH IT', () async {
+      if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
+      // The deletion phase used to share one transaction with the page
+      // writes, which guaranteed it ran after them. It is now its own
+      // transaction, so "deletes last" has to be re-proved — and with it the
+      // two ways a delete can do damage: losing (the node stays) and
+      // over-reaching (something unrelated goes too).
+      final nb = await repo.createNotebook('Deletes');
+      final app = AppState(repo)..notebookId = nb.id;
+      app.reloadNodes();
+      final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+      // Enough pages to span several slices, so the delete phase really is a
+      // separate transaction from the writes.
+      seedForeign(ref.file, section.id, pages: 40);
+      await app.syncPull(nb.id);
+      expect(repo.loadNodes(nb.id).where((n) => n.id.startsWith('rp')).length,
+          40);
+
+      // The other device deletes ONE page, and — in the same batch, at a
+      // HIGHER lamport than the delete — edits it again. Delete wins
+      // (ADR-0006 §6a.3): a later edit must not resurrect it.
+      final store = OpLogStore.forNotebook(ref.file);
+      store.append('other', [
+        Op(
+            device: 'other',
+            seq: 100000,
+            lamport: 100000,
+            timestamp: 9,
+            kind: OpKind.nodeDelete,
+            data: {'id': 'rp7', 'deletedAt': 9}),
+        Op(
+            device: 'other',
+            seq: 100001,
+            lamport: 100001,
+            timestamp: 10,
+            kind: OpKind.blockSet,
+            data: {
+              'pageId': 'rp7',
+              'block': {
+                'id': 'late',
+                'type': 'text',
+                'x': 0,
+                'y': 0,
+                'w': 600,
+                'content': {'text': 'after the delete'}
+              }
+            }),
+        // …and an unrelated page gets a genuine edit in the same pull.
+        Op(
+            device: 'other',
+            seq: 100002,
+            lamport: 100002,
+            timestamp: 11,
+            kind: OpKind.blockSet,
+            data: {
+              'pageId': 'rp8',
+              'block': {
+                'id': 'b8-0',
+                'type': 'text',
+                'x': 0,
+                'y': 0,
+                'w': 600,
+                'content': {'text': 'edited by the other device'}
+              }
+            }),
+      ]);
+      await app.syncPull(nb.id);
+
+      // `loadNodes` returns only what is live, so a soft-deleted page simply
+      // is not in it.
+      final nodes = repo.loadNodes(nb.id);
+      expect(nodes.where((n) => n.id == 'rp7'), isEmpty,
+          reason: 'the remote delete must reach the container — a delete that '
+              'does not is "delete loses", and a later edit at a HIGHER '
+              'lamport must not bring it back');
+      // NOTHING ELSE. The whole reason this is worth a test: a delete phase
+      // that over-reaches destroys notes on a device that never asked.
+      expect(nodes.where((n) => n.id.startsWith('rp')).length, 39,
+          reason: 'exactly one page went, and it was the one named');
+      expect(
+          repo
+              .readPage(nb.id, 'rp8')
+              .blocks
+              .where((b) => b.content['text'] == 'edited by the other device'),
+          hasLength(1),
+          reason: "the unrelated page's edit survived the same pull");
+      // The other 38 keep the content they were given.
+      expect(repo.readPage(nb.id, 'rp0').blocks, hasLength(4));
+    }, timeout: const Timeout(Duration(minutes: 3)));
+
+    test('A SAVE MADE DURING A FOLD WAITS FOR IT', () async {
+      if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
+      // Pacing hands the event loop back mid-fold, which is a window that did
+      // not exist when the apply was one block: a save landing in it writes
+      // this device's copy of a page the fold has ALREADY rewritten, and the
+      // watermark then moves past the ops that would have fixed it — so that
+      // page stays wrong until something rebuilds the container.
+      final nb = await repo.createNotebook('Interleave');
+      final app = AppState(repo)..notebookId = nb.id;
+      app.reloadNodes();
+      final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+      seedForeign(ref.file, section.id, pages: 1);
+      await app.syncPull(nb.id); // warm, as above
+      seedForeign(ref.file, section.id,
+          pages: 400, firstSeq: 1000, idPrefix: 'q');
+
+      final pull = app.syncPull(nb.id);
+      // Mid-fold, the user types on a page the other device also touched.
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      app.pageId = 'q3';
+      app.blocks = [
+        Block(
+            id: 'mine',
+            type: BlockType.text,
+            x: 0,
+            y: 0,
+            content: {'text': 'typed during the pull'})
+      ];
+      app.markDirty();
+      final save = app.flushSave();
+      // Many fold yields later, the save must still not have run: a save is
+      // milliseconds of work and would otherwise have finished long ago.
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      expect(app.hasUnsavedChanges, isTrue,
+          reason: 'the save has to wait for the fold, not race it');
+
+      await pull;
+      await save;
+      expect(app.hasUnsavedChanges, isFalse, reason: 'and then it happens');
+    }, timeout: const Timeout(Duration(minutes: 3)));
+  });
+}
+
+// ── "there were a bunch of files left over in the folder" ────────────────
+
+void _deletingASharedNotebook(bool Function() haveSqlite) {
+  group('deleting a notebook in a shared folder', () {
+    late Directory root;
+    late Directory shared;
+
+    setUp(() {
+      root = Directory.systemTemp.createTempSync('onote_purge_');
+      shared = Directory(p.join(root.path, 'FakeDrive'))..createSync();
+    });
+    tearDown(() {
+      try {
+        root.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    /// Device A: a notebook with a page, moved into the shared folder.
+    Future<({Repository repo, AppState app, String id, String path})>
+        deviceA() async {
+      final repo = await Repository.openAt(
+          Directory(p.join(root.path, 'wsA'))..createSync());
+      final nb = await repo.createNotebook('Shared');
+      final app = AppState(repo)..notebookId = nb.id;
+      app.reloadNodes();
+      app.pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+      app.blocks = [
+        Block(type: BlockType.text, x: 0, y: 0, content: {'text': 'A wrote this'})
+      ];
+      app.markDirty();
+      await app.flushSave();
+      final path = await app.moveNotebookToFolder(nb.id, shared.path);
+      return (repo: repo, app: app, id: nb.id, path: path);
+    }
+
+    test('PURGING A JOINED NOTEBOOK LEAVES THE OTHER DEVICE ALONE', () async {
+      if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
+      final a = await deviceA();
+      addTearDown(a.repo.dispose);
+      addTearDown(a.app.dispose);
+      final sharedLogs =
+          Directory('${p.withoutExtension(a.path)}.onotebook');
+      expect(File(p.join(sharedLogs.path, 'ops', _onlyLog(a.path))).existsSync(),
+          isTrue,
+          reason: "device A's log is there");
+
+      // Device B joins the same folder: private container here, shared logs
+      // there.
+      final repoB = await Repository.openAt(
+          Directory(p.join(root.path, 'wsB'))..createSync());
+      addTearDown(repoB.dispose);
+      final appB = AppState(repoB);
+      addTearDown(appB.dispose);
+      await appB.openExistingNotebook(a.path);
+      await repoB.createNotebook('Somewhere else'); // deleting the last is refused
+      final joined = repoB.notebooks.firstWhere((n) => n.title == 'Shared');
+      appB.notebookId =
+          repoB.notebooks.firstWhere((n) => n.title == 'Somewhere else').id;
+
+      // Photograph the shared folder the instant before the purge, and compare
+      // the instant after. Snapshotting earlier compares against the wrong
+      // thing: both devices have background work in flight (the recorder warm
+      // appends a manifest and back-fills the tree), so a log that legitimately
+      // GREW between the two reads looked like the purge had touched it — the
+      // first version of this test flaked under a full-suite run for exactly
+      // that reason.
+      Map<String, List<int>> photograph() => {
+            for (final f in sharedLogs.listSync(recursive: true))
+              if (f is File)
+                p.relative(f.path, from: sharedLogs.path): f.readAsBytesSync()
+          };
+      final before = photograph();
+      expect(before, isNotEmpty);
+      // What the confirmation dialog says, asked when it asks — before the
+      // click. Afterwards there is no registry entry left to ask about.
+      final caveat = appB.purgeCaveat(joined.id);
+
+      // …and deletes it for good.
+      await appB.deleteNotebook(joined.id);
+      await appB.purgeNotebook(joined.id);
+
+      // THE POINT. This used to delete the whole `.onotebook` — device A's
+      // log and every blob in it — because the only "is it shared?" test
+      // asked this workspace, which cannot see another computer.
+      expect(sharedLogs.existsSync(), isTrue,
+          reason: "device B deleting its copy must not remove device A's ops");
+      expect(photograph(), before,
+          reason: 'not one byte of the shared folder changed');
+      expect(File(a.path).existsSync(), isTrue,
+          reason: "the shared container is device A's notebook, not B's");
+      // B's own private copy is gone, which is what the user asked for.
+      expect(File(joined.file).existsSync(), isFalse);
+      expect(File('${joined.file}-wal').existsSync(), isFalse);
+      expect(File('${joined.file}-shm').existsSync(), isFalse);
+      // And device A can still read its own notebook.
+      final nodes = a.repo.loadNodes(a.id);
+      expect(nodes.where((n) => n.kind == NodeKind.page), isNotEmpty);
+      // The confirmation said so before the click, in words with no jargon.
+      expect(caveat, contains('other devices'));
+    });
+
+    test('purging the notebook this device OWNS removes both halves', () async {
+      if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
+      // The complement, and the reason the rule is about ownership rather
+      // than about the folder: device A put the pair in Drive itself, so
+      // leaving either half behind is the leftover being fixed.
+      final a = await deviceA();
+      addTearDown(a.repo.dispose);
+      await a.repo.createNotebook('Somewhere else');
+      a.app.notebookId =
+          a.repo.notebooks.firstWhere((n) => n.title == 'Somewhere else').id;
+      expect(a.app.purgeKeepsSharedFolder(a.id), isFalse);
+      expect(a.app.purgeCaveat(a.id), isNull);
+      await a.app.deleteNotebook(a.id);
+      await a.app.purgeNotebook(a.id);
+
+      expect(shared.listSync(), isEmpty,
+          reason: 'container, its -wal and -shm, and the logs all go together');
+    });
+
+    test('SETUP DOES NOT OFFER A LEFTOVER AS A NOTEBOOK TO JOIN', () {
+      // "it thought there were several notebooks which didnt actually exist".
+      // The real folder held a live notebook and, beside it under a name one
+      // character different, a 35.9 MB container whose log directory had been
+      // deleted out from under it — and setup offered both.
+      final live = File(p.join(shared.path, 'Physics.onote'))
+        ..writeAsStringSync('a notebook');
+      Directory(p.join(shared.path, 'Physics.onotebook', 'ops'))
+          .createSync(recursive: true);
+      File(p.join(shared.path, 'Physics (2).onote'))
+          .writeAsStringSync('a leftover');
+      // The sidecars a deleted notebook strands are not notebooks either.
+      File(p.join(shared.path, 'Physics.onote-wal')).writeAsStringSync('w');
+      File(p.join(shared.path, 'Physics.onote-shm')).writeAsStringSync('s');
+
+      final found = findExistingNotebooks(searchIn: [
+        CloudFolder(
+            name: 'FakeDrive', path: shared.path, kind: CloudKind.other)
+      ]);
+      expect(found.map((f) => f.path), [live.path],
+          reason: 'a container with no `.onotebook` beside it was never put '
+              'there by another device');
+    });
+
+    test('A PURGE TAKES THE WRITE-AHEAD FILES WITH THE CONTAINER', () async {
+      if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
+      final repo = await Repository.openAt(
+          Directory(p.join(root.path, 'ws'))..createSync());
+      addTearDown(repo.dispose);
+      await repo.createNotebook('Keep');
+      final nb = await repo.createNotebook('Doomed');
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+      await repo.trashNotebook(nb.id); // closes the handle, as a real trash does
+      // Exactly what an unclean shutdown leaves, and what the real workspace
+      // was found holding: a 32 KB `-shm` and a `-wal` for a notebook that no
+      // longer exists. The `-wal` is committed content nothing will ever open.
+      File('${ref.file}-wal').writeAsStringSync('committed pages live here');
+      File('${ref.file}-shm').writeAsStringSync('shared memory index');
+
+      await repo.purgeNotebook(nb.id);
+
+      expect(File(ref.file).existsSync(), isFalse);
+      expect(File('${ref.file}-wal').existsSync(), isFalse,
+          reason: 'a stranded -wal is real content in a file nothing reopens');
+      expect(File('${ref.file}-shm').existsSync(), isFalse);
+    });
+
+    test('MOVING A NOTEBOOK FOLDS ITS WRITE-AHEAD LOG IN FIRST', () async {
+      if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
+      // The move byte-copies the `.onote` and then deletes the original. In
+      // WAL mode the `.onote` is not the notebook: measured on a freshly
+      // written one, the container was 4,096 bytes and all 238,992 bytes of
+      // content were in the `-wal`. The length check compares main file to
+      // main file, so it agreed the copy was perfect — and the move destroyed
+      // the notebook while reporting success.
+      final ws = Directory(p.join(root.path, 'ws'))..createSync();
+      final repo = await Repository.openAt(ws);
+      final nb = await repo.createNotebook('Mover');
+      final app = AppState(repo)..notebookId = nb.id;
+      app.reloadNodes();
+      app.pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+      app.blocks = [
+        Block(type: BlockType.text, x: 0, y: 0, content: {'text': 'in the wal'})
+      ];
+      app.markDirty();
+      await app.flushSave();
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+
+      // Take the un-checkpointed pair off disk exactly as it stands, then put
+      // it back after a clean close has folded it in. That is the state the
+      // bug needs and the state any real notebook is in between checkpoints:
+      // a nearly empty container beside a `-wal` holding everything.
+      final mainBytes = File(ref.file).readAsBytesSync();
+      final walBytes = File('${ref.file}-wal').readAsBytesSync();
+      expect(mainBytes.length, lessThan(walBytes.length),
+          reason: 'the notebook is IN the wal, which is the whole point');
+      repo.dispose();
+      File(ref.file).writeAsBytesSync(mainBytes);
+      File('${ref.file}-wal').writeAsBytesSync(walBytes);
+      try {
+        File('${ref.file}-shm').deleteSync(); // SQLite rebuilds it
+      } catch (_) {}
+
+      // A session that has never opened this notebook — so `_open` holds no
+      // handle for it and nothing has checkpointed.
+      final repo2 = await Repository.openAt(ws);
+      addTearDown(repo2.dispose);
+      final app2 = AppState(repo2);
+      final moved = await app2.moveNotebookToFolder(nb.id, shared.path);
+
+      // The moved file is the notebook, not an empty database.
+      expect(File(moved).lengthSync(), greaterThan(mainBytes.length),
+          reason: 'a container the size it was is the WAL left behind');
+      final repoC = await Repository.openAt(
+          Directory(p.join(root.path, 'check'))..createSync());
+      addTearDown(repoC.dispose);
+      final copy = await repoC.openExistingNotebook(moved, title: 'Check');
+      final pages =
+          repoC.loadNodes(copy.id).where((n) => n.kind == NodeKind.page);
+      expect(pages, isNotEmpty, reason: 'the moved notebook still has pages');
+      expect(repoC.readPage(copy.id, pages.first.id).blocks.single
+          .content['text'], 'in the wal');
+      // …and the source keeps nothing.
+      expect(
+          ws
+              .listSync()
+              .map((e) => p.basename(e.path))
+              .where((n) => n.startsWith('Mover')),
+          isEmpty);
+    });
+  });
+}
+
+/// The single `.oplog` in a notebook's ops directory — this device's.
+String _onlyLog(String container) => Directory(
+        p.join('${p.withoutExtension(container)}.onotebook', 'ops'))
+    .listSync()
+    .map((e) => p.basename(e.path))
+    .firstWhere((n) => n.endsWith('.oplog'));

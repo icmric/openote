@@ -959,16 +959,41 @@ IconData _iconFor(CloudKind k) => switch (k) {
 /// detected cloud folder plus an `Openote` subfolder — deep enough to find
 /// what the sync dialog itself creates, shallow enough not to walk somebody's
 /// whole Drive.
-List<({String name, String path, CloudFolder folder})> findExistingNotebooks() {
+///
+/// **A `.onote` is only offered when its `.onotebook` is beside it.**
+///
+/// Reported: "there were a bunch of files left over in the folder from deleted
+/// notebooks … which meant that when i was running through the setup process
+/// it thought there were several notebooks which didnt actually exist." That
+/// is this list, and it was trusting a filename. A notebook another device
+/// shares through a folder ALWAYS arrives as a pair — `moveNotebookTo` copies
+/// the container and the log directory together — so a lone container is
+/// never something to join. It is a leftover, and on the real machine there
+/// was one 35.9 MB of it, offered beside the live notebook under a name one
+/// character different.
+///
+/// Checked by looking rather than by opening: the candidate lives in someone's
+/// Drive, and opening a SQLite file to interrogate it writes to it (schema
+/// DDL, a `-wal`, a `-shm`) — scanning for leftovers must not create any.
+///
+/// [searchIn] replaces the detected folders, for tests — the real ones are
+/// this machine's actual Drive and OneDrive, which no test may write into.
+List<({String name, String path, CloudFolder folder})> findExistingNotebooks({
+  List<CloudFolder>? searchIn,
+}) {
   final out = <({String name, String path, CloudFolder folder})>[];
   final seen = <String>{};
-  for (final cloud in detectCloudFolders()) {
+  for (final cloud in searchIn ?? detectCloudFolders()) {
     for (final root in [cloud.path, p.join(cloud.path, 'Openote')]) {
       final dir = Directory(root);
       if (!dir.existsSync()) continue;
       try {
         for (final e in dir.listSync(followLinks: false)) {
           if (e is! File || p.extension(e.path) != '.onote') continue;
+          if (!Directory('${p.withoutExtension(e.path)}.onotebook')
+              .existsSync()) {
+            continue;
+          }
           if (!seen.add(e.path)) continue;
           out.add((
             name: p.basenameWithoutExtension(e.path),

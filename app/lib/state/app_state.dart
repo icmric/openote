@@ -1534,6 +1534,46 @@ class AppState extends ChangeNotifier
     return copied;
   }
 
+  /// Pages written per transaction while a pull is applying.
+  ///
+  /// Measured at ~1.4 ms per `writePage` on a real fold, so eight is ~11 ms —
+  /// inside a frame, with room for the frame itself.
+  static const int _pullPageChunk = 8;
+
+  /// Nodes written per transaction. `upsertNode` measured ~0.3 ms, so forty is
+  /// the same ~12 ms budget.
+  static const int _pullNodeChunk = 40;
+
+  /// Run [work] over [items] in slices of [size], letting the app breathe
+  /// between them.
+  ///
+  /// **A REAL delay, not `Duration.zero`.** Same reason as
+  /// `SyncRecorder.backfillBlobs`: on Windows the UI isolate lives on the
+  /// Win32 message loop, where posted messages outrank hardware input, so a
+  /// zero-duration timer is work due immediately and the queue never goes idle
+  /// — the window would still not answer the mouse. One millisecond lets it
+  /// actually wait, which is when Win32 delivers input.
+  static Future<void> _inChunks<T>(
+      List<T> items, int size, void Function(List<T> slice) work) async {
+    for (var i = 0; i < items.length; i += size) {
+      work(items.sublist(i, math.min(i + size, items.length)));
+      if (i + size < items.length) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+    }
+  }
+
+  /// Non-null while a pull is writing materialised pages into the container.
+  ///
+  /// The pull now yields, so a save CAN land in the middle of one — and a save
+  /// writes the page as this device currently has it, which for a page the
+  /// pull is about to rewrite means the container keeps the stale copy while
+  /// the log keeps the remote's ops. The watermark advances anyway, so that
+  /// page would stay wrong on this device until something rebuilt it. Saves
+  /// wait for the gate instead of being dropped, so nothing is lost and
+  /// `shutdown`'s flush still lands.
+  Completer<void>? _applyingPull;
+
   Future<int> _syncPullLocked(
       String nb, SyncRecorder r, List<Op> pending) async {
     // Flush first: a local edit still sitting in the debounce would otherwise
@@ -1552,16 +1592,43 @@ class AppState extends ChangeNotifier
     // took the WHOLE pull down with it. One shared notebook with one image in
     // it stopped that device syncing at all.
     //
-    // Inside the same transaction as the pages, and before them, so a crash
-    // can never leave a page referencing bytes that are not there.
+    // Before the pages, so a crash can never leave a page referencing bytes
+    // that are not there. (Before, not *inside*: this has always run outside
+    // the transaction, and the comment here used to claim otherwise. Copying
+    // files is not something a SQLite transaction can roll back anyway, and
+    // the watermark below is what actually makes a half-done pull safe — it
+    // does not move, so the next pull redoes the whole thing.)
     final pulledBlobs = _ingestForeignBlobs(nb, r, pending);
 
-    _repo.runInTransaction(nb, () {
+    // **Written in chunks, with the event loop let go between them.**
+    //
+    // "the app to fully lock up for 10-20s as it works". This was one
+    // `runInTransaction` over every changed page, on the UI thread. Measured
+    // on a 2,000-page fold from a 20 MB log: 2,842 ms in `writePage`, 588 ms
+    // in `upsertNode`, and an event loop blocked solid for 3.2 s — and the
+    // user's real log is three times that size, which is the reported 10-20 s
+    // almost exactly. Nothing here got FASTER; it now happens in slices the
+    // window can paint and type between.
+    //
+    // The order the single transaction enforced is kept by running the phases
+    // in sequence instead, and each phase is still atomic:
+    //
+    //   1. nodes, parents before children;
+    //   2. pages;
+    //   3. deletions.
+    //
+    // Splitting them is safe because the watermark still advances only at the
+    // very end, and every write here is idempotent (upsert, mirror replace,
+    // soft-delete) — so a crash between phases re-applies the whole pull next
+    // time rather than skipping it. That was already true of the blob copy
+    // above, which has always run outside the transaction.
+    _applyingPull = Completer<void>();
+    try {
       // **Nodes before pages.** `page_mirror.page_id` is a foreign key onto
       // `nodes(id)` and every container runs with `PRAGMA foreign_keys=ON`, so
       // writing a page whose node row does not exist yet fails with SQLITE
       // constraint 787 — and `runInTransaction` rolls back, discarding the
-      // WHOLE pull rather than one row.
+      // whole phase rather than one row.
       //
       // It has never mattered because every existing way of getting a
       // notebook onto a second device copies the container first, so the node
@@ -1579,32 +1646,47 @@ class AppState extends ChangeNotifier
         // Same reason as the block above: on a container that already has the
         // tree these are all updates and order is irrelevant. On the empty
         // container a git join creates, every row is an insert.
-        for (final n in _parentsFirst(r.materialisedNodes())) {
-          _repo.upsertNode(
-              nb,
-              TreeNode(
-                id: n.id,
-                kind: NodeKind.values.firstWhere((k) => k.name == n.kind,
-                    orElse: () => NodeKind.page),
-                parentId: n.parentId,
-                title: n.title,
-                position: n.position,
-                color: n.color,
-                level: n.level,
-                createdAt: n.createdAt == 0 ? null : n.createdAt,
-              ));
-        }
+        //
+        // Chunked as one unit per slice rather than per node: a child whose
+        // parent is in the SAME slice is fine (same transaction), and a child
+        // whose parent was in an earlier slice is fine too (already
+        // committed), because `_parentsFirst` never puts a child before its
+        // parent in the list.
+        await _inChunks(_parentsFirst(r.materialisedNodes()), _pullNodeChunk,
+            (slice) {
+          _repo.runInTransaction(nb, () {
+            for (final n in slice) {
+              _repo.upsertNode(
+                  nb,
+                  TreeNode(
+                    id: n.id,
+                    kind: NodeKind.values.firstWhere((k) => k.name == n.kind,
+                        orElse: () => NodeKind.page),
+                    parentId: n.parentId,
+                    title: n.title,
+                    position: n.position,
+                    color: n.color,
+                    level: n.level,
+                    createdAt: n.createdAt == 0 ? null : n.createdAt,
+                  ));
+            }
+          });
+        });
       }
-      for (final pageId in changed.pages) {
-        final mirror = r.materialisedPage(pageId);
-        final blocks = [
-          for (final b in (mirror['blocks'] as List? ?? const []))
-            Block.fromJson((b as Map).cast<String, dynamic>())
-        ];
-        final props = PageProps.fromJson(
-            (mirror['page'] as Map?)?.cast<String, dynamic>());
-        _repo.writePage(nb, pageId, blocks, props);
-      }
+      await _inChunks(changed.pages.toList(), _pullPageChunk, (slice) {
+        _repo.runInTransaction(nb, () {
+          for (final pageId in slice) {
+            final mirror = r.materialisedPage(pageId);
+            final blocks = [
+              for (final b in (mirror['blocks'] as List? ?? const []))
+                Block.fromJson((b as Map).cast<String, dynamic>())
+            ];
+            final props = PageProps.fromJson(
+                (mirror['page'] as Map?)?.cast<String, dynamic>());
+            _repo.writePage(nb, pageId, blocks, props);
+          }
+        });
+      });
       if (changed.treeChanged) {
         // Deletions LAST, and this is the half that has to stay after the
         // pages: a node the log says is gone must leave the container, or a
@@ -1612,11 +1694,19 @@ class AppState extends ChangeNotifier
         // become "delete loses". Running it before the page writes would let a
         // page write resurrect what the delete just removed. Soft-delete, so
         // it lands in the recycle bin exactly as a local delete would.
-        for (final id in r.materialisedDeletedIds()) {
-          _repo.softDeleteNode(nb, id);
-        }
+        await _inChunks(r.materialisedDeletedIds(), _pullNodeChunk, (slice) {
+          _repo.runInTransaction(nb, () {
+            for (final id in slice) {
+              _repo.softDeleteNode(nb, id);
+            }
+          });
+        });
       }
-    });
+    } finally {
+      final gate = _applyingPull;
+      _applyingPull = null;
+      gate?.complete();
+    }
 
     if (pulledBlobs > 0) {
       debugPrint(
@@ -4354,6 +4444,25 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Whether deleting [id] for good leaves the shared folder alone, because
+  /// other devices keep their notes there too. Drives the wording of the
+  /// confirmation — see [Repository.purgeKeepsSharedFolder].
+  bool purgeKeepsSharedFolder(String id) => _repo.purgeKeepsSharedFolder(id);
+
+  /// The sentence a "delete permanently?" confirmation needs to add, or null
+  /// when its plain promise is the whole truth.
+  ///
+  /// "and all its pages will be removed for good" is what both recycle bins
+  /// say, and for a notebook joined from a shared folder it is wrong in the
+  /// direction that frightens people: the notes are still on the other
+  /// computer, and this only ever removed this machine's copy. Said before the
+  /// click, not discovered afterwards. No mention of logs, devices ids or
+  /// folders-with-a-dot — "your other devices" is the thing the user has.
+  String? purgeCaveat(String id) => purgeKeepsSharedFolder(id)
+      ? 'This notebook is in a folder you share, so your other devices keep '
+          'their copy. Deleting it here takes it off this computer.'
+      : null;
+
   /// Throw away a notebook that was never the user's — the half-built target of
   /// a cancelled or crashed import. Not the recycle bin: see
   /// [Repository.discardNotebook].
@@ -5803,6 +5912,10 @@ class AppState extends ChangeNotifier
 
   Future<void> flushSave() async {
     _saveDebounce?.cancel();
+    if (!_dirty || pageId == null || notebookId == null) return;
+    // Wait out a pull that is mid-write rather than racing it. See
+    // [_applyingPull]; the wait is bounded by the pull, which yields.
+    await _applyingPull?.future;
     if (!_dirty || pageId == null || notebookId == null) return;
     // Keep `_dirty` TRUE until the write actually lands: clearing it first meant
     // a throwing save (disk full, DB locked) left the page marked clean and the
