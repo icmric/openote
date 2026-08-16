@@ -530,6 +530,28 @@ class Repository {
     return _enqueueWorkspaceWrite();
   }
 
+  /// Write the registry NOW and bring the `.bak` copy in line with it.
+  ///
+  /// For a caller that has just REMOVED a secret from the settings (the
+  /// clear-text GitHub token scrub, task #73). The ordinary atomic write
+  /// keeps the PREVIOUS file as `workspace.json.bak` — which, right after a
+  /// scrub, is precisely the copy still carrying the secret. Copying the
+  /// freshly written file over the backup keeps the recovery path intact and
+  /// leaves the secret in no file this class writes.
+  Future<void> flushSettingsScrub() async {
+    await _saveNow();
+    // A read-only registry (written by a newer build) is never rewritten, so
+    // nothing was scrubbed and the backup must not be touched either.
+    if (registryReadOnly != null || _disposed) return;
+    try {
+      final target = _workspaceFile;
+      if (target.existsSync()) await target.copy('${target.path}.bak');
+    } catch (_) {
+      // The live registry is already clean; a backup that could not be
+      // refreshed is replaced by the next routine write anyway.
+    }
+  }
+
   Future<void> _saveWorkspace() async {
     if (_disposed) return; // the workspace may no longer exist
     _writePending = false;

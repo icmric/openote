@@ -4,6 +4,14 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Security — your GitHub key now lives in your computer's own password storage
+
+- **Openote now keeps your GitHub key in your computer's own password storage
+  instead of a plain file** — Credential Manager on Windows, the Keychain on
+  Mac, and the desktop's keyring on Linux. If you connected GitHub before this
+  change, your key is quietly moved there the next time Openote starts, and the
+  plain file no longer holds it.
+
 ### Added — Openote can tuck a notebook's working file out of the way
 
 - **Openote keeps a working file for each notebook, and it can now tuck that

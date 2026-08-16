@@ -12,6 +12,7 @@ import '../canvas/canvas_controller.dart';
 import '../core/engine.dart';
 import '../core/ids.dart';
 import '../core/onote_ffi.dart';
+import '../core/secret_store.dart';
 import '../core/open_target.dart'
     show isOpenoteWorkingCopy, notebookFolderNamedBy;
 import '../editor/onote_text_editor.dart';
@@ -619,8 +620,18 @@ class AppState extends ChangeNotifier
   /// worth being able to exercise end to end rather than by inspection.
   static String debugGitHubBase = 'https://api.github.com';
 
+  /// Where the token itself lives: the OS password store, under this key,
+  /// via [SecretStore]. **Never in `workspace.json`** — task #73 is that it
+  /// used to be, in clear text, and [reloadGitHub] still scrubs that shape.
+  static const _githubSecret = 'github';
+
   String? _githubToken;
   String? _githubLogin;
+
+  /// The in-flight move of a legacy clear-text token out of `workspace.json`,
+  /// if [reloadGitHub] found one. Exposed so a test can await the scrub
+  /// instead of polling the file.
+  Future<void>? debugGitHubScrub;
 
   /// The connected account's username, or null when none is connected.
   String? get githubLogin => _githubLogin;
@@ -636,9 +647,40 @@ class AppState extends ChangeNotifier
 
   void reloadGitHub() {
     final raw = _repo.getSetting(_githubKey);
-    if (raw is! Map) return;
-    _githubToken = raw['token'] as String?;
+    if (raw is! Map) {
+      _githubToken = null;
+      _githubLogin = null;
+      return;
+    }
     _githubLogin = raw['login'] as String?;
+    final legacy = raw['token'] as String?;
+    if (legacy != null && legacy.isNotEmpty) {
+      // A workspace written before 0.8: the token is sitting in
+      // `workspace.json` in clear text. Keep it usable right now, and move it
+      // where it belongs — the scrub rewrites the file (and its backup)
+      // without the token, so this branch runs at most once per workspace.
+      _githubToken = legacy;
+      debugGitHubScrub = _scrubLegacyGitHubToken(legacy)..ignore();
+    } else {
+      _githubToken = SecretStore.read(_githubSecret);
+      // A login with no key behind it must not read as "signed in" anywhere —
+      // `githubConnected` would say false while dialogs showed the name.
+      if (_githubToken == null) _githubLogin = null;
+    }
+  }
+
+  /// Move a clear-text token out of `workspace.json` and into the OS store.
+  ///
+  /// The order is store-first, scrub-always: even if the store refuses the
+  /// token (no store on this machine), the clear-text copy still goes —
+  /// leaving it would keep the exact exposure this exists to end. The user is
+  /// then signed out at the next start and reconnects, at which point
+  /// [connectGitHub] explains what is missing in plain words.
+  Future<void> _scrubLegacyGitHubToken(String token) async {
+    await SecretStore.write(_githubSecret, token);
+    _repo.setSetting(
+        _githubKey, {if (_githubLogin != null) 'login': _githubLogin});
+    await _repo.flushSettingsScrub();
   }
 
   /// Check a token and remember it if GitHub accepts it.
@@ -654,9 +696,23 @@ class AppState extends ChangeNotifier
       return 'GitHub did not accept that token. Check it was copied whole, '
           'and that it has not expired.';
     }
+    // Into the OS password store, never into a file. If this machine has no
+    // store to offer, the answer is "not saved", said plainly — a clear-text
+    // file is not a fallback (task #73).
+    final kept = await SecretStore.write(_githubSecret, t);
+    if (!kept) {
+      return 'GitHub accepted the token, but Openote could not keep it. '
+          'Openote stores the token in your computer\'s own password '
+          'storage — never in a plain file — and this computer\'s password '
+          'storage did not take it.'
+          '${Platform.isLinux ? ' On Linux, installing the "libsecret-tools" '
+              'package usually fixes this.' : ''}';
+    }
     _githubToken = t;
     _githubLogin = login;
-    _repo.setSetting(_githubKey, {'token': t, 'login': login});
+    // Only the LOGIN goes in the workspace file — it is the display name, not
+    // a secret. The token's absence here is load-bearing and pinned by test.
+    _repo.setSetting(_githubKey, {'login': login});
     notifyListeners();
     return null;
   }
@@ -664,6 +720,7 @@ class AppState extends ChangeNotifier
   void disconnectGitHub() {
     _githubToken = null;
     _githubLogin = null;
+    SecretStore.delete(_githubSecret);
     _repo.setSetting(_githubKey, null);
     notifyListeners();
   }

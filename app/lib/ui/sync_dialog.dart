@@ -1725,9 +1725,10 @@ class _GitSectionState extends State<_GitSection> {
           const SizedBox(height: 4),
           Text(
             app.githubConnected
-                ? 'Signed in to GitHub as ${app.githubLogin}. The token is '
-                    'kept on this computer and sent only to GitHub — it is '
-                    'never written into the notebook or its repository.'
+                ? 'Signed in to GitHub as ${app.githubLogin}. Openote keeps '
+                    'the token in this computer\'s own password storage and '
+                    'sends it only to GitHub — it is never written into a '
+                    'plain file, the notebook, or its repository.'
                 : 'Openote never asks for your password: it runs the git '
                     'already on this computer and uses whatever sign-in you '
                     'have set up for it. If a push needs credentials you have '
