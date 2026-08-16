@@ -100,6 +100,51 @@ const List<int> _sqliteMagic = [
   0x6F, 0x72, 0x6D, 0x61, 0x74, 0x20, 0x33, 0x00, // "ormat 3" + NUL
 ];
 
+/// Thrown by [openExistingOnote] when the container it was told to open is not
+/// there. Carries the path for the Advanced fold and nothing else.
+class NotebookFileMissing implements Exception {
+  const NotebookFileMissing(this.path);
+  final String path;
+
+  @override
+  String toString() => 'no notebook file at $path';
+}
+
+/// [openOnote], for a container that is **expected to already exist**.
+///
+/// **The difference is that this one refuses to invent a notebook** (v0.17
+/// plan, Step 8 item 2). [openOnote] treats an `application_id` of zero as "a
+/// fresh file" and seeds a brand-new notebook into it — which is right for
+/// `createNotebook` and `adoptLogDirectory`, the two callers that genuinely
+/// mean "make me one", and catastrophic for every other caller, which means
+/// "open the one that is there".
+///
+/// Reachable today, without any migration: `Repository._db` opened whatever
+/// path the registry named with no existence check at all, so an unmounted
+/// drive, a cloud client that had evicted the file, or a container the user
+/// moved in Explorer produced a valid `Database` with 0 nodes and 0 pages and
+/// left a 73,728-byte file behind — after which `notebookFileProblem` reports
+/// it as *"looks like a notebook"* and the real one is no longer registered.
+///
+/// It is also the single hazard that turned a crash into a disaster in the
+/// spike this whole plan is written around: killed immediately after a rename,
+/// the obvious *"just run it again"* called `openOnote` on the now-missing old
+/// path, fabricated an empty database, and renamed it over the real
+/// container — which `File.renameSync` on Windows does silently. 329 pages
+/// became 73,728 bytes with `integrity_check` reporting `ok`.
+Database openExistingOnote(String path,
+    {required String notebookId, required String title}) {
+  // `typeSync`, not `existsSync`: a *directory* where the container belongs is
+  // the state `reclaimFreeSpace`'s own test constructs deliberately, and
+  // `sqlite3.open` on one fails with a platform-dependent message rather than
+  // with the thing that is actually wrong.
+  if (FileSystemEntity.typeSync(path, followLinks: true) !=
+      FileSystemEntityType.file) {
+    throw NotebookFileMissing(path);
+  }
+  return openOnote(path, notebookId: notebookId, title: title);
+}
+
 Database openOnote(String path, {required String notebookId, required String title}) {
   final db = sqlite3.open(path);
   // **Before `journal_mode`, and before any table exists.** `auto_vacuum` can

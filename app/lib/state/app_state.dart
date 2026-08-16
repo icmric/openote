@@ -2038,10 +2038,15 @@ class AppState extends ChangeNotifier
         // become "delete loses". Running it before the page writes would let a
         // page write resurrect what the delete just removed. Soft-delete, so
         // it lands in the recycle bin exactly as a local delete would.
-        await _inChunks(r.materialisedDeletedIds(), _pullNodeChunk, (slice) {
+        // **Stamped with the log's instant, not this device's clock.** Writing
+        // `nowMs()` here made two devices disagree about when a page had been
+        // deleted — so its thirty-day retention expired at a different moment
+        // on each — and left the container disagreeing with the very log it
+        // was folded from.
+        await _inChunks(r.materialisedDeletions(), _pullNodeChunk, (slice) {
           _repo.runInTransaction(nb, () {
-            for (final id in slice) {
-              _repo.softDeleteNode(nb, id);
+            for (final (id, at) in slice) {
+              _repo.softDeleteNode(nb, id, at: at);
             }
           });
         });
@@ -2865,6 +2870,85 @@ class AppState extends ChangeNotifier
   Future<BlobRefill> refillContainerBlobs(String nb) async {
     await flushSave();
     final out = await _repo.refillContainerBlobs(nb);
+    notifyListeners();
+    return out;
+  }
+
+  /// Build this notebook's working file again from its saved history
+  /// (v0.17 Step 8 item 1) — *"rebuild this notebook from its history"*.
+  ///
+  /// **The gates that have to be here rather than in [Repository].** The
+  /// repository can see the container and the folder; only this layer can make
+  /// the log-side proof run *first*, and the ordering is the whole safety
+  /// argument, exactly as it is for [reclaimContainerBlobs]:
+  ///
+  ///  * [proveBlobBytes] repairs a damaged blob file **from the container**,
+  ///    and the container is what this replaces. After the swap there is
+  ///    nothing left to repair from, so the proof has to happen while the
+  ///    notebook can still be mended.
+  ///  * A missing recorder is a refusal, not a pass. [proveBlobBytes] answers
+  ///    `checked: 0` with empty sets when the log will not open and `ok` on that
+  ///    is `true` — so a notebook whose folder is broken would otherwise clear
+  ///    the strictest gate in the plan by having nothing to check, and be
+  ///    rebuilt from a history nobody could read.
+  ///
+  /// On success the derived history index is thrown away rather than migrated.
+  /// `block_authors` and `recent_deletions` live in the container this call has
+  /// just replaced, and both are folds of the log — so the honest repair is to
+  /// forget how far the fold got and let the next [refreshHistory] re-derive
+  /// them, which is the same recovery `_catchUpHistory` already takes when it
+  /// cannot trust an offset.
+  Future<ContainerRebuild> rebuildContainerFromLog(String nb) async {
+    await flushSave();
+    if (notebookIsReadOnly(nb)) {
+      return const ContainerRebuild(
+          refusal: 'This notebook was written by a newer version of Openote, '
+              'so this one is only showing it to you. Nothing will be changed.');
+    }
+    // The backfill is what puts the bytes in `blobs/`; rebuilding while it is
+    // still running would measure a hole it is in the middle of filling.
+    await awaitBlobBackfill(nb);
+    final r = await warmRecorder(nb);
+    if (r == null) {
+      return const ContainerRebuild(
+          refusal: "Openote could not open this notebook's own folder, so it "
+              'has no history to rebuild from. Nothing has been changed.',
+          details: 'no SyncRecorder for the notebook; see the save problem '
+              'reported separately');
+    }
+    final proof = await proveBlobBytes(nb);
+    if (!proof.ok) {
+      return ContainerRebuild(
+          refusal: 'Openote will not do this yet. ${proof.holes} of this '
+              "notebook's pictures and drawings are missing or damaged in the "
+              "notebook's own folder, and that folder is what a rebuilt "
+              'notebook reads them from. Nothing has been changed.',
+          details: '$proof\n'
+              'missing: ${_someHashes(proof.missing)}\n'
+              'unrepairable: ${_someHashes(proof.damaged)}');
+    }
+    final out = await _repo.rebuildContainerFromLog(nb);
+    if (!out.done) return out;
+
+    // The container the index lived in is gone. Forget the offsets so the fold
+    // starts from the beginning of every log, and drop the in-memory copy so
+    // nothing serves rows that no longer have a table under them.
+    final store = _bareLog(nb);
+    if (store != null) {
+      for (final dev in store.deviceIds()) {
+        _repo.setSetting(_historyOffsetKey(nb, dev), null);
+      }
+    }
+    _histories.remove(nb);
+
+    reloadNodes();
+    final pid = pageId;
+    if (nb == notebookId && pid != null) {
+      final data = await engine.loadPage(nb, pid);
+      blocks = data.blocks;
+      pageProps = data.props;
+      docRevision++;
+    }
     notifyListeners();
     return out;
   }
@@ -6609,8 +6693,15 @@ class AppState extends ChangeNotifier
     // Deleting is a write like any other. A notebook we can only half read is
     // the last place to be removing things from — see [notebookIsReadOnly].
     if (notebookIsReadOnly(notebookId!)) return;
-    _repo.softDeleteNode(notebookId!, id);
-    _recorderFor(notebookId!)?.nodeDeleted(id);
+    // **One clock reading, used twice.** The container and the log each used to
+    // take their own, so a delete that straddled a millisecond boundary was
+    // recorded at two different times — invisible until a rebuild compared
+    // them, and then it refused at random on any notebook with a page in the
+    // recycle bin. It also gave the thirty-day retention promise two different
+    // start instants for the same deletion.
+    final at = nowMs();
+    _repo.softDeleteNode(notebookId!, id, at: at);
+    _recorderFor(notebookId!)?.nodeDeleted(id, at: at);
     reloadNodes();
     if (pageId == id || !nodes.any((n) => n.id == pageId)) {
       await selectPage(

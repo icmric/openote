@@ -4,6 +4,14 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — a notebook can be built again from its own history
+
+- **If a notebook's working file is ever damaged or lost, Openote can build it
+  again from the history kept in the notebook's own folder** — your pages, what
+  is on them, and their version history. It changes nothing at all unless it
+  first finds everything it needs, and if it is interrupted partway you are left
+  with either the old notebook or the new one, never half of each.
+
 ### Changed — your notebook is the folder, and there is one thing to double-click
 
 - **Your notebook is a folder — `Physics.onotebook` — and everything inside it

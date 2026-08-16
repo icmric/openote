@@ -686,6 +686,20 @@ class SyncRecorder {
           if (n.deletedAt != null) n.id
       ];
 
+  /// The same nodes, each with the instant the **log** recorded.
+  ///
+  /// The pull used to write only the ids and let `Repository.softDeleteNode`
+  /// stamp this device's own clock, which quietly made two things untrue: two
+  /// devices disagreed about when a page had been deleted, so its thirty-day
+  /// retention ran out at a different moment on each, and the container stopped
+  /// matching its own log — invisible until `rebuildContainerFromLog` compared
+  /// them, and then a rebuild refused on any joined notebook with something in
+  /// its recycle bin.
+  List<(String, int)> materialisedDeletions() => [
+        for (final n in state.nodes.values)
+          if (n.deletedAt != null) (n.id, n.deletedAt!)
+      ];
+
   /// Record that [device]'s ops up to [seq] are folded in.
   ///
   /// Lowers [foreignPending] — the caller advances the watermark only after

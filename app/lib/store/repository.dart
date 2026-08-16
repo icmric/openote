@@ -16,6 +16,8 @@ import '../ink/ink_storage.dart';
 import '../model/history.dart';
 import '../model/models.dart';
 import '../sync/device_identity.dart';
+import '../sync/materializer.dart';
+import '../sync/op.dart' show Op, canonicalJson;
 import '../sync/op_log.dart';
 import 'database.dart';
 import 'free_space.dart';
@@ -123,6 +125,58 @@ class BlobRefill {
 
   @override
   String toString() => 'restored $restored, could not restore ${missing.length}';
+}
+
+/// What rebuilding a container out of its own op log did — or why it refused.
+///
+/// Same shape and the same reasoning as [BlobReclaim]: refusal is the normal
+/// outcome, it is not an error, and only [details] may carry a path, an id or
+/// an exception. [refusal] is the sentence a year 10 student reads.
+class ContainerRebuild {
+  const ContainerRebuild({
+    this.done = false,
+    this.ops = 0,
+    this.nodes = 0,
+    this.pages = 0,
+    this.blobsChecked = 0,
+    this.versionsCarried = 0,
+    this.droppedNodes = 0,
+    this.refusal,
+    this.details,
+  });
+
+  /// True only when the replacement is verified and in place.
+  final bool done;
+
+  /// Ops replayed — **every device's, including this one's**, which is the
+  /// whole point of this call existing.
+  final int ops;
+
+  final int nodes;
+  final int pages;
+
+  /// Blob files re-hashed before the swap. Not files seen: the number that
+  /// separates this from a directory listing.
+  final int blobsChecked;
+
+  /// `page_versions` rows carried across. The log cannot supply them — there is
+  /// no op kind for page history — so they are copied, not rebuilt.
+  final int versionsCarried;
+
+  /// Nodes the log still lists under a parent that was purged. The container
+  /// cascades a purge to the whole subtree and [Materializer] does not, so
+  /// these are rows the container had already removed.
+  final int droppedNodes;
+
+  final String? refusal;
+  final String? details;
+
+  @override
+  String toString() => done
+      ? 'rebuilt from $ops op(s): $nodes node(s), $pages page(s), '
+          '$blobsChecked blob file(s) checked, $versionsCarried version(s) '
+          'carried, $droppedNodes node(s) dropped'
+      : 'refused: $refusal';
 }
 
 /// Workspace + notebook persistence. One SQLite Database handle per open
@@ -291,6 +345,7 @@ class Repository {
     for (final n in (j['notebooks'] as List? ?? const [])) {
       final m = (n as Map).cast<String, dynamic>();
       final file = p.join(workspaceDir.path, m['file'] as String);
+      _settleInterruptedRebuild(file);
       if (File(file).existsSync()) {
         notebooks.add(NotebookRef(
             id: m['id'] as String,
@@ -302,6 +357,7 @@ class Repository {
     for (final n in (j['trashed'] as List? ?? const [])) {
       final m = (n as Map).cast<String, dynamic>();
       final file = p.join(workspaceDir.path, m['file'] as String);
+      _settleInterruptedRebuild(file);
       if (File(file).existsSync()) {
         trashedNotebooks.add(NotebookRef(
             id: m['id'] as String,
@@ -527,10 +583,23 @@ class Repository {
     _scheduleSaveWorkspace();
   }
 
+  /// The open handle for [notebookId], opening it if this session has not yet.
+  ///
+  /// **[openExistingOnote], not [openOnote]** (v0.17 plan, Step 8 item 2). Every
+  /// notebook reaching this line is one the registry already lists, so the file
+  /// is *expected* to be there and a missing one is a fault to report, never a
+  /// notebook to invent. Before this, a registered container whose path had gone
+  /// — an unmounted drive, a cloud client that evicted the file, a user who
+  /// moved it in Explorer — was silently re-seeded as an empty 73,728-byte
+  /// notebook that `notebookFileProblem` then called *"looks like a notebook"*.
+  /// The three callers that really do mean "make me one" ([createNotebook],
+  /// [adoptLogDirectory], [adoptWorkspaceNotebook]) call [openOnote] directly
+  /// and put the handle in `_open` themselves, so none of them comes through
+  /// here.
   Database _db(String notebookId) {
     final nb = notebooks.firstWhere((n) => n.id == notebookId);
-    return _open.putIfAbsent(
-        notebookId, () => openOnote(nb.file, notebookId: nb.id, title: nb.title));
+    return _open.putIfAbsent(notebookId,
+        () => openExistingOnote(nb.file, notebookId: nb.id, title: nb.title));
   }
 
   /// The container-level writer for [notebookId]. Built per call rather than
@@ -1424,6 +1493,607 @@ class Repository {
     return BlobRefill(restored: restored, missing: missing);
   }
 
+  // ── v0.17 Step 8 item 1: rebuild the container from its own log ──────
+
+  /// Where the half-built replacement lives while it is being built, and where
+  /// the container it replaces is set aside during the swap.
+  ///
+  /// Both are **siblings of the container**, deliberately: the swap is two
+  /// renames, and a rename is only atomic within one volume. They are also
+  /// outside the `.onotebook`, so nothing a cloud client replicates ever sees
+  /// a partially written database (v0.17 Step 4).
+  static String _rebuildTempPath(String file) => '$file.rebuild';
+  static String _rebuildAsidePath(String file) => '$file.previous';
+
+  /// Put a notebook back together after a rebuild was killed mid-swap.
+  ///
+  /// **Driven by the files, never by a marker**, and that is the design rather
+  /// than a detail. The spike that destroyed a 329-page notebook did it by
+  /// obeying a marker — *"just run the migration again"* — on a disk state the
+  /// marker did not actually describe. There are exactly three states to
+  /// settle and each one is decided by looking:
+  ///
+  ///  * `.previous` there, container **gone** — killed between the two renames.
+  ///    The notebook is the file set aside; put it back.
+  ///  * `.previous` there, container there — the swap finished and only the
+  ///    tidy-up was lost. The container is the new one; drop the old.
+  ///  * `.rebuild` there — killed while building. It was never in place and
+  ///    nothing has read it; drop it.
+  ///
+  /// Called from [_loadWorkspace] **before** the `existsSync` filter, which is
+  /// the ordering that matters: that filter drops any entry whose file is
+  /// missing, and `_saveWorkspace` then rewrites the registry from what
+  /// survived. Without this line a kill in the one-rename-wide window would
+  /// prune the notebook from the registry at the next start, permanently — the
+  /// exact harm `workspaceFormat` exists to prevent, reached by another road.
+  static void _settleInterruptedRebuild(String file) {
+    try {
+      final aside = File(_rebuildAsidePath(file));
+      if (aside.existsSync()) {
+        if (FileSystemEntity.typeSync(file, followLinks: true) ==
+            FileSystemEntityType.notFound) {
+          debugPrint('[openote/store] a rebuild was interrupted mid-swap; '
+              'putting ${p.basename(file)} back');
+          aside.renameSync(file);
+        } else {
+          aside.deleteSync();
+        }
+      }
+      final tmp = File(_rebuildTempPath(file));
+      if (tmp.existsSync()) tmp.deleteSync();
+      for (final side in const ['-wal', '-shm']) {
+        for (final base in [_rebuildTempPath(file), _rebuildAsidePath(file)]) {
+          final f = File('$base$side');
+          if (f.existsSync()) f.deleteSync();
+        }
+      }
+    } catch (e) {
+      // Never fatal. A workspace that cannot be tidied still has to load, and
+      // both leftovers are inert: `.previous` is a whole valid notebook and
+      // `.rebuild` was never in place. The leftovers scan reports them.
+      debugPrint('[openote/store] could not settle a rebuild leftover for '
+          '${p.basename(file)}: $e');
+    }
+  }
+
+  /// Rebuild [notebookId]'s container from the append-only log, and put the
+  /// result in place of the old one (v0.17 plan, Step 8 item 1).
+  ///
+  /// **This is the call `pendingForeignOps` structurally cannot make.** That one
+  /// opens with `if (dev == device.id) continue` (`sync_recorder.dart`), because
+  /// its job is folding in what *other* devices wrote. A single-device
+  /// notebook's entire history lives in exactly the file it skips, so the join
+  /// path has never been a rebuild path: a fresh device works because it has no
+  /// log of its own, and a device that loses its cache but keeps its `deviceId`
+  /// gets back only what other devices wrote. This reads every device's log,
+  /// this one's included. Measured by the plan at 102–120 ms for 329 pages and
+  /// 2,780 ops.
+  ///
+  /// **It is a wall of refusals with a small action at the end**, for the same
+  /// reason [reclaimContainerBlobs] is: a rebuild that proceeds when the log
+  /// cannot supply the whole notebook does not report an error, it produces a
+  /// notebook that passes `PRAGMA integrity_check` and is missing things. The
+  /// gates, in order:
+  ///
+  ///  1. the log opens and is not empty;
+  ///  2. no op is beyond what this build can read (Step 3's envelope gate) —
+  ///     writing a container from a half-read history is how an "edit" becomes
+  ///     an undo of changes the user never asked to lose;
+  ///  3. **every live node and every stored page the container holds is in the
+  ///     rebuilt state.** This is the negative control: a notebook whose
+  ///     container knows things its log does not — one created with logging off,
+  ///     one whose log was truncated below a page — is refused rather than
+  ///     silently reduced;
+  ///  4. every blob the result names has a **byte-identical** file in `blobs/`.
+  ///     Page JSON names a picture by hash, so a page whose bytes are gone is
+  ///     byte-identical to one whose bytes are fine, and only re-hashing can
+  ///     tell them apart. A spike skipped this and destroyed 193 image blocks
+  ///     across 40 pages while printing `MIGRATION COMPLETE`;
+  ///  5. free space ≥ 2.0 × (container + write-ahead log), measured in Step 7.
+  ///
+  /// Nothing is touched until every one of them passes, and the container is
+  /// only removed once the replacement is built, verified and in place.
+  ///
+  /// **The replacement holds no `blobs` rows, and that is deliberate.** From
+  /// Step 6 the bytes live in `.onotebook/blobs/` and the container reads
+  /// through to them, so a rebuilt container is Step 7's shape whether or not
+  /// Step 7's reclaim has been run — measured on the owner's real Drive
+  /// notebook, 31,715,328 B → 1,495,040 B, against the 1,470,464 B the plan
+  /// recorded for `DELETE FROM blobs; VACUUM` on the same shape. Gate 4 is what
+  /// makes that safe rather than lossy, and [refillContainerBlobs] is the way
+  /// back for anyone who needs the old shape.
+  ///
+  /// `page_versions` is the opposite case and is copied across rather than
+  /// rebuilt: the log has no op kind for page history, so a rebuild that did
+  /// not carry it would silently destroy up to thirty restorable snapshots per
+  /// page. A repair that loses history is not a repair.
+  Future<ContainerRebuild> rebuildContainerFromLog(String notebookId) async {
+    ContainerRebuild refuse(String why, [String? details]) =>
+        ContainerRebuild(refusal: why, details: details);
+
+    final ref = notebooks.where((n) => n.id == notebookId).firstOrNull;
+    if (ref == null) {
+      return refuse('That notebook is not open, so there is nothing to '
+          'rebuild.');
+    }
+    if (reclaimInProgress) {
+      return refuse(
+          'Openote is already tidying up a notebook. Let that finish first.',
+          'marker: ${readReclaimMarker()}');
+    }
+
+    // ── Gate 1: there is a history to rebuild from. ────────────────────
+    final store = OpLogStore.forNotebook(ref.file, logDir: ref.logDir);
+    if (!store.opsDir.existsSync()) {
+      return refuse(
+          "Openote could not find this notebook's own folder, so there is no "
+          'history to rebuild it from. Nothing has been changed.',
+          'no ops directory at ${store.opsDir.path}');
+    }
+    final List<Op> ops;
+    try {
+      ops = store.readAll();
+    } catch (e) {
+      return refuse(
+          "Openote could not read this notebook's history. Nothing has been "
+          'changed.',
+          '$e');
+    }
+    if (ops.isEmpty) {
+      return refuse(
+          "This notebook's folder has no history in it, so rebuilding would "
+          'produce an empty notebook. Nothing has been changed.',
+          'readAll() over ${store.opsDir.path} returned no ops');
+    }
+
+    final state = Materializer()..applyAll(ops);
+
+    // ── Gate 2: nothing in the log is beyond this build. ───────────────
+    if (state.unsupported.isNotEmpty) {
+      return refuse(
+          'Part of this notebook was written by a newer version of Openote, so '
+          'this one cannot rebuild it without leaving that part out. Update '
+          'Openote and try again. Nothing has been changed.',
+          '${state.unsupported.length} op(s) with an envelope this build '
+          'cannot read; first: ${state.unsupported.first.kind}');
+    }
+
+    // ── Gate 3: the replay reproduces the container, field for field. ──
+    //
+    // **The gate the whole call stands on, and the only one that can see the
+    // notebook the log has never fully described.** Comparing ids would not do
+    // it: `AppState._backfillTree` records a `node.upsert` for every container
+    // node the log has never heard of, so a notebook saved before the log
+    // existed has a log that *names* every page and holds not one of their
+    // blocks. Ids would match and the rebuild would produce empty pages.
+    //
+    // So this compares content — the same comparison `SyncRecorder.verifyPage`
+    // has always made, in bulk: canonical page JSON with blocks keyed by id on
+    // both sides, plus every `nodes` column. Anything the container has that
+    // the replay does not reproduce stops the rebuild before a byte is written.
+    final db = _db(notebookId);
+    final containerNodes = _count(db, 'nodes');
+    final containerPages = _count(db, 'page_mirror');
+    final differences = _rebuildDifferences(db, state);
+    if (differences.isNotEmpty) {
+      return refuse(
+          'Openote will not do this. Rebuilding this notebook from its saved '
+          'history would not give back what is in it now — '
+          '${differences.length} page(s) or section(s) would come back '
+          'different or empty. Nothing has been changed.',
+          '${differences.length} difference(s), first few:\n'
+          '${differences.take(5).join('\n')}\n'
+          '${ops.length} op(s) replayed');
+    }
+
+    // ── Gate 5: the room to do it, before anything is written. ─────────
+    final file = File(ref.file);
+    final wal = File('${ref.file}-wal');
+    final before = file.existsSync() ? file.lengthSync() : 0;
+    final walBefore = wal.existsSync() ? wal.lengthSync() : 0;
+    final need = (before + walBefore) * 2;
+    final free = FreeSpace.bytesFor(ref.file);
+    if (free == null) {
+      return refuse(
+          'Openote could not check how much room is left on this disk, and it '
+          'will not rebuild a notebook without knowing. Nothing has been '
+          'changed.',
+          'FreeSpace.bytesFor returned null for ${p.dirname(ref.file)}; '
+          'needed ${_mb(need)}');
+    }
+    if (free < need) {
+      // Needed rounds UP and free rounds DOWN. With both rounded the same way,
+      // a refusal one byte short of the bar printed "needs 60.5 MB free … and
+      // this disk has 60.5 MB", which reads as a contradiction — observed
+      // exactly that way on the owner's 31.7 MB notebook.
+      return refuse(
+          'There is not enough free space to do this safely. Rebuilding needs '
+          '${_mbUp(need)} free for a moment while it works, and this disk has '
+          '${_mb(free)}. Nothing has been changed — free up some room and try '
+          'again.',
+          'need ${need}B (2.0 × (${before}B container + ${walBefore}B '
+          'write-ahead log)), free ${free}B');
+    }
+
+    // Past here we write — but only to a file the notebook does not depend on.
+    // The marker goes down first so the leftovers scan is silent for the
+    // duration: `findOrphanFiles` classes a `-wal` whose `.onote` is absent as
+    // an orphan, and the swap below creates exactly that state for two renames.
+    _writeReclaimMarker(notebookId, 'rebuild-from-log');
+    final tmpPath = _rebuildTempPath(ref.file);
+    final asidePath = _rebuildAsidePath(ref.file);
+    Database? fresh;
+    try {
+      // Never onto an existing destination, anywhere in this method.
+      // `File.renameSync` on Windows replaces silently — verified directly, and
+      // it is how a re-run renamed a fabricated empty database over a real
+      // 329-page notebook with no exception at all.
+      _settleInterruptedRebuild(ref.file);
+
+      fresh = openOnote(tmpPath, notebookId: notebookId, title: ref.title);
+      final writer = NotebookWriter(fresh);
+      final title = state.meta['title'] as String? ?? ref.title;
+      fresh.execute('INSERT OR REPLACE INTO notebook_meta(key,value) '
+          'VALUES(?,?)', ['title', jsonEncode(title)]);
+
+      // **Parents before children, and every node, live or not.** Two foreign
+      // keys make the order load-bearing — `nodes.parent_id` onto itself and
+      // `page_mirror.page_id` onto `nodes` — and a soft-deleted node satisfies
+      // both perfectly well, so unlike the sync pull this writes deleted nodes
+      // in place rather than writing the live tree and soft-deleting after.
+      // That is what keeps `deletedAt` at the value the log recorded instead of
+      // resetting every trashed page's thirty-day clock to today.
+      final ordered = <MatNode>[];
+      final placed = <String>{};
+      var droppedNodes = 0;
+      var unknownKinds = 0;
+      var progress = true;
+      final pending = state.nodes.values.toList()
+        ..sort((a, b) => a.id.compareTo(b.id));
+      while (progress) {
+        progress = false;
+        pending.removeWhere((n) {
+          final parent = n.parentId;
+          if (parent != null && !placed.contains(parent)) return false;
+          placed.add(n.id);
+          ordered.add(n);
+          progress = true;
+          return true;
+        });
+      }
+      // Whatever is left is a node whose parent the log no longer holds — the
+      // subtree of a `node.purge`. The container cascades a purge through
+      // `nodes.parent_id ON DELETE CASCADE` and [Materializer] does not, so
+      // these rows were already gone from the container before this ran. Gate 3
+      // above is what makes dropping them safe: it has already refused if any
+      // of them is still live in the container.
+      droppedNodes = pending.length;
+
+      final stmt = fresh.prepare(
+          'INSERT INTO nodes(id,kind,parent_id,title,position,color,level,'
+          'created_at,updated_at,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,?)');
+      try {
+        writer.runInTransaction(() {
+          for (final n in ordered) {
+            // A kind this build cannot name is left out rather than coerced to
+            // `page`: the container's own CHECK constraint would reject it, and
+            // guessing "page" is what turned six section groups per notebook
+            // into pages (v0.17 Step 3).
+            final kind = nodeKindFromWire(n.kind);
+            if (kind == null) {
+              unknownKinds++;
+              continue;
+            }
+            // **The SPEC spelling, not whatever the log happens to say.** The
+            // container declares `CHECK (kind IN ('section_group','section',
+            // 'page'))`, and every log written before v0.17 Step 3 spells a
+            // section group `sectionGroup` — so writing it back verbatim fails
+            // the INSERT outright and takes the whole transaction with it. The
+            // plan recorded exactly this: "every rebuild a spike ran needed
+            // exactly 6 fixups or the INSERT failed".
+            stmt.execute([
+              n.id, nodeKindWire(kind), n.parentId, n.title, n.position,
+              n.color, n.level, n.createdAt, n.updatedAt, n.deletedAt,
+            ]);
+          }
+        });
+      } finally {
+        stmt.dispose();
+      }
+
+      // Pages, in chunks so a big notebook does not hold one transaction open
+      // across the whole rebuild.
+      final pageIds = [
+        for (final n in ordered)
+          if (n.kind == 'page' && placed.contains(n.id)) n.id
+      ];
+      for (var i = 0; i < pageIds.length; i += _rebuildPageChunk) {
+        final slice = pageIds.sublist(
+            i, math.min(i + _rebuildPageChunk, pageIds.length));
+        writer.runInTransaction(() {
+          for (final pid in slice) {
+            final mirror = state.pageMirror(pid);
+            writer.writePage(
+                pid,
+                [
+                  for (final b in (mirror['blocks'] as List? ?? const []))
+                    Block.fromJson((b as Map).cast<String, dynamic>())
+                ],
+                PageProps.fromJson(
+                    (mirror['page'] as Map?)?.cast<String, dynamic>()));
+          }
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+
+      // **`page_versions` is copied, not rebuilt, because it cannot be.**
+      // `database.dart` states the position outright: version history is
+      // container-local and there is no `OpKind` for it. So a rebuild that
+      // simply did not carry it would silently destroy up to thirty restorable
+      // snapshots per page — a repair that loses history is not a repair. When
+      // Step 8 drops the table this block goes with it, and that is a decision
+      // taken in the open (plan decision 1), not a side effect of a rebuild.
+      var versions = 0;
+      final vins = fresh.prepare(
+          'INSERT OR REPLACE INTO page_versions(page_id,version_at,snapshot,'
+          'label) VALUES(?,?,?,?)');
+      try {
+        writer.runInTransaction(() {
+          for (final r in db.select('SELECT page_id,version_at,snapshot,label '
+              'FROM page_versions')) {
+            // Only for a page the rebuild actually has. The table declares no
+            // foreign key onto `nodes` — that is the whole of commit 1be2d28 —
+            // so carrying an orphan across would re-create the leak the sweep
+            // in `openOnote` exists to clear.
+            if (!placed.contains(r['page_id'] as String)) continue;
+            vins.execute([
+              r['page_id'], r['version_at'], r['snapshot'], r['label'],
+            ]);
+            versions++;
+          }
+        });
+      } finally {
+        vins.dispose();
+      }
+
+      // ── Gate 4: every picture the result names really is on disk. ────
+      //
+      // Read off the REBUILT container's own `blob_refs`, not off the old one:
+      // that projection is what a reader follows, and it is what
+      // `NotebookWriter.writePage` has just recomputed from the log's own page
+      // content. Union'd with the log's `blob.put` set so a hash recorded but
+      // never yet placed on a page is checked too — `importBlob` writes the op
+      // before anything writes the page, so every paste and every crash between
+      // the two leaves exactly that.
+      final wanted = <String>{
+        for (final r in fresh.select('SELECT DISTINCT hash FROM blob_refs'))
+          (r['hash'] as String).replaceFirst('sha256:', ''),
+        for (final h in state.blobs) h.replaceFirst('sha256:', ''),
+      }.toList()
+        ..sort();
+      final absent = <String>[];
+      final wrong = <String>[];
+      for (var i = 0; i < wanted.length; i += _hashBatch) {
+        final slice =
+            wanted.sublist(i, math.min(i + _hashBatch, wanted.length));
+        final actual =
+            await _hashFiles([for (final h in slice) store.blobFile(h).path]);
+        for (var j = 0; j < slice.length; j++) {
+          if (!store.hasBlob(slice[j])) {
+            absent.add(slice[j]);
+          } else if (actual[j] != slice[j]) {
+            wrong.add(slice[j]);
+          }
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+      if (absent.isNotEmpty || wrong.isNotEmpty) {
+        checkpointAndClose(fresh);
+        fresh = null;
+        _deleteContainerFiles(tmpPath);
+        return refuse(
+            'Openote will not do this yet. ${absent.length + wrong.length} of '
+            "this notebook's ${wanted.length} pictures and drawings do not "
+            "have a good copy in the notebook's own folder, and rebuilding "
+            'would leave you with the folder alone. Open the notebook, leave '
+            'it open for a minute so Openote can finish copying, then try '
+            'again.',
+            'no file: ${_fewHashes(absent)}\n'
+            'wrong bytes: ${_fewHashes(wrong)}');
+      }
+
+      // Verified before it is anywhere near the registered path.
+      final integrity =
+          fresh.select('PRAGMA integrity_check;').first.columnAt(0) as String?;
+      final builtNodes = _count(fresh, 'nodes');
+      final builtPages = _count(fresh, 'page_mirror');
+      checkpointAndClose(fresh);
+      fresh = null;
+      if (integrity != 'ok') {
+        _deleteContainerFiles(tmpPath);
+        return refuse(
+            'Openote built a replacement for this notebook and then found it '
+            'was not sound, so it has thrown it away. Nothing has been '
+            'changed.',
+            'integrity_check on $tmpPath said "$integrity"');
+      }
+      if (builtNodes < containerNodes || builtPages < containerPages) {
+        // Belt and braces over gate 3: that gate compares ids, this compares
+        // what actually landed. A write that silently dropped rows — a
+        // constraint the DDL will grow later, a chunk that rolled back — must
+        // not reach the swap.
+        _deleteContainerFiles(tmpPath);
+        return refuse(
+            'Openote built a replacement for this notebook and it came out '
+            'smaller than the one you have, so it has thrown it away. Nothing '
+            'has been changed.',
+            'rebuilt $builtNodes node(s) / $builtPages page(s) against '
+            '$containerNodes / $containerPages in the container');
+      }
+
+      // ── The swap: two renames, neither onto anything. ────────────────
+      //
+      // The container's own handle is closed and checkpointed FIRST. In WAL
+      // mode the `.onote` is not the notebook — the `-wal` beside it is, until
+      // something folds it back in — and moving the main file while a `-wal`
+      // holds pages throws those pages away and still passes
+      // `integrity_check`. Measured on the owner's My Notebook: 2 whole pages
+      // and newer revisions of 6 more in a 4,128,272-byte `-wal`.
+      final open = _open.remove(notebookId);
+      if (open != null) checkpointAndClose(open);
+      _decodedPages.remove(notebookId);
+      file.renameSync(asidePath);
+      File(tmpPath).renameSync(ref.file);
+      _deleteContainerFiles(asidePath);
+
+      debugPrint('[openote/store] $notebookId: rebuilt from ${ops.length} op(s)'
+          ' — $builtNodes node(s), $builtPages page(s), $versions version(s)');
+      return ContainerRebuild(
+        done: true,
+        ops: ops.length,
+        nodes: builtNodes,
+        pages: builtPages,
+        blobsChecked: wanted.length,
+        versionsCarried: versions,
+        droppedNodes: droppedNodes,
+        details: unknownKinds == 0
+            ? null
+            : '$unknownKinds node(s) left out — their kind was written by a '
+                'newer version of Openote',
+      );
+    } catch (e) {
+      try {
+        if (fresh != null) checkpointAndClose(fresh);
+      } catch (_) {/* the throw below is the one worth reporting */}
+      // The files decide, not this catch: whatever stage it failed at,
+      // `_settleInterruptedRebuild` restores the container or drops the
+      // half-built one, exactly as it would after a hard kill at the same
+      // point. One recovery path, exercised by every failure.
+      _settleInterruptedRebuild(ref.file);
+      return refuse(
+          'Openote could not rebuild this notebook. Your notes have not been '
+          'changed — everything is still where it was.',
+          '$e');
+    } finally {
+      _clearReclaimMarker();
+    }
+  }
+
+  /// Pages per transaction during a rebuild. The same order of magnitude as the
+  /// sync pull's chunk, and for the same reason: big enough that transaction
+  /// overhead is noise, small enough that one rollback is not the whole
+  /// notebook.
+  static const int _rebuildPageChunk = 64;
+
+  /// Stop listing differences after this many. The list is for a person to
+  /// read in the Advanced fold; on a notebook the log has never described it
+  /// would otherwise be one line per page.
+  static const int _rebuildDiffCap = 200;
+
+  /// Everything the container holds that replaying its log does not reproduce.
+  ///
+  /// **The comparison of record.** Deliberately the same one
+  /// `SyncRecorder.verifyPage` has made since shadow mode shipped — canonical
+  /// page JSON with blocks keyed by id — because that is the property three
+  /// investigation passes measured on the owner's real notebooks (329 of 329
+  /// pages, 328 of 328, 14 of 14) and a second, subtly different comparison
+  /// here would be a second chance to be wrong.
+  ///
+  /// **Blocks are compared as a set keyed by id, not as a list.** The container
+  /// stores whatever order the app's list happened to be in, which carries no
+  /// meaning — render order is the `z` field, and flow order is `y`
+  /// (`AppState`'s flow restack sorts on it) — while a replay can only
+  /// reconstruct them in id order. Comparing positions would report differences
+  /// that are not differences. Every other field, including `createdAt`,
+  /// `updatedAt` and `deletedAt`, is compared exactly.
+  ///
+  /// Page-level equality is **not** enough on its own and this is the single
+  /// most important sentence about it: `page_mirror` names a picture by hash,
+  /// so a page whose blob bytes have been destroyed is byte-identical to the
+  /// same page with its bytes intact. A spike proved that the hard way — 329 of
+  /// 329 pages "identical" over 278 hashes with no bytes anywhere and 193 broken
+  /// image blocks. Gate 4 in [rebuildContainerFromLog] re-hashes the files; this
+  /// is only the half that compares structure and content.
+  List<String> _rebuildDifferences(Database db, Materializer state) {
+    final out = <String>[];
+    for (final r in db.select('SELECT id,kind,parent_id,title,position,color,'
+        'level,created_at,updated_at,deleted_at FROM nodes')) {
+      final id = r['id'] as String;
+      final n = state.nodes[id];
+      if (n == null) {
+        out.add('$id: in the notebook, absent from its history');
+        if (out.length >= _rebuildDiffCap) return out;
+        continue;
+      }
+      // **Through the enum, not as raw strings.** Until v0.17 Step 3 the writer
+      // spelled a section group the Dart way — `sectionGroup` — while the
+      // container's own CHECK constraint says `section_group`, and Step 3
+      // fixed the writer while promising the reader accepts both forever. So
+      // every log written before that release carries the old spelling, and a
+      // raw comparison reports a difference that is not one: measured on the
+      // owner's real 329-page notebook, exactly 6 nodes of 360, which is the
+      // count the plan's own §2.2 recorded.
+      final kindNow = nodeKindFromWire(n.kind);
+      final was = <String, Object?>{
+        'kind': nodeKindFromWire(r['kind'] as String)?.name ?? r['kind'],
+        'parentId': r['parent_id'],
+        'title': r['title'],
+        'position': r['position'],
+        'color': r['color'],
+        'level': r['level'],
+        'createdAt': r['created_at'],
+        'updatedAt': r['updated_at'],
+        'deletedAt': r['deleted_at'],
+      };
+      final now = <String, Object?>{
+        'kind': kindNow?.name ?? n.kind,
+        'parentId': n.parentId,
+        'title': n.title,
+        'position': n.position,
+        'color': n.color,
+        'level': n.level,
+        'createdAt': n.createdAt,
+        'updatedAt': n.updatedAt,
+        'deletedAt': n.deletedAt,
+      };
+      for (final k in was.keys) {
+        if (canonicalJson(was[k]) != canonicalJson(now[k])) {
+          out.add('$id.$k: notebook ${was[k]}, history ${now[k]}');
+          if (out.length >= _rebuildDiffCap) return out;
+        }
+      }
+    }
+    for (final r in db.select('SELECT page_id,json FROM page_mirror')) {
+      final pid = r['page_id'] as String;
+      String fromContainer;
+      try {
+        final m = (jsonDecode(r['json'] as String) as Map).cast<String, dynamic>();
+        final blocks = [
+          for (final b in (m['blocks'] as List? ?? const [])) b as Map
+        ]..sort((a, b) =>
+            (a['id'] as String? ?? '').compareTo(b['id'] as String? ?? ''));
+        fromContainer = canonicalJson({
+          'schema': 'onote-page/1',
+          'pageId': pid,
+          'page': m['page'] ?? <String, dynamic>{},
+          'blocks': blocks,
+        });
+      } catch (e) {
+        // Unreadable stored JSON is a difference, not a pass. A page this
+        // cannot decode is one nothing can prove the replay reproduces, and
+        // waving it through is how a corrupt page becomes an empty one.
+        out.add('$pid: the stored page could not be read ($e)');
+        if (out.length >= _rebuildDiffCap) return out;
+        continue;
+      }
+      if (canonicalJson(state.pageMirror(pid)) != fromContainer) {
+        out.add('$pid: rebuild-from-log does not match the stored page');
+        if (out.length >= _rebuildDiffCap) return out;
+      }
+    }
+    return out;
+  }
+
   /// The mime a blob's bytes announce.
   ///
   /// The `blobs` row carried one and the reclaim deleted it with the row, so on
@@ -1481,6 +2151,13 @@ class Repository {
       h.isEmpty ? 'none' : '${h.length}: ${h.take(5).join(', ')}';
 
   static String _mb(int b) => '${(b / (1024 * 1024)).toStringAsFixed(1)} MB';
+
+  /// [_mb] rounded **up**, for a figure the user has to reach rather than one
+  /// they already have. See the refusal in [rebuildContainerFromLog].
+  static String _mbUp(int b) {
+    final mb = b / (1024 * 1024);
+    return '${((mb * 10).ceil() / 10).toStringAsFixed(1)} MB';
+  }
 
   /// A free `<base>.onotebook` directory in the workspace, for a notebook
   /// arriving as logs rather than as a container.
@@ -1847,9 +2524,20 @@ class Repository {
   }
 
   /// Soft-delete a node and everything under it (ORG-7 recycle bin).
-  void softDeleteNode(String notebookId, String nodeId) {
+  ///
+  /// **[at] exists so the container and the log can agree.** They used to take
+  /// two independent `nowMs()` readings for one deletion — this one, and
+  /// `SyncRecorder.nodeDeleted`'s `at ?? nowMs()` — so whenever the pair
+  /// straddled a millisecond boundary the notebook and its history recorded
+  /// different deletion times. Nothing compared them until
+  /// [rebuildContainerFromLog] did, and then the rebuild refused, at random, on
+  /// any notebook with something in its recycle bin. It also meant the thirty-
+  /// day retention promise was measured from a different instant on each side,
+  /// and that a delete folded in from another device was stamped with THIS
+  /// device's clock rather than the one the log recorded.
+  void softDeleteNode(String notebookId, String nodeId, {int? at}) {
     final db = _db(notebookId);
-    final ts = nowMs();
+    final ts = at ?? nowMs();
     for (final id in _descendants(db, nodeId)) {
       db.execute(
           'UPDATE nodes SET deleted_at=? WHERE id=? AND deleted_at IS NULL',
