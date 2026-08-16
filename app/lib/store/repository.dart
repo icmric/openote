@@ -807,14 +807,35 @@ class Repository {
       if (p.equals(from.path, to.path)) return to.path;
       if (to.existsSync()) throw StateError('$name is already in that folder');
       await _copyDirectory(from, to);
+      // Registry BEFORE the delete, durably — same commit order as
+      // [demoteContainerToCache], for the same reason. Deleting first and
+      // recording second (on a 400 ms debounce, at that) left a window in
+      // which the only `.onotebook` this registry could find was the one just
+      // deleted: a crash there re-derived the old location on the next start
+      // and the recorder re-initialised an EMPTY log directory under the same
+      // device id at seq 1 — a fork against the real log at the destination.
+      final oldLogDir = ref.logDir;
+      ref.logDir = to.path;
+      try {
+        await _saveNow();
+      } catch (_) {
+        // The registry could not record the move, so the move did not happen:
+        // the entry goes back the way it was, the copy goes, the original is
+        // untouched. Deleting the original on the strength of a registry
+        // write that FAILED is the pruning window again, one step removed.
+        ref.logDir = oldLogDir;
+        try {
+          to.deleteSync(recursive: true);
+        } catch (_) {/* a stray copy; the original is still authoritative */}
+        rethrow;
+      }
       try {
         from.deleteSync(recursive: true);
       } catch (_) {
-        // Same reasoning as below: the data has landed, and a stale original
-        // is far better than failing after the fact.
+        // Best-effort, and last: the data has landed and the registry already
+        // says so, so a stale original is far better than failing after the
+        // fact. Same reasoning as the created branch below.
       }
-      ref.logDir = to.path;
-      _scheduleSaveWorkspace();
       return to.path;
     }
 
@@ -844,16 +865,33 @@ class Repository {
     }
 
     await _copyDirectory(srcLog, Directory(destLog));
+    // Registry BEFORE the delete, durably — not on the 400 ms debounce. The
+    // reverse order had a window (seconds wide, thanks to the debounce) in
+    // which the source `.onotebook` was gone while the registry on disk still
+    // had no `logDir`. A crash there meant `logDirPath` derived the deleted
+    // sibling, and the next recorder re-initialised an EMPTY `.onotebook`
+    // there under the same device id starting at seq 1 — a fork against the
+    // real log sitting in the sync folder, with every blob byte unreachable.
+    // Same commit order as [demoteContainerToCache]: copy, verify (inside
+    // [_copyDirectory], by hash), registry, delete.
+    ref.logDir = destLog;
+    try {
+      await _saveNow();
+    } catch (_) {
+      // See the joined branch above: an unrecorded move did not happen.
+      ref.logDir = null;
+      try {
+        Directory(destLog).deleteSync(recursive: true);
+      } catch (_) {/* a stray copy; the original is still authoritative */}
+      rethrow;
+    }
     try {
       srcLog.deleteSync(recursive: true);
     } catch (_) {
-      // The copy is verified and complete; a lock or a permission on the
-      // original must not fail the move after the data has already landed.
-      // Same reasoning as the joined branch above.
+      // Best-effort, and last: the copy is verified, complete and recorded; a
+      // lock or a permission on the original must not fail the move after the
+      // data has already landed.
     }
-
-    ref.logDir = destLog;
-    _scheduleSaveWorkspace();
     return destLog;
   }
 
@@ -959,19 +997,43 @@ class Repository {
           'the copy did not complete — nothing was moved or deleted');
     }
 
-    // Only now, and only inside the cloud folder's own name: the container and
-    // the two sidecars SQLite keeps beside it. The `.onotebook` is untouched.
-    try {
-      _deleteContainerFiles(ref.file);
-    } catch (_) {
-      // The notebook is safe at the destination. A stale original left in
-      // Drive is a leftover the "Find leftovers…" scan already knows how to
-      // report; failing the move after the data has landed is not.
-    }
-
+    // ── Commit: the registry first, the deletion second. ─────────────────
+    //
+    // Same order as [demoteContainerToCache], and it used to be the reverse:
+    // delete the container in Drive, THEN point the registry at the copy. A
+    // kill between the two left `workspace.json` naming a file that was no
+    // longer there — [_loadWorkspace]'s `existsSync` filter then pruned the
+    // notebook from the list permanently, and the fresh copy sitting in the
+    // workspace was unregistered, so `findOrphanFiles` offered it up as safe
+    // to delete. Registry first, and a kill in any window costs at worst a
+    // stale original in Drive — a leftover, not a lost notebook.
+    final oldFile = ref.file;
+    final oldLogDir = ref.logDir;
     ref.logDir = logs;
     ref.file = dest;
-    await _saveNow();
+    try {
+      await _saveNow();
+    } catch (_) {
+      // The registry could not record the move, so the move did not happen:
+      // the entry goes back the way it was and the copy goes. Deleting the
+      // original on the strength of a registry write that FAILED is the same
+      // pruning disaster, one step removed.
+      ref.file = oldFile;
+      ref.logDir = oldLogDir;
+      try {
+        File(dest).deleteSync();
+      } catch (_) {/* a stray copy; the original is still authoritative */}
+      rethrow;
+    }
+
+    // Best-effort, and last — the container and the two sidecars SQLite keeps
+    // beside it, and only inside the cloud folder's own name. The `.onotebook`
+    // is untouched. A lock or a permission must not fail a move whose result
+    // is already recorded: a stale original left in Drive is a leftover the
+    // "Find leftovers…" scan already knows how to report.
+    try {
+      _deleteContainerFiles(oldFile);
+    } catch (_) {/* see above */}
     return dest;
   }
 
@@ -2772,10 +2834,14 @@ class Repository {
     return file;
   }
 
-  /// Copy a notebook, contents and all. A `.onote` is a self-contained SQLite
-  /// file, so a byte copy duplicates pages, blobs, versions and history exactly
-  /// — no walking the tree, nothing missed. The copy gets a fresh workspace id;
-  /// its internal `notebook_id` metadata is rewritten so the two don't collide
+  /// Copy a notebook, contents and all. The container is byte-copied — pages,
+  /// text and the derived history index travel exactly — and so are the two
+  /// directories that hold content BESIDE the log rather than inside the
+  /// container: `media/` (recordings) and `blobs/` (picture bytes, which from
+  /// v0.17 Step 6 live only there). `ops/` deliberately does not travel: the
+  /// logs are the history of the notebook they were written for and must not
+  /// be inherited by a new id. The copy gets a fresh workspace id; its
+  /// internal `notebook_id` metadata is rewritten so the two don't collide
   /// once sync lands.
   Future<NotebookRef> duplicateNotebook(String id, {String? title}) async {
     final src = notebooks.firstWhere((n) => n.id == id);
@@ -2823,6 +2889,21 @@ class Repository {
     if (srcMedia.existsSync()) {
       await _copyDirectory(
           srcMedia, Directory(p.join(ref.logDirPath, 'media')));
+    }
+    // Pictures are the same shape one step further out: from v0.17 Step 6 a
+    // pasted image's bytes live ONLY in `blobs/` beside the log — the
+    // container's `blobs` table is empty — so a duplicate made from the
+    // container and `media/` alone rendered every picture blank, and for a
+    // demoted notebook that is every picture it has. The duplicate's `logDir`
+    // is null, so its `logDirPath` is the fresh `.onotebook` beside the new
+    // container; [_copyDirectory] hash-verifies each file on the way in,
+    // which matters more than usual because this is the copy's only copy from
+    // birth. The source's `blobs/` is found through ITS `logDirPath`, which
+    // is what makes the same line serve a shared or demoted source too.
+    final srcBlobs = Directory(p.join(src.logDirPath, 'blobs'));
+    if (srcBlobs.existsSync()) {
+      await _copyDirectory(
+          srcBlobs, Directory(p.join(ref.logDirPath, 'blobs')));
     }
     await _saveNow();
     return ref;

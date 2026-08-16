@@ -4,6 +4,30 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — opening, moving and copying notebooks all keep their promises now
+
+- **Double-clicking a notebook now works even when Openote is closed.** Opening
+  a notebook's folder — or the "Open this notebook" file inside it — used to
+  say *"That file isn't an Openote notebook"* if Openote wasn't already
+  running, about your own notebook. Now a double-click opens the same notebook
+  whether the app was running or not, and double-clicking the notebook you
+  already have open simply brings the window to the front.
+- **Moving a notebook — or sharing it into a sync folder — can no longer lose
+  it if the app is interrupted at the wrong moment.** Openote used to delete
+  the old copy first and write down the new home second; if it was closed or
+  the computer lost power in between, the notebook could vanish from the list —
+  and in one case the surviving copy was even offered up as safe to delete. Now
+  the new home is written down before anything old is removed, so an
+  interruption costs at worst a leftover file, never the notebook.
+- **Duplicating a notebook now keeps its pictures.** A duplicate used to come
+  out with every pasted picture blank, because the picture files that live
+  beside the notebook were not carried along. They travel with the copy now,
+  and each file is checked on the way over.
+- **Tidying up videos now always respects the recently-deleted list.** The
+  clean-up sweep could run before Openote had read which removed videos you can
+  still put back, and offer one of those for deletion. It reads that list first
+  now — and if the list cannot be read, it says so and removes nothing.
+
 ### Fixed — a shared notebook's pictures can no longer be lost when one computer's copy goes bad
 
 - **When one computer's copy of a picture turns out to be wrong, Openote now

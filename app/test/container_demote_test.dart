@@ -42,6 +42,7 @@ import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/database.dart';
 import 'package:openote/store/free_space.dart';
+import 'package:openote/store/notebook_writer.dart' show sha256Hex;
 import 'package:openote/store/repository.dart';
 
 import 'support/sqlite.dart';
@@ -365,6 +366,13 @@ void main() {
       // outright.
       expect(userVersionOf(copy.file), onoteFormatMajor);
       expect(isOpenoteWorkingCopy(copy.file), isFalse);
+      // And the pictures came with it. A demoted container's `blobs` table is
+      // empty — the fixture's picture exists ONLY as `blobs/<sha256>` beside
+      // the log — so without `duplicateNotebook`'s blobs copy this duplicate
+      // renders every image block blank.
+      final pic = picture(1);
+      expect(repo.getBlob(copy.id, sha256Hex(pic)), pic,
+          reason: 'a duplicate of a demoted notebook keeps its pictures');
     });
   });
 

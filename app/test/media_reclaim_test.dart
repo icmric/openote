@@ -23,6 +23,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart' show sqlite3;
 
 import 'package:openote/model/history.dart' show kRecentDeletionsKept;
 import 'package:openote/model/models.dart';
@@ -605,6 +606,85 @@ void main() {
       expect(s.unused.length, 1, reason: 'so it IS reclaimable');
       expect(await app.deleteUnusedVideos(s.unused), 4096);
       expect((await app.storageFor(nb)).mediaBytes, 0);
+    });
+
+    test('a FRESH SESSION still honours the pins: the history is loaded, '
+        'not assumed', () async {
+      // The deletions-list pin above only worked because the test (like the
+      // app's save path) had already called `refreshHistory`. In a session
+      // that had never opened the history — launch Openote, press the button
+      // — `_histories[nb]` was simply absent, `?? const {}` answered "no
+      // pins", and the sweep offered up a video the ten-deep list still
+      // promises to put back. Restoring that entry would then rebuild a page
+      // whose video file this very sweep had deleted.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = AppState(repo)..notebookId = nb;
+      addTearDown(app.cancelPendingSave);
+      await video('pinned', 0x5A);
+
+      final page = newPage('Week 1', const []);
+      await app.selectPage(page);
+      app.addBlock(videoBlock(stored['pinned']!));
+      await app.flushSave(); // on a SAVED page
+      app.select(app.blocks.first.id);
+      app.removeSelected();
+      await app.flushSave(); // deleted — pinned by the deletions list
+      await app.selectPage(page); // clears undo, so the pin stands alone
+
+      // A fresh session: a second AppState over the same repository, whose
+      // history index has never been loaded.
+      final fresh = AppState(repo)..notebookId = nb;
+      addTearDown(fresh.cancelPendingSave);
+      final s = await fresh.findUnusedVideos(nb);
+
+      expect(s.refusal, isNull);
+      // MUTATION: remove the history load from `findUnusedVideos` and this
+      // is 1 — the sweep consulted `_histories[nb]` before anything had
+      // loaded it and believed the empty answer.
+      expect(s.unused, isEmpty,
+          reason: 'the deletions list still holds it, whoever is asking');
+      await fresh.deleteUnusedVideos(s.unused);
+      expectSurvived('pinned',
+          because: 'a fresh session must load the pins before consulting them');
+    });
+
+    test('a history that cannot be read refuses the sweep', () async {
+      // The other half of the same rule: proceeding with pins we could not
+      // read is the fresh-session bug with a different cause. The sweep must
+      // say so in plain words and delete nothing.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = AppState(repo)..notebookId = nb;
+      addTearDown(app.cancelPendingSave);
+      await video('held', 0x7E);
+
+      final page = newPage('Week 1', const []);
+      await app.selectPage(page);
+      app.addBlock(videoBlock(stored['held']!));
+      await app.flushSave();
+      app.select(app.blocks.first.id);
+      app.removeSelected();
+      await app.flushSave(); // the pin is now real, in the log and the store
+      await app.selectPage(page);
+
+      // Break the stored index the way a torn write would leave it: the
+      // derived table is gone, so `HistoryStore.load` throws in the next
+      // session. Through a second connection, so the repository's own open
+      // handle (which a fresh AppState shares) meets the damage cold.
+      final raw = sqlite3.open(ref.file);
+      raw.execute('DROP TABLE recent_deletions;');
+      raw.dispose();
+
+      final fresh = AppState(repo)..notebookId = nb;
+      addTearDown(fresh.cancelPendingSave);
+      final s = await fresh.findUnusedVideos(nb);
+
+      // MUTATION: make `findUnusedVideos` swallow the failed load and carry
+      // on and this reports the pinned video as reclaimable.
+      expect(s.unused, isEmpty);
+      expect(s.refusal, isNotNull);
+      expect(s.refusal, contains('Nothing has been removed'));
+      expectSurvived('held',
+          because: 'unknown pins are a refusal, not a verdict');
     });
 
     test("another computer's log still pins a video ours would release",

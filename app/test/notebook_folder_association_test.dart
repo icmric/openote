@@ -246,7 +246,12 @@ void main() {
       final after = repo.notebooks.length;
       final result = await app.openNotebookFile(folder.path);
 
-      expect(result.outcome, OpenNotebookOutcome.opened);
+      // `alreadyOpen`, since both shapes share one resolution funnel: the
+      // second click finds the notebook on screen, and the right response is
+      // the same as double-clicking an open `.onote` — raise the window, no
+      // dialog, register nothing. (`ok` is true either way.)
+      expect(result.outcome, OpenNotebookOutcome.alreadyOpen);
+      expect(result.ok, isTrue);
       expect(repo.notebooks.length, after);
     });
 
@@ -267,6 +272,114 @@ void main() {
       expect(repo.notebooks.length, before);
       expect(result.message, isNot(contains('Exception')));
       expect(result.message, isNot(contains(elsewhere.path)));
+    });
+  });
+
+  // ── 2b. Cold start is the same door ──────────────────────────────────────
+  //
+  // The association launches `openote.exe <pointer file>` precisely when the
+  // app is CLOSED, and `init(notebookPath:)` used to feed that path straight
+  // to the container sniff — skipping both the folder branch and the
+  // working-copy refusal that `openNotebookFile` had. So the flow the
+  // association exists for said "That file isn't an Openote notebook" about
+  // the user's own notebook, and only when Openote wasn't already running;
+  // and `openote D:\backup\cache.onote` at a cold start adopted the
+  // picture-less clone a running app refuses. Both doors now go through one
+  // resolution funnel, and these cells hold the two branches cold start
+  // lacked, plus the copy-in path that must not break.
+
+  group('cold start opens what a double-click delivers', () {
+    test('the pointer file opens the notebook at launch', () async {
+      if (!haveSqlite) {
+        markTestSkipped('sqlite3.dll not built');
+        return;
+      }
+      final ws = tempDir('onote_cold_');
+      final drive = tempDir('onote_cold_drive_');
+      final repo = await Repository.openAt(ws);
+      final app = AppState(repo);
+      addTearDown(() {
+        app.dispose();
+        repo.dispose();
+      });
+      final folder = folderNotebook(drive, 'Physics');
+      final pointer = File(p.join(folder.path, notebookPointerFileName))
+        ..writeAsStringSync(notebookPointerText('Physics'));
+
+      await app.init(notebookPath: pointer.path);
+
+      // MUTATION: point `init` back at `_resolveNotebookFile` and this is the
+      // notice that appears — `notANotebook`, about a prose file whose whole
+      // job is to be double-clicked.
+      expect(app.pendingOpenNotice, isNull,
+          reason: 'a notebook that opened is its own confirmation');
+      final joined = repo.notebooks.where((n) => n.logDir != null).single;
+      expect(p.equals(joined.logDir!, folder.path), isTrue,
+          reason: 'JOINED where it lies, exactly as the hand-off path does');
+      expect(app.notebookId, joined.id);
+    });
+
+    test('a working copy on argv is refused at launch, not adopted', () async {
+      if (!haveSqlite) {
+        markTestSkipped('sqlite3.dll not built');
+        return;
+      }
+      final ws = tempDir('onote_cold_cache_');
+      final elsewhere = tempDir('onote_cold_cache_src_');
+      final repo = await Repository.openAt(ws);
+      final alpha = await repo.createNotebook('Alpha');
+      final app = AppState(repo);
+      addTearDown(() {
+        app.dispose();
+        repo.dispose();
+      });
+      // A carried-off working copy: satisfies the SQLite magic and the
+      // application_id exactly as a notebook does, so the sniff alone calls
+      // it one — which is why cold start bypassing the refusal adopted it.
+      final cache = p.join(elsewhere.path, 'cache.onote');
+      File(alpha.file).copySync(cache);
+      final before = repo.notebooks.length;
+
+      await app.init(notebookPath: cache);
+
+      // MUTATION: point `init` back at `_resolveNotebookFile` and the outcome
+      // is `copiedIn` — a clone with every picture missing, registered.
+      expect(app.pendingOpenNotice?.outcome, OpenNotebookOutcome.notANotebook);
+      expect(app.pendingOpenNotice!.message, contains('working copy'));
+      expect(repo.notebooks.length, before, reason: 'nothing was registered');
+      expect(app.notebookId, alpha.id, reason: 'the app still came up');
+    });
+
+    // NEGATIVE CONTROL for the funnel itself: the path shape cold start
+    // always handled keeps its exact behaviour — copied in, and said so.
+    test('a real notebook on argv still cold-opens, and is still copied in',
+        () async {
+      if (!haveSqlite) {
+        markTestSkipped('sqlite3.dll not built');
+        return;
+      }
+      final ws = tempDir('onote_cold_neg_');
+      final outside = tempDir('onote_cold_neg_out_');
+      final repo = await Repository.openAt(ws);
+      await repo.createNotebook('Alpha');
+      final app = AppState(repo);
+      addTearDown(() {
+        app.dispose();
+        repo.dispose();
+      });
+      final other = await Repository.openAt(outside);
+      final made = await other.createNotebook('Lectures');
+      other.dispose();
+      final before = repo.notebooks.length;
+
+      await app.init(notebookPath: made.file);
+
+      expect(app.pendingOpenNotice?.outcome, OpenNotebookOutcome.copiedIn);
+      expect(repo.notebooks.length, before + 1);
+      expect(app.notebookId, repo.notebooks.last.id);
+      expect(p.isWithin(ws.path, repo.notebooks.last.file), isTrue);
+      expect(File(made.file).existsSync(), isTrue,
+          reason: 'the file they launched stays where it is');
     });
   });
 

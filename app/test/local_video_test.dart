@@ -329,6 +329,63 @@ void main() {
       expect(carried.path, isNot(MediaStore.resolve(ref, stored)!.path),
           reason: 'and it is its own file, not a link back to the original');
     });
+
+    test('duplicating a notebook copies its pictures too', () async {
+      // Recordings above are files beside the container; from v0.17 Step 6 a
+      // pasted PICTURE is the same shape — its bytes live only in `blobs/`
+      // beside the log, and the container's `blobs` table is empty. So the
+      // old container-plus-`media/` copy produced a duplicate whose every
+      // picture was blank: its ref (logDir: null) resolved `blobs/` to a
+      // directory that did not exist.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final dir = Directory.systemTemp.createTempSync('onote_dup_blob_');
+      final repo = await Repository.openAt(dir);
+      addTearDown(() {
+        repo.dispose();
+        try {
+          dir.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+      final nb = await repo.createNotebook('Lectures');
+      final bytes = Uint8List.fromList(List.generate(2048, (i) => i % 251));
+      final hash = repo.putBlob(nb.id, bytes, 'image/png');
+
+      final copy = await repo.duplicateNotebook(nb.id);
+
+      // MUTATION: remove the `blobs/` copy from `duplicateNotebook` and this
+      // reads null — the duplicate answers from its own, empty, blob store.
+      expect(repo.getBlob(copy.id, hash), bytes,
+          reason: 'the copy kept the picture');
+      expect(File('${copy.logDirPath}/blobs/$hash').existsSync(), isTrue,
+          reason: 'as its own file, not a read-through to the original');
+      expect(Directory('${copy.logDirPath}/ops').existsSync(), isFalse,
+          reason: "the logs are the source notebook's history, not the copy's");
+    });
+
+    test('a duplicate of a pre-Step-6 notebook still shows its pictures',
+        () async {
+      // NEGATIVE CONTROL: a classic notebook holds its picture bytes in the
+      // container's `blobs` table and has no `blobs/` directory to copy. The
+      // byte-copied container must go on serving them by itself, with the
+      // blobs copy finding nothing to do.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final dir = Directory.systemTemp.createTempSync('onote_dup_classic_');
+      final repo = await Repository.openAt(dir);
+      addTearDown(() {
+        repo.dispose();
+        try {
+          dir.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+      final nb = await repo.createNotebook('Lectures');
+      final bytes = Uint8List.fromList(List.generate(1024, (i) => 255 - i % 251));
+      final hash = repo.putContainerBlobForTest(nb.id, bytes, 'image/png');
+
+      final copy = await repo.duplicateNotebook(nb.id);
+
+      expect(repo.getBlob(copy.id, hash), bytes,
+          reason: 'the container row travelled with the byte copy');
+    });
   });
 
   group('the sizes people will actually see', () {

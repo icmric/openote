@@ -159,6 +159,155 @@ void main() {
     expect(Repository.sameBytes(a.path, same.path), isTrue);
   });
 
+  test('THE REGISTRY POINTS AT THE COPY BEFORE THE ORIGINAL GOES', () async {
+    // The commit order `demoteContainerToCache` documents — copy, verify,
+    // registry, delete — and `moveContainerOutOfSyncFolder` used to run it
+    // backwards: delete the container in Drive, THEN write the registry. A
+    // kill between the two left `workspace.json` naming a file that was gone;
+    // `_loadWorkspace`'s existsSync filter pruned the notebook permanently,
+    // and the unregistered fresh copy was offered by the orphans scan as safe
+    // to delete. The wedge below makes the registry write FAIL, which is the
+    // observable stand-in for dying before it: whatever the function deleted
+    // by that point is what a kill in the window costs.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final root = Directory.systemTemp.createTempSync('onote_moveorder_');
+    final ws = Directory(p.join(root.path, 'ws'))..createSync();
+    final drive = Directory(p.join(root.path, 'Drive'))..createSync();
+    final repo1 = await Repository.openAt(ws);
+    addTearDown(() {
+      try {
+        root.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    final made = await repo1.createNotebook('Fragile');
+    await repo1.flushWorkspace();
+    repo1.dispose();
+
+    // The pre-v0.17 shape, same construction as the test below: the container
+    // living in the cloud folder, with the registry naming it there.
+    final inDrive = p.join(drive.path, 'Fragile.onote');
+    File(made.file).renameSync(inDrive);
+    final wsFile = File(p.join(ws.path, 'workspace.json'));
+    final j = jsonDecode(wsFile.readAsStringSync()) as Map<String, dynamic>;
+    ((j['notebooks'] as List).single as Map)['file'] = inDrive;
+    wsFile.writeAsStringSync(jsonEncode(j));
+
+    final repo = await Repository.openAt(ws);
+    addTearDown(repo.dispose);
+
+    // Wedge the REGISTRY write, not the copy: `_writeAtomic` opens
+    // `workspace.json.tmp` for writing, and a directory squatting on that
+    // name makes it throw.
+    Directory(p.join(ws.path, 'workspace.json.tmp')).createSync();
+    await expectLater(
+        repo.moveContainerOutOfSyncFolder(made.id), throwsA(isA<Object>()));
+
+    // MUTATION: move the `_deleteContainerFiles` call back in front of the
+    // `_saveNow()` in `moveContainerOutOfSyncFolder` and this is the line
+    // that goes red — the only copy the registry could still name was
+    // deleted on the strength of a registry write that then failed.
+    expect(File(inDrive).existsSync(), isTrue,
+        reason: 'nothing is deleted until the registry says where it went');
+    expect(repo.notebooks.single.file, inDrive,
+        reason: 'the entry went back to the truth on disk');
+    expect(File(p.join(ws.path, 'Fragile.onote')).existsSync(), isFalse,
+        reason: 'no unregistered stray copy left in the workspace');
+
+    // NEGATIVE CONTROL: unwedge, and the same move completes — the copy in
+    // the workspace, the registry naming it ON DISK, the original gone.
+    Directory(p.join(ws.path, 'workspace.json.tmp')).deleteSync();
+    final dest = await repo.moveContainerOutOfSyncFolder(made.id);
+    expect(p.isWithin(ws.path, dest), isTrue);
+    expect(File(dest).existsSync(), isTrue);
+    expect(File(inDrive).existsSync(), isFalse,
+        reason: 'a move that committed still moves');
+    final after = jsonDecode(wsFile.readAsStringSync()) as Map<String, dynamic>;
+    final entry = (after['notebooks'] as List).single as Map;
+    expect(entry['file'], 'Fragile.onote',
+        reason: 'durable before the delete, not on a debounce');
+    expect(entry['logDir'], isNotNull,
+        reason: 'the notes folder stops being derivable and is recorded');
+    expect(repo.loadNodes(made.id).where((n) => n.kind == NodeKind.page),
+        isNotEmpty, reason: 'and it is still a notebook that opens');
+  });
+
+  test('THE NEW LOG HOME IS RECORDED BEFORE THE OLD ONE GOES', () async {
+    // `moveNotebookTo` deleted the source `.onotebook` and then recorded
+    // `ref.logDir` on the 400 ms debounce — a seconds-wide window in which
+    // the registry on disk still derived the deleted sibling. A crash there
+    // meant the next recorder re-initialised an EMPTY `.onotebook` at the old
+    // spot under the same device id starting at seq 1: a fork against the
+    // real log sitting in the sync folder, with its blob bytes unreachable.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final root = Directory.systemTemp.createTempSync('onote_movelog_');
+    final ws = Directory(p.join(root.path, 'ws'))..createSync();
+    final cloud = Directory(p.join(root.path, 'Drive'))..createSync();
+    final cloud2 = Directory(p.join(root.path, 'Dropbox'))..createSync();
+    final repo = await Repository.openAt(ws);
+    addTearDown(() {
+      repo.dispose();
+      try {
+        root.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    final nb = await repo.createNotebook('Shared');
+    final app = AppState(repo)..notebookId = nb.id;
+    addTearDown(app.dispose);
+    app.reloadNodes();
+    app.pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+    app.blocks = [
+      Block(type: BlockType.text, x: 0, y: 0, content: {'text': 'real ops'})
+    ];
+    app.markDirty();
+    await app.flushSave(); // so the source `.onotebook` holds a real log
+
+    final srcLog = Directory(p.join(ws.path, 'Shared.onotebook'));
+    expect(srcLog.existsSync(), isTrue);
+
+    // Wedged registry write, exactly as in the container test above.
+    Directory(p.join(ws.path, 'workspace.json.tmp')).createSync();
+    await expectLater(
+        repo.moveNotebookTo(nb.id, cloud.path), throwsA(isA<Object>()));
+
+    // MUTATION: in `moveNotebookTo`'s created branch, move the
+    // `srcLog.deleteSync` back in front of the `_saveNow()` and the first
+    // line goes red — the only ops the registry can find were deleted while
+    // the move was unrecorded.
+    expect(srcLog.existsSync(), isTrue,
+        reason: 'nothing is deleted until the registry says where it went');
+    expect(repo.notebooks.single.logDir, isNull,
+        reason: 'the entry went back to the truth on disk');
+    expect(Directory(p.join(cloud.path, 'Shared.onotebook')).existsSync(),
+        isFalse, reason: 'the unrecorded copy was cleaned up');
+
+    // NEGATIVE CONTROL: unwedge, and the same move completes. The registry on
+    // disk names the new home BY THE TIME THE CALL RETURNS — durable, not
+    // parked on the debounce whose window was the fork.
+    Directory(p.join(ws.path, 'workspace.json.tmp')).deleteSync();
+    final dest = await repo.moveNotebookTo(nb.id, cloud.path);
+    final wsFile = File(p.join(ws.path, 'workspace.json'));
+    var entry =
+        (jsonDecode(wsFile.readAsStringSync())['notebooks'] as List).single
+            as Map;
+    // MUTATION: put `_scheduleSaveWorkspace()` back in place of `_saveNow()`
+    // and this reads a registry with no `logDir` — the window, made visible.
+    expect(entry['logDir'], dest);
+    expect(srcLog.existsSync(), isFalse,
+        reason: 'a normal move still deletes the old logs');
+    expect(Directory(dest).existsSync(), isTrue);
+
+    // And the JOINED branch (logDir already set) commits in the same order:
+    // move it again, folder to folder.
+    final dest2 = await repo.moveNotebookTo(nb.id, cloud2.path);
+    entry = (jsonDecode(wsFile.readAsStringSync())['notebooks'] as List).single
+        as Map;
+    expect(entry['logDir'], dest2);
+    expect(Directory(dest).existsSync(), isFalse,
+        reason: 'the old folder is deleted once the new one is recorded');
+    expect(Directory(p.join(dest2, 'ops')).existsSync(), isTrue,
+        reason: 'the ops travelled');
+  });
+
   test('A COPY THAT CANNOT BE MADE DELETES NOTHING', () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final root = Directory.systemTemp.createTempSync('onote_movefail_');

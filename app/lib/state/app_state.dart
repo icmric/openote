@@ -3377,6 +3377,29 @@ class AppState extends ChangeNotifier
           refusal: 'There are changes from another device still to fold in. '
               'Try again in a moment.');
     }
+    // The ten notable deletions are a garbage-collection root (source 3 in
+    // [_volatileMediaText]) and they are read out of `_histories[nb]` — which
+    // in a fresh session has simply not been loaded yet. `?? const {}` there
+    // silently answered "no pins", so a pinned, recently-deleted video was
+    // reported reclaimable, and "Put it back" afterwards would have restored
+    // a block naming a file this sweep had already deleted. Load the real
+    // pins before the sweep consults them — and if the history cannot be
+    // loaded, refuse: sweeping with pins we could not read is sweeping with
+    // pins we invented.
+    if (syncLogEnabled && (_bareLog(nb)?.opsDir.existsSync() ?? false)) {
+      NotebookHistory? history;
+      try {
+        history = await refreshHistory(nb);
+      } catch (_) {
+        history = null; // loading threw; refused below for the same reason
+      }
+      if (history == null) {
+        return const VideoSweep(
+            refusal: "Openote couldn't read this notebook's list of recent "
+                'deletions, so it cannot tell which videos "Put it back" '
+                'still needs. Nothing has been removed.');
+      }
+    }
     return MediaGc.sweep(
       ref: ref,
       containerText: () => _repo.everyStoredPageText(nb),
@@ -5150,7 +5173,13 @@ class AppState extends ChangeNotifier
     // handed a notebook IS the choice.
     String? asked;
     if (notebookPath != null && notebookPath.trim().isNotEmpty) {
-      final resolved = await _resolveNotebookFile(notebookPath);
+      // Through [_resolveHandedPath], NOT [_resolveNotebookFile]: cold start
+      // must open exactly what a double-click into a running app would.
+      // Feeding the raw path to the container sniff is how launching Openote
+      // by double-clicking a notebook folder's pointer file — the association
+      // Windows actually has — was told "That file isn't an Openote notebook"
+      // about the user's own notebook, while a running app opened it fine.
+      final resolved = await _resolveHandedPath(notebookPath);
       asked = resolved.ref?.id;
       // A path that could not be opened must not end the launch: the app comes
       // up on the last notebook, and the shell says what happened to the one
@@ -5294,54 +5323,7 @@ class AppState extends ChangeNotifier
   /// Never throws for a bad path: the caller is a command line or a
   /// double-click, and both deserve an answer rather than a crash.
   Future<OpenNotebookResult> openNotebookFile(String path) async {
-    // ── v0.17 Step 8b: what arrives here is no longer always a container ────
-    //
-    // Since decision 2 ("register the folder instead") the thing a student
-    // double-clicks is the `.onotebook` DIRECTORY, or the pointer file inside
-    // it. Without this branch the sniff below answers `notAFile` and the app
-    // says "That's a folder, not a notebook, so there is nothing to open" —
-    // about the notebook itself.
-    final folder = notebookFolderNamedBy(path);
-    if (folder != null) {
-      try {
-        // [openExistingNotebook] already tells a `.onotebook` from a container
-        // and routes it to `adoptLogDirectory`, which is idempotent: a folder
-        // already in the registry comes back as the entry it already has, and
-        // one in the recycle bin is restored rather than cloned.
-        await openExistingNotebook(folder);
-      } catch (e) {
-        final failed = OpenNotebookResult(OpenNotebookOutcome.failed,
-            "Openote couldn't open that notebook.", details: '$folder\n\n$e');
-        pendingOpenNotice = failed;
-        notifyListeners();
-        return failed;
-      }
-      // Never `copiedIn`: nothing was copied. The folder they double-clicked
-      // IS the notebook and goes on receiving their edits, which is the whole
-      // reason the association moved onto it.
-      final opened = _repo.notebooks.where((n) => n.id == notebookId);
-      final title = opened.isEmpty
-          ? p.basenameWithoutExtension(folder)
-          : opened.first.title;
-      return OpenNotebookResult(
-          OpenNotebookOutcome.opened, 'Opened "$title".');
-    }
-    // The container is a working copy nobody should be able to open by hand.
-    // After Step 7 its `blobs` table is empty, so a clone of one is a notebook
-    // with every picture missing that still passes `integrity_check` — and the
-    // sniff below would call it a notebook, because a cache satisfies the
-    // SQLite magic and the `application_id` exactly as a notebook does.
-    if (isOpenoteWorkingCopy(path)) {
-      final refused = OpenNotebookResult(
-          OpenNotebookOutcome.notANotebook,
-          "This is Openote's working copy, not your notebook. Open the "
-          'notebook folder instead.',
-          details: path);
-      pendingOpenNotice = refused;
-      notifyListeners();
-      return refused;
-    }
-    final resolved = await _resolveNotebookFile(path);
+    final resolved = await _resolveHandedPath(path);
     final problem = resolved.problem;
     if (problem != null) {
       pendingOpenNotice = problem;
@@ -5383,7 +5365,80 @@ class AppState extends ChangeNotifier
           'you make are saved to the copy, not to the file you opened.',
           details: 'Opened: $from\nCopy: ${ref.file}');
 
-  /// Turn a path into a registry entry, registering or copying as required.
+  /// What a path Openote was handed MEANS — the one answer for both doors.
+  ///
+  /// Cold start (`init(notebookPath:)`) and hand-off ([openNotebookFile]) used
+  /// to answer this question separately, and only the hand-off knew about
+  /// notebook folders and working copies. So double-clicking
+  /// `Open this notebook.onotelink` with Openote closed said *"That file isn't
+  /// an Openote notebook"* — about the user's own notebook — because the cold
+  /// path fed the pointer file straight to the container sniff; and
+  /// `openote D:\backup\cache.onote` at cold start adopted a picture-less
+  /// clone of Openote's own working copy, bypassing the refusal the hand-off
+  /// path has always made. Resolution lives HERE, once; the callers keep only
+  /// what genuinely differs between them (switching notebooks and showing the
+  /// notice now, versus recording it for the shell to show after startup).
+  Future<({NotebookRef? ref, OpenNotebookResult? problem, bool copied})>
+      _resolveHandedPath(String path) async {
+    // ── v0.17 Step 8b: what arrives here is no longer always a container ────
+    //
+    // Since decision 2 ("register the folder instead") the thing a student
+    // double-clicks is the `.onotebook` DIRECTORY, or the pointer file inside
+    // it. Without this branch the sniff below answers `notAFile` and the app
+    // says "That's a folder, not a notebook, so there is nothing to open" —
+    // about the notebook itself.
+    final folder = notebookFolderNamedBy(path);
+    if (folder != null) {
+      try {
+        // Idempotent: a folder already in the registry comes back as the
+        // entry it already has, and one in the recycle bin is restored rather
+        // than cloned. Nothing is ever `copiedIn` here — the folder they
+        // double-clicked IS the notebook and goes on receiving their edits,
+        // which is the whole reason the association moved onto it.
+        final ref =
+            await _repo.adoptLogDirectory(folder, title: _titleOfLogDir(folder));
+        // Joining a notebook from a folder is a moment the user tells us
+        // where their sync lives — this device's logs go into that folder, so
+        // it is a sync root by definition.
+        rememberSyncRoot(p.dirname(folder));
+        // The container an adopt creates is EMPTY; only the pull makes it a
+        // notebook. Pulled here, before any caller switches to it, so that a
+        // cold start and a hand-off both deliver notes rather than a blank
+        // sidebar that looks exactly like a join that silently failed.
+        await syncPull(ref.id);
+        return (ref: ref, problem: null, copied: false);
+      } catch (e) {
+        return (
+          ref: null,
+          problem: OpenNotebookResult(OpenNotebookOutcome.failed,
+              "Openote couldn't open that notebook.",
+              details: '$folder\n\n$e'),
+          copied: false
+        );
+      }
+    }
+    // The container is a working copy nobody should be able to open by hand.
+    // After Step 7 its `blobs` table is empty, so a clone of one is a notebook
+    // with every picture missing that still passes `integrity_check` — and the
+    // sniff below would call it a notebook, because a cache satisfies the
+    // SQLite magic and the `application_id` exactly as a notebook does.
+    if (isOpenoteWorkingCopy(path)) {
+      return (
+        ref: null,
+        problem: OpenNotebookResult(
+            OpenNotebookOutcome.notANotebook,
+            "This is Openote's working copy, not your notebook. Open the "
+            'notebook folder instead.',
+            details: path),
+        copied: false
+      );
+    }
+    return _resolveNotebookFile(path);
+  }
+
+  /// Turn a container path into a registry entry, registering or copying as
+  /// required. Callers want [_resolveHandedPath], which answers the folder,
+  /// pointer-file and working-copy shapes first — this is its final step.
   ///
   /// `copied` says the notebook was taken INTO the workspace rather than found
   /// there, which is a fact the user has to be told: their edits stop going to
