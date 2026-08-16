@@ -85,6 +85,16 @@
   .badges span { white-space:nowrap; }
   .badges span + span::before { content:"·"; margin:0 10px; opacity:.55; }
 
+  /* The same shape as .note below: the brass left border is this site's
+     mark for "the honest bit". */
+  .status {
+    max-width:620px; margin:26px auto 0; text-align:left;
+    background:var(--surface); border:1px solid var(--border);
+    border-left:3px solid var(--brass-400); border-radius:8px;
+    padding:12px 16px; font-size:15px; color:var(--text-2);
+  }
+  .status b { color:var(--text); }
+
   /* ── Downloads ────────────────────────────────────────────────────── */
   section { padding:44px 0; }
   h2 { font-size:22px; margin:0 0 6px; }
@@ -160,6 +170,14 @@
       <span>No account</span>
       <span>Notes stay on your machine</span>
     </p>
+    <p class="status">
+      <b>Usable today, still under active development.</b> Openote is still
+      receiving major updates, and an update may break a feature until the
+      next one fixes it. It is developed on Windows, tested on Linux now and
+      then, and largely untested on macOS. Your notes stay on your own
+      machine in an open, documented format either way — so nothing is ever
+      locked in.
+    </p>
   </div>
 </header>
 
@@ -180,7 +198,8 @@
       <div class="card" id="card-macos">
         <h3>macOS</h3>
         <p>A universal disk image — Apple Silicon and Intel. Open it and drag
-           Openote to Applications.</p>
+           Openote to Applications. Honestly: this is the least-tested build —
+           <a href="https://github.com/icmric/openote/issues">tell us what breaks</a>.</p>
         <a class="btn" id="dl-macos" href="https://github.com/icmric/openote/releases/latest">Download for macOS</a>
         <span class="alt" id="alt-macos"></span>
       </div>

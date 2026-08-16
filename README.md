@@ -12,14 +12,19 @@
 
 ---
 
-> 🚧 **Status: early, but real.** Openote is a working Flutter + Rust desktop
-> app — freeform canvas, ink, math, Markdown, an open `.onote` format, sync
+> 🚧 **Usable today — and still under active development.** Openote is a real,
+> working app: freeform canvas, ink, math, Markdown, an open format, sync
 > through any folder you already have, a OneNote importer that handles real
-> notebooks, flashcards from your own notes, and a planner. It is **not yet
-> 1.0**: expect rough edges, and see [TESTING.md](TESTING.md) for what is
-> currently unverified. Design and specification documents are in the
-> [documentation index](docs/README.md); build instructions in
-> [`app/README.md`](app/README.md).
+> notebooks, flashcards from your own notes, and a planner. But it is still
+> receiving **major updates, and an update may break a feature** until the
+> next one fixes it — and it is **largely untested on many platforms**:
+> development happens on Windows, Linux is tested occasionally, and **macOS
+> has barely been tested at all**. Whatever breaks, your notes are safe
+> either way: they live on your own machine, in an open, documented format
+> that stays readable without Openote — nothing is locked in. What is and
+> isn't verified is tracked honestly in [TESTING.md](TESTING.md); design and
+> specification documents are in the [documentation index](docs/README.md);
+> build instructions in [`app/README.md`](app/README.md).
 
 ## Install
 
@@ -112,9 +117,9 @@ Start here → **[docs/README.md](docs/README.md)** (the index). In reading orde
 ## Project status & roadmap at a glance
 
 - **Now (2026-08):** a **working desktop app** for Windows, macOS and Linux — freeform canvas, notebook/section/page navigator, live-Markdown text, math blocks, pressure ink, images, tables, code, tags, notebook-wide search, spell check, the open `.onote` format with Markdown/PDF/folder export, and a **native Rust core** linked over `dart:ffi`. Stack decided: **Flutter/Dart UI + Rust core, SQLite `.onote` container** ([ADRs](docs/adr/README.md)).
-- **Sync between your own devices** works, with no account and no sign-in: a notebook carries a `.onotebook` directory of append-only per-device op logs plus content-addressed blobs, and you put it in a folder your cloud already keeps in step ([ADR-0006](docs/adr/ADR-0006-sync-transport-and-text-model.md)). One writer per file, so two devices cannot produce conflicting logs. Mirrors and dated backups are configurable per notebook.
+- **Sync between your own devices** works, with no account and no sign-in: a notebook is a `.onotebook` folder of append-only per-device op logs plus content-addressed blobs, and you put it in a folder your cloud already keeps in step ([ADR-0006](docs/adr/ADR-0006-sync-transport-and-text-model.md)). One writer per file, so two devices cannot produce conflicting logs. Mirrors and dated backups are configurable per notebook.
 - **For students specifically:** the **OneNote `.one`/`.onepkg` importer** (reverse-engineered MS-ONESTORE — text boxes at true positions, styling, images, equations, ink, hyperlinks, whole-notebook packages), **PDF lecture slides** imported as an annotatable printout you write on with the pen, and **flashcards** generated from the lines you tagged Question or Definition, with spaced repetition and Anki export.
-- **Next:** vector (searchable) PDF export and printing — export is a raster capture today; reclaiming space from deleted images; and demoting the `.onote` container to a purely local cache, which is the remaining half of ADR-0006 §3.
+- **Next:** vector (searchable) PDF export and printing — export is a raster capture today; and reclaiming space from deleted images.
 - See the [Roadmap](ROADMAP.md) for exactly what is and isn't done.
 
 ## License
