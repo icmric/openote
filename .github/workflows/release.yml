@@ -301,6 +301,13 @@ jobs:
   linux:
     name: linux x64
     needs: version
+    # Inside a container the runner's default shell resolves to plain sh
+    # (dash), not bash — v0.8.0's dry run died on this job's first bashism,
+    # `set -o pipefail` ("Illegal option"). Every script here was written and
+    # syntax-checked as bash, so say so; debian:12 ships bash in the base image.
+    defaults:
+      run:
+        shell: bash
     # Built INSIDE a debian:12 (bookworm) container rather than on a runner
     # image. TWO properties of the build host are inherited by the artifact,
     # and on the stock runner images they pull in opposite directions:
