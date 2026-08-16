@@ -6355,6 +6355,14 @@ mod tests {
         g
     }
 
+    /// One entry of the section's `0x3442` array: the page guid a metadata
+    /// object names, and that object's index.
+    type MetaEntry = ([u8; 16], usize);
+    /// One entry of the `0x1D63` display-order array as `pair_page_metadata`
+    /// consumes it: the page's own guid and its positionally-paired meta index,
+    /// either of which a real file can fail to carry.
+    type PageEntry = (Option<[u8; 16]>, Option<usize>);
+
     /// "Week 6: More sets and Algorithms" of the reference notebook's Discrete
     /// Mathematics section, reduced to the two arrays that pair a title to a
     /// page. Six pages; `metas` is the section's `0x3442` array in FILE order
@@ -6364,7 +6372,7 @@ mod tests {
     ///
     /// Metadata object indices are 100 + their position in the `0x3442` array,
     /// which is exactly what the old positional pairing handed each page.
-    fn week6() -> (Vec<([u8; 16], usize)>, Vec<(Option<[u8; 16]>, Option<usize>)>) {
+    fn week6() -> (Vec<MetaEntry>, Vec<PageEntry>) {
         // 0x3442, in file order: the pages it names are 0, 5, 4, 3, 2, 1.
         let named = [0u8, 5, 4, 3, 2, 1];
         let metas: Vec<([u8; 16], usize)> =
