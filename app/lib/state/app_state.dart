@@ -20,7 +20,8 @@ import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/history.dart';
 import '../model/models.dart';
-import '../store/database.dart' show NotebookFileProblem, notebookFileProblem;
+import '../store/database.dart'
+    show NotebookFileMissing, NotebookFileProblem, notebookFileProblem;
 import '../store/notebook_writer.dart' show sha256Hex;
 import '../store/history_store.dart';
 import '../sync/device_label.dart';
@@ -1493,8 +1494,39 @@ class AppState extends ChangeNotifier
       // read is a `continue`. The only honest answer comes from re-reading
       // `blobs/` and re-hashing it.
       if (_disposed) return copied;
-      _noteBlobProof(
-          nb, await r.proveBlobs(read: (h) => _repo.containerBlob(nb, h)));
+      try {
+        _noteBlobProof(
+            nb, await r.proveBlobs(read: (h) => _repo.containerBlob(nb, h)));
+      } catch (e) {
+        // This proof half had no handler of its own, and the chain is awaited
+        // by nobody unless a mirror is waiting on it — so a throw here was an
+        // UNHANDLED async error. Under `flutter test` that fails whichever
+        // test happens to be running when it lands (the Windows CI runner is
+        // slow enough to lose the race against teardown on most pushes; six
+        // unrelated tests went red for it), and in the app it is a crash
+        // report for background work nobody asked to keep.
+        //
+        // The common cause is the notebook legitimately LEAVING mid-proof —
+        // purged, moved in Explorer, its workspace torn down — which makes
+        // the proof moot, not failed: there is nothing left to prove ABOUT.
+        // Only a notebook still present and readable gets the "Saved, but not
+        // recorded" report the backfill half above already uses.
+        bool gone;
+        try {
+          final refs = _repo.notebooks.where((n) => n.id == nb).toList();
+          gone = _disposed ||
+              e is NotebookFileMissing ||
+              refs.isEmpty ||
+              !File(refs.single.file).existsSync();
+        } catch (_) {
+          gone = true; // the check itself failing is the strongest "gone"
+        }
+        if (gone) {
+          debugPrint('[openote/sync] blob proof for $nb stopped: $e');
+        } else {
+          _noteLogProblem('blob proof for $nb stopped', e);
+        }
+      }
       return copied;
     });
     // Kept so a mirror run can wait for it. Without that, configuring a backup

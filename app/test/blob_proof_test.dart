@@ -332,7 +332,12 @@ void main() {
       // ignore: avoid_print
       print('[step5] proveBlobs 21 blobs (one 4 MB): ticks=$ticks '
           'worstBlockMs=$worstMs');
-    });
+      // `retry`, because the meter is wall-clock: on an oversubscribed CI
+      // runner the OS can starve this isolate long enough to blow the budget
+      // with the code entirely correct. The mutation this test exists for —
+      // hashing the 4 MB blob ON this isolate — blocks deterministically on
+      // every attempt, so a retry cannot launder it.
+    }, retry: 2);
 
     test('materialising a whole notebook of pictures does not freeze the app',
         () async {
@@ -375,7 +380,10 @@ void main() {
       // ignore: avoid_print
       print('[step5] backfill+prove 40 blobs: ticks=$ticks '
           'worstBlockMs=$worstMs');
-    });
+      // Same rule as the meter above: wall-clock budgets retry, because an
+      // oversubscribed runner can starve a correct implementation past them;
+      // the unpaced-backfill mutation blocks on every attempt regardless.
+    }, retry: 2);
   });
 
   group('the folder Openote writes is the folder it checks', () {
@@ -394,6 +402,54 @@ void main() {
       Directory(p.join(store.blobsDir.path, hash)).createSync();
       expect(store.blobBytesMatch(hash), isFalse,
           reason: '"I could not check" must never read as "it matched"');
+    });
+  });
+
+  group('the proof is background work, and background work must not throw', () {
+    test('a notebook that leaves mid-proof is moot, not a crash', () async {
+      // The backfill-then-prove chain `_startBlobBackfill` builds is awaited
+      // by NOBODY unless a mirror happens to be waiting on it, and its proof
+      // half used to have no handler: an error there was an unhandled async
+      // error. Under `flutter test` that fails whichever test is running when
+      // it lands — the Windows CI runner is slow enough that the chain lost
+      // its race against test teardown on most pushes, turning six unrelated
+      // tests red with "no notebook file at …" AFTER they had completed. In
+      // the app the same throw is a crash report for background work against
+      // a notebook the user had already deleted or moved.
+      //
+      // This is that race made DETERMINISTIC. The proof's repair read happens
+      // strictly after its first `_hashFiles` batch, which is an isolate
+      // round-trip away — so everything below the warm runs first, and the
+      // container is reliably gone by the time the proof reaches for it.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, app, nb) = await fixture('onote_blob_gone_');
+      final hash = app.importBlob(nb, picture(7), 'image/png');
+      await app.settleBackgroundWork(); // blobs/ holds it; the log knows it
+
+      // Wrong bytes under the right name: the proof MUST reach for the
+      // container to repair. (Absent would be `missing`, which never reads.)
+      final store = logOf(repo, nb);
+      store.blobFile(hash).writeAsBytesSync(picture(8), flush: true);
+
+      // A fresh session starts the chain. Its backfill half copies nothing —
+      // the file exists — so the container is not touched until the proof.
+      final app2 = AppState(repo)..notebookId = nb;
+      addTearDown(app2.settleBackgroundWork);
+      await app2.warmRecorder(nb);
+
+      // The notebook leaves before the proof's read: handle closed, container
+      // gone — a purge, a move in Explorer, or a teardown, mid-chain.
+      final file = repo.notebooks.firstWhere((n) => n.id == nb).file;
+      repo.closeNotebook(nb);
+      File(file).deleteSync();
+
+      // MUTATION: remove the try/catch around the proof stage in
+      // `_startBlobBackfill` and the chain's NotebookFileMissing lands in
+      // this test's zone as an unhandled error — red exactly as CI was.
+      await app2.settleBackgroundWork();
+      expect(app2.saveError, isNull,
+          reason: 'a notebook that left mid-proof is moot: no report, and '
+              'certainly no throw into the void');
     });
   });
 }

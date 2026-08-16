@@ -684,6 +684,19 @@ void _deletingASharedNotebook(bool Function() haveSqlite) {
               if (f is File)
                 p.relative(f.path, from: sharedLogs.path): f.readAsBytesSync()
           };
+      // …and the photograph is only honest once every OTHER writer has put
+      // its pen down. Byte equality is the right bar — a purge that APPENDED
+      // so much as one op to a log in the shared folder would replicate the
+      // deletion to every other device, which is the 320e0be disaster class —
+      // but it means the two devices' watchers must be disarmed first: either
+      // one can legitimately append at any moment (a foreign-change pull, the
+      // warm's tree backfill), and on a starved machine (two cores, low
+      // priority — the shape of a busy CI runner) one of those landed between
+      // the two reads and the purge was blamed for it.
+      a.app.setAutoSync(false);
+      appB.setAutoSync(false);
+      await a.app.settleBackgroundWork();
+      await appB.settleBackgroundWork();
       final before = photograph();
       expect(before, isNotEmpty);
       // What the confirmation dialog says, asked when it asks — before the
