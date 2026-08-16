@@ -478,6 +478,14 @@ jobs:
         run: |
           set -euo pipefail
           bundle=app/build/linux/x64/release/bundle
+          # Per-file breakdown FIRST, so a failure below names its culprit —
+          # the aggregate alone says "GLIBC_2.38" without saying which library
+          # demanded it, and the prebuilt ones (pdfium) are the likely suspects.
+          for f in "$bundle/openote" "$bundle/libonote_core.so" "$bundle"/lib/*.so; do
+            m="$({ objdump -T "$f" 2>/dev/null || true; } \
+              | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -uV | tail -1 || true)"
+            echo "  ${m:-none}  ${f##*/}"
+          done | sort -V
           floor="$(
             { objdump -T "$bundle/openote" "$bundle/libonote_core.so" "$bundle"/lib/*.so 2>/dev/null || true; } \
               | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -uV | tail -1 || true
