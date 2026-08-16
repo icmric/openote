@@ -4,6 +4,8 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-08-17
+
 ### Fixed — opening, moving and copying notebooks all keep their promises now
 
 - **Double-clicking a notebook now works even when Openote is closed.** Opening
@@ -434,6 +436,31 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - An empty paragraph produced no line at all, so the gaps you left between
   thoughts were gone before the page was built. Existing imports are not
   rewritten; re-import to get the spacing back.
+
+### Fixed — four more ways the OneNote import let you down
+
+- **Imported pages no longer look cut off.** The importer had the whole
+  page all along — it was being cut off when the page opened.
+- **Erased ink stays erased.** Handwriting you had rubbed out in OneNote
+  used to come back on import.
+- **Titles land on the right pages.** Pages could come in wearing each
+  other's titles, and one title could be duplicated into every page.
+- **Paragraphs no longer come in twice**, with the second copy in the
+  wrong place — a nested group was being counted as page-level content.
+- As with the blank-lines fix, pages you have already imported are not
+  rewritten; re-import to pick these up.
+
+### Added — full keyboard control, phases 3 and 4
+
+- **F6 (Shift+F6 backwards) moves between the areas of the app** — sidebar,
+  toolbar, page, an open panel, a showing reminder — with a visible focus
+  ring, and it works mid-sentence. Ctrl+/ still shows every shortcut.
+- **The surfaces that were mouse-only now answer the keyboard**: arrows
+  walk a board's cards and columns and Ctrl+arrows carry a card, Enter
+  edits and Delete removes (undoably); the find bar's Enter finds the next
+  match instead of doing nothing; the PDF reader's full key set is
+  reachable without a click; and Escape behaves consistently everywhere,
+  including dialogs where it was silently switched off.
 
 ### Fixed
 - **CI is green again on all four app platforms — and the cause was not what it looked like.** The red Analyze step was one real `unused_field` warning left behind by the PDF rework, invisible on the dev machine because a local check filtered analyzer output down to nothing and reported success regardless. The field is gone. Two genuine hardenings came out of chasing it: the Flutter SDK is now **pinned** in CI and release (an SDK release could previously change what every branch built with, with no commit to bisect), and six tests that asserted on wall-clock time — "200 calls in under 50 ms", "first progress inside the first quarter of the import" — now count the work instead (page reads, directory listings, measurement round-trips), because `flutter test` runs files in parallel and a stopwatch bar measures the machine's spare CPU, not the code.

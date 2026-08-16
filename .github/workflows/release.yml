@@ -670,18 +670,96 @@ jobs:
           generate_release_notes: true
           files: dist/*
           # THE BODY IS WHAT THE IN-APP UPDATE DIALOG SHOWS (update-through
-          # -app fetches the release body as the "what's new" text). So the
-          # review step before publishing MUST replace the top of this with
-          # a short human "What's new" — the actual features and fixes, in
-          # the user's language — ABOVE the download boilerplate. Eric,
-          # 2026-08-10: "ensure the patch notes actually describe whats new
-          # at the start rather than the generic info since thats whats
-          # seen in app." CHANGELOG.md's newest section is the source.
+          # -app fetches the release body as the "what's new" text). So it
+          # MUST LEAD with a human "What's new" — the actual features and
+          # fixes, in the user's language — ABOVE the download boilerplate.
+          # Eric, 2026-08-10: "ensure the patch notes actually describe
+          # whats new at the start rather than the generic info since thats
+          # whats seen in app." CHANGELOG.md's newest section is the source.
+          # The "What's new" below is written for THIS release before
+          # tagging; rewrite it from the CHANGELOG before cutting the next
+          # one — a stale top section is worse than the old placeholder.
           body: |
-            <!-- Draft: review, edit, then publish.
-                 STEP 1 (required): write "## What's new" at the TOP —
-                 summarise CHANGELOG.md's newest section in plain words.
-                 The app shows this body in the update dialog. -->
+            <!-- Draft: review — the What's new below was written with the
+                 tag, from CHANGELOG.md's 0.8.0 section — then publish. -->
+
+            ## What's new
+
+            - **The download is about half the size** — roughly 100 MB down
+              to about 50 MB. Openote used to carry a video player inside it;
+              now it is fetched once, the first time you play a video. Your
+              videos themselves are always on your computer, and if you are
+              updating from an older Openote the player you already have
+              keeps working — nothing to download.
+            - **Notebooks can take about half the space they did.** One
+              button (sharing window ▸ Storage) stops Openote keeping every
+              picture and drawing twice; on two real notebooks it took them
+              from 63 MB down to 33 MB apiece. It checks every single picture
+              is safe in the notebook's own folder before it removes
+              anything, and changes nothing unless all of them are.
+            - **Double-clicking a notebook now opens it — even when Openote
+              is closed.** Opening another notebook switches the window you
+              already have, rather than starting a second copy.
+            - **See who changed what on a page, and get deletions back.** The
+              page history button now says which computer each paragraph,
+              picture or drawing last came from — and your last ten notable
+              deletions (a page, a section, a picture, a recording, a long
+              stretch of writing) can each be put back with one click.
+              The old copy Openote quietly took of every page every ten
+              minutes is gone, and those old copies cannot be brought back —
+              if there is an old page version you still want, get it out
+              before you update. Undo, the recycle bin and your backups all
+              carry on exactly as before.
+            - **OneNote import overhauled.** Pages no longer come out cut
+              off, blank lines and layout are preserved, erased ink stays
+              erased, titles land on the right pages, and importing the same
+              file twice no longer doubles up your handwriting or paragraphs.
+              Re-import a section to pick up the fixes.
+            - **Sharing and sync are much safer, and faster.** Several ways a
+              shared notebook could quietly lose things are fixed — one
+              computer's bad copy of a picture can no longer delete the good
+              copies everywhere else, a sync that silently stopped now picks
+              itself up, a save that never reached the notebook's history now
+              says so — and catching up with another computer no longer
+              freezes the app.
+            - **The whole app works from the keyboard.** F6 moves between the
+              sidebar, toolbar, page and panels; Ctrl+/ shows every shortcut.
+              A paste that cannot be saved now tells you plainly instead of
+              doing nothing, and error messages are clearer throughout.
+            - **Your GitHub key now lives in your computer's own password
+              storage** — Credential Manager on Windows, the Keychain on Mac,
+              the keyring on Linux — never in a plain file. A key you saved
+              before is moved over automatically.
+            - **Openote can rebuild a notebook's working file from your
+              notes** if it is ever damaged or lost. Your notes live in the
+              notebook's own folder; the working file is only the copy
+              Openote reads while the notebook is open.
+
+            ## The fine print
+
+            - Openote is still in active development. Updates are worth
+              taking, but a major update may occasionally break a feature —
+              and macOS is the least-tested platform by far.
+            - On Linux, whether double-clicking a notebook *folder* opens
+              Openote depends on your file manager; the **Open this
+              notebook** file inside the folder works either way.
+            - The storage format changed this release: Openote can now tuck
+              a notebook's working file out of the way and rebuild it on
+              demand. It is opt-in, one notebook at a time, and **Put it
+              back** undoes it.
+
+            ## For the technically curious
+
+            This release lands the storage-cluster work: the append-only op
+            log in the notebook's folder is now the source of truth, and the
+            SQLite container is demoted to a working copy the app can always
+            reproduce from that log. Pictures and drawings are stored once,
+            as content-addressed files verified by re-hash on read-back —
+            a corrupt copy is set aside and healed rather than deleted, so
+            one machine's bad blob can never propagate a delete through a
+            shared notebook. The change set then went through adversarial
+            review passes whose every confirmed finding was fixed, and the
+            test suite grew from 1,272 to 1,564 over the cycle.
 
             ## Downloads
             - **Windows**: `openote-*-windows-x64-setup.exe` — the installer.
@@ -692,12 +770,15 @@ jobs:
             - **Linux**: `openote-*-linux-amd64.deb` on Ubuntu/Debian/Mint, or
               `openote-*-linux-x86_64.rpm` on Fedora/RHEL/openSUSE. Double-click
               it, or install from a terminal — then Openote is in your
-              applications menu like any other program, and `.onote` files are
-              named and iconed correctly in your file manager. (Neither fits?
-              The `.tar.gz` runs from anywhere: extract it and run `./openote`
-              inside. It has no package manager to ask for libmpv, so if you
-              want video to play in the page, install `mpv-libs` on Fedora or
-              `libmpv2` on Ubuntu/Debian yourself — the app says so too.)
+              applications menu like any other program. To open a notebook from
+              your file manager, double-click the **Open this notebook** file
+              inside the notebook's folder; whether double-clicking the folder
+              itself opens Openote depends on which file manager you use.
+              (Neither package fits? The `.tar.gz` runs from anywhere: extract
+              it and run `./openote` inside. It has no package manager to ask
+              for libmpv, so if you want video to play in the page, install
+              `mpv-libs` on Fedora or `libmpv2` on Ubuntu/Debian yourself —
+              the app says so too.)
             - **macOS**: `openote-*-macos-universal.dmg` — drag Openote to Applications.
 
             ---
