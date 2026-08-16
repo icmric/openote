@@ -395,8 +395,11 @@ jobs:
           #                     builds against nothing and ships a release
           #                     where video silently does not work.
           #   rpm               provides rpmbuild for build-packages.sh.
+          # jq is not ours: subosito/flutter-action's setup.sh dies without it
+          # ("jq not found", v0.8.0's first tag build). The ubuntu runner image
+          # preinstalls it, so the gap only shows inside a bare container.
           apt-get install -y --no-install-recommends \
-            ca-certificates curl git unzip zip xz-utils zstd file \
+            ca-certificates curl git unzip zip xz-utils zstd file jq \
             build-essential clang cmake ninja-build pkg-config \
             libgtk-3-dev liblzma-dev libstdc++-12-dev \
             libmpv-dev libepoxy-dev \
