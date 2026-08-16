@@ -2953,6 +2953,99 @@ class AppState extends ChangeNotifier
     return out;
   }
 
+  /// Whether this notebook has already been changed over to the new storage
+  /// (v0.17 Step 8), so the dialog can offer the right one of two buttons.
+  bool notebookIsDemoted(String nb) {
+    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull;
+    return ref != null && _repo.isDemoted(ref);
+  }
+
+  /// Change this notebook over to the new storage — v0.17 Step 8's rename.
+  ///
+  /// **The gates that have to live here rather than in [Repository]**, the same
+  /// two as [rebuildContainerFromLog] and for the same reason: only this layer
+  /// can make the log-side proof run *first*, while the notebook can still be
+  /// mended from the container.
+  ///
+  ///  * [proveBlobBytes] repairs a damaged blob file **from the container**, and
+  ///    after this the container is a cache whose whole justification is that
+  ///    the folder beside it holds the real bytes.
+  ///  * A missing recorder is a refusal, not a pass. [proveBlobBytes] answers
+  ///    `checked: 0` with empty sets when the log will not open, and `ok` on that
+  ///    is `true` — so a notebook whose folder is broken would otherwise clear
+  ///    the strictest gate by having nothing to check.
+  Future<ContainerDemotion> demoteContainerToCache(String nb) async {
+    await flushSave();
+    if (notebookIsReadOnly(nb)) {
+      return const ContainerDemotion(
+          refusal: 'This notebook was written by a newer version of Openote, '
+              'so this one is only showing it to you. Nothing will be changed.');
+    }
+    await awaitBlobBackfill(nb);
+    final r = await warmRecorder(nb);
+    if (r == null) {
+      return const ContainerDemotion(
+          refusal: "Openote could not open this notebook's own folder, so "
+              'there would be nothing left to rebuild it from. Nothing has '
+              'been changed.',
+          details: 'no SyncRecorder for the notebook; see the save problem '
+              'reported separately');
+    }
+    final proof = await proveBlobBytes(nb);
+    if (!proof.ok) {
+      return ContainerDemotion(
+          refusal: 'Openote will not do this yet. ${proof.holes} of this '
+              "notebook's pictures and drawings are missing or damaged in the "
+              "notebook's own folder, and that folder is where they would be "
+              'read from. Nothing has been changed.',
+          details: '$proof\n'
+              'missing: ${_someHashes(proof.missing)}\n'
+              'unrepairable: ${_someHashes(proof.damaged)}');
+    }
+    // Drop the recorder BEFORE the move: it holds the old container path, and
+    // `logDirPath` is about to stop being derivable from it, so a stale one
+    // would write this device's ops somewhere nobody is looking. Same reasoning
+    // as [moveContainerOutOfSyncFolder].
+    _recorders.remove(nb);
+    await _stopWatching();
+    // **And wait for background work already in flight.** Observed on a copy of
+    // the owner's real 329-page notebook: a recorder warm started by an earlier
+    // load was still running, its `_backfillTree` wrote to the container the
+    // move had just replaced, and SQLite answered *"attempt to write a readonly
+    // database"* — which Step 1 routes to the save-problem dialog, so a
+    // successful migration would have shown the student an error about a file
+    // that was fine.
+    await settleBackgroundWork();
+    final out = await _repo.demoteContainerToCache(nb);
+    if (out.done && nb == notebookId) {
+      await _loadNotebook();
+      _startWatching();
+    } else if (nb == notebookId) {
+      _startWatching();
+    }
+    _invalidateSyncStatus();
+    notifyListeners();
+    return out;
+  }
+
+  /// Put a migrated notebook back the way it was — Step 8's inverse.
+  Future<ContainerDemotion> undemoteContainerFromCache(String nb) async {
+    await flushSave();
+    _recorders.remove(nb);
+    await _stopWatching();
+    // See [demoteContainerToCache]: a warm still in flight would write to the
+    // container this is about to replace.
+    await settleBackgroundWork();
+    final out = await _repo.undemoteContainerFromCache(nb);
+    if (nb == notebookId) {
+      await _loadNotebook();
+      _startWatching();
+    }
+    _invalidateSyncStatus();
+    notifyListeners();
+    return out;
+  }
+
   /// Notebooks that look like repeated imports of the same source.
   ///
   /// **Why this exists.** A real workspace held 586 MB, of which ~380 MB was
@@ -5560,29 +5653,11 @@ class AppState extends ChangeNotifier
     markDirty();
   }
 
-  // ── Version history (SYNC-8) ───────────────────────────────────────────
-
-  List<int> pageVersions() =>
-      pageId == null ? [] : _repo.listVersions(notebookId!, pageId!);
-
-  Future<void> restoreVersion(int at) async {
-    if (pageId == null) return;
-    final json = _repo.versionJson(notebookId!, pageId!, at);
-    if (json == null) return;
-    pushUndo();
-    final j = jsonDecode(json) as Map<String, dynamic>;
-    pageProps =
-        PageProps.fromJson((j['page'] as Map?)?.cast<String, dynamic>());
-    blocks = [
-      for (final b in (j['blocks'] as List))
-        Block.fromJson((b as Map).cast<String, dynamic>())
-    ];
-    docRevision++;
-    markDirty();
-    notifyListeners();
-  }
-
   // ── Simplified version history (v0.17 plan, Step 8a) ───────────────────
+  //
+  // `pageVersions()` and `restoreVersion()` used to live here, over the
+  // `page_versions` table. Decision 1 replaced them with what is below; see the
+  // note in `Repository` for why the reads went with the writes.
   //
   // Who last changed each block you can see, and the last ten notable
   // deletions. Both are folds of ops the app already writes — no new op kind,

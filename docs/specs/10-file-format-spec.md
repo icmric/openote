@@ -126,14 +126,24 @@ CREATE INDEX idx_refs_dst ON refs(dst_page_id);
 -- trigram-tokenized table. FTS content is derivable; corruption here is
 -- repaired by rebuild, never data loss.
 
--- ── Page version history (SYNC-8; optional table, MAY be absent) ──
-CREATE TABLE page_versions (
-  page_id    TEXT NOT NULL,
-  version_at INTEGER NOT NULL,
-  snapshot   BLOB NOT NULL,
-  label      TEXT,
-  PRIMARY KEY (page_id, version_at)
-);
+-- ── Page version history (SYNC-8) — WITHDRAWN in v0.17 ────────────
+--
+-- `page_versions` kept up to thirty complete copies of every page. It was
+-- bounded by how long a notebook had been edited, i.e. by nothing (measured:
+-- 9,840 snapshots in a 322 MB container), it declared no foreign key onto
+-- `nodes` so a purged page's snapshots outlived it for good, and it pinned
+-- media from garbage collection by accident and permanently. It is no longer
+-- created; Openote's opt-in storage migration drops it from containers that
+-- have it. A reader MAY still meet the table in an older notebook and MUST
+-- treat it as optional.
+--
+-- CREATE TABLE page_versions (
+--   page_id    TEXT NOT NULL,
+--   version_at INTEGER NOT NULL,
+--   snapshot   BLOB NOT NULL,
+--   label      TEXT,
+--   PRIMARY KEY (page_id, version_at)
+-- );
 ```
 
 ### 3.1 `notebook_meta` required keys
@@ -146,7 +156,7 @@ CREATE TABLE page_versions (
 |---|---|---|
 | **Source of truth** | `page_mirror`, `nodes`, `blobs`, `blob_refs` | data loss possible — protected by WAL + backups |
 | **Projection** (rebuildable from truth) | `refs`, `fts_pages` (if present) | rebuild, no loss |
-| **Optional** | `page_versions` | feature degrades |
+| **Optional** | `page_versions` *(withdrawn v0.17 — see §3; no longer created)*, `block_authors`, `recent_deletions` *(both derived from the op log, rebuildable, never synced)* | feature degrades |
 
 This delivers OPEN-11 (partial recoverability) more directly than v0.1 did: a reader that understands *only* SQLite + JSON has everything, because there is no second, opaque representation to be the "real" one. Damage is also naturally page-scoped — one unparseable `page_mirror.json` costs that page, not the notebook.
 
@@ -197,6 +207,10 @@ If a future major version changes CRDT engine or encoding, migration MUST be one
   "settings": {}
 }
 ```
+`file` is a path **relative to the workspace directory** when the notebook lives inside it, and absolute otherwise. For a notebook in the classic layout that relative path is exactly the basename, which is what every registry written before v0.17 holds.
+
+`format.major` is **2** once the workspace holds a notebook whose container has been demoted to a working copy (§11), and **1** otherwise. A reader that meets a higher `format.major` than it understands MUST load the entries and MUST NOT write the file back: `file` paths it cannot represent would be rewritten as something else, and any entry whose file it cannot find would be dropped — which is how a build that predates the demotion would silently prune every migrated notebook from a user's list.
+
 Notebooks are discoverable without the registry (directory scan); the registry adds ordering, colors, and id→file resolution for cross-notebook refs.
 
 Two further files may appear in the workspace root, both **runtime state, not data**. A third-party reader MUST ignore them, and deleting them while Openote is closed loses nothing:
@@ -246,13 +260,25 @@ This container is an excellent **single-device** format and a poor **sync unit**
 [ADR-0006](../adr/ADR-0006-sync-transport-and-text-model.md) therefore moves the durable unit **out of SQLite and into files**:
 
 ```
-MyNotebook.onotebook/
+MyNotebook.onotebook/            ← what a sync client replicates
   manifest.json     ← notebook id, format version, device registry
   ops/<device>.oplog  ← append-only. ONE writer, ever.
   blobs/<sha256>    ← content-addressed, immutable
+
+<workspace>/.cache/<notebook-id>/
   cache.onote       ← THIS container, demoted: local-only, never synced,
                       rebuildable from the logs at any time
 ```
+
+> **Corrected 2026-08-16 (v0.17 Step 8, landed).** This diagram used to draw
+> `cache.onote` **inside** `MyNotebook.onotebook/`, matching ADR-0006 §3 as first
+> written. That is wrong and the ADR is amended: the `.onotebook` is the
+> directory Drive, OneDrive, Dropbox and Syncthing replicate file by file, so a
+> live WAL SQLite database inside it re-creates the torn-database hazard the
+> whole design exists to avoid — measured on the owner's own Drive at
+> 31,954,368 bytes of `.onote` + `-wal` + `-shm` being replicated. The working
+> copy lives under the local workspace, keyed by notebook id, and is stamped
+> `user_version = 2` so that any build meeting one knows it is not a notebook.
 
 The load-bearing property is **one writer per file**, which makes the conflicting-versions case structurally impossible rather than resolved-after-the-fact. Merging becomes reading: concatenate the logs, order the operations, apply.
 
@@ -274,8 +300,8 @@ What "frozen" binds:
 | Surface | Frozen | Notes |
 |---|---|---|
 | `page_mirror.json` shape (`schema`, `pageId`, `page`, `blocks`) | ✅ | The block envelope's known fields; unknown fields MUST round-trip (Data Model Spec §2). |
-| `nodes`, `blobs`, `blob_refs`, `refs`, `page_versions` columns | ✅ | Columns may be ADDED; existing ones keep their meaning. |
-| `application_id` / `user_version` | ✅ | `0x4F4E4F54` / `1`. |
+| `nodes`, `blobs`, `blob_refs`, `refs` columns | ✅ | Columns may be ADDED; existing ones keep their meaning. `page_versions` was on this list until v0.17 withdrew the table (§3). |
+| `application_id` / `user_version` | ✅ | `0x4F4E4F54` / **`1` for a notebook file**. **`2` means Openote's own local working copy**, not a notebook: its `blobs` table may be empty and its only guarantee is that it can be rebuilt from the log beside it. A reader that does not understand `2` MUST refuse the file rather than open it — which every release before v0.17 already does, since its gate is `user_version > 1`. |
 | `notebook_meta` required keys | ✅ | Readers MUST ignore unknown keys. |
 | Op-log envelope (`v`, `dev`, `seq`, `lc`, `ts`, `enc`, `op`, `d`) and the total order | ✅ | New **op kinds** are additive and do not bump `v`; a reader that meets an unknown kind MUST preserve it verbatim and MAY skip applying it. |
 | `.onotebook` directory layout (`manifest.json`, `ops/`, `blobs/`) | ✅ | |
@@ -283,6 +309,7 @@ What "frozen" binds:
 
 ### Changelog
 
+- **v0.17 (container `user_version` 2 for working copies; `workspace.json` format 2)** — the container is demoted to a local, rebuildable working copy at `<workspace>/.cache/<notebook-id>/cache.onote` (§11). A notebook file is still v1 and still opens everywhere; **v2 is only ever a working copy**, and the migration that produces one is opt-in per notebook and reversible from inside the app, except that `page_versions` is dropped and cannot be restored (§3). `workspace.json` is stamped `format.major = 2` only once a workspace actually contains a demoted notebook, so an older build keeps full use of a registry it can still write safely; when it meets a 2 it loads the list read-only rather than rewriting it. The registry's `file` field is now a path **relative to the workspace**, which for every notebook in the classic layout is byte-identical to the basename it has always been.
 - **v0.2.0 (format v1, spec v0.2)** — first frozen release. Corrected from spec v0.1: the CRDT layer (`page_docs`, `page_updates`) is not part of the format and never was implemented; `page_mirror` is authoritative; `dirty_mirror` retired; `fts_pages` optional. Added: the `.onotebook` operation log (§11) with the `ink.strokes`, `node.*`, `block.*`, `page.props`, `blob.put` and `notebook.meta` op kinds.
 
 ---

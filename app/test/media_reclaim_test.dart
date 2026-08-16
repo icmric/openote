@@ -161,7 +161,7 @@ void main() {
 
       await video('live', 0x11);
       await video('trashed', 0x22);
-      await video('version', 0x33);
+      await video('deletionList', 0x33);
       await video('thisDevice', 0x44);
       await video('otherDevice', 0x55);
       await video('template', 0x66);
@@ -178,12 +178,22 @@ void main() {
       final trashed = newPage('Trashed', [videoBlock(stored['trashed']!)]);
       repo.softDeleteNode(nb, trashed);
 
-      // 3. A version snapshot ONLY: the page held the video, was snapshotted,
-      //    and then the block was taken out. Restoring the version brings it
-      //    back, so the file is still owed.
-      final versioned = newPage('Versioned', [videoBlock(stored['version']!)]);
-      repo.maybeSnapshotVersion(nb, versioned, minGap: Duration.zero);
-      repo.writePage(nb, versioned, [], PageProps());
+      // 3. The ten-deep notable-deletions list ONLY: the page held the video and
+      //    the block was taken out, so the list offers "put it back" and the
+      //    bytes are still owed.
+      //
+      //    **This source replaced a much bigger one** (v0.17 plan, decision 1).
+      //    It used to be a `page_versions` snapshot — the page held the video,
+      //    was snapshotted, and the block was removed — and the plan's own list
+      //    of prune sites did not mention this test at all. A snapshot was
+      //    evicted only by thirty NEWER snapshots of the same page, so a video
+      //    on a page the student stopped editing was pinned for ever, and on a
+      //    single-device notebook it was the only pin, because the sweep skips
+      //    this device's own log. Ten entries is a bound; thirty-per-page was
+      //    not. The pin is fed in here through `liveText` exactly as
+      //    `AppState._volatileMediaText` yields it, and that AppState really
+      //    does yield it is pinned by "THE story" below.
+      newPage('Deleted from here', const []);
 
       // 4/5. The op log — this device's, and ANOTHER DEVICE'S. The second is
       //    7851c3d exactly: in a folder-shared notebook the other machine's
@@ -206,6 +216,9 @@ void main() {
       repo.setSetting('templates', {'Lecture page': template});
       final live = [
         template,
+        // Source 3: the deletion list's `pins`, which AppState yields as one
+        // newline-joined string of stored media names.
+        stored['deletionList']!,
         jsonEncode({
           'blocks': [videoBlock(stored['undo']!).toJson()]
         }),
@@ -231,7 +244,8 @@ void main() {
 
       expectSurvived('live', because: 'it is on a live page');
       expectSurvived('trashed', because: 'its page is in the recycle bin');
-      expectSurvived('version', because: 'a version snapshot still names it');
+      expectSurvived('deletionList',
+          because: 'the last ten deletions can still put it back');
       expectSurvived('thisDevice', because: "this device's op log names it");
       expectSurvived('otherDevice',
           because: "ANOTHER DEVICE'S op log names it (7851c3d)");

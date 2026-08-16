@@ -57,7 +57,6 @@ class _PageHistoryDialogState extends State<_PageHistoryDialog> {
     final me = app.localDeviceId();
     final authors = app.pageAuthors();
     final deletions = app.recentDeletions();
-    final snapshots = app.pageVersions();
 
     String who(String device) => deviceDisplayName(labels[device],
         isThisComputer: device == me);
@@ -95,26 +94,11 @@ class _PageHistoryDialogState extends State<_PageHistoryDialog> {
                 _quiet('Nothing yet.')
               else
                 for (final d in deletions) _deletionLine(d, who(d.device)),
-              if (snapshots.isNotEmpty) ...[
-                const SizedBox(height: 14),
-                _heading('Earlier copies of this page'),
-                for (final at in snapshots.take(30))
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    visualDensity: VisualDensity.compact,
-                    leading: const Icon(Icons.history, size: 16),
-                    title:
-                        Text(whenWords(at), style: const TextStyle(fontSize: 13)),
-                    trailing: TextButton(
-                      child: const Text('Put this back'),
-                      onPressed: () async {
-                        await app.restoreVersion(at);
-                        if (context.mounted) Navigator.pop(context);
-                      },
-                    ),
-                  ),
-              ],
+              // There was an "Earlier copies of this page" list here, over the
+              // thirty automatic snapshots `page_versions` kept. Decision 1
+              // removed the table; undo, the recycle bin and mirror backups are
+              // what answer "get me this morning's version" now, and the plan
+              // states that reduction plainly rather than dressing it up.
               const SizedBox(height: 6),
               _advanced(authors, deletions, labels, me),
             ],

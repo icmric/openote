@@ -19,7 +19,8 @@ import 'package:path/path.dart' as p;
 import '../core/platform_open.dart';
 import '../state/app_state.dart';
 import '../store/media_gc.dart' show VideoSweep;
-import '../store/repository.dart' show BlobReclaim, SpaceReclaim;
+import '../store/repository.dart'
+    show BlobReclaim, ContainerDemotion, SpaceReclaim;
 import '../sync/cloud_folders.dart';
 import '../sync/github_api.dart';
 import '../sync/mirrors.dart';
@@ -936,9 +937,188 @@ class _StorageSectionState extends State<_StorageSection> {
           },
         ),
         _tidyPictures(),
+        _storageUpgrade(),
         if (_orphans != null) _orphanList(),
       ],
     );
+  }
+
+  bool _upgrading = false;
+  ContainerDemotion? _upgraded;
+
+  /// The one door to v0.17 Step 8's rename, in both directions.
+  ///
+  /// **Opt-in, and it stays opt-in.** Nothing runs this on open. Decision 4 of
+  /// the plan ships macOS with no human pass, so a one-way v1 → v2 migration
+  /// will run for the first time on a platform nobody has driven by hand; the
+  /// answer is that the student picks the moment, the app runs indefinitely
+  /// without it, and if a problem is ever reported the advice can be "don't
+  /// press it yet" rather than "we already did".
+  ///
+  /// The button that comes back is the inverse, in the same place, because a
+  /// rollback nobody can find is not a rollback.
+  Widget _storageUpgrade() {
+    final done = app.notebookIsDemoted(widget.notebookId);
+    final r = _upgraded;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextButton.icon(
+            onPressed: _upgrading
+                ? null
+                : (done ? _confirmUndoUpgrade : _confirmUpgrade),
+            icon: _upgrading
+                ? const SizedBox(
+                    width: 13,
+                    height: 13,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : Icon(done ? Icons.undo : Icons.upgrade, size: 16),
+            label: Text(
+                _upgrading
+                    ? 'Working…'
+                    : done
+                        ? 'Go back to the old way of storing this notebook…'
+                        : 'Update how this notebook is stored…',
+                style: const TextStyle(fontSize: 12)),
+          ),
+          if (r != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 12, right: 4),
+              child: Text(
+                  r.done
+                      ? (done
+                          ? 'Done. This notebook now keeps its working file '
+                              'tucked away on this computer, and your notes are '
+                              'in the folder beside them as before.'
+                          : 'Done. This notebook is stored the old way again.')
+                      : r.refusal!,
+                  style: TextStyle(
+                      fontSize: 11,
+                      height: 1.35,
+                      color: r.done
+                          ? context.surfaces.textSecondary
+                          : OnoteColors.danger)),
+            ),
+          if (r?.details != null)
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              shape: const Border(),
+              title: const Text('Details (advanced)',
+                  style: TextStyle(fontSize: 12.5)),
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SelectableText(r!.details!,
+                      style: const TextStyle(
+                          fontFamily: 'JetBrains Mono', fontSize: 11)),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// The one dialog the plan asks for: honest about what changes, what is kept,
+  /// and that it cannot be undone from inside the app.
+  ///
+  /// Every sentence is a fact about this notebook rather than about the storage
+  /// design. No "container", no "SQLite", no "user_version", no file extension —
+  /// all of that is in the Advanced fold, which is where the jargon rule
+  /// (PLANNING, year-10 bar) puts it.
+  Future<void> _confirmUpgrade() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Update how this notebook is stored?'),
+        content: const SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Openote keeps two things for every notebook: your notes, in '
+                "the notebook's own folder, and a working file it uses to open "
+                'them quickly.\n\n'
+                'This tucks the working file away where it belongs — out of '
+                'sight, on this computer only — and makes it something Openote '
+                'can always build again from your notes. It checks first that '
+                'your notes really do describe everything in this notebook, and '
+                'stops without changing anything if they do not.\n\n'
+                'What stays the same: every page, every picture, drawing, file '
+                'and recording, your recycle bin, and sharing with your other '
+                'computers.\n\n'
+                'What you lose: the automatic copies of each page that Openote '
+                'used to take every ten minutes. Undo, the recycle bin and your '
+                'backups are unaffected.\n\n'
+                'You can put this back from this same panel afterwards, except '
+                'for those automatic copies — those are gone for good.',
+                style: TextStyle(fontSize: 13, height: 1.45),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Not now')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Update it')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      _upgrading = true;
+      _upgraded = null;
+    });
+    final out = await app.demoteContainerToCache(widget.notebookId);
+    if (!mounted) return;
+    setState(() {
+      _upgrading = false;
+      _upgraded = out;
+      _storage = app.storageFor(widget.notebookId);
+    });
+  }
+
+  Future<void> _confirmUndoUpgrade() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Go back to the old way?'),
+        content: const Text(
+          "This puts the notebook's working file back where an older Openote "
+          'looks for it, and puts its own copy of every picture and drawing '
+          'back inside it.\n\n'
+          'Your notes are not changed. The automatic copies of each page that '
+          'the update removed cannot come back — they were deleted then, not '
+          'now.',
+          style: TextStyle(fontSize: 13, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Put it back')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      _upgrading = true;
+      _upgraded = null;
+    });
+    final out = await app.undemoteContainerFromCache(widget.notebookId);
+    if (!mounted) return;
+    setState(() {
+      _upgrading = false;
+      _upgraded = out;
+      _storage = app.storageFor(widget.notebookId);
+    });
   }
 
   bool _reclaiming = false;

@@ -353,6 +353,17 @@ void main() {
       expect(app.pendingOpenNotice?.outcome, OpenNotebookOutcome.notANotebook);
     });
 
+    // **Both directions of the cross-version story, in one test**, because
+    // Step 8's stamp made them different numbers rather than one.
+    //
+    // A student will not upgrade both machines the same day. The October laptop
+    // migrates a notebook and stamps its working copy 2; the Christmas desktop
+    // is still running a build whose only accepted value is 1. That build's gate
+    // is `user_version > onoteFormatMajor`, shipped and unchanged since the
+    // format existed, so it says *"newer than this app supports"* and stops —
+    // failing safe rather than adopting a cache whose `blobs` table Step 7 has
+    // already emptied. This build has to accept the same file, because it wrote
+    // it.
     test('by the OLD check already shipped in openOnote, on user_version',
         () async {
       if (!haveSqlite) {
@@ -364,13 +375,32 @@ void main() {
       final alpha = await repo.createNotebook('Alpha');
       repo.dispose();
 
-      // Stamp it the way Step 8 will. This is the gate that makes a build
-      // predating all of this refuse the same file, which is the half of
-      // mitigation 2 that protects users who have not upgraded.
+      // Stamped the way `Repository.demoteContainerToCache` stamps it.
       final db = sqliteOpenForTest(alpha.file);
-      db.execute('PRAGMA user_version = 2;');
+      db.execute('PRAGMA user_version = $onoteWorkingCopyVersion;');
+      db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
       db.dispose();
 
+      // The OLD build's rule, written out as the expression it evaluates. Its
+      // constants are not in this source any more, so this is the one honest way
+      // to assert what a build nobody can run here would do.
+      expect(onoteWorkingCopyVersion > onoteFormatMajor, isTrue,
+          reason: 'a build that accepts only v1 refuses a working copy');
+
+      // THIS build accepts it — it has to, the cache is its own — and refuses
+      // anything beyond it, which is the same gate one number along.
+      final ok = openOnote(alpha.file, notebookId: 'x', title: 'x');
+      expect(ok.select('PRAGMA user_version;').first.columnAt(0),
+          onoteWorkingCopyVersion);
+      ok.dispose();
+
+      final ahead = sqliteOpenForTest(alpha.file);
+      ahead.execute('PRAGMA user_version = ${onoteWorkingCopyVersion + 1};');
+      ahead.execute('PRAGMA wal_checkpoint(TRUNCATE);');
+      ahead.dispose();
+      // MUTATION: widen the gate to `>= 0` and this passes — after which a
+      // container written by a future Openote is edited as though it were
+      // understood, which is the fault commit fcf2500 fixed for the log.
       expect(
           () => openOnote(alpha.file, notebookId: 'x', title: 'x'),
           throwsA(isA<StateError>().having((e) => '$e', 'message',

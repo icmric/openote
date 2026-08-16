@@ -28,7 +28,8 @@ import 'package:path/path.dart' as p;
 // WRITES them, and `isOpenoteWorkingCopy` below is only correct while the two
 // agree. Importing this does not load sqlite3 — only `sqlite3.open` does — so
 // a test that never touches a database still runs.
-import '../store/database.dart' show onoteApplicationId, onoteFormatMajor;
+import '../store/database.dart'
+    show onoteApplicationId, onoteFormatMajor, onoteWorkingCopyVersion;
 
 /// The extension on the notebook itself, which is a directory.
 const notebookFolderExtension = '.onotebook';
@@ -56,9 +57,19 @@ const notebookPointerExtension = '.onotelink';
 /// the file SITS IN is the notebook; the name is a label for a human.
 const notebookPointerFileName = 'Open this notebook$notebookPointerExtension';
 
-/// The container's name once it is a working copy inside the notebook folder
-/// (v0.17 Step 8). Matched case-insensitively: Windows and macOS both hand
-/// back whatever case the user typed.
+/// The container's name once it is a working copy (v0.17 Step 8). Matched
+/// case-insensitively: Windows and macOS both hand back whatever case the user
+/// typed.
+///
+/// **It is NOT inside the `.onotebook`, and that correction matters.** ADR-0006
+/// §3 draws `cache.onote` inside the notebook folder, and an earlier draft of
+/// this comment repeated it. For a shared notebook that folder *is* the Drive
+/// folder, so the drawing puts a live WAL SQLite database back into the
+/// replicated tree — the exact 31,954,368 bytes commit 435b2bd took out of the
+/// owner's own Drive, and the hazard the plan's §1.2 forbids. The working copy
+/// lives in a per-notebook cache directory under the workspace instead; see
+/// `Repository.cacheDirFor`. The ADR is what is wrong and is amended alongside
+/// this.
 const workingCopyFileName = 'cache.onote';
 
 /// The `.onotebook` directory [path] names, or null when it names none.
@@ -87,13 +98,18 @@ String? notebookFolderNamedBy(String path) {
 ///   name survives a copy onto a USB stick, an email attachment and a rename
 ///   of the folder around it.
 /// * **By `user_version`.** A student who renames the file defeats the first
-///   test, and the second still holds: the container is stamped v2 by Step 8
-///   and a notebook file never is, because after Step 8 there is no such thing
-///   as a v2 notebook file — v2 exists only on caches.
+///   test, and the second still holds: the container is stamped
+///   [onoteWorkingCopyVersion] by Step 8's migration and a notebook file never
+///   is. Every other producer of a container stamps [onoteFormatMajor]:
+///   `_seedNotebook` on a fresh file, and `duplicateNotebook`, which stamps a
+///   copy back down to 1 precisely so that duplicating a migrated notebook
+///   cannot mint a v2 file that is not a cache.
 ///
 /// This is the *new* half of the plan's mitigation 2. The old half is already
-/// shipped and is `openOnote`'s `user_version > onoteFormatMajor` gate, which
-/// is what makes a build that predates all of this refuse the same file.
+/// shipped and is `openOnote`'s `user_version` gate, which is what makes a
+/// build that predates all of this refuse the same file — a pre-v0.17 build
+/// accepts 1 and nothing else, so it says *"newer than this app supports"* and
+/// stops, which is failing safe rather than failing quietly.
 ///
 /// What it prevents, concretely: after Step 7 the container's `blobs` table is
 /// empty, so cloning one produces a notebook whose every picture is missing —
@@ -111,7 +127,7 @@ bool isOpenoteWorkingCopy(String path) {
   // Offset 60 is `user_version`, four bytes big-endian like every multi-byte
   // field in a SQLite header — the same header `notebookFileProblem` reads
   // application_id out of at 68.
-  return _be32(head, 60) > onoteFormatMajor;
+  return _be32(head, 60) >= onoteWorkingCopyVersion;
 }
 
 /// The pointer file's contents.

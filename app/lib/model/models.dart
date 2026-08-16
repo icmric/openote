@@ -101,6 +101,14 @@ class NotebookRef {
   /// So a device that joins an existing notebook keeps its OWN container in
   /// the workspace and points this at the shared folder. Null means the
   /// default: `<file without extension>.onotebook`.
+  ///
+  /// **After v0.17 Step 8's migration this is not optional.** A demoted
+  /// notebook's container is `<workspace>/.cache/<id>/cache.onote`, and the
+  /// default below would derive `<workspace>/.cache/<id>/cache.onotebook` from
+  /// it — a log directory inside the very folder that exists to be disposable,
+  /// which is the notes themselves written somewhere a rebuild deletes. So
+  /// `Repository.demoteContainerToCache` records the notes folder explicitly
+  /// before it moves anything, and refuses outright if it cannot find one.
   String? logDir;
 
   /// Where the op logs actually are — [logDir] when set, otherwise the
@@ -110,6 +118,11 @@ class NotebookRef {
   /// sites that missed it went subtly wrong rather than failing (the sync chip
   /// read "not synced" for a device that had just joined, and moving a joined
   /// notebook looked for a log directory that was never there).
+  ///
+  /// The sibling default is for a notebook in the classic layout — a
+  /// `Physics.onote` with a `Physics.onotebook` beside it — and stays for as
+  /// long as un-migrated notebooks exist, which is for ever, because the
+  /// migration is opt-in.
   String get logDirPath {
     final o = logDir;
     return (o != null && o.isNotEmpty)

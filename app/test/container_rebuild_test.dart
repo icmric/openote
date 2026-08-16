@@ -171,12 +171,10 @@ void main() {
               'SELECT page_id,hash FROM blob_refs ORDER BY page_id,hash'))
             '${r['page_id']}/${r['hash']}'
         ],
-        'versions': [
-          for (final r in db.select('SELECT page_id,version_at,snapshot,label '
-              'FROM page_versions ORDER BY page_id,version_at'))
-            '${r['page_id']}/${r['version_at']}/'
-                '${utf8.decode(r['snapshot'] as Uint8List)}/${r['label']}'
-        ],
+        // There was a `versions` key here, over `page_versions`, asserting the
+        // rebuild carried the table across. v0.17 decision 1 dropped the table
+        // and the carry went with it; `Repository.demoteContainerToCache` is now
+        // the one place its rows are destroyed, and it says so before it runs.
         'title': db
             .select("SELECT value FROM notebook_meta WHERE key='title'")
             .firstOrNull?['value'],
@@ -339,8 +337,7 @@ void main() {
       // **The whole claim, in four lines.** MUTATION: delete the `writePage`
       // loop from `rebuildContainerFromLog` and `pages` comes back empty;
       // delete the `deleted_at` column from the node INSERT and `nodes`
-      // differs on the trashed page; drop the `page_versions` carry and
-      // `versions` differs.
+      // differs on the trashed page.
       expect(after['nodes'], before['nodes'],
           reason: 'a node came back different — titles, order (position), '
               'level, colour and the created/updated/deleted dates are all in '
@@ -352,10 +349,6 @@ void main() {
       expect(after['blobRefs'], before['blobRefs'],
           reason: "ADR-0007's garbage-collection root set must survive, or the "
               'first collector run frees every picture in the notebook');
-      expect(after['versions'], before['versions'],
-          reason: 'the log has no op kind for page history, so a rebuild that '
-              'did not carry it would silently destroy up to thirty '
-              'restorable snapshots per page');
       // **The one field the rebuild deliberately does NOT reproduce, and it is
       // a correction rather than a loss.** `notebook_meta.title` is written
       // once, by `_seedNotebook`, and `Repository.renameNotebook` only touches
@@ -661,7 +654,7 @@ void main() {
       // Page content is untouched; only the one new block was added.
       final now = snapshot(file);
       expect((now['nodes'] as List), before['nodes']);
-      expect((now['versions'] as List), before['versions']);
+      expect((now['blobRefs'] as List), before['blobRefs']);
     });
   });
 

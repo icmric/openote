@@ -4,6 +4,33 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — Openote can tuck a notebook's working file out of the way
+
+- **Openote keeps a working file for each notebook, and it can now tuck that
+  file away and build it again from your notes whenever it needs to.** Your
+  notes have never lived in that file — they live in the notebook's own folder,
+  and the working file is only the copy Openote reads from while you have the
+  notebook open. That is what makes it safe to move.
+- **It is offered one notebook at a time, and nothing happens to a notebook you
+  do not choose.** You will find it in the panel that already tells you where
+  each notebook keeps its things. If you change your mind, **Put it back** puts
+  the working file exactly where it was.
+- **Notebooks you make from now on are unchanged.** They are still made the way
+  they always have been; this is something you turn on for a notebook yourself,
+  when you want it.
+
+### Removed — the copy Openote took of every page every ten minutes
+
+- **Openote used to quietly keep a copy of each page every ten minutes or so,
+  and those copies are now gone.** They are cleared out of notebooks you
+  already have, and they cannot be brought back — so if there is an old page
+  you still want, get it out before you update.
+- **Undo, the recycle bin and your backups all carry on exactly as before.**
+  Undo still works the way it always has while you are writing, deleted pages
+  still go to the recycle bin and still come back from it, and nothing your
+  backups hold is touched. **Who changed this page** and the last ten deletions
+  you can put back are both still there too.
+
 ### Added — a notebook can be built again from its own history
 
 - **If a notebook's working file is ever damaged or lost, Openote can build it

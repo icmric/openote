@@ -95,9 +95,32 @@ at once:
       <sha256>                 ← content-addressed, immutable
 
 <this device's workspace>/     ← never synced, never shared
-  MyNotebook.onote             ← local-only SQLite cache (+ -wal, -shm)
+  MyNotebook.onote             ← an un-migrated notebook, still the classic shape
+  .cache/
+    <notebook-id>/
+      cache.onote              ← local-only SQLite working copy (+ -wal, -shm)
 ```
 
+> **Amended 2026-08-16 (v0.17 plan, Step 8 — the rename).** The working copy is
+> now `<workspace>/.cache/<notebook-id>/cache.onote`, stamped `user_version = 2`,
+> and `workspace.json` is the only thing that knows the way to it. Three
+> properties, each paid for by a specific failure:
+>
+> * **Under the workspace**, which is where every container has always lived, so
+>   nothing that was local becomes synced. It is emphatically **not** inside the
+>   `.onotebook`: for a shared notebook that directory *is* the Drive folder, and
+>   the paragraph below is the whole reason.
+> * **Keyed by the notebook id, not its title**, because the title is renameable
+>   and two notebooks can share one. The per-notebook directory also pens in the
+>   `-wal`, the `-shm` and the `.rebuild`/`.previous` files a rebuild makes.
+> * **One level down**, so `AppState.findOrphanFiles`' deliberately
+>   top-level-only workspace scan cannot see — and therefore cannot offer to
+>   delete — a container mid-migration.
+>
+> **The migration is opt-in**, one notebook at a time, from the sync dialog, and
+> its inverse (`Repository.undemoteContainerFromCache`) is one click away in the
+> same place. A notebook that is never migrated keeps the classic shape for ever.
+>
 > **Amended 2026-08-15 (v0.17 plan, Step 4).** As first drawn, this diagram put
 > `cache.onote` **inside** `MyNotebook.onotebook/`, and listed a `snapshots/`
 > directory beside it. Both are withdrawn.

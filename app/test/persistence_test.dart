@@ -481,8 +481,17 @@ void main() {
         expect(ws.readAsStringSync(), isNot(before));
         final back = jsonDecode(ws.readAsStringSync()) as Map<String, dynamic>;
         expect((back['notebooks'] as List), hasLength(2));
-        expect((back['format'] as Map)['major'], workspaceFormat,
-            reason: 'and it is stamped, so the NEXT build has the guard');
+        // **1, not [workspaceFormat], and that is the v0.17 Step 8 rule.**
+        // The guard is switched on by the thing it guards: `workspaceFormat` is
+        // 2 because a demoted notebook's `.cache/<id>/cache.onote` path is a
+        // shape an older build mis-writes as a bare basename and then prunes,
+        // and a workspace with nothing demoted in it has no such path. Stamping
+        // 2 here anyway would put every user who installs this build and
+        // migrates nothing into a read-only registry on their other machine for
+        // no reason at all — which is the same harm this guard exists to
+        // prevent, arriving from the other direction.
+        expect((back['format'] as Map)['major'], 1,
+            reason: 'nothing is demoted, so an older build may still write it');
       });
     }
   });

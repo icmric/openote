@@ -95,52 +95,26 @@ class NotebookWriter {
   /// page inside it in `_decodedPages`. Reproduced: purge a section, and
   /// `readPageShared` went on serving the child page's pre-purge blocks while
   /// `readPage` — the same page, straight from SQLite — correctly returned
-  /// nothing. The list is the same `_subtree` walk the `page_versions` delete
-  /// needs, computed once and shared rather than walked twice.
+  /// nothing.
   ///
-  /// The `page_versions` delete is that same eviction, for the copy of the page
-  /// that lives in SQLite. `page_mirror` and `blob_refs` both declare
-  /// `REFERENCES nodes(id) ON DELETE CASCADE` and so empty themselves here;
-  /// `page_versions` never declared one, and nothing else ever prunes it — the
-  /// retention cap in `Repository.maybeSnapshotVersion` only runs when a NEW
-  /// snapshot is written for that same page id, which for a purged page can
-  /// never happen again. So the snapshots stayed for good, and
-  /// `listVersions` went on returning all thirty of them for a page that no
-  /// longer existed.
-  ///
-  /// **Explicit, not a foreign key.** Adding `ON DELETE CASCADE` to
-  /// `page_versions` would only ever take effect on NEW notebooks —
-  /// `CREATE TABLE IF NOT EXISTS` does not alter a table that already exists —
-  /// so every notebook already on disk would keep leaking. Worse, the cascade
-  /// would make a fresh-notebook regression test go green on the schema and
-  /// stop guarding the Dart path those older notebooks are the only ones to
-  /// take.
+  /// **There is no `page_versions` delete here any more** (v0.17 plan, decision
+  /// 1). It used to be the SQLite half of the same eviction: `page_mirror` and
+  /// `blob_refs` declare `REFERENCES nodes(id) ON DELETE CASCADE` and empty
+  /// themselves here, `page_versions` never declared one, and nothing else ever
+  /// pruned it — so up to thirty full page snapshots per purged page stayed for
+  /// good. Measured on a notebook built to the shape of the owner's imported one
+  /// (204 KB of page JSON per page, its real average across 328 pages): purging
+  /// one SECTION of two pages left 90 snapshot rows and 18,036,435 bytes of
+  /// unreachable history. The table is gone and `block_authors` declares the
+  /// cascade it never had, so the bug is designed out rather than swept up.
   List<String> purgeNode(String nodeId) {
     // **The subtree, not just this node.** `nodes.parent_id` is itself
     // `REFERENCES nodes(id) ON DELETE CASCADE`, so deleting a section deletes
     // its pages' rows too — and those page ids are never passed to this
-    // method by anyone. Measured on a notebook built to the shape of the
-    // owner's imported one (204 KB of page JSON per page, its real average
-    // across 328 pages): purging one SECTION of two pages left 90 snapshot
-    // rows and 18,036,435 bytes of unreachable history, against 30 rows and
-    // 6,012,145 bytes for the single page. Deleting only `nodeId`'s snapshots
-    // would have fixed the smaller half of the bug and left the common one —
-    // the recycle bin purges sections, and the importer purges the seeded
-    // starter section on every single import.
-    //
-    // Prepared once and reused, because the subtree can be the whole notebook:
-    // purging a 328-page section — the size of the owner's imported one — is
-    // 328 executions, and re-parsing the statement for each of them measured
-    // 0.73 s against a full 9,840-snapshot table.
+    // method by anyone. The recycle bin purges sections, which is the common
+    // case rather than the rare one, and the importer purges the seeded starter
+    // section on every single import.
     final ids = _subtree(nodeId);
-    final stmt = db.prepare('DELETE FROM page_versions WHERE page_id=?');
-    try {
-      for (final id in ids) {
-        stmt.execute([id]);
-      }
-    } finally {
-      stmt.dispose();
-    }
     db.execute('DELETE FROM nodes WHERE id=?', [nodeId]);
     return ids;
   }

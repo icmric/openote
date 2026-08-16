@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../core/ids.dart';
+import '../core/open_target.dart' show workingCopyFileName;
 import '../ink/ink_codec.dart' show inkMimeType;
 import '../ink/ink_storage.dart';
 import '../model/history.dart';
@@ -39,7 +40,17 @@ import 'notebook_writer.dart';
 /// This is the only mechanical guard against that, and it has to be shipped
 /// and baked **before** any release moves a container (v0.17 plan, Step 8),
 /// which is why it lands first with nothing yet depending on it.
-const int workspaceFormat = 1;
+///
+/// **2 as of Step 8's migration, and what makes it necessary is one line of the
+/// OLD build.** `_saveWorkspace` writes `p.basename(n.file)` for a notebook
+/// inside the workspace; a demoted notebook's file is
+/// `.cache/<id>/cache.onote`, and a build that predates this one would write it
+/// back as the bare `cache.onote` and then look for it at the workspace root on
+/// the next start, find nothing, and prune the entry. Every migrated notebook,
+/// silently, on one launch of an old build. Reading this number is what stops
+/// it: the old build sees a format it does not understand, loads the registry
+/// read-only, and never rewrites it.
+const int workspaceFormat = 2;
 
 /// What a `VACUUM` did — **and whether it happened at all**.
 ///
@@ -139,7 +150,6 @@ class ContainerRebuild {
     this.nodes = 0,
     this.pages = 0,
     this.blobsChecked = 0,
-    this.versionsCarried = 0,
     this.droppedNodes = 0,
     this.refusal,
     this.details,
@@ -159,10 +169,6 @@ class ContainerRebuild {
   /// separates this from a directory listing.
   final int blobsChecked;
 
-  /// `page_versions` rows carried across. The log cannot supply them — there is
-  /// no op kind for page history — so they are copied, not rebuilt.
-  final int versionsCarried;
-
   /// Nodes the log still lists under a parent that was purged. The container
   /// cascades a purge to the whole subtree and [Materializer] does not, so
   /// these are rows the container had already removed.
@@ -174,8 +180,52 @@ class ContainerRebuild {
   @override
   String toString() => done
       ? 'rebuilt from $ops op(s): $nodes node(s), $pages page(s), '
-          '$blobsChecked blob file(s) checked, $versionsCarried version(s) '
-          'carried, $droppedNodes node(s) dropped'
+          '$blobsChecked blob file(s) checked, $droppedNodes node(s) dropped'
+      : 'refused: $refusal';
+}
+
+/// What changing how a notebook is stored did — or why it refused
+/// (v0.17 Step 8, both directions).
+///
+/// Same shape and the same reasoning as [BlobReclaim] and [ContainerRebuild]:
+/// refusal is a normal outcome rather than an error, [refusal] is the sentence a
+/// year 10 student reads, and only [details] may carry a path or an exception.
+class ContainerDemotion {
+  const ContainerDemotion({
+    this.done = false,
+    this.from,
+    this.to,
+    this.snapshotsDropped = 0,
+    this.blobsRestored = 0,
+    this.bytes = 0,
+    this.refusal,
+    this.details,
+  });
+
+  /// True only when the move is complete and recorded in the registry.
+  final bool done;
+
+  final String? from;
+  final String? to;
+
+  /// `page_versions` rows destroyed. The one part of this no inverse can undo,
+  /// counted so the app can say how much rather than merely that it happened.
+  final int snapshotsDropped;
+
+  /// Pictures put back into the container's own table by the inverse, so an
+  /// older Openote can render them.
+  final int blobsRestored;
+
+  /// The result file's size, for the sentence that reports it.
+  final int bytes;
+
+  final String? refusal;
+  final String? details;
+
+  @override
+  String toString() => done
+      ? 'moved to $to ($bytes B; $snapshotsDropped snapshot(s) dropped, '
+          '$blobsRestored picture(s) restored)'
       : 'refused: $refusal';
 }
 
@@ -344,26 +394,42 @@ class Repository {
     _settings = (j['settings'] as Map?)?.cast<String, dynamic>() ?? {};
     for (final n in (j['notebooks'] as List? ?? const [])) {
       final m = (n as Map).cast<String, dynamic>();
-      final file = p.join(workspaceDir.path, m['file'] as String);
+      // `p.join` with a RELATIVE path, which is what `_registryPath` writes: for
+      // a notebook sitting directly in the workspace that is still the bare
+      // basename every registry on disk holds today, and for a migrated one it
+      // is `.cache/<id>/cache.onote`. An absolute path wins outright, which is
+      // how a notebook moved into a cloud folder resolves.
+      final id = m['id'] as String;
+      final logDir = m['logDir'] as String?;
+      // BOTH settles run before the `existsSync` filter below, and that ordering
+      // is the whole point of them: the filter drops an entry whose file is
+      // missing and `_saveWorkspace` then rewrites the registry from what
+      // survived, so a kill inside either swap window would prune the notebook
+      // permanently.
+      final file = _settleDemotion(
+          id, p.join(workspaceDir.path, m['file'] as String), logDir);
       _settleInterruptedRebuild(file);
       if (File(file).existsSync()) {
         notebooks.add(NotebookRef(
-            id: m['id'] as String,
+            id: id,
             file: file,
             title: m['title'] as String? ?? 'Notebook',
-            logDir: m['logDir'] as String?));
+            logDir: logDir));
       }
     }
     for (final n in (j['trashed'] as List? ?? const [])) {
       final m = (n as Map).cast<String, dynamic>();
-      final file = p.join(workspaceDir.path, m['file'] as String);
+      final id = m['id'] as String;
+      final logDir = m['logDir'] as String?;
+      final file = _settleDemotion(
+          id, p.join(workspaceDir.path, m['file'] as String), logDir);
       _settleInterruptedRebuild(file);
       if (File(file).existsSync()) {
         trashedNotebooks.add(NotebookRef(
-            id: m['id'] as String,
+            id: id,
             file: file,
             title: m['title'] as String? ?? 'Notebook',
-            logDir: m['logDir'] as String?,
+            logDir: logDir,
             deletedAt: (m['deletedAt'] as num?)?.toInt() ?? nowMs()));
       }
     }
@@ -474,21 +540,13 @@ class Repository {
     // `AppState.saveError`.
     if (registryReadOnly != null) return;
     await _writeAtomic(const JsonEncoder.withIndent('  ').convert({
-      'format': {'major': workspaceFormat, 'minor': 0},
+      'format': {'major': _formatToWrite, 'minor': 0},
       'workspace_id': _workspaceId ??= newId(),
       'notebooks': [
         for (final n in notebooks)
           {
             'id': n.id,
-            // Basename for a notebook that lives in the workspace, so the
-            // whole folder stays movable — but the FULL path for one that
-            // doesn't. `_loadWorkspace` re-joins against the workspace dir, so
-            // a basename for a notebook that had been moved into a cloud
-            // folder resolved to a file that isn't there, and the notebook
-            // silently disappeared from the list on the next start.
-            'file': p.isWithin(workspaceDir.path, n.file)
-                ? p.basename(n.file)
-                : n.file,
+            'file': _registryPath(n.file),
             'title': n.title,
             // Always absolute: the shared folder is by definition outside the
             // workspace, so a basename would be meaningless.
@@ -505,9 +563,7 @@ class Repository {
             // was then written as a bare basename — dropped at the next load,
             // unrecoverable, and its file orphaned. The 30-day retention
             // promise quietly became "until you restart".
-            'file': p.isWithin(workspaceDir.path, n.file)
-                ? p.basename(n.file)
-                : n.file,
+            'file': _registryPath(n.file),
             'title': n.title,
             if (n.logDir != null) 'logDir': n.logDir,
             'deletedAt': n.deletedAt,
@@ -516,6 +572,39 @@ class Repository {
       'settings': _settings,
     }));
   }
+
+  /// How a notebook's container path is recorded in `workspace.json`.
+  ///
+  /// **Relative to the workspace, not the basename** (v0.17 Step 8). The
+  /// original rule was "basename for a notebook that lives in the workspace, so
+  /// the whole folder stays movable; the full path for one that doesn't" — and
+  /// the full path matters, because writing a basename for a notebook that had
+  /// been moved into a cloud folder resolved to a file that isn't there and the
+  /// notebook silently disappeared from the list on the next start.
+  ///
+  /// A demoted container is `<workspace>/.cache/<id>/cache.onote`, which *is*
+  /// inside the workspace and whose basename is `cache.onote` for every
+  /// notebook at once. `p.relative` keeps the movable-folder property and
+  /// round-trips the old shape unchanged: `_loadWorkspace` re-joins against the
+  /// workspace directory, and for a file sitting directly in it `p.relative`
+  /// returns exactly the basename this used to write, byte for byte.
+  String _registryPath(String file) => p.isWithin(workspaceDir.path, file)
+      ? p.relative(file, from: workspaceDir.path)
+      : file;
+
+  /// The `format.major` this registry is written with.
+  ///
+  /// **The guard is switched on by the thing it guards**, rather than by the
+  /// release. [workspaceFormat] is 2 because a demoted notebook's relative path
+  /// is a shape older builds mis-write, but a workspace with nothing demoted in
+  /// it has no such path, and stamping it 2 anyway would put every user who
+  /// installs this build and migrates nothing into a read-only registry on
+  /// their other machine for no reason at all. So the number goes up on the
+  /// same atomic write that first records a cache path, and comes back down on
+  /// the write that `undemoteContainerFromCache` performs — which is how
+  /// `undemote` restores a workspace an older build can use again.
+  int get _formatToWrite =>
+      [...notebooks, ...trashedNotebooks].any((n) => isDemoted(n)) ? 2 : 1;
 
   /// Atomic replace: write a temp file, flush it to disk, keep the previous
   /// version as `.bak`, then rename over the original. `rename` within a
@@ -678,10 +767,16 @@ class Repository {
     final dir = Directory(targetDir);
     if (!dir.existsSync()) dir.createSync(recursive: true);
 
-    // A notebook this device JOINED already keeps its container locally and
-    // shares only the logs, so "move it somewhere else" means moving the log
-    // directory — moving the container would drag a private cache into a
+    // A notebook whose log directory is named explicitly — one this device
+    // JOINED, or one v0.17 Step 8 has migrated — already keeps its container
+    // locally and shares only the logs, so "move it somewhere else" means moving
+    // the log directory. Moving the container would drag a private cache into a
     // shared folder and undo the very thing that keeps two devices apart.
+    //
+    // A migrated notebook always takes this branch, which is what stops the
+    // branch below naming the destination folder after `p.basename(ref.file)` —
+    // it would create `cache.onotebook` in the user's Drive, once per notebook,
+    // all colliding.
     if (ref.logDir != null) {
       final from = Directory(ref.logDirPath);
       if (!from.existsSync()) throw StateError('the shared folder is missing');
@@ -820,7 +915,7 @@ class Repository {
     // closed.** In WAL mode the `.onote` is not the notebook — the `-wal`
     // beside it is, until something folds it back in. Measured on the owner's
     // own notebooks: My Notebook's 4,128,272-byte `-wal` held 2 whole pages,
-    // newer revisions of 6 more, 1 of 5 blobs and 5 of 22 `page_versions`; the
+    // newer revisions of 6 more, and 1 of 5 blobs; the
     // Drive notebook's 247 KB `-wal` held newer revisions of 4 pages. Copying
     // the main file and deleting the sidecars without this throws all of that
     // away, and the result passes `PRAGMA integrity_check`. `_open` only holds
@@ -1603,10 +1698,10 @@ class Repository {
   /// makes that safe rather than lossy, and [refillContainerBlobs] is the way
   /// back for anyone who needs the old shape.
   ///
-  /// `page_versions` is the opposite case and is copied across rather than
-  /// rebuilt: the log has no op kind for page history, so a rebuild that did
-  /// not carry it would silently destroy up to thirty restorable snapshots per
-  /// page. A repair that loses history is not a repair.
+  /// **The derived tables are not carried across either, and nothing is.**
+  /// `block_authors` and `recent_deletions` (Step 8a) are folds of the very log
+  /// this replays, so `AppState.rebuildContainerFromLog` forgets how far the
+  /// fold had got and lets the next refresh re-derive them.
   Future<ContainerRebuild> rebuildContainerFromLog(String notebookId) async {
     ContainerRebuild refuse(String why, [String? details]) =>
         ContainerRebuild(refusal: why, details: details);
@@ -1826,35 +1921,15 @@ class Repository {
         await Future<void>.delayed(const Duration(milliseconds: 1));
       }
 
-      // **`page_versions` is copied, not rebuilt, because it cannot be.**
-      // `database.dart` states the position outright: version history is
-      // container-local and there is no `OpKind` for it. So a rebuild that
-      // simply did not carry it would silently destroy up to thirty restorable
-      // snapshots per page — a repair that loses history is not a repair. When
-      // Step 8 drops the table this block goes with it, and that is a decision
-      // taken in the open (plan decision 1), not a side effect of a rebuild.
-      var versions = 0;
-      final vins = fresh.prepare(
-          'INSERT OR REPLACE INTO page_versions(page_id,version_at,snapshot,'
-          'label) VALUES(?,?,?,?)');
-      try {
-        writer.runInTransaction(() {
-          for (final r in db.select('SELECT page_id,version_at,snapshot,label '
-              'FROM page_versions')) {
-            // Only for a page the rebuild actually has. The table declares no
-            // foreign key onto `nodes` — that is the whole of commit 1be2d28 —
-            // so carrying an orphan across would re-create the leak the sweep
-            // in `openOnote` exists to clear.
-            if (!placed.contains(r['page_id'] as String)) continue;
-            vins.execute([
-              r['page_id'], r['version_at'], r['snapshot'], r['label'],
-            ]);
-            versions++;
-          }
-        });
-      } finally {
-        vins.dispose();
-      }
+      // **Nothing is carried across any more.** This used to copy
+      // `page_versions` out of the old container and back into the new one, on
+      // the grounds that the log has no op kind for page history and a repair
+      // that loses history is not a repair. Plan decision 1 removed the other
+      // end of that argument: the table is gone, Step 8a's `block_authors` and
+      // `recent_deletions` replace it, and both are folds of the log that
+      // `AppState.rebuildContainerFromLog` deliberately re-derives afterwards
+      // rather than migrating. So a rebuilt container is the log, and only the
+      // log — which is the property the whole call is for.
 
       // ── Gate 4: every picture the result names really is on disk. ────
       //
@@ -1947,14 +2022,13 @@ class Repository {
       _deleteContainerFiles(asidePath);
 
       debugPrint('[openote/store] $notebookId: rebuilt from ${ops.length} op(s)'
-          ' — $builtNodes node(s), $builtPages page(s), $versions version(s)');
+          ' — $builtNodes node(s), $builtPages page(s)');
       return ContainerRebuild(
         done: true,
         ops: ops.length,
         nodes: builtNodes,
         pages: builtPages,
         blobsChecked: wanted.length,
-        versionsCarried: versions,
         droppedNodes: droppedNodes,
         details: unknownKinds == 0
             ? null
@@ -1973,6 +2047,495 @@ class Repository {
       return refuse(
           'Openote could not rebuild this notebook. Your notes have not been '
           'changed — everything is still where it was.',
+          '$e');
+    } finally {
+      _clearReclaimMarker();
+    }
+  }
+
+  // ── v0.17 Step 8: the rename, and the way back ───────────────────────
+
+  /// The folder holding every notebook's working copy.
+  ///
+  /// **Local, and never inside a synced tree.** ADR-0006 §3 drew `cache.onote`
+  /// inside `MyNotebook.onotebook/`, and §8 of that same ADR — six days later —
+  /// made that directory the git repo root and the thing Drive, OneDrive,
+  /// Dropbox and Syncthing replicate file by file. The drawing therefore puts a
+  /// live WAL SQLite database back into the replicated set: the exact
+  /// 31,954,368 bytes commit 435b2bd removed from the owner's own Drive, and the
+  /// torn-database hazard ADR-0006 §2 calls a live risk. The ADR is what is
+  /// wrong. The working copy goes here instead.
+  ///
+  /// Three properties, each one paid for by a specific failure:
+  ///
+  ///  * **Under the workspace**, which is where every container has always
+  ///    lived. Nothing that was local becomes synced and nothing that was synced
+  ///    becomes local; the only tree a student is ever told to put in Drive is
+  ///    the `.onotebook`, and it does not come here.
+  ///  * **Keyed by the notebook id, not its title.** The title is renameable and
+  ///    two notebooks can share one; the id is the identity, which is exactly
+  ///    what [NotebookRef.file]'s own comment says. A per-notebook directory
+  ///    also pens in the `-wal`, the `-shm` and the `.rebuild`/`.previous` files
+  ///    the rebuild swap makes, so none of them can ever collide with another
+  ///    notebook's.
+  ///  * **One level down**, so [findOrphanFiles]'s deliberately top-level-only
+  ///    workspace scan cannot see a container mid-migration. That scan marks an
+  ///    unclaimed workspace `.onote` `safeToDelete`, and a `-wal` whose `.onote`
+  ///    is absent an orphan — offering a student their own half-migrated
+  ///    notebook to delete is the one way that feature could destroy notes.
+  ///
+  /// The leading dot keeps it out of the way in the user's own Documents folder.
+  /// It is never a path anybody has to type: `workspace.json` is the only thing
+  /// that knows the way in, which is also why [workspaceFormat] guards it.
+  Directory cacheDirFor(String notebookId) =>
+      Directory(p.join(workspaceDir.path, '.cache', notebookId));
+
+  /// Where [notebookId]'s working copy lives once it has been migrated.
+  String cachePathFor(String notebookId) =>
+      p.join(cacheDirFor(notebookId).path, workingCopyFileName);
+
+  /// Whether this notebook's container has been migrated to a working copy.
+  ///
+  /// By path rather than by reading the file: this is asked on every registry
+  /// write, and a `user_version` probe is a file open per notebook per save.
+  bool isDemoted(NotebookRef ref) => p.equals(ref.file, cachePathFor(ref.id));
+
+  /// Decide what a half-finished migration left behind, by looking at the files.
+  ///
+  /// **Driven by the disk, never by a marker**, for the reason
+  /// [_settleInterruptedRebuild] is: the spike that destroyed a 329-page
+  /// notebook did it by obeying a marker on a disk state the marker did not
+  /// describe. There are three states and each is decided by looking:
+  ///
+  ///  * The registry already names the cache — the migration committed. Nothing
+  ///    to settle.
+  ///  * The registry names a container that is **there**, and a cache directory
+  ///    exists anyway — an attempt that never committed. It cannot be the only
+  ///    copy of anything, because both directions write `workspace.json` BEFORE
+  ///    they delete the container they came from, so drop it.
+  ///  * The registry names a container that is **gone**, and a working copy is
+  ///    sitting in the cache — the one state where deleting would be the wrong
+  ///    move. Adopt the cache instead. This is the difference between "the app
+  ///    tidied up" and "the notebook is not in the list any more", and the
+  ///    `existsSync` filter in [_loadWorkspace] makes the second one permanent.
+  ///
+  /// Returns the path the entry should use.
+  String _settleDemotion(String notebookId, String file, String? logDir) {
+    try {
+      final cache = cachePathFor(notebookId);
+      if (p.equals(file, cache)) return file;
+      final dir = cacheDirFor(notebookId);
+      if (!dir.existsSync()) return file;
+      if (File(file).existsSync()) {
+        debugPrint('[openote/store] dropping a cache directory left by an '
+            'unfinished migration of $notebookId');
+        dir.deleteSync(recursive: true);
+        return file;
+      }
+      // The notes folder has to be named explicitly for a working copy to be
+      // usable at all — [NotebookRef.logDir] — and the migration records it on
+      // the same write that records the cache path. Without one there is nothing
+      // to adopt: the ops would be looked for inside the cache directory itself.
+      if (logDir != null && File(cache).existsSync()) {
+        debugPrint('[openote/store] $notebookId: the notebook file is gone and '
+            'a working copy is here; using the working copy');
+        return cache;
+      }
+      return file;
+    } catch (e) {
+      // Never fatal. Both leftovers are inert and the registry still loads.
+      debugPrint('[openote/store] could not settle a migration leftover for '
+          '$notebookId: $e');
+      return file;
+    }
+  }
+
+  /// Move this notebook's container into its cache directory as `cache.onote`,
+  /// stamp it as a working copy, and drop the old page snapshots
+  /// (v0.17 plan, Step 8 — the rename).
+  ///
+  /// **Opt-in, one notebook at a time, and never on open.** Decision 4 of the
+  /// plan ships macOS without a human pass, so a one-way v1 → v2 migration will
+  /// run for the first time on a platform nobody has driven by hand. The
+  /// response is not to soften the risk: it is that the student chooses the
+  /// moment, the app runs indefinitely without it, and if a problem is ever
+  /// reported the answer is *"don't press it yet"* rather than *"we already
+  /// did"*.
+  ///
+  /// **A wall of refusals with a small action at the end**, the same shape as
+  /// [reclaimContainerBlobs] and [rebuildContainerFromLog], because every gate
+  /// here exists because something without it destroyed real data:
+  ///
+  ///  1. the registry is writable. If `workspace.json` was written by a newer
+  ///     build this one loads it and never writes it back — so the move would
+  ///     happen on disk and be forgotten, and the next start would look for the
+  ///     container at the path it used to be;
+  ///  2. there is a notes folder with a history in it, and it is not inside the
+  ///     cache. That folder becomes the only permanent copy of the notebook's
+  ///     structure, and [NotebookRef.logDir] has to name it explicitly from here
+  ///     on because the sibling-of-the-container default stops meaning anything;
+  ///  3. **the log can supply the whole notebook.** Calling a file a cache is a
+  ///     promise that it can be rebuilt, and [_rebuildDifferences] is the only
+  ///     thing that can tell a notebook whose log describes it from one whose
+  ///     log merely names its pages. A notebook that fails this is refused with
+  ///     nothing touched — it is not broken, it simply is not a cache;
+  ///  4. free space ≥ 2.0 × (container + write-ahead log), the same bar Step 7
+  ///     measured, checked before the marker goes down.
+  ///
+  /// **The order of the last three steps is the crash safety**, and it is the
+  /// opposite of the obvious one: copy, then write the registry, then delete.
+  /// Deleting first — or renaming — leaves a window in which `workspace.json`
+  /// names a file that is not there, and [_loadWorkspace] drops such an entry
+  /// and rewrites the registry without it. That is a notebook pruned from the
+  /// list permanently for a kill inside a millisecond-wide window, which is the
+  /// same disaster [workspaceFormat] exists to prevent, reached by another road.
+  Future<ContainerDemotion> demoteContainerToCache(String notebookId) async {
+    ContainerDemotion refuse(String why, [String? details]) =>
+        ContainerDemotion(refusal: why, details: details);
+
+    final ref = notebooks.where((n) => n.id == notebookId).firstOrNull;
+    if (ref == null) {
+      return refuse('That notebook is not open, so there is nothing to change.');
+    }
+    if (isDemoted(ref)) {
+      return refuse('This notebook is already stored the new way. Nothing has '
+          'been changed.', 'already at ${ref.file}');
+    }
+    if (reclaimInProgress) {
+      return refuse(
+          'Openote is already tidying up a notebook. Let that finish first.',
+          'marker: ${readReclaimMarker()}');
+    }
+    // ── Gate 1: this build is allowed to write the list of notebooks. ──
+    if (registryReadOnly != null) {
+      return refuse(
+          'Your list of notebooks was last used by a newer version of Openote, '
+          'so this one is only reading it. Update Openote first — moving this '
+          'notebook now would lose track of where it went.',
+          registryReadOnly!.details);
+    }
+    final file = File(ref.file);
+    if (!file.existsSync()) {
+      return refuse(
+          'Openote cannot find this notebook at the moment, so it has not '
+          'changed anything.',
+          'no file at ${ref.file}');
+    }
+
+    // ── Gate 2: there is a notes folder, and it is not inside the cache. ──
+    final logs = ref.logDirPath;
+    if (p.isWithin(cacheDirFor(notebookId).path, logs) ||
+        p.equals(p.basename(logs), workingCopyFileName)) {
+      return refuse(
+          "Openote cannot tell where this notebook's own folder is, so it has "
+          'not changed anything.',
+          'refusing to record a log directory inside the cache: $logs');
+    }
+    final store = OpLogStore.forNotebook(ref.file, logDir: ref.logDir);
+    if (!store.opsDir.existsSync()) {
+      return refuse(
+          "Openote could not find this notebook's own folder, so there would be "
+          'nothing left to rebuild it from. Nothing has been changed.',
+          'no ops directory at ${store.opsDir.path}');
+    }
+    final List<Op> ops;
+    try {
+      ops = store.readAll();
+    } catch (e) {
+      return refuse(
+          "Openote could not read this notebook's history. Nothing has been "
+          'changed.',
+          '$e');
+    }
+    if (ops.isEmpty) {
+      return refuse(
+          "This notebook's folder has no history in it yet, so the notes file "
+          'is still the only copy. Open the notebook, make a change, and try '
+          'again. Nothing has been changed.',
+          'readAll() over ${store.opsDir.path} returned no ops');
+    }
+    final state = Materializer()..applyAll(ops);
+    if (state.unsupported.isNotEmpty) {
+      return refuse(
+          'Part of this notebook was written by a newer version of Openote, so '
+          'this one cannot read all of it. Update Openote and try again. '
+          'Nothing has been changed.',
+          '${state.unsupported.length} op(s) with an envelope this build '
+          'cannot read; first: ${state.unsupported.first.kind}');
+    }
+
+    // ── Gate 3: the history really does describe this notebook. ────────
+    final db = _db(notebookId);
+    final differences = _rebuildDifferences(db, state);
+    if (differences.isNotEmpty) {
+      return refuse(
+          'Openote will not do this. This notebook has things in it that its '
+          'saved history does not describe — ${differences.length} page(s) or '
+          'section(s) — so the notes file is still the only copy of them and '
+          'must not be treated as one Openote can throw away. Nothing has been '
+          'changed.',
+          '${differences.length} difference(s), first few:\n'
+          '${differences.take(5).join('\n')}\n'
+          '${ops.length} op(s) replayed');
+    }
+
+    // ── Gate 4: the room, before anything is written. ──────────────────
+    final wal = File('${ref.file}-wal');
+    final before = file.lengthSync();
+    final walBefore = wal.existsSync() ? wal.lengthSync() : 0;
+    final need = (before + walBefore) * 2;
+    final free = FreeSpace.bytesFor(ref.file);
+    if (free == null) {
+      return refuse(
+          'Openote could not check how much room is left on this disk, and it '
+          'will not move a notebook without knowing. Nothing has been changed.',
+          'FreeSpace.bytesFor returned null for ${p.dirname(ref.file)}; '
+          'needed ${_mb(need)}');
+    }
+    if (free < need) {
+      return refuse(
+          'There is not enough free space to do this safely. It needs '
+          '${_mbUp(need)} free for a moment while it works, and this disk has '
+          '${_mb(free)}. Nothing has been changed — free up some room and try '
+          'again.',
+          'need ${need}B (2.0 × (${before}B container + ${walBefore}B '
+          'write-ahead log)), free ${free}B');
+    }
+
+    final oldFile = ref.file;
+    final oldLogDir = ref.logDir;
+    final dest = cachePathFor(notebookId);
+    _writeReclaimMarker(notebookId, 'demote-to-cache');
+    var committed = false;
+    try {
+      // Anything already in the cache directory is from an attempt that never
+      // committed — see [_settleDemotion] — and a copy onto an existing file is
+      // the one thing this plan never does.
+      final dir = cacheDirFor(notebookId);
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+      dir.createSync(recursive: true);
+
+      // **Checkpointed, and opened in order to be checkpointed if it was
+      // closed.** In WAL mode the `.onote` is not the notebook — the `-wal`
+      // beside it is, until something folds it back in. Measured on the owner's
+      // own notebooks: My Notebook's 4,128,272-byte `-wal` held 2 whole pages,
+      // newer revisions of 6 more, 1 of 5 blobs and 5 of 22 `page_versions`.
+      // Copying the main file without this throws all of that away and the
+      // result passes `PRAGMA integrity_check`.
+      final open = _open.remove(notebookId);
+      checkpointAndClose(open ??
+          openExistingOnote(ref.file, notebookId: notebookId, title: ref.title));
+      _decodedPages.remove(notebookId);
+
+      await file.copy(dest);
+      // By hash, not by length: a copy torn in the middle by a crash or a cloud
+      // client has exactly the right length and passes a length check, and this
+      // is the copy that decides whether the original may be deleted.
+      if (!sameBytes(oldFile, dest)) {
+        throw StateError('the copy of the notes file did not complete');
+      }
+
+      // Stamp it, and drop the old snapshots. Both happen on the COPY, so a
+      // failure anywhere here leaves the original untouched and the registry
+      // still pointing at it.
+      final fresh =
+          openExistingOnote(dest, notebookId: notebookId, title: ref.title);
+      var dropped = 0;
+      try {
+        // **The one irreversible half of this migration** (plan decision 1).
+        // `page_versions` held up to thirty full copies of every page; Step 8a
+        // shipped what replaces it, and nothing in `lib/` has read this table
+        // since. `undemote` cannot bring the rows back, which is why the dialog
+        // says so before the button is pressed.
+        try {
+          dropped = _count(fresh, 'page_versions');
+        } catch (_) {
+          // A notebook made by a build that never created it. Nothing to drop.
+        }
+        fresh.execute('DROP TABLE IF EXISTS page_versions;');
+        fresh.execute('VACUUM;');
+        fresh.execute('PRAGMA user_version = $onoteWorkingCopyVersion;');
+        final integrity =
+            fresh.select('PRAGMA integrity_check;').first.columnAt(0) as String?;
+        if (integrity != 'ok') {
+          throw StateError('integrity_check on the copy said "$integrity"');
+        }
+      } finally {
+        checkpointAndClose(fresh);
+      }
+
+      // ── Commit: the registry first, the deletion second. ─────────────
+      //
+      // Both facts land on one atomic `workspace.json` write — the new path AND
+      // the notes folder, which stops being derivable from it — and the old
+      // container is not touched until that write has returned.
+      ref.logDir = logs;
+      ref.file = dest;
+      await _saveNow();
+      committed = true;
+
+      // Best-effort, and last. A lock or a permission on the original must not
+      // fail a migration whose result is already recorded; what is left behind
+      // is an ordinary leftover the "Find leftovers…" scan already reports.
+      try {
+        _deleteContainerFiles(oldFile);
+      } catch (_) {/* see above */}
+
+      debugPrint('[openote/store] $notebookId: $oldFile → $dest, '
+          '$dropped page snapshot(s) dropped');
+      return ContainerDemotion(
+        done: true,
+        from: oldFile,
+        to: dest,
+        snapshotsDropped: dropped,
+        bytes: File(dest).existsSync() ? File(dest).lengthSync() : 0,
+      );
+    } catch (e) {
+      if (!committed) {
+        ref.file = oldFile;
+        ref.logDir = oldLogDir;
+        try {
+          final dir = cacheDirFor(notebookId);
+          if (dir.existsSync()) dir.deleteSync(recursive: true);
+        } catch (_) {/* [_settleDemotion] drops it at the next start */}
+      }
+      return refuse(
+          'Openote could not change how this notebook is stored. Your notes '
+          'have not been changed — everything is still where it was.',
+          '$e');
+    } finally {
+      _clearReclaimMarker();
+    }
+  }
+
+  /// Put a migrated notebook back the way it was (v0.17 Step 8's inverse).
+  ///
+  /// **Written, tested and executed in the same change as the rename**, because
+  /// an inverse that has never been run is a paragraph rather than a rollback.
+  /// Part 6 of the plan makes it a release blocker for the release that ships
+  /// the rename.
+  ///
+  /// Four things go back, and they are exactly the four the plan names: the
+  /// container returns to the workspace as an ordinary `.onote`, its
+  /// `user_version` goes back to [onoteFormatMajor], [refillContainerBlobs]
+  /// puts the picture bytes back into the `blobs` table so a build that reads
+  /// pictures out of the container can render them, and `workspace.json`'s
+  /// format falls back to 1 on the same write — see [_formatToWrite] — so an
+  /// older Openote can use the registry again instead of holding it read-only.
+  ///
+  /// **The one thing it cannot undo is the page snapshots**, and it does not
+  /// pretend to: `page_versions` was dropped and the log has never held a page
+  /// history, so there is nothing to restore from. That is why the dialog says
+  /// it before the button is pressed rather than here afterwards.
+  ///
+  /// Same commit order as [demoteContainerToCache], for the same reason: copy,
+  /// registry, delete.
+  Future<ContainerDemotion> undemoteContainerFromCache(String notebookId) async {
+    ContainerDemotion refuse(String why, [String? details]) =>
+        ContainerDemotion(refusal: why, details: details);
+
+    final ref = notebooks.where((n) => n.id == notebookId).firstOrNull;
+    if (ref == null) {
+      return refuse('That notebook is not open, so there is nothing to change.');
+    }
+    if (!isDemoted(ref)) {
+      return refuse('This notebook is already stored the old way. Nothing has '
+          'been changed.', 'not a working copy: ${ref.file}');
+    }
+    if (reclaimInProgress) {
+      return refuse(
+          'Openote is already tidying up a notebook. Let that finish first.',
+          'marker: ${readReclaimMarker()}');
+    }
+    if (registryReadOnly != null) {
+      return refuse(
+          'Your list of notebooks was last used by a newer version of Openote, '
+          'so this one is only reading it. Nothing has been changed.',
+          registryReadOnly!.details);
+    }
+    final file = File(ref.file);
+    if (!file.existsSync()) {
+      return refuse(
+          'Openote cannot find this notebook at the moment, so it has not '
+          'changed anything.',
+          'no file at ${ref.file}');
+    }
+    final wal = File('${ref.file}-wal');
+    final before = file.lengthSync();
+    final walBefore = wal.existsSync() ? wal.lengthSync() : 0;
+    final need = (before + walBefore) * 2;
+    final free = FreeSpace.bytesFor(ref.file);
+    if (free == null || free < need) {
+      return refuse(
+          'There is not enough free space to do this safely. It needs '
+          '${_mbUp(need)} free for a moment while it works. Nothing has been '
+          'changed.',
+          'need ${need}B, free ${free ?? -1}B');
+    }
+
+    final oldFile = ref.file;
+    final dest = _freeNotebookPath(ref.title);
+    _writeReclaimMarker(notebookId, 'undemote-from-cache');
+    var committed = false;
+    try {
+      final open = _open.remove(notebookId);
+      checkpointAndClose(open ??
+          openExistingOnote(ref.file, notebookId: notebookId, title: ref.title));
+      _decodedPages.remove(notebookId);
+
+      await file.copy(dest);
+      if (!sameBytes(oldFile, dest)) {
+        throw StateError('the copy of the notes file did not complete');
+      }
+      final fresh =
+          openExistingOnote(dest, notebookId: notebookId, title: ref.title);
+      try {
+        fresh.execute('PRAGMA user_version = $onoteFormatMajor;');
+      } finally {
+        checkpointAndClose(fresh);
+      }
+
+      // [NotebookRef.logDir] stays exactly as it is rather than being cleared
+      // back to null. The notes folder has not moved, `_freeNotebookPath` may
+      // not hand back the name it originally had (the title can have changed,
+      // or something else can be sitting on the name), and every build ever
+      // released reads this field — so naming it is right and deriving it is a
+      // guess.
+      ref.file = dest;
+      await _saveNow();
+      committed = true;
+
+      try {
+        cacheDirFor(notebookId).deleteSync(recursive: true);
+      } catch (_) {/* [_settleDemotion] drops it at the next start */}
+
+      // Last, and only once the notebook is where an older build looks for it:
+      // an older build reads pictures by following `blob_refs` into `blobs`, so
+      // this is what makes them render rather than come up empty.
+      final back = await refillContainerBlobs(notebookId);
+      debugPrint('[openote/store] $notebookId: $oldFile → $dest, '
+          '${back.restored} picture(s) put back');
+      return ContainerDemotion(
+        done: true,
+        from: oldFile,
+        to: dest,
+        blobsRestored: back.restored,
+        bytes: File(dest).existsSync() ? File(dest).lengthSync() : 0,
+        details: back.missing.isEmpty
+            ? null
+            : '${back.missing.length} picture(s) had no good copy in the '
+                "notebook's folder: ${_fewHashes(back.missing.toList())}",
+      );
+    } catch (e) {
+      if (!committed) {
+        ref.file = oldFile;
+        try {
+          if (File(dest).existsSync()) _deleteContainerFiles(dest);
+        } catch (_) {/* the leftovers scan reports it */}
+      }
+      return refuse(
+          'Openote could not put this notebook back the old way. Your notes '
+          'have not been changed — everything is still where it was.',
           '$e');
     } finally {
       _clearReclaimMarker();
@@ -2204,6 +2767,23 @@ class Repository {
     final ref = NotebookRef(id: newId0, file: dstPath, title: newTitle);
     notebooks.add(ref);
     final db = openOnote(dstPath, notebookId: newId0, title: newTitle);
+    // **Stamped back down to a notebook file.** Duplicating a MIGRATED notebook
+    // byte-copies a container stamped [onoteWorkingCopyVersion] to an ordinary
+    // `.onote` in the workspace — and `isOpenoteWorkingCopy` reads that stamp
+    // straight out of the file header to decide whether a double-clicked file is
+    // Openote's own cache. Left as it was, every duplicate of a migrated
+    // notebook would be a v2 file that is not a cache, which breaks the one
+    // invariant that test stands on and would make the copy refuse to open on a
+    // build that predates v0.17.
+    //
+    // **Checkpointed straight away**, because `user_version` is a field in the
+    // 100-byte file HEADER and in WAL mode a changed header sits in the `-wal`
+    // until something folds it back in. `isOpenoteWorkingCopy` reads that header
+    // directly, with nothing opened — so without this line a duplicate copied
+    // onto a USB stick before the app next closed would still say v2 on disk,
+    // and every build, old and new, would refuse the file.
+    db.execute('PRAGMA user_version = $onoteFormatMajor;');
+    db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
     db.execute(
         "INSERT INTO notebook_meta(key,value) VALUES('notebook_id',?) "
         'ON CONFLICT(key) DO UPDATE SET value=excluded.value',
@@ -2305,6 +2885,15 @@ class Repository {
     _open.remove(id)?.dispose();
     _decodedPages.remove(id);
     _deleteContainerFiles(ref.file);
+    // The cache directory too, and unconditionally: it is named by THIS
+    // notebook's id and nothing else can ever be in it, so a purge that left it
+    // would strand a whole container the way purge used to strand `.onotebook`
+    // directories. Harmless when the notebook was never migrated — there is
+    // nothing there.
+    try {
+      final cache = cacheDirFor(id);
+      if (cache.existsSync()) cache.deleteSync(recursive: true);
+    } catch (_) {/* a lock or a permission must not fail the purge */}
     if (_mayDeleteLogDir(ref)) {
       try {
         final logs = Directory(ref.logDirPath);
@@ -2457,17 +3046,14 @@ class Repository {
     db.execute(
         'DELETE FROM nodes WHERE deleted_at IS NOT NULL AND deleted_at < ?',
         [_retentionCutoff()]);
-    // The other of the only two places a `nodes` row is hard-deleted, and so
-    // the other half of the same hole [NotebookWriter.purgeNode] closes:
-    // `page_versions` has no foreign key onto `nodes`, so an expired page's
-    // snapshots outlive it for good. Measured leaking 1,002,020 bytes for one
-    // expired page of average size.
+    // **There is no `page_versions` sweep here any more** (plan decision 1).
+    // This used to be the other half of the hole [NotebookWriter.purgeNode]
+    // closed — the table declared no foreign key onto `nodes`, so an expired
+    // page's snapshots outlived it for good, measured at 1,002,020 leaked bytes
+    // for one expired page of average size. `block_authors` declares the
+    // `ON DELETE CASCADE` the old table never did and `recent_deletions`' cap of
+    // ten is its own prune, so the leak is designed out rather than swept up.
     //
-    // Written as the orphan predicate rather than `page_id=?` because the
-    // statement above deletes whole subtrees through `nodes.parent_id`'s
-    // cascade and never names the pages it took with it.
-    db.execute(
-        'DELETE FROM page_versions WHERE page_id NOT IN (SELECT id FROM nodes)');
     // …and the same for the copy of the page that lives in memory. This method
     // evicted nothing at all, which is the same hole [purgeNode] had for its
     // subtree, only wider: it names no ids, so a page whose retention ran out
@@ -2562,10 +3148,10 @@ class Repository {
     }
   }
 
-  /// Permanently delete a node and its subtree. FK cascade clears `page_mirror`
-  /// and `blob_refs`; `page_versions` has no such key and is cleared explicitly
-  /// inside [NotebookWriter.purgeNode], which is why that is the funnel rather
-  /// than here — the import writer calls it directly, from its own isolate.
+  /// Permanently delete a node and its subtree. The FK cascade clears
+  /// `page_mirror`, `blob_refs` and `block_authors`; [NotebookWriter.purgeNode]
+  /// is still the funnel rather than here because the import writer calls it
+  /// directly, from its own isolate.
   void purgeNode(String notebookId, String nodeId) {
     // A purged page must not survive in the decoded cache: a page recreated
     // later under the same id (a restore, a sync replay) would read as its
@@ -2609,50 +3195,23 @@ class Repository {
     ];
   }
 
-  // ── Version history (SYNC-8, page_versions table) ─────────────────────
-
-  /// Snapshot the page's current mirror into page_versions if the newest
-  /// version is older than [minGap] (or none exists). Called before saves.
-  void maybeSnapshotVersion(String notebookId, String pageId,
-      {Duration minGap = const Duration(minutes: 10)}) {
-    final db = _db(notebookId);
-    final cur = db
-        .select('SELECT json FROM page_mirror WHERE page_id=?', [pageId])
-        .firstOrNull?['json'] as String?;
-    if (cur == null) return;
-    final newest = db
-        .select(
-            'SELECT MAX(version_at) AS m FROM page_versions WHERE page_id=?',
-            [pageId])
-        .first['m'] as int?;
-    final now = nowMs();
-    if (newest != null && now - newest < minGap.inMilliseconds) return;
-    db.execute(
-        'INSERT OR REPLACE INTO page_versions(page_id,version_at,snapshot,label) '
-        'VALUES(?,?,?,NULL)',
-        [pageId, now, Uint8List.fromList(utf8.encode(cur))]);
-    // Retention: keep the newest 30 versions per page.
-    db.execute(
-        'DELETE FROM page_versions WHERE page_id=? AND version_at NOT IN '
-        '(SELECT version_at FROM page_versions WHERE page_id=? '
-        'ORDER BY version_at DESC LIMIT 30)',
-        [pageId, pageId]);
-  }
-
-  List<int> listVersions(String notebookId, String pageId) => [
-        for (final r in _db(notebookId).select(
-            'SELECT version_at FROM page_versions WHERE page_id=? '
-            'ORDER BY version_at DESC',
-            [pageId]))
-          r['version_at'] as int
-      ];
-
-  String? versionJson(String notebookId, String pageId, int at) {
-    final row = _db(notebookId).select(
-        'SELECT snapshot FROM page_versions WHERE page_id=? AND version_at=?',
-        [pageId, at]).firstOrNull;
-    return row == null ? null : utf8.decode(row['snapshot'] as Uint8List);
-  }
+  // ── Version history ────────────────────────────────────────────────────
+  //
+  // **`page_versions` is gone, and with it `maybeSnapshotVersion`,
+  // `listVersions` and `versionJson`** (v0.17 plan, decision 1). The table
+  // stored up to thirty complete copies of every page and was bounded by how
+  // long a notebook had been edited, i.e. by nothing — `database.dart` records
+  // 9,840 snapshots in a 322 MB container as the worst shape the owner's
+  // 328-page notebook could reach. What replaces it is below, and the plain
+  // statement of what a student loses is in the plan's Step 8a: they can see who
+  // last changed each thing on a page and get back the last ten notable
+  // deletions; they cannot wind a page back to how it looked at 09:40.
+  //
+  // Removing the READS as well as the writes is deliberate rather than tidy.
+  // The schema no longer creates the table, so a read left behind would throw on
+  // every notebook made from here on — which is exactly the "left pointing at a
+  // table that is gone" the plan warns about. Rows already on disk are inert
+  // until `demoteContainerToCache` drops them.
 
   // ── Simplified version history (v0.17 plan, Step 8a) ──────────────────
   //
@@ -2830,10 +3389,17 @@ class Repository {
   ///    it can be restored for thirty days. The usual
   ///    `WHERE deleted_at IS NULL` would hide precisely the pages whose videos
   ///    look unused, which is the deleted-page-comes-back-empty shape.
-  ///  * **`page_versions` too.** Up to thirty autosnapshots per page, each a
-  ///    complete copy of the page as it was and each restorable from the UI.
-  ///    A video removed from a page this morning is still named by every
-  ///    snapshot taken before that.
+  ///  * **No `page_versions` any more, and that is a reduction in pinning
+  ///    rather than a hole.** This used to yield up to thirty autosnapshots per
+  ///    page as well, so a video removed from a page this morning was still
+  ///    named by every snapshot taken before that — for ever, on a single-device
+  ///    notebook, because a snapshot is only evicted when thirty newer ones of
+  ///    the *same* page exist. Plan decision 1 dropped the table and put
+  ///    `recent_deletions`' ten-deep list in its place as an explicit, bounded
+  ///    garbage-collection root: [MediaGc] reads its `pins` column, so a video
+  ///    in the last ten notable deletions is still safe and one that has fallen
+  ///    off the end becomes reclaimable after `kVideoReclaimMinimumAge` — which
+  ///    is what that constant was written to be.
   ///  * **Raw text, not decoded pages.** Decoding asks the schema's question;
   ///    the sweep needs the bytes' question. It is also what keeps this from
   ///    materialising a notebook's worth of `Block` objects to look for one
@@ -2844,9 +3410,6 @@ class Repository {
     final db = _db(notebookId);
     for (final r in db.select('SELECT json FROM page_mirror')) {
       yield r['json'] as String;
-    }
-    for (final r in db.select('SELECT snapshot FROM page_versions')) {
-      yield utf8.decode(r['snapshot'] as Uint8List, allowMalformed: true);
     }
   }
 

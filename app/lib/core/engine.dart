@@ -63,7 +63,10 @@ class MirrorEngine implements DocumentEngine {
   @override
   Future<void> savePage(String notebookId, String pageId, List<Block> blocks,
       PageProps props) async {
-    repo.maybeSnapshotVersion(notebookId, pageId);
+    // **No snapshot before the write** (v0.17 plan, decision 1). This used to
+    // copy the whole page's JSON into `page_versions` every ten minutes of
+    // editing, in the save path, and the table it wrote to is gone. Losing the
+    // write is part of the point: it was a full page INSERT on the hot path.
     repo.writePage(notebookId, pageId, blocks, props);
   }
 }
@@ -104,10 +107,11 @@ class RustEngine implements DocumentEngine {
     final mirror = pageMirrorJson(pageId, blocks, props);
     final hash = core.pageHash(mirror);
     _lastSavedHash = hash;
-    // Unchanged since the last persisted state → skip write + version snapshot.
+    // Unchanged since the last persisted state → skip the write entirely.
     if (_hashes[pageId] == hash) return;
     _hashes[pageId] = hash;
-    repo.maybeSnapshotVersion(notebookId, pageId);
+    // See [MirrorEngine.savePage]: the ten-minute page snapshot is gone with
+    // `page_versions` (v0.17 plan, decision 1).
     repo.writePage(notebookId, pageId, blocks, props);
   }
 }

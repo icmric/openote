@@ -96,8 +96,19 @@ class VideoSweep {
   ///     stamps `nodes.deleted_at`; the content row is untouched, and the
   ///     usual `WHERE deleted_at IS NULL` filter would hide exactly the pages
   ///     whose videos are most likely to look unused.
-  ///  3. `page_versions.snapshot` — up to thirty autosaves per page, each a
-  ///     full copy of the page as it was, each restorable from the UI.
+  ///  3. `recent_deletions.pins` — the media names held by the last ten notable
+  ///     deletions, each of which the student can still put back.
+  ///
+  ///     **This entry replaced a much bigger one** (v0.17 plan, decision 1). It
+  ///     used to be `page_versions.snapshot` — up to thirty autosaves per page,
+  ///     each a full copy of the page as it was — and that pinned by accident
+  ///     and for ever: a snapshot is evicted only when thirty newer snapshots of
+  ///     the SAME page exist, so a video deleted from a page the student then
+  ///     stops editing was pinned permanently, and on a single-device notebook
+  ///     (the majority case) it was the ONLY pin, because `_eliminateInFiles`
+  ///     skips this device's own log. Ten explicit, bounded entries are strictly
+  ///     less pinning, and [kVideoReclaimMinimumAge] becomes the actual bound —
+  ///     which is what it was written to be.
   ///  4. `ops/<device>.oplog`, for EVERY device — append-only, never
   ///     compacted, so every name ever written is in there permanently.
   ///  5. Workspace templates. Saved page-shaped JSON, stored outside the
@@ -112,7 +123,7 @@ class VideoSweep {
   /// Not on the list, having been checked: page embeds hold a page pointer and
   /// never copy block content; flashcards store text; board cards are strings.
   static const sources = '''
-live pages · the recycle bin · saved page versions · every device's op log ·
+live pages · the recycle bin · the last ten deletions · every device's op log ·
 workspace templates · undo and redo · the block clipboard · unsaved blocks''';
 }
 
@@ -149,9 +160,10 @@ abstract final class MediaGc {
   /// What could be reclaimed from [ref]'s media directory.
   ///
   /// [containerText] yields page content out of the container — every
-  /// `page_mirror` row INCLUDING trashed pages, and every `page_versions`
-  /// snapshot. [liveText] is everything held in memory or in the workspace:
-  /// undo, redo, clipboard, on-screen blocks, templates. Both are `Iterable`
+  /// `page_mirror` row INCLUDING trashed pages. [liveText] is everything held in
+  /// memory or in the workspace: undo, redo, clipboard, on-screen blocks,
+  /// templates, and the media names pinned by the last ten notable deletions
+  /// (`AppState._volatileMediaText`), which is source 3. Both are `Iterable`
   /// so a caller can stream rather than materialise a notebook's worth of JSON,
   /// and both are allowed to throw — a throw is a refusal, not a crash.
   ///
