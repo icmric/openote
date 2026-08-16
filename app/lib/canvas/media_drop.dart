@@ -45,9 +45,15 @@ bool _looksLikeImage(String name) =>
 /// The block is created at a sane width and left selected, so the very next
 /// gesture can move or resize it — pasting something you then have to hunt for
 /// is barely better than not pasting at all.
-Block insertImageBytes(AppState app, Uint8List bytes, String mime, Offset at,
+///
+/// Null when the bytes could not be stored (full disk, read-only folder):
+/// the failure is already on the status bar via `AppState.saveError`, and a
+/// block referencing bytes nothing holds would render as a broken picture
+/// that LOOKS like the paste worked.
+Block? insertImageBytes(AppState app, Uint8List bytes, String mime, Offset at,
     {double width = 320}) {
-  final hash = app.addBlob(bytes, mime);
+  final hash = app.tryAddBlob(bytes, mime);
+  if (hash == null) return null;
   final b = app.addBlock(Block(
     type: BlockType.image,
     x: at.dx - width / 2,
@@ -91,7 +97,11 @@ Block? insertImageAtCaret(AppState app, Uint8List bytes, String mime) {
   if (ae == null) return null;
   final target = ae.block;
   if (target.type != BlockType.text) return null;
-  final hash = app.addBlob(bytes, mime);
+  // `tryAddBlob` BEFORE the splice: a write that fails (full disk, read-only
+  // folder) is already on the status bar, and splicing a reference to bytes
+  // nothing holds would leave a broken picture that looks like it worked.
+  final hash = app.tryAddBlob(bytes, mime);
+  if (hash == null) return null;
   // AppState owns undo, commit and notify for the caret path.
   app.insertTextAtActiveCursor('\n![](sha256:$hash)\n');
   // Auto-width measures the RAW markdown, and a 64-hex-character line would
@@ -105,7 +115,11 @@ Block? insertImageIntoTextAt(
     {required bool dark}) {
   final target = _textBlockAt(app, pagePt);
   if (target == null) return null;
-  final hash = app.addBlob(bytes, mime);
+  // Same rule as [insertImageAtCaret]: no reference to bytes that were never
+  // stored. The caller's fallback to [insertImageBytes] fails the same way
+  // and the notice is already up.
+  final hash = app.tryAddBlob(bytes, mime);
+  if (hash == null) return null;
   final ref = '![](sha256:$hash)';
 
   // Editing that very block? Then the caret is the truth, and AppState already
@@ -217,10 +231,14 @@ void _rebaseTags(Block b, {required int fromLine, required int by}) {
 }
 
 /// Insert a non-image file as an attachment block.
-Block insertFileBytes(
+///
+/// Null on a failed write, like [insertImageBytes] — an attachment chip whose
+/// bytes were never stored is a file the user believes is kept and is not.
+Block? insertFileBytes(
     AppState app, Uint8List bytes, String name, Offset at) {
   final mime = mimeForExtension(name);
-  final hash = app.addBlob(bytes, mime);
+  final hash = app.tryAddBlob(bytes, mime);
+  if (hash == null) return null;
   final b = app.addBlock(Block(
     type: BlockType.file,
     x: at.dx - 110,
@@ -358,23 +376,30 @@ Future<int> dropFilesOntoCanvas(
     final name = path.split(Platform.pathSeparator).last;
     // Cascade multiple drops so they don't land exactly on top of each other.
     final where = at + Offset(offset, offset);
+    // Only what actually landed counts: the caller announces "Added N items"
+    // on the strength of this number, and a blob write that failed (full
+    // disk, read-only folder) is already on the status bar saying the
+    // opposite.
+    var landed = false;
     if (looksLikeCsv(name)) {
       // Tabular data becomes a TABLE, not an attachment — "import data
       // (csv, xlsx)" means the rows end up editable on the page, the same
       // block the table button makes. An unusable file falls back to an
       // attachment, so the drop never simply vanishes.
-      if (!insertTableFromFile(app, name, bytes, where).placed) {
-        insertFileBytes(app, bytes, name, where);
-      }
+      landed = insertTableFromFile(app, name, bytes, where).placed ||
+          insertFileBytes(app, bytes, name, where) != null;
     } else if (!_looksLikeImage(name)) {
-      insertFileBytes(app, bytes, name, where);
-    } else if (insertImageIntoTextAt(app, bytes, mimeForExtension(name), where,
-            dark: dark) ==
-        null) {
-      insertImageBytes(app, bytes, mimeForExtension(name), where);
+      landed = insertFileBytes(app, bytes, name, where) != null;
+    } else {
+      landed = insertImageIntoTextAt(app, bytes, mimeForExtension(name), where,
+              dark: dark) !=
+              null ||
+          insertImageBytes(app, bytes, mimeForExtension(name), where) != null;
     }
-    offset += 24;
-    placed++;
+    if (landed) {
+      offset += 24;
+      placed++;
+    }
   }
   return placed;
 }

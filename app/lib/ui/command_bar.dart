@@ -899,7 +899,12 @@ class _CommandBarState extends State<CommandBar> {
     // single box" looked impossible to anyone who reached for the menu.
     if (insertImageAtCaret(app, bytes, mime) != null) return;
 
-    final hash = app.addBlob(bytes, mime);
+    // `tryAddBlob`: a full disk or read-only folder throws out of `writeBlob`
+    // synchronously, and from this async handler that used to vanish into the
+    // console — a menu item that silently did nothing. The failure is on the
+    // status bar; a block referencing unstored bytes must not be made.
+    final hash = app.tryAddBlob(bytes, mime);
+    if (hash == null) return;
     final c = _center();
     final b = app.addBlock(Block(
         type: BlockType.image,
@@ -1060,7 +1065,10 @@ class _CommandBarState extends State<CommandBar> {
     }
     if (file == null) return;
     final Uint8List bytes = await file.readAsBytes();
-    final hash = app.addBlob(bytes, 'application/octet-stream');
+    // Same reason as _insertImage: a throwing write must not read as a menu
+    // item that did nothing.
+    final hash = app.tryAddBlob(bytes, 'application/octet-stream');
+    if (hash == null) return;
     final c = _center();
     final b = app.addBlock(Block(
         type: BlockType.file,

@@ -4,6 +4,26 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — a shared notebook's pictures can no longer be lost when one computer's copy goes bad
+
+- **When one computer's copy of a picture turns out to be wrong, Openote now
+  sets that copy aside and heals it instead of deleting it.** Deleting it was
+  how it used to work, and in a shared notebook a delete travels — one bad copy
+  on one computer could take the good copies on every other computer with it.
+  Now the bad copy is simply not used until a good one arrives, from another
+  computer or from the notebook itself, and the moment it is right again it is
+  back in use. A copy Openote merely could not read — a file another program
+  had open, say — is left alone entirely.
+- **A picture that arrives while you are looking at the page is checked before
+  it is shown**, and one unreadable picture shows its own placeholder instead
+  of stopping the pictures around it from loading.
+- **A paste that cannot be saved now says so instead of doing nothing.** If
+  your disk is full or the notebook's folder cannot be written to, pasting or
+  dropping a picture used to quietly leave you with nothing — or worse, with a
+  picture on the page whose file was never saved. Now nothing is added to the
+  page and Openote tells you plainly what went wrong, with the technical
+  details behind the Advanced fold.
+
 ### Security — your GitHub key now lives in your computer's own password storage
 
 - **Openote now keeps your GitHub key in your computer's own password storage

@@ -67,9 +67,23 @@ class OpLogStore {
 
   bool hasBlob(String hash) => blobFile(hash).existsSync();
 
+  /// Bytes of [hash]'s file, or null when there is no file **or it cannot be
+  /// read right now** — a cloud client holding a lock, a dehydrated
+  /// files-on-demand placeholder, a permission error.
+  ///
+  /// The try/catch is not tidiness: this is called from `Repository.getBlob`
+  /// on the paint path, and `image_block_view` chains every image read behind
+  /// the last through one shared queue — so a single unreadable file used to
+  /// throw into render and blank every image loaded after it, page after
+  /// page. "Could not read" behaves as "absent", which sends the caller to
+  /// the container fallback exactly as a not-yet-synced file does.
   Uint8List? readBlob(String hash) {
     final f = blobFile(hash);
-    return f.existsSync() ? f.readAsBytesSync() : null;
+    try {
+      return f.existsSync() ? f.readAsBytesSync() : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Store blob bytes. Idempotent and immutable — content-addressed data can
@@ -123,6 +137,15 @@ class OpLogStore {
   /// be put right. Deliberately not exposed as "delete a blob" — nothing in
   /// Openote deletes content-addressed bytes, and blob GC (ADR-0007) is a
   /// separate, unbuilt thing.
+  ///
+  /// **Delete-and-rewrite is only safe when the caller HOLDS verified
+  /// replacement bytes**, as the repair does. `blobs/` lives in the shared
+  /// folder, so a cloud client replicates whatever happens here: the sync
+  /// pull once called this on a bytes-mismatch with no replacement, and the
+  /// deletion of one device's half-copied download replicated out and removed
+  /// every other device's GOOD copy of the picture. A caller without the
+  /// bytes in hand must use `Repository.holdBlobUntilVerified` instead, which
+  /// has only local consequences.
   void discardBlob(String hash) {
     final f = blobFile(hash);
     if (f.existsSync()) f.deleteSync();

@@ -3524,13 +3524,19 @@ class Repository {
   /// here is the failure mode a spike already reproduced — `MIGRATION COMPLETE`
   /// over 193 destroyed image blocks.
   ///
-  /// **Not verified on read.** Re-hashing costs 2.8 s across a real notebook's
-  /// 488 blobs, which cannot be paid per repaint. `SyncRecorder.proveBlobs`
-  /// (Step 5) is the verifier and it runs at every open; the sync pull checks
-  /// each newly arrived file before it is ever read.
+  /// **Not verified on read — except for hashes on the held register.**
+  /// Re-hashing costs 2.8 s across a real notebook's 488 blobs, which cannot
+  /// be paid per repaint. `SyncRecorder.proveBlobs` (Step 5) is the verifier
+  /// and it runs at every open; the sync pull checks each blob file that was
+  /// present when its op folded, and puts every one it could NOT vouch for —
+  /// not arrived yet, or holding the wrong bytes — on [holdBlobUntilVerified]'s
+  /// register. A held hash is the one case this method re-hashes: once, here,
+  /// before the file is first served, which is what covers the
+  /// documented-normal log-before-picture ordering where the file lands
+  /// AFTER its op has folded and no later pull would ever name it again.
   Uint8List? getBlob(String notebookId, String hash) {
     final bare = hash.replaceFirst('sha256:', '');
-    final fromFile = _blobStore(notebookId).readBlob(bare);
+    final fromFile = _trustedBlobFile(notebookId, bare);
     if (fromFile != null) {
       // Both registers are "as of now", not "ever": the backfill and a cloud
       // client both land files while the app is running, and a Step 7 gate that
@@ -3551,6 +3557,74 @@ class Repository {
     }
     return bytes;
   }
+
+  /// [OpLogStore.readBlob], gated by the held register.
+  ///
+  /// A hash that is not held reads straight through — the common case, and it
+  /// must stay free of hashing. A held hash is re-verified first and released
+  /// the moment its file passes, so the register clears itself when the
+  /// backfill, `proveBlobs`' repair or the cloud client's re-delivered copy
+  /// puts the good bytes in place. While it fails, the file is invisible to
+  /// the read path and the caller falls back to the container exactly as if
+  /// no file existed.
+  Uint8List? _trustedBlobFile(String notebookId, String bare) {
+    final held = _blobsHeld[notebookId];
+    if (held == null || !held.contains(bare)) {
+      return _blobStore(notebookId).readBlob(bare);
+    }
+    if (!_blobStore(notebookId).blobBytesMatch(bare)) return null;
+    held.remove(bare);
+    if (held.isEmpty) _blobsHeld.remove(notebookId);
+    return _blobStore(notebookId).readBlob(bare);
+  }
+
+  /// Keep [hash]'s file out of the read path until its bytes verify.
+  ///
+  /// **This exists so the sync pull never deletes in the shared folder.**
+  /// `blobs/` is replicated: discarding a file whose bytes looked wrong
+  /// replicated that deletion to every other device's good copy, and once
+  /// Step 7 empties the container there is no copy left anywhere — permanent,
+  /// all-device loss on the strength of one device's local evidence (which
+  /// `blobBytesMatch` cannot even distinguish from a file it merely could not
+  /// read). Holding the hash has only local consequences: [getBlob] treats
+  /// the file as absent and falls back to the container, and the entry lifts
+  /// itself the first time the file's bytes match the name — after
+  /// `proveBlobs`' repair (which does hold verified container bytes), or
+  /// after the cloud client finishes or re-delivers the copy.
+  ///
+  /// Also the register for a blob op whose FILE has not arrived at all: the
+  /// file lands after the op has folded, nothing ever names that hash again,
+  /// and without this it would be served all session without one check.
+  void holdBlobUntilVerified(String notebookId, String hash) {
+    _blobsHeld
+        .putIfAbsent(notebookId, () => <String>{})
+        .add(hash.replaceFirst('sha256:', ''));
+  }
+
+  /// Sweep the held register against what is on disk now.
+  ///
+  /// Called by every sync pull — including the empty ones the folder watcher
+  /// fires when a blob file lands — so a late-arriving file is verified close
+  /// to its arrival rather than only on its first read. Returns how many
+  /// verified; free when nothing is held, which is always in a healthy
+  /// notebook.
+  int verifyHeldBlobs(String notebookId) {
+    final held = _blobsHeld[notebookId];
+    if (held == null || held.isEmpty) return 0;
+    final store = _blobStore(notebookId);
+    final cleared = [
+      for (final bare in held)
+        if (store.blobBytesMatch(bare)) bare
+    ];
+    held.removeAll(cleared);
+    if (held.isEmpty) _blobsHeld.remove(notebookId);
+    return cleared.length;
+  }
+
+  /// Hashes whose `blobs/` file may not be trusted yet — absent when its op
+  /// folded, or found holding the wrong bytes. Per notebook, session-scoped:
+  /// a restart re-runs `proveBlobs`, which is the durable verifier.
+  final Map<String, Set<String>> _blobsHeld = {};
 
   /// Bytes from the container's legacy `blobs` table alone.
   ///

@@ -125,7 +125,17 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     _readQueue = _readQueue.then((_) async {
       await Future<void>.delayed(Duration.zero);
       if (!mounted || widget.block.content['blob'] != h) return;
-      final b = widget.app.blob(h);
+      // The queue is SHARED and CHAINED: every later image read `.then`s
+      // onto this future, and a future carrying an error never runs those
+      // callbacks. So one throwing read — a file a cloud client had locked —
+      // used to blank every image loaded after it, all session. A failed
+      // read must cost exactly this image its placeholder and nothing else.
+      Uint8List? b;
+      try {
+        b = widget.app.blob(h);
+      } catch (e) {
+        debugPrint('[openote] could not read image $h: $e');
+      }
       if (b != null) _blobCache.put(h, b);
       if (!mounted || widget.block.content['blob'] != h) return;
       setState(() {

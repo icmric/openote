@@ -579,14 +579,51 @@ class SyncRecorder {
   /// work happens, not what the answer is.
   Future<List<Op>> pendingForeignOps(
       Object? Function(String key) readSetting) async {
+    // One listing for both passes below — `deviceIds` lists the directory,
+    // which on a cloud-folder notebook is real I/O.
+    final devices = [
+      for (final d in store.deviceIds())
+        if (d != device.id) d
+    ];
+    // **THE GUARD GOES UP BEFORE THE FIRST AWAIT, ON A CHEAP ANSWER.**
+    //
+    // Arming [foreignPending] only at the end reopened the exact disaster its
+    // own comment describes, the day the parse became paced: reading a big
+    // log now spans ~1 s of event-loop turns, the save debounce is 700 ms,
+    // and a page is marked dirty just by being OPENED (the title-band
+    // repair). So a save could land INSIDE the parse, diff the container's
+    // page against replayed state that already holds another device's blocks,
+    // and emit `block.remove` at top Lamport — deleting their edits on every
+    // replica. The pre-scan is stat calls only, no read and no parse: a
+    // foreign log with bytes past the offset we have folded to means the
+    // answer MIGHT be non-empty, and the guard must already be up when the
+    // first mid-parse save asks. The accurate answer still replaces it at the
+    // end — a false alarm (say, a stale offset over ops the seq watermark has
+    // already covered) costs one save its recording for the parse's duration,
+    // and `page()`'s own comment explains why an unrecorded save is
+    // recoverable where a destructive op that replicated is not.
+    for (final dev in devices) {
+      final at =
+          (readSetting(foreignOffsetKey(notebookId, dev)) as num?)?.toInt() ??
+              0;
+      final f = store.logFor(dev);
+      final len = f.existsSync() ? f.lengthSync() : 0;
+      // The same "will the read below see anything" predicate as
+      // `readDeviceFrom`: an offset outside the file (a shrunken log — fresh
+      // clone, restore) restarts from 0, so it counts as unread too.
+      final start = (at > 0 && at <= len) ? at : 0;
+      if (len > start) {
+        foreignPending = true;
+        break;
+      }
+    }
     final out = <Op>[];
     // Built locally and swapped in at the end. The parse yields now, so a
     // second caller could land inside this loop; a half-filled `_resumeAt`
     // would hand [markForeignSeen] an offset past ops the container never
     // received, which is data loss that no later pull would ever repair.
     final resumeAt = <String, int>{};
-    for (final dev in store.deviceIds()) {
-      if (dev == device.id) continue;
+    for (final dev in devices) {
       final seen =
           (readSetting(foreignSeqKey(notebookId, dev)) as num?)?.toInt() ?? 0;
       // **From where we left off, not from the beginning.** This used to run
@@ -618,7 +655,10 @@ class SyncRecorder {
     // Asking the question is what arms the guard. Every path that folds
     // foreign ops in goes through here first, so this is the one place that
     // reliably knows the answer — and it is answered fresh from disk each
-    // time, so a log that arrived while the app was running counts too.
+    // time, so a log that arrived while the app was running counts too. This
+    // is the ACCURATE answer replacing the pre-scan's cautious one above; it
+    // can lower the guard, because an empty batch means there was nothing the
+    // container is missing after all.
     foreignPending = out.isNotEmpty;
     return out;
   }
@@ -626,10 +666,13 @@ class SyncRecorder {
   /// True while this device's replayed [state] contains other devices' work
   /// that its container does not.
   ///
-  /// Set by [pendingForeignOps], cleared by [markForeignSeen]. While it is
-  /// true, [page] refuses to record a diff — see the reasoning there. It
-  /// starts FALSE and is only ever raised by an explicit check, so a recorder
-  /// nobody has asked about behaves exactly as before.
+  /// Raised by [pendingForeignOps] **before its first await** (from a cheap
+  /// bytes-on-disk pre-scan, so a save landing inside the paced parse is
+  /// already refused), refined to the accurate answer when the parse
+  /// completes, cleared by [markForeignSeen]. While it is true, [page]
+  /// refuses to record a diff — see the reasoning there. It starts FALSE and
+  /// is only ever raised by an explicit check, so a recorder nobody has asked
+  /// about behaves exactly as before.
   bool foreignPending = false;
 
   static String foreignSeqKey(String notebookId, String device) =>

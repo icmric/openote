@@ -192,6 +192,131 @@ void main() {
             'pointing at nothing while looking like it worked');
   });
 
+  // `blobs/` IS the replicated folder: a deletion here is replicated to every
+  // other device, removing their GOOD copy under the canonical name — and
+  // once Step 7 empties the container there is no copy left anywhere. So the
+  // pull may disbelieve a file, but it may never delete it: it holds the hash
+  // out of the read path and lets the good copy arrive (or `proveBlobs`'
+  // repair, which holds verified container bytes, rewrite it).
+  test('a mismatched blob file is held out of reach, never deleted', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, app, nb, pageId, store) = await fixture('onote_blob_hold_');
+    final bytes = image(5);
+    final hash = await hashOf(bytes);
+
+    // A half-copied download: right name, wrong bytes.
+    store.writeBlob(hash, Uint8List.fromList([1, 2, 3]));
+    store.append('other-device', [
+      Op(
+          device: 'other-device',
+          seq: 1,
+          lamport: 500,
+          timestamp: 1000,
+          kind: OpKind.blobPut,
+          data: {'hash': hash, 'mime': 'image/png', 'size': bytes.length}),
+    ]);
+    await app.syncPull(nb);
+
+    expect(app.blob(hash), isNull,
+        reason: 'the wrong bytes must not be served as a picture');
+    // MUTATION: put `r.store.discardBlob(hash)` back in
+    // `_rejectBadForeignBlobs` and this fails — and in the field the cloud
+    // client replicates that deletion into every other device's good copy.
+    expect(store.hasBlob(hash), isTrue,
+        reason: 'deleting in a shared folder on local evidence is the bug');
+
+    // The cloud client finishes (or re-delivers) the copy under the same
+    // name. `writeBlob` refuses to overwrite, so this is the client's own
+    // file replacement.
+    store.blobFile(hash).writeAsBytesSync(bytes, flush: true);
+    // MUTATION: drop the held-hash re-verify from `Repository.getBlob` and
+    // this fails — the hold would outlive the repair for ever.
+    expect(app.blob(hash), bytes,
+        reason: 'the hold lifts itself the moment the bytes match the name');
+  });
+
+  // A blob file that lands AFTER its op has folded is never named by any
+  // later op — the pull's check ran while there was nothing to check, and
+  // `getBlob` does not re-hash on the ordinary path. The held register is
+  // what closes that gap, for the documented-normal log-before-picture
+  // ordering of every cloud client.
+  test('a file that lands after its op folded is verified before it is served',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, app, nb, pageId, store) = await fixture('onote_blob_land_');
+    final bytes = image(13);
+    final hash = await hashOf(bytes);
+
+    // Log first, picture later — the ordinary cloud-client ordering.
+    otherDeviceAddsImage(store, pageId, hash, bytes, withBytes: false);
+    expect(await app.syncPull(nb), 2);
+    expect(app.blob(hash), isNull);
+
+    // The file starts landing — and is caught half-copied: right name,
+    // wrong bytes. No pull will ever name this hash again.
+    store.writeBlob(hash, Uint8List.fromList([9, 9, 9]));
+    // MUTATION: remove `holdBlobUntilVerified` from the not-arrived branch
+    // of `_rejectBadForeignBlobs` and this serves three bytes of garbage as
+    // the picture, unverified, all session.
+    expect(app.blob(hash), isNull,
+        reason: 'an unverified late arrival must not be served');
+
+    // The copy completes; the folder watcher would fire a pull for it.
+    store.blobFile(hash).writeAsBytesSync(bytes, flush: true);
+    expect(await app.syncPull(nb), 0);
+    // MUTATION: remove `_repo.verifyHeldBlobs(nb)` from `syncPull` and this
+    // returns 1 — the pull no longer sweeps, leaving verification to chance.
+    expect(repo.verifyHeldBlobs(nb), 0,
+        reason: 'the pull itself must have already verified and released it');
+    expect(app.blob(hash), bytes);
+  });
+
+  // `blobBytesMatch` answers false for a file it could not READ — a cloud
+  // client's lock, a dehydrated placeholder — and the old code fed that
+  // false straight into the discard: a perfectly good file, deleted (and the
+  // deletion replicated) because it was momentarily busy.
+  test('a file the pull cannot read is not treated as bad', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // Windows enforces file locks against every handle, which is exactly the
+    // "cloud client holding the file" shape; elsewhere locks are advisory and
+    // the scenario cannot be built.
+    if (!Platform.isWindows) {
+      return markTestSkipped('needs mandatory file locking');
+    }
+    final (repo, app, nb, pageId, store) = await fixture('onote_blob_lock_');
+    final bytes = image(21);
+    final hash = await hashOf(bytes);
+
+    store.writeBlob(hash, bytes); // the GOOD bytes, mid-"sync"
+    store.append('other-device', [
+      Op(
+          device: 'other-device',
+          seq: 1,
+          lamport: 500,
+          timestamp: 1000,
+          kind: OpKind.blobPut,
+          data: {'hash': hash, 'mime': 'image/png', 'size': bytes.length}),
+    ]);
+
+    final raf = store.blobFile(hash).openSync(mode: FileMode.append);
+    raf.lockSync();
+    try {
+      await app.syncPull(nb);
+    } finally {
+      raf.unlockSync();
+      raf.closeSync();
+    }
+
+    expect(store.hasBlob(hash), isTrue,
+        reason: 'a file that could not be checked was never evidence of '
+            'anything — deleting it cost the only copy');
+    // MUTATION: classify unreadable as bad (hold it) in
+    // `_rejectBadForeignBlobs` and this is 1, not 0.
+    expect(repo.verifyHeldBlobs(nb), 0,
+        reason: '"could not check" must not put a good file on the register');
+    expect(app.blob(hash), bytes, reason: 'released, it reads normally');
+  });
+
   test('a blob already held is not copied again', () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (repo, app, nb, pageId, store) = await fixture('onote_blob_dupe_');

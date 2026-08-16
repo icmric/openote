@@ -358,6 +358,37 @@ void main() {
       expect(s.highestLamport(), 2);
       expect(s.lastSeq('devA'), 1);
     });
+
+    test('readBlob answers null, never a throw, for a file it cannot read',
+        () {
+      // `readBlob` sits on the paint path (`Repository.getBlob`), and the
+      // image views chain every read behind the last through one shared
+      // queue — so a single throw here used to blank every image loaded
+      // after it. "Cannot read right now" — a cloud client's lock, a
+      // dehydrated placeholder — must behave exactly like "absent", which
+      // sends the caller to the container fallback.
+      final s = store();
+      final bytes = Uint8List.fromList(List.generate(256, (i) => i % 256));
+      const h = 'deadbeef';
+      s.writeBlob(h, bytes);
+      expect(s.readBlob(h), bytes, reason: 'a healthy blob still reads');
+
+      // Windows locks are mandatory across every handle — the same shape as
+      // OneDrive holding the file. Elsewhere they are advisory and the
+      // unreadable state cannot be constructed this way.
+      if (!Platform.isWindows) return;
+      final raf = s.blobFile(h).openSync(mode: FileMode.append);
+      raf.lockSync();
+      try {
+        // MUTATION: remove readBlob's try/catch and this THROWS instead.
+        expect(s.readBlob(h), isNull);
+      } finally {
+        raf.unlockSync();
+        raf.closeSync();
+      }
+      expect(s.readBlob(h), bytes,
+          reason: 'and once the lock lifts it reads normally again');
+    });
   });
 
   group('device identity (§6a.2)', () {

@@ -618,6 +618,179 @@ void main() {
           reason: 'recording resumes once the container has caught up');
     });
 
+    // THE GUARD MUST BE UP *DURING* THE PARSE, NOT ONLY AFTER IT.
+    //
+    // The test above proves a save is refused once `pendingForeignOps` has
+    // ANSWERED. But the parse is paced now (`OpLogStore.readDeviceFrom`
+    // yields every half megabyte), so on a big log the answer is ~1 s away —
+    // and the save debounce is 700 ms, armed the moment a page is opened
+    // (the title-band repair marks it dirty). A guard raised only at the end
+    // leaves that whole window open, and a save landing inside it is the
+    // exact reproduced disaster the previous test describes: a diff against
+    // replayed state that already holds the other device's blocks, emitting
+    // `block.remove` at top Lamport on every replica.
+    test('the guard is up before the parse finishes, not only after', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp) = await freshRepo('onote_sync_midparse_');
+      addTearDown(() {
+        repo.dispose();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      final nb = await repo.createNotebook('MidParse');
+      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
+
+      final first = AppState(repo)..notebookId = nb.id;
+      first.reloadNodes();
+      final pageId = first.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+      first.pageId = pageId;
+      first.blocks = [
+        Block(
+            id: 'mine-1',
+            type: BlockType.text,
+            x: 0,
+            y: 0,
+            content: {'text': 'mine'})
+      ];
+      first.markDirty();
+      await first.flushSave();
+      first.cancelPendingSave();
+
+      final store = OpLogStore.forNotebook(ref.file);
+      otherDeviceWrites(store, [
+        op(1, 500, OpKind.blockSet, {
+          'pageId': pageId,
+          'block': {
+            'id': 'theirs-1',
+            'type': 'text',
+            'x': 0,
+            'y': 100,
+            'w': 320,
+            'content': {'text': 'theirs'}
+          }
+        }),
+      ]);
+
+      final second = AppState(repo)..notebookId = nb.id;
+      second.reloadNodes();
+      second.pageId = pageId;
+      addTearDown(second.cancelPendingSave);
+      final recorder = await second.warmRecorder(nb.id);
+      expect(recorder, isNotNull);
+
+      // Start the parse and do NOT await it — this is the paced window.
+      final parsing = recorder!.pendingForeignOps(repo.getSetting);
+      // MUTATION: move the pre-scan arming out of `pendingForeignOps` (back
+      // to end-of-parse only) and this expectation fails — and with it the
+      // block below records a destructive diff.
+      expect(recorder.foreignPending, isTrue,
+          reason: 'the cheap bytes-on-disk pre-scan must raise the guard '
+              'before the first await, because the 700 ms save debounce '
+              'fires inside the ~1 s paced parse');
+
+      // The mid-parse save: the page as the CONTAINER knows it, without
+      // their block. `page()` must refuse to diff it.
+      recorder.page(
+          pageId,
+          [
+            Block(
+                id: 'mine-1',
+                type: BlockType.text,
+                x: 0,
+                y: 0,
+                content: {'text': 'mine, edited mid-parse'})
+          ],
+          PageProps());
+
+      await parsing;
+
+      final ours = store.readDevice(second.localDeviceId());
+      expect(ours.where((o) => o.kind == OpKind.blockRemove), isEmpty,
+          reason: 'a save inside the parse window must not delete a block '
+              'this device has not folded into its container yet');
+      expect(
+          ours.where((o) =>
+              o.kind == OpKind.blockSet &&
+              (o.map['block'] as Map?)?['id'] == 'theirs-1'),
+          isEmpty,
+          reason: 'nor rewrite it with stale content');
+    });
+
+    // Negative control for the pre-scan: a foreign log that is FULLY FOLDED
+    // (offset at end of file) must not arm, or every save landing during any
+    // pull's check — and the watcher fires one on every folder event — would
+    // lose its recording to a phantom window.
+    test('no unread foreign bytes leaves saves recording during the check',
+        () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp) = await freshRepo('onote_sync_noforeign_');
+      addTearDown(() {
+        repo.dispose();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      final nb = await repo.createNotebook('Quiet');
+      final app = AppState(repo)..notebookId = nb.id;
+      app.reloadNodes();
+      final pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+      app.pageId = pageId;
+      addTearDown(app.cancelPendingSave);
+
+      // A foreign device exists and everything it wrote is already folded —
+      // the steady state of every shared notebook. The pre-scan sees a log
+      // whose stored offset equals its length: nothing unread.
+      final store = OpLogStore.forNotebook(
+          repo.notebooks.firstWhere((n) => n.id == nb.id).file);
+      otherDeviceWrites(store, [
+        op(1, 500, OpKind.blockSet, {
+          'pageId': pageId,
+          'block': {
+            'id': 'theirs-1',
+            'type': 'text',
+            'x': 0,
+            'y': 100,
+            'w': 320,
+            'content': {'text': 'theirs'}
+          }
+        }),
+      ]);
+      expect(await app.syncPull(nb.id), 1, reason: 'precondition: folded');
+
+      final recorder = await app.warmRecorder(nb.id);
+      expect(recorder, isNotNull);
+      final parsing = recorder!.pendingForeignOps(repo.getSetting);
+      // MUTATION: arm the guard unconditionally in the pre-scan and this
+      // fails — the phantom window would cost a save its recording on every
+      // watcher-fired pull of every shared notebook.
+      expect(recorder.foreignPending, isFalse,
+          reason: 'no foreign log has unread bytes, so nothing may be armed');
+      recorder.page(
+          pageId,
+          [
+            ...repo.readPage(nb.id, pageId).blocks,
+            Block(
+                id: 'solo-1',
+                type: BlockType.text,
+                x: 0,
+                y: 0,
+                content: {'text': 'recorded'})
+          ],
+          PageProps());
+      await parsing;
+
+      final ours = store.readDevice(app.localDeviceId());
+      expect(
+          ours.where((o) =>
+              o.kind == OpKind.blockSet &&
+              (o.map['block'] as Map?)?['id'] == 'solo-1'),
+          isNotEmpty,
+          reason: 'an ordinary save with no pending foreign work records');
+    });
+
     test('pulling twice is a no-op (the watermark holds)', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, tmp) = await freshRepo('onote_sync_twice_');

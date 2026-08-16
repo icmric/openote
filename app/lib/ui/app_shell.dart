@@ -840,7 +840,12 @@ class _AppShellState extends State<AppShell> {
     final bytes = await readClipboardImage();
     if (bytes == null || !mounted) return;
     if (app.activeEditor?.block.id != ae.block.id) return; // moved on
-    final hash = app.addBlob(bytes.bytes, bytes.mime);
+    // `tryAddBlob`: this path is fire-and-forget by design (see above), which
+    // is exactly where a throwing `writeBlob` — full disk, read-only folder —
+    // used to disappear without a word. The status bar now says so, and no
+    // reference to unstored bytes is spliced into the text.
+    final hash = app.tryAddBlob(bytes.bytes, bytes.mime);
+    if (hash == null) return;
     app.insertTextAtActiveCursor('\n![](sha256:$hash)\n');
     ae.block.content['autoWidth'] = false;
   }

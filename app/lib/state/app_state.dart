@@ -21,6 +21,7 @@ import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/history.dart';
 import '../model/models.dart';
 import '../store/database.dart' show NotebookFileProblem, notebookFileProblem;
+import '../store/notebook_writer.dart' show sha256Hex;
 import '../store/history_store.dart';
 import '../sync/device_label.dart';
 import '../store/media_gc.dart';
@@ -242,6 +243,46 @@ class AppState extends ChangeNotifier
   /// Store bytes in the current notebook, returning the content hash.
   String addBlob(Uint8List bytes, String mime) =>
       importBlob(notebookId!, bytes, mime);
+
+  /// [addBlob] for the interactive routes — paste, drag-and-drop, the Insert
+  /// menu — returning null instead of throwing when the bytes could not be
+  /// written.
+  ///
+  /// `writeBlob` throws synchronously on a full disk, a read-only folder or a
+  /// cloud directory that is offline, and every one of those used to escape
+  /// into a fire-and-forget async gap: the paste simply did nothing, with not
+  /// a word on screen. Losing the thing the user just added is the one
+  /// failure that must be VISIBLE, so it surfaces through [saveError] — the
+  /// same plain-words status-bar chip every other write failure uses — and
+  /// the caller skips creating a block that would reference bytes nothing
+  /// holds.
+  String? tryAddBlob(Uint8List bytes, String mime) {
+    try {
+      final hash = addBlob(bytes, mime);
+      if (_blobWriteError != null) {
+        // The write path works again; a stale notice would outlive the
+        // problem it described.
+        _blobWriteError = null;
+        notifyListeners();
+      }
+      return hash;
+    } catch (e) {
+      debugPrint('[openote] could not store pasted/dropped bytes: $e');
+      _blobWriteError = SaveProblem(
+        short: "That didn't get added",
+        message: 'Openote could not save the picture or file you just added, '
+            'so it is not in your notebook.\n\n'
+            'Check that the disk is not full and that the notebook\'s folder '
+            'is not set to read-only, then paste or drop it again.',
+        details: '$e',
+      );
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// The last failed paste/drop, until one succeeds. See [tryAddBlob].
+  SaveProblem? _blobWriteError;
 
   /// Every notebook in the workspace (registry order).
   List<NotebookRef> get notebooks => _repo.notebooks;
@@ -1792,6 +1833,16 @@ class AppState extends ChangeNotifier
         // already async, so it can simply wait for the background open.
         final r = await warmRecorder(nb);
         if (r == null) break;
+        // A blob file that landed AFTER its op folded is never named by any
+        // later op, so this sweep — running on every pull, including the one
+        // the folder watcher fires when the file itself arrives — is what
+        // verifies it close to arrival instead of leaving it to its first
+        // read. Free when nothing is held, which is the healthy steady state.
+        final verified = _repo.verifyHeldBlobs(nb);
+        if (verified > 0) {
+          debugPrint('[openote/sync] $verified late blob file(s) verified '
+              'against their name and released to the read path');
+        }
         // Awaited: the parse is paced now (see `OpLogStore.readDeviceFrom`),
         // so the ~1 s a first read of a 64.6 MB log costs is spent in ~8 ms
         // slices the window can paint and type between instead of one block.
@@ -1805,8 +1856,8 @@ class AppState extends ChangeNotifier
     }
   }
 
-  /// Check the bytes of every blob these ops name, and throw out any file whose
-  /// contents are not what its name says.
+  /// Check the bytes of every blob these ops name, and put any file whose
+  /// contents are not what its name says out of the read path's reach.
   ///
   /// **This used to copy those bytes into the container** — the two halves of a
   /// blob travel separately (an op carries hash, mime and size; the bytes go
@@ -1820,15 +1871,39 @@ class AppState extends ChangeNotifier
   /// re-derived the hash from the bytes, so a truncated download stored itself
   /// under a different name and the page went on showing nothing. Reading
   /// straight from the file would instead *serve* those bytes — a corrupted
-  /// picture rendered as if it were real. So a file that fails its own name is
-  /// discarded here, which puts it back in `SyncRecorder.missingBlobs()` where
-  /// the UI can say so, and lets the cloud client's next copy replace it.
+  /// picture rendered as if it were real.
+  ///
+  /// **Nothing here deletes — or renames — a file, and that is the decision
+  /// everything else hangs off.** `blobs/` sits inside the replicated folder,
+  /// so the cloud client mirrors whatever happens to it: this used to call
+  /// `discardBlob` on a mismatch, and the deletion of one device's
+  /// half-copied download replicated out and removed every other device's
+  /// GOOD copy under that name — after Step 7 empties the container, that is
+  /// permanent, all-device loss of the picture. (A rename is no better: it
+  /// replicates too, and takes the canonical name away from everyone.) Local
+  /// evidence gets local consequences only: the hash goes on the
+  /// repository's held register, `getBlob` treats the file as absent and
+  /// falls back to the container, and the file is put right by `proveBlobs`'
+  /// repair — the one caller that holds verified replacement bytes — or by
+  /// the cloud client finishing or re-delivering the copy, at which point the
+  /// register releases it.
+  ///
+  /// A file that is present but cannot be READ (a lock, a dehydrated
+  /// placeholder) is skipped outright: `blobBytesMatch` answers false for it,
+  /// so treating "failed the check" as "bad" condemned perfectly good files.
+  /// "Could not check" is not evidence of anything.
   ///
   /// A blob whose file has simply not arrived is **not** an error and must not
   /// fail the pull: a cloud client syncs the log and the blobs independently,
-  /// so a reference routinely lands first. Returns how many files were rejected.
+  /// so a reference routinely lands first. It IS put on the held register —
+  /// once this op folds, nothing ever names the hash again, so a file landing
+  /// later would be served all session without a single check. The register
+  /// is swept by every later pull (the folder watcher fires one when the file
+  /// lands) and consulted by `getBlob` before first serve.
+  ///
+  /// Returns how many files were found holding the wrong bytes.
   int _rejectBadForeignBlobs(String nb, SyncRecorder r, List<Op> pending) {
-    var rejected = 0;
+    var wrongBytes = 0;
     for (final op in pending) {
       if (op.kind != OpKind.blobPut) continue;
       // `Op.data` is Object? — a hand-edited or future log can put anything
@@ -1837,14 +1912,22 @@ class AppState extends ChangeNotifier
       if (d is! Map) continue;
       final hash = d['hash'];
       if (hash is! String || hash.isEmpty) continue;
-      if (!r.store.hasBlob(hash)) continue; // not arrived yet — not an error
-      if (r.store.blobBytesMatch(hash)) continue;
-      r.store.discardBlob(hash);
-      rejected++;
+      if (!r.store.hasBlob(hash)) {
+        _repo.holdBlobUntilVerified(nb, hash);
+        continue; // not arrived yet — not an error
+      }
+      // `readBlob`, not `blobBytesMatch`: the latter folds "unreadable" into
+      // its false, and this is the one caller that must tell them apart.
+      final bytes = r.store.readBlob(hash);
+      if (bytes == null) continue; // unreadable — could not check, not bad
+      if (sha256Hex(bytes) == hash.replaceFirst('sha256:', '')) continue;
+      _repo.holdBlobUntilVerified(nb, hash);
+      wrongBytes++;
       debugPrint('[openote/sync] blob $hash does not match its bytes — '
-          'discarded; the file was probably still copying');
+          'held out of the read path; probably still copying, and the good '
+          'copy stays safe on the device that wrote it');
     }
-    return rejected;
+    return wrongBytes;
   }
 
   /// Pages written per transaction while a pull is applying.
@@ -2115,8 +2198,8 @@ class AppState extends ChangeNotifier
     }
 
     if (badBlobs > 0) {
-      debugPrint('[openote/sync] threw out $badBlobs blob file(s) whose bytes '
-          'were not what their name said');
+      debugPrint('[openote/sync] held $badBlobs blob file(s) whose bytes '
+          'were not what their name said out of the read path');
     }
     if (orphanNodes > 0 || orphanPages > 0) {
       // Said out loud because it is the only trace either skip leaves: what
@@ -7212,12 +7295,14 @@ class AppState extends ChangeNotifier
   /// landed. Surfaced in the status bar — a silent failed save used to read as
   /// "Saved".
   ///
-  /// **Three sources, one surface, in order of how much they cost the user.**
-  /// [_pageSaveError] is the container write, and means the notes on screen are
-  /// not on disk. [_logError] is the operation log — the notes ARE on disk but
-  /// the history other devices and backups read from is behind. The registry
-  /// lock means the notebook *list* cannot be written, so a rename or a new
-  /// notebook will not survive a restart.
+  /// **Several sources, one surface, in order of how much they cost the
+  /// user.** [_pageSaveError] is the container write, and means the notes on
+  /// screen are not on disk. [_blobWriteError] means a paste or drop's bytes
+  /// never landed anywhere — the thing just added is not in the notebook.
+  /// [_logError] is the operation log — the notes ARE on disk but the history
+  /// other devices and backups read from is behind. The registry lock means
+  /// the notebook *list* cannot be written, so a rename or a new notebook
+  /// will not survive a restart.
   ///
   /// They are separate fields rather than one because they are cleared by
   /// different events: a successful page save must not wipe a log failure it
@@ -7230,6 +7315,10 @@ class AppState extends ChangeNotifier
     final nb = notebookId;
     return (nb == null ? null : _logAhead[nb]) ??
         _pageSaveError ??
+        // A paste or drop whose bytes never landed anywhere. As costly as a
+        // failed page save — the thing the user just added is simply not in
+        // the notebook — and nothing else on screen would ever mention it.
+        _blobWriteError ??
         _logError ??
         // Below the two write failures and above the registry lock: the notes
         // themselves are safe on this computer, so this is not a lost save —
