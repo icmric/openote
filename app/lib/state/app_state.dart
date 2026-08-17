@@ -4791,6 +4791,32 @@ class AppState extends ChangeNotifier
       if (s == e) return;
     }
 
+    // Sub and super are mutually exclusive on the same text. Nesting them
+    // would emit `~^x^~`, which the grammar reads as neither (the inner run
+    // is never re-scanned), so the markers would be visible forever — the
+    // same failure the whole command was rewritten to stop producing.
+    // Applying one over the other therefore SWAPS the run's markers, which is
+    // also what a student means by "no, make it the other one".
+    final opposite = _oppositeMark[mark];
+    if (opposite != null) {
+      final other = _runAround(t, s, e, opposite);
+      if (other != null) {
+        pushUndo();
+        final inner = t.substring(other.open + other.strip, other.close);
+        c.value = TextEditingValue(
+          text: t.replaceRange(
+              other.open, other.close + other.strip, '$mark$inner$close'),
+          selection: TextSelection(
+              baseOffset: other.open + mark.length,
+              extentOffset: other.open + mark.length + inner.length),
+          composing: TextRange.empty,
+        );
+        _commitActiveEditor();
+        notifyListeners();
+        return;
+      }
+    }
+
     pushUndo();
     // Ask the GRAMMAR what encloses this range rather than searching for the
     // marker characters. `*` is a prefix of `**`, so a plain string search
@@ -4807,10 +4833,12 @@ class AppState extends ChangeNotifier
         composing: TextRange.empty,
       );
     } else {
+      final wrapped = _wrapRun(t.substring(s, e), mark, close);
       c.value = TextEditingValue(
-        text: t.replaceRange(s, e, '$mark${t.substring(s, e)}$close'),
+        text: t.replaceRange(s, e, wrapped),
         selection: TextSelection(
-            baseOffset: s + mark.length, extentOffset: e + mark.length),
+            baseOffset: s + mark.length,
+            extentOffset: s + wrapped.length - close.length),
         composing: TextRange.empty,
       );
     }
@@ -4833,7 +4861,7 @@ class AppState extends ChangeNotifier
       }
       final lead = line.substring(0, line.indexOf(trimmed[0]));
       final tail = line.substring(lead.length + trimmed.length);
-      out.add('$lead$mark$trimmed$close$tail');
+      out.add('$lead${_wrapRun(trimmed, mark, close)}$tail');
     }
     final next = out.join('\n');
     c.value = TextEditingValue(
@@ -4852,7 +4880,30 @@ class AppState extends ChangeNotifier
     '~~': MdInline.strike,
     '`': MdInline.code,
     '==': MdInline.highlight,
+    '~': MdInline.subscript,
+    '^': MdInline.superscript,
   };
+
+  /// The mark that must come OFF when this one goes on. Only sub/superscript
+  /// have one: nothing else in the grammar is mutually exclusive.
+  static const _oppositeMark = <String, String>{'~': '^', '^': '~'};
+
+  /// Marks whose grammar forbids whitespace between the markers — see the
+  /// long note on `_sub`/`_sup` in markdown/md_syntax.dart.
+  static const _noSpaceMarks = <String>{'~', '^'};
+
+  /// Wrap [s] in [mark]…[close], one pair per WORD when the mark cannot span
+  /// a space.
+  ///
+  /// Selecting two words and pressing Ctrl+= would otherwise write
+  /// `~hello world~`, which no renderer matches — permanently visible tildes,
+  /// exactly the bug class this command exists to avoid. `~hello~ ~world~`
+  /// looks identical on the page and actually renders.
+  static String _wrapRun(String s, String mark, String close) =>
+      _noSpaceMarks.contains(mark)
+          ? s.replaceAllMapped(
+              RegExp(r'\S+'), (m) => '$mark${m.group(0)}$close')
+          : '$mark$s$close';
 
   /// The run of [mark]'s kind enclosing [s]..[e], with how many characters to
   /// strip from each end to remove exactly that mark.

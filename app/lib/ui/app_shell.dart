@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../canvas/media_drop.dart';
 import '../canvas/page_canvas.dart';
+import '../math/linear_math.dart' show linearToLatex;
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../core/onote_ffi.dart';
@@ -144,6 +145,72 @@ class _AppShellState extends State<AppShell> {
     return found;
   }
 
+  /// The `=` key, however the platform reports it. `add` is the `+` CHARACTER
+  /// — what a shifted `=` becomes on a layout that hands Flutter the shifted
+  /// logical key — and `numpadAdd` is the keypad's own. The zoom chords below
+  /// have always accepted `equal` and `add` for the same reason.
+  static bool _isEqualsKey(LogicalKeyboardKey k) =>
+      k == LogicalKeyboardKey.equal ||
+      k == LogicalKeyboardKey.add ||
+      k == LogicalKeyboardKey.numpadAdd;
+
+  /// Alt+= — a new equation on the page, with the caret already in it.
+  ///
+  /// Deliberately the same two calls the Insert ribbon and the right-click
+  /// menu make (`addBlock`, then `select(edit: true)`); `MathBlockView` takes
+  /// the keyboard itself on its first editing build, so there is nothing more
+  /// to do to land the caret.
+  ///
+  /// With text selected, the words come WITH you rather than being left
+  /// behind as a duplicate — `x^2 + 1` written in prose becomes the equation
+  /// it was always meant to be. The selection is seeded into BOTH
+  /// `linearSource` and `latex`: an equation whose `latex` is empty is swept
+  /// away when the editor closes, so seeding only the source would lose the
+  /// text if the student pressed Escape without typing.
+  void _startEquation() {
+    // Already writing an equation? Then the chord has nothing to add, and a
+    // second empty block appearing underneath would be a surprise.
+    for (final b in app.blocks) {
+      if (b.id == app.editingBlockId && b.type == BlockType.math) return;
+    }
+
+    final ae = app.activeEditor;
+    var seed = '';
+    Offset at;
+    if (ae != null && ae.block.type == BlockType.text) {
+      final sel = ae.controller.selection;
+      if (sel.isValid && !sel.isCollapsed) {
+        seed = ae.controller.text.substring(sel.start, sel.end).trim();
+        // Replacing the selection with nothing is the existing "write at the
+        // caret" seam, so the text block is committed and undoable exactly
+        // as any other edit would be.
+        if (seed.isNotEmpty) app.insertTextAtActiveCursor('');
+      }
+      final b = ae.block;
+      final h = b.h ?? app.renderSizes[b.id]?.height ?? 60;
+      // `b.y + h + 14` is one of the candidates smartTextPosition snaps to,
+      // so the equation lands directly under the paragraph it came from and
+      // aligned to its left edge.
+      at = app.smartTextPosition(Offset(b.x, b.y + h + 14));
+    } else {
+      final v = app.canvas.viewport;
+      final c = app.canvas.screenToPage(Offset(v.width / 2, v.height / 2));
+      at = Offset(c.dx - 180, c.dy - 30); // centred, same as Insert ▸ Equation
+    }
+
+    final block = app.addBlock(Block(
+      type: BlockType.math,
+      x: at.dx,
+      y: at.dy,
+      w: 360,
+      content: {
+        'latex': seed.isEmpty ? '' : linearToLatex(seed),
+        'linearSource': seed,
+      },
+    ));
+    app.select(block.id, edit: true);
+  }
+
   bool _onKey(KeyEvent e) {
     if (e is! KeyDownEvent) return false;
     final k = e.logicalKey;
@@ -205,6 +272,20 @@ class _AppShellState extends State<AppShell> {
       return _cycleRegion(shift ? -1 : 1);
     }
 
+    // Alt+= — start a maths equation, OneNote's own chord. Here with the
+    // navigator chords, BEFORE the typing early-return: that return lets only
+    // Ctrl accelerators through, and reaching for an equation mid-sentence is
+    // the whole point of the shortcut. Alt plus a printable key produces no
+    // character on any desktop we ship, so nothing is taken away from the
+    // field — and `_routeOnTop` keeps it out of a dialog's own text fields.
+    if (HardwareKeyboard.instance.isAltPressed &&
+        !ctrl &&
+        _isEqualsKey(k) &&
+        !_routeOnTop) {
+      _startEquation();
+      return true;
+    }
+
     // Navigator chords, BEFORE the editable early-return: none of these can
     // collide with typing (no field inserts a character for Ctrl+PageDown),
     // and OneNote users reach for them mid-sentence.
@@ -255,6 +336,20 @@ class _AppShellState extends State<AppShell> {
         }
         if (k == LogicalKeyboardKey.keyU) {
           app.wrapSelection('++'); // underline (TEXT-1)
+          return true;
+        }
+        // Ctrl+= / Ctrl+Shift+= — small text below / above the line
+        // (`H~2~O`, `x^2^`), on OneNote's own chords. Reached only from
+        // INSIDE a text box: the canvas keeps Ctrl+= for zoom, which is why
+        // this sits behind the `editable` early-return and that one does not.
+        //
+        // `add` is the `+` CHARACTER a shifted `=` reports on layouts that
+        // hand Flutter the shifted logical key, so it means "above the line"
+        // however Shift arrives; `equal` plus the Shift flag is what Windows
+        // sends.
+        if (_isEqualsKey(k)) {
+          app.wrapSelection(
+              (shift || k == LogicalKeyboardKey.add) ? '^' : '~');
           return true;
         }
         // Ctrl+Shift+C — flick the selection to the last colour and back.

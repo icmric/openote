@@ -36,6 +36,8 @@ const List<KeySection> keyboardMap = [
     KeyBinding('Ctrl+N', 'New page after this one'),
     KeyBinding('Ctrl+Shift+N', 'New sub-page of this one'),
     KeyBinding('Ctrl+\\', 'Hide or show the sidebar'),
+    KeyBinding('Alt+=',
+        'Start a maths equation — with words selected, they go into it'),
     KeyBinding(
         'F6 / Shift+F6',
         'Jump between the sidebar, the toolbar, the page, the open panel and '
@@ -47,6 +49,8 @@ const List<KeySection> keyboardMap = [
   ]),
   KeySection('While writing', [
     KeyBinding('Ctrl+B / Ctrl+I / Ctrl+U', 'Bold / italic / underline'),
+    KeyBinding('Ctrl+= / Ctrl+Shift+=',
+        'Small text below the line / above it — H₂O, x²'),
     KeyBinding('Ctrl+Shift+C',
         'Colour the selection (last used colour; again to remove)'),
     KeyBinding('Ctrl+1 … Ctrl+5',

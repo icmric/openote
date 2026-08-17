@@ -4,7 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../markdown/md_render.dart' show indentPx, kBulletGutter;
+import '../markdown/md_render.dart' show indentPx, kBulletGutter, subSupStyle;
 import '../markdown/md_syntax.dart';
 import '../theme/onote_theme.dart';
 import '../study/flashcards.dart' show inlineCardRe;
@@ -592,6 +592,14 @@ class LiveMarkdownController extends TextEditingController {
                   dark ? OnoteColors.night100 : OnoteColors.paper100);
         case MdInline.strike:
           inner = cBase.copyWith(decoration: TextDecoration.lineThrough);
+        case MdInline.subscript:
+          // Same helper the read renderer uses, so `H~2~O` does not change
+          // shape when the caret leaves the block. It shifts the ink with a
+          // shadow rather than a placeholder precisely so the character count
+          // — and therefore every caret offset — is untouched.
+          inner = subSupStyle(cBase, sup: false, dark: dark);
+        case MdInline.superscript:
+          inner = subSupStyle(cBase, sup: true, dark: dark);
         case MdInline.highlight:
           inner = cBase.copyWith(
               backgroundColor: dark

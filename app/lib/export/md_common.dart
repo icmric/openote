@@ -130,6 +130,14 @@ String plainLine(String line) {
       RegExp(r'(?<![\w])_(?!\s)(.+?)(?<!\s)_(?![\w])', dotAll: true),
       (x) => x.group(1)!);
 
+  // Sub/superscript (`H~2~O`, `x^2^`). AFTER the `~~` pass above, so a
+  // strikethrough is already gone and cannot be read as two subscripts. The
+  // inner text forbids whitespace, which is the grammar's own rule
+  // (markdown/md_syntax.dart) and what keeps "~5 to ~10" and "3^2 = 9 and
+  // 4^2 = 16" reading as the arithmetic somebody actually wrote.
+  s = s.replaceAllMapped(RegExp(r'~([^\s~]+)~'), (m) => m.group(1)!);
+  s = s.replaceAllMapped(RegExp(r'\^([^\s^]+)\^'), (m) => m.group(1)!);
+
   // The colour extension and wiki-links degrade to their visible text, the
   // same way `markdownInline` degrades them for export.
   s = s.replaceAllMapped(

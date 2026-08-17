@@ -1,10 +1,10 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_math_fork/flutter_math.dart';
 
 import '../core/platform_open.dart';
 import '../model/tags.dart';
+import '../math/math_view.dart';
 import '../theme/onote_theme.dart';
 import 'md_syntax.dart';
 import 'md_table.dart';
@@ -553,13 +553,15 @@ class _MarkdownViewState extends State<MarkdownView> {
         child: Center(
           child: FittedBox(
             fit: BoxFit.scaleDown,
-            child: Math.tex(
-              dm.group(1)!,
-              textStyle: baseStyle.copyWith(fontSize: 18),
-              onErrorFallback: (e) => Text(dm.group(1)!,
-                  style: const TextStyle(
-                      fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, color: OnoteColors.graphite400)),
-            ),
+            // OnoteMath, not a bare Math.tex: it rewrites the constructs this
+            // renderer lacks (`\begin{align}`, a top-level `\\`) instead of
+            // losing them, and when an equation genuinely cannot be drawn it
+            // says so in words. The fallback here used to be the raw LaTeX in
+            // graphite400 — 2.80:1 in the contrast audit, and to a student
+            // indistinguishable from the app eating their equation and
+            // leaving the backslashes behind.
+            child: OnoteMath(dm.group(1)!,
+                textStyle: baseStyle.copyWith(fontSize: 18)),
           ),
         ),
       );
@@ -592,6 +594,46 @@ class _MarkdownViewState extends State<MarkdownView> {
       style: baseStyle,
     );
   }
+}
+
+/// The look of `~subscript~` and `^superscript^`, in ONE place because both
+/// renderers have to agree character for character.
+///
+/// Why a shadow rather than the obvious thing: Flutter's `TextStyle` has no
+/// baseline shift, and the live editor cannot reach for a `WidgetSpan` — a
+/// placeholder occupies exactly one code unit however many characters it
+/// stands in for, so every caret offset after it would move (that is why
+/// `_SourceSpan` in live_markdown_controller.dart is only ever used for a
+/// single character). Painting the glyph as a zero-blur shadow at an offset
+/// and making the glyph itself transparent shifts the INK without touching
+/// the metrics, so the raw text keeps exactly as many code units as it had
+/// and the coverage check still passes on every keystroke.
+///
+/// The sizes are relative to [base] rather than absolute, so a text box with
+/// its own font size gets sub/superscripts in proportion.
+TextStyle subSupStyle(TextStyle base, {required bool sup, required bool dark}) {
+  final em = base.fontSize ?? 14;
+  // Ink has to be named explicitly: the shadow needs a colour, and the base
+  // style inherits its own from the enclosing DefaultTextStyle more often
+  // than it carries one.
+  final ink =
+      base.color ?? (dark ? OnoteColors.moon0 : OnoteColors.graphite900);
+  return base.copyWith(
+    fontSize: em * 0.72,
+    color: const Color(0x00000000),
+    shadows: [
+      // The rise is 0.26em, not the 0.34em typography would suggest, and the
+      // reason is measured: a raised glyph is drawn OUTSIDE its line box, and
+      // a text box clips at its own edge. At 0.34em the top of a superscript
+      // was cut off on every imported OneNote box (line height 1.2207 —
+      // `oneNoteLineHeight`), which is precisely where imported subscripts
+      // and superscripts arrive from. 0.26em clears it with room to spare and
+      // still sits visibly above the x-height. zz_subsup_probe measured this
+      // by counting ink; a line height of 1.0 has no leading at all and would
+      // clip any rise whatever, but no block in the app uses one.
+      Shadow(color: ink, offset: Offset(0, sup ? -em * 0.26 : em * 0.14)),
+    ],
+  );
 }
 
 /// Inline span parsing: **bold**, *italic*, `code`, ~~strike~~, ==highlight==,
@@ -634,15 +676,9 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
       case MdInline.math:
         spans.add(WidgetSpan(
           alignment: PlaceholderAlignment.middle,
-          child: Math.tex(
-            c.inner,
-            textStyle: base,
-            onErrorFallback: (e) => Text(c.inner,
-                style: const TextStyle(
-                    fontFamily: 'JetBrains Mono',
-                    fontFamilyFallback: onoteFontFallback,
-                    color: OnoteColors.graphite400)),
-          ),
+          // `compact`: this one sits MID-SENTENCE, so an explanation box
+          // would break the paragraph open. It moves into a tooltip instead.
+          child: OnoteMath(c.inner, textStyle: base, compact: true),
         ));
       case MdInline.extLink:
         spans.add(WidgetSpan(
@@ -704,6 +740,12 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
         spans.add(TextSpan(
             text: c.inner,
             style: const TextStyle(decoration: TextDecoration.lineThrough)));
+      case MdInline.subscript:
+        spans.add(TextSpan(
+            text: c.inner, style: subSupStyle(base, sup: false, dark: dark)));
+      case MdInline.superscript:
+        spans.add(TextSpan(
+            text: c.inner, style: subSupStyle(base, sup: true, dark: dark)));
       case MdInline.highlight:
         spans.add(TextSpan(
             text: c.inner,

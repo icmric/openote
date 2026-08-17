@@ -29,6 +29,8 @@ enum MdInline {
   strike,
   highlight,
   underline,
+  subscript,
+  superscript,
 }
 
 /// One classified match: what it is, and where its markers are.
@@ -76,6 +78,34 @@ const String _code = r'(`(.+?)`)';
 const String _strike = r'(~~(.+?)~~)';
 const String _high = r'(==(.+?)==)';
 const String _under = r'(\+\+(.+?)\+\+)';
+// Pandoc's subscript and superscript: `H~2~O`, `x^2^`.
+//
+// TWO rules, and both are load-bearing.
+//
+// 1. `~~` must stay strikethrough. A single tilde is a PREFIX of the double
+//    one — the same shape as `*` inside `**`, which is the collision that
+//    once rendered `***bold italic***` as bold plus a stray asterisk.
+//    Answered twice over, because it is cheap:
+//      * the inner class EXCLUDES `~`, so a subscript can neither begin on
+//        the second tilde of a pair nor swallow one. This is what actually
+//        does the work — a subscript branch simply cannot match anywhere
+//        inside `~~struck~~`;
+//      * and `_strike` sits BEFORE `_sub` in `_order`, so even if the inner
+//        class were ever loosened, `~~…~~` still wins at the position it
+//        starts on. `(?!~)` on both markers is the same belt on the outside.
+//    Either one alone holds today; the test that proves the collision has to
+//    break BOTH to make it fail, which is the honest thing to say about it.
+//
+// 2. The inner text may contain NO whitespace (`[^\s~]+`, `[^\s^]+`) — this
+//    is Pandoc's own rule and it is what keeps ordinary prose literal. A
+//    flanking guard alone is not enough: with a lazy `.+?` inner,
+//    "3^2 = 9 and 4^2 = 16" matches `^2 = 9 and 4^` (the closing caret is
+//    flanked by digits on both sides) and eats half the sentence. Forbidding
+//    the space kills that, and with it "~5 to ~10", "a ~ b" and `~/Documents
+//    ~/Downloads`. A lone `~` or `^` with no partner on its own side of a
+//    space is simply a tilde or a caret, which is what students type.
+const String _sub = r'(~(?!~)([^\s~]+)~(?!~))';
+const String _sup = r'(\^([^\s^]+)\^)';
 const String _math = r'(\$([^$\n]+?)\$)';
 const String _colour =
     r'(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})';
@@ -98,6 +128,9 @@ const _order = <MapEntry<MdInline, int>>[
   MapEntry(MdInline.underline, 2), // ++u++ before __u__ can claim it
   MapEntry(MdInline.strike, 2),
   MapEntry(MdInline.highlight, 2),
+  // AFTER strike: `~~` must beat `~`, exactly as `**` beats `*` above.
+  MapEntry(MdInline.subscript, 2),
+  MapEntry(MdInline.superscript, 2),
   MapEntry(MdInline.code, 2),
   MapEntry(MdInline.math, 2),
   MapEntry(MdInline.bareUrl, 2),
@@ -113,6 +146,8 @@ String _patternFor(MdInline k) => switch (k) {
       MdInline.underline => _under,
       MdInline.strike => _strike,
       MdInline.highlight => _high,
+      MdInline.subscript => _sub,
+      MdInline.superscript => _sup,
       MdInline.code => _code,
       MdInline.math => _math,
       MdInline.bareUrl => _bare,
@@ -124,6 +159,7 @@ int _openLen(MdInline k) => switch (k) {
       MdInline.bold || MdInline.strike || MdInline.highlight => 2,
       MdInline.underline => 2,
       MdInline.italic || MdInline.code || MdInline.math => 1,
+      MdInline.subscript || MdInline.superscript => 1,
       _ => -1,
     };
 
