@@ -96,6 +96,27 @@ void main() {
     expect(fellBack(), isFalse);
   });
 
+  testWidgets('the exact piecewise LaTeX the OneNote importer emits draws',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // The seam between two halves that were built separately: the importer
+    // decodes OneNote's maths-object kinds into this string, and the renderer
+    // has to take it. Neither side's own tests cross that line, and the
+    // string carries three things worth pinning — a deliberately MISMATCHED
+    // delimiter pair (OneNote really does store begChr '(' with endChr '|',
+    // which is why its own PDF prints "(2 | n)"), a U+2212 minus rather than
+    // a hyphen, and a U+2224 "does not divide". Copied verbatim from the
+    // importer's output for the owner's "Finite and Infinite Countable Sets"
+    // page, the equation that started this.
+    const tex = '\\begin{cases}\\frac{n}{2}\\text{ if }\\left(2\\right| n) '
+        '\\\\ −\\left(\\frac{n+1}{2}\\right)\\text{if }(2∤n)'
+        '\\end{cases}';
+    await pump(tester, tex);
+    expect(fellBack(), isFalse,
+        reason: 'the importer and the renderer must meet: if this falls back, '
+            'a student sees LaTeX source where OneNote showed a brace');
+  });
+
   testWidgets('an equation nothing can draw shows its source AND a reason',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');

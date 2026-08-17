@@ -164,8 +164,56 @@ const PID_BOLD: u32 = 0x001C04;
 const PID_ITALIC: u32 = 0x001C05;
 const PID_UNDERLINE: u32 = 0x001C06;
 const PID_STRIKE: u32 = 0x001C07;
+// Plain-text superscript/subscript — a property of the character run, NOT
+// maths. OneNote's ribbon has x² / x₂ buttons that set exactly these, and a
+// student writing "a₁, a₂, … aₘ" in ordinary prose uses them rather than the
+// equation editor. Both were parsed as unknown properties and dropped, so every
+// such subscript imported flat ("a1"), silently changing what the note says.
+const PID_SUPERSCRIPT: u32 = 0x001C08;
+const PID_SUBSCRIPT: u32 = 0x001C09;
 const PID_RUN_INDEX: u32 = 0x001E12; // TextRunIndex: array of u32 char offsets
 const PID_RUN_FORMATTING: u32 = 0x001E13; // TextRunFormatting: style OIDs per run
+
+// ── The maths-structure sidecar (0x3499) ───────────────────────────────────
+//
+// A OneNote equation is stored as ordinary run text sprinkled with the Office
+// structure noncharacters — U+FDD0 opens an argument list, U+FDEE separates
+// arguments, U+FDEF closes — and NOTHING in that text says what kind of object
+// each U+FDD0 opens. The importer used to assume "fraction" for every one of
+// them, which is why the reference page's piecewise definition came back as
+// `\frac{n}{2}\text{ if }2 n) −\frac{n+1}{2}…` with its curly brace, its
+// equation array and its delimiters all gone.
+//
+// The type IS in the file: 0x3499 is an ArrayOfPropertyValues with ONE ENTRY
+// PER TEXT RUN (same indexing as 0x1E12/0x1E13), and the entry belonging to the
+// run that *starts* with the U+FDD0 describes the object it opens. Decoded
+// against 1 154 equations in the owner's notebook (every distinct maths
+// paragraph in `Eric - Computing Science (Honours).onepkg`); the `beg`
+// character each type carries is Office's own linear-format marker for it,
+// which is what pins the mapping down.
+const PID_MATH_OBJECTS: u32 = 0x003499;
+const PID_MATH_KIND: u32 = 0x00344F; // MATH_* below
+const PID_MATH_ARGS: u32 = 0x003450; // on an opening run: argument/cell count
+const PID_MATH_COLS: u32 = 0x003451; // columns (matrices, equation arrays)
+const PID_MATH_BEG: u32 = 0x003453; // opening delimiter / operator character
+const PID_MATH_END: u32 = 0x003454; // closing delimiter character
+
+// Observed kinds, each identified by the linear-format character it carries.
+const MATH_ACCENT: u32 = 10; // beg = a combining accent (U+0302 ̂, U+20D7 ⃗)
+const MATH_DELIM: u32 = 13; // beg/end = ( ) [ ] { } | | ⌊ ⌋ …
+const MATH_DELIM_SEP: u32 = 14; // as above but the arguments are `|`-separated
+const MATH_EQ_ARRAY: u32 = 15; // beg = █ (U+2588)
+const MATH_FRACTION: u32 = 16; // beg = /
+const MATH_FUNC: u32 = 17; // beg = U+2061 FUNCTION APPLICATION
+const MATH_LIM_LOW: u32 = 19; // beg = _  (the limit under `lim`)
+const MATH_MATRIX: u32 = 20; // beg = ■ (U+25A0)
+const MATH_NARY: u32 = 21; // beg = ∑ ∏ ∫ ∮ …
+const MATH_RADICAL: u32 = 25; // beg = √
+const MATH_NO_BAR: u32 = 27; // beg = ¦ — the binomial-coefficient stack
+const MATH_SUB: u32 = 29; // beg = _
+const MATH_SUB_SUP: u32 = 30; // beg = _ , three arguments
+const MATH_SUP: u32 = 31; // beg = ^
+const MATH_UNDERBAR: u32 = 32; // beg = ▁ (U+2581)
 const PID_PARA_STYLE: u32 = 0x00342C; // paragraph style OID
 
 // ── Ink (MS-ONE ink object model; encoding per MS-ISF multi-byte) ──────────
@@ -1856,6 +1904,17 @@ struct Style {
     size_half_pt: u32, // 0 = unset
     color: u32,        // 0 = unset; else 0x00BBGGRR-ish (FF000000 = auto/black)
     is_math: bool,     // font == "Cambria Math"
+    /// Plain-text sub/superscript (0x1C09 / 0x1C08), not maths notation.
+    sub: bool,
+    sup: bool,
+    /// This run's text is Markdown we generated, not the writer's characters.
+    /// Set only on the `[label](url)` runs [`linkify_hyperlink_runs`] builds,
+    /// and read by [`run_markdown`] to skip character escaping: a URL such as
+    /// `https://example.com/~eric` must not have its tilde backslash-escaped
+    /// into the link target. Never read from the file, so [`merge_style`]
+    /// clears it; it takes part in [`same_visible`] so a generated link run can
+    /// never coalesce with the prose beside it and take the prose with it.
+    verbatim_md: bool,
 }
 
 /// Read a style object (00020001 / 0012004D) into a [Style].
@@ -1931,6 +1990,9 @@ fn read_style(r: &Reader, o: &Obj) -> Style {
         size_half_pt: ps.u32(PID_FONT_SIZE).unwrap_or(0),
         color: ps.u32(PID_FONT_COLOR).unwrap_or(0),
         is_math,
+        sub: ps.flag(PID_SUBSCRIPT),
+        sup: ps.flag(PID_SUPERSCRIPT),
+        verbatim_md: false,
     }
 }
 
@@ -1953,13 +2015,72 @@ fn merge_style(base: &Style, run: &Style) -> Style {
         size_half_pt: if run.size_half_pt > 0 { run.size_half_pt } else { base.size_half_pt },
         color: if run.color != 0 { run.color } else { base.color },
         is_math: base.is_math || run.is_math,
+        sub: base.sub || run.sub,
+        sup: base.sup || run.sup,
+        // Never comes from the file — only [`linkify_hyperlink_runs`] sets it,
+        // on runs it builds itself, and those are not merged from a base style.
+        verbatim_md: false,
     }
 }
 
+/// One maths object opened by a U+FDD0 in a run's text — read from the run's
+/// own entry in [`PID_MATH_OBJECTS`]. See that constant for how it was decoded.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct MathObj {
+    kind: u32,
+    /// Argument count on the opening run (cells, for a matrix).
+    args: u32,
+    /// Columns, for the grid kinds. 0 when unrecorded.
+    cols: u32,
+    beg: Option<char>,
+    end: Option<char>,
+}
+
 /// One styled span of text within a paragraph.
+#[derive(Default)]
 struct SRun {
     text: String,
     style: Style,
+    /// Maths objects opened inside `text`, as (char offset of the U+FDD0,
+    /// descriptor). Carried per run because that is how OneNote records it, and
+    /// accumulated when [`render_runs`] coalesces runs — an equation's
+    /// structure spans a dozen runs, so it can only be converted once they are
+    /// back together.
+    math_objs: Vec<(usize, MathObj)>,
+}
+
+/// Does this paragraph END in maths that stacks — a piecewise definition, an
+/// equation array, a matrix? If so: where that trailing maths group starts, and
+/// the LaTeX it converts to.
+///
+/// `None` for a paragraph with no maths, maths only in the middle of it, or
+/// maths that converts to something that fits on a line.
+fn split_trailing_display_math(runs: &[SRun]) -> Option<(usize, String)> {
+    // The first run after the last piece of substantive PROSE.
+    let at = runs.iter().rposition(|r| !r.style.is_math && !r.text.trim().is_empty())? + 1;
+    let tail = runs.get(at..)?;
+    if tail.iter().all(|r| r.text.trim().is_empty()) {
+        return None;
+    }
+    let (text, objs) = joined_math(tail);
+    let latex = office_math_to_latex(&text, &objs);
+    const STACKED: [&str; 3] = ["\\begin{cases}", "\\begin{aligned}", "\\begin{matrix}"];
+    STACKED.iter().any(|e| latex.contains(e)).then_some((at, latex))
+}
+
+/// Concatenate a paragraph's runs and re-base their maths-object offsets onto
+/// the joined string, so a display equation converts as one structure however
+/// many runs OneNote split it across.
+fn joined_math(runs: &[SRun]) -> (String, Vec<(usize, MathObj)>) {
+    let mut text = String::new();
+    let mut objs: Vec<(usize, MathObj)> = Vec::new();
+    let mut base = 0usize;
+    for r in runs {
+        objs.extend(r.math_objs.iter().map(|(o, m)| (base + o, m.clone())));
+        base += r.text.chars().count();
+        text.push_str(&r.text);
+    }
+    (text, objs)
 }
 
 /// TextRunIndex (0x1E12) → char-offset boundaries (array of little-endian u32).
@@ -2044,6 +2165,7 @@ fn styled_runs(r: &Reader, o: &Obj, res: &Resolver) -> Vec<SRun> {
     let fmt = ps.oids(PID_RUN_FORMATTING);
     let bounds = parse_run_index(ps.get(PID_RUN_INDEX));
     let chars: Vec<char> = text.chars().collect();
+    let math = parse_math_objects(&ps);
 
     // Single style (or a shape we can't split cleanly): one merged run.
     if fmt.len() <= 1 || bounds.len() + 1 != fmt.len() {
@@ -2051,15 +2173,39 @@ fn styled_runs(r: &Reader, o: &Obj, res: &Resolver) -> Vec<SRun> {
         for &f in &fmt {
             st = merge_style(&st, &resolve_style(r, res, f, o.rev));
         }
-        let mut runs = vec![SRun { text, style: st }];
+        // One run means one 0x3499 entry, so it can only describe an object
+        // opened at offset 0. Anything richer needs the run split, and the
+        // converter's fraction fallback covers the rest exactly as before.
+        let objs = match (math.first(), chars.first()) {
+            (Some(Some(m)), Some('\u{FDD0}')) => vec![(0usize, m.clone())],
+            _ => Vec::new(),
+        };
+        let mut runs = vec![SRun { text, style: st, math_objs: objs }];
         translate_symbol_pua(&mut runs);
         linkify_hyperlink_runs(&mut runs);
         return runs;
     }
 
     // Multi-run: boundaries [0, b0, b1, …, len] split the char stream.
+    //
+    // 0x1E12's offsets count UTF-16 CODE UNITS — that is how OneNote stores the
+    // text — while we split a `Vec<char>`. The two agree exactly until the
+    // paragraph contains an astral character, and every maths-italic letter
+    // (U+1D400…, which is what an equation is made of) is one: each surrogate
+    // pair slides every later boundary one unit further off. On the reference
+    // page's piecewise definition that shifted the runs by up to six positions,
+    // which handed each U+FDD0 the maths descriptor belonging to a different
+    // object — a fraction came back as an equation array.
+    let mut u16_to_char: Vec<usize> = Vec::with_capacity(chars.len() + 1);
+    for (ci, ch) in chars.iter().enumerate() {
+        for _ in 0..ch.len_utf16() {
+            u16_to_char.push(ci);
+        }
+    }
+    u16_to_char.push(chars.len());
+    let to_char = |u: usize| u16_to_char.get(u).copied().unwrap_or(chars.len());
     let mut starts = vec![0usize];
-    starts.extend(bounds.iter().copied());
+    starts.extend(bounds.iter().map(|&b| to_char(b)));
     starts.push(chars.len());
     let mut runs = Vec::new();
     for i in 0..fmt.len() {
@@ -2070,14 +2216,50 @@ fn styled_runs(r: &Reader, o: &Obj, res: &Resolver) -> Vec<SRun> {
         }
         let seg: String = chars[a..b].iter().collect();
         let st = merge_style(&base, &resolve_style(r, res, fmt[i], o.rev));
-        runs.push(SRun { text: seg, style: st });
+        // A run's 0x3499 entry describes the object it OPENS, and OneNote puts
+        // every opening U+FDD0 in a run of its own — so the descriptor is only
+        // trusted when this run actually begins with one. An entry on a run
+        // that merely sits inside an object describes the enclosing context,
+        // and reading it as an opener would nest the equation wrongly.
+        let objs = match (math.get(i).and_then(|m| m.as_ref()), chars.get(a)) {
+            (Some(m), Some('\u{FDD0}')) => vec![(0usize, m.clone())],
+            _ => Vec::new(),
+        };
+        runs.push(SRun { text: seg, style: st, math_objs: objs });
     }
     if runs.is_empty() {
-        runs.push(SRun { text, style: base });
+        runs.push(SRun { text, style: base, math_objs: Vec::new() });
     }
     translate_symbol_pua(&mut runs);
     linkify_hyperlink_runs(&mut runs);
     runs
+}
+
+/// Decode [`PID_MATH_OBJECTS`] into one slot per text run: `Some` when that
+/// entry names a maths-object kind, `None` for a plain run (and for the
+/// entries whose kind field is out of range, which a few carry).
+fn parse_math_objects(ps: &PropSet) -> Vec<Option<MathObj>> {
+    let Some(PVal::Array(sets)) = ps.get(PID_MATH_OBJECTS) else {
+        return Vec::new();
+    };
+    sets.iter()
+        .map(|s| {
+            let kind = s.u32(PID_MATH_KIND)?;
+            // Real kinds are small ordinals; some entries carry a large
+            // sentinel in this slot (0x90000000 on top-level runs), and
+            // treating one as a kind would invent structure that is not there.
+            if kind > 0xFF {
+                return None;
+            }
+            Some(MathObj {
+                kind,
+                args: s.u32(PID_MATH_ARGS).unwrap_or(0),
+                cols: s.u32(PID_MATH_COLS).unwrap_or(0),
+                beg: s.u32(PID_MATH_BEG).and_then(char::from_u32),
+                end: s.u32(PID_MATH_END).and_then(char::from_u32),
+            })
+        })
+        .collect()
 }
 
 /// Adobe Symbol encoding, byte → Unicode. `None` for glyphs with no clean
@@ -2602,9 +2784,17 @@ fn linkify_hyperlink_runs(runs: &mut Vec<SRun>) {
             }
             let text: String = chars[i..j].iter().filter(|c| !is_field_control(**c)).collect();
             if !text.is_empty() {
+                // Maths-object offsets are deliberately dropped here. This
+                // rebuild deletes field-control characters, so every offset in
+                // the run shifts by an amount that depends on where they were;
+                // carrying them unadjusted would attach a fraction's descriptor
+                // to the wrong U+FDD0. A paragraph holding BOTH a hyperlink and
+                // an equation therefore converts with the fraction fallback —
+                // exactly what every paragraph got before this sidecar existed.
                 out.push(SRun {
                     text,
                     style: runs[who].style.clone(),
+                    math_objs: Vec::new(),
                 });
             }
             i = j;
@@ -2623,9 +2813,15 @@ fn linkify_hyperlink_runs(runs: &mut Vec<SRun>) {
             st.highlight = false;
             st.color = 0;
             st.is_math = false;
+            st.sub = false;
+            st.sup = false;
+            // Generated Markdown, not the writer's characters: `run_markdown`
+            // must not escape `~`/`^` inside it (see [`Style::verbatim_md`]).
+            st.verbatim_md = true;
             out.push(SRun {
                 text: md.clone(),
                 style: st,
+                math_objs: Vec::new(),
             });
         }
         at = *hi;
@@ -2638,33 +2834,331 @@ fn linkify_hyperlink_runs(runs: &mut Vec<SRun>) {
 /// a Cambria-Math run's 0x1C22 text) to LaTeX. Handles fraction delimiters
 /// (U+FDD0 numerator … U+FDEE bar … U+FDEF end) and folds math-italic letters;
 /// strips invisible operators. Unrecognised structure degrades to plain text.
-fn office_math_to_latex(s: &str) -> String {
-    let mut t: String = s.chars().map(fold_math_char).collect();
-    // Collapse fractions innermost-first: FDD0 num FDEE den FDEF → \frac{num}{den}.
-    let (d0, dbar, dend) = ('\u{FDD0}', '\u{FDEE}', '\u{FDEF}');
-    let mut guard = 0;
-    while let Some(end) = t.find(dend) {
-        guard += 1;
-        if guard > 256 {
-            break;
+/// Structure markers: U+FDD0 opens an object's argument list, U+FDEE separates
+/// arguments, U+FDEF closes.
+const MATH_OPEN: char = '\u{FDD0}';
+const MATH_SEP: char = '\u{FDEE}';
+const MATH_CLOSE: char = '\u{FDEF}';
+
+/// Best-effort conversion of OneNote's Office linear-maths Unicode (as stored
+/// in a Cambria-Math run's 0x1C22 text) to LaTeX, told what each U+FDD0
+/// actually opens. Folds maths-italic letters and strips invisible operators;
+/// unrecognised structure degrades to plain text rather than disappearing.
+///
+/// `objs` is `(char offset of the U+FDD0, descriptor)`, assembled by
+/// [`styled_runs`] from [`PID_MATH_OBJECTS`] and reassembled by
+/// [`render_runs`]. An offset with no descriptor — a file that predates the
+/// sidecar, or a paragraph whose runs had to be rebuilt around a hyperlink —
+/// falls back to the rule this function used for everything: a two-argument
+/// object is a fraction. That fallback is why the reference notebook's
+/// fractions were the one construct that always survived, and why nothing else
+/// did.
+fn office_math_to_latex(s: &str, objs: &[(usize, MathObj)]) -> String {
+    // Fold FIRST, over the whole string: `fold_math_char` is one-char-in,
+    // one-char-out, so every offset in `objs` still points where it did.
+    let chars: Vec<char> = s.chars().map(fold_math_char).collect();
+    let mut i = 0usize;
+    let mut budget = 4096usize;
+    math_seq(&chars, &mut i, objs, 0, &mut budget)
+}
+
+/// Convert one argument: characters, and the objects nested in them, up to the
+/// next separator/close at this level (or the end of the input).
+fn math_seq(
+    chars: &[char],
+    i: &mut usize,
+    objs: &[(usize, MathObj)],
+    depth: u32,
+    budget: &mut usize,
+) -> String {
+    let mut out = String::new();
+    // Literal characters accumulate until an object boundary, then convert as
+    // one piece. Running `latexify_prose` over the ASSEMBLED string instead
+    // would find the `cases` in `\begin{cases}` and wrap it as prose —
+    // `\begin{\text{cases}}` — which renders as nothing at all.
+    let mut lit = String::new();
+    let flush = |lit: &mut String, out: &mut String| {
+        if !lit.is_empty() {
+            out.push_str(&latexify_prose(&collapse_spaces(lit)));
+            lit.clear();
         }
-        let before = &t[..end];
-        if let (Some(s0), Some(bar)) = (before.rfind(d0), before.rfind(dbar)) {
-            if s0 < bar {
-                let num = t[s0 + d0.len_utf8()..bar].trim().to_string();
-                let den = t[bar + dbar.len_utf8()..end].trim().to_string();
-                let repl = format!("\\frac{{{num}}}{{{den}}}");
-                t.replace_range(s0..end + dend.len_utf8(), &repl);
+    };
+    while *i < chars.len() {
+        let c = chars[*i];
+        if c == MATH_SEP || c == MATH_CLOSE {
+            break; // the caller owns this marker
+        }
+        if c == MATH_OPEN {
+            let at = *i;
+            *i += 1;
+            // Runaway guards: a malformed file must degrade, not hang. Depth
+            // also bounds the recursion this function does on its own stack.
+            if depth > 32 || *budget == 0 {
                 continue;
             }
+            *budget -= 1;
+            let mut args: Vec<String> = Vec::new();
+            loop {
+                args.push(math_seq(chars, i, objs, depth + 1, budget));
+                match chars.get(*i) {
+                    Some(&MATH_SEP) => *i += 1,
+                    Some(&MATH_CLOSE) => {
+                        *i += 1;
+                        break;
+                    }
+                    // Truncated input: take what we have rather than lose it.
+                    _ => break,
+                }
+            }
+            let obj = objs.iter().find(|(o, _)| *o == at).map(|(_, m)| m);
+            flush(&mut lit, &mut out);
+            out.push_str(&render_math_obj(obj, &args));
+            continue;
         }
-        // Malformed — drop the stray end marker and carry on.
-        t.replace_range(end..end + dend.len_utf8(), "");
+        // Carriage returns and NULs are not text (see [`run_markdown`]), and
+        // dropping them HERE rather than in the caller is what lets the caller
+        // hand us the run's untouched string — every offset in `objs` is an
+        // index into that string, and pre-filtering it would slide them.
+        if !is_math_control(c) && c != '\r' && c != '\0' {
+            lit.push(c);
+        }
+        *i += 1;
     }
-    // Strip any leftover structure/invisible chars, collapse runs of spaces.
-    let cleaned: String = t.chars().filter(|c| !is_math_control(*c)).collect();
-    let joined = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
-    latexify_prose(&joined)
+    flush(&mut lit, &mut out);
+    out
+}
+
+/// Runs of whitespace → one space, leading/trailing kept (they are what makes
+/// `\text{ if }` read as " if " rather than "if", and maths mode eats the
+/// difference otherwise).
+fn collapse_spaces(s: &str) -> String {
+    let core = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if core.is_empty() {
+        return if s.is_empty() { String::new() } else { " ".into() };
+    }
+    let lead = if s.starts_with(char::is_whitespace) { " " } else { "" };
+    let trail = if s.ends_with(char::is_whitespace) { " " } else { "" };
+    format!("{lead}{core}{trail}")
+}
+
+/// `{x}`, with the argument trimmed — LaTeX ignores the spaces anyway, and
+/// braces keep multi-character arguments together under `_`, `^` and `\frac`.
+fn grp(s: &str) -> String {
+    format!("{{{}}}", s.trim())
+}
+
+/// One maths object → LaTeX. `obj` is `None` when the file gave us no
+/// descriptor for this U+FDD0; see [`office_math_to_latex`].
+fn render_math_obj(obj: Option<&MathObj>, args: &[String]) -> String {
+    let empty = String::new();
+    let a = |n: usize| args.get(n).unwrap_or(&empty).trim().to_string();
+    let Some(o) = obj else {
+        return unknown_math_obj(args);
+    };
+    match o.kind {
+        MATH_FRACTION => format!("\\frac{}{}", grp(&a(0)), grp(&a(1))),
+        MATH_NO_BAR => format!("{{{} \\atop {}}}", a(0), a(1)),
+        MATH_SUB => format!("{}_{}", grp(&a(0)), grp(&a(1))),
+        MATH_SUP => format!("{}^{}", grp(&a(0)), grp(&a(1))),
+        MATH_SUB_SUP => format!("{}_{}^{}", grp(&a(0)), grp(&a(1)), grp(&a(2))),
+        MATH_RADICAL => {
+            // Two arguments are (degree, radicand); OneNote leaves the degree
+            // empty for a plain square root rather than dropping the slot.
+            if args.len() >= 2 && !a(0).is_empty() {
+                format!("\\sqrt[{}]{}", a(0), grp(&a(1)))
+            } else {
+                format!("\\sqrt{}", grp(&a(args.len().saturating_sub(1))))
+            }
+        }
+        MATH_ACCENT => match accent_cmd(o.beg) {
+            Some(cmd) => format!("{cmd}{}", grp(&a(0))),
+            // An accent we cannot name must not silently vanish the letter
+            // under it.
+            None => grp(&a(0)),
+        },
+        MATH_UNDERBAR => format!("\\underline{}", grp(&a(0))),
+        MATH_NARY => {
+            // (lower, upper, body). Empty limits are the common case for ∫ and
+            // must not become `\int_{}^{}`, which KaTeX renders as empty boxes.
+            let mut out = nary_cmd(o.beg);
+            if !a(0).is_empty() {
+                out.push_str(&format!("_{}", grp(&a(0))));
+            }
+            if !a(1).is_empty() {
+                out.push_str(&format!("^{}", grp(&a(1))));
+            }
+            out.push(' ');
+            out.push_str(&a(2));
+            out
+        }
+        MATH_FUNC => format!("{} {}", func_cmd(&a(0)), a(1)),
+        // The limit sits UNDER the operator, which is what `\lim_{x → 0}`
+        // means; `\underset` says it for any base, named operator or not.
+        MATH_LIM_LOW => format!("\\underset{}{{{}}}", grp(&a(1)), func_cmd(&a(0))),
+        MATH_MATRIX => {
+            let cols = if o.cols == 0 { 1 } else { o.cols as usize };
+            // Empty CELLS are kept: a blank cell is a position in the grid, and
+            // dropping one would slide every later entry into the wrong column.
+            format!("\\begin{{matrix}}{}\\end{{matrix}}", math_grid(args, cols))
+        }
+        MATH_EQ_ARRAY => {
+            let cols = if o.cols == 0 { 1 } else { o.cols as usize };
+            // Empty ROWS are dropped, which a matrix's cells are not. OneNote
+            // records the blank line a writer left between two branches of a
+            // piecewise definition as a real row — the reference page's has
+            // three rows for two branches — and it carries no content, only the
+            // risk that a renderer chokes on `\\ \\` and loses the whole
+            // equation. The vertical gap is not worth that trade.
+            let rows: Vec<String> = args
+                .chunks(cols.max(1))
+                .filter(|row| row.iter().any(|c| !c.trim().is_empty()))
+                .map(|row| row.iter().map(|c| c.trim()).collect::<Vec<_>>().join(" & "))
+                .collect();
+            // One row is not an array. OneNote uses a two-row array with the
+            // second row empty for the top half of a binomial coefficient, and
+            // wrapping that lone `n` in `\begin{aligned}` both reads as noise
+            // and — because a stacked environment is what promotes an equation
+            // out of its sentence — moved prose maths into a block of its own.
+            match rows.len() {
+                0 => String::new(),
+                1 => rows.into_iter().next().unwrap_or_default(),
+                _ => format!("\\begin{{aligned}}{}\\end{{aligned}}", rows.join(" \\\\ ")),
+            }
+        }
+        MATH_DELIM | MATH_DELIM_SEP => render_math_delim(o, args),
+        _ => unknown_math_obj(args),
+    }
+}
+
+/// Cells → `a & b \\ c & d`, row-major over `cols` columns.
+fn math_grid(args: &[String], cols: usize) -> String {
+    args.chunks(cols.max(1))
+        .map(|row| row.iter().map(|c| c.trim()).collect::<Vec<_>>().join(" & "))
+        .collect::<Vec<_>>()
+        .join(" \\\\ ")
+}
+
+/// A bracketed group: `(x)`, `|x|`, `⌊x⌋`, or the big brace of a piecewise
+/// definition.
+fn render_math_delim(o: &MathObj, args: &[String]) -> String {
+    let inner = args.iter().map(|a| a.trim()).collect::<Vec<_>>().join(" \\mid ");
+    // The piecewise definition. OneNote writes it as a left brace with NO
+    // closing character wrapped around an equation array — which is exactly
+    // what `\begin{cases}` is — and rendering it as `\left\{\begin{aligned}…`
+    // would put the brace and the rows in two different groups. This is the
+    // shape the owner's reference page uses and the one that came back as a
+    // flat run of text with the brace gone.
+    if o.beg == Some('{') && o.end.is_none() && args.len() == 1 {
+        if let Some(rows) = args[0]
+            .trim()
+            .strip_prefix("\\begin{aligned}")
+            .and_then(|r| r.strip_suffix("\\end{aligned}"))
+        {
+            return format!("\\begin{{cases}}{rows}\\end{{cases}}");
+        }
+    }
+    format!("\\left{}{inner}\\right{}", latex_delim(o.beg), latex_delim(o.end))
+}
+
+/// No descriptor: keep the old rule, which is right far more often than not —
+/// a two-argument object in a student's notes is nearly always a fraction.
+fn unknown_math_obj(args: &[String]) -> String {
+    match args.len() {
+        0 => String::new(),
+        1 => grp(args[0].trim()),
+        2 => format!("\\frac{}{}", grp(args[0].trim()), grp(args[1].trim())),
+        _ => args.iter().map(|a| a.trim()).collect::<Vec<_>>().join(" "),
+    }
+}
+
+/// A delimiter character as LaTeX. `.` is `\left`/`\right`'s "no delimiter",
+/// which is what an absent one means (the `┤` of a piecewise definition).
+fn latex_delim(c: Option<char>) -> String {
+    match c {
+        None => ".".into(),
+        Some('{') => "\\{".into(),
+        Some('}') => "\\}".into(),
+        Some('\u{2016}') => "\\|".into(),
+        Some('\u{230A}') => "\\lfloor".into(),
+        Some('\u{230B}') => "\\rfloor".into(),
+        Some('\u{2308}') => "\\lceil".into(),
+        Some('\u{2309}') => "\\rceil".into(),
+        Some('\u{27E8}') | Some('<') => "\\langle".into(),
+        Some('\u{27E9}') | Some('>') => "\\rangle".into(),
+        Some(c @ ('(' | ')' | '[' | ']' | '|' | '/')) => c.to_string(),
+        // Anything else is not a delimiter LaTeX knows; sizing it would be a
+        // parse error, so the group simply has no bracket on that side.
+        Some(_) => ".".into(),
+    }
+}
+
+/// The combining accent OneNote records → the LaTeX command that draws it.
+fn accent_cmd(c: Option<char>) -> Option<&'static str> {
+    Some(match c? {
+        '\u{0300}' => "\\grave",
+        '\u{0301}' => "\\acute",
+        '\u{0302}' => "\\hat",
+        '\u{0303}' => "\\tilde",
+        '\u{0304}' => "\\bar",
+        '\u{0305}' => "\\overline",
+        '\u{0306}' => "\\breve",
+        '\u{0307}' => "\\dot",
+        '\u{0308}' => "\\ddot",
+        '\u{030A}' => "\\mathring",
+        '\u{030C}' => "\\check",
+        '\u{20D0}' => "\\overleftarrow",
+        '\u{20D1}' | '\u{20D7}' => "\\vec",
+        '\u{20DB}' => "\\dddot",
+        _ => return None,
+    })
+}
+
+/// The n-ary operator character → its LaTeX command. Unknown operators pass
+/// through as the character itself, which is what they did before.
+fn nary_cmd(c: Option<char>) -> String {
+    match c {
+        Some('\u{2211}') => "\\sum".into(),
+        Some('\u{220F}') => "\\prod".into(),
+        Some('\u{2210}') => "\\coprod".into(),
+        Some('\u{222B}') => "\\int".into(),
+        Some('\u{222C}') => "\\iint".into(),
+        Some('\u{222D}') => "\\iiint".into(),
+        Some('\u{222E}') => "\\oint".into(),
+        Some('\u{22C0}') => "\\bigwedge".into(),
+        Some('\u{22C1}') => "\\bigvee".into(),
+        Some('\u{22C2}') => "\\bigcap".into(),
+        Some('\u{22C3}') => "\\bigcup".into(),
+        Some('\u{2A01}') => "\\bigoplus".into(),
+        Some('\u{2A02}') => "\\bigotimes".into(),
+        Some('\u{2A04}') => "\\biguplus".into(),
+        Some(c) => c.to_string(),
+        None => String::new(),
+    }
+}
+
+/// A function name applied to an argument. LaTeX has upright operators for the
+/// standard ones; without them `sin θ` is typeset as the product s·i·n·θ, and
+/// `latexify_prose` would wrap the word as `\text{sin}` — right shape, wrong
+/// spacing, and wrong for `\lim`, which also needs its limit set underneath.
+fn func_cmd(name: &str) -> String {
+    const KNOWN: &[&str] = &[
+        "arccos", "arcsin", "arctan", "arg", "cos", "cosh", "cot", "coth", "csc", "deg", "det",
+        "dim", "exp", "gcd", "hom", "inf", "ker", "lg", "lim", "liminf", "limsup", "ln", "log",
+        "max", "min", "sec", "sin", "sinh", "sup", "tan", "tanh",
+    ];
+    // The name arrives already converted, so a real word came through
+    // `latexify_prose` as `\text{cos}`; unwrap that before matching.
+    let bare = name
+        .trim()
+        .strip_prefix("\\text{")
+        .and_then(|r| r.strip_suffix('}'))
+        .unwrap_or(name)
+        .trim();
+    if KNOWN.contains(&bare) {
+        format!("\\{bare}")
+    } else {
+        bare.to_string()
+    }
 }
 
 /// Unwrap inline `$…$` spans that never needed to be maths.
@@ -2822,6 +3316,48 @@ fn color_hex(color: u32) -> Option<String> {
     Some(format!("{r:02X}{g:02X}{b:02X}"))
 }
 
+/// Wrap each whitespace-free WORD of `s` in `mark`, keeping the spacing
+/// between them: `a b` with `~` becomes `~a~ ~b~`, never `~a b~`.
+///
+/// The app's grammar is Pandoc's, and Pandoc forbids whitespace inside the
+/// markers (`~(?!~)([^\s~]+)~(?!~)`). That rule is what keeps "about ~5 to
+/// ~10", "a ~ b" and `~/Documents` literal on screen — and it means a pair
+/// spanning a space matches NOTHING and renders as two visible tildes. A
+/// OneNote subscript run is usually one or two characters, but it can be a
+/// phrase, and that phrase would have arrived with its markers showing.
+///
+/// A word already containing the marker cannot be marked at all — the inner
+/// class excludes it — so those are left plain rather than wrapped in a pair
+/// that would render as literal punctuation around the word. Losing the
+/// baseline shift on such a word beats printing tildes at the reader.
+fn mark_each_word(s: &str, mark: char) -> String {
+    let mut out = String::with_capacity(s.len() + 4);
+    let mut word = String::new();
+    fn flush(word: &mut String, out: &mut String, mark: char) {
+        if word.is_empty() {
+            return;
+        }
+        if word.contains(mark) {
+            out.push_str(word);
+        } else {
+            out.push(mark);
+            out.push_str(word);
+            out.push(mark);
+        }
+        word.clear();
+    }
+    for c in s.chars() {
+        if c.is_whitespace() {
+            flush(&mut word, &mut out, mark);
+            out.push(c);
+        } else {
+            word.push(c);
+        }
+    }
+    flush(&mut word, &mut out, mark);
+    out
+}
+
 /// Render one styled run as Markdown, applying bold/italic/strike (Openote's
 /// live-Markdown dialect) and the `{{#RRGGBB …}}` colour extension.
 fn run_markdown(run: &SRun) -> String {
@@ -2856,7 +3392,9 @@ fn run_markdown(run: &SRun) -> String {
             .map(fold_math_char)
             .filter(|c| !is_math_control(*c) && *c != '\0')
             .collect();
-        let latex = office_math_to_latex(src);
+        // Converted from the run's UNTOUCHED text: `s` above dropped `\r` and
+        // `\0`, and every offset in `math_objs` indexes the original string.
+        let latex = office_math_to_latex(&run.text, &run.math_objs);
         if latex.trim().is_empty() {
             return plain;
         }
@@ -2885,8 +3423,28 @@ fn run_markdown(run: &SRun) -> String {
         }
         return format!("{lead}${latex}${trail}");
     }
-    let core = s[lead.len()..s.len() - trail.len()].to_string();
-    let mut core = core;
+    let mut core = s[lead.len()..s.len() - trail.len()].to_string();
+    // Innermost, next to the characters: sub/superscript is a property of the
+    // glyphs, so `**a~1~**` (bold containing a subscript) is right and
+    // `~**a**1~` is not. Pandoc's single-tilde/single-caret dialect, which the
+    // app's Markdown grammar now parses — note `~~x~~` is strikethrough below,
+    // and a run that is both lands as `~~~x~~~`, which is what OneNote means.
+    //
+    // Nothing is escaped on the way out, and that is a decision, not an
+    // oversight: the app's inline grammar has NO backslash escape (only
+    // `md_table.dart` unescapes, and only `\|`), so emitting `\~` would put a
+    // visible backslash in the note — a certain, widespread regression traded
+    // against a rare one. What guards a literal tilde instead is the grammar's
+    // own Pandoc rule that the marked text may contain no whitespace, so
+    // "roughly ~5 to ~10" and "a ~ b" stay literal. The gap it leaves —
+    // `x~y~z`, with no space between the two markers — occurs 0 times in the
+    // 355 pages of the reference notebook, measured.
+    if run.style.sub {
+        core = mark_each_word(&core, '~');
+    }
+    if run.style.sup {
+        core = mark_each_word(&core, '^');
+    }
     if run.style.underline {
         // `++u++` — the app's dialect (Markdown has none, and `__x__` is bold).
         // Underline was parsed here and then silently discarded, so underlined
@@ -3445,11 +4003,32 @@ fn collect_inner(
             let substantive = || runs.iter().filter(|r| !r.text.trim().is_empty());
             let all_math = substantive().count() > 0 && substantive().all(|r| r.style.is_math);
             let latex = if all_math {
-                office_math_to_latex(plain.trim_end_matches('\0'))
+                let (text, objs) = joined_math(&runs);
+                office_math_to_latex(&text, &objs)
             } else {
                 String::new()
             };
-            if all_math && !latex.trim().is_empty() {
+            // **A symbol is not an equation** — the same rule [run_markdown]
+            // applies to an inline maths run, and it has to be applied here too.
+            // OneNote marks a character from the symbol palette as a maths run,
+            // so a table cell holding just `ℕ` (or `0`, or `-1`) became a
+            // maths-only paragraph, and a maths Line carries LaTeX with NO runs.
+            // [outline_markdown_tagged] renders runs, so every one of those
+            // cells came out EMPTY: on the owner's reference page the second
+            // table imported with its first and last columns entirely blank,
+            // the middle (arrow) column intact because arrows are prose.
+            // Folded and normalised exactly as [run_markdown] does it, because
+            // the two must agree: comparing the raw text against folded LaTeX
+            // never matches, which is the bug that made the first attempt at
+            // this rule in [run_markdown] look fixed when it was not.
+            let folded: String = plain
+                .chars()
+                .map(fold_math_char)
+                .filter(|c| !is_math_control(*c) && *c != '\0')
+                .collect();
+            let norm = |x: &str| x.split_whitespace().collect::<Vec<_>>().join(" ");
+            let notation = norm(&latex) != norm(&folded);
+            if all_math && notation && !latex.trim().is_empty() {
                 out.push(Line {
                     depth,
                     tags: tags.clone(),
@@ -3457,6 +4036,44 @@ fn collect_inner(
                     bullet: bullet.clone(),
                     runs: Vec::new(),
                     math: Some(latex),
+                    table: None,
+                    image: None,
+                });
+            } else if let Some((at, stacked)) = split_trailing_display_math(&runs) {
+                // A STACKED equation cannot live inside a line of prose:
+                // `\begin{cases}` is two expressions one above the other behind
+                // a brace as tall as both, and dropped into a sentence it either
+                // clips or shoves the line apart. The reference page's "We can
+                // define the bijection f(n) = ⟨cases⟩" is exactly this shape, so
+                // the sentence stays a text line and the equation becomes its
+                // own block under it — which is what [emit_boxes] already does
+                // for a paragraph that is maths all through.
+                //
+                // Nothing is dropped: the prose keeps its own Line. Only a
+                // TRAILING maths group qualifies, because lifting maths out of
+                // the MIDDLE of a sentence would reorder the writer's words.
+                let mut runs = runs;
+                let tail = runs.split_off(at);
+                debug_assert!(!tail.is_empty());
+                if !runs.iter().all(|r| r.text.trim().is_empty()) {
+                    out.push(Line {
+                        depth,
+                        tags: tags.clone(),
+                        is_list: ctx,
+                        bullet: bullet.clone(),
+                        runs,
+                        math: None,
+                        table: None,
+                        image: None,
+                    });
+                }
+                out.push(Line {
+                    depth,
+                    tags,
+                    is_list: false,
+                    bullet: String::new(),
+                    runs: Vec::new(),
+                    math: Some(stacked),
                     table: None,
                     image: None,
                 });
@@ -3916,6 +4533,9 @@ fn same_visible(a: &Style, b: &Style) -> bool {
         && a.underline == b.underline
         && a.strike == b.strike
         && a.highlight == b.highlight
+        && a.sub == b.sub
+        && a.sup == b.sup
+        && a.verbatim_md == b.verbatim_md
         && color_hex(a.color) == color_hex(b.color)
 }
 
@@ -3926,6 +4546,13 @@ fn render_runs(runs: &[SRun]) -> String {
     for run in runs {
         if let Some(last) = merged.last_mut() {
             if same_visible(&last.style, &run.style) {
+                // Shift the incoming run's object offsets by what is already
+                // in the buffer: an equation's structure is spread over a
+                // dozen runs, and it only converts correctly once they are
+                // reassembled with their offsets still pointing at the right
+                // U+FDD0.
+                let base = last.text.chars().count();
+                last.math_objs.extend(run.math_objs.iter().map(|(o, m)| (base + o, m.clone())));
                 last.text.push_str(&run.text);
                 continue;
             }
@@ -3933,6 +4560,7 @@ fn render_runs(runs: &[SRun]) -> String {
         merged.push(SRun {
             text: run.text.clone(),
             style: run.style.clone(),
+            math_objs: run.math_objs.clone(),
         });
     }
     merged.iter().map(run_markdown).collect()
@@ -4042,7 +4670,15 @@ fn outline_markdown_tagged(
                 out.push_str(&l.bullet);
                 out.push(' ');
             }
-            out.push_str(&render_runs(&l.runs));
+            // A maths line carries LaTeX and NO runs. [emit_boxes] intercepts
+            // those before they reach here, so this only fires for the callers
+            // that render lines directly — table cells — and rendering only the
+            // (empty) runs is how a cell holding an equation came out blank.
+            // Inline `$…$` rather than a box: a cell IS an inline context.
+            match &l.math {
+                Some(latex) => out.push_str(&format!("${latex}$")),
+                None => out.push_str(&render_runs(&l.runs)),
+            }
         }
         out.push('\n');
         for t in &l.tags {
@@ -5300,7 +5936,7 @@ mod tests {
     fn a_lone_symbol_is_not_wrapped_in_math_delimiters() {
         let math = Style { is_math: true, ..Default::default() };
         for sym in ["∀", "∈", "ℝ", "θ", "≤", "∑"] {
-            let run = SRun { text: sym.into(), style: math.clone() };
+            let run = SRun { math_objs: Vec::new(), text: sym.into(), style: math.clone() };
             assert_eq!(
                 run_markdown(&run),
                 sym,
@@ -5321,7 +5957,7 @@ mod tests {
     fn a_symbol_with_a_trailing_nul_is_still_just_a_symbol() {
         let math = Style { is_math: true, ..Default::default() };
         for raw in ["∀\0", "∈\0\0", "ℝ\0"] {
-            let run = SRun { text: raw.into(), style: math.clone() };
+            let run = SRun { math_objs: Vec::new(), text: raw.into(), style: math.clone() };
             let out = run_markdown(&run);
             assert!(
                 !out.contains('$'),
@@ -5335,7 +5971,7 @@ mod tests {
     /// count as a difference either.
     #[test]
     fn spacing_alone_does_not_make_it_an_equation() {
-        let run = SRun {
+        let run = SRun { math_objs: Vec::new(),
             text: "E  ∩  O\0".into(),
             style: Style { is_math: true, ..Default::default() },
         };
@@ -5345,7 +5981,7 @@ mod tests {
     /// …while something that genuinely needs typesetting keeps its delimiters.
     #[test]
     fn real_notation_still_becomes_inline_math() {
-        let run = SRun {
+        let run = SRun { math_objs: Vec::new(),
             text: "\u{FDD0}a\u{FDEE}b\u{FDEF}".into(),
             style: Style { is_math: true, ..Default::default() },
         };
@@ -5446,7 +6082,7 @@ mod tests {
             tags: Vec::new(),
             is_list,
             bullet: if is_list { "-".into() } else { String::new() },
-            runs: vec![SRun { text: text.into(), style: Style::default() }],
+            runs: vec![SRun { math_objs: Vec::new(), text: text.into(), style: Style::default() }],
             math: None,
             table: None,
             image: None,
@@ -5671,7 +6307,7 @@ mod tests {
     /// and the reference notebook's 17× U+F0AC are left arrows.
     #[test]
     fn symbol_pua_translates_when_the_font_says_symbol() {
-        let mut runs = vec![SRun {
+        let mut runs = vec![SRun { math_objs: Vec::new(),
             text: "x \u{F0CE} A \u{F0D8}B \u{F0AC}".into(),
             style: Style { font: Some("Symbol".into()), ..Default::default() },
         }];
@@ -5681,7 +6317,7 @@ mod tests {
 
         // A different font must NOT translate — Wingdings 0xCE is a different
         // glyph entirely, and guessing would corrupt content.
-        let mut wd = vec![SRun {
+        let mut wd = vec![SRun { math_objs: Vec::new(),
             text: "\u{F0CE}".into(),
             style: Style { font: Some("Wingdings".into()), ..Default::default() },
         }];
@@ -5691,7 +6327,7 @@ mod tests {
 
         // An unmappable byte (bracket extender 0xE6) keeps the whole run
         // untouched rather than half-translating it.
-        let mut partial = vec![SRun {
+        let mut partial = vec![SRun { math_objs: Vec::new(),
             text: "\u{F0CE}\u{F0E6}".into(),
             style: Style { font: Some("Symbol".into()), ..Default::default() },
         }];
@@ -5792,13 +6428,13 @@ mod tests {
     fn real_onenote_hyperlink_labels_the_text_that_follows() {
         let bold = Style { bold: true, ..Default::default() };
         let mut runs = vec![
-            SRun { text: "Video: ".into(), style: bold.clone() },
-            SRun {
+            SRun { math_objs: Vec::new(), text: "Video: ".into(), style: bold.clone() },
+            SRun { math_objs: Vec::new(),
                 text: "\u{FDDF}HYPERLINK \"https://www.youtube.com/watch?v=DsT_YiMiUQo\""
                     .into(),
                 style: bold,
             },
-            SRun {
+            SRun { math_objs: Vec::new(),
                 text: "Natural Language and Introduction to Truth Tables".into(),
                 style: Style::default(),
             },
@@ -5823,9 +6459,9 @@ mod tests {
     fn a_trailing_field_labels_the_link_styled_run_before_it() {
         let link = Style { underline: true, color: 0x0563C1, ..Default::default() };
         let mut runs = vec![
-            SRun { text: "Watch ".into(), style: Style::default() },
-            SRun { text: "this video".into(), style: link },
-            SRun {
+            SRun { math_objs: Vec::new(), text: "Watch ".into(), style: Style::default() },
+            SRun { math_objs: Vec::new(), text: "this video".into(), style: link },
+            SRun { math_objs: Vec::new(),
                 text: "\u{FDDF}HYPERLINK \"https://a.test/v\"".into(),
                 style: Style::default(),
             },
@@ -5847,11 +6483,11 @@ mod tests {
         for color in [0u32, 0xFF00_0000] {
             let style = Style { color, ..Default::default() };
             let mut runs = vec![
-                SRun {
+                SRun { math_objs: Vec::new(),
                     text: "Some notes about logic ".into(),
                     style: style.clone(),
                 },
-                SRun {
+                SRun { math_objs: Vec::new(),
                     text: "\u{FDDF}HYPERLINK \"https://a.test/v\"".into(),
                     style,
                 },
@@ -5877,12 +6513,12 @@ mod tests {
     fn the_label_does_not_absorb_the_prose_after_it() {
         let link = Style { underline: true, ..Default::default() };
         let mut runs = vec![
-            SRun {
+            SRun { math_objs: Vec::new(),
                 text: "\u{FDDF}HYPERLINK \"https://a.test/v\"".into(),
                 style: Style::default(),
             },
-            SRun { text: "watch this".into(), style: link },
-            SRun { text: " before the exam".into(), style: Style::default() },
+            SRun { math_objs: Vec::new(), text: "watch this".into(), style: link },
+            SRun { math_objs: Vec::new(), text: " before the exam".into(), style: Style::default() },
         ];
         linkify_hyperlink_runs(&mut runs);
         assert_eq!(
@@ -5896,7 +6532,7 @@ mod tests {
     /// the single easiest way to ship a fix that fixes nothing.
     #[test]
     fn imported_link_carries_no_emphasis_wrapper() {
-        let mut runs = vec![SRun {
+        let mut runs = vec![SRun { math_objs: Vec::new(),
             text: "\u{FDDF}HYPERLINK \"https://a.test/v\"watch".into(),
             style: Style {
                 underline: true,
@@ -5994,7 +6630,7 @@ mod tests {
     fn office_math_fraction_to_latex() {
         // "= ⟦frac-start⟧ L ⟦bar⟧ R ⟦frac-end⟧" as OneNote stores it.
         let s = "= \u{FDD0}\u{1D43F} \u{FDEE}\u{1D445}\u{FDEF}";
-        assert_eq!(office_math_to_latex(s), r"= \frac{L}{R}");
+        assert_eq!(office_math_to_latex(s, &[]), r"= \frac{L}{R}");
     }
 
     #[test]
@@ -6012,7 +6648,7 @@ mod tests {
     fn office_math_strips_invisibles_when_no_structure() {
         // Function application (U+2061) and math letters, no fraction.
         let s = "\u{1D453}\u{2061}(\u{1D465})"; // f(x)
-        assert_eq!(office_math_to_latex(s), "f(x)");
+        assert_eq!(office_math_to_latex(s, &[]), "f(x)");
     }
 
     #[test]
@@ -7304,5 +7940,320 @@ mod tests {
             "the empty RUN is one blank line, and the three textless \
              CONTAINERS are none"
         );
+    }
+
+    // ── Character formatting and maths structure ───────────────────────────
+
+    /// A property whose value is a list of property sets (type 0x10): the
+    /// element count, the array's own prid, then each element as an embedded
+    /// `PropertySet` — a `u16` property count, the prid words, then the data.
+    fn propset_array(pid: u32, sets: &[Vec<(u32, u8, Vec<u8>)>]) -> Vec<u8> {
+        let mut b = (sets.len() as u32).to_le_bytes().to_vec();
+        b.extend_from_slice(&pid.to_le_bytes());
+        for set in sets {
+            b.extend_from_slice(&(set.len() as u16).to_le_bytes());
+            for (p, t, _) in set {
+                b.extend_from_slice(&(p | ((*t as u32) << 26)).to_le_bytes());
+            }
+            for (_, _, d) in set {
+                b.extend_from_slice(d);
+            }
+        }
+        b
+    }
+
+    /// A boolean property. ONESTORE keeps the VALUE in bit 31 of the prid
+    /// word and gives the property no data at all, so `true` needs the type
+    /// nibble carried up with it — `0x22` is type 0x02 with bit 31 set.
+    fn bool_prop(pid: u32, v: bool) -> (u32, u8, Vec<u8>) {
+        (pid, if v { 0x22 } else { 0x02 }, Vec::new())
+    }
+
+    /// A `u32` property (type 0x05).
+    fn u32_prop(pid: u32, v: u32) -> (u32, u8, Vec<u8>) {
+        (pid, 0x05, v.to_le_bytes().to_vec())
+    }
+
+    /// A character-formatting object: whatever properties it is given.
+    fn style_decl(n: u8, props: &[(u32, u8, Vec<u8>)]) -> Decl {
+        decl(n, 0x0002_0001, propset_blob(&[], props))
+    }
+
+    /// A paragraph split into runs: `text`, the UTF-16 offsets where each run
+    /// after the first begins (0x1E12) and the style object per run (0x1E13).
+    fn runs_blob(text: &str, bounds: &[u32], styles: &[u8], math: Option<Vec<u8>>) -> Vec<u8> {
+        let idx: Vec<u8> = bounds.iter().flat_map(|b| b.to_le_bytes()).collect();
+        let oids: Vec<u32> = styles.iter().map(|&s| cid(s)).collect();
+        let mut props = vec![
+            (PID_RUN_FORMATTING, 0x09, (styles.len() as u32).to_le_bytes().to_vec()),
+            (PID_TEXT_UTF16, 0x07, utf16_data(text)),
+            (PID_RUN_INDEX, 0x07, str_data(&idx)),
+        ];
+        if let Some(m) = math {
+            props.push((PID_MATH_OBJECTS, 0x10, m));
+        }
+        propset_blob(&oids, &props)
+    }
+
+    /// Reported: "all of the subscript wasnt respected, this wasnt done in
+    /// mathematical notation, onenote lets you set regular text as subscript or
+    /// superscript which is what i did here. This was for the a1, a2, and am."
+    ///
+    /// 0x1C09 and 0x1C08 are ordinary character formatting — the ribbon's x₂
+    /// and x² buttons — and the style reader parsed neither, so `a₁` imported
+    /// as the two characters "a1" and the note stopped saying what it said.
+    /// Emitted in the Pandoc dialect the app's Markdown grammar parses.
+    #[test]
+    fn plain_text_subscript_and_superscript_survive_the_import() {
+        let mut f = OneFile::new();
+        let (space_guid, page_guid, dir_guid) = ([0xE1; 16], [0x51; 16], [0xE9; 16]);
+        let live = vec![
+            decl(1, JCID_PAGE_NODE, kids_blob(&[2])),
+            decl(2, JCID_OUTLINE, kids_blob(&[3])),
+            // "a" plain, "1" subscript, "x" plain, "2" superscript, then a
+            // subscript run of TWO words — the app's grammar forbids
+            // whitespace inside the markers, so one pair around the phrase
+            // would render as visible tildes.
+            decl(
+                3,
+                JCID_RICHTEXT_RUN,
+                runs_blob("a1x2 max val", &[1, 2, 3, 4, 5], &[10, 11, 10, 12, 10, 11], None),
+            ),
+            style_decl(10, &[bool_prop(PID_SUBSCRIPT, false), bool_prop(PID_SUPERSCRIPT, false)]),
+            style_decl(11, &[bool_prop(PID_SUBSCRIPT, true)]),
+            style_decl(12, &[bool_prop(PID_SUPERSCRIPT, true)]),
+            decl(9, JCID_PAGE_METADATA, page_id_blob(&page_guid)),
+        ];
+        let page = f.space(space_guid, &[Rev::live(&[1], live)]);
+        let dir = dir_space(&mut f, dir_guid, &[(space_guid, page_guid, "Countable Sets")], &[0]);
+        let root = f.root(&[(dir, dir_guid), (page, space_guid)]);
+        let section = import_one(&f.finish(root));
+
+        assert!(section.ok, "the synthetic section must parse: {:?}", section.error);
+        assert_eq!(
+            page_lines(&section.pages[0]),
+            ["a~1~x^2^ ~max~ ~val~"],
+            "the subscript and the superscript must each survive as their own \
+             marked span, the unformatted characters beside them must not, and \
+             a two-word subscript must be marked word by word"
+        );
+    }
+
+    /// Reported: "the second table included the arrows in the middle however
+    /// the first and last columns are both entirley empty."
+    ///
+    /// OneNote marks a character inserted from the symbol palette as a MATHS
+    /// run, so a cell holding just `ℕ` was a maths-only paragraph — and a
+    /// maths Line carries LaTeX with no runs, while the cell renderer rendered
+    /// only runs. Every such cell came out blank; the arrow column survived
+    /// because an arrow typed as prose is prose. Both halves are fixed here:
+    /// a lone symbol is no longer promoted to an equation at all, and a cell
+    /// that really does hold one renders it.
+    #[test]
+    fn a_table_cell_holding_a_symbol_is_not_emptied_by_it() {
+        let mut f = OneFile::new();
+        let (space_guid, page_guid, dir_guid) = ([0xE2; 16], [0x52; 16], [0xEA; 16]);
+        // The row's three cells: a symbol, an arrow typed as prose, a symbol.
+        let cell = |n: u8, run: u8| decl(n, JCID_TABLE_CELL, kids_blob(&[run]));
+        let live = vec![
+            decl(1, JCID_PAGE_NODE, kids_blob(&[2])),
+            decl(2, JCID_OUTLINE, kids_blob(&[3])),
+            decl(3, JCID_OUTLINE_ELEMENT, kids_blob(&[4])),
+            decl(4, JCID_TABLE, kids_blob(&[5])),
+            decl(5, JCID_TABLE_ROW, kids_blob(&[6, 7, 8, 12])),
+            cell(6, 20),
+            cell(7, 21),
+            cell(8, 22),
+            // A cell that really does hold notation, not a symbol: it must
+            // arrive as inline maths rather than as the blank the renderer
+            // used to leave, and it is the other half of the same fix.
+            cell(12, 23),
+            decl(20, JCID_RICHTEXT_RUN, runs_blob("ℕ", &[], &[30], None)),
+            decl(21, JCID_RICHTEXT_RUN, runs_blob("→", &[], &[31], None)),
+            decl(22, JCID_RICHTEXT_RUN, runs_blob("ℤ", &[], &[30], None)),
+            decl(
+                23,
+                JCID_RICHTEXT_RUN,
+                runs_blob("\u{FDD0}n\u{FDEE}2\u{FDEF}", &[], &[30], None),
+            ),
+            // The maths font is the ONLY thing that marks a run as maths.
+            style_decl(30, &[(PID_FONT, 0x07, utf16_data("Cambria Math"))]),
+            style_decl(31, &[(PID_FONT, 0x07, utf16_data("Calibri"))]),
+            decl(9, JCID_PAGE_METADATA, page_id_blob(&page_guid)),
+        ];
+        let page = f.space(space_guid, &[Rev::live(&[1], live)]);
+        let dir = dir_space(&mut f, dir_guid, &[(space_guid, page_guid, "Countable Sets")], &[0]);
+        let root = f.root(&[(dir, dir_guid), (page, space_guid)]);
+        let section = import_one(&f.finish(root));
+
+        assert!(section.ok, "the synthetic section must parse: {:?}", section.error);
+        let cells: Vec<Vec<String>> = section.pages[0]
+            .boxes
+            .iter()
+            .filter(|b| b.kind == "table")
+            .flat_map(|b| b.cells.clone())
+            .collect();
+        assert_eq!(
+            cells,
+            vec![vec![
+                "ℕ".to_string(),
+                "→".to_string(),
+                "ℤ".to_string(),
+                r"$\frac{n}{2}$".to_string(),
+            ]],
+            "the outer columns must carry their symbols, not be blanked by them"
+        );
+    }
+
+    /// Reported: "the maths equation was not rendered quite properly. If you
+    /// refer to the pdf from onenote you will see it is meant to render one
+    /// part on top of the other there with the single large curly brace."
+    ///
+    /// A piecewise definition, as OneNote stores one: a delimiter whose
+    /// opening character is `{` and which has no closing character, wrapped
+    /// around an equation array. NOTHING in the run text says that — every
+    /// object is the same U+FDD0 — so the importer assumed "fraction" for all
+    /// of them and the brace, the array and the delimiters all vanished. The
+    /// kinds come from the per-run sidecar 0x3499, and this is the shape that
+    /// has to survive it.
+    #[test]
+    fn a_piecewise_definition_imports_as_a_cases_block() {
+        let mut f = OneFile::new();
+        let (space_guid, page_guid, dir_guid) = ([0xE3; 16], [0x53; 16], [0xEB; 16]);
+        // "f(n) = " then 𝑥⟨{ ⟨█ ⟨/ n ¦ 2 ⟩ ¦ −x ⟩ ⟩ — the reference page's own
+        // shape: a sentence that ENDS in the equation, and three opening
+        // markers each in its own run, exactly as OneNote splits them.
+        //
+        // The `𝑥` is MATHEMATICAL ITALIC SMALL X, and it is here on purpose:
+        // it is ASTRAL, so 0x1E12's UTF-16 offsets stop agreeing with
+        // character positions right at the first marker. Reading them as
+        // character offsets — which is what this file did — hands each U+FDD0
+        // the descriptor belonging to the object after it.
+        //
+        // The array has THREE rows for two branches, because the writer left a
+        // blank line between them and OneNote records that as a row — the
+        // reference page's does exactly this.
+        let text = "f(n) = \u{1D465}\u{FDD0}\u{FDD0}\u{FDD0}n\u{FDEE}2\u{FDEF}\
+                    \u{FDEE} \u{FDEE}−x\u{FDEF}\u{FDEF}";
+        let math = propset_array(
+            PID_MATH_OBJECTS,
+            &[
+                // The prose and the `𝑥` sit outside every object.
+                Vec::new(),
+                Vec::new(),
+                // The big brace: one argument, opens with `{`, never closes.
+                vec![
+                    u32_prop(PID_MATH_KIND, MATH_DELIM),
+                    u32_prop(PID_MATH_ARGS, 1),
+                    u32_prop(PID_MATH_BEG, '{' as u32),
+                ],
+                // The equation array: three rows, one column.
+                vec![
+                    u32_prop(PID_MATH_KIND, MATH_EQ_ARRAY),
+                    u32_prop(PID_MATH_ARGS, 3),
+                    u32_prop(PID_MATH_COLS, 1),
+                    u32_prop(PID_MATH_BEG, 0x2588),
+                ],
+                vec![
+                    u32_prop(PID_MATH_KIND, MATH_FRACTION),
+                    u32_prop(PID_MATH_ARGS, 2),
+                    u32_prop(PID_MATH_BEG, '/' as u32),
+                ],
+                // The two content runs describe only their enclosing context.
+                vec![u32_prop(PID_MATH_KIND, MATH_FRACTION)],
+                vec![u32_prop(PID_MATH_KIND, MATH_EQ_ARRAY)],
+            ],
+        );
+        let live = vec![
+            decl(1, JCID_PAGE_NODE, kids_blob(&[2])),
+            decl(2, JCID_OUTLINE, kids_blob(&[3])),
+            decl(
+                3,
+                JCID_RICHTEXT_RUN,
+                // UTF-16 offsets, as OneNote writes them: the astral `𝑥`
+                // occupies units 7 and 8, so the first marker begins at 9.
+                runs_blob(text, &[7, 9, 10, 11, 12, 16], &[31, 30, 30, 30, 30, 30, 30], Some(math)),
+            ),
+            style_decl(30, &[(PID_FONT, 0x07, utf16_data("Cambria Math"))]),
+            style_decl(31, &[(PID_FONT, 0x07, utf16_data("Calibri"))]),
+            decl(9, JCID_PAGE_METADATA, page_id_blob(&page_guid)),
+        ];
+        let page = f.space(space_guid, &[Rev::live(&[1], live)]);
+        let dir = dir_space(&mut f, dir_guid, &[(space_guid, page_guid, "Countable Sets")], &[0]);
+        let root = f.root(&[(dir, dir_guid), (page, space_guid)]);
+        let section = import_one(&f.finish(root));
+
+        assert!(section.ok, "the synthetic section must parse: {:?}", section.error);
+        let shapes: Vec<(&str, &str)> = section.pages[0]
+            .boxes
+            .iter()
+            .map(|b| {
+                (b.kind.as_str(), if b.kind == "math" { &b.latex } else { &b.markdown }.as_str())
+            })
+            .collect();
+        assert_eq!(
+            shapes,
+            [
+                ("text", "f(n) ="),
+                ("math", r"x\begin{cases}\frac{n}{2} \\ −x\end{cases}"),
+            ],
+            "the brace and the stacked rows must both survive, and the equation \
+             must leave the sentence for a BLOCK of its own without taking any \
+             of the sentence with it"
+        );
+    }
+
+    /// The rest of the constructs a student's notes actually contain, against
+    /// the same sidecar. Decoded from 1 154 equations in the owner's notebook,
+    /// and held here because the alternative — every one of them arriving as a
+    /// fraction — is what the import looked like: a matrix came back as five
+    /// fractions inside each other, and `aᵢ` as `\frac{a}{i}`.
+    #[test]
+    fn the_maths_object_kinds_each_convert_to_their_own_latex() {
+        // ⟨ a ¦ b ⟩ — the shape every two-argument object shares. What it
+        // MEANS is the kind, and only the kind.
+        let two = "\u{FDD0}a\u{FDEE}b\u{FDEF}";
+        let obj = |kind: u32, args: u32, cols: u32, beg: Option<char>| {
+            vec![(0usize, MathObj { kind, args, cols, beg, end: None })]
+        };
+        let cases: [(u32, Option<char>, &str); 7] = [
+            (MATH_FRACTION, Some('/'), r"\frac{a}{b}"),
+            (MATH_SUB, Some('_'), r"{a}_{b}"),
+            (MATH_SUP, Some('^'), r"{a}^{b}"),
+            (MATH_NO_BAR, Some('¦'), r"{a \atop b}"),
+            (MATH_NARY, Some('\u{2211}'), r"\sum_{a}^{b} "),
+            (MATH_RADICAL, Some('√'), r"\sqrt[a]{b}"),
+            (MATH_MATRIX, Some('■'), r"\begin{matrix}a & b\end{matrix}"),
+        ];
+        for (kind, beg, want) in cases {
+            let cols = if kind == MATH_MATRIX { 2 } else { 0 };
+            assert_eq!(
+                office_math_to_latex(two, &obj(kind, 2, cols, beg)),
+                want,
+                "kind {kind}"
+            );
+        }
+        // A delimiter carries its own brackets, and an absent one is `\right.`
+        // — LaTeX's "no delimiter", which is what the piecewise brace needs.
+        let one = "\u{FDD0}a\u{FDEF}";
+        let delim = |beg: char, end: Option<char>| {
+            vec![(0usize, MathObj { kind: MATH_DELIM, args: 1, cols: 0, beg: Some(beg), end })]
+        };
+        assert_eq!(office_math_to_latex(one, &delim('(', Some(')'))), r"\left(a\right)");
+        assert_eq!(office_math_to_latex(one, &delim('|', Some('|'))), r"\left|a\right|");
+        assert_eq!(office_math_to_latex(one, &delim('{', None)), r"\left\{a\right.");
+        // An accent names the command that draws it; a function name becomes
+        // LaTeX's upright operator so `sin θ` is not typeset as s·i·n·θ.
+        let acc = |c: char| {
+            vec![(0usize, MathObj { kind: MATH_ACCENT, args: 1, cols: 0, beg: Some(c), end: None })]
+        };
+        assert_eq!(office_math_to_latex(one, &acc('\u{0302}')), r"\hat{a}");
+        assert_eq!(office_math_to_latex(one, &acc('\u{20D7}')), r"\vec{a}");
+        let func =
+            vec![(0usize, MathObj { kind: MATH_FUNC, args: 2, cols: 0, beg: None, end: None })];
+        assert_eq!(office_math_to_latex("\u{FDD0}sin\u{FDEE}x\u{FDEF}", &func), r"\sin x");
+        // …and with no descriptor at all, the old rule still answers, so a
+        // file that predates the sidecar imports exactly as it always did.
+        assert_eq!(office_math_to_latex(two, &[]), r"\frac{a}{b}");
     }
 }

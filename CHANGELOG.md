@@ -4,6 +4,27 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — three ways the OneNote import flattened your maths pages
+
+- **Text you set as subscript or superscript now comes across.** OneNote lets
+  you make ordinary text small-and-low or small-and-high with the x₂ and x²
+  buttons, without writing an equation — and the importer threw that away, so
+  a set written `{a₁, a₂, … , aₘ}` arrived as `{a1, a2, … ,am}`. It now
+  survives, along with every `Aᶜ`, `ℝ⁺`, `O(n²)` and `qᵢ` on the pages around
+  it.
+- **A table cell holding just a symbol is no longer imported empty.** A
+  character you picked from OneNote's symbol palette — ℕ, ℤ, an arrow, a 0 —
+  is marked inside the file as maths, and a cell holding nothing else was
+  dropped on the floor, so whole columns of a table came in blank. Those
+  cells import now, and a cell holding a real equation shows the equation
+  instead of nothing.
+- **Equations keep their shape.** A definition split over two lines with a big
+  curly brace used to be mashed into a fraction — and so did matrices, roots,
+  and sums and integrals, which also lost the limits above and below them.
+  Every one of those now imports looking like it did in OneNote.
+- Pages you have already imported are not rewritten; re-import to pick these
+  up.
+
 ## [0.8.0] — 2026-08-17
 
 ### Fixed — opening, moving and copying notebooks all keep their promises now
