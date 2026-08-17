@@ -33,6 +33,7 @@ import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../canvas/ink_painter.dart' show colorFromHex;
+import '../math/latex_compat.dart';
 import '../media/pdf_pages.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
@@ -514,7 +515,10 @@ Future<Map<String, Uint8List>> _renderMaths(List<Block> blocks) async {
     // 3x, so the equation is still crisp when the reader zooms in — the whole
     // complaint about the OLD raster exporter was that its output went to mush.
     final png = await rasteriseOffscreen(
-      Math.tex(tex,
+      // Same rewrite the on-screen renderer applies (math/latex_compat.dart).
+      // Without it an `\begin{align}` equation drew on the page and printed as
+      // backslashes in the PDF — the export would have been half the fix.
+      Math.tex(renderableLatex(tex),
           textStyle: const TextStyle(fontSize: 24, color: Colors.black),
           onErrorFallback: (_) => const SizedBox.shrink()),
       pixelRatio: 3,

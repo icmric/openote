@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_math_fork/flutter_math.dart';
 
 import '../math/evaluate.dart';
 import '../math/linear_math.dart';
+import '../math/math_view.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -220,15 +220,9 @@ class _MathBlockViewState extends State<MathBlockView> {
               FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
-                child: Math.tex(
+                child: OnoteMath(
                   preview,
                   textStyle: TextStyle(fontSize: 20, color: textColor),
-                  onErrorFallback: (e) => Text(
-                    preview,
-                    style: const TextStyle(
-                        fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback,
-                        color: OnoteColors.graphite400),
-                  ),
                 ),
               ),
             ],
@@ -261,12 +255,9 @@ class _MathBlockViewState extends State<MathBlockView> {
       child: FittedBox(
         fit: BoxFit.scaleDown,
         alignment: Alignment.centerLeft,
-        child: Math.tex(
+        child: OnoteMath(
           latex,
           textStyle: TextStyle(fontSize: 22, color: textColor),
-          onErrorFallback: (e) => Text(latex,
-              style: const TextStyle(
-                  fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, color: OnoteColors.graphite400)),
         ),
       ),
     );

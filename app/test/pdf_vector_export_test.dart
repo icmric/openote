@@ -483,6 +483,27 @@ void main() {
       expect(withMath.length, greaterThan(without.length + 200));
     });
 
+    test('the export draws the same LaTeX the page draws', () async {
+      // The renderer is a KaTeX subset with no `align` environment, so an
+      // `\begin{align}` equation drew on screen (the app rewrites it first,
+      // math/latex_compat.dart) but printed as backslashes — the exporter
+      // painted the raw string. Rendering on screen and not on paper is half
+      // a fix, so the exporter runs the same rewrite.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.blocks = [
+        Block(type: BlockType.math, x: 60, y: 200, w: 300, content: {
+          'latex': r'\begin{align} a &= b \\ c &= d \end{align}',
+        }),
+      ];
+      final withMath = await buildPagePdf(app, pageId, title: 'M');
+      expect(latin1.decode(withMath, allowInvalid: true), contains('/XObject'),
+          reason: 'the equation reached the page as pixels, not as source');
+      app.blocks = [];
+      final without = await buildPagePdf(app, pageId, title: 'M');
+      expect(withMath.length, greaterThan(without.length + 200));
+    });
+
     test('an equation that will not paint falls back to its source', () async {
       // Every failure in the rasteriser returns null rather than throwing, so
       // a page with one impossible equation still exports — with that
