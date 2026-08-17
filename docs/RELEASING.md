@@ -97,6 +97,53 @@ what 0.3.0 → 0.3.1 was.
 **Version numbers.** `M.m.p` on both sides; increment the `+build` counter too,
 because some platforms care about it even though this workflow does not.
 
+### ⚠️ 0a. Writing the notes — manual, every release
+
+The release body lives in the `body: |` block at the bottom of
+[`.github/workflows/release.yml`](../.github/workflows/release.yml), and it is
+written **before you tag**. It is not just the GitHub page: the in-app update
+dialog fetches the release body and shows it to the user, and that dialog is
+where most people will read it. From v0.9 it renders as real Markdown there —
+bold is bold, `##` is a heading — so write it as Markdown, not as plain text.
+
+**The first lines are the shop window.** Only about eight lines fit before the
+reader has to scroll, and a student skims. So:
+
+1. **Open with a compact overview.** Three to seven bullets, each one **a
+   single line** of at most ~90 characters, each naming one genuinely exciting
+   user-facing change in plain words. No wrapping onto a second line — a
+   wrapped bullet is a bullet that is too long for the window it is read in.
+2. **The fuller detail underneath**, in the "All of it, in more detail"
+   section. This is where a change gets its paragraph.
+3. **Then the fine print** — what is still rough, what is opt-in, what a user
+   should do before updating.
+4. **Then "For the technically curious"** — the architecture, the numbers.
+   Nobody has to read it, and nobody skimming should have to skip it.
+5. **Downloads and the code-signing warnings last.** They are the same every
+   release, so they are the least useful thing anyone's first screen could
+   hold.
+
+**Every claim comes from `CHANGELOG.md`'s section for this version**, which is
+written from what actually shipped. Rewrite the overview each release — a
+stale top section is worse than a generic one, because it is confidently
+wrong. If a claim is not in the CHANGELOG, either it did not ship or the
+CHANGELOG is missing it; find out which before it becomes a release note.
+
+**No jargon.** The overview is read by someone who has never heard of an op
+log. "Half the download" — not "the media engine is now fetched lazily".
+
+`app/test/release_notes_test.dart` reads the workflow's `body:` block and fails
+if the opening section grows past seven bullets, if a bullet wraps, if one
+runs past 90 characters, or if the downloads move above the detail. It also
+renders the real body through the dialog's own widget and asserts no Markdown
+markers survive on screen. It cannot check that the words are *true* — that is
+the CHANGELOG's job and yours.
+
+Two things the workflow file's body may contain that the reader never sees:
+an `<!-- HTML comment -->` (the draft-review note at the top — the dialog
+strips them, as GitHub does), and anything past ~20 000 characters, which the
+dialog cuts at a line boundary with a pointer to the download page.
+
 ---
 
 ## 1. What the tag triggers

@@ -697,11 +697,30 @@ jobs:
           # The "What's new" below is written for THIS release before
           # tagging; rewrite it from the CHANGELOG before cutting the next
           # one — a stale top section is worse than the old placeholder.
+          #
+          # AND IT MUST OPEN SHORT. Eric, 2026-08-17: "we only show the first
+          # few lines in the app which is where most people will see it. We
+          # want to keep the overview compact and have the most important
+          # /exciting changes for a user right at the top every time." So the
+          # FIRST section is a handful of one-line bullets — the best of the
+          # release, one line each, no line wrapping — and the detail follows
+          # underneath. `release_notes_test.dart` reads this file and fails
+          # if that opening grows. The rule, and why, is written down in
+          # docs/RELEASING.md §"Writing the notes".
           body: |
             <!-- Draft: review — the What's new below was written with the
                  tag, from CHANGELOG.md's 0.8.0 section — then publish. -->
 
             ## What's new
+
+            - **Half the download** — about 50 MB now, instead of 100 MB.
+            - **Your notebook can take half the room** — one button does it.
+            - **Double-click a notebook to open it**, even with Openote shut.
+            - **Get deletions back** — your last ten, one click each.
+            - **OneNote import overhauled** — nothing cut off or doubled up.
+            - **Every part of the app now works from the keyboard.**
+
+            ## All of it, in more detail
 
             - **The download is about half the size** — roughly 100 MB down
               to about 50 MB. Openote used to carry a video player inside it;
@@ -812,10 +831,12 @@ jobs:
             can read both.
 
             **Windows: "Windows protected your PC"**
+
             Click **More info**, then **Run anyway**. SmartScreen shows this for
             any installer it has not seen often enough to have an opinion about.
 
             **macOS: "openote is damaged and can't be opened"**
+
             Gatekeeper quarantines unsigned downloads. After copying to
             Applications, clear the flag once:
 

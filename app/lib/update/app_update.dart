@@ -17,6 +17,8 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import '../markdown/md_syntax.dart';
+
 /// The running app's version. pubspec.yaml is the source of truth;
 /// app_update_test.dart fails the build the moment the two drift.
 const kAppVersion = '0.8.0';
@@ -110,6 +112,141 @@ Future<UpdateInfo?> fetchLatestUpdate({String current = kAppVersion}) async {
     }
   } catch (_) {
     return null;
+  }
+}
+
+// ── The release body, made fit to show ────────────────────────────────────
+//
+// The dialog renders the GitHub release body with the SAME Markdown renderer
+// notes use (markdown/md_render.dart), so `**bold**` finally arrives as bold
+// rather than as four visible asterisks. That renderer reads a note, though,
+// and a note is not a GitHub release body. Three concrete differences bite,
+// and this is where each is dealt with — before any widget sees the text.
+
+/// `<!-- … -->`, across lines. GitHub hides comments; our renderer has no
+/// idea what one is and would print it.
+final _reHtmlComment = RegExp(r'<!--.*?-->', dotAll: true);
+
+/// Four or more leading spaces: a code block in Markdown, so its line breaks
+/// are content and must survive the reflow below.
+final _reIndentedCode = RegExp(r'^ {4,}\S');
+
+/// A heading at any level. Wider than the renderer's own 1–3 on purpose: a
+/// `#### x` it will not style is still a line that must not be swallowed by
+/// the paragraph above it.
+final _reAnyHeading = RegExp(r'^#{1,6}[ \t]');
+
+/// A pipe-table row. `md_table` parses a table as a run of consecutive lines,
+/// so folding the first row into the paragraph above destroys the whole table.
+final _reTableRow = RegExp(r'^\s*\|');
+
+/// An image line, and a raw HTML block. Neither is prose to be joined.
+final _reImageLine = RegExp(r'^\s*!\[');
+final _reHtmlBlock = RegExp(r'^\s*<');
+
+/// How much of a release body the dialog will show. The renderer builds one
+/// widget per line into a plain `Column` — nothing is lazy — so a body that
+/// arrives with hundreds of generated pull-request lines would build
+/// thousands of widgets before the dialog could paint. GitHub's own limit on
+/// a release body is 125 000 characters.
+const int kReleaseNotesMaxChars = 20000;
+
+/// True when [line] opens a new block, so it can never be a continuation of
+/// the line before it.
+bool _startsBlock(String line) {
+  final l = line.trimLeft();
+  return _reAnyHeading.hasMatch(l) ||
+      mdBulletRe.hasMatch(line) ||
+      mdNumberedRe.hasMatch(line) ||
+      mdCheckboxRe.hasMatch(line) ||
+      mdQuoteRe.hasMatch(l) ||
+      mdDividerRe.hasMatch(line) ||
+      _reTableRow.hasMatch(line) ||
+      _reImageLine.hasMatch(line) ||
+      _reHtmlBlock.hasMatch(line);
+}
+
+/// True when [line] is a block that prose may be appended to — a paragraph, a
+/// list item or a quote. A heading, rule, table row or image is not.
+bool _acceptsContinuation(String line) {
+  if (line.trim().isEmpty) return false;
+  // An indented code line. Prose that follows one at column 0 ENDS the code
+  // block, so appending it would move that sentence inside the command.
+  if (_reIndentedCode.hasMatch(line)) return false;
+  final l = line.trimLeft();
+  // A fence marker, in particular the CLOSING one: appending the next
+  // paragraph to it would put that paragraph inside the code block.
+  if (l.startsWith('```')) return false;
+  return !(_reAnyHeading.hasMatch(l) ||
+      mdDividerRe.hasMatch(line) ||
+      _reTableRow.hasMatch(line) ||
+      _reImageLine.hasMatch(line) ||
+      _reHtmlBlock.hasMatch(line));
+}
+
+/// Fold soft-wrapped lines back into the block they belong to.
+///
+/// A release body is hard-wrapped in the workflow file at about seventy
+/// columns, because it lives inside YAML. Markdown — and therefore GitHub,
+/// where these notes are also read — joins those lines into one paragraph.
+/// Our renderer is line-based and would instead draw each wrapped fragment as
+/// its own paragraph at zero indent, so a bullet's second line fell out from
+/// under its bullet and the whole panel came out ragged. Folding here makes
+/// the dialog show what GitHub shows.
+List<String> _reflow(List<String> lines) {
+  final out = <String>[];
+  var inFence = false;
+  for (final line in lines) {
+    if (line.trimLeft().startsWith('```')) {
+      inFence = !inFence;
+      out.add(line);
+      continue;
+    }
+    // Inside a fence every line break is content.
+    if (inFence || line.trim().isEmpty) {
+      out.add(line);
+      continue;
+    }
+    // Note there is no test for an indented line HERE. Markdown does not let
+    // an indented code block interrupt a paragraph either — `Some prose:` /
+    // `    code` with no blank line between them is one paragraph on GitHub
+    // too — so refusing to fold it would have made us differ from the page
+    // this text is also read on. The guard that matters is the one in
+    // [_acceptsContinuation]: nothing gets appended to a code line.
+    if (out.isNotEmpty && _acceptsContinuation(out.last) && !_startsBlock(line)) {
+      out[out.length - 1] = '${out.last.trimRight()} ${line.trim()}';
+    } else {
+      out.add(line);
+    }
+  }
+  return out;
+}
+
+/// A GitHub release body, ready for the note renderer.
+///
+/// Never throws and never returns something unshowable: this text is the only
+/// description a user gets of an update they are being asked to install, and
+/// a tidying step must not be the reason the offer fails to appear. Anything
+/// unexpected falls back to the body as it arrived, which is exactly what the
+/// dialog used to show.
+String tidyReleaseNotes(String raw, {int maxChars = kReleaseNotesMaxChars}) {
+  try {
+    // GitHub returns CRLF. A stray `\r` rides along at the end of every line
+    // into whatever the renderer measures and draws.
+    var s = raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    s = s.replaceAll(_reHtmlComment, '');
+    var text = _reflow(s.split('\n')).join('\n').trim();
+    // Stripping a comment leaves the blank lines that surrounded it.
+    text = text.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+    if (text.length > maxChars) {
+      // Cut at a line boundary — half a sentence looks like a bug.
+      final nl = text.lastIndexOf('\n', maxChars);
+      text = '${text.substring(0, nl > 0 ? nl : maxChars).trimRight()}\n\n'
+          'There is more to read on the download page.';
+    }
+    return text;
+  } catch (_) {
+    return raw.trim();
   }
 }
 

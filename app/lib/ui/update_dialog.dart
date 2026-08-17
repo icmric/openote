@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../core/platform_open.dart';
+import '../markdown/md_render.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../update/app_update.dart';
@@ -31,6 +32,108 @@ Future<void> showUpdateDialog(BuildContext context, AppState app) {
     // the only moment it needed to be.
     builder: (_) => _UpdateDialog(app: app, info: info),
   );
+}
+
+/// What's new in the update, drawn the way it was written.
+///
+/// The release body arrives as Markdown, and this used to be a plain [Text] —
+/// so a student was shown `**The download is about half the size**`,
+/// asterisks and all, with `##` in front of every heading. Eric, 2026-08-17:
+/// "it shows words **like this** rather than bolded which is not the best
+/// look."
+///
+/// It renders through [MarkdownView], the renderer the notes themselves use,
+/// so the dialect can never drift from the one the rest of the app reads.
+/// Three deliberate choices, because a release body is REMOTE text rather
+/// than the user's own notes:
+///
+///  * **No image resolver.** Without one an `![…](…)` line renders as its
+///    literal Markdown, which means the dialog cannot be made to fetch a
+///    remote picture by whatever the release body happens to contain.
+///  * **No wiki-link handler**, so `[[…]]` draws as an inert chip: there is
+///    no page in a notebook for a release note to point at.
+///  * **Links open in the browser** through the same `PlatformOpen`
+///    allow-list note links use — http/https/mailto only, handed to the OS as
+///    one parameter and never through a shell.
+///
+/// It scrolls, and it opens out: a release body is arbitrarily long, and the
+/// dialog is where most people read one.
+class ReleaseNotesView extends StatefulWidget {
+  const ReleaseNotesView({super.key, required this.notes});
+
+  final String notes;
+
+  /// Height of the panel when folded. About eight lines — enough for the
+  /// compact overview the body is required to open with (docs/RELEASING.md).
+  static const double collapsedHeight = 200;
+
+  /// Longer than this and the panel offers to open out.
+  static const int foldAfterLines = 10;
+
+  @override
+  State<ReleaseNotesView> createState() => _ReleaseNotesViewState();
+}
+
+class _ReleaseNotesViewState extends State<ReleaseNotesView> {
+  final _scroll = ScrollController();
+  bool _expanded = false;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = tidyReleaseNotes(widget.notes);
+    if (text.isEmpty) return const SizedBox.shrink();
+    final long = '\n'.allMatches(text).length + 1 >
+        ReleaseNotesView.foldAfterLines;
+    // Opened out, the panel follows the window rather than a fixed number:
+    // the same 460px that is comfortable on a laptop is taller than the whole
+    // dialog on a small screen.
+    final maxHeight = _expanded
+        ? (MediaQuery.of(context).size.height * 0.45).clamp(160.0, 460.0)
+        : ReleaseNotesView.collapsedHeight;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Flexible(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            // A visible thumb, because the first few lines are all most
+            // people see — without it there is nothing to say the rest of the
+            // notes exist.
+            child: Scrollbar(
+              controller: _scroll,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _scroll,
+                padding: const EdgeInsets.only(right: 12),
+                child: MarkdownView(
+                  text: text,
+                  baseStyle: const TextStyle(fontSize: 12.5, height: 1.35),
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (long)
+          TextButton(
+            onPressed: () => setState(() => _expanded = !_expanded),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              minimumSize: const Size(0, 30),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(_expanded ? 'Show less' : 'Show more',
+                style: const TextStyle(fontSize: 12)),
+          ),
+      ],
+    );
+  }
 }
 
 class _UpdateDialog extends StatefulWidget {
@@ -107,13 +210,11 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                   style: TextStyle(fontSize: 12.5)),
               if (notes.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 180),
-                  child: SingleChildScrollView(
-                    child: Text(notes,
-                        style: const TextStyle(fontSize: 11.5, height: 1.4)),
-                  ),
-                ),
+                // Flexible, not a bare child: the notes panel asks for up to
+                // 460px when opened out, and a `Column` hands a non-flexible
+                // child unbounded height — on a short window that is a yellow
+                // overflow stripe across the dialog.
+                Flexible(child: ReleaseNotesView(notes: notes)),
               ],
               const SizedBox(height: 10),
               if (_busy) ...[
