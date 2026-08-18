@@ -25,6 +25,7 @@ PPTX Thumbnail
     (The PDF half of this shipped as the card import.) PPTX has no renderer
     here — a .pptx still lands as a plain attachment. Rendering it needs
     either a converter on import or exporting to PDF first.
+    
 
 Tables
     Excel like spreadsheet or SQL like table
@@ -110,6 +111,9 @@ Page info/tools
         users: students creating IT flowcharts, students creating logic flowcharts, companies creating chain of command, problem resolution, etc
         Basic text in components as early version. In future be able to click to expand each box to see more information (sorta like how the pdf thumbnail thing works), or potentially attach flows and actions to buttons allowing code or things to be executed by clicking on them
         Viewing mode where it takes people through one step at a time (for logic flowcharts), shows answer history somewhere (not kept once leaving view mode) allowing backtracking
+    PDF Viewer
+        Inserted PDF (thumbnail) and it opened once but then failed to ever open again, i opened right after importing which may have caused a bug?
+        Thumbnail PDF viewer should be able to be "detached" (or a better term) and had off to the side still within the app, but allowing me to edit the page while also viewing the PDF at the same time. 
 
 Drawing
     tools such as basic shapes, lines/arrows, graphs
