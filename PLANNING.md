@@ -139,24 +139,13 @@ Consistency/UX
       page when the styles system grows defaults at all.
     Pressing 'Del' when clicking on a page or group doesnt delete it - only way to delete is right click and press delete
     Hovering over a box makes its background solid, this makes aligning with other objects more difficult and is different to how it will be rendered
+    Poor feedback given when selecting a cloud folder to sync with. Options to grey out however as the process can soemtimes take some time for larger notebooks a spinner icon where the select button was (or somewhere intuitive) would be great
 
 Code editor
-    → ALL SHIPPED (editor/code_languages.dart is the registry: id, display
-      name, aliases, group, indent width, comment syntax, pairs, runnable).
-      · IDE typing: pairs close and step over, Backspace clears an empty
-        pair, Enter between braces pushes the closer to its own line at the
-        right indent, Tab/Shift+Tab indent and outdent whole selections.
-        Implemented as an input formatter, not a key handler, because a
-        newline arrives through the text-input service — a key handler
-        works on desktop and silently does nothing on a tablet.
-      · Language auto-detection from the source, with negative weights so C
-        stops claiming C++ and a JS object literal stops claiming JSON, and
-        a confidence floor so an ambiguous two-liner is left alone rather
-        than guessed at. It never overrides a language the user picked.
-      · c++ and c# highlighting, plus the picker grouped Runs-on-this-device
-        (badged) → C family → common → web → data → terminal → plain.
     Remaining: HTML tag auto-closing, and string/comment awareness in the
     pairing rules (typing a quote inside a comment still pairs).
+    Should follow VS or VScode styling where possible. i.e. comments in C# should be green. Maybe we offer the option to pick styles? Dont want to bog down the app with storing several styles for each language (assuming each style ends up language specific), if all styles are <5-10MB total then have them all preloaded, otherwise we should figure out a way to download them or compress them. 
+        Basic linting for each language would be nice. Dont have to do anything complex on most languages (basic syntax errors would be helpful even), slightly more complex linting for JS and SQL would be very helpful as they can be run locally, however again if its going to add lots of 
 
 General text editing
     → ALL FIVE SHIPPED. The lasting change is that there is now ONE grammar
@@ -189,3 +178,5 @@ General text editing
     tables/fences/$$math$$/links, recursive inline nesting (**==x==**), rich
     paste that keeps structure from Word or a web page, and replacing the
     private {{#hex text}} colour syntax with portable HTML.
+    Still seems like there is a lot of movement with dotpoints? Did work at some stage so maybe some recent breaking change (or works on one machine and not others)
+    Ontenote page links arent imported correctly. Start with onenote:https://ONEDRIVELINK, would be nice if we could attempt to convert this link to a page link within openote - Given page name (which may not be unique), section ID, and page ID. If a matching page cannot be found (as it could be linking to a notebook that hasnt been imported, a deleted page, etc) please allow it to continue linking to onenote (which the onenote: prefix automatically allows AFAIK)
