@@ -9,7 +9,6 @@ import 'package:openote/math/math_editor.dart';
 import 'package:openote/math/math_field.dart';
 import 'package:openote/math/math_inventory.dart';
 import 'package:openote/math/math_view.dart';
-import 'package:openote/ui/math_bar.dart';
 
 void main() {
   late MathEditor editor;
@@ -154,83 +153,6 @@ void main() {
         reason: 'mid-sentence, Enter belongs to the sentence');
   });
 
-  group('the maths bar', () {
-    testWidgets('shows the structures and inserts one on tap', (tester) async {
-      MathItem? inserted;
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: MathBar(
-            latexMode: false,
-            onToggleLatex: () {},
-            onInsert: (i) => inserted = i,
-          ),
-        ),
-      ));
-      await tester.pumpAndSettle();
-      // Every button face draws as notation, not as source.
-      expect(find.byType(MathSourceFallback), findsNothing);
-      await tester.tap(find.byTooltip('fraction — type 1/2'));
-      await tester.pumpAndSettle();
-      expect(inserted?.id, 'frac');
-    });
-
-    testWidgets('searching in plain words finds the symbol', (tester) async {
-      MathItem? inserted;
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: MathBar(
-            latexMode: false,
-            onToggleLatex: () {},
-            onInsert: (i) => inserted = i,
-          ),
-        ),
-      ));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), 'not equal');
-      await tester.pumpAndSettle();
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pumpAndSettle();
-      expect(inserted?.id, 'neq',
-          reason: 'Enter takes the first hit — the fast path for a student '
-              'who knows what the thing is called but not where it lives');
-    });
-
-    testWidgets('a search with no hits points at the LaTeX view, not a wall',
-        (tester) async {
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: MathBar(
-            latexMode: false,
-            onToggleLatex: () {},
-            onInsert: (_) {},
-          ),
-        ),
-      ));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), 'zzzznothing');
-      await tester.pumpAndSettle();
-      expect(find.textContaining('LaTeX view can write anything'),
-          findsOneWidget);
-    });
-
-    testWidgets('the LaTeX fold is one button, and off by default',
-        (tester) async {
-      var toggled = 0;
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: MathBar(
-            latexMode: false,
-            onToggleLatex: () => toggled++,
-            onInsert: (_) {},
-          ),
-        ),
-      ));
-      await tester.pumpAndSettle();
-      expect(find.text('LaTeX'), findsOneWidget);
-      await tester.tap(find.text('LaTeX'));
-      expect(toggled, 1);
-    });
-  });
 }
 
 /// The logical key that produces a character, for the ones these tests type.

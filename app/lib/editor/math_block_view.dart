@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../math/active_math.dart';
 import '../math/evaluate.dart';
 import '../math/linear_math.dart';
 import '../math/math_editor.dart';
@@ -9,7 +10,6 @@ import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
-import '../ui/math_bar.dart';
 import 'wrap_selection.dart';
 
 /// Math block: the equation is built VISUALLY while editing — symbols drawn as
@@ -66,6 +66,7 @@ class _MathBlockViewState extends State<MathBlockView> {
 
   @override
   void dispose() {
+    widget.app.clearActiveMath(this);
     _controller.dispose();
     _latexFocus.dispose();
     _fieldFocus.dispose();
@@ -106,6 +107,9 @@ class _MathBlockViewState extends State<MathBlockView> {
   void _handleExitTransition() {
     if (_wasEditing && !editing) {
       _undoPushed = false;
+      // The toolbar's Maths tab is showing THIS equation's buttons; it has to
+      // go when the equation does.
+      widget.app.clearActiveMath(this);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if ((widget.block.content['latex'] as String? ?? '').trim().isEmpty) {
@@ -151,16 +155,23 @@ class _MathBlockViewState extends State<MathBlockView> {
     final textColor = dark ? OnoteColors.moon0 : OnoteColors.graphite900;
 
     if (editing) {
+      // The palette lives in the toolbar's Maths tab, not in this box (v0.18
+      // §5.2 as revised). Registered from `build`, like `setActiveEditor`, and
+      // therefore WITHOUT a notify — the rebuild that reveals the tab rides
+      // the `select(edit: true)` notify that opened this editor.
+      widget.app.setActiveMath(ActiveMathEditor(
+        owner: this,
+        insert: (item) => _fieldKey.currentState?.insertItem(item),
+        latexMode: _latexMode,
+        latexAvailable: _latexMode || _editor != null,
+        toggleLatex: _toggleLatexMode,
+        result: _evaluated?.display,
+      ));
       return Padding(
         padding: const EdgeInsets.all(10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_latexMode)
-              _latexEditor(textColor)
-            else
-              MathField(
+        child: _latexMode
+            ? _latexEditor(textColor)
+            : MathField(
                 key: _fieldKey,
                 focusNode: _fieldFocus,
                 editor: _editor!,
@@ -168,16 +179,6 @@ class _MathBlockViewState extends State<MathBlockView> {
                 onChanged: _commitLatex,
                 onExit: (_) => _leaveEquation(),
               ),
-            const SizedBox(height: 8),
-            MathBar(
-              latexMode: _latexMode,
-              latexAvailable: _latexMode || _editor != null,
-              onToggleLatex: _toggleLatexMode,
-              onInsert: (item) => _fieldKey.currentState?.insertItem(item),
-              trailing: _result(dark),
-            ),
-          ],
-        ),
       );
     }
 
@@ -257,24 +258,4 @@ class _MathBlockViewState extends State<MathBlockView> {
     );
   }
 
-  /// The live numeric result (MATH-7). OneNote paywalls maths answers behind
-  /// an Education subscription; we own the grammar, so this is free. A
-  /// calculator, not a solver — an expression it can't reduce shows nothing
-  /// rather than an error the student didn't ask for.
-  Widget? _result(bool dark) {
-    final r = _evaluated;
-    if (r == null) return null;
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      const Text('= ',
-          style: TextStyle(fontSize: 13, color: OnoteColors.graphite400)),
-      Text(
-        r.display,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: dark ? OnoteColors.moon0 : OnoteColors.graphite900,
-        ),
-      ),
-    ]);
-  }
 }

@@ -20,11 +20,12 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../math/active_math.dart';
 import '../math/math_editor.dart';
 import '../math/math_field.dart';
 import '../math/math_view.dart';
+import '../state/app_state.dart';
 import '../theme/tokens.dart';
-import '../ui/math_bar.dart';
 
 /// Opens the editing card for one inline equation.
 ///
@@ -47,6 +48,7 @@ class InlineMathPopover {
 
   static void show(
     BuildContext context, {
+    required AppState app,
     required Rect anchor,
     required String latex,
     required ValueChanged<String> onChanged,
@@ -63,6 +65,7 @@ class InlineMathPopover {
     late OverlayEntry entry;
     entry = OverlayEntry(
       builder: (ctx) => _InlineMathCard(
+        app: app,
         anchor: anchor,
         editor: editor,
         latex: latex,
@@ -80,6 +83,7 @@ class InlineMathPopover {
 
 class _InlineMathCard extends StatefulWidget {
   const _InlineMathCard({
+    required this.app,
     required this.anchor,
     required this.editor,
     required this.latex,
@@ -87,6 +91,7 @@ class _InlineMathCard extends StatefulWidget {
     required this.onDone,
   });
 
+  final AppState app;
   final Rect anchor;
   final MathEditor? editor;
   final String latex;
@@ -111,6 +116,7 @@ class _InlineMathCardState extends State<_InlineMathCard> {
 
   @override
   void dispose() {
+    widget.app.clearActiveMath(this);
     _source.dispose();
     super.dispose();
   }
@@ -129,6 +135,20 @@ class _InlineMathCardState extends State<_InlineMathCard> {
     final below = widget.anchor.bottom + 6;
     final wantsAbove = below + 220 > screen.height;
     final left = widget.anchor.left.clamp(8.0, screen.width - cardWidth - 8);
+
+    // The palette is the toolbar's Maths tab, the same one the block editor
+    // drives — so this card holds ONLY the equation. Registered from `build`
+    // without a notify, matching the block editor.
+    widget.app.setActiveMath(ActiveMathEditor(
+      owner: this,
+      insert: (item) => _fieldKey.currentState?.insertItem(item),
+      latexMode: _latexMode,
+      latexAvailable: widget.editor != null,
+      toggleLatex: () => setState(() {
+        _latexMode = !_latexMode;
+        if (_latexMode) _source.text = widget.editor?.latex ?? '';
+      }),
+    ));
 
     return Stack(children: [
       // Tapping anywhere else finishes — the same "click away commits" rule
@@ -175,16 +195,10 @@ class _InlineMathCardState extends State<_InlineMathCard> {
                     onChanged: widget.onChanged,
                     onExit: (_) => widget.onDone(),
                   ),
-                const SizedBox(height: 8),
-                MathBar(
-                  latexMode: _latexMode,
-                  latexAvailable: widget.editor != null,
-                  onToggleLatex: () => setState(() {
-                    _latexMode = !_latexMode;
-                    if (_latexMode) _source.text = widget.editor?.latex ?? '';
-                  }),
-                  onInsert: (item) => _fieldKey.currentState?.insertItem(item),
-                  trailing: TextButton(
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
                     onPressed: widget.onDone,
                     style: TextButton.styleFrom(
                       visualDensity: VisualDensity.compact,

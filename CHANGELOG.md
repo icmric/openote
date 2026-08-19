@@ -12,12 +12,14 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   cursor already in the box. Tab hops to the next box. There is no longer a
   panel of backslashes with a preview underneath — you write the equation by
   looking at the equation.
-- **A maths bar sits under whatever you are writing.** A fixed row of shapes
+- **A Maths tab appears in the toolbar while you write an equation**, and
+  goes away when you finish — the same place OneNote puts it. A fixed row of
+  shapes
   (fraction, powers, roots, Σ, ∫, lim, brackets, piecewise, matrix, choose,
-  accents), then symbols by category — Greek, comparisons and arrows, sets and
-  logic, stats, geometry, science, functions — and a search box that speaks
-  plain English: type "square root", "not equal", "choose" or "theta" and
-  press Enter.
+  accents), then a drop-down of symbols per category — Greek, comparisons and
+  arrows, sets and logic, stats, geometry, science, functions — and a search
+  box that speaks plain English: type "square root", "not equal", "choose" or
+  "theta" and press Enter.
 - **Symbols by name as you type.** `sqrt`, `sum`, `theta`, `pi`, `sin` and the
   rest turn into their symbol when you press space, and `<=` `>=` `!=` `->`
   turn into ≤ ≥ ≠ → as you type them. Every button's tooltip tells you its

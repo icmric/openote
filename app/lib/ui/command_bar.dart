@@ -19,6 +19,7 @@ import '../export/print_page.dart';
 import '../editor/list_editing.dart';
 import '../markdown/md_syntax.dart';
 import '../model/models.dart';
+import 'math_bar.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
 import '../editor/video_block_view.dart' show formatBytes;
@@ -49,10 +50,47 @@ class CommandBar extends StatefulWidget {
 }
 
 class _CommandBarState extends State<CommandBar> {
+  /// The tab the user last chose among the permanent ones.
   int _tab = 0;
+
+  /// The user navigated off the Maths tab while an equation was still open.
+  /// Without this, tapping Home mid-equation would be undone on the very next
+  /// rebuild — the tab would drag itself back and the student could never
+  /// leave it.
+  bool _leftMaths = false;
+
   static const _tabs = ['Home', 'Insert', 'Draw', 'View'];
 
+  /// The contextual tab's index — one past the permanent ones.
+  static const int _mathsTab = 4;
+
   AppState get app => widget.app;
+
+  /// Is an equation being written right now?
+  ///
+  /// Derived, not stored, and deliberately NOT read from `app.activeMath`
+  /// alone: that handle is registered from the equation editor's own `build`,
+  /// and there is no guarantee the editor builds before this bar does. Asking
+  /// the model what is being edited is true the instant `select(edit: true)`
+  /// notifies, which is the frame the tab has to appear in.
+  bool get _mathsOpen {
+    final id = app.editingBlockId;
+    if (id != null) {
+      for (final b in app.blocks) {
+        if (b.id == id) return b.type == BlockType.math;
+      }
+    }
+    // An equation inside a sentence: the block being edited is TEXT, so only
+    // the open editor itself can say.
+    return app.activeMath != null;
+  }
+
+  /// The tab actually showing. Pure derivation — no `setState` from `build`,
+  /// and therefore no frame where the wrong tab is painted first.
+  int get _effectiveTab {
+    if (_mathsOpen) return _leftMaths ? _tab : _mathsTab;
+    return _tab == _mathsTab ? 0 : _tab;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -78,32 +116,13 @@ class _CommandBarState extends State<CommandBar> {
                 // which is the one place a pointer can be thrown at infinitely
                 // fast (Fitts's law) and always land.
                 for (var i = 0; i < _tabs.length; i++)
-                  InkWell(
-                    borderRadius: BorderRadius.circular(6),
-                    onTap: () => setState(() => _tab = i),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(
-                            width: 2,
-                            color:
-                                _tab == i ? scheme.primary : Colors.transparent,
-                          ),
-                        ),
-                      ),
-                      child: Text(
-                        _tabs[i],
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight:
-                              _tab == i ? FontWeight.w600 : FontWeight.w400,
-                          color: _tab == i ? scheme.primary : null,
-                        ),
-                      ),
-                    ),
-                  ),
+                  _tabButton(scheme, i, _tabs[i]),
+                // The contextual tab. It exists only while an equation is
+                // being written, which is why it is drawn here rather than
+                // living in `_tabs` — and it is TINTED, so its arrival reads
+                // as "these buttons are about the thing you are doing" the way
+                // OneNote's do.
+                if (_mathsOpen) _tabButton(scheme, _mathsTab, 'Maths'),
                 const Spacer(),
                 // The trailing cluster scrolls rather than overflowing.
                 //
@@ -290,12 +309,13 @@ class _CommandBarState extends State<CommandBar> {
                 children: [...previous, if (current != null) current],
               ),
               child: SingleChildScrollView(
-                key: ValueKey(_tab),
+                key: ValueKey(_effectiveTab),
                 scrollDirection: Axis.horizontal,
-                child: switch (_tab) {
+                child: switch (_effectiveTab) {
                   0 => _homeRow(context),
                   1 => _insertRow(context),
                   2 => _drawRow(context),
+                  _mathsTab => _mathsRow(context),
                   _ => _viewRow(context),
                 },
               ),
@@ -462,6 +482,63 @@ class _CommandBarState extends State<CommandBar> {
   }
 
   // ── INSERT ────────────────────────────────────────────────────────────
+
+  Widget _tabButton(ColorScheme scheme, int i, String label) {
+    final on = _effectiveTab == i;
+    return InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: () => setState(() {
+        if (i == _mathsTab) {
+          _leftMaths = false;
+        } else {
+          _tab = i;
+          // Only counts as leaving if there was something to leave.
+          _leftMaths = _mathsOpen;
+        }
+      }),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              width: 2,
+              color: on ? scheme.primary : Colors.transparent,
+            ),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+            color: on
+                ? scheme.primary
+                : (i == _mathsTab ? scheme.primary.withValues(alpha: 0.75) : null),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The Maths tab's contents, driven through `AppState.activeMath` — see
+  /// `math/active_math.dart` for why that handle is a record of closures and
+  /// not a reference to the editor.
+  Widget _mathsRow(BuildContext context) {
+    final m = app.activeMath;
+    if (m == null) {
+      // One frame at most: the tab is derived from `editingBlockId`, which is
+      // true before the equation editor has built and registered itself.
+      return const SizedBox(height: 34);
+    }
+    return MathBar(
+      onInsert: m.insert,
+      latexMode: m.latexMode,
+      latexAvailable: m.latexAvailable,
+      onToggleLatex: m.toggleLatex,
+      result: m.result,
+    );
+  }
 
   Widget _insertRow(BuildContext context) {
     Widget ins(IconData icon, String label, VoidCallback fn) => Padding(

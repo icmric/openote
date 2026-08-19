@@ -66,6 +66,7 @@ class LiveMarkdownEngine extends OnoteTextEditor {
     required ValueChanged<String> onChanged,
   }) =>
       _LiveMarkdownSession(
+        app: app,
         controller: LiveMarkdownController(
             text: deserialize(block.content), dark: false)
           // The same resolver the read view gets, so an in-flow image is a
@@ -95,7 +96,11 @@ class LiveMarkdownEngine extends OnoteTextEditor {
 }
 
 class _LiveMarkdownSession extends OnoteEditSession {
-  _LiveMarkdownSession({required this.controller, required this.onChanged}) {
+  _LiveMarkdownSession({
+    required this.app,
+    required this.controller,
+    required this.onChanged,
+  }) {
     // Resizing a picture rewrites the buffer from inside the controller, and a
     // programmatic edit never fires TextField.onChanged — without this the new
     // size would draw perfectly and then be gone on the next open.
@@ -117,6 +122,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
     var current = end;
     InlineMathPopover.show(
       ctx,
+      app: app,
       anchor: anchor,
       latex: latex,
       onChanged: (next) {
@@ -133,6 +139,9 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// an `Overlay`, since a session is not a widget.
   BuildContext? _lastContext;
 
+  /// Needed only so the inline equation card can register with the toolbar's
+  /// Maths tab — the session itself never reads the model.
+  final AppState app;
   final LiveMarkdownController controller;
   final ValueChanged<String> onChanged;
   final FocusNode _focus = FocusNode();

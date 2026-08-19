@@ -19,6 +19,7 @@ import '../editor/onote_text_editor.dart';
 import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/history.dart';
+import '../math/active_math.dart';
 import '../math/linear_math.dart';
 import '../model/models.dart';
 import '../store/database.dart'
@@ -7326,6 +7327,35 @@ class AppState extends ChangeNotifier
   // stored gridSize actually drives placement instead of being dead state.
   double get gridSize => pageProps.gridSize;
   double snap(double v) => effectiveSnap ? (v / gridSize).round() * gridSize : v;
+
+  /// The equation editor that has the keyboard, so the toolbar's **Maths** tab
+  /// can drive it (v0.18 §5.2, revised).
+  ///
+  /// The palette began docked inside the equation's own box. The owner's
+  /// verdict — *"this isnt great. I want them in the bar up the top like it is
+  /// in onenote"* — and they are right for a reason worth writing down: a
+  /// palette inside the box competes with the equation for the space the
+  /// student is actually looking at, and it moves every time the equation
+  /// grows. A contextual toolbar tab stays put.
+  ///
+  /// Both editors register here: the block on the page, and the small card
+  /// that opens over an equation sitting in a sentence.
+  ActiveMathEditor? activeMath;
+
+  /// Registered from the equation editor's `build`, so — like [setActiveEditor]
+  /// — it must NOT notify. The rebuild that reveals the tab rides the
+  /// `select(edit: true)` notify that opened the editor in the first place.
+  void setActiveMath(ActiveMathEditor m) => activeMath = m;
+
+  /// Called when an equation editor closes. [owner] identifies the caller so a
+  /// teardown arriving *after* the next editor has already registered cannot
+  /// unregister its successor — the classic dispose-order bug.
+  void clearActiveMath(Object owner) {
+    if (activeMath?.owner == owner) {
+      activeMath = null;
+      notifyListeners();
+    }
+  }
 
   /// Put a new equation on the page, open for editing (task #79).
   ///
