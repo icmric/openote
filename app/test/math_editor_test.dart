@@ -39,11 +39,13 @@ void main() {
     });
 
     test('x^2 raises only the x', () {
-      expect(type('x^2').latex, r'{x}^{2}');
+      // Unbraced base. `{x}^{2}` draws the same, but `{\int}^{2}` does NOT
+      // draw the same as `\int^{2}` — see the big-operator test below.
+      expect(type('x^2').latex, r'x^{2}');
     });
 
     test('a power and an index land on the same letter', () {
-      expect(type('x_i^2').latex, r'{x}_{i}^{2}');
+      expect(type('x_i^2').latex, r'x_{i}^{2}');
     });
 
     test('a control word becomes its symbol on space', () {
@@ -92,6 +94,42 @@ void main() {
       // The caret is outside the brackets, so what follows is not inside them.
       e.insertChar('y');
       expect(e.latex, endsWith('y'));
+    });
+
+    test('a big operator keeps its limits above and below', () {
+      // **The equation the owner photographed.** `{\int }_{5}^{2}` and
+      // `\int _{5}^{2}` are not the same equation: braces make the base an
+      // ORDINARY atom, and TeX only stacks limits on a BIG OPERATOR. Braced,
+      // the 5 and the 2 slide out beside the sign like the indices of a
+      // variable. Nothing about this is visible in the stored string unless
+      // you know to look, which is why it is pinned here.
+      for (final id in ['int', 'sum', 'prod', 'iint', 'oint']) {
+        final e = MathEditor.empty()..insertItem(mathItemsById[id]!);
+        expect(e.latex, isNot(startsWith('{')),
+            reason: '\$id must not brace its operator, or its limits move');
+      }
+      // A base of two or more atoms still needs its braces.
+      expect(type('(a+b)^2').latex, contains(r'^{2}'));
+      // …and an empty base still needs somewhere to hang the script.
+      final bare = MathEditor.empty()..insertItem(mathItemsById['power']!);
+      expect(bare.latex, r'{}^{}');
+    });
+
+    test('the whole integral, as a student writes it', () {
+      // Insert ∫, lower limit, Tab, upper limit, Tab, integrand. Before the
+      // Tab-out fix the last Tab did nothing and the integrand was typed into
+      // the exponent — `{\int }_{5}^{23x+5dx}` — which is what put the
+      // numbers up beside the sign in the owner's screenshot.
+      final e = MathEditor.empty()..insertItem(mathItemsById['int']!);
+      e.insertChar('5');
+      expect(e.tab(), isTrue);
+      e.insertChar('2');
+      expect(e.tab(), isTrue, reason: 'a structure you cannot Tab out of is a trap');
+      expect(e.caretRow.owner, isNull, reason: 'the integrand goes on the baseline');
+      for (final ch in '3x+5dx'.split('')) {
+        e.insertChar(ch);
+      }
+      expect(e.latex, r'\int _{5}^{2}3x+5dx');
     });
 
     test('an unfinished construct is just characters, never an error', () {
@@ -180,9 +218,13 @@ void main() {
       expect(e.caretRow.name, 'num');
     });
 
-    test('Tab does nothing once every box is full', () {
+    test('Tab from a full structure LEAVES it', () {
       final e = type('1/2');
-      e.placeAtEnd();
+      expect(e.caretRow.name, 'den');
+      expect(e.tab(), isTrue);
+      expect(e.caretRow.owner, isNull,
+          reason: 'the way out has to be the same key as the way in');
+      // …and at the top level, with nothing left to leave, it stops.
       expect(e.tab(), isFalse);
     });
 

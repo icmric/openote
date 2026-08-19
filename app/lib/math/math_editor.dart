@@ -236,9 +236,15 @@ class MathEditor {
     return null;
   }
 
-  /// Tab: the next box still waiting to be filled, wrapping round. Returns
-  /// false when everything is filled, so Tab does nothing rather than
-  /// launching the caret somewhere unexpected.
+  /// Tab: the next box still waiting to be filled — and, when there are none
+  /// left, OUT of the structure the caret is in.
+  ///
+  /// That second half is the difference between a working integral and the one
+  /// the owner photographed. Insert ∫, fill the lower limit, Tab, fill the
+  /// upper limit — and then there is nowhere to go. Tab used to do nothing, so
+  /// the next thing typed went into the exponent and the integrand ended up
+  /// stacked above the sign. A structure you cannot leave by the key that got
+  /// you into it is a trap.
   bool tab({bool backwards = false}) {
     _openText = null;
     final rows = allRows(root).where((r) => r.owner != null).toList();
@@ -246,7 +252,7 @@ class MathEditor {
       for (var i = 0; i < rows.length; i++)
         if (rows[i].isEmpty) i
     ];
-    if (holes.isEmpty) return false;
+    if (holes.isEmpty) return backwards ? false : _tabOut();
     final here = rows.indexWhere((r) => identical(r, caretRow));
     int target;
     if (backwards) {
@@ -256,6 +262,20 @@ class MathEditor {
     }
     caretRow = rows[target];
     caretIndex = 0;
+    return true;
+  }
+
+  /// Leave the structure the caret is in, landing just after it — where the
+  /// integrand of a filled-in integral belongs. Climbs out of nesting one
+  /// level at a time, and reports false only when the caret is already in the
+  /// equation's own top row with nothing left to leave.
+  bool _tabOut() {
+    final owner = caretRow.owner;
+    if (owner == null) return false;
+    final parent = owner.parent;
+    if (parent == null) return false;
+    caretRow = parent;
+    caretIndex = parent.children.indexOf(owner) + 1;
     return true;
   }
 

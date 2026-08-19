@@ -209,7 +209,16 @@ class MScript extends MNode {
 
   @override
   String texOf(MathTexCtx c) {
-    final b = StringBuffer('{${rowToTex(base, c)}}');
+    final inner = rowToTex(base, c);
+    // **Do not brace a lone base.** `{\int}_{5}^{2}` and `\int_{5}^{2}` are not
+    // the same equation: braces make the base an ORDINARY atom, and TeX only
+    // puts limits above and below a BIG OPERATOR. Braced, the 5 and the 2 slide
+    // out beside the sign like the indices of a variable — which is exactly
+    // what the owner photographed. Hits every n-ary: ∫ ∑ ∏ ∬ ∮ and lim.
+    //
+    // A base of two or more atoms still needs its braces (`{a+b}^{2}`), and an
+    // empty one needs `{}` or the script has nothing to attach to.
+    final b = StringBuffer(base.length == 1 ? inner : '{$inner}');
     if (sub != null) b.write('_{${rowToTex(sub!, c)}}');
     if (sup != null) b.write('^{${rowToTex(sup!, c)}}');
     return b.toString();
