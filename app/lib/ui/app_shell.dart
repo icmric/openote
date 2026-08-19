@@ -149,6 +149,37 @@ class _AppShellState extends State<AppShell> {
   /// — what a shifted `=` becomes on a layout that hands Flutter the shifted
   /// logical key — and `numpadAdd` is the keypad's own. The zoom chords below
   /// have always accepted `equal` and `add` for the same reason.
+  /// The printable character this keystroke actually PRODUCED, or null.
+  ///
+  /// The marker chord has to key off the character, never the key: `*` is
+  /// Shift+8 on a US layout, Shift+`+` on a German one and an unshifted key of
+  /// its own on French AZERTY, and Flutter hands Windows the UNSHIFTED logical
+  /// key (the same divergence `_isEqualsKey` exists for, where a shifted `=`
+  /// arrives as `equal` plus a Shift flag on Windows and as `add` elsewhere).
+  /// Binding `digit8` would give the chord to one keyboard and to no other.
+  /// [KeyEvent.character] is what Flutter's own [CharacterActivator] compares,
+  /// and its documented caveat is about Alt on macOS, not Control.
+  ///
+  /// Two guards, each for a concrete misfire:
+  ///
+  /// * control codes are rejected, because Windows reports Ctrl+letter as
+  ///   U+0001…U+001A — Ctrl+F would otherwise arrive as U+0006 and Ctrl+^ as
+  ///   U+001E, and a raw code point could collide with a marker;
+  /// * the `keyLabel` fallback (for the embedders that report the SHIFTED key
+  ///   as the logical one, where `character` may be absent) is taken only when
+  ///   Shift is not held. With Shift down the label is ambiguous — on Windows
+  ///   it is the unshifted key — so guessing would fire Ctrl+Shift+` as
+  ///   backtick/code when the student asked for a tilde.
+  static String? _producedCharacter(KeyEvent e, bool shift) {
+    bool printable(String s) =>
+        s.length == 1 && s.codeUnitAt(0) > 0x20 && s.codeUnitAt(0) != 0x7f;
+    final c = e.character;
+    if (c != null && printable(c)) return c;
+    final label = e.logicalKey.keyLabel;
+    if (!shift && printable(label)) return label;
+    return null;
+  }
+
   static bool _isEqualsKey(LogicalKeyboardKey k) =>
       k == LogicalKeyboardKey.equal ||
       k == LogicalKeyboardKey.add ||
@@ -371,6 +402,18 @@ class _AppShellState extends State<AppShell> {
           app.toggleTagOnSelection(tag);
           return true;
         }
+        // Ctrl + a Markdown marker character — wrap the word at the caret in
+        // it, and press again for another layer: `*w*`, `**w**`, `***w***`,
+        // and then nothing, because `****w****` is not emphasis. Which
+        // characters count, and where each one stops, come from the grammar
+        // (`AppState.markerChordLadders`), so a Ctrl+chord with a character
+        // Markdown does not use falls straight through to the field.
+        //
+        // LAST of the writing chords on purpose: every named accelerator
+        // above keeps its meaning, which is why Ctrl+= is still subscript
+        // rather than highlight even though `=` has a ladder.
+        final produced = _producedCharacter(e, shift);
+        if (produced != null && app.cycleMarker(produced)) return true;
         // Ctrl+V with an IMAGE on the clipboard. Flutter's own paste handles
         // text only, so screenshot → click in the box → Ctrl+V silently did
         // nothing. Handled here only when there is an image; anything else

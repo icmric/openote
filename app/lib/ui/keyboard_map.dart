@@ -49,6 +49,12 @@ const List<KeySection> keyboardMap = [
   ]),
   KeySection('While writing', [
     KeyBinding('Ctrl+B / Ctrl+I / Ctrl+U', 'Bold / italic / underline'),
+    KeyBinding('Ctrl+*',
+        'Put the word you are on in italics; press it again for bold, again '
+        'for both, and a fourth press does nothing'),
+    KeyBinding('Ctrl+` / Ctrl+~ / Ctrl+^ / Ctrl+_ / Ctrl+\$',
+        'The same with the other Markdown characters: code / small below the '
+        'line, then crossed out / small above it / italic then bold / maths'),
     KeyBinding('Ctrl+= / Ctrl+Shift+=',
         'Small text below the line / above it — H₂O, x²'),
     KeyBinding('Ctrl+Shift+C',

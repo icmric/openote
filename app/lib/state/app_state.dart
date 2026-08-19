@@ -4960,6 +4960,209 @@ class AppState extends ChangeNotifier
     return null;
   }
 
+  // ── Ctrl + a marker character ─────────────────────────────────────────────
+
+  /// Which characters the marker chord accepts, and how far each one goes.
+  ///
+  /// The keys are the characters `cycleMarker` answers to; the value is every
+  /// marker WIDTH the grammar will accept for that character, smallest first.
+  ///
+  /// It is MEASURED, not typed out. For every printable ASCII character we
+  /// wrap a probe word in one to four copies and keep the widths that come
+  /// back from [mdInlineRe] as a single run covering the whole string with
+  /// markers exactly that wide. So the chord's alphabet and its ceiling come
+  /// from the same grammar both renderers use, and a branch added to
+  /// markdown/md_syntax.dart reaches this chord in the commit that adds it —
+  /// which is the entire reason that file exists (it replaced two hand-kept
+  /// copies of the grammar that had drifted apart in four places).
+  ///
+  /// What it measures today, and why each ladder stops where it does:
+  ///
+  /// * `*` → 1, 2, 3 — italic, bold, bold+italic. A fourth is refused because
+  ///   `****x****` cannot match: `_bi`'s `(?![\s*])` sees a fourth asterisk
+  ///   and fails at offset 0, so the leftmost match starts at offset 1 and
+  ///   leaves a stray asterisk at each end. That is the product owner's own
+  ///   "it won't accept the last one".
+  /// * `_` → 1, 2 — the underscore spelling of italic and bold. No `___`
+  ///   branch exists, and `_bU`'s `(?<![\w\\])` refuses to start on the
+  ///   second underscore of a run.
+  /// * `~` → 1, 2 — the interesting one: the ladder crosses TWO marks,
+  ///   subscript then strikethrough. That is not a compromise, it is what
+  ///   "add one more marker" literally does — `~x~` plus a tilde a side IS
+  ///   `~~x~~`. A third is refused (`~~~x~~~` closes one tilde early).
+  /// * `^` → 1 superscript, `` ` `` → 1 code, `$` → 1 inline maths. Each
+  ///   caps at one because its inner class excludes its own marker.
+  /// * `=` → 2 highlight and `+` → 2 underline: ladders that START at two,
+  ///   because `=x=` and `+x+` are not marks at all. One press therefore has
+  ///   to write both characters, or none.
+  static final Map<String, List<int>> markerChordLadders = _measureLadders();
+
+  static Map<String, List<int>> _measureLadders() {
+    // One word character. Short enough that the match either covers the whole
+    // probe or obviously does not, and word-shaped so the flanking guards
+    // (`(?![\s*])`) and the no-whitespace rule on `~`/`^` are both satisfied —
+    // a probe with a space in it would report `~` as having no ladder at all.
+    const probe = 'x';
+    final out = <String, List<int>>{};
+    for (var code = 0x21; code <= 0x7e; code++) {
+      final ch = String.fromCharCode(code);
+      final widths = <int>[];
+      // Four, so the width ABOVE the highest legal one is always tried: the
+      // ceiling has to be observed failing, not assumed.
+      for (var n = 1; n <= 4; n++) {
+        final mark = ch * n;
+        final s = '$mark$probe$mark';
+        final m = mdInlineRe.firstMatch(s);
+        // `firstMatch` is leftmost, so `m.start != 0` is exactly the
+        // `****x****` failure — the grammar found emphasis, but one asterisk
+        // in, with punctuation left over on both sides.
+        if (m == null || m.start != 0 || m.end != s.length) continue;
+        final c = classifyInline(m);
+        // …and these three are the rest of the ceilings: `~~~x~~~` matches
+        // `~~~x~~` so `m.end` is short, `` ``x`` `` closes on the second
+        // backtick, and a link or colour match has mismatched marker widths.
+        if (c.openLen == n && c.closeLen == n && c.inner == probe) {
+          widths.add(n);
+        }
+      }
+      if (widths.isNotEmpty) out[ch] = widths;
+    }
+    return out;
+  }
+
+  /// The outermost run around [s]..[e] whose markers are made of [ch], plus
+  /// the TOTAL marker width of every enclosing run made of [ch].
+  ///
+  /// The total, and not just the outermost run's own width, is what makes the
+  /// ladder safe. The caret inside the `it` of `**bold *it* end**` already
+  /// carries three asterisks a side, and a fourth would write
+  /// `**bold **it** end**` — which the grammar re-reads as one bold run with a
+  /// literal `**` inside it, i.e. two asterisks the student can see and cannot
+  /// get rid of. Counting three there is what refuses that press.
+  ///
+  /// Separate from [_runAround] on purpose: that one answers "is this exact
+  /// MARK on", using the `_markKinds` table, and has no entry for `_` at all;
+  /// this one answers "how many of this CHARACTER am I inside", which is the
+  /// only question a ladder can be built from.
+  static ({int start, int end, int openLen, int closeLen, int total})?
+      _markerRunAround(String t, int s, int e, String ch) {
+    final lineStart = lineStartOf(t, s);
+    final lineEnd = math.max(lineStart, lineEndOf(t, e));
+    var scan = t.substring(lineStart, lineEnd);
+    var base = lineStart;
+    var lo = s - lineStart, hi = e - lineStart;
+    int? outStart, outEnd, outOpen, outClose;
+    var total = 0;
+    // Descend exactly as _runAround and marksAtCaret do: `allMatches` yields
+    // only outermost runs, so a nested one is invisible without re-scanning
+    // the enclosing match's inner text.
+    for (var depth = 0; depth < 8; depth++) {
+      MdMatch? enclosing;
+      RegExpMatch? em;
+      for (final m in mdInlineRe.allMatches(scan)) {
+        final c = classifyInline(m);
+        if (lo < m.start + c.openLen || hi > m.end - c.closeLen) continue;
+        enclosing = c;
+        em = m;
+        break;
+      }
+      if (enclosing == null || em == null) break;
+      final open = enclosing.openLen;
+      // Symmetric markers only, and made of this character: a link's `](url)`
+      // tail and a colour's `{{#rrggbb ` head are not ladders.
+      if (open > 0 &&
+          open == enclosing.closeLen &&
+          scan.substring(em.start, em.start + open) == ch * open) {
+        total += open;
+        outStart ??= base + em.start;
+        outEnd ??= base + em.end;
+        outOpen ??= open;
+        outClose ??= enclosing.closeLen;
+      }
+      final innerStart = em.start + open;
+      base += innerStart;
+      lo -= innerStart;
+      hi -= innerStart;
+      scan = enclosing.inner;
+      if (lo < 0 || hi > scan.length) break;
+    }
+    if (outStart == null) return null;
+    return (
+      start: outStart,
+      end: outEnd!,
+      openLen: outOpen!,
+      closeLen: outClose!,
+      total: total,
+    );
+  }
+
+  /// Ctrl + a Markdown marker character: wrap the word at the caret in that
+  /// marker, and press it again to add a layer, as far as the grammar goes.
+  ///
+  /// Returns **false** when [ch] is not a marker character the grammar uses,
+  /// which is how the shell knows to leave that keystroke completely alone.
+  /// A chord that swallowed every Ctrl+punctuation would take Ctrl+letter
+  /// accelerators and dead keys away from the field.
+  ///
+  /// The progression is deliberately NOT read from the text on screen: the
+  /// markers are invisible in the editor, so "press again for bold" has to be
+  /// decided from the grammar's own view of what encloses the caret, the same
+  /// way [marksAtCaret] lights the toolbar.
+  bool cycleMarker(String ch) {
+    final ladder = markerChordLadders[ch];
+    if (ladder == null) return false;
+    final ae = activeEditor;
+    // Recognised, but nowhere to put it. Still handled: the alternative is a
+    // stray marker character landing in a code cell, where `**` is
+    // multiplication and not bold — the same reason wrapSelection refuses.
+    if (ae == null || ae.block.type != BlockType.text) return true;
+    final c = ae.controller;
+    final sel = c.selection;
+    if (!sel.isValid) return true;
+    final t = c.text;
+    final run = _markerRunAround(t, sel.start, sel.end, ch);
+    final have = run?.total ?? 0;
+    var next = -1;
+    for (final w in ladder) {
+      if (w > have) {
+        next = w;
+        break;
+      }
+    }
+    // Top of the ladder: do nothing, and specifically do not write the
+    // markers anyway. A marker pair no renderer matches is punctuation the
+    // student can see and cannot delete in one press — the whole bug class
+    // wrapSelection was rewritten to stop producing.
+    if (next < 0) return true;
+    if (run == null) {
+      // Nothing on yet. Hand it to wrapSelection, which already owns
+      // word-at-caret (apostrophes in, hyphens out), selection trimming, the
+      // multi-line case, the per-word wrap for marks that cannot span a space
+      // and the sub/superscript swap. A second copy of "which word is the
+      // caret in" is precisely how this chord would drift away from Ctrl+B.
+      wrapSelection(ch * next);
+      return true;
+    }
+    pushUndo();
+    final inner = t.substring(run.start + run.openLen, run.end - run.closeLen);
+    final mark = ch * next;
+    final text = t.replaceRange(run.start, run.end, '$mark$inner$mark');
+    // The caret keeps its own character. Only the OPENING marker grew ahead of
+    // it — the run encloses the selection, so the caret is always past that
+    // marker and never inside it.
+    final shift = next - run.openLen;
+    c.value = TextEditingValue(
+      text: text,
+      selection: TextSelection(
+        baseOffset: (sel.baseOffset + shift).clamp(0, text.length),
+        extentOffset: (sel.extentOffset + shift).clamp(0, text.length),
+      ),
+      composing: TextRange.empty,
+    );
+    _commitActiveEditor();
+    notifyListeners();
+    return true;
+  }
 
   /// Which inline marks apply at the caret — what lights the toolbar up.
   ///

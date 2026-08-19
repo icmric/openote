@@ -69,7 +69,14 @@ void main() {
         (tester) async {
       // Tall surface so the whole list materialises — the claim is "the
       // overlay shows ALL of the map", not "scrolling works".
-      tester.view.physicalSize = const Size(1000, 3000);
+      //
+      // It has to stay taller than the map: the list is lazy, so a row below
+      // the fold is never built and `find.text` reports it missing. At 3000
+      // the marker-chord rows pushed the very last binding ("Close it") off
+      // the bottom and this test failed for a row that renders perfectly
+      // well. Grow this number when the map grows, or the test starts
+      // measuring the viewport instead of the overlay.
+      tester.view.physicalSize = const Size(1000, 4200);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(
