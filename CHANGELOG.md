@@ -37,6 +37,50 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   the bar. It is also where an imported equation opens if it uses something
   the buttons cannot show yet, so nothing is ever silently reshaped.
 
+### Fixed — equations that quietly stopped drawing, and an integral that lost its limits
+
+- **Integral and sum limits sit on the sign again**, above and below, instead
+  of sliding off to the right of the whole expression. And after you fill the
+  two limits, Tab now takes you to where the rest of the equation goes — it
+  used to do nothing, so what you typed next ended up as a tiny exponent.
+- **Typing a percentage no longer erases the rest of your equation.** `20%`
+  drew as `20`, and `30%+2` drew as `30`, with nothing at all to tell you the
+  rest had gone. Same story for `{`, `}`, `$`, `#` and `&`, which turned the
+  whole equation into a grey box of code. A set written `{1,2,3}` now shows
+  its braces instead of silently losing them.
+- **Words boxes take any words.** "50% off", "costs $5", "where {n} is odd" —
+  all of these used to break the equation they were in. An empty words box is
+  also visible now; before, pressing the button did nothing you could see.
+- **Backspace never destroys what you wrote.** At the edge of a fraction, a
+  root or a matrix it now steps *inside* so you can delete from there. One
+  press used to flatten a filled grid to a run of loose numbers, and on an
+  empty power it left behind something no renderer could draw.
+- **`x < -3` stays an inequality** instead of turning into `x ← 3`.
+- **A degree sign or a prime after a power no longer breaks the equation**, and
+  `30°C` works.
+- **Undo takes back what you just typed, not the whole equation.** Ctrl+Z after
+  a typo used to delete the equation and its box.
+
+### Changed — the maths buttons are a tidier bar now
+
+- The Maths tab was too wide for a normal window, so the search box and some
+  buttons were off the edge with no way to scroll to them. It is about half
+  the width now: eight shapes you use daily stay on the bar, everything else
+  is behind **More shapes** and **Symbols**.
+- **One Symbols button** with the search inside it, instead of eight
+  category menus — and the lists are proper grids rather than one symbol per
+  row.
+- **Searching works the way you'd expect.** Typing a symbol's name now finds
+  that symbol rather than something else with a similar nickname, and longer
+  phrases like "greater than or equal to" find it too.
+- **Every shape can be typed as well as clicked** — `matrix`, `root`, `abs`,
+  `choose`, `cases` and the rest, then Space.
+- **Recently used symbols** sit at the top of the Symbols panel.
+- **The answer is clickable**: `= 0.5` writes itself into your equation. It
+  also stays in one place now instead of shoving the buttons sideways as you
+  type.
+- The whole toolbar scrolls and takes a mouse wheel, on every tab.
+
 ### Fixed
 
 - **Prices in a sentence are no longer turned into an equation.** "coffee is

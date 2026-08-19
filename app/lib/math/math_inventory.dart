@@ -136,6 +136,7 @@ final List<MathItem> _structures = [
     name: 'power and subscript',
     preview: r'\square_{\square}^{\square}',
     aliases: ['both', 'sub and super'],
+    typeIt: 'subsup',
     build: () => [MScript(sub: MRow(), sup: MRow())],
   ),
   MathItem(
@@ -153,6 +154,7 @@ final List<MathItem> _structures = [
     name: 'nth root',
     preview: r'\sqrt[\square]{\square}',
     aliases: ['cube root', 'root', 'radical'],
+    typeIt: 'root',
     build: () => [MSqrt(degree: MRow())],
   ),
   MathItem(
@@ -185,6 +187,7 @@ final List<MathItem> _structures = [
     name: 'double integral',
     preview: r'\iint',
     aliases: ['area', 'volume'],
+    typeIt: 'iint',
     build: () => [_s(r'\iint', cls: MClass.op)],
   ),
   MathItem(
@@ -193,6 +196,7 @@ final List<MathItem> _structures = [
     name: 'closed integral',
     preview: r'\oint',
     aliases: ['contour', 'loop'],
+    typeIt: 'oint',
     build: () => [_s(r'\oint', cls: MClass.op)],
   ),
   MathItem(
@@ -224,6 +228,7 @@ final List<MathItem> _structures = [
     name: 'derivative',
     preview: r'\frac{d}{dx}',
     aliases: ['differentiate', 'rate of change', 'dy dx'],
+    typeIt: 'ddx',
     build: () => [
       MFrac(
           num: MRow([_s('d', cls: MClass.letter)]),
@@ -236,6 +241,7 @@ final List<MathItem> _structures = [
     name: 'partial derivative',
     preview: r'\frac{\partial}{\partial x}',
     aliases: ['partial', 'del'],
+    typeIt: 'partial',
     build: () => [
       MFrac(
           num: MRow([_s(r'\partial')]),
@@ -257,6 +263,7 @@ final List<MathItem> _structures = [
     name: 'absolute value',
     preview: r'\left|\square\right|',
     aliases: ['modulus', 'magnitude', 'size', 'distance from zero'],
+    typeIt: 'abs',
     build: () => [MDelim(left: '|', right: '|')],
   ),
   MathItem(
@@ -265,6 +272,7 @@ final List<MathItem> _structures = [
     name: 'floor',
     preview: r'\left\lfloor\square\right\rfloor',
     aliases: ['round down', 'integer part'],
+    typeIt: 'floor',
     build: () => [MDelim(left: r'\lfloor', right: r'\rfloor')],
   ),
   MathItem(
@@ -273,6 +281,7 @@ final List<MathItem> _structures = [
     name: 'ceiling',
     preview: r'\left\lceil\square\right\rceil',
     aliases: ['round up'],
+    typeIt: 'ceil',
     build: () => [MDelim(left: r'\lceil', right: r'\rceil')],
   ),
   MathItem(
@@ -281,6 +290,7 @@ final List<MathItem> _structures = [
     name: 'piecewise',
     preview: r'\begin{cases}\square\\\square\end{cases}',
     aliases: ['cases', 'brace', 'split definition', 'if'],
+    typeIt: 'cases',
     build: () => [MMatrix.sized(env: 'cases', rowCount: 2, colCount: 2)],
   ),
   MathItem(
@@ -289,6 +299,7 @@ final List<MathItem> _structures = [
     name: 'matrix',
     preview: r'\begin{pmatrix}\square&\square\\\square&\square\end{pmatrix}',
     aliases: ['grid', 'array', 'table of numbers'],
+    typeIt: 'matrix',
     build: () => [MMatrix.sized(env: 'pmatrix')],
   ),
   MathItem(
@@ -297,6 +308,7 @@ final List<MathItem> _structures = [
     name: 'determinant',
     preview: r'\begin{vmatrix}\square&\square\\\square&\square\end{vmatrix}',
     aliases: ['det'],
+    typeIt: 'determinant',
     build: () => [MMatrix.sized(env: 'vmatrix')],
   ),
   MathItem(
@@ -305,6 +317,7 @@ final List<MathItem> _structures = [
     name: 'choose',
     preview: r'\binom{\square}{\square}',
     aliases: ['combination', 'binomial', 'ncr', 'n choose r'],
+    typeIt: 'choose',
     build: () => [MBinom()],
   ),
   MathItem(
@@ -313,6 +326,7 @@ final List<MathItem> _structures = [
     name: 'bar',
     preview: r'\bar{\square}',
     aliases: ['mean', 'average', 'overline', 'x bar'],
+    typeIt: 'bar',
     build: () => [MAccent(cmd: r'\bar')],
   ),
   MathItem(
@@ -321,6 +335,7 @@ final List<MathItem> _structures = [
     name: 'hat',
     preview: r'\hat{\square}',
     aliases: ['estimate', 'unit vector', 'circumflex'],
+    typeIt: 'hat',
     build: () => [MAccent(cmd: r'\hat')],
   ),
   MathItem(
@@ -329,6 +344,7 @@ final List<MathItem> _structures = [
     name: 'vector arrow',
     preview: r'\vec{\square}',
     aliases: ['vector', 'arrow over'],
+    typeIt: 'vec',
     build: () => [MAccent(cmd: r'\vec')],
   ),
   MathItem(
@@ -337,6 +353,7 @@ final List<MathItem> _structures = [
     name: 'dot',
     preview: r'\dot{\square}',
     aliases: ['rate', 'time derivative'],
+    typeIt: 'dot',
     build: () => [MAccent(cmd: r'\dot')],
   ),
   MathItem(
@@ -345,6 +362,7 @@ final List<MathItem> _structures = [
     name: 'tilde',
     preview: r'\tilde{\square}',
     aliases: ['approximation', 'squiggle'],
+    typeIt: 'tilde',
     build: () => [MAccent(cmd: r'\tilde')],
   ),
   MathItem(
@@ -354,7 +372,10 @@ final List<MathItem> _structures = [
     label: '′',
     aliases: ['dash', 'derivative', 'f dash'],
     typeIt: "'",
-    build: () => [_s("'")],
+    // `{}^{\prime}` rather than a bare `'`: after any script — and `\sum_i^n`
+    // is a script — a bare prime is a second superscript and the equation
+    // stops drawing.
+    build: () => [_s(r'{}^{\prime}')],
   ),
   MathItem(
     id: 'words',
@@ -362,6 +383,7 @@ final List<MathItem> _structures = [
     name: 'words',
     preview: r'\text{if}',
     aliases: ['text', 'label', 'if', 'where', 'writing'],
+    typeIt: 'text',
     build: () => [MText('')],
   ),
 ];
@@ -382,7 +404,11 @@ final List<MathItem> _common = [
   _symbol(id: 'lt', cat: MathCat.common, name: 'less than', label: '<', tex: '<', cls: MClass.rel),
   _symbol(id: 'gt', cat: MathCat.common, name: 'greater than', label: '>', tex: '>', cls: MClass.rel),
   _symbol(id: 'percent', cat: MathCat.common, name: 'percent', label: '%', tex: r'\%', aliases: ['per cent', 'out of 100']),
-  _symbol(id: 'degree', cat: MathCat.common, name: 'degrees', label: '°', tex: r'^\circ', aliases: ['angle', 'temperature']),
+  // `{}^{\circ}`, not `^\circ`. The bare form is BOTH an unterminated command
+  // — `30^\circC` ran the C into the command name and drew nothing — and a
+  // script start, so `x^{2}` followed by it was a double superscript. The
+  // empty group in front fixes both at the source.
+  _symbol(id: 'degree', cat: MathCat.common, name: 'degrees', label: '°', tex: r'{}^{\circ}', aliases: ['angle', 'temperature']),
   _symbol(id: 'infty', cat: MathCat.common, name: 'infinity', label: '∞', tex: r'\infty', aliases: ['endless', 'forever'], typeIt: 'oo'),
   _symbol(id: 'factorial', cat: MathCat.common, name: 'factorial', label: '!', tex: '!', aliases: ['bang']),
   _symbol(id: 'propto', cat: MathCat.common, name: 'proportional to', label: '∝', tex: r'\propto', cls: MClass.rel, aliases: ['varies with']),
@@ -433,7 +459,10 @@ final List<MathItem> _compare = [
   _symbol(id: 'll', cat: MathCat.compare, name: 'much less than', label: '≪', tex: r'\ll', cls: MClass.rel),
   _symbol(id: 'gg', cat: MathCat.compare, name: 'much greater than', label: '≫', tex: r'\gg', cls: MClass.rel),
   _symbol(id: 'to', cat: MathCat.compare, name: 'goes to', label: '→', tex: r'\to', cls: MClass.rel, aliases: ['approaches', 'tends to', 'arrow', 'maps to'], typeIt: '->'),
-  _symbol(id: 'gets', cat: MathCat.compare, name: 'left arrow', label: '←', tex: r'\leftarrow', cls: MClass.rel, typeIt: '<-'),
+  // **No `<-` shortcut.** `x <-3` is an inequality against a negative number
+  // far more often than it is a left arrow, and the shortcut turned one into
+  // the other silently. `->` stays: `x ->` is not otherwise valid maths.
+  _symbol(id: 'gets', cat: MathCat.compare, name: 'left arrow', label: '←', tex: r'\leftarrow', cls: MClass.rel),
   _symbol(id: 'leftrightarrow', cat: MathCat.compare, name: 'both ways', label: '↔', tex: r'\leftrightarrow', cls: MClass.rel),
   _symbol(id: 'implies', cat: MathCat.compare, name: 'implies', label: '⇒', tex: r'\Rightarrow', cls: MClass.rel, aliases: ['therefore', 'so', 'then'], typeIt: '=>'),
   _symbol(id: 'impliedby', cat: MathCat.compare, name: 'is implied by', label: '⇐', tex: r'\Leftarrow', cls: MClass.rel),
@@ -662,30 +691,56 @@ final List<(String, MathItem)> mathOperatorRuns = () {
   return out;
 }();
 
-/// Plain-words search over the whole table. Ranked so an exact name beats a
-/// prefix, which beats a word appearing anywhere — otherwise "sum" surfaces
-/// "consumer"-shaped junk before Σ.
+/// Plain-words search over the whole table.
+///
+/// Two rules the first version got wrong, both measured:
+///
+/// * **A NAME must beat an ALIAS.** Every term scored alike, so an earlier
+///   row's loose alias outranked a later row's exact name: "angle" found the
+///   degree sign before ∠, "sigma" found Σ before σ, "therefore" found ⇒
+///   before ∴. The student typed the thing's own name and got something else —
+///   and since Enter inserts the first hit, they got it in their equation.
+/// * **A query LONGER than the stored term must still match.** Scoring only
+///   compared equality, prefix and substring, so "greater than or equal to"
+///   scored zero against the name "greater than or equal", and the panel then
+///   told the student the symbol did not exist. A token-overlap branch catches
+///   the natural longer phrasing.
 List<MathItem> searchMathItems(String query, {int limit = 40}) {
   final q = query.trim().toLowerCase();
   if (q.isEmpty) return const [];
+  final qWords = q.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toSet();
+
+  // A name outranks an alias at every tier, by more than any tier gap — so no
+  // alias can outrank a name that matched at least as well.
+  int scoreTerm(String term, {required bool isName}) {
+    final bonus = isName ? 200 : 0;
+    if (term == q) return 100 + bonus;
+    if (term.startsWith(q)) return 70 + bonus;
+    if (term.split(' ').any((w) => w.startsWith(q))) return 55 + bonus;
+    if (term.contains(q)) return 40 + bonus;
+    if (qWords.length > 1) {
+      final tWords = term.split(RegExp(r'\s+')).toSet();
+      final shared = qWords.intersection(tWords).length;
+      if (shared > 0 && shared >= tWords.length) return 45 + bonus;
+      if (shared >= 2) return 35 + bonus;
+    }
+    return 0;
+  }
+
   final scored = <(int, int, MathItem)>[];
   for (var idx = 0; idx < mathItems.length; idx++) {
     final item = mathItems[idx];
-    var best = 0;
-    for (final term in item.searchTerms) {
-      if (term == q) {
-        best = 100;
-        break;
-      }
-      if (term.startsWith(q)) {
-        best = best < 70 ? 70 : best;
-      } else if (term.contains(q)) {
-        best = best < 40 ? 40 : best;
-      } else if (term.split(' ').any((w) => w.startsWith(q))) {
-        best = best < 55 ? 55 : best;
-      }
+    var best = scoreTerm(item.name.toLowerCase(), isName: true);
+    for (final term in [
+      ...item.aliases,
+      item.id,
+      if (item.typeIt != null) item.typeIt!,
+    ]) {
+      final v = scoreTerm(term.toLowerCase(), isName: false);
+      if (v > best) best = v;
     }
-    if (item.label == query) best = 100;
+    // Pasting the character itself finds it.
+    if (item.label == query) best = 400;
     if (best > 0) scored.add((best, idx, item));
   }
   scored.sort((a, b) => a.$1 == b.$1 ? a.$2.compareTo(b.$2) : b.$1.compareTo(a.$1));

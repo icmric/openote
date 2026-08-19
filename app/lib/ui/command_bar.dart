@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -308,7 +309,14 @@ class _CommandBarState extends State<CommandBar> {
                 alignment: Alignment.centerLeft,
                 children: [...previous, if (current != null) current],
               ),
-              child: SingleChildScrollView(
+              // A horizontal `Scrollable` reads `scrollDelta.dx`, which a
+              // mouse wheel does not produce, and there was no scrollbar
+              // anywhere in the subtree — so a row wider than the window was
+              // simply unreachable. Measured on Insert too (1217 px against
+              // 965), so this is every tab's fix, not the Maths tab's.
+              child: ScrollConfiguration(
+                behavior: const _ToolbarScroll(),
+                child: SingleChildScrollView(
                 key: ValueKey(_effectiveTab),
                 scrollDirection: Axis.horizontal,
                 child: switch (_effectiveTab) {
@@ -318,6 +326,7 @@ class _CommandBarState extends State<CommandBar> {
                   _mathsTab => _mathsRow(context),
                   _ => _viewRow(context),
                 },
+              ),
               ),
             ),
           ),
@@ -537,6 +546,8 @@ class _CommandBarState extends State<CommandBar> {
       latexAvailable: m.latexAvailable,
       onToggleLatex: m.toggleLatex,
       result: m.result,
+      onUseResult: m.useResult,
+      recentIds: app.recentMathIds,
     );
   }
 
@@ -2068,4 +2079,19 @@ class _MediaCopyDialog extends StatelessWidget {
           TextButton(onPressed: onCancel, child: const Text('Cancel')),
         ],
       );
+}
+
+/// Lets the toolbar row be dragged and wheel-scrolled when it is wider than
+/// the window. Flutter's default behaviour excludes mouse and trackpad from
+/// drag scrolling, and a horizontal viewport ignores a vertical wheel.
+class _ToolbarScroll extends MaterialScrollBehavior {
+  const _ToolbarScroll();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => const {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+      };
 }

@@ -141,7 +141,10 @@ class _InlineMathCardState extends State<_InlineMathCard> {
     // without a notify, matching the block editor.
     widget.app.setActiveMath(ActiveMathEditor(
       owner: this,
-      insert: (item) => _fieldKey.currentState?.insertItem(item),
+      insert: (item) {
+        widget.app.noteMathUse(item.id);
+        _fieldKey.currentState?.insertItem(item);
+      },
       latexMode: _latexMode,
       latexAvailable: widget.editor != null,
       toggleLatex: () => setState(() {

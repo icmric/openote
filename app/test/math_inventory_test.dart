@@ -45,8 +45,13 @@ void main() {
         e.insertItem(item);
 
         final stored = e.latex;
-        expect(stored.trim(), isNotEmpty,
-            reason: '${item.id} inserts nothing at all');
+        // `words` is the one entry that legitimately stores nothing until it
+        // is typed into — an empty `\text{}` should not go to disk. Everything
+        // else that stores nothing is a button that does nothing.
+        if (item.id != 'words') {
+          expect(stored.trim(), isNotEmpty,
+              reason: '${item.id} inserts nothing at all');
+        }
         expect(await drawn(tester, stored), isTrue,
             reason: '${item.id} stores LaTeX the renderer cannot draw: '
                 '$stored');
@@ -103,9 +108,13 @@ void main() {
             e.insertChar(ch);
           }
           e.insertChar(' ');
-          expect(e.latex.trim(), isNotEmpty,
+          // `words` is the one entry that legitimately stores nothing until it
+          // is typed into, so it is checked on what it DRAWS instead.
+          final produced =
+              item.id == 'words' ? e.renderTex(const MathTexCtx()) : e.latex;
+          expect(produced.trim(), isNotEmpty,
               reason: '${item.id} advertises "$t" but typing it builds nothing');
-          expect(e.latex, isNot(t),
+          expect(produced, isNot(t),
               reason: '${item.id} advertises "$t" but it stays as letters');
         }
       }

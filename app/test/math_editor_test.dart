@@ -139,41 +139,61 @@ void main() {
   });
 
   group('backspace never eats what was typed', () {
-    test('a fraction unbuilds into the characters that rebuild it', () {
+    // The rule: at a structure's RIGHT edge, Backspace steps inside it at the
+    // end. It never takes a structure and its contents together.
+    //
+    // This replaced an "unbuild back into the characters that made it" rule,
+    // which read well and was wrong three measured ways — see the header of
+    // math_editor.dart. These are the evidence the replacement keeps the
+    // promise the old rule was written for.
+
+    test('backspacing into a fraction enters it, and deletes from there', () {
       final e = type('1/2');
-      e.moveRight(); // out of the denominator, to the right of the fraction
+      e.placeAtEnd();
       expect(e.backspace(), isTrue);
-      expect(e.latex, '1/2');
-      // …and the linear form really does rebuild the same fraction.
-      expect(MathEditor.open('1/2'), isNotNull);
-      final again = type('1/2');
-      expect(again.latex, r'\frac{1}{2}');
+      expect(e.caretRow.name, 'den', reason: 'step in, do not destroy');
+      expect(e.latex, r'\frac{1}{2}', reason: 'nothing deleted yet');
+      expect(e.backspace(), isTrue);
+      expect(e.latex, r'\frac{1}{}', reason: 'now the 2 goes');
     });
 
-    test('a fraction with a sum on top comes back bracketed, and rebuilds',
+    test('an empty structure goes on the first press — nothing to step into',
         () {
-      final e = type('(n+1)/2');
-      e.moveRight();
-      e.backspace();
-      expect(e.latex, '(n+1)/2');
-      expect(type('(n+1)/2').latex, r'\frac{n+1}{2}');
+      final e = MathEditor.empty()..insertItem(mathItemsById['frac']!);
+      e.placeAtEnd();
+      expect(e.backspace(), isTrue);
+      expect(e.latex, '',
+          reason: 'stepping into an empty fraction would be a keystroke that '
+              'appears to do nothing');
     });
 
-    test('a power unbuilds to its caret form', () {
-      final e = type('x^2');
-      e.moveRight();
-      e.backspace();
-      expect(e.latex, 'x^2');
+    test('a power NEVER unbuilds to a bare caret', () {
+      // The reported shape: an empty script unbuilt to `^`, which is not
+      // drawable TeX at all, so the equation vanished into a grey box of
+      // source the moment Backspace was pressed.
+      for (final id in ['power', 'subscript', 'subsup']) {
+        final e = MathEditor.empty()..insertItem(mathItemsById[id]!);
+        e.placeAtEnd();
+        e.backspace();
+        expect(e.latex, isNot(anyOf('^', '_', '_^')),
+            reason: '$id backspaced to undrawable TeX');
+      }
     });
 
-    test('a square root unwraps, keeping everything under it', () {
+    test('a square root keeps everything under it', () {
       final e = type('sqrt ');
       type('x+1', into: e);
-      e.moveRight();
+      e.placeAtEnd();
       expect(e.backspace(), isTrue);
-      // No linear form to give back, so the CONTENTS survive instead — the
-      // promise is that nothing is destroyed, not that everything round-trips.
-      expect(e.latex, 'x+1');
+      expect(e.latex, contains('x+1'), reason: 'nothing may be destroyed');
+    });
+
+    test('deleting off the FRONT unwraps, keeping the contents', () {
+      final e = type('sqrt ');
+      type('x+1', into: e);
+      e.caretIndex = 0; // start of the radicand
+      expect(e.backspace(), isTrue);
+      expect(e.latex, 'x+1', reason: 'the sign goes, what was under it stays');
     });
 
     test('backspacing a symbol gives back the word that produced it', () {
@@ -187,7 +207,7 @@ void main() {
       expect(e.backspace(), isFalse);
     });
 
-    test('a matrix keeps every cell when it unwraps', () {
+    test('one Backspace can never flatten a filled matrix', () {
       final e = MathEditor.empty();
       e.insertItem(mathItemsById['matrix']!);
       e.insertChar('a');
@@ -199,10 +219,23 @@ void main() {
       e.insertChar('d');
       e.placeAtEnd();
       e.backspace();
-      final out = e.latex;
+      expect(e.latex, contains(r'\begin{pmatrix}'),
+          reason: 'the grid itself has to survive a single keypress — it used '
+              'to flatten to a bare run of its own cells');
       for (final cell in ['a', 'b', 'c', 'd']) {
-        expect(out, contains(cell), reason: 'cell $cell was destroyed');
+        expect(e.latex, contains(cell), reason: 'cell $cell was destroyed');
       }
+    });
+
+    test('Delete takes one character of a words box, not the whole box', () {
+      final e = MathEditor.empty()..insertItem(mathItemsById['words']!);
+      for (final ch in 'if'.split('')) {
+        e.insertChar(ch);
+      }
+      e.placeAtStart();
+      expect(e.delete(), isTrue);
+      expect(e.latex, contains('f'), reason: 'only the i should have gone');
+      expect(e.latex, isNot(contains('i')));
     });
   });
 
@@ -289,7 +322,10 @@ void main() {
       e.insertItem(mathItemsById['frac']!);
       final drawn = e.renderTex(const MathTexCtx());
       expect(drawn, contains(r'\square'));
-      expect(drawn, contains(r'\colorbox'),
+      // `\fcolorbox`, not `\colorbox`: the latter draws its contents and never
+      // paints its fill in flutter_math_fork 0.7.4, so the "you are here" box
+      // was invisible for as long as it shipped.
+      expect(drawn, contains(r'\fcolorbox'),
           reason: 'the box the caret is in has to look different');
     });
   });

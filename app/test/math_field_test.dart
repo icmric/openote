@@ -105,15 +105,16 @@ void main() {
     expect(exits, [MathExit.left]);
   });
 
-  testWidgets('backspace unbuilds rather than deleting the lot',
+  testWidgets('backspace steps into a fraction rather than deleting the lot',
       (tester) async {
     await pump(tester);
     await typeKeys(tester, '1/2');
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight); // out of the den
     await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
     await tester.pumpAndSettle();
-    expect(editor.latex, '1/2',
+    expect(editor.latex, r'\frac{1}{2}',
         reason: 'one keypress must never destroy a fraction and its contents');
+    expect(editor.caretRow.name, 'den', reason: 'it steps in instead');
     expect(exits, isEmpty);
   });
 

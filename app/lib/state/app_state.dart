@@ -7342,6 +7342,23 @@ class AppState extends ChangeNotifier
   /// that opens over an equation sitting in a sentence.
   ActiveMathEditor? activeMath;
 
+  /// Symbols reached for lately, newest first, at most twelve. Shown at the top
+  /// of the symbol panel so the θ a student used a minute ago is one click
+  /// away rather than eight categories away.
+  ///
+  /// Session-scoped on purpose for now: it is a convenience, and persisting it
+  /// would put a new key in the workspace file for something nobody misses
+  /// across a restart. Seeded with what a student reaches for first.
+  final List<String> recentMathIds = [
+    'pi', 'degree', 'pm', 'leq', 'theta',
+  ];
+
+  void noteMathUse(String id) {
+    recentMathIds.remove(id);
+    recentMathIds.insert(0, id);
+    if (recentMathIds.length > 12) recentMathIds.removeLast();
+  }
+
   /// Registered from the equation editor's `build`, so — like [setActiveEditor]
   /// — it must NOT notify. The rebuild that reveals the tab rides the
   /// `select(edit: true)` notify that opened the editor in the first place.

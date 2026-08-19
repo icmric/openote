@@ -25,6 +25,7 @@ class ActiveMathEditor {
     required this.latexAvailable,
     required this.toggleLatex,
     this.result,
+    this.useResult,
   });
 
   /// Whoever registered this — the `State` object of the editor. Used only so
@@ -46,4 +47,8 @@ class ActiveMathEditor {
 
   /// The live arithmetic result (`= 42`), when the expression reduces to one.
   final String? result;
+
+  /// Put that result into the equation. A calculator OneNote paywalls; the
+  /// click is what turns it from a readout into a tool.
+  final VoidCallback? useResult;
 }

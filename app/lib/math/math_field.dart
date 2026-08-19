@@ -82,6 +82,17 @@ class MathFieldState extends State<MathField> {
     _changed();
   }
 
+  /// Write the calculator's answer into the equation, at the end: `… = 0.5`.
+  void insertResult(String value) {
+    if (value.isEmpty) return;
+    _e.placeAtEnd();
+    for (final ch in '=\$value'.split('')) {
+      _e.insertChar(ch);
+    }
+    _focus.requestFocus();
+    _changed();
+  }
+
   static bool _printable(String s) =>
       s.length == 1 && s.codeUnitAt(0) > 0x20 && s.codeUnitAt(0) != 0x7f;
 
@@ -227,7 +238,19 @@ class MathFieldState extends State<MathField> {
       onKeyEvent: _onKey,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => _focus.requestFocus(),
+        // Clicking an equation you are ALREADY in puts the caret at the end.
+        // True hit-testing inside the equation needs box geometry
+        // flutter_math_fork does not expose (v0.18 phase 3); until it does,
+        // predictable beats mysterious — the click used to do nothing at all,
+        // so the caret stayed wherever it happened to be.
+        onTap: () {
+          if (_focus.hasFocus) {
+            _e.placeAtEnd();
+            _changed();
+          } else {
+            _focus.requestFocus();
+          }
+        },
         child: OnoteMath(
           _e.renderTex(ctx),
           textStyle: widget.textStyle,

@@ -73,10 +73,28 @@ class _MathBlockViewState extends State<MathBlockView> {
     super.dispose();
   }
 
-  void _pushUndoOnce() {
-    if (!_undoPushed) {
+  /// When the last undo point was taken, so a burst of typing is one step.
+  int _lastUndoAt = 0;
+
+  /// Take an undo point, at most one per [_undoGap] of continuous typing.
+  ///
+  /// It used to take exactly ONE for the whole editing session, so Ctrl+Z
+  /// after a typo did not take back the typo — it took back the equation, and
+  /// with it the block. The punishment for a mistyped character was the whole
+  /// thing you were writing.
+  ///
+  /// Coalescing on time rather than keeping a second undo stack inside the
+  /// editor is deliberate: the page already has an undo stack that syncs and
+  /// persists, and two stacks means two chances to disagree about which one
+  /// Ctrl+Z belongs to.
+  static const int _undoGap = 700;
+
+  void _pushUndoOnce({bool force = false}) {
+    final now = nowMs();
+    if (force || !_undoPushed || now - _lastUndoAt > _undoGap) {
       widget.app.pushUndo();
       _undoPushed = true;
+      _lastUndoAt = now;
     }
   }
 
@@ -161,11 +179,16 @@ class _MathBlockViewState extends State<MathBlockView> {
       // the `select(edit: true)` notify that opened this editor.
       widget.app.setActiveMath(ActiveMathEditor(
         owner: this,
-        insert: (item) => _fieldKey.currentState?.insertItem(item),
+        insert: (item) {
+          widget.app.noteMathUse(item.id);
+          _fieldKey.currentState?.insertItem(item);
+        },
         latexMode: _latexMode,
         latexAvailable: _latexMode || _editor != null,
         toggleLatex: _toggleLatexMode,
         result: _evaluated?.display,
+        useResult: () => _fieldKey.currentState?.insertResult(
+            _evaluated?.display ?? ''),
       ));
       return Padding(
         padding: const EdgeInsets.all(10),

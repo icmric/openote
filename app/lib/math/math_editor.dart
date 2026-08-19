@@ -3,11 +3,19 @@
 ///
 /// Two rules run through everything here.
 ///
-/// **Nothing the student typed is ever destroyed.** Backspace on a built
-/// structure unbuilds or unwraps it — a fraction becomes `1/2` again, a square
-/// root hands back what was under it — but it never removes a structure and
+/// **Nothing the student typed is ever destroyed.** Backspace at the right
+/// edge of a structure steps INSIDE it, at the end, and deletes from there —
+/// the way every other equation editor works. It never removes a structure and
 /// its contents in one keypress. That is the "the app ate my equation" moment
 /// this editor exists to avoid.
+///
+/// This replaced an earlier rule where Backspace "unbuilt" a structure back
+/// into the characters that produced it. That read well and was wrong three
+/// ways, each measured: a script with an empty slot unbuilt to a bare `^`,
+/// which is not drawable TeX at all, so the equation vanished into a grey box
+/// of source; `x^(n+1)` unbuilt to characters TeX then re-read as a script
+/// over the bracket alone; and one Backspace at the edge of a matrix flattened
+/// a filled 2x2 grid to `1234`.
 ///
 /// **Typing is never blocked.** Input that doesn't parse yet simply stays as
 /// the characters that were typed until it does (Math Input Spec §3.3). There
@@ -43,9 +51,17 @@ class MathEditor {
   late int caretIndex;
 
   /// A `\text{…}` the student is currently filling. Words go into it instead
-  /// of becoming maths atoms. Cleared by any caret movement, so leaving is
-  /// just pressing an arrow — no mode to get stuck in.
+  /// of becoming maths atoms. Cleared by any caret movement, and by inserting
+  /// anything from the palette — otherwise the next symbol pressed left the
+  /// box armed and the typing after it landed inside the words instead of in
+  /// the equation.
   MText? _openText;
+
+  /// A space was typed and built nothing, so the two characters either side of
+  /// it are separate. Without this, `x < -3` became `x ← 3`: space inserted no
+  /// atom, so `<` and `-` ended up adjacent and the `<-` shortcut fired on a
+  /// perfectly ordinary inequality. Cleared by the next character.
+  bool _spaceBarrier = false;
 
   bool get isEmpty => root.isEmpty;
 
@@ -60,11 +76,16 @@ class MathEditor {
           caretRow: caretRow,
           caretIndex: caretIndex,
           decorate: true,
+          activeText: _openText,
           accent: style.accent,
           tint: style.tint,
           dim: style.dim,
         ),
       );
+
+  /// The words box being filled, if any. Public so the field can tell whether
+  /// a keystroke is going into words or into maths.
+  MText? get openText => _openText;
 
   // ───────────────────────────────────────────────────────── movement
 
@@ -173,6 +194,10 @@ class MathEditor {
     return true;
   }
 
+  /// Returns false at the top or bottom of the equation, which the caller
+  /// reads as "leave" — the same contract [moveLeft] and [moveRight] use. It
+  /// used to swallow the keystroke, so ↑ out of an equation in a sentence did
+  /// nothing at all.
   bool moveUp() => _vertical(up: true);
   bool moveDown() => _vertical(up: false);
 
@@ -283,6 +308,11 @@ class MathEditor {
 
   /// A palette press. Fresh nodes every time — see [MathItem.build].
   void insertItem(MathItem item) {
+    // Pressing a symbol ENDS the words box. Leaving it armed meant the letters
+    // typed after a π landed inside the preceding \text{…} instead of in the
+    // equation, which looks like the keyboard has stopped working.
+    _openText = null;
+    _spaceBarrier = false;
     final nodes = item.build();
     caretRow.insertAll(caretIndex, nodes);
     caretIndex += nodes.length;
@@ -310,7 +340,9 @@ class MathEditor {
 
     switch (ch) {
       case ' ':
-        return _buildControlWord() || _buildFunctionName();
+        if (_buildControlWord() || _buildFunctionName()) return true;
+        _spaceBarrier = true;
+        return false;
       case '/':
         _buildFraction();
         return true;
@@ -337,8 +369,12 @@ class MathEditor {
         }
     }
 
-    // `<=`, `->`, `!=` … complete the moment their last character lands.
-    if (_buildOperatorRun(ch)) return true;
+    // `<=`, `->`, `!=` … complete the moment their last character lands —
+    // unless a space came between, which means the student wrote two separate
+    // things.
+    final barrier = _spaceBarrier;
+    _spaceBarrier = false;
+    if (!barrier && _buildOperatorRun(ch)) return true;
 
     // An operator ends a control word: `pi+1` should have π before the +.
     final cls = classOf(ch);
@@ -516,19 +552,23 @@ class MathEditor {
     // The power belongs to the x, not to the i. Without this, a student typing
     // the most ordinary thing in algebra gets a power nested inside their own
     // subscript.
+    //
+    // The same rule carries the n-ary case, which is the one that actually
+    // bit: type `sum`, fill the lower limit, press `^`. The upper limit is
+    // right there and empty, and pressing the key for it should GO there —
+    // before this, it built a second script inside the lower limit and left
+    // the upper one visibly empty.
     final owner = caretRow.owner;
-    if (owner is MScript && caretIndex == caretRow.length) {
-      final leavingSub = identical(caretRow, owner.sub);
-      final leavingSup = identical(caretRow, owner.sup);
-      if (sup && leavingSub && owner.sup == null) {
-        caretRow = owner.ensureSup();
-        caretIndex = 0;
-        return;
-      }
-      if (!sup && leavingSup && owner.sub == null) {
-        caretRow = owner.ensureSub();
-        caretIndex = 0;
-        return;
+    if (owner is MScript) {
+      final inSub = identical(caretRow, owner.sub);
+      final inSup = identical(caretRow, owner.sup);
+      final wanted = sup ? owner.sup : owner.sub;
+      if ((sup && inSub) || (!sup && inSup)) {
+        if (wanted == null || wanted.isEmpty) {
+          caretRow = sup ? owner.ensureSup() : owner.ensureSub();
+          caretIndex = 0;
+          return;
+        }
       }
     }
 
@@ -554,10 +594,11 @@ class MathEditor {
   // ───────────────────────────────────────────────────────── deletion
 
   /// Backspace. Never removes a structure together with its contents: at a
-  /// structure's edge it unbuilds (fraction, script — back to the linear
-  /// characters that rebuild it) or unwraps (everything else — contents kept,
-  /// wrapper gone). Returns false only at the very start of the equation,
-  /// which the caller reads as "leave".
+  /// structure's right edge it steps INSIDE, at the end, so the next press
+  /// deletes the last thing in it. A structure already emptied is removed
+  /// outright; one deleted into from the FRONT unwraps, keeping its contents.
+  /// Returns false only at the very start of the equation, which the caller
+  /// reads as "leave".
   bool backspace() {
     if (_openText != null && _openText!.text.isNotEmpty) {
       final t = _openText!;
@@ -603,7 +644,17 @@ class MathEditor {
         return true;
       }
 
-      _dissolve(n, caretIndex - 1);
+      // A structure. Step INSIDE it, at the end, rather than taking it apart —
+      // unless it is already empty, in which case there is nothing to lose.
+      if (n.isBlank) {
+        caretRow.removeAt(caretIndex - 1);
+        caretIndex--;
+        return true;
+      }
+      final last = n.slots.last;
+      caretRow = last;
+      caretIndex = last.length;
+      _openText = null;
       return true;
     }
 
@@ -619,20 +670,28 @@ class MathEditor {
     }
     final parent = owner.parent;
     if (parent == null) return false;
-    _dissolve(owner, parent.children.indexOf(owner), inRow: parent);
+    final at = parent.children.indexOf(owner);
+    if (owner.isBlank) {
+      parent.removeAt(at);
+      caretRow = parent;
+      caretIndex = at;
+      _openText = null;
+    } else {
+      _unwrap(owner, at, parent);
+    }
     return true;
   }
 
-  /// Replace a structure with its linear form, or with its contents.
-  void _dissolve(MNode n, int at, {MRow? inRow}) {
-    final row = inRow ?? caretRow;
+  /// Take a structure's wrapper away and leave its contents in its place, in
+  /// order. Used when the student deletes off the FRONT of a structure that
+  /// still holds work: the frame goes, every character they typed stays.
+  void _unwrap(MNode n, int at, MRow row) {
     if (at < 0) return;
-    final replacement = n.unbuild() ??
-        [for (final s in n.slots) ...s.drain()];
+    final contents = [for (final s in n.slots) ...s.drain()];
     row.removeAt(at);
-    row.insertAll(at, replacement);
+    row.insertAll(at, contents);
     caretRow = row;
-    caretIndex = at + replacement.length;
+    caretIndex = at;
     _openText = null;
   }
 
@@ -641,13 +700,25 @@ class MathEditor {
   bool delete() {
     if (caretIndex >= caretRow.length) return false;
     final n = caretRow.children[caretIndex];
-    if (n is MSym || n is MText) {
+    if (n is MText) {
+      // ONE character, matching Backspace. Delete used to take the whole words
+      // box — and everything written in it — on a single keypress.
+      if (n.text.length > 1) {
+        n.text = n.text.substring(1);
+        return true;
+      }
       caretRow.removeAt(caretIndex);
       return true;
     }
-    final at = caretIndex;
-    _dissolve(n, at);
-    caretIndex = at;
+    if (n is MSym || n.isBlank) {
+      caretRow.removeAt(caretIndex);
+      return true;
+    }
+    // Mirror of Backspace: step inside, at the start.
+    final first = n.slots.first;
+    caretRow = first;
+    caretIndex = 0;
+    _openText = null;
     return true;
   }
 

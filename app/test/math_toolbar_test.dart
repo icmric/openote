@@ -154,7 +154,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(inserted.single.id, 'frac');
 
-    await tester.tap(find.text('LaTeX'));
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Write the LaTeX by hand'));
+    await tester.pumpAndSettle();
     expect(toggled, 1);
     settle();
   });
@@ -209,21 +212,28 @@ void main() {
   });
 
   group('what the bar itself offers', () {
+    // Round two of this bar measured 1725-2230 px against a 1280 px default
+    // window, with no scrollbar and a dead mouse wheel, so the search box and
+    // the LaTeX escape hatch were simply off the edge. These keep it honest.
+
     Future<void> pumpBar(
       WidgetTester tester, {
       required ValueChanged<MathItem> onInsert,
       bool latexMode = false,
       String? result,
+      VoidCallback? onToggle,
+      List<String> recents = const ['theta', 'pi'],
     }) async {
       widen(tester);
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
-          body: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          body: Align(
+            alignment: Alignment.topLeft,
             child: MathBar(
               latexMode: latexMode,
               result: result,
-              onToggleLatex: () {},
+              recentIds: recents,
+              onToggleLatex: onToggle ?? () {},
               onInsert: onInsert,
             ),
           ),
@@ -232,36 +242,88 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('every shape button draws as notation, not as source',
+    testWidgets('the whole row fits a 1280 px window', (tester) async {
+      await pumpBar(tester, onInsert: (_) {}, result: '0.16666666');
+      final w = tester.getSize(find.byType(MathBar)).width;
+      expect(w, lessThan(900),
+          reason: 'measured ' + w.toString() + ' px; the row has to leave room '
+              'for the window edge on the smallest window the app opens');
+    });
+
+    testWidgets('the answer sits in a fixed slot, so nothing slides',
+        (tester) async {
+      await pumpBar(tester, onInsert: (_) {});
+      final without = tester.getSize(find.byType(MathBar)).width;
+      await pumpBar(tester, onInsert: (_) {}, result: '0.166666666');
+      final withAnswer = tester.getSize(find.byType(MathBar)).width;
+      expect(withAnswer, without,
+          reason: 'the row used to grow by up to 177 px as the answer '
+              'appeared, shoving the controls at its end sideways mid-typing');
+    });
+
+    testWidgets('every quick shape draws as notation, not as source',
         (tester) async {
       await pumpBar(tester, onInsert: (_) {});
       expect(find.byType(MathSourceFallback), findsNothing);
-      // The fixed row IS the muscle memory — all of it has to be present.
-      for (final id in kMathStructureIds) {
+      for (final id in kMathQuickShapes) {
         final item = mathItemsById[id]!;
         final tip = item.typeIt == null
             ? item.name
-            : '${item.name} — type ${item.typeIt}';
+            : item.name + ' — type ' + item.typeIt!;
         expect(find.byTooltip(tip), findsOneWidget,
-            reason: '$id is missing from the shapes row');
+            reason: id + ' is missing from the quick shapes');
       }
     });
 
-    testWidgets('a symbol category opens as a gallery and inserts on tap',
+    testWidgets('the shapes are all one size, so the row is not ragged',
         (tester) async {
-      MathItem? got;
-      await pumpBar(tester, onInsert: (i) => got = i);
-      await tester.tap(find.text('Greek'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('theta — type theta').first);
-      await tester.pumpAndSettle();
-      expect(got?.id, 'greek-theta');
+      await pumpBar(tester, onInsert: (_) {});
+      final widths = <double>{};
+      for (final chip in find.byType(MathChip).evaluate()) {
+        widths.add(tester.getSize(find.byWidget(chip.widget)).width);
+      }
+      expect(widths.length, 1,
+          reason: 'ragged widths were half of what read as chaotic: ' +
+              widths.toString());
     });
 
-    testWidgets('searching in plain words inserts the first hit on Enter',
+    testWidgets('More shapes opens a GRID and inserts on tap', (tester) async {
+      MathItem? got;
+      await pumpBar(tester, onInsert: (i) => got = i);
+      await tester.tap(find.byTooltip('More shapes'));
+      await tester.pumpAndSettle();
+
+      // A grid, not a column. Every gallery used to be one symbol per row —
+      // Greek was a 1119 px column — because a Container with an alignment
+      // expands to fill its loose constraints.
+      final rows = <double>{};
+      for (final e in find.byType(MathChip).evaluate()) {
+        rows.add(tester.getTopLeft(find.byWidget(e.widget)).dy);
+      }
+      final chips = find.byType(MathChip).evaluate().length;
+      expect(rows.length, lessThan(chips),
+          reason: chips.toString() + ' chips on ' + rows.length.toString() +
+              ' rows is a column, not a grid');
+
+      await tester.tap(find.byTooltip('nth root — type root').first);
+      await tester.pumpAndSettle();
+      expect(got?.id, 'nthroot');
+    });
+
+    testWidgets('Symbols opens one searchable panel over every category',
         (tester) async {
       MathItem? got;
       await pumpBar(tester, onInsert: (i) => got = i);
+      await tester.tap(find.byTooltip('Symbols'));
+      await tester.pumpAndSettle();
+
+      // One door with the sections inside it. Eight word-labelled drop-downs
+      // on the row spent 1010 px and still made the student guess which
+      // category a symbol was filed under.
+      expect(find.text('Recent'), findsOneWidget);
+      expect(find.text('Greek'), findsOneWidget);
+      expect(find.text('Sets & logic'), findsOneWidget);
+
       await tester.enterText(find.byType(TextField), 'not equal');
       await tester.pumpAndSettle();
       await tester.testTextInput.receiveAction(TextInputAction.done);
@@ -269,16 +331,37 @@ void main() {
       expect(got?.id, 'neq');
     });
 
-    testWidgets('the calculator answer rides along at the end', (tester) async {
-      await pumpBar(tester, onInsert: (_) {}, result: '42');
-      expect(find.text('= 42'), findsOneWidget);
+    testWidgets('a search miss says so IN the panel, and points somewhere',
+        (tester) async {
+      await pumpBar(tester, onInsert: (_) {});
+      await tester.tap(find.byTooltip('Symbols'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'zzzznothing');
+      await tester.pumpAndSettle();
+      // Where the student is looking, rather than a message that appears
+      // somewhere else only after they press Enter.
+      expect(find.textContaining('Write the LaTeX by hand'), findsOneWidget);
     });
 
-    testWidgets('the LaTeX view swaps the buttons for a plain-words note',
+    testWidgets('the LaTeX view is one item behind the more menu',
+        (tester) async {
+      var toggled = 0;
+      await pumpBar(tester, onInsert: (_) {}, onToggle: () => toggled++);
+      expect(find.text('LaTeX'), findsNothing,
+          reason: 'a word-labelled button for the escape hatch spends row '
+              'width on something most students never press');
+      await tester.tap(find.byTooltip('More'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Write the LaTeX by hand'));
+      await tester.pumpAndSettle();
+      expect(toggled, 1);
+    });
+
+    testWidgets('and in LaTeX mode the row says so in plain words',
         (tester) async {
       await pumpBar(tester, onInsert: (_) {}, latexMode: true);
-      expect(find.text('Buttons'), findsOneWidget);
       expect(find.textContaining('Writing the LaTeX by hand'), findsOneWidget);
+      expect(find.byType(MathChip), findsNothing);
     });
   });
 }

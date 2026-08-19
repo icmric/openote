@@ -94,16 +94,10 @@ sealed class MNode {
 
   String texOf(MathTexCtx c);
 
-  /// The linear characters this structure unbuilds to on Backspace, or null
-  /// for "unwrap" — hand the slots' contents back to the parent row in order.
-  ///
-  /// Only fraction and script have a linear form that provably rebuilds to
-  /// the same structure, so only those two return one. Everything else
-  /// unwraps, which preserves every character the student typed even though
-  /// it does not round-trip through the build-up rules. Both behaviours are
-  /// covered in `math_editor_test.dart`; the promise that matters — Backspace
-  /// never destroys content — holds for all of them.
-  List<MNode>? unbuild() => null;
+  /// True when every slot is empty, so removing the node loses nothing.
+  /// This is what lets Backspace delete a structure the student has already
+  /// emptied, while refusing to delete one that still holds their work.
+  bool get isBlank => slots.every((s) => s.isEmpty);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -129,7 +123,12 @@ class MSym extends MNode {
   List<MRow> get slots => const [];
 
   @override
-  String texOf(MathTexCtx c) => _cmd(tex);
+  String texOf(MathTexCtx c) => _emit(tex);
+
+  /// Does this atom START a script? The degree sign and the prime do, and two
+  /// script starts in a row is `x^{2}^\circ` — a double superscript, which TeX
+  /// refuses outright. [rowToTex] puts an empty group between them.
+  bool get startsScript => tex.startsWith('^') || tex.startsWith('_');
 }
 
 /// Upright words inside maths: `\text{if }`. Imported OneNote equations are
@@ -142,7 +141,15 @@ class MText extends MNode {
   List<MRow> get slots => const [];
 
   @override
-  String texOf(MathTexCtx c) => '\\text{${_escapeText(text)}}';
+  String texOf(MathTexCtx c) {
+    // An empty words box has to be VISIBLE. It drew exactly 0 px before, so
+    // pressing the button was pixel-identical to not pressing it.
+    if (text.isEmpty) {
+      if (!c.decorate) return '';
+      return identical(c.activeText, this) ? c.activeSlotTex : c.idleSlotTex;
+    }
+    return '\\text{${_escapeText(text)}}';
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -170,15 +177,6 @@ class MFrac extends MNode {
   @override
   String texOf(MathTexCtx c) =>
       '\\frac{${rowToTex(num, c)}}{${rowToTex(den, c)}}';
-
-  /// `\frac{1}{2}` → `1/2`, bracketing a slot that holds more than one atom
-  /// so `\frac{n+1}{2}` comes back as `(n+1)/2` and rebuilds to itself.
-  @override
-  List<MNode> unbuild() => [
-        ..._grouped(num),
-        MSym('/', cls: MClass.op),
-        ..._grouped(den),
-      ];
 }
 
 /// Powers, indices, and n-ary limits — one node, because TeX already draws
@@ -223,19 +221,6 @@ class MScript extends MNode {
     if (sup != null) b.write('^{${rowToTex(sup!, c)}}');
     return b.toString();
   }
-
-  @override
-  List<MNode> unbuild() => [
-        ...base.drain(),
-        if (sub != null) ...[
-          MSym('_', cls: MClass.op),
-          ..._grouped(sub!),
-        ],
-        if (sup != null) ...[
-          MSym('^', cls: MClass.op),
-          ..._grouped(sup!),
-        ],
-      ];
 }
 
 class MSqrt extends MNode {
@@ -411,6 +396,7 @@ class MathTexCtx {
     this.caretRow,
     this.caretIndex = -1,
     this.decorate = false,
+    this.activeText,
     this.accent = '#2563EB',
     this.tint = '#DBEAFE',
     this.dim = '#9CA3AF',
@@ -420,6 +406,10 @@ class MathTexCtx {
   final int caretIndex;
   final bool decorate;
 
+  /// The words box being filled, so an empty one can show as the active slot
+  /// rather than as nothing at all.
+  final MText? activeText;
+
   /// Hex, with the `#`. `flutter_math_fork` takes `\textcolor{#RRGGBB}{…}`
   /// (probed 2026-08-19), so the editor's chrome is theme-coloured without a
   /// second rendering path.
@@ -427,7 +417,11 @@ class MathTexCtx {
   final String tint;
   final String dim;
 
-  String get caretTex => '\\textcolor{$accent}{\\rule{0.07em}{0.9em}}';
+  /// The caret. Sized in `ex`, not `em`: an `em` rule is measured against the
+  /// font size where it sits, so nesting made the caret GROW — measured at
+  /// 2.9× too tall inside a script of a script, when it should shrink with the
+  /// text around it. `ex` tracks the x-height, which is what a caret matches.
+  String get caretTex => '\\textcolor{$accent}{\\rule{0.06em}{1.5ex}}';
 
   /// An empty box nobody is standing in.
   String get idleSlotTex => '\\textcolor{$dim}{\\square}';
@@ -435,7 +429,14 @@ class MathTexCtx {
   /// The box the caret is in. The tint IS the caret here: a hairline inside an
   /// empty box reads as a stray mark, while a highlighted box reads as "type
   /// here", which is what OneNote does too.
-  String get activeSlotTex => '\\colorbox{$tint}{\$\\textcolor{$accent}{\\square}\$}';
+  ///
+  /// `\fcolorbox`, not `\colorbox`: flutter_math_fork 0.7.4 draws `\colorbox`'s
+  /// contents and never paints its fill, so this box has been INVISIBLE since
+  /// it shipped — the student saw the same grey placeholder whether the caret
+  /// was in it or not. `\fcolorbox` paints; the same colour for border and
+  /// fill keeps the shape it was meant to have.
+  String get activeSlotTex =>
+      '\\fcolorbox{$tint}{$tint}{\$\\textcolor{$accent}{\\square}\$}';
 }
 
 /// The plain context used for storage and for read-only rendering.
@@ -453,9 +454,17 @@ String rowToTex(MRow r, MathTexCtx c) {
   }
 
   final b = StringBuffer();
+  var prevEndsScript = false;
   for (var i = 0; i < r.children.length; i++) {
     if (caretHere && i == c.caretIndex) b.write(c.caretTex);
-    b.write(r.children[i].texOf(c));
+    final n = r.children[i];
+    // **Two scripts cannot touch.** `x^{2}` followed by the degree sign or a
+    // prime emits `x^{2}^\circ` — a double superscript, which TeX refuses, so
+    // the whole equation falls back to a grey box of source. An empty group
+    // between them is the standard fix and costs nothing on screen.
+    if (prevEndsScript && n is MSym && n.startsScript) b.write('{}');
+    b.write(n.texOf(c));
+    prevEndsScript = n is MScript || (n is MSym && n.startsScript);
   }
   if (caretHere && c.caretIndex >= r.children.length) b.write(c.caretTex);
   return b.toString();
@@ -477,28 +486,70 @@ List<MRow> allRows(MRow root) {
   return out;
 }
 
+/// The characters TeX reserves. Typed into an equation they used to go
+/// straight through, and every one of them broke it:
+///
+/// * `{ } $ # &` made the equation undrawable — a grey box of source where the
+///   student's maths had been.
+/// * `%` was worse than an error: it is TeX's COMMENT character, so `20%` drew
+///   as `20` and `30%+2` drew as `30`. The rest vanished with nothing to say
+///   it had gone.
+/// * A balanced pair of braces — `{1,2,3}`, which is how a student writes a
+///   set — became invisible grouping, so the braces simply were not there.
+///
+/// `^` has no escape that works in both modes (`\^{}` falls back), so it goes
+/// through `\char`, which was probed in maths mode and in text mode.
+const Map<String, String> _mathEscapes = {
+  '{': r'\{',
+  '}': r'\}',
+  r'$': r'\$',
+  '#': r'\#',
+  '&': r'\&',
+  '%': r'\%',
+  '_': r'\_',
+  '^': r'\char94 ',
+  '~': r'\sim ',
+  '\\': r'\backslash ',
+};
+
+/// Text mode needs a different set: `\backslash` and `\sim` are maths-only and
+/// fall back inside `\text{…}` (probed).
+const Map<String, String> _textEscapes = {
+  '{': r'\{',
+  '}': r'\}',
+  r'$': r'\$',
+  '#': r'\#',
+  '&': r'\&',
+  '%': r'\%',
+  '_': r'\_',
+  '^': r'\char94 ',
+  '~': r'\char126 ',
+  '\\': r'\char92 ',
+};
+
+final RegExp _trailingCommand = RegExp(r'\\[a-zA-Z]+$');
+
+/// One atom, made safe.
+///
 /// A command needs a space after it or the next letter joins its name
-/// (`\alpha x`, never `\alphax`). Single characters must NOT get one: `{+}`
-/// and `+ ` differ to TeX's spacing rules, and `a + b` reads wrong without it.
-String _cmd(String tex) {
-  if (tex.length > 1 && tex.startsWith('\\')) {
-    final last = tex.codeUnitAt(tex.length - 1);
-    final isLetter = (last >= 65 && last <= 90) || (last >= 97 && last <= 122);
-    if (isLetter) return '$tex ';
-  }
+/// (`\alpha x`, never `\alphax`) — and that has to be tested on the END of the
+/// string, not the start, because `^\circ` is a command too and `30^\circC`
+/// was an undrawable equation. Single characters must NOT get one: `{+}` and
+/// `+ ` differ to TeX's spacing rules, and `a + b` reads wrong without it.
+String _emit(String tex) {
+  if (tex.length == 1) return _mathEscapes[tex] ?? tex;
+  if (_trailingCommand.hasMatch(tex)) return '$tex ';
   return tex;
 }
 
-/// Bracket a slot's contents when unbuilding, so the linear form rebuilds to
-/// the same structure. One atom needs no brackets; `n+1` does.
-List<MNode> _grouped(MRow r) {
-  final kids = r.drain();
-  if (kids.length <= 1) return kids;
-  return [
-    MSym('(', cls: MClass.open),
-    ...kids,
-    MSym(')', cls: MClass.close),
-  ];
+/// Words inside maths. Every reserved character is ESCAPED rather than
+/// swapped: the old version turned a typed `{` into `(` and a backslash into a
+/// space, so a words box quietly said something the student had not written —
+/// and left `% $ # & _ ^` alone, any one of which killed the render outright.
+String _escapeText(String s) {
+  final b = StringBuffer();
+  for (final ch in s.split('')) {
+    b.write(_textEscapes[ch] ?? ch);
+  }
+  return b.toString();
 }
-
-String _escapeText(String s) => s.replaceAll('\\', ' ').replaceAll('{', '(').replaceAll('}', ')');
