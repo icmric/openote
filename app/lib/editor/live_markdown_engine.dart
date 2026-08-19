@@ -181,7 +181,19 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // exists to remove, reappearing on the one keystroke that declines.
       if (next == null) return KeyEventResult.handled;
     } else if (k == LogicalKeyboardKey.backspace) {
-      next = hw.isShiftPressed ? null : handleListBackspace(controller.value);
+      // The list unwrap first — it owns the start of a list item's body, which
+      // is a different position from any marker edge.
+      next = hw.isShiftPressed
+          ? null
+          : handleListBackspace(controller.value) ??
+              controller.markerAwareDelete(controller.value, forward: false);
+    } else if (k == LogicalKeyboardKey.delete) {
+      // Delete has no list behaviour, only the marker edges. See
+      // LiveMarkdownController.markerAwareDelete for why the default is wrong
+      // now that the markers cannot be seen.
+      next = hw.isShiftPressed
+          ? null
+          : controller.markerAwareDelete(controller.value, forward: true);
     } else {
       return KeyEventResult.ignored;
     }
@@ -304,62 +316,75 @@ class _LiveMarkdownSession extends OnoteEditSession {
         // key the framework reported unhandled. Returning `ignored` when no
         // rule applies keeps every other key available to whoever wants it.
         onKeyEvent: _onKey,
-        child: TextField(
-          controller: controller,
-          focusNode: _focus,
-          maxLines: null,
-          style: s.baseStyle,
-          // NON-FORCED strut, explicitly. TextField's default when none is
-          // given is `StrutStyle.fromTextStyle(style, forceStrutHeight: true)`,
-          // and a forced strut makes every line box EXACTLY the base height —
-          // per-span metrics are discarded, so the controller's 22px heading
-          // style was being measured and then thrown away. That is most of why
-          // "the text slightly compresses during editing": headings physically
-          // could not be taller than a body line. Non-forced keeps the strut as
-          // a minimum (empty and marker-only lines hold their height) while a
-          // taller span grows its line, same as the read renderer.
-          strutStyle:
-              StrutStyle.fromTextStyle(s.baseStyle, forceStrutHeight: false),
-          cursorColor: Theme.of(context).colorScheme.primary,
-          inputFormatters: [WrapSelectionFormatter()],
-          decoration: InputDecoration(
-            isDense: true,
-            // Zero, not the dense default: InputDecorator otherwise adds 8px
-            // of vertical padding that the read renderer does not have, so
-            // every block grew 8px on entering edit and shrank back on exit.
-            // The block's own inset already provides the breathing room.
-            contentPadding: EdgeInsets.zero,
-            border: InputBorder.none,
-            // The rest of the borderless set, because the themed
-            // InputDecorationTheme's enabledBorder would otherwise win over
-            // this one and put an outline round every text block.
-            enabledBorder: InputBorder.none,
-            focusedBorder: InputBorder.none,
-            filled: false,
-            hintText: s.hintText,
-            hintStyle:
-                const TextStyle(color: OnoteColors.graphite400, fontSize: 13),
-          ),
-          // Spell suggestions on right-click. Flutter's own spell-check menu
-          // is unreachable here (see spell/spell_checker.dart for why), so the
-          // corrections are spliced into the standard adaptive menu instead of
-          // replacing it — cut/copy/paste must keep working.
-          contextMenuBuilder: (context, editable) {
-            final items = [...editable.contextMenuButtonItems];
-            final extra = _spellMenuItems(editable);
-            return AdaptiveTextSelectionToolbar.buttonItems(
-              anchors: editable.contextMenuAnchors,
-              buttonItems: [...extra, ...items],
-            );
-          },
-          onChanged: (v) {
-            onChanged(v);
-            _scheduleSpellCheck();
-          },
-        ),
+        child: LayoutBuilder(builder: (context, cons) {
+          // The hanging indent for wrapped list lines has to know the width
+          // the field's paragraph will be laid out at, and it has to know it
+          // in the SAME frame or a resize would draw the indent against last
+          // frame's wrap points — a gap in the middle of a line, which is far
+          // worse than no indent. LayoutBuilder builds its child during
+          // layout, so this assignment lands before `buildTextSpan` runs.
+          // A plain field, never a notifying setter: this runs inside layout.
+          controller.layoutWidth = cons.maxWidth.isFinite
+              ? cons.maxWidth - kEditorCaretMargin
+              : null;
+          return _field(context, s);
+        }),
       ),
     );
   }
+
+  Widget _field(BuildContext context, TextSurface s) => TextField(
+      controller: controller,
+      focusNode: _focus,
+      maxLines: null,
+      style: s.baseStyle,
+      // NON-FORCED strut, explicitly. TextField's default when none is
+      // given is `StrutStyle.fromTextStyle(style, forceStrutHeight: true)`,
+      // and a forced strut makes every line box EXACTLY the base height —
+      // per-span metrics are discarded, so the controller's 22px heading
+      // style was being measured and then thrown away. That is most of why
+      // "the text slightly compresses during editing": headings physically
+      // could not be taller than a body line. Non-forced keeps the strut as
+      // a minimum (empty and marker-only lines hold their height) while a
+      // taller span grows its line, same as the read renderer.
+      strutStyle:
+          StrutStyle.fromTextStyle(s.baseStyle, forceStrutHeight: false),
+      cursorColor: Theme.of(context).colorScheme.primary,
+      inputFormatters: [WrapSelectionFormatter()],
+      decoration: InputDecoration(
+        isDense: true,
+        // Zero, not the dense default: InputDecorator otherwise adds 8px
+        // of vertical padding that the read renderer does not have, so
+        // every block grew 8px on entering edit and shrank back on exit.
+        // The block's own inset already provides the breathing room.
+        contentPadding: EdgeInsets.zero,
+        border: InputBorder.none,
+        // The rest of the borderless set, because the themed
+        // InputDecorationTheme's enabledBorder would otherwise win over
+        // this one and put an outline round every text block.
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        filled: false,
+        hintText: s.hintText,
+        hintStyle:
+            const TextStyle(color: OnoteColors.graphite400, fontSize: 13),
+      ),
+      // Spell suggestions on right-click. Flutter's own spell-check menu
+      // is unreachable here (see spell/spell_checker.dart for why), so the
+      // corrections are spliced into the standard adaptive menu instead of
+      // replacing it — cut/copy/paste must keep working.
+      contextMenuBuilder: (context, editable) {
+        final items = [...editable.contextMenuButtonItems];
+        final extra = _spellMenuItems(editable);
+        return AdaptiveTextSelectionToolbar.buttonItems(
+          anchors: editable.contextMenuAnchors,
+          buttonItems: [...extra, ...items],
+        );
+      },
+      onChanged: (v) {
+        onChanged(v);
+        _scheduleSpellCheck();
+      });
 
   /// Correction items for the word under the caret, plus "Add to dictionary".
   /// Empty when the click didn't land on a misspelling — the menu then looks

@@ -13,10 +13,39 @@ import 'flashcard_view.dart';
 
 export 'wrap_selection.dart' show WrapSelectionFormatter;
 
+/// The horizontal room `RenderEditable` keeps for the caret and takes off the
+/// width it lays the paragraph out at (`_kCaretGap` 1.0 + the default
+/// `cursorWidth` 2.0). Anyone predicting where the field will wrap has to
+/// subtract it: laying out at the field's full width predicted the wrong line
+/// breaks for this block — `- alpha bravo charlie …` in a 200px box breaks at
+/// offsets 14/22/33/46 in the field and 14/28/41 at 200px flat.
+const double kEditorCaretMargin = 3.0;
+
 /// A [TextEditingController] that renders Markdown **as you type** (TEXT-2/4):
 /// the moment a construct closes (e.g. the second `*` of `**bold**`) the text
-/// styles and its markers collapse away; move the caret back into it and the
-/// markers reveal so you can edit them (the Obsidian "live preview" model).
+/// styles and its markers collapse away — **and stay away**. The caret moving
+/// back into a styled run no longer reveals its markers.
+///
+/// That is a deliberate change of character, from "live Markdown" towards
+/// "rich text that happens to save as Markdown", and it is what the product
+/// owner asked for: "if they click on a bold word and suddenly **** appears
+/// around it, this will be quite offputting" — most people taking notes have
+/// never heard of Markdown. Three things carry the consequences:
+///
+/// * **Removing formatting** is `AppState.wrapSelection` (Ctrl+B and the
+///   toolbar), which already toggles a run off from a bare caret inside it.
+///   That is the word-processor model and it is now the only route, because
+///   there are no markers left to delete by hand.
+/// * **Caret arithmetic is untouched**, and that is the whole reason this is
+///   safe: a hidden marker is still laid out, at 0.01px, so every character of
+///   the buffer still occupies exactly one position in the paragraph. Visible
+///   and source offsets have never diverged and still do not. What hiding
+///   *does* cost is dead keystrokes — arrowing across an invisible `**` looked
+///   like the caret had stopped — so [_snapOutOfHiddenMarkers] steps the caret
+///   over a marker run in whichever direction it was already travelling.
+/// * **Editing at the edges** would otherwise leave half a marker behind
+///   (Backspace after `**bold**` used to produce `**bold*`, which un-bolds the
+///   word and prints two asterisks). [markerAwareDelete] answers that.
 ///
 /// The raw text buffer is unchanged — only the *rendering* transforms — so the
 /// stored Markdown stays exactly what the user typed. Every code path is
@@ -159,6 +188,225 @@ class LiveMarkdownController extends TextEditingController {
   static final _prefixRe = RegExp(
       r'^([ \t]*)([-*+] \[[ xX]\][ \t]+|[-*+][ \t]+|\d{1,9}[.)][ \t]+|>[ \t]?)');
 
+  /// The width the field lays its paragraph out at, or null while it is not
+  /// known. Set by the engine from the field's own constraints, less
+  /// [kEditorCaretMargin]; null simply turns the hanging indent off, which is
+  /// exactly how this file behaved before it existed.
+  double? layoutWidth;
+
+  // ── Inline runs, scanned once per text ───────────────────────────────────
+  //
+  // The same scan [_inline] performs, hoisted so the caret logic and the
+  // deletion helper agree with the renderer by construction rather than by
+  // inspection. `live_hidden_markers_test.dart` cross-checks the ranges this
+  // returns against the spans `buildTextSpan` actually draws at a hairline, so
+  // the two cannot drift apart unnoticed.
+  String? _runsFor;
+  List<_MdRun>? _runsCache;
+
+  /// Every inline construct whose markers this controller HIDES, in source
+  /// offsets. Links, bare URLs and `$math$` are excluded because [_inline]
+  /// deliberately leaves those legible (`openLen = closeLen = 0`).
+  List<_MdRun> _runs([String? of]) {
+    final t = of ?? text;
+    if (_runsFor == t) return _runsCache!;
+    final out = <_MdRun>[];
+    var pos = 0;
+    for (final line in t.split('\n')) {
+      _lineRuns(line, pos, out);
+      pos += line.length + 1;
+    }
+    _runsFor = t;
+    return _runsCache = out;
+  }
+
+  /// The source ranges the user cannot see: the marker characters of every
+  /// styled run. Public so `live_hidden_markers_test.dart` can hold it against
+  /// the spans [buildTextSpan] actually draws at a hairline — the caret logic
+  /// and the renderer have to agree about what is invisible, and the only way
+  /// to keep two scans of the same grammar honest is to compare them.
+  List<TextRange> hiddenMarkerRanges([String? of]) => [
+        for (final r in _runs(of)) ...[
+          if (r.openLen > 0)
+            TextRange(start: r.start, end: r.start + r.openLen),
+          if (r.closeLen > 0) TextRange(start: r.end - r.closeLen, end: r.end),
+        ]
+      ];
+
+  static void _lineRuns(String line, int lineStart, List<_MdRun> out) {
+    if (line.isEmpty) return;
+    // Whole-line constructs are drawn as one object with the rest of the
+    // source trailing hidden; they have no inline runs of their own.
+    if (inlineCardRe.hasMatch(line)) return;
+    if (_imageLineRe.hasMatch(line)) return;
+    var from = 0;
+    final h = _headingRe.firstMatch(line);
+    if (h != null) {
+      from = h.end;
+    } else if (!mdDividerRe.hasMatch(line)) {
+      final p = _prefixRe.firstMatch(line);
+      if (p != null) from = p.end;
+    }
+    final sub = line.substring(from);
+    final regionStart = lineStart + from;
+    for (final m in _inlineRe.allMatches(sub)) {
+      final c = classifyInline(m);
+      // Exactly the kinds [_inline] zeroes: their source stays legible, so
+      // there is nothing hidden for the caret to trip over.
+      switch (c.kind) {
+        case MdInline.wikiLink:
+        case MdInline.extLink:
+        case MdInline.bareUrl:
+        case MdInline.math:
+          continue;
+        default:
+      }
+      if (c.openLen <= 0 && c.closeLen <= 0) continue;
+      out.add((
+        start: regionStart + m.start,
+        end: regionStart + m.end,
+        openLen: c.openLen,
+        closeLen: c.closeLen,
+      ));
+    }
+  }
+
+  @override
+  set value(TextEditingValue newValue) {
+    super.value = _snapOutOfHiddenMarkers(newValue);
+  }
+
+  /// Step a caret that has landed *between* the characters of an invisible
+  /// marker out to the near edge, in the direction it was already moving.
+  ///
+  /// Without this, hiding the markers turned arrow keys into dead keystrokes:
+  /// Left from the end of `**bold**` moved the caret from 8 to 7 to 6 with no
+  /// visible change, because those two `*` are laid out at 0.01px. Two presses
+  /// that appear to do nothing is exactly the kind of thing the owner's
+  /// complaint was about.
+  ///
+  /// Only a MOVE is snapped, never an edit: after a keystroke the caret has to
+  /// stay precisely where the edit put it, or a half-typed `**bold*` would
+  /// have its caret yanked somewhere the next character does not belong.
+  TextEditingValue _snapOutOfHiddenMarkers(TextEditingValue next) {
+    final sel = next.selection;
+    final old = value;
+    if (!sel.isValid || !old.selection.isValid) return next;
+    if (old.text != next.text) return next;
+    final rs = _runs(next.text);
+    if (rs.isEmpty) return next;
+
+    int fix(int off, int from) {
+      if (from == off) return off;
+      for (final r in rs) {
+        for (final edge in [
+          (r.start, r.start + r.openLen),
+          (r.end - r.closeLen, r.end),
+        ]) {
+          if (off > edge.$1 && off < edge.$2) {
+            return from < off ? edge.$2 : edge.$1;
+          }
+        }
+      }
+      return off;
+    }
+
+    final base = fix(sel.baseOffset, old.selection.baseOffset);
+    final extent = fix(sel.extentOffset, old.selection.extentOffset);
+    if (base == sel.baseOffset && extent == sel.extentOffset) return next;
+    return next.copyWith(
+        selection: TextSelection(
+            baseOffset: base,
+            extentOffset: extent,
+            affinity: sel.affinity,
+            isDirectional: sel.isDirectional));
+  }
+
+  /// Backspace or Delete at the edge of a run whose markers cannot be seen.
+  /// Returns null when the platform's own behaviour is already right.
+  ///
+  /// With the markers visible this needed no help — you could see the `*` you
+  /// were about to delete. With them hidden, the default is actively wrong in
+  /// three ways, and each one is a reported-class bug waiting to happen:
+  ///
+  /// * Backspace with the caret just past `**bold**` deleted the last `*`,
+  ///   leaving `**bold*`: the word silently un-bolds AND two asterisks appear.
+  ///   It deletes the last *visible* character instead — the `d`.
+  /// * Backspace with the caret at the start of the word (just inside the
+  ///   invisible `**`) ate the second `*`, same damage. It deletes the
+  ///   character before the whole run instead, which is what "backspace at the
+  ///   start of a word" means in every word processor.
+  /// * Emptying a run left `****` behind — four visible asterisks that no
+  ///   renderer matches. Deleting the last character of the inner text now
+  ///   takes the markers with it.
+  ///
+  /// Delete (forward) is the mirror of all three.
+  TextEditingValue? markerAwareDelete(TextEditingValue v,
+      {required bool forward}) {
+    final sel = v.selection;
+    if (!sel.isValid || !sel.isCollapsed) return null;
+    final at = sel.baseOffset;
+    final t = v.text;
+    for (final r in _runs(t)) {
+      final innerStart = r.start + r.openLen;
+      final innerEnd = r.end - r.closeLen;
+      if (innerEnd <= innerStart) continue;
+      // A one-character inner run cannot survive the deletion, so the markers
+      // go with it rather than being left as literal asterisks.
+      final lastOne = _prevBoundary(t, innerEnd) <= innerStart;
+      if (!forward) {
+        if (at == r.end) {
+          return lastOne
+              ? _spliced(v, r.start, r.end)
+              : _spliced(v, _prevBoundary(t, innerEnd), innerEnd);
+        }
+        if (at == innerEnd && lastOne) return _spliced(v, r.start, r.end);
+        if (at == innerStart) {
+          if (r.start == 0) return null;
+          return _spliced(v, _prevBoundary(t, r.start), r.start);
+        }
+      } else {
+        if (at == r.start) {
+          return lastOne
+              ? _spliced(v, r.start, r.end)
+              : _spliced(v, innerStart, _nextBoundary(t, innerStart), keep: at);
+        }
+        if (at == innerStart && lastOne) return _spliced(v, r.start, r.end);
+        if (at == innerEnd) {
+          if (r.end >= t.length) return null;
+          return _spliced(v, r.end, _nextBoundary(t, r.end), keep: at);
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Surrogate-pair-safe neighbours: `**bold🙂**` must not lose half an emoji.
+  static int _prevBoundary(String t, int at) {
+    if (at <= 0) return 0;
+    final i = at - 1;
+    if (i > 0 && t.codeUnitAt(i) >= 0xDC00 && t.codeUnitAt(i) <= 0xDFFF) {
+      return i - 1;
+    }
+    return i;
+  }
+
+  static int _nextBoundary(String t, int at) {
+    if (at >= t.length) return t.length;
+    final i = at + 1;
+    final c = t.codeUnitAt(at);
+    if (c >= 0xD800 && c <= 0xDBFF && i < t.length) return i + 1;
+    return i;
+  }
+
+  static TextEditingValue _spliced(TextEditingValue v, int from, int to,
+          {int? keep}) =>
+      TextEditingValue(
+        text: v.text.replaceRange(from, to, ''),
+        selection: TextSelection.collapsed(offset: keep ?? from),
+        composing: TextRange.empty,
+      );
+
   @override
   TextSpan buildTextSpan(
       {required BuildContext context,
@@ -205,7 +453,9 @@ class LiveMarkdownController extends TextEditingController {
 
       collect(root);
       if (buf.toString() == full) {
-        return misspellings.isEmpty ? root : _underlineMisspellings(root, lo, hi);
+        final done =
+            misspellings.isEmpty ? root : _underlineMisspellings(root, lo, hi);
+        return _hangWrappedListLines(done, full, base);
       }
     } catch (_) {/* fall through */}
     return TextSpan(text: full, style: base);
@@ -310,8 +560,323 @@ class LiveMarkdownController extends TextEditingController {
     return walk(root) as TextSpan;
   }
 
-  bool _touches(int a, int b, int lo, int hi) =>
-      lo >= 0 && hi >= a && lo <= b;
+  // ── Hanging indent for WRAPPED list lines ────────────────────────────────
+  //
+  // "if i have a dotpoint that goes over multiple lines when its in view mode
+  // it renders properly where both lines start at the same indent, however
+  // when editing the second (and further) lines push all the way left to the
+  // edge of the box, this shouldnt happen."
+  //
+  // The read renderer gets this free: a list line there is a Row of
+  // [gutter, Expanded(Text)], so every wrapped line lands on the body indent.
+  // The editor is ONE paragraph inside one TextField, and Flutter has no
+  // per-paragraph hanging indent — `dart:ui`'s ParagraphStyle carries no
+  // text-indent at all, and a leading span per wrapped line is impossible
+  // because nobody knows where the wraps are until after layout.
+  //
+  // So the wraps are worked out first, and then made to hang with two moves
+  // per wrapped line. Both matter, and the first one alone does NOT work:
+  //
+  //  1. The SPACE the line wrapped on becomes a `hang`-wide empty box. A
+  //     WidgetSpan is exactly one code unit — the same trick the bullet gutter
+  //     and the in-flow picture already use — so the paragraph keeps precisely
+  //     as many code units as the buffer and not one caret offset moves.
+  //  2. The last character of the PREVIOUS line gets extra trailing letter
+  //     spacing, sized so that box can no longer fit at the end of that line.
+  //
+  // Without (2) the box simply sits in the slack at the end of the previous
+  // line and nothing is indented. That was measured, not guessed: standing the
+  // wrapped line's first CHARACTER in a `hang + charWidth` box — the obvious
+  // approach — produced line starts of 14/23/34/46 where the true wraps were
+  // 14/22/33/46, i.e. every box but the first was dragged back onto the line
+  // above, taking one letter of the following word with it and leaving a 22px
+  // hole before it. An object is a break opportunity like any other; the only
+  // way to keep it off the previous line is to leave it no room there.
+  //
+  // The padding in (2) is invisible: it is trailing advance on the last
+  // character of a line, with nothing drawn after it, and it is sized to leave
+  // the line exactly `hang - 0.5` px short of full, so it can never push that
+  // line's last word onto the next one.
+  //
+  // Everything is verified against a real layout before it is drawn — an
+  // indent in the middle of a sentence is far worse than no indent — and any
+  // item that cannot be made to hang cleanly (a word longer than the whole
+  // line, so it wraps mid-word with no space to stand a box on) is left
+  // exactly as it was rather than being half-done.
+
+  /// One item's plan: which spaces become gutters, and which characters carry
+  /// the trailing padding that keeps those gutters off the line above.
+  static const double _kHangEpsilon = 0.5;
+
+  TextSpan _hangWrappedListLines(TextSpan root, String full, TextStyle base) {
+    final width = layoutWidth;
+    if (width == null || width <= 0) return root;
+
+    final bodies = <_ListBody>[];
+    var pos = 0;
+    for (final line in full.split('\n')) {
+      final p = mdDividerRe.hasMatch(line) ? null : _prefixRe.firstMatch(line);
+      if (p != null && _markerGlyph(p.group(2)!) != null) {
+        final hang = math.max(
+            indentPx(p.group(1)!.length, base.fontSize), kBulletGutter);
+        // A gutter that leaves no room for words would wrap one character per
+        // line. Better to leave a very narrow box flush than unreadable.
+        if (width - hang >= 48) {
+          bodies.add((from: pos + p.end, to: pos + line.length, hang: hang));
+        }
+      }
+      pos += line.length + 1;
+    }
+    if (bodies.isEmpty) return root;
+
+    // One layout to find out whether anything wraps at all. The overwhelmingly
+    // common block has no wrapped list line, and this is the only measurement
+    // it pays for.
+    final plain = _dimensioned(root, base);
+    final firstPass = _visualLineStarts(root, plain, width).toSet();
+
+    final gutters = <int, double>{};
+    final pads = <int, double>{};
+    for (final b in bodies) {
+      if (!firstPass.any((s) => s > b.from && s <= b.to)) continue;
+      _planItem(root, full, b, width, base, gutters, pads);
+    }
+    if (gutters.isEmpty) return root;
+
+    // Verify against a real layout, and keep only what actually hangs. An
+    // item whose gutter did not land at the start of a visual line is dropped
+    // whole, so a bullet is never half-indented.
+    for (var pass = 0; pass < 3 && gutters.isNotEmpty; pass++) {
+      final built = _applyHangs(root, gutters, pads, base);
+      final starts = _visualLineStarts(built.tree, built.dims, width).toSet();
+      final bad = gutters.keys.where((g) => !starts.contains(g)).toSet();
+      if (bad.isEmpty) return built.tree;
+      for (final b in bodies) {
+        if (bad.any((g) => g > b.from && g <= b.to)) {
+          gutters.removeWhere((g, _) => g > b.from && g <= b.to);
+          pads.removeWhere((k, _) => k >= b.from && k <= b.to);
+        }
+      }
+    }
+    return root;
+  }
+
+  /// Work out one list item's gutters and padding, or leave [gutters] and
+  /// [pads] untouched if it cannot hang cleanly.
+  void _planItem(TextSpan root, String full, _ListBody b, double width,
+      TextStyle base, Map<int, double> gutters, Map<int, double> pads) {
+    final avail = width - b.hang;
+    final part = _slice(root, b.from, b.to, base);
+    final tp = TextPainter(
+        text: part.tree, textDirection: TextDirection.ltr, maxLines: null)
+      ..setPlaceholderDimensions(part.dims)
+      ..layout(maxWidth: avail);
+    final starts = <int>[];
+    for (final m in tp.computeLineMetrics()) {
+      final y = math.max(0.0, m.baseline - 1);
+      starts.add(tp.getLineBoundary(tp.getPositionForOffset(Offset(0, y))).start);
+    }
+
+    final myGutters = <int, double>{};
+    final myPads = <int, double>{};
+    for (var i = 1; i < starts.length; i++) {
+      final at = b.from + starts[i]; // source offset of the wrapped line
+      // The line has to have wrapped ON a space, or there is nothing to stand
+      // the gutter box on. A word longer than the line breaks mid-word; that
+      // item keeps today's flush-left behaviour rather than half of one.
+      if (at - 1 < b.from || full[at - 1] != ' ') {
+        tp.dispose();
+        return;
+      }
+      // The last character with ink on the line above, and where it ends.
+      var q = at - 2;
+      while (q >= b.from && full[q] == ' ') {
+        q--;
+      }
+      if (q < b.from) {
+        tp.dispose();
+        return;
+      }
+      final boxes = tp.getBoxesForSelection(
+          TextSelection(baseOffset: q - b.from, extentOffset: q - b.from + 1));
+      if (boxes.isEmpty) {
+        tp.dispose();
+        return;
+      }
+      final endX = boxes.last.right;
+      // Leave the line too full for a `hang`-wide box, and no fuller: the
+      // padding is trailing advance, so a line padded to `avail - hang + ε`
+      // still holds every word it held before.
+      final pad = avail - b.hang - endX + _kHangEpsilon;
+      if (pad > 0) myPads[q] = pad;
+      myGutters[at - 1] = b.hang;
+    }
+    tp.dispose();
+    gutters.addAll(myGutters);
+    pads.addAll(myPads);
+  }
+
+  /// Placeholder sizes for a tree with nothing injected.
+  List<PlaceholderDimensions> _dimensioned(TextSpan root, TextStyle base) {
+    final dims = <PlaceholderDimensions>[];
+    final fs = base.fontSize ?? 14;
+    void walk(InlineSpan s) {
+      if (s is _SourceSpan) {
+        dims.add(_dimOf(s, fs));
+        return;
+      }
+      if (s is TextSpan) s.children?.forEach(walk);
+    }
+
+    walk(root);
+    return dims;
+  }
+
+  static PlaceholderDimensions _dimOf(_SourceSpan s, double fs) =>
+      PlaceholderDimensions(
+        // Only the WIDTH steers line breaking; height and baseline move a line
+        // box up and down and cannot change where it breaks, so a nominal
+        // height here costs the prediction nothing.
+        size: Size(s.width ?? 0, fs),
+        alignment: s.alignment,
+        baseline: s.baseline,
+        baselineOffset: fs * 0.8,
+      );
+
+  /// Rebuild [root] with a gutter box at each offset in [gutters] and extra
+  /// trailing advance on each character in [pads].
+  ///
+  /// Deliberately a post-pass over the finished tree, exactly like
+  /// [_underlineMisspellings] and for the same reason: it consumes and re-emits
+  /// the same characters in the same order, so the coverage invariant cannot be
+  /// broken by a boundary bug here.
+  ({TextSpan tree, List<PlaceholderDimensions> dims}) _applyHangs(
+      TextSpan root,
+      Map<int, double> gutters,
+      Map<int, double> pads,
+      TextStyle base) {
+    final dims = <PlaceholderDimensions>[];
+    final fs = base.fontSize ?? 14;
+    var off = 0;
+
+    InlineSpan walk(InlineSpan span) {
+      if (span is _SourceSpan) {
+        dims.add(_dimOf(span, fs));
+        off += span.source.length;
+        return span;
+      }
+      if (span is! TextSpan) return span;
+      final t = span.text;
+      final kids = span.children;
+      if (t == null) {
+        return TextSpan(style: span.style, children: kids?.map(walk).toList());
+      }
+      final start = off;
+      off += t.length;
+      final hits = <int>{
+        for (final g in gutters.keys)
+          if (g >= start && g < start + t.length) g,
+        for (final p in pads.keys)
+          if (p >= start && p < start + t.length) p,
+      }.toList()
+        ..sort();
+      if (hits.isEmpty) {
+        return TextSpan(
+            text: t, style: span.style, children: kids?.map(walk).toList());
+      }
+      final pieces = <InlineSpan>[];
+      var cut = 0;
+      for (final a in hits) {
+        final i = a - start;
+        if (i > cut) {
+          pieces.add(TextSpan(text: t.substring(cut, i), style: span.style));
+        }
+        final st = span.style ?? base;
+        if (gutters.containsKey(a)) {
+          final sp = _SourceSpan(
+            source: t.substring(i, i + 1),
+            width: gutters[a],
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: SizedBox(width: gutters[a], height: fs),
+          );
+          dims.add(_dimOf(sp, fs));
+          pieces.add(sp);
+        } else {
+          pieces.add(TextSpan(
+              text: t.substring(i, i + 1),
+              style: st.copyWith(
+                  letterSpacing: (st.letterSpacing ?? 0) + pads[a]!)));
+        }
+        cut = i + 1;
+      }
+      if (cut < t.length) {
+        pieces.add(TextSpan(text: t.substring(cut), style: span.style));
+      }
+      return TextSpan(
+          style: span.style, children: [...pieces, ...?kids?.map(walk)]);
+    }
+
+    return (tree: walk(root) as TextSpan, dims: dims);
+  }
+
+  /// The spans covering source offsets [from]..[to], flattened.
+  ///
+  /// Used to measure ONE list item's body on its own, at the width its every
+  /// visual line will really have. Flattening is safe here because every leaf
+  /// this controller emits already carries a complete style — nothing relies on
+  /// inheriting from a parent span.
+  ({TextSpan tree, List<PlaceholderDimensions> dims}) _slice(
+      TextSpan root, int from, int to, TextStyle base) {
+    final dims = <PlaceholderDimensions>[];
+    final out = <InlineSpan>[];
+    final fs = base.fontSize ?? 14;
+    var off = 0;
+
+    void walk(InlineSpan span) {
+      if (span is _SourceSpan) {
+        final at = off;
+        off += span.source.length;
+        if (at >= from && at < to) {
+          out.add(span);
+          dims.add(_dimOf(span, fs));
+        }
+        return;
+      }
+      if (span is! TextSpan) return;
+      final t = span.text;
+      if (t != null) {
+        final at = off;
+        off += t.length;
+        final a = math.max(at, from), b = math.min(at + t.length, to);
+        if (b > a) {
+          out.add(
+              TextSpan(text: t.substring(a - at, b - at), style: span.style));
+        }
+      }
+      span.children?.forEach(walk);
+    }
+
+    walk(root);
+    return (tree: TextSpan(style: base, children: out), dims: dims);
+  }
+
+  /// Which source offset starts each visual line, at [width].
+  List<int> _visualLineStarts(
+      TextSpan tree, List<PlaceholderDimensions> dims, double width) {
+    final tp = TextPainter(
+        text: tree, textDirection: TextDirection.ltr, maxLines: null)
+      ..setPlaceholderDimensions(dims)
+      ..layout(maxWidth: width);
+    final out = <int>[];
+    for (final m in tp.computeLineMetrics()) {
+      final y = math.max(0.0, m.baseline - 1);
+      out.add(tp.getLineBoundary(tp.getPositionForOffset(Offset(0, y))).start);
+    }
+    tp.dispose();
+    return out;
+  }
+
 
   /// Text that is laid out but must occupy no space.
   ///
@@ -474,7 +1039,7 @@ class LiveMarkdownController extends TextEditingController {
           color: dark ? OnoteColors.moon0 : OnoteColors.graphite900);
       final prefix = line.substring(0, h.end);
       out.add(TextSpan(text: prefix, style: onLine ? _dim(base) : _hidden(base)));
-      _inline(line.substring(h.end), lineStart + h.end, cStyle, lo, hi, out);
+      _inline(line.substring(h.end), lineStart + h.end, cStyle, out);
       return;
     }
 
@@ -517,6 +1082,9 @@ class LiveMarkdownController extends TextEditingController {
           source: prefix.substring(0, 1),
           alignment: PlaceholderAlignment.baseline,
           baseline: TextBaseline.alphabetic,
+          // Declared, so the wrap predictor above knows this gutter's width
+          // without laying the widget out.
+          width: bodyStart,
           child: SizedBox(
             width: bodyStart,
             child: Padding(
@@ -542,30 +1110,24 @@ class LiveMarkdownController extends TextEditingController {
                     decoration: TextDecoration.lineThrough,
                     color: OnoteColors.graphite400)
                 : base,
-            lo,
-            hi,
             out);
         return;
       }
       out.add(TextSpan(text: prefix, style: _dim(base)));
-      _inline(line.substring(p.end), lineStart + p.end, base, lo, hi, out);
+      _inline(line.substring(p.end), lineStart + p.end, base, out);
       return;
     }
 
-    _inline(line, lineStart, base, lo, hi, out);
+    _inline(line, lineStart, base, out);
   }
 
-  void _inline(String sub, int regionStart, TextStyle cBase, int lo, int hi,
-      List<InlineSpan> out) {
+  void _inline(
+      String sub, int regionStart, TextStyle cBase, List<InlineSpan> out) {
     var last = 0;
     for (final m in _inlineRe.allMatches(sub)) {
       if (m.start > last) {
         out.add(TextSpan(text: sub.substring(last, m.start), style: cBase));
       }
-      final absStart = regionStart + m.start;
-      final absEnd = regionStart + m.end;
-      final reveal = _touches(absStart, absEnd, lo, hi);
-
       // One classifier, shared with the read renderer (markdown/md_syntax.dart)
       // — the two used to carry hand-numbered copies of the alternation and
       // disagreed about `***both***`, `_italic_` and `snake_case`.
@@ -626,7 +1188,13 @@ class LiveMarkdownController extends TextEditingController {
               color: dark ? OnoteColors.ink300 : OnoteColors.ink600);
       }
 
-      final markStyle = reveal ? _dim(cBase) : _hidden(cBase);
+      // ALWAYS hidden. This used to be `reveal ? _dim : _hidden`, where
+      // `reveal` meant "the caret touches this run" — so clicking on a bold
+      // word made `**` appear around it, which is the second defect this file
+      // was rewritten for. See the class comment for what carries the
+      // consequences (Ctrl+B to un-format, caret snapping, marker-aware
+      // Backspace).
+      final markStyle = _hidden(cBase);
       final full = sub.substring(m.start, m.end);
       // open marker + inner + close marker — substrings guarantee coverage.
       out.add(TextSpan(text: full.substring(0, openLen), style: markStyle));
@@ -711,13 +1279,28 @@ class _SourceSpan extends WidgetSpan {
   const _SourceSpan({
     required this.source,
     required super.child,
+    this.width,
     super.alignment,
     super.baseline,
   });
 
   /// The raw text this placeholder was emitted in place of.
   final String source;
+
+  /// How wide this placeholder will lay out, when that is knowable without a
+  /// layout pass — the list gutter and the hanging-indent stand-ins both are.
+  /// Null for a picture or a card, whose size depends on bytes we would have
+  /// to decode; the wrap predictor treats those as zero-width, which is
+  /// harmless because `\n` is a HARD break, so no line's wrapping can be
+  /// affected by a placeholder on a different line.
+  final double? width;
 }
+
+/// One inline construct with hidden markers, in source offsets.
+typedef _MdRun = ({int start, int end, int openLen, int closeLen});
+
+/// A list line's body region and the x its text should start on.
+typedef _ListBody = ({int from, int to, double hang});
 
 /// The smallest a picture may be dragged. Below this the handle is most of the
 /// image and there is no way back out.
