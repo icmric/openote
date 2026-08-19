@@ -152,13 +152,7 @@ Future<void> showCanvasMenu(BuildContext context, AppState app,
           type: BlockType.text, x: pos.dx, y: pos.dy, w: 320, content: {'text': ''}));
       app.select(b.id, edit: true);
     case 'math':
-      final b = app.addBlock(Block(
-          type: BlockType.math,
-          x: pagePt.dx,
-          y: pagePt.dy,
-          w: 360,
-          content: {'latex': '', 'linearSource': ''}));
-      app.select(b.id, edit: true);
+      app.insertEquation(at: pagePt);
     case 'table':
       final b = app.addBlock(Block(
           type: BlockType.table,

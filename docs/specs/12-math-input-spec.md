@@ -1,6 +1,15 @@
 # Openote Math Input & Storage Specification
 
-> **Document status:** Draft v0.1 · Last updated 2026-07-22
+> **Document status:** Draft v0.2 · Last updated 2026-08-19
+> **Build-up is now REAL.** §1's "build-as-you-type" and §2's de-build were
+> written as intent and shipped as a LaTeX text field with a preview beneath
+> it. `v0.18` closed that gap: `math/math_tree.dart` holds the editing tree,
+> `math/math_editor.dart` the caret and the build rules, `math/math_field.dart`
+> draws it. Where this document and v0.18 disagree, **v0.18 is what shipped** —
+> notably §5's "Backspace de-builds, round-trip guaranteed", which holds for
+> fractions and scripts and becomes "unwrap, contents preserved" for the rest
+> (v0.18 §6.3 says why). §4's palette-from-the-same-table rule was kept in full
+> and is now enforced by a generated test.
 > **Purpose:** Defines the OneNote-style **linear math input** experience — type a linear string, watch it build into 2-D notation as you go — and the storage/rendering pipeline behind it. This is the spec for MATH-1…7.
 > **Related:** [Data Model Spec §5.4](11-data-model-spec.md) · [Architecture §6](../04-architecture-overview.md)
 > **Prior art:** UnicodeMath (Unicode Technical Note #28, v3.2 — the format behind OneNote/Word's equation editor), LaTeX, AsciiMath; reference implementation UnicodeMathML (MIT-adjacent, mineable for the buildup grammar).

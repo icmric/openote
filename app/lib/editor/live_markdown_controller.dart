@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../markdown/md_render.dart' show indentPx, kBulletGutter, subSupStyle;
 import '../markdown/md_syntax.dart';
+import 'inline_math_editor.dart';
 import '../theme/onote_theme.dart';
 import '../study/flashcards.dart' show inlineCardRe;
 import '../theme/tokens.dart';
@@ -62,10 +63,33 @@ class LiveMarkdownController extends TextEditingController {
   /// the dimmed source text — which is all this editor used to do.
   Uint8List? Function(String src)? imageResolver;
 
-  /// Called after the controller has rewritten its own text, which only an
-  /// image resize does. A programmatic edit never fires `TextField.onChanged`,
-  /// so without this the new size would draw correctly and then never be saved.
+  /// Called after the controller has rewritten its own text, which an image
+  /// resize and an inline-equation edit both do. A programmatic edit never
+  /// fires `TextField.onChanged`, so without this the change would draw
+  /// correctly and then never be saved.
   VoidCallback? onSelfEdit;
+
+  /// A student clicked an equation sitting in a sentence. Offsets are into the
+  /// buffer and cover the whole `$…$`; the rect is in global coordinates, for
+  /// anchoring the editor. Null leaves inline equations as plain drawings,
+  /// which is what a read-only surface wants.
+  void Function(int start, int end, String latex, Rect anchor)? onMathTap;
+
+  /// Replace the `$…$` at [start]..[end] with [latex], or remove it when
+  /// [latex] is empty. Used by the inline equation editor, which cannot go
+  /// through the field: the field never sees a keystroke aimed at a
+  /// `WidgetSpan`.
+  void replaceMathAt(int start, int end, String latex) {
+    if (start < 0 || end > text.length || start >= end) return;
+    final tidy = latex.trim();
+    final next = tidy.isEmpty ? '' : '\$$tidy\$';
+    value = TextEditingValue(
+      text: text.replaceRange(start, end, next),
+      selection: TextSelection.collapsed(offset: start + next.length),
+      composing: TextRange.empty,
+    );
+    onSelfEdit?.call();
+  }
 
   /// Ask the host to widen the block by [extra] logical pixels — see
   /// `OnoteEditSession.requestExtraWidth`. Null means the box cannot grow, and
@@ -251,13 +275,26 @@ class LiveMarkdownController extends TextEditingController {
     final regionStart = lineStart + from;
     for (final m in _inlineRe.allMatches(sub)) {
       final c = classifyInline(m);
+      // An inline equation is drawn as ONE object, so everything after the
+      // code unit it stands on — `frac{1}{2}$` and all — is invisible. The
+      // caret has to cross the whole of it in one step, or a student pressing
+      // Left inside their own sentence gets twelve dead keystrokes. Recorded
+      // as a single hidden span from just after the object to the end.
+      if (c.kind == MdInline.math) {
+        out.add((
+          start: regionStart + m.start + 1,
+          end: regionStart + m.end,
+          openLen: m.end - m.start - 1,
+          closeLen: 0,
+        ));
+        continue;
+      }
       // Exactly the kinds [_inline] zeroes: their source stays legible, so
       // there is nothing hidden for the caret to trip over.
       switch (c.kind) {
         case MdInline.wikiLink:
         case MdInline.extLink:
         case MdInline.bareUrl:
-        case MdInline.math:
           continue;
         default:
       }
@@ -1132,6 +1169,42 @@ class LiveMarkdownController extends TextEditingController {
       // — the two used to carry hand-numbered copies of the alternation and
       // disagreed about `***both***`, `_italic_` and `snake_case`.
       final c = classifyInline(m);
+
+      // Maths stays MATHS while the sentence around it is being edited.
+      //
+      // It used to drop back to `$\frac{1}{2}$` the moment the caret entered
+      // the box — the same defect as `**` appearing around a bold word, and
+      // worse, because a fraction is unrecognisable as source. The equation is
+      // drawn as ONE object standing in for the opening `$`; the rest of the
+      // source trails at a hairline behind it, so the paragraph keeps exactly
+      // as many code units as the buffer and not one caret offset moves. The
+      // same placeholder trick as the pictures, the cards and the list gutter.
+      if (c.kind == MdInline.math) {
+        final full = sub.substring(m.start, m.end);
+        final from = regionStart + m.start, to = regionStart + m.end;
+        final tap = onMathTap;
+        out.add(_SourceSpan(
+          source: full.substring(0, 1),
+          // BASELINE: an equation mid-sentence sits on the sentence's
+          // baseline like a word, and the line — only that line — grows to
+          // fit it. Measured and argued at length in md_render.dart, which
+          // draws the read-mode half the same way; the two have to agree or
+          // the text jumps on click-in.
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: InlineMathAtom(
+            latex: c.inner,
+            style: cBase,
+            onTap: tap == null
+                ? null
+                : (rect) => tap(from, to, c.inner, rect),
+          ),
+        ));
+        out.add(TextSpan(text: full.substring(1), style: _hidden(cBase)));
+        last = m.end;
+        continue;
+      }
+
       var openLen = c.openLen, closeLen = c.closeLen;
       final TextStyle inner;
       switch (c.kind) {
@@ -1179,7 +1252,7 @@ class LiveMarkdownController extends TextEditingController {
         case MdInline.wikiLink:
         case MdInline.extLink:
         case MdInline.bareUrl:
-        case MdInline.math:
+        case MdInline.math: // handled above; listed to keep the switch total
           // The editor has no live form for these yet, so they stay legible
           // source. Zero-width markers would hide half a URL and leave the
           // caret walking through characters nobody can see.

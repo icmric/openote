@@ -19,6 +19,7 @@ import '../editor/onote_text_editor.dart';
 import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/history.dart';
+import '../math/linear_math.dart';
 import '../model/models.dart';
 import '../store/database.dart'
     show NotebookFileMissing, NotebookFileProblem, notebookFileProblem;
@@ -7325,6 +7326,33 @@ class AppState extends ChangeNotifier
   // stored gridSize actually drives placement instead of being dead state.
   double get gridSize => pageProps.gridSize;
   double snap(double v) => effectiveSnap ? (v / gridSize).round() * gridSize : v;
+
+  /// Put a new equation on the page, open for editing (task #79).
+  ///
+  /// THE way an equation is created. It existed in three copies — Alt+= in the
+  /// shell, Insert ▸ Equation in the command bar, and the right-click menu —
+  /// each with its own idea of the box's size and its own literal content map.
+  /// One of them already carried a `linearSource` the others didn't, which is
+  /// the kind of drift that ends with two routes producing subtly different
+  /// blocks.
+  ///
+  /// [at] is the block's top-left in page coordinates. [seed] is text the
+  /// student had selected when they pressed Alt+= — the words come WITH them
+  /// rather than being left behind.
+  Block insertEquation({required Offset at, String seed = ''}) {
+    final b = addBlock(Block(
+      type: BlockType.math,
+      x: at.dx,
+      y: at.dy,
+      w: 360,
+      content: {
+        'latex': seed.isEmpty ? '' : linearToLatex(seed),
+        'linearSource': seed,
+      },
+    ));
+    select(b.id, edit: true);
+    return b;
+  }
 
   Block addBlock(Block b, {bool recordUndo = true}) {
     if (recordUndo) pushUndo();

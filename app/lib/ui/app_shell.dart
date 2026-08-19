@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 
 import '../canvas/media_drop.dart';
 import '../canvas/page_canvas.dart';
-import '../math/linear_math.dart' show linearToLatex;
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../core/onote_ffi.dart';
@@ -229,17 +228,7 @@ class _AppShellState extends State<AppShell> {
       at = Offset(c.dx - 180, c.dy - 30); // centred, same as Insert ▸ Equation
     }
 
-    final block = app.addBlock(Block(
-      type: BlockType.math,
-      x: at.dx,
-      y: at.dy,
-      w: 360,
-      content: {
-        'latex': seed.isEmpty ? '' : linearToLatex(seed),
-        'linearSource': seed,
-      },
-    ));
-    app.select(block.id, edit: true);
+    app.insertEquation(at: at, seed: seed);
   }
 
   bool _onKey(KeyEvent e) {

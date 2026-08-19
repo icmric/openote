@@ -9,6 +9,7 @@ import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'inline_math_editor.dart';
 import 'list_editing.dart';
 import 'live_markdown_controller.dart';
 import 'onote_text_editor.dart';
@@ -101,7 +102,36 @@ class _LiveMarkdownSession extends OnoteEditSession {
     controller.onSelfEdit = () => onChanged(controller.text);
     // Forwarded, not handled: only the host may touch the block (ADR-0004).
     controller.requestExtraWidth = (extra) => requestExtraWidth?.call(extra);
+    controller.onMathTap = _editInlineMath;
   }
+
+  /// One click on an equation in a sentence opens it for editing (v0.18 §7).
+  ///
+  /// The range is re-derived on every keystroke rather than remembered,
+  /// because rewriting the equation changes its own length: holding the
+  /// original `end` would make the second character of a longer equation
+  /// overwrite the word after it.
+  void _editInlineMath(int start, int end, String latex, Rect anchor) {
+    final ctx = _lastContext;
+    if (ctx == null || !ctx.mounted) return;
+    var current = end;
+    InlineMathPopover.show(
+      ctx,
+      anchor: anchor,
+      latex: latex,
+      onChanged: (next) {
+        final tidy = next.trim();
+        final written = tidy.isEmpty ? '' : '\$$tidy\$';
+        controller.replaceMathAt(start, current, tidy);
+        current = start + written.length;
+      },
+      onDone: () => _focus.requestFocus(),
+    );
+  }
+
+  /// The most recent context this session built in — the only handle it has on
+  /// an `Overlay`, since a session is not a widget.
+  BuildContext? _lastContext;
 
   final LiveMarkdownController controller;
   final ValueChanged<String> onChanged;
@@ -289,6 +319,9 @@ class _LiveMarkdownSession extends OnoteEditSession {
   @override
   Widget build(BuildContext context, TextSurface s) {
     controller.dark = s.dark;
+    // The only handle a session — which is not a widget — has on an Overlay,
+    // for the inline equation editor to anchor itself in.
+    _lastContext = context;
     // Focus is claimed post-frame: the host decides *that* a block is being
     // edited, but the field only exists after this build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -445,6 +478,10 @@ class _LiveMarkdownSession extends OnoteEditSession {
   @override
   void dispose() {
     _disposed = true;
+    // A card left open over a torn-down block would edit a buffer nobody is
+    // showing any more.
+    InlineMathPopover.dismiss();
+    _lastContext = null;
     _spellDebounce?.cancel();
     controller.dispose();
     _focus.dispose();

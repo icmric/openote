@@ -156,7 +156,7 @@ acceptance criteria this project set itself and then did not meet:
 ## Beyond — "everything app" vision (stakeholder-flagged, future)
 
 - **Math evaluation / CAS.** The editor stores canonical LaTeX; a compute layer (e.g. a Rust CAS crate, or an embedded engine) could evaluate expressions — from basic arithmetic up to matrix multiplication and symbolic algebra. Feasible incrementally: start with numeric evaluation of simple expressions, grow toward CAS. Was a v1 non-goal; re-opened as a future differentiator.
-- **Point-and-click math UI.** A structure palette that builds matrices/fractions/integrals visually (OneNote-style) so users needn't learn LaTeX, layered over the existing linear-input engine.
+- ~~**Point-and-click math UI.**~~ **SHIPPED** (v0.18, phases 0-2): equations build up as you type, with boxes to fill, a searchable symbol bar, and inline maths that stays drawn while the sentence around it is edited. See `docs/planning/v0.18-visual-maths.md`; phase 3 (matrix size picker, recents, on-screen keyboard for touch, MathML export) is what remains.
 - **Sandboxed code execution.** Run code blocks in a sandbox (WASM runtimes like Wasmtime, or language-specific sandboxes) so scripts execute in-app. Lofty; a security-sensitive, later-stage goal.
 - Plugin/extension API (the documented format is the first extension surface)
 - Community importers/exporters and format tooling around the published spec

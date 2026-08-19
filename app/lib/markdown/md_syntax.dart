@@ -106,7 +106,15 @@ const String _under = r'(\+\+(.+?)\+\+)';
 //    space is simply a tilde or a caret, which is what students type.
 const String _sub = r'(~(?!~)([^\s~]+)~(?!~))';
 const String _sup = r'(\^([^\s^]+)\^)';
-const String _math = r'(\$([^$\n]+?)\$)';
+// Maths, with Pandoc's flanking rule — the opening `$` must be followed by a
+// non-space, the closing one preceded by a non-space and NOT followed by a
+// digit. Without those three guards the pattern eats money: measured against
+// the old `(\$([^$\n]+?)\$)`, "coffee is $5 and lunch is $10 today" matched
+// `$5 and lunch is $` and set a student's lunch order as an equation. Every
+// guard earns its place — the trailing `(?!\d)` is the one that rejects the
+// price pair specifically, since "5 and lunch is" ends in a non-space and
+// would otherwise satisfy the rest.
+const String _math = r'(\$([^\s$\n](?:[^$\n]*[^\s$\n])?)\$(?!\d))';
 const String _colour =
     r'(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})';
 const String _wiki = r'(\[\[([^\]|]+)(?:\|([^\]]+))?\]\])';

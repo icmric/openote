@@ -88,6 +88,25 @@ const List<KeySection> keyboardMap = [
     KeyBinding('Ctrl+= / Ctrl+-', 'Zoom in / out'),
     KeyBinding('Ctrl+0', 'Reset zoom and scroll'),
   ]),
+  KeySection('Writing an equation', [
+    KeyBinding('Alt+=', 'Start one; press it again to finish'),
+    KeyBinding('Esc', 'Finish, and carry on with the sentence'),
+    KeyBinding('Tab / Shift+Tab', 'The next / previous box left to fill'),
+    KeyBinding('← →', 'Step through — INTO a fraction or a root, not over it'),
+    KeyBinding('↑ ↓',
+        'Between the halves: top and bottom of a fraction, a power and an '
+        'index, rows of a matrix'),
+    KeyBinding('Space', 'Turn what you just typed into notation'),
+    KeyBinding('Backspace',
+        'At the edge of a fraction or a power, take it apart again — never '
+        'deletes the whole thing'),
+    KeyBinding('Ctrl+= / Ctrl+Shift+=', 'A small index / a power'),
+    KeyBinding('Enter', 'Another row of a piecewise or a matrix'),
+    KeyBinding('/ then a number', 'A fraction — try 1/2, or (n+1)/2'),
+    KeyBinding('A word then Space',
+        'Symbols by name: sqrt, sum, theta, pi, sin. And <= >= != -> as you '
+        'type them'),
+  ]),
   KeySection('In a table', [
     KeyBinding('Tab / Shift+Tab', 'Next / previous cell'),
     KeyBinding('↑ ↓ ← →',

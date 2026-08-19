@@ -819,13 +819,7 @@ class _CommandBarState extends State<CommandBar> {
 
   void _insertMath() {
     final c = _center();
-    final b = app.addBlock(Block(
-        type: BlockType.math,
-        x: c.dx - 180,
-        y: c.dy - 30,
-        w: 360,
-        content: {'latex': '', 'linearSource': ''}));
-    app.select(b.id, edit: true);
+    app.insertEquation(at: Offset(c.dx - 180, c.dy - 30));
   }
 
   void _insertCode() {

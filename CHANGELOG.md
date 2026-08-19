@@ -4,6 +4,45 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — write maths by seeing it, not by learning LaTeX
+
+- **Equations are now built visually.** Press Alt+= and type `1/2`: the moment
+  you hit space it *becomes* a fraction, right where you were typing. Insert a
+  square root and you get a √ with a small dotted box under it, with your
+  cursor already in the box. Tab hops to the next box. There is no longer a
+  panel of backslashes with a preview underneath — you write the equation by
+  looking at the equation.
+- **A maths bar sits under whatever you are writing.** A fixed row of shapes
+  (fraction, powers, roots, Σ, ∫, lim, brackets, piecewise, matrix, choose,
+  accents), then symbols by category — Greek, comparisons and arrows, sets and
+  logic, stats, geometry, science, functions — and a search box that speaks
+  plain English: type "square root", "not equal", "choose" or "theta" and
+  press Enter.
+- **Symbols by name as you type.** `sqrt`, `sum`, `theta`, `pi`, `sin` and the
+  rest turn into their symbol when you press space, and `<=` `>=` `!=` `->`
+  turn into ≤ ≥ ≠ → as you type them. Every button's tooltip tells you its
+  keyboard route, so the palette teaches you the shortcuts.
+- **Nothing you typed is ever eaten.** Backspace at the edge of a fraction
+  takes it apart back into `1/2` rather than deleting the whole thing. That
+  holds for every shape: the wrapper goes, what you wrote stays.
+- **Maths in a sentence stays maths while you write.** Clicking a paragraph
+  that has an equation in it used to show `$\frac{1}{2}$` where the fraction
+  had been. Now the equation stays drawn, the arrow keys step over it in one
+  press, and one click on it opens it for editing.
+- **Function names go upright by themselves** — `sin(x)` sets the way your
+  textbook does, without you knowing there is a rule.
+- The LaTeX view is still there for anyone who wants it: one `LaTeX` button on
+  the bar. It is also where an imported equation opens if it uses something
+  the buttons cannot show yet, so nothing is ever silently reshaped.
+
+### Fixed
+
+- **Prices in a sentence are no longer turned into an equation.** "coffee is
+  $5 and lunch is $10 today" was being read as maths from the first `$` to the
+  second, setting half the sentence in italics as an equation. Two dollar
+  signs now only mean maths when what is between them looks like maths.
+
+
 ### Fixed — three ways the OneNote import flattened your maths pages
 
 - **Text you set as subscript or superscript now comes across.** OneNote lets
