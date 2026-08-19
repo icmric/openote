@@ -61,6 +61,24 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **Undo takes back what you just typed, not the whole equation.** Ctrl+Z after
   a typo used to delete the equation and its box.
 
+### Fixed — two ways an equation could still lose your work
+
+- **Ctrl+X no longer deletes the whole box.** Pressed while writing an
+  equation it cut the block out from under you. Copy, cut and paste now belong
+  to the equation while you are in it, and it travels as LaTeX so it pastes
+  into Word, Overleaf or a message — and a `1/2` pasted from a message comes
+  back as a fraction.
+- **Clearing an equation in a sentence no longer eats the words after it.**
+  Emptying it and typing again used to overwrite the next few characters of
+  your paragraph.
+- **Tapping an equation in a sentence no longer errors on a narrow window.**
+
+### Changed
+
+- **Alt+= with words selected turns them into maths where they are**, in the
+  sentence, instead of cutting them out and dropping a separate equation
+  below. **Alt+Shift+=** does the old thing — an equation on its own line.
+
 ### Fixed — you can type in an equation
 
 - **A new equation takes the keyboard straight away.** Nothing you typed

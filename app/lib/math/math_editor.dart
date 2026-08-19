@@ -23,6 +23,7 @@
 library;
 
 import 'math_inventory.dart';
+import 'linear_math.dart';
 import 'math_parse.dart';
 import 'math_tree.dart';
 
@@ -308,6 +309,45 @@ class MathEditor {
   }
 
   // ───────────────────────────────────────────────────────── insertion
+
+  /// Empty the equation — what Ctrl+X leaves behind once it has taken a copy.
+  void clear() {
+    root.drain();
+    caretRow = root;
+    caretIndex = 0;
+    _openText = null;
+  }
+
+  /// Drop pasted source in at the caret.
+  ///
+  /// LaTeX first, then the linear grammar (`1/2`, `\sum_(n=1)^oo`) so maths
+  /// copied out of a message still arrives as maths, and finally the plain
+  /// characters — pasting must never be refused outright, because the student
+  /// can always see what they pasted and fix it.
+  void insertSource(String source) {
+    bool place(MathParseResult r) {
+      if (!r.supported || r.root == null) return false;
+      final nodes = r.root!.drain();
+      caretRow.insertAll(caretIndex, nodes);
+      caretIndex += nodes.length;
+      _openText = null;
+      return true;
+    }
+
+    // The LINEAR reading goes first, but only when it actually says something
+    // different. `1/2` is perfectly valid LaTeX — three ordinary atoms — so a
+    // LaTeX-first order pasted it as the characters `1/2` rather than as the
+    // fraction the sender meant. Where the linear grammar leaves the text
+    // alone, nothing is preferred and the LaTeX path takes it.
+    final linear = linearToLatex(source);
+    if (linear != source && place(parseLatex(linear))) return;
+    if (place(parseLatex(source))) return;
+    // Neither reading holds it: the characters go in as characters. Pasting is
+    // never refused — the student can see what arrived and fix it.
+    for (final ch in source.split('')) {
+      insertChar(ch);
+    }
+  }
 
   /// A palette press. Fresh nodes every time — see [MathItem.build].
   void insertItem(MathItem item) {

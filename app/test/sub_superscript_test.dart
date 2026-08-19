@@ -641,13 +641,39 @@ void main() {
       await settle(tester);
     });
 
-    testWidgets('Alt+= with words selected takes them into the equation',
+    testWidgets('Alt+= with words selected makes them maths WHERE THEY ARE',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // **Changed deliberately.** This used to cut the words out of the
+      // paragraph and drop a separate equation block below it, so "the area is
+      // 1/2bh" became "the area is " with something floating underneath. There
+      // was also no other route to an inline equation at all — you had to know
+      // to type the dollars. Now the selection is wrapped in place and the
+      // live editor draws it as an equation immediately.
+      await pumpShell(tester);
+      await editWholeWord(tester);
+
+      expect(await key(tester, LogicalKeyboardKey.equal, alt: true), isTrue);
+      expect(app.blocks.where((b) => b.type == BlockType.math), isEmpty,
+          reason: 'no block: the equation belongs in the sentence');
+      final prose = app.blocks
+          .where((b) => b.type == BlockType.text)
+          .map((b) => b.content['text'] as String? ?? '')
+          .join();
+      expect(prose, contains(r'$water$'),
+          reason: 'the words stay exactly where the student put them');
+      await settle(tester);
+    });
+
+    testWidgets('Alt+SHIFT+= still lifts them out into a block of their own',
         (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await pumpShell(tester);
       await editWholeWord(tester);
 
-      expect(await key(tester, LogicalKeyboardKey.equal, alt: true), isTrue);
+      expect(
+          await key(tester, LogicalKeyboardKey.equal, alt: true, shift: true),
+          isTrue);
       final maths =
           app.blocks.where((b) => b.type == BlockType.math).toList();
       expect(maths, hasLength(1));
@@ -655,9 +681,7 @@ void main() {
       // `latex` must be seeded too: an equation whose latex is empty is swept
       // away when its editor closes, so the words would be lost on Escape.
       expect(maths.single.content['latex'], isNot(''));
-      // And they are MOVED, not copied. The paragraph itself may well have
-      // gone: a text box emptied of everything is swept away when its editor
-      // closes, which is existing behaviour and exactly right here.
+      // And they are MOVED, not copied.
       final prose = app.blocks
           .where((b) => b.type == BlockType.text)
           .map((b) => b.content['text'] as String? ?? '')

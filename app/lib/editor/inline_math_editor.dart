@@ -134,7 +134,12 @@ class _InlineMathCardState extends State<_InlineMathCard> {
     // the card never hangs off the bottom of the window.
     final below = widget.anchor.bottom + 6;
     final wantsAbove = below + 220 > screen.height;
-    final left = widget.anchor.left.clamp(8.0, screen.width - cardWidth - 8);
+    // `clamp` throws when its upper bound falls below its lower one, which is
+    // what a window narrower than the card does — measured at 436 px, where
+    // tapping an inline equation threw ArgumentError instead of opening it.
+    // A card wider than the window simply starts at the left margin.
+    final maxLeft = screen.width - cardWidth - 8;
+    final left = maxLeft <= 8.0 ? 8.0 : widget.anchor.left.clamp(8.0, maxLeft);
 
     // The palette is the toolbar's Maths tab, the same one the block editor
     // drives — so this card holds ONLY the equation. Registered from `build`

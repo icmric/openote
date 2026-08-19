@@ -80,7 +80,14 @@ class LiveMarkdownController extends TextEditingController {
   /// through the field: the field never sees a keystroke aimed at a
   /// `WidgetSpan`.
   void replaceMathAt(int start, int end, String latex) {
-    if (start < 0 || end > text.length || start >= end) return;
+    // `start == end` is LEGITIMATE: it means the equation is currently
+    // zero-length, which is exactly what happens the moment a student clears
+    // the card to retype. Rejecting it left the caller's idea of where the
+    // equation was running ahead of the buffer, so the next keystroke wrote
+    // over the words AFTER the equation instead of replacing it — reported as
+    // "emptying an inline equation then typing again eats the words after it".
+    // Only a genuinely inverted or out-of-range span is refused.
+    if (start < 0 || end > text.length || start > end) return;
     final tidy = latex.trim();
     final next = tidy.isEmpty ? '' : '\$$tidy\$';
     value = TextEditingValue(

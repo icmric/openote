@@ -37,7 +37,10 @@ const List<KeySection> keyboardMap = [
     KeyBinding('Ctrl+Shift+N', 'New sub-page of this one'),
     KeyBinding('Ctrl+\\', 'Hide or show the sidebar'),
     KeyBinding('Alt+=',
-        'Start a maths equation — with words selected, they go into it'),
+        'Start a maths equation — with words selected, they become one '
+        'right where they are, in the sentence'),
+    KeyBinding('Alt+Shift+=',
+        'The same, but as an equation on a line of its own'),
     KeyBinding(
         'F6 / Shift+F6',
         'Jump between the sidebar, the toolbar, the page, the open panel and '
@@ -96,16 +99,21 @@ const List<KeySection> keyboardMap = [
     KeyBinding('↑ ↓',
         'Between the halves: top and bottom of a fraction, a power and an '
         'index, rows of a matrix'),
-    KeyBinding('Space', 'Turn what you just typed into notation'),
-    KeyBinding('Backspace',
-        'At the edge of a fraction or a power, take it apart again — never '
-        'deletes the whole thing'),
-    KeyBinding('Ctrl+= / Ctrl+Shift+=', 'A small index / a power'),
-    KeyBinding('Enter', 'Another row of a piecewise or a matrix'),
+    KeyBinding('A backslash, a name, then Space',
+        r'Symbols by name: \alpha, \sqrt, \sum, \sin. WITHOUT the '
+        r'backslash the letters stay letters, so ordinary words survive'),
     KeyBinding('/ then a number', 'A fraction — try 1/2, or (n+1)/2'),
-    KeyBinding('A word then Space',
-        'Symbols by name: sqrt, sum, theta, pi, sin. And <= >= != -> as you '
-        'type them'),
+    KeyBinding('<= >= != ->', 'Become ≤ ≥ ≠ → as you type them'),
+    KeyBinding('Space',
+        'A space — or finishes the backslash name in front of it'),
+    KeyBinding('Backspace',
+        'Steps INSIDE a fraction, root or grid rather than deleting it, so '
+        'one press can never take the whole thing'),
+    KeyBinding('Ctrl+= / Ctrl+Shift+=', 'A small index / a power'),
+    KeyBinding('Ctrl+C / Ctrl+X / Ctrl+V',
+        'Copy, cut or paste the equation — it goes on the clipboard as '
+        'LaTeX, so it pastes into Word, Overleaf or a message'),
+    KeyBinding('Enter', 'Another row of a piecewise or a matrix'),
   ]),
   KeySection('In a table', [
     KeyBinding('Tab / Shift+Tab', 'Next / previous cell'),

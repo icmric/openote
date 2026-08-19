@@ -93,6 +93,26 @@ class MathFieldState extends State<MathField> {
     _changed();
   }
 
+  /// LaTeX goes on the clipboard, because that is what pastes into Word,
+  /// Overleaf, a message to a classmate, or back into here.
+  void _copy() {
+    final tex = _e.latex.trim();
+    if (tex.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: tex));
+  }
+
+  /// Take whatever is on the clipboard as maths. LaTeX first; failing that the
+  /// linear form, so `1/2` copied out of a text message still arrives as a
+  /// fraction. Anything else lands as the characters themselves rather than
+  /// being refused.
+  Future<void> _paste() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text?.trim();
+    if (text == null || text.isEmpty || !mounted) return;
+    _e.insertSource(text);
+    _changed();
+  }
+
   static bool _printable(String s) =>
       s.length == 1 && s.codeUnitAt(0) > 0x20 && s.codeUnitAt(0) != 0x7f;
 
@@ -120,6 +140,30 @@ class MathFieldState extends State<MathField> {
         (k == LogicalKeyboardKey.equal || k == LogicalKeyboardKey.numpadEqual)) {
       _e.insertChar(shift ? '^' : '_');
       _changed();
+      return KeyEventResult.handled;
+    }
+    // **The clipboard belongs to the equation while the equation has the
+    // keyboard.** Letting these fall through to the canvas meant Ctrl+C copied
+    // the whole BLOCK and — much worse — Ctrl+X *cut the block*, destroying the
+    // equation the student was in the middle of writing. That is the only
+    // keystroke in the editor that could still lose work.
+    //
+    // There is no selection model yet (v0.18 phase 3), so copy and cut take the
+    // whole equation. Said plainly rather than half-built: a Ctrl+C that copies
+    // more than you highlighted is a surprise, but a Ctrl+X that deletes your
+    // note is a bug.
+    if (ctrl && k == LogicalKeyboardKey.keyC) {
+      _copy();
+      return KeyEventResult.handled;
+    }
+    if (ctrl && k == LogicalKeyboardKey.keyX) {
+      _copy();
+      _e.clear();
+      _changed();
+      return KeyEventResult.handled;
+    }
+    if (ctrl && k == LogicalKeyboardKey.keyV) {
+      _paste();
       return KeyEventResult.handled;
     }
     // Everything else with Ctrl belongs to the app, not to the equation.

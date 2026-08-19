@@ -197,7 +197,7 @@ class _AppShellState extends State<AppShell> {
   /// `linearSource` and `latex`: an equation whose `latex` is empty is swept
   /// away when the editor closes, so seeding only the source would lose the
   /// text if the student pressed Escape without typing.
-  void _startEquation() {
+  void _startEquation({bool forceBlock = false}) {
     // Already writing an equation? Then the chord has nothing to add, and a
     // second empty block appearing underneath would be a surprise.
     for (final b in app.blocks) {
@@ -211,9 +211,21 @@ class _AppShellState extends State<AppShell> {
       final sel = ae.controller.selection;
       if (sel.isValid && !sel.isCollapsed) {
         seed = ae.controller.text.substring(sel.start, sel.end).trim();
-        // Replacing the selection with nothing is the existing "write at the
-        // caret" seam, so the text block is committed and undoable exactly
-        // as any other edit would be.
+        if (seed.isNotEmpty && !forceBlock) {
+          // **In place, in the sentence.** Alt+= used to cut the selected words
+          // OUT of the paragraph and drop a separate equation block below it —
+          // so "the area is ½bh" became "the area is " with a floating block
+          // underneath. Wrapping in `$…$` leaves the words exactly where the
+          // student put them, and the live editor draws them as an equation
+          // immediately; one click opens it. Alt+Shift+= is the way to a
+          // display block on its own line.
+          app.insertTextAtActiveCursor('\$$seed\$');
+          return;
+        }
+        // Alt+SHIFT+= — a display equation of its own. The words come with it,
+        // so they are cut from the paragraph here. Replacing the selection
+        // with nothing is the existing "write at the caret" seam, so the text
+        // block is committed and undoable exactly as any other edit would be.
         if (seed.isNotEmpty) app.insertTextAtActiveCursor('');
       }
       final b = ae.block;
@@ -302,7 +314,9 @@ class _AppShellState extends State<AppShell> {
         !ctrl &&
         _isEqualsKey(k) &&
         !_routeOnTop) {
-      _startEquation();
+      // Shift keeps the old behaviour: a display equation in a block of its
+      // own. Plain Alt+= now wraps a selection where it stands.
+      _startEquation(forceBlock: HardwareKeyboard.instance.isShiftPressed);
       return true;
     }
 
