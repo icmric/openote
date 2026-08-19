@@ -11,6 +11,10 @@ import 'package:openote/math/math_inventory.dart';
 import 'package:openote/math/math_parse.dart';
 import 'package:openote/math/math_tree.dart';
 
+/// One backslash, named so the test bodies read as what a student presses
+/// rather than as escape soup.
+const String bs = '\\';
+
 /// Type a string one character at a time, exactly as a keyboard delivers it.
 MathEditor type(String s, {MathEditor? into}) {
   final e = into ?? MathEditor.empty();
@@ -48,13 +52,37 @@ void main() {
       expect(type('x_i^2').latex, r'x_{i}^{2}');
     });
 
-    test('a control word becomes its symbol on space', () {
-      expect(type('alpha ').latex, r'\alpha ');
+    test('a BACKSLASH command becomes its symbol on space', () {
+      expect(type(bs + 'alpha ').latex, r'\alpha ');
     });
 
-    test('an operator ends a control word too, without a space', () {
-      // "pi+1" — nobody types a space before the plus.
-      expect(type('pi+1').latex, r'\pi +1');
+    test('an operator finishes a command too, without a space', () {
+      // Nobody types a space before the plus.
+      expect(type(bs + 'pi+1').latex, r'\pi +1');
+    });
+
+    test('but a bare word is just a word', () {
+      // **The rule the owner asked for**, replacing "convert everything we
+      // recognise the moment a space arrives". `in`, `cap`, `div`, `to`,
+      // `dot`, `hat`, `deg` and every Greek letter are ordinary English words
+      // and ordinary variable names, so a greedy converter turned a student's
+      // own writing into symbols they never asked for.
+      expect(type('alpha ').latex, isNot(contains(r'\alpha')));
+      expect(type('a in b').latex, isNot(contains(r'\in ')));
+      expect(type('sin x').latex, isNot(contains(r'\sin')));
+      expect(type('cap ').latex, isNot(contains(r'\cap')));
+    });
+
+    test('and a space is a SPACE', () {
+      // It used to be swallowed whenever it built nothing, so there was no way
+      // to put one in at all — "i can never have a space included".
+      expect(type('hello world').latex, r'hello\ world');
+      expect(type('x + y').latex, r'x\ +\ y');
+    });
+
+    test('an unknown command stays as the characters typed', () {
+      // Never an error, and never silently eaten.
+      expect(type(bs + 'notacommand ').latex, contains('notacommand'));
     });
 
     test('<= becomes one symbol the moment it is complete', () {
@@ -66,7 +94,7 @@ void main() {
     });
 
     test('sqrt opens a root with the caret under the sign', () {
-      final e = type('sqrt ');
+      final e = type(bs + 'sqrt ');
       expect(e.latex, r'\sqrt{}');
       expect(e.caretRow.owner, isA<MSqrt>());
       expect(e.caretRow.name, 'radicand');
@@ -75,7 +103,7 @@ void main() {
     });
 
     test('sum opens with the caret in the lower limit', () {
-      final e = type('sum ');
+      final e = type(bs + 'sum ');
       expect(e.caretRow.name, 'sub');
       type('n=1', into: e);
       expect(e.latex, contains(r'\sum'));
@@ -83,7 +111,7 @@ void main() {
     });
 
     test('a function name goes upright when the bracket arrives', () {
-      final e = type('sin(x');
+      final e = type(bs + 'sin(x');
       expect(e.latex, startsWith(r'\sin '));
       expect(e.latex, contains(r'\left( x'));
     });
@@ -181,7 +209,7 @@ void main() {
     });
 
     test('a square root keeps everything under it', () {
-      final e = type('sqrt ');
+      final e = type(bs + 'sqrt ');
       type('x+1', into: e);
       e.placeAtEnd();
       expect(e.backspace(), isTrue);
@@ -189,17 +217,17 @@ void main() {
     });
 
     test('deleting off the FRONT unwraps, keeping the contents', () {
-      final e = type('sqrt ');
+      final e = type(bs + 'sqrt ');
       type('x+1', into: e);
       e.caretIndex = 0; // start of the radicand
       expect(e.backspace(), isTrue);
       expect(e.latex, 'x+1', reason: 'the sign goes, what was under it stays');
     });
 
-    test('backspacing a symbol gives back the word that produced it', () {
-      final e = type('alpha ');
+    test('backspacing a symbol gives back the command that produced it', () {
+      final e = type(bs + 'alpha ');
       expect(e.backspace(), isTrue);
-      expect(e.latex, 'alpha');
+      expect(e.latex, contains('alpha'));
     });
 
     test('backspace at the very start of the equation reports "leave"', () {

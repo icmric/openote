@@ -57,11 +57,14 @@ class MathEditor {
   /// the equation.
   MText? _openText;
 
-  /// A space was typed and built nothing, so the two characters either side of
-  /// it are separate. Without this, `x < -3` became `x ← 3`: space inserted no
-  /// atom, so `<` and `-` ended up adjacent and the `<-` shortcut fired on a
-  /// perfectly ordinary inequality. Cleared by the next character.
-  bool _spaceBarrier = false;
+  /// A space is a SPACE.
+  ///
+  /// It used to be swallowed whenever it did not trigger a build-up, so a
+  /// student could never put one in — reported as "i can never have a space
+  /// included". It is a real atom now, which also means two characters with a
+  /// space between them are no longer adjacent, so `x < -3` cannot pair itself
+  /// into `x ← 3` by accident.
+  static const String spaceTex = r'\ ';
 
   bool get isEmpty => root.isEmpty;
 
@@ -312,7 +315,6 @@ class MathEditor {
     // typed after a π landed inside the preceding \text{…} instead of in the
     // equation, which looks like the keyboard has stopped working.
     _openText = null;
-    _spaceBarrier = false;
     final nodes = item.build();
     caretRow.insertAll(caretIndex, nodes);
     caretIndex += nodes.length;
@@ -340,9 +342,13 @@ class MathEditor {
 
     switch (ch) {
       case ' ':
-        if (_buildControlWord() || _buildFunctionName()) return true;
-        _spaceBarrier = true;
-        return false;
+        // A space either FINISHES a `\command` or is a space. Not both: doing
+        // both put the space inside the box the command had just opened, so
+        // `\sqrt` came out as a root with a space already under it.
+        if (_buildControlWord()) return true;
+        caretRow.insert(caretIndex, MSym(spaceTex));
+        caretIndex++;
+        return true;
       case '/':
         _buildFraction();
         return true;
@@ -369,12 +375,9 @@ class MathEditor {
         }
     }
 
-    // `<=`, `->`, `!=` … complete the moment their last character lands —
-    // unless a space came between, which means the student wrote two separate
-    // things.
-    final barrier = _spaceBarrier;
-    _spaceBarrier = false;
-    if (!barrier && _buildOperatorRun(ch)) return true;
+    // `<=`, `->`, `!=` … complete the moment their last character lands. A
+    // space between them is a real atom now, so it separates them by itself.
+    if (_buildOperatorRun(ch)) return true;
 
     // An operator ends a control word: `pi+1` should have π before the +.
     final cls = classOf(ch);
@@ -387,9 +390,18 @@ class MathEditor {
     return true;
   }
 
-  /// The letters immediately before the caret that the student typed as
-  /// letters — never symbols autocorrect already placed.
-  (int, String) _wordBefore() {
+  /// The letters immediately before the caret, and the index of the BACKSLASH
+  /// that starts them — or `-1` when there isn't one.
+  ///
+  /// **Only a `\command` converts.** The editor used to translate any word it
+  /// recognised the moment a space or an operator arrived, which is the "super
+  /// greedy always convert everything we see" the owner asked to be rid of —
+  /// and it was worse than untidy. `in`, `cap`, `div`, `to`, `dot`, `hat`,
+  /// `text`, `deg` and every Greek letter are ordinary English words and
+  /// ordinary variable names, so writing any of them turned into a symbol
+  /// nobody asked for. Requiring the backslash is the LaTeX convention, it is
+  /// unambiguous, and a student who wants the letters simply types the letters.
+  (int, String) _commandBefore() {
     var k = caretIndex;
     final buf = StringBuffer();
     while (k > 0) {
@@ -398,20 +410,26 @@ class MathEditor {
       buf.write(n.tex);
       k--;
     }
+    if (buf.isEmpty || k == 0) return (-1, '');
+    final lead = caretRow.children[k - 1];
+    // `'\\'` and not `r'\'`: a Dart raw string cannot end in a backslash, and
+    // the form that does compile does not hold the character we are after.
+    if (lead is! MSym || lead.tex != '\\') return (-1, '');
     final word = String.fromCharCodes(buf.toString().codeUnits.reversed);
-    return (k, word);
+    return (k - 1, word);
   }
 
   bool _buildControlWord() {
-    final (start, word) = _wordBefore();
-    if (word.isEmpty) return false;
-    final item = mathControlWords[word];
+    final (start, word) = _commandBefore();
+    if (start < 0 || word.isEmpty) return false;
+    // Function names live under `fn-<name>`; everything else is a control word.
+    final item = mathControlWords[word] ?? mathItemsById['fn-$word'];
     if (item == null) return false;
     for (var i = caretIndex; i > start; i--) {
       caretRow.removeAt(i - 1);
     }
     caretIndex = start;
-    _insertRemembering(item, word);
+    _insertRemembering(item, '\\$word');
     return true;
   }
 
@@ -429,20 +447,10 @@ class MathEditor {
     insertItem(item);
   }
 
-  /// `sin` typed in front of a bracket goes upright, the way every textbook
-  /// sets it — without the student knowing the rule exists.
-  bool _buildFunctionName() {
-    final (start, word) = _wordBefore();
-    if (word.length < 2) return false;
-    final item = mathItemsById['fn-$word'];
-    if (item == null) return false;
-    for (var i = caretIndex; i > start; i--) {
-      caretRow.removeAt(i - 1);
-    }
-    caretIndex = start;
-    _insertRemembering(item, word);
-    return true;
-  }
+  /// `\sin(` goes upright, the way every textbook sets it. Folded into
+  /// [_buildControlWord], which looks the function names up in the same pass;
+  /// kept under its own name so the `(` handler reads for what it means.
+  bool _buildFunctionName() => _buildControlWord();
 
   bool _buildOperatorRun(String ch) {
     for (final (run, item) in mathOperatorRuns) {

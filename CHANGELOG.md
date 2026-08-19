@@ -61,6 +61,23 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **Undo takes back what you just typed, not the whole equation.** Ctrl+Z after
   a typo used to delete the equation and its box.
 
+### Fixed — you can type in an equation
+
+- **A new equation takes the keyboard straight away.** Nothing you typed
+  registered until you happened to click a button on the bar.
+- **A space is a space.** There was no way to put one in at all.
+- **Only `\commands` turn into symbols now.** Typing `lpha` then a space
+  gives you α; typing `alpha` gives you the word alpha. Before, the editor
+  converted any word it recognised — so writing "a in b", "sin x" or "cap" in
+  your own sentence turned into symbols you never asked for. An unrecognised
+  command just stays as the letters you typed.
+
+### Changed — a bar button for each kind of thing
+
+- The Maths tab now has a door per kind — **Shapes, Big, Operators, Compare,
+  Greek, Sets, Functions, More** — instead of one "Symbols" button you had to
+  guess your way into, plus five shapes on the bar itself and a search button.
+
 ### Changed — the maths buttons are a tidier bar now
 
 - The Maths tab was too wide for a normal window, so the search box and some

@@ -213,6 +213,19 @@ class MathFieldState extends State<MathField> {
 
   @override
   Widget build(BuildContext context) {
+    // **Claim the keyboard, post-frame.** `autofocus` alone was not enough: a
+    // fresh equation opened with the canvas still holding focus, so nothing
+    // typed into it at all until a palette press — which calls
+    // `requestFocus` — happened to hand it over. Reported as "i cant actually
+    // type anything right off the bat". The text editor claims focus the same
+    // way and for the same reason: the host decides THAT a block is being
+    // edited, but the field only exists after this build.
+    if (widget.autofocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_focus.hasFocus) _focus.requestFocus();
+      });
+    }
+
     final surfaces = Theme.of(context).extension<OnoteSurfaces>() ??
         (Theme.of(context).brightness == Brightness.dark
             ? OnoteSurfaces.dark

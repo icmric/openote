@@ -38,30 +38,109 @@ import '../theme/tokens.dart';
 /// The eight shapes that stay on the bar, in this order, forever.
 ///
 /// Chosen by what a year-10 to first-year student reaches for in an afternoon,
-/// not by what is interesting: a fraction, a power, a root, the two big
-/// operators, growing brackets, a piecewise definition, a matrix. Everything
-/// else is one click further away and none of it is common enough to notice.
+/// not by what is interesting. Everything else is one click further away.
+/// FIVE, not eight. Once every kind of thing has its own named door the row
+/// is 1385 px measured, which is wider than the 1280 px window the app opens
+/// at — so the chips pay for the doors, and these are the five that survive a
+/// "would a student reach for this today" test.
 const List<String> kMathQuickShapes = [
-  'frac', 'power', 'sqrt', 'sum', 'int', 'paren', 'cases', 'matrix',
+  'frac', 'power', 'sqrt', 'paren', 'words',
 ];
 
-/// The rest of the shapes, behind **More shapes**.
-const List<String> kMathMoreShapes = [
-  'subscript', 'subsup', 'nthroot', 'prod', 'lim', 'ddx', 'partial',
-  'iint', 'oint', 'abs', 'floor', 'ceil', 'determinant', 'binom',
-  'bar', 'hat', 'vec', 'dot', 'tilde', 'prime', 'words',
+/// One door per KIND of thing, with the room the row actually has.
+///
+/// Round three collapsed eight category drop-downs into a single Symbols
+/// panel, which fitted — and then had room to spare. The owner: *"We have more
+/// space to play with in that bar than your using, so we can break symbols,
+/// opperators, large opperators, functions, etc out into their own things."*
+///
+/// Right: one door marked "Symbols" is a filing cabinet, and a student looking
+/// for ∑ has to know it is filed under symbols rather than under shapes. Doors
+/// named after what is behind them are a shorter path than a search box for
+/// anyone who can see the door. The search is still there for the rest.
+///
+/// Listed by ID rather than by category so a door can draw from several — the
+/// large operators are STRUCTURES (they carry limit slots), and ≤ lives with
+/// the other comparisons rather than with the arithmetic it is filed under.
+typedef MathDoor = ({String label, String tip, List<String> ids});
+
+const List<MathDoor> kMathDoors = [
+  (
+    label: 'Shapes',
+    tip: 'Roots, derivatives, brackets, accents',
+    ids: [
+      'subscript', 'subsup', 'nthroot', 'ddx', 'partial', 'binom',
+      'floor', 'ceil', 'determinant', 'prime',
+      'bar', 'hat', 'vec', 'dot', 'tilde',
+    ],
+  ),
+  (
+    label: 'Big',
+    tip: 'Sums, integrals, products, limits',
+    ids: ['sum', 'int', 'iint', 'oint', 'prod', 'lim'],
+  ),
+  (
+    label: 'Operators',
+    tip: 'Plus or minus, times, divide, and the rest',
+    ids: [
+      'pm', 'times', 'div', 'cdot', 'percent', 'factorial', 'degree',
+      'cup', 'cap', 'setminus', 'oplus', 'land', 'lor', 'lnot',
+      'infty', 'ldots', 'propto', 'nabla',
+    ],
+  ),
+  (
+    label: 'Compare',
+    tip: 'Equals, inequalities, arrows',
+    ids: [
+      'eq', 'neq', 'approx', 'leq', 'geq', 'lt', 'gt', 'll', 'gg',
+      'equiv', 'cong', 'sim', 'to', 'gets', 'leftrightarrow',
+      'implies', 'impliedby', 'iff', 'mapsto', 'therefore', 'because',
+    ],
+  ),
+  (
+    label: 'Greek',
+    tip: 'The whole alphabet, by name',
+    ids: [],
+  ),
+  (
+    label: 'Sets',
+    tip: 'Membership, subsets, number systems, logic',
+    ids: [
+      'in', 'notin', 'subset', 'subseteq', 'notsubset', 'emptyset',
+      'naturals', 'integers', 'rationals', 'reals', 'complex',
+      'forall', 'exists', 'mid', 'nmid',
+    ],
+  ),
+  (
+    label: 'Functions',
+    tip: 'sin, cos, log, and friends',
+    ids: [],
+  ),
+  (
+    label: 'More',
+    tip: 'Geometry, statistics, science',
+    ids: [],
+  ),
 ];
 
-const List<MathCat> kMathSymbolTabs = [
-  MathCat.common,
-  MathCat.greek,
-  MathCat.compare,
-  MathCat.sets,
-  MathCat.stats,
-  MathCat.geometry,
-  MathCat.science,
-  MathCat.functions,
-];
+/// Doors whose contents come from a whole category rather than a list.
+const Map<String, List<MathCat>> kMathDoorCats = {
+  'Greek': [MathCat.greek],
+  'Functions': [MathCat.functions],
+  'More': [MathCat.geometry, MathCat.stats, MathCat.science],
+};
+
+/// What a door shows, resolved from either source.
+List<MathItem> mathDoorItems(MathDoor door) {
+  final cats = kMathDoorCats[door.label];
+  if (cats != null) {
+    return [for (final c in cats) ...mathItemsIn(c)];
+  }
+  return [
+    for (final id in door.ids)
+      if (mathItemsById[id] case final i?) i
+  ];
+}
 
 class MathBar extends StatelessWidget {
   const MathBar({
@@ -120,9 +199,10 @@ class MathBar extends StatelessWidget {
         if (mathItemsById[id] case final item?)
           MathChip(item: item, onTap: onInsert, surfaces: s),
       _Sep(surfaces: s),
-      _ShapesMenu(onInsert: onInsert, surfaces: s),
-      _SymbolsMenu(onInsert: onInsert, surfaces: s, recentIds: recentIds),
+      for (final door in kMathDoors)
+        _DoorButton(door: door, onInsert: onInsert, surfaces: s),
       _Sep(surfaces: s),
+      _SearchButton(onInsert: onInsert, surfaces: s, recentIds: recentIds),
       _AnswerSlot(result: result, onUse: onUseResult, surfaces: s),
       _MoreMenu(
         latexMode: latexMode,
@@ -239,12 +319,6 @@ class _MoreMenu extends StatelessWidget {
       );
 }
 
-/// A drop-down whose contents are a GRID.
-///
-/// The width and height are fixed here, and every chip inside is given an
-/// explicit size, because a `Container` with an `alignment` expands to its
-/// loose constraints — which is why every gallery used to be one symbol per
-/// row.
 class _Gallery extends StatelessWidget {
   const _Gallery({required this.width, required this.children});
   final double width;
@@ -257,42 +331,60 @@ class _Gallery extends StatelessWidget {
       );
 }
 
-class _ShapesMenu extends StatelessWidget {
-  const _ShapesMenu({required this.onInsert, required this.surfaces});
+/// A gallery, laid out as a GRID.
+///
+/// Width and height are fixed here and every chip inside is explicitly sized,
+/// because a `Container` with an `alignment` expands to its loose constraints
+/// — which is why every gallery used to come out one symbol per row.
+/// One door on the row, named for what is behind it.
+class _DoorButton extends StatelessWidget {
+  const _DoorButton({
+    required this.door,
+    required this.onInsert,
+    required this.surfaces,
+  });
+
+  final MathDoor door;
   final ValueChanged<MathItem> onInsert;
   final OnoteSurfaces surfaces;
 
   @override
-  Widget build(BuildContext context) => _MenuButton(
-        icon: Icons.grid_view_outlined,
-        label: 'More shapes',
-        surfaces: surfaces,
-        builder: (close) => _Gallery(
-          width: 320,
-          children: [
-            for (final id in kMathMoreShapes)
-              if (mathItemsById[id] case final item?)
+  Widget build(BuildContext context) {
+    final items = mathDoorItems(door);
+    return _MenuButton(
+      label: door.label,
+      tooltip: door.tip,
+      surfaces: surfaces,
+      builder: (close) => ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 320),
+        child: SingleChildScrollView(
+          child: _Gallery(
+            width: 320,
+            children: [
+              for (final i in items)
                 MathChip(
-                  item: item,
+                  item: i,
                   surfaces: surfaces,
-                  onTap: (i) {
+                  onTap: (x) {
                     close();
-                    onInsert(i);
+                    onInsert(x);
                   },
                 ),
-          ],
+            ],
+          ),
         ),
-      );
+      ),
+    );
+  }
 }
 
-/// One door to every symbol, with the search at the top of it.
+/// The search, on its own small button.
 ///
-/// Eight word-labelled drop-downs on the row was most of "chaotic": 1010 px of
-/// the width, and it still made the student guess which category `≅` was filed
-/// under. One panel, searchable, with the sections stacked inside it, answers
-/// the guess instead of posing it.
-class _SymbolsMenu extends StatefulWidget {
-  const _SymbolsMenu({
+/// It is the answer to "I don't know what this is called or which door it is
+/// behind" — which is a different question from any of the doors, so it gets
+/// its own control rather than living inside one of them.
+class _SearchButton extends StatefulWidget {
+  const _SearchButton({
     required this.onInsert,
     required this.surfaces,
     required this.recentIds,
@@ -303,10 +395,10 @@ class _SymbolsMenu extends StatefulWidget {
   final List<String> recentIds;
 
   @override
-  State<_SymbolsMenu> createState() => _SymbolsMenuState();
+  State<_SearchButton> createState() => _SearchButtonState();
 }
 
-class _SymbolsMenuState extends State<_SymbolsMenu> {
+class _SearchButtonState extends State<_SearchButton> {
   final _search = TextEditingController();
 
   @override
@@ -319,12 +411,10 @@ class _SymbolsMenuState extends State<_SymbolsMenu> {
   Widget build(BuildContext context) {
     final s = widget.surfaces;
     return _MenuButton(
-      icon: Icons.emoji_symbols_outlined,
-      label: 'Symbols',
+      icon: Icons.search,
+      tooltip: 'Find a symbol by name',
       surfaces: s,
-      onClosed: () {
-        _search.clear();
-      },
+      onClosed: _search.clear,
       builder: (close) => StatefulBuilder(
         builder: (ctx, setLocal) {
           final q = _search.text.trim();
@@ -336,7 +426,7 @@ class _SymbolsMenuState extends State<_SymbolsMenu> {
 
           return SizedBox(
             width: 336,
-            height: 340,
+            height: 300,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -348,8 +438,8 @@ class _SymbolsMenuState extends State<_SymbolsMenu> {
                     style: OnoteType.small,
                     decoration: InputDecoration(
                       isDense: true,
-                      prefixIcon: Icon(Icons.search,
-                          size: 15, color: s.textSecondary),
+                      prefixIcon:
+                          Icon(Icons.search, size: 15, color: s.textSecondary),
                       prefixIconConstraints:
                           const BoxConstraints(minWidth: 26, minHeight: 20),
                       contentPadding: const EdgeInsets.symmetric(
@@ -368,25 +458,29 @@ class _SymbolsMenuState extends State<_SymbolsMenu> {
                 const SizedBox(height: 6),
                 Expanded(
                   child: SingleChildScrollView(
-                    child: q.isNotEmpty
-                        ? _resultsSection(hits, pick, s)
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (widget.recentIds.isNotEmpty)
-                                _section(
-                                  'Recent',
-                                  [
-                                    for (final id in widget.recentIds)
-                                      if (mathItemsById[id] case final i?) i
-                                  ],
-                                  pick,
-                                  s,
-                                ),
-                              for (final cat in kMathSymbolTabs)
-                                _section(cat.title, mathItemsIn(cat), pick, s),
+                    child: q.isEmpty
+                        ? _section(
+                            'Recent',
+                            [
+                              for (final id in widget.recentIds)
+                                if (mathItemsById[id] case final i?) i
                             ],
-                          ),
+                            pick,
+                            s,
+                          )
+                        : hits.isEmpty
+                            ? Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Text(
+                                  "Openote doesn't have that as a button yet. "
+                                  'Anything at all can be written by hand from '
+                                  '⋯ ▸ Write the LaTeX by hand.',
+                                  style: OnoteType.small
+                                      .copyWith(color: s.textSecondary),
+                                ),
+                              )
+                            : _section('Matches — Enter takes the first', hits,
+                                pick, s),
                   ),
                 ),
               ],
@@ -397,31 +491,13 @@ class _SymbolsMenuState extends State<_SymbolsMenu> {
     );
   }
 
-  Widget _resultsSection(
-      List<MathItem> hits, ValueChanged<MathItem> pick, OnoteSurfaces s) {
-    if (hits.isEmpty) {
-      // A miss is a pointer, never a dead end (§4.3) — and it is shown IN the
-      // panel, where the student is looking, rather than as a message that
-      // appears somewhere else after they press Enter.
-      return Padding(
-        padding: const EdgeInsets.all(8),
-        child: Text(
-          'Openote doesn\'t have that as a button yet. Anything at all can be '
-          'written by hand from ⋯ ▸ Write the LaTeX by hand.',
-          style: OnoteType.small.copyWith(color: s.textSecondary),
-        ),
-      );
-    }
-    return _section('Matches — press Enter for the first', hits, pick, s);
-  }
-
   Widget _section(String title, List<MathItem> items,
           ValueChanged<MathItem> pick, OnoteSurfaces s) =>
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(2, 6, 2, 4),
+            padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
             child: Text(title,
                 style: OnoteType.small.copyWith(
                     color: s.textSecondary, fontWeight: FontWeight.w600)),
@@ -441,15 +517,19 @@ class _SymbolsMenuState extends State<_SymbolsMenu> {
 /// A labelled door on the row, opening a panel underneath it.
 class _MenuButton extends StatefulWidget {
   const _MenuButton({
-    required this.icon,
-    required this.label,
+    this.icon,
+    this.label,
+    required this.tooltip,
     required this.surfaces,
     required this.builder,
     this.onClosed,
   });
 
-  final IconData icon;
-  final String label;
+  /// A door carries a WORD; the search carries a glyph. Both, and the row
+  /// stops reading as a row of controls and starts reading as a paragraph.
+  final IconData? icon;
+  final String? label;
+  final String tooltip;
   final OnoteSurfaces surfaces;
   final Widget Function(VoidCallback close) builder;
   final VoidCallback? onClosed;
@@ -493,35 +573,42 @@ class _MenuButtonState extends State<_MenuButton> {
   }
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(right: 3),
-        child: Tooltip(
-          message: widget.label,
-          child: InkWell(
-            key: _key,
-            borderRadius: BorderRadius.circular(5),
-            onTap: _open,
-            child: Container(
-              height: OnoteSize.button,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(5),
-                border: Border.all(color: widget.surfaces.border),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
+  Widget build(BuildContext context) {
+    final label = widget.label;
+    return Padding(
+      padding: const EdgeInsets.only(right: 3),
+      child: Tooltip(
+        message: widget.tooltip,
+        child: InkWell(
+          key: _key,
+          borderRadius: BorderRadius.circular(5),
+          onTap: _open,
+          child: Container(
+            height: OnoteSize.button,
+            padding: EdgeInsets.symmetric(horizontal: label == null ? 6 : 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(5),
+              border: Border.all(color: widget.surfaces.border),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              if (widget.icon != null)
                 Icon(widget.icon,
                     size: OnoteIcon.sm, color: widget.surfaces.textPrimary),
-                const SizedBox(width: 5),
-                Text(widget.label,
+              if (label != null)
+                Text(label,
                     style: OnoteType.small
                         .copyWith(color: widget.surfaces.textPrimary)),
+              // No drop-down caret on a labelled door: eight of them is 120 px
+              // of pure decoration on a row that has to fit 1280.
+              if (label == null)
                 Icon(Icons.arrow_drop_down,
                     size: 15, color: widget.surfaces.textSecondary),
-              ]),
-            ),
+            ]),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 /// One palette button. Draws its own notation where a picture says it best (a

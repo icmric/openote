@@ -245,9 +245,9 @@ void main() {
     testWidgets('the whole row fits a 1280 px window', (tester) async {
       await pumpBar(tester, onInsert: (_) {}, result: '0.16666666');
       final w = tester.getSize(find.byType(MathBar)).width;
-      expect(w, lessThan(900),
-          reason: 'measured ' + w.toString() + ' px; the row has to leave room '
-              'for the window edge on the smallest window the app opens');
+      expect(w, lessThan(1200),
+          reason: 'measured ' + w.toString() + ' px; the row has to fit the '
+              'smallest window the app opens, which is 1280');
     });
 
     testWidgets('the answer sits in a fixed slot, so nothing slides',
@@ -287,10 +287,10 @@ void main() {
               widths.toString());
     });
 
-    testWidgets('More shapes opens a GRID and inserts on tap', (tester) async {
+    testWidgets('a door opens a GRID and inserts on tap', (tester) async {
       MathItem? got;
       await pumpBar(tester, onInsert: (i) => got = i);
-      await tester.tap(find.byTooltip('More shapes'));
+      await tester.tap(find.text('Shapes'));
       await tester.pumpAndSettle();
 
       // A grid, not a column. Every gallery used to be one symbol per row —
@@ -305,24 +305,35 @@ void main() {
           reason: chips.toString() + ' chips on ' + rows.length.toString() +
               ' rows is a column, not a grid');
 
-      await tester.tap(find.byTooltip('nth root — type root').first);
+      await tester.tap(find.byTooltip(r'nth root — type \root').first);
       await tester.pumpAndSettle();
       expect(got?.id, 'nthroot');
     });
 
-    testWidgets('Symbols opens one searchable panel over every category',
+    testWidgets('there is a door for each kind of thing', (tester) async {
+      // The owner, on the single Symbols door: "We have more space to play
+      // with in that bar than your using, so we can break symbols,
+      // opperators, large opperators, functions, etc out into their own
+      // things." A door named for what is behind it is a shorter path than a
+      // search box, for anyone who can see the door.
+      await pumpBar(tester, onInsert: (_) {});
+      for (final door in kMathDoors) {
+        expect(find.text(door.label), findsOneWidget,
+            reason: door.label + ' is missing from the row');
+        expect(mathDoorItems(door), isNotEmpty,
+            reason: door.label + ' opens on nothing');
+      }
+    });
+
+    testWidgets('the search finds a symbol by name, whichever door it is in',
         (tester) async {
       MathItem? got;
       await pumpBar(tester, onInsert: (i) => got = i);
-      await tester.tap(find.byTooltip('Symbols'));
+      await tester.tap(find.byTooltip('Find a symbol by name'));
       await tester.pumpAndSettle();
-
-      // One door with the sections inside it. Eight word-labelled drop-downs
-      // on the row spent 1010 px and still made the student guess which
-      // category a symbol was filed under.
+      // It opens on what you used lately, which is the other half of "I know
+      // I had it a minute ago".
       expect(find.text('Recent'), findsOneWidget);
-      expect(find.text('Greek'), findsOneWidget);
-      expect(find.text('Sets & logic'), findsOneWidget);
 
       await tester.enterText(find.byType(TextField), 'not equal');
       await tester.pumpAndSettle();
@@ -334,7 +345,7 @@ void main() {
     testWidgets('a search miss says so IN the panel, and points somewhere',
         (tester) async {
       await pumpBar(tester, onInsert: (_) {});
-      await tester.tap(find.byTooltip('Symbols'));
+      await tester.tap(find.byTooltip('Find a symbol by name'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'zzzznothing');
       await tester.pumpAndSettle();

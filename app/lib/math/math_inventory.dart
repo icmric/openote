@@ -136,7 +136,7 @@ final List<MathItem> _structures = [
     name: 'power and subscript',
     preview: r'\square_{\square}^{\square}',
     aliases: ['both', 'sub and super'],
-    typeIt: 'subsup',
+    typeIt: r'\subsup',
     build: () => [MScript(sub: MRow(), sup: MRow())],
   ),
   MathItem(
@@ -145,7 +145,7 @@ final List<MathItem> _structures = [
     name: 'square root',
     preview: r'\sqrt{\square}',
     aliases: ['root', 'surd', 'radical'],
-    typeIt: 'sqrt',
+    typeIt: r'\sqrt',
     build: () => [MSqrt()],
   ),
   MathItem(
@@ -154,7 +154,7 @@ final List<MathItem> _structures = [
     name: 'nth root',
     preview: r'\sqrt[\square]{\square}',
     aliases: ['cube root', 'root', 'radical'],
-    typeIt: 'root',
+    typeIt: r'\root',
     build: () => [MSqrt(degree: MRow())],
   ),
   MathItem(
@@ -163,7 +163,7 @@ final List<MathItem> _structures = [
     name: 'sum',
     preview: r'\sum_{\square}^{\square}',
     aliases: ['sigma', 'add up', 'series', 'total'],
-    typeIt: 'sum',
+    typeIt: r'\sum',
     build: () => [
       MScript(
           base: MRow([_s(r'\sum', cls: MClass.op)]), sub: MRow(), sup: MRow())
@@ -175,7 +175,7 @@ final List<MathItem> _structures = [
     name: 'integral',
     preview: r'\int_{\square}^{\square}',
     aliases: ['area under', 'integrate', 'antiderivative'],
-    typeIt: 'int',
+    typeIt: r'\int',
     build: () => [
       MScript(
           base: MRow([_s(r'\int', cls: MClass.op)]), sub: MRow(), sup: MRow())
@@ -187,7 +187,7 @@ final List<MathItem> _structures = [
     name: 'double integral',
     preview: r'\iint',
     aliases: ['area', 'volume'],
-    typeIt: 'iint',
+    typeIt: r'\iint',
     build: () => [_s(r'\iint', cls: MClass.op)],
   ),
   MathItem(
@@ -196,7 +196,7 @@ final List<MathItem> _structures = [
     name: 'closed integral',
     preview: r'\oint',
     aliases: ['contour', 'loop'],
-    typeIt: 'oint',
+    typeIt: r'\oint',
     build: () => [_s(r'\oint', cls: MClass.op)],
   ),
   MathItem(
@@ -205,7 +205,7 @@ final List<MathItem> _structures = [
     name: 'product',
     preview: r'\prod_{\square}^{\square}',
     aliases: ['multiply all', 'pi product'],
-    typeIt: 'prod',
+    typeIt: r'\prod',
     build: () => [
       MScript(
           base: MRow([_s(r'\prod', cls: MClass.op)]), sub: MRow(), sup: MRow())
@@ -217,7 +217,7 @@ final List<MathItem> _structures = [
     name: 'limit',
     preview: r'\lim_{\square}',
     aliases: ['approaches', 'tends to', 'as x goes to'],
-    typeIt: 'lim',
+    typeIt: r'\lim',
     build: () => [
       MScript(base: MRow([_s(r'\lim', cls: MClass.func)]), sub: MRow())
     ],
@@ -228,7 +228,7 @@ final List<MathItem> _structures = [
     name: 'derivative',
     preview: r'\frac{d}{dx}',
     aliases: ['differentiate', 'rate of change', 'dy dx'],
-    typeIt: 'ddx',
+    typeIt: r'\ddx',
     build: () => [
       MFrac(
           num: MRow([_s('d', cls: MClass.letter)]),
@@ -241,7 +241,7 @@ final List<MathItem> _structures = [
     name: 'partial derivative',
     preview: r'\frac{\partial}{\partial x}',
     aliases: ['partial', 'del'],
-    typeIt: 'partial',
+    typeIt: r'\partial',
     build: () => [
       MFrac(
           num: MRow([_s(r'\partial')]),
@@ -263,7 +263,7 @@ final List<MathItem> _structures = [
     name: 'absolute value',
     preview: r'\left|\square\right|',
     aliases: ['modulus', 'magnitude', 'size', 'distance from zero'],
-    typeIt: 'abs',
+    typeIt: r'\abs',
     build: () => [MDelim(left: '|', right: '|')],
   ),
   MathItem(
@@ -272,7 +272,7 @@ final List<MathItem> _structures = [
     name: 'floor',
     preview: r'\left\lfloor\square\right\rfloor',
     aliases: ['round down', 'integer part'],
-    typeIt: 'floor',
+    typeIt: r'\floor',
     build: () => [MDelim(left: r'\lfloor', right: r'\rfloor')],
   ),
   MathItem(
@@ -281,7 +281,7 @@ final List<MathItem> _structures = [
     name: 'ceiling',
     preview: r'\left\lceil\square\right\rceil',
     aliases: ['round up'],
-    typeIt: 'ceil',
+    typeIt: r'\ceil',
     build: () => [MDelim(left: r'\lceil', right: r'\rceil')],
   ),
   MathItem(
@@ -290,7 +290,7 @@ final List<MathItem> _structures = [
     name: 'piecewise',
     preview: r'\begin{cases}\square\\\square\end{cases}',
     aliases: ['cases', 'brace', 'split definition', 'if'],
-    typeIt: 'cases',
+    typeIt: r'\cases',
     build: () => [MMatrix.sized(env: 'cases', rowCount: 2, colCount: 2)],
   ),
   MathItem(
@@ -299,7 +299,7 @@ final List<MathItem> _structures = [
     name: 'matrix',
     preview: r'\begin{pmatrix}\square&\square\\\square&\square\end{pmatrix}',
     aliases: ['grid', 'array', 'table of numbers'],
-    typeIt: 'matrix',
+    typeIt: r'\matrix',
     build: () => [MMatrix.sized(env: 'pmatrix')],
   ),
   MathItem(
@@ -308,7 +308,7 @@ final List<MathItem> _structures = [
     name: 'determinant',
     preview: r'\begin{vmatrix}\square&\square\\\square&\square\end{vmatrix}',
     aliases: ['det'],
-    typeIt: 'determinant',
+    typeIt: r'\determinant',
     build: () => [MMatrix.sized(env: 'vmatrix')],
   ),
   MathItem(
@@ -317,7 +317,7 @@ final List<MathItem> _structures = [
     name: 'choose',
     preview: r'\binom{\square}{\square}',
     aliases: ['combination', 'binomial', 'ncr', 'n choose r'],
-    typeIt: 'choose',
+    typeIt: r'\choose',
     build: () => [MBinom()],
   ),
   MathItem(
@@ -326,7 +326,7 @@ final List<MathItem> _structures = [
     name: 'bar',
     preview: r'\bar{\square}',
     aliases: ['mean', 'average', 'overline', 'x bar'],
-    typeIt: 'bar',
+    typeIt: r'\bar',
     build: () => [MAccent(cmd: r'\bar')],
   ),
   MathItem(
@@ -335,7 +335,7 @@ final List<MathItem> _structures = [
     name: 'hat',
     preview: r'\hat{\square}',
     aliases: ['estimate', 'unit vector', 'circumflex'],
-    typeIt: 'hat',
+    typeIt: r'\hat',
     build: () => [MAccent(cmd: r'\hat')],
   ),
   MathItem(
@@ -344,7 +344,7 @@ final List<MathItem> _structures = [
     name: 'vector arrow',
     preview: r'\vec{\square}',
     aliases: ['vector', 'arrow over'],
-    typeIt: 'vec',
+    typeIt: r'\vec',
     build: () => [MAccent(cmd: r'\vec')],
   ),
   MathItem(
@@ -353,7 +353,7 @@ final List<MathItem> _structures = [
     name: 'dot',
     preview: r'\dot{\square}',
     aliases: ['rate', 'time derivative'],
-    typeIt: 'dot',
+    typeIt: r'\dot',
     build: () => [MAccent(cmd: r'\dot')],
   ),
   MathItem(
@@ -362,7 +362,7 @@ final List<MathItem> _structures = [
     name: 'tilde',
     preview: r'\tilde{\square}',
     aliases: ['approximation', 'squiggle'],
-    typeIt: 'tilde',
+    typeIt: r'\tilde',
     build: () => [MAccent(cmd: r'\tilde')],
   ),
   MathItem(
@@ -383,7 +383,7 @@ final List<MathItem> _structures = [
     name: 'words',
     preview: r'\text{if}',
     aliases: ['text', 'label', 'if', 'where', 'writing'],
-    typeIt: 'text',
+    typeIt: r'\text',
     build: () => [MText('')],
   ),
 ];
@@ -394,9 +394,9 @@ final List<MathItem> _structures = [
 
 final List<MathItem> _common = [
   _symbol(id: 'pm', cat: MathCat.common, name: 'plus or minus', label: '±', tex: r'\pm', cls: MClass.op, typeIt: '+-'),
-  _symbol(id: 'times', cat: MathCat.common, name: 'times', label: '×', tex: r'\times', cls: MClass.op, aliases: ['multiply', 'multiplied by'], typeIt: 'times'),
-  _symbol(id: 'div', cat: MathCat.common, name: 'divide', label: '÷', tex: r'\div', cls: MClass.op, aliases: ['divided by'], typeIt: 'div'),
-  _symbol(id: 'cdot', cat: MathCat.common, name: 'dot product', label: '⋅', tex: r'\cdot', cls: MClass.op, aliases: ['times', 'multiply'], typeIt: 'cdot'),
+  _symbol(id: 'times', cat: MathCat.common, name: 'times', label: '×', tex: r'\times', cls: MClass.op, aliases: ['multiply', 'multiplied by'], typeIt: r'\times'),
+  _symbol(id: 'div', cat: MathCat.common, name: 'divide', label: '÷', tex: r'\div', cls: MClass.op, aliases: ['divided by'], typeIt: r'\div'),
+  _symbol(id: 'cdot', cat: MathCat.common, name: 'dot product', label: '⋅', tex: r'\cdot', cls: MClass.op, aliases: ['times', 'multiply'], typeIt: r'\cdot'),
   _symbol(id: 'neq', cat: MathCat.common, name: 'not equal', label: '≠', tex: r'\neq', cls: MClass.rel, aliases: ['does not equal'], typeIt: '!='),
   _symbol(id: 'approx', cat: MathCat.common, name: 'roughly equal', label: '≈', tex: r'\approx', cls: MClass.rel, aliases: ['about', 'approximately'], typeIt: '~='),
   _symbol(id: 'leq', cat: MathCat.common, name: 'less than or equal', label: '≤', tex: r'\leq', cls: MClass.rel, aliases: ['at most', 'no more than'], typeIt: '<='),
@@ -409,13 +409,13 @@ final List<MathItem> _common = [
   // script start, so `x^{2}` followed by it was a double superscript. The
   // empty group in front fixes both at the source.
   _symbol(id: 'degree', cat: MathCat.common, name: 'degrees', label: '°', tex: r'{}^{\circ}', aliases: ['angle', 'temperature']),
-  _symbol(id: 'infty', cat: MathCat.common, name: 'infinity', label: '∞', tex: r'\infty', aliases: ['endless', 'forever'], typeIt: 'oo'),
+  _symbol(id: 'infty', cat: MathCat.common, name: 'infinity', label: '∞', tex: r'\infty', aliases: ['endless', 'forever'], typeIt: r'\oo'),
   _symbol(id: 'factorial', cat: MathCat.common, name: 'factorial', label: '!', tex: '!', aliases: ['bang']),
   _symbol(id: 'propto', cat: MathCat.common, name: 'proportional to', label: '∝', tex: r'\propto', cls: MClass.rel, aliases: ['varies with']),
   _symbol(id: 'ldots', cat: MathCat.common, name: 'and so on', label: '…', tex: r'\ldots', aliases: ['dots', 'ellipsis', 'continues']),
   _symbol(id: 'equiv', cat: MathCat.common, name: 'identical to', label: '≡', tex: r'\equiv', cls: MClass.rel, aliases: ['congruent', 'always equals']),
-  _symbol(id: 'pi', cat: MathCat.common, name: 'pi', label: 'π', tex: r'\pi', typeIt: 'pi'),
-  _symbol(id: 'theta', cat: MathCat.common, name: 'theta', label: 'θ', tex: r'\theta', aliases: ['angle'], typeIt: 'theta'),
+  _symbol(id: 'pi', cat: MathCat.common, name: 'pi', label: 'π', tex: r'\pi', typeIt: r'\pi'),
+  _symbol(id: 'theta', cat: MathCat.common, name: 'theta', label: 'θ', tex: r'\theta', aliases: ['angle'], typeIt: r'\theta'),
 ];
 
 /// The full Greek alphabet, lower and upper. Each carries its NAME, so a
@@ -448,7 +448,7 @@ final List<MathItem> _greek = () {
           'phi' => r'\varphi',
           _ => '\\$n',
         },
-        typeIt: n,
+        typeIt: '\\$n',
       ),
   ];
 }();
@@ -473,13 +473,13 @@ final List<MathItem> _compare = [
 ];
 
 final List<MathItem> _sets = [
-  _symbol(id: 'in', cat: MathCat.sets, name: 'is in', label: '∈', tex: r'\in', cls: MClass.rel, aliases: ['element of', 'belongs to', 'member'], typeIt: 'in'),
+  _symbol(id: 'in', cat: MathCat.sets, name: 'is in', label: '∈', tex: r'\in', cls: MClass.rel, aliases: ['element of', 'belongs to', 'member'], typeIt: r'\in'),
   _symbol(id: 'notin', cat: MathCat.sets, name: 'is not in', label: '∉', tex: r'\notin', cls: MClass.rel, aliases: ['not an element']),
-  _symbol(id: 'subset', cat: MathCat.sets, name: 'subset of', label: '⊂', tex: r'\subset', cls: MClass.rel, typeIt: 'subset'),
+  _symbol(id: 'subset', cat: MathCat.sets, name: 'subset of', label: '⊂', tex: r'\subset', cls: MClass.rel, typeIt: r'\subset'),
   _symbol(id: 'subseteq', cat: MathCat.sets, name: 'subset of or equal', label: '⊆', tex: r'\subseteq', cls: MClass.rel),
   _symbol(id: 'notsubset', cat: MathCat.sets, name: 'not a subset of', label: '⊄', tex: r'\not\subset', cls: MClass.rel),
-  _symbol(id: 'cup', cat: MathCat.sets, name: 'union', label: '∪', tex: r'\cup', cls: MClass.op, aliases: ['or', 'combined'], typeIt: 'cup'),
-  _symbol(id: 'cap', cat: MathCat.sets, name: 'intersection', label: '∩', tex: r'\cap', cls: MClass.op, aliases: ['and', 'both', 'overlap'], typeIt: 'cap'),
+  _symbol(id: 'cup', cat: MathCat.sets, name: 'union', label: '∪', tex: r'\cup', cls: MClass.op, aliases: ['or', 'combined'], typeIt: r'\cup'),
+  _symbol(id: 'cap', cat: MathCat.sets, name: 'intersection', label: '∩', tex: r'\cap', cls: MClass.op, aliases: ['and', 'both', 'overlap'], typeIt: r'\cap'),
   _symbol(id: 'emptyset', cat: MathCat.sets, name: 'empty set', label: '∅', tex: r'\emptyset', aliases: ['nothing', 'null set']),
   _symbol(id: 'setminus', cat: MathCat.sets, name: 'without', label: '∖', tex: r'\setminus', cls: MClass.op, aliases: ['minus', 'difference', 'except']),
   _symbol(id: 'naturals', cat: MathCat.sets, name: 'natural numbers', label: 'ℕ', tex: r'\mathbb{N}', aliases: ['counting numbers']),
@@ -487,8 +487,8 @@ final List<MathItem> _sets = [
   _symbol(id: 'rationals', cat: MathCat.sets, name: 'rational numbers', label: 'ℚ', tex: r'\mathbb{Q}', aliases: ['fractions']),
   _symbol(id: 'reals', cat: MathCat.sets, name: 'real numbers', label: 'ℝ', tex: r'\mathbb{R}'),
   _symbol(id: 'complex', cat: MathCat.sets, name: 'complex numbers', label: 'ℂ', tex: r'\mathbb{C}'),
-  _symbol(id: 'forall', cat: MathCat.sets, name: 'for all', label: '∀', tex: r'\forall', aliases: ['every', 'any'], typeIt: 'forall'),
-  _symbol(id: 'exists', cat: MathCat.sets, name: 'there exists', label: '∃', tex: r'\exists', aliases: ['some'], typeIt: 'exists'),
+  _symbol(id: 'forall', cat: MathCat.sets, name: 'for all', label: '∀', tex: r'\forall', aliases: ['every', 'any'], typeIt: r'\forall'),
+  _symbol(id: 'exists', cat: MathCat.sets, name: 'there exists', label: '∃', tex: r'\exists', aliases: ['some'], typeIt: r'\exists'),
   _symbol(id: 'lnot', cat: MathCat.sets, name: 'not', label: '¬', tex: r'\neg', aliases: ['negation']),
   _symbol(id: 'land', cat: MathCat.sets, name: 'and', label: '∧', tex: r'\land', cls: MClass.op, aliases: ['conjunction']),
   _symbol(id: 'lor', cat: MathCat.sets, name: 'or', label: '∨', tex: r'\lor', cls: MClass.op, aliases: ['disjunction']),
@@ -550,7 +550,7 @@ final List<MathItem> _science = [
   _symbol(id: 'rho', cat: MathCat.science, name: 'density', label: 'ρ', tex: r'\rho', aliases: ['rho']),
   _symbol(id: 'lambda-sci', cat: MathCat.science, name: 'wavelength', label: 'λ', tex: r'\lambda', aliases: ['lambda']),
   _symbol(id: 'hbar', cat: MathCat.science, name: 'reduced Planck constant', label: 'ℏ', tex: r'\hbar', aliases: ['h bar', 'planck']),
-  _symbol(id: 'nabla', cat: MathCat.science, name: 'gradient', label: '∇', tex: r'\nabla', aliases: ['del', 'nabla'], typeIt: 'nabla'),
+  _symbol(id: 'nabla', cat: MathCat.science, name: 'gradient', label: '∇', tex: r'\nabla', aliases: ['del', 'nabla'], typeIt: r'\nabla'),
 ];
 
 /// Upright function names — the rule every textbook follows, applied without
@@ -575,7 +575,7 @@ final List<MathItem> _functions = () {
           'gcd' => ['highest common factor', 'hcf'],
           _ => const [],
         },
-        typeIt: f,
+        typeIt: '\\$f',
         build: () => [_s('\\$f', cls: MClass.func)],
       ),
     // Q1, decided by the owner 2026-08-19: the buttons read sin⁻¹, which is
@@ -665,8 +665,11 @@ final Map<String, MathItem> mathControlWords = () {
   for (final i in mathItems) {
     final t = i.typeIt;
     if (t == null || t.isEmpty) continue;
-    if (!RegExp(r'^[A-Za-z]+$').hasMatch(t)) continue;
-    out.putIfAbsent(t, () => i);
+    final m = RegExp(r'^\\([A-Za-z]+)$').firstMatch(t);
+    if (m == null) continue;
+    // Keyed WITHOUT the backslash — the editor has already consumed it as its
+    // own atom by the time it looks a command up.
+    out.putIfAbsent(m.group(1)!, () => i);
   }
   return out;
 }();
