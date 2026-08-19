@@ -329,7 +329,7 @@ pw.Widget? _blockWidget(AppState app, Block b, double sheetTop,
     BlockType.ink => _inkWidget(b, h),
     BlockType.image => _imageWidget(app, b, h, prerendered: maths[b.id]),
     BlockType.math => _mathWidget(b, maths[b.id]),
-    BlockType.text || BlockType.code => _textWidget(app, b),
+    BlockType.text || BlockType.code => _textWidget(app, b, maths),
     BlockType.table => _tableWidget(b),
     BlockType.embed => _embedWidget(app, b, h),
     _ => null,
@@ -420,7 +420,8 @@ String _dateLine(int ms) {
 /// different text model; the thing that matters for a shared or printed note is
 /// that the words are *there*, selectable and searchable, at roughly the right
 /// size. Headings keep their weight because that carries the structure.
-pw.Widget? _textWidget(AppState app, Block b) {
+pw.Widget? _textWidget(AppState app, Block b,
+    [Map<String, Uint8List> maths = const {}]) {
   // A text block is a container of MIXED content (Data Model §5.1): pictures
   // and flashcards live on their own lines inside the prose. The exporter used
   // to delete both — `_stripInline` threw away every `![](sha256:…)` on the
@@ -428,16 +429,17 @@ pw.Widget? _textWidget(AppState app, Block b) {
   // in-flow images existed and has been false since. So a picture you put in
   // the middle of your notes simply was not in the PDF.
   if (b.type == BlockType.text) {
-    final mixed = _mixedFlow(app, b);
+    final mixed = _mixedFlow(app, b, maths);
     if (mixed != null) return mixed;
   }
-  return _plainTextWidget(b);
+  return _plainTextWidget(b, maths: maths);
 }
 
 /// A block whose text carries in-flow pictures or cards, as a column of real
 /// widgets. Null when it is ordinary prose, which is the overwhelming majority
 /// and keeps the simple path simple.
-pw.Widget? _mixedFlow(AppState app, Block b) {
+pw.Widget? _mixedFlow(AppState app, Block b,
+    [Map<String, Uint8List> maths = const {}]) {
   final text = b.content['text'] as String? ?? '';
   if (!text.contains('![') && !text.contains('?[')) return null;
   final lines = text.split('\n');
@@ -446,7 +448,7 @@ pw.Widget? _mixedFlow(AppState app, Block b) {
 
   void flushRun() {
     if (run.isEmpty) return;
-    final w = _plainTextWidget(b, override: run.join('\n'));
+    final w = _plainTextWidget(b, override: run.join('\n'), maths: maths);
     if (w != null) children.add(w);
     run.clear();
   }
@@ -508,24 +510,177 @@ final _cardLineRe = RegExp(r'^\s*\?\[([^\]]*)\]\(([^)]*)\)\s*$');
 /// printing its source, which is what the exporter did for everything before.
 Future<Map<String, Uint8List>> _renderMaths(List<Block> blocks) async {
   final out = <String, Uint8List>{};
+  final tried = <String>{};
   for (final b in blocks) {
+    if (b.type == BlockType.text) {
+      // **Inline maths inside prose** (task #78). `_stripInline` had no `$…$`
+      // case, so an equation written into a sentence printed as its raw LaTeX
+      // — backslashes and braces in the middle of the words — while only a
+      // standalone maths BLOCK was ever typeset. That is why the owner's
+      // re-import came out of the PDF full of backslashes, and it stopped
+      // being cosmetic the moment the importer started leaving equations
+      // where OneNote put them: inline is now the common case, not the rare
+      // one.
+      for (final line in (b.content['text'] as String? ?? '').split('\n')) {
+        if (!line.contains(r'$')) continue;
+        for (final run in splitInlineMaths(line)) {
+          if (!run.isMaths) continue;
+          // Keyed by the LaTeX, not by block id: one page repeating `$\Z$`
+          // forty times paints it once. The prefix keeps the key space clear
+          // of the block ids this same map carries.
+          final key = inlineMathKey(run.text);
+          if (!tried.add(key)) continue;
+          final png = await _rasteriseTex(run.text, inline: true);
+          if (png != null) out[key] = png;
+        }
+      }
+      continue;
+    }
     if (b.type != BlockType.math) continue;
     final tex = (b.content['latex'] as String? ?? '').trim();
     if (tex.isEmpty) continue;
+    final png = await _rasteriseTex(tex, inline: false);
+    if (png != null) out[b.id] = png;
+  }
+  return out;
+}
+
+/// The map key an inline equation's picture is filed under.
+@visibleForTesting
+String inlineMathKey(String tex) => 'inline-math:$tex';
+
+/// Paint one equation off screen, at [_mathRasterEm] logical pixels per em.
+///
+/// `inline: true` selects TeX's *text* style, which is what the screen uses
+/// for `$…$` (see `OnoteMath.compact`) and what OneNote's own export uses —
+/// its inline fractions have numerators at 0.727 of the prose size, i.e.
+/// script size. Rasterising an inline equation in display style would print it
+/// noticeably bigger than the app draws it.
+Future<Uint8List?> _rasteriseTex(String tex, {required bool inline}) =>
     // 3x, so the equation is still crisp when the reader zooms in — the whole
     // complaint about the OLD raster exporter was that its output went to mush.
-    final png = await rasteriseOffscreen(
+    rasteriseOffscreen(
       // Same rewrite the on-screen renderer applies (math/latex_compat.dart).
       // Without it an `\begin{align}` equation drew on the page and printed as
       // backslashes in the PDF — the export would have been half the fix.
       Math.tex(renderableLatex(tex),
-          textStyle: const TextStyle(fontSize: 24, color: Colors.black),
+          mathStyle: inline ? MathStyle.text : MathStyle.display,
+          textStyle: const TextStyle(fontSize: _mathRasterEm, color: Colors.black),
           onErrorFallback: (_) => const SizedBox.shrink()),
-      pixelRatio: 3,
+      pixelRatio: _mathPixelRatio,
     );
-    if (png != null) out[b.id] = png;
+
+/// Font size, in logical pixels, every equation is painted at before being
+/// scaled to the size of the text it belongs to.
+const double _mathRasterEm = 24.0;
+const double _mathPixelRatio = 3.0;
+
+/// A text line, cut into the words and the equations it is made of.
+///
+/// A `\$` is **not** a delimiter: without that, one stray dollar sign ("costs
+/// \$5 and \$6 more") swallows the rest of the sentence into an equation that
+/// then prints as garbage. Note this is stricter than the app's own inline
+/// grammar (`md_syntax.dart`'s `mdInlineRe`, which has no escape at all) —
+/// reported upward rather than changed here, because that pattern is shared
+/// with the live editor.
+///
+/// Exposed because the finished PDF cannot be asked what it split: text is
+/// written as glyph indices into an embedded font subset.
+@visibleForTesting
+List<({String text, bool isMaths})> splitInlineMaths(String line) {
+  final out = <({String text, bool isMaths})>[];
+  final buf = StringBuffer();
+  void flush() {
+    if (buf.isEmpty) return;
+    out.add((text: buf.toString(), isMaths: false));
+    buf.clear();
   }
+
+  var i = 0;
+  while (i < line.length) {
+    if (line[i] == r'\' && i + 1 < line.length && line[i + 1] == r'$') {
+      buf.write(r'\$');
+      i += 2;
+      continue;
+    }
+    if (line[i] == r'$') {
+      final close = _unescapedDollar(line, i + 1);
+      // `close > i + 1` rejects an empty `$$`, exactly as the screen's
+      // `\$([^$\n]+?)\$` does — an empty equation is two dollar signs the
+      // writer typed, not maths.
+      if (close > i + 1) {
+        flush();
+        out.add((text: line.substring(i + 1, close), isMaths: true));
+        i = close + 1;
+        continue;
+      }
+    }
+    buf.write(line[i]);
+    i++;
+  }
+  flush();
   return out;
+}
+
+int _unescapedDollar(String s, int from) {
+  for (var i = from; i < s.length; i++) {
+    if (s[i] == r'\') {
+      i++;
+      continue;
+    }
+    if (s[i] == r'$') return i;
+  }
+  return -1;
+}
+
+/// A PNG's pixel dimensions, straight out of its IHDR.
+///
+/// The exporter has to know how big the picture is to scale it to the size of
+/// the words around it, and decoding the image to ask would mean holding every
+/// equation on the page in memory as raw pixels.
+({int w, int h})? _pngSize(Uint8List png) {
+  if (png.length < 24) return null;
+  final b = ByteData.sublistView(png);
+  final w = b.getUint32(16);
+  final h = b.getUint32(20);
+  if (w == 0 || h == 0) return null;
+  return (w: w, h: h);
+}
+
+/// One equation, as an inline span sized and seated for text of [sizePt].
+///
+/// **Where it sits.** A `pw.WidgetSpan` with `baseline: 0` puts the picture's
+/// BOTTOM on the text baseline, which would hang every fraction off the line.
+/// The equation is dropped so its vertical centre lands on the TeX maths axis
+/// — 0.25 em above the baseline — which is measured, not chosen: in OneNote's
+/// own PDF export of "Finite and Infinite Countable Sets" the inline
+/// `f(n) = ⟨cases⟩` is centred on y=404.15 against a prose baseline of
+/// y=407.69 at 10.82 pt, i.e. 0.327 em above it. Verified in our own output:
+/// the same sentence exports with the picture spanning y 133.14…155.39 beside
+/// prose on baseline 146.51 at 9 pt — centred 0.249 em above the line, and
+/// starting at x=192.69 where the words end at x=190.15.
+///
+/// The residual: `rasteriseOffscreen` hands back pixels, not the equation's
+/// own baseline, so a SHORT expression with no descender (`$x^2$`) is seated
+/// by the same axis rule and lands ~0.12 em low — measured 180.62 against a
+/// baseline of 179.50. Fixing that properly means the rasteriser reporting
+/// where it put the baseline, which is a change to `widget_raster.dart`.
+pw.InlineSpan? _inlineMathSpan(Uint8List? png, double sizePt) {
+  if (png == null) return null;
+  final size = _pngSize(png);
+  if (size == null) return null;
+  try {
+    final scale = sizePt / _mathRasterEm / _mathPixelRatio;
+    final w = size.w * scale;
+    final h = size.h * scale;
+    return pw.WidgetSpan(
+      baseline: -(h / 2 - 0.25 * sizePt),
+      child: pw.Image(pw.MemoryImage(png), width: w, height: h),
+    );
+  } catch (_) {
+    // An image the encoder cannot read must not take the sentence with it.
+    return null;
+  }
 }
 
 /// An equation as the picture the app draws, or as its source when that could
@@ -566,7 +721,8 @@ pw.Widget _cardWidget(String front, String back) => pw.Container(
       ),
     );
 
-pw.Widget? _plainTextWidget(Block b, {String? override}) {
+pw.Widget? _plainTextWidget(Block b,
+    {String? override, Map<String, Uint8List> maths = const {}}) {
   // `source`, not `code`. Nothing in the app has ever written `content['code']`
   // — the code editor reads and writes `source` (code_block_view.dart), as do
   // the Markdown and open-folder exporters — so this key missed, `raw` came
@@ -590,23 +746,52 @@ pw.Widget? _plainTextWidget(Block b, {String? override}) {
   final mono =
       b.type == BlockType.code ? (_mono ?? pw.Font.courier()) : null;
 
-  final spans = <pw.TextSpan>[];
+  final spans = <pw.InlineSpan>[];
   for (final line in raw.split('\n')) {
     // Headings are the one piece of Markdown structure worth keeping: it is
     // what makes a printed note skimmable.
     final heading = RegExp(r'^(#{1,3})\s+(.*)$').firstMatch(line);
-    final text = heading != null ? heading.group(2)! : _stripInline(line);
-    spans.add(pw.TextSpan(
-      text: '$text\n',
-      style: pw.TextStyle(
-        fontSize: heading != null
-            ? size * (1.6 - 0.2 * heading.group(1)!.length)
-            : size,
-        fontWeight: heading != null ? pw.FontWeight.bold : pw.FontWeight.normal,
-        font: mono,
-        lineSpacing: size * 0.25,
-      ),
-    ));
+    final body = heading != null ? heading.group(2)! : line;
+    final lineSize =
+        heading != null ? size * (1.6 - 0.2 * heading.group(1)!.length) : size;
+    final style = pw.TextStyle(
+      fontSize: lineSize,
+      fontWeight: heading != null ? pw.FontWeight.bold : pw.FontWeight.normal,
+      font: mono,
+      lineSpacing: size * 0.25,
+    );
+    // The line is cut on `$…$` FIRST and the words stripped afterwards, one
+    // piece at a time. The other order runs `_stripInline` over the LaTeX,
+    // where `$a*b*c$` loses its asterisks to the italic rule and the equation
+    // silently changes meaning on the way to the printer.
+    //
+    // Never in a CODE block: `$HOME`, `${x}` and `$(cmd)` are code, and a
+    // shell script is not a place to go looking for equations. (Nothing
+    // rasterises a code block's maths either — `_renderMaths` only scans text
+    // blocks — so this is belt as well as braces.)
+    final runs = b.type == BlockType.code
+        ? [(text: body, isMaths: false)]
+        : splitInlineMaths(body);
+    for (final run in runs) {
+      if (run.isMaths) {
+        final span = _inlineMathSpan(maths[inlineMathKey(run.text)], lineSize);
+        if (span != null) {
+          spans.add(span);
+          continue;
+        }
+        // Nothing painted: print the source, delimiters and all. That is what
+        // a maths BLOCK does when its raster fails, and the equation the
+        // student wrote is worth more on the page as backslashes than gone.
+        spans.add(pw.TextSpan(text: '\$${run.text}\$', style: style));
+        continue;
+      }
+      final text = _stripInline(run.text);
+      if (text.isEmpty) continue;
+      spans.add(pw.TextSpan(text: text, style: style));
+    }
+    // The newline is its own span, as it was when the whole line was one:
+    // a blank line between paragraphs is content, and must still take a line.
+    spans.add(pw.TextSpan(text: '\n', style: style));
   }
   return pw.RichText(text: pw.TextSpan(children: spans));
 }
@@ -631,9 +816,19 @@ String debugPlainText(Block b) {
   return [
     for (final line in raw.split('\n'))
       RegExp(r'^(#{1,3})\s+(.*)$').firstMatch(line)?.group(2) ??
-          _stripInline(line)
+          _plainRuns(line)
   ].join('\n');
 }
+
+/// One line, as the exporter's TEXT would read it — equations left as their
+/// `$…$` source, which is exactly what the drawing path falls back to when an
+/// equation cannot be painted. Split first, strip second, for the reason given
+/// in `_plainTextWidget`: stripping the whole line first eats an asterisk out
+/// of `$a*b*c$`.
+String _plainRuns(String line) => [
+      for (final run in splitInlineMaths(line))
+        run.isMaths ? '\$${run.text}\$' : _stripInline(run.text)
+    ].join();
 
 /// Drop the inline markers, keeping the words.
 String _stripInline(String s) {

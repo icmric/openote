@@ -675,9 +675,30 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
         ));
       case MdInline.math:
         spans.add(WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
+          // BASELINE, not `middle`. An equation mid-sentence has to sit on the
+          // sentence's baseline the way a word does — that is what "maths on
+          // the same line as text" means, and it is what TeX, and OneNote,
+          // both do. `middle` centred the equation's BOX on the middle of the
+          // text instead, which is only accidentally right: measured by
+          // zz_inline_math_probe at 14px, `$x^2$` came out with its `x` on
+          // y=31.50 while the words around it sat on y=29.04 — the equation
+          // 2.46px (0.18em) below the line it was supposed to be on, sinking
+          // further the taller the equation got. flutter_math computes a real
+          // baseline for every construct (frac, matrix, sqrt, enclosure all
+          // implement `computeDistanceToActualBaseline`), so asking for it
+          // gets the TeX-correct position, including the axis-centring a
+          // `\begin{cases}` brace needs.
+          //
+          // The line still GROWS to fit a tall equation — a WidgetSpan's
+          // ascent and descent both enter the line's metrics — and only that
+          // line: the paragraph above keeps its own height, which is exactly
+          // the behaviour asked for ("increase the height of that one line as
+          // required").
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
           // `compact`: this one sits MID-SENTENCE, so an explanation box
-          // would break the paragraph open. It moves into a tooltip instead.
+          // would break the paragraph open. It moves into a tooltip instead —
+          // and the equation is set in TeX text style, not display style.
           child: OnoteMath(c.inner, textStyle: base, compact: true),
         ));
       case MdInline.extLink:

@@ -504,6 +504,69 @@ void main() {
       expect(withMath.length, greaterThan(without.length + 200));
     });
 
+    // ── Inline maths inside prose (task #78) ─────────────────────────────
+    //
+    // `_stripInline` had no `$…$` case, so an equation written INTO a sentence
+    // printed as its raw LaTeX — backslashes and braces among the words —
+    // while only a standalone maths block was ever typeset. That is why the
+    // owner's imported page came out of the PDF full of backslashes. It
+    // stopped being cosmetic when the importer started leaving equations
+    // inline where OneNote put them, which made this the common case.
+    test('a line is cut into words and equations, and `\\\$` is not a delimiter',
+        () {
+      expect(
+        splitInlineMaths(r'before $x^2$ after').map((r) => r.isMaths).toList(),
+        [false, true, false],
+      );
+      expect(
+        splitInlineMaths(r'before $x^2$ after').map((r) => r.text).toList(),
+        ['before ', 'x^2', ' after'],
+      );
+      // One stray dollar must not swallow the rest of the sentence into an
+      // equation that then prints as garbage.
+      expect(
+          splitInlineMaths(r'costs \$5 and \$6 more')
+              .map((r) => r.isMaths)
+              .toList(),
+          [false],
+          reason: r'an escaped \$ opens nothing, so this is one run of words');
+      // `$$` is two dollar signs the writer typed, not an empty equation —
+      // the same rule the screen's `\$([^$\n]+?)\$` applies.
+      expect(splitInlineMaths(r'a $$ b').map((r) => r.isMaths).toList(),
+          [false]);
+      // Two equations in one sentence, each its own run.
+      expect(
+        splitInlineMaths(r'$a$ and $b$').map((r) => r.isMaths).toList(),
+        [true, false, true],
+      );
+      // The maths is cut out BEFORE the Markdown markers are stripped: the
+      // other order feeds `$a*b*c$` to the italic rule, which eats the
+      // asterisks and changes what the equation means on its way to paper.
+      expect(debugPlainText(text('a', 0, r'x $a*b*c$ y')),
+          r'x $a*b*c$ y');
+    });
+
+    test('an inline equation in a paragraph is typeset, not printed as source',
+        () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      // A sentence shaped exactly like the one the owner re-imported.
+      app.blocks = [
+        text('a', 100, r'We can define the bijection f(n) = $\frac{n}{2}$'),
+      ];
+      final withMath = await buildPagePdf(app, pageId, title: 'M');
+      expect(latin1.decode(withMath, allowInvalid: true), contains('/XObject'),
+          reason: 'the equation reached the page as pixels, in the sentence — '
+              'before this, a TEXT block never rendered maths at all');
+
+      // Bigger than the same sentence with the equation removed, which no
+      // substring can be accidentally satisfied by: `/XObject` alone would
+      // still appear if some other part of the page had produced an image.
+      app.blocks = [text('a', 100, 'We can define the bijection f(n) = ')];
+      final without = await buildPagePdf(app, pageId, title: 'M');
+      expect(withMath.length, greaterThan(without.length + 200));
+    });
+
     test('an equation that will not paint falls back to its source', () async {
       // Every failure in the rasteriser returns null rather than throwing, so
       // a page with one impossible equation still exports — with that

@@ -29,13 +29,24 @@ class OnoteMath extends StatelessWidget {
   final TextStyle textStyle;
 
   /// Inline use (mid-sentence): the explanation moves into a tooltip so a
-  /// paragraph isn't broken open by a notice box.
+  /// paragraph isn't broken open by a notice box, AND the equation is set in
+  /// TeX's *text* style rather than *display* style.
+  ///
+  /// That second half is measured, not stylistic. In OneNote's own PDF export
+  /// of "Finite and Infinite Countable Sets", the inline `f(n) = ⟨cases⟩` has
+  /// prose at 10.82 pt and the fractions' numerators and denominators at
+  /// 7.87 pt — a 0.727 ratio, i.e. script size, i.e. `\textstyle`. Ours ran at
+  /// `Math.tex`'s default `MathStyle.display`, which sets numerator and
+  /// denominator at FULL size, so an inline fraction came out around 40%
+  /// taller than the source it was imported from and shoved its line apart by
+  /// that much more than OneNote does.
   final bool compact;
 
   @override
   Widget build(BuildContext context) => Math.tex(
         renderableLatex(tex),
         textStyle: textStyle,
+        mathStyle: compact ? MathStyle.text : MathStyle.display,
         onErrorFallback: (e) => MathSourceFallback(
           tex: tex,
           note: mathDisplayProblem(e),

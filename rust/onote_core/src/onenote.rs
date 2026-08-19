@@ -2049,25 +2049,6 @@ struct SRun {
     math_objs: Vec<(usize, MathObj)>,
 }
 
-/// Does this paragraph END in maths that stacks — a piecewise definition, an
-/// equation array, a matrix? If so: where that trailing maths group starts, and
-/// the LaTeX it converts to.
-///
-/// `None` for a paragraph with no maths, maths only in the middle of it, or
-/// maths that converts to something that fits on a line.
-fn split_trailing_display_math(runs: &[SRun]) -> Option<(usize, String)> {
-    // The first run after the last piece of substantive PROSE.
-    let at = runs.iter().rposition(|r| !r.style.is_math && !r.text.trim().is_empty())? + 1;
-    let tail = runs.get(at..)?;
-    if tail.iter().all(|r| r.text.trim().is_empty()) {
-        return None;
-    }
-    let (text, objs) = joined_math(tail);
-    let latex = office_math_to_latex(&text, &objs);
-    const STACKED: [&str; 3] = ["\\begin{cases}", "\\begin{aligned}", "\\begin{matrix}"];
-    STACKED.iter().any(|e| latex.contains(e)).then_some((at, latex))
-}
-
 /// Concatenate a paragraph's runs and re-base their maths-object offsets onto
 /// the joined string, so a display equation converts as one structure however
 /// many runs OneNote split it across.
@@ -4039,47 +4020,39 @@ fn collect_inner(
                     table: None,
                     image: None,
                 });
-            } else if let Some((at, stacked)) = split_trailing_display_math(&runs) {
-                // A STACKED equation cannot live inside a line of prose:
-                // `\begin{cases}` is two expressions one above the other behind
-                // a brace as tall as both, and dropped into a sentence it either
-                // clips or shoves the line apart. The reference page's "We can
-                // define the bijection f(n) = ⟨cases⟩" is exactly this shape, so
-                // the sentence stays a text line and the equation becomes its
-                // own block under it — which is what [emit_boxes] already does
-                // for a paragraph that is maths all through.
-                //
-                // Nothing is dropped: the prose keeps its own Line. Only a
-                // TRAILING maths group qualifies, because lifting maths out of
-                // the MIDDLE of a sentence would reorder the writer's words.
-                let mut runs = runs;
-                let tail = runs.split_off(at);
-                debug_assert!(!tail.is_empty());
-                if !runs.iter().all(|r| r.text.trim().is_empty()) {
-                    out.push(Line {
-                        depth,
-                        tags: tags.clone(),
-                        is_list: ctx,
-                        bullet: bullet.clone(),
-                        runs,
-                        math: None,
-                        table: None,
-                        image: None,
-                    });
-                }
-                out.push(Line {
-                    depth,
-                    tags,
-                    is_list: false,
-                    bullet: String::new(),
-                    runs: Vec::new(),
-                    math: Some(stacked),
-                    table: None,
-                    image: None,
-                });
             } else {
                 // Prose, mixed prose+math, or a display equation whose
                 // conversion failed — all keep their runs, so nothing is lost.
+                //
+                // **Including a paragraph that ENDS in a stacked equation.** A
+                // previous pass here split "We can define the bijection
+                // f(n) = ⟨cases⟩" into a text Line plus a maths Line, on the
+                // theory that a two-row brace cannot live inside a sentence.
+                // Measured against OneNote's own PDF export of that very page,
+                // it can and it does: the prose baseline is y=407.69 and its
+                // last glyph ends at x=246.3, and the equation's glyphs start
+                // at x=252.9 on the SAME line, spanning y 380.3…428.0 — above
+                // and below the line, which is the only thing OneNote changes
+                // to make room. Splitting it produced the reported defect:
+                // "it seems like we cant have maths in the same box and on the
+                // same line as text… i think it got broken out into its own
+                // thing."
+                //
+                // Inline-ness needs no separate signal, because splitting was
+                // the only thing that ever removed it: [render_runs] merges
+                // adjacent maths runs (offsets rebased, so a structure spread
+                // over a dozen runs still converts as one) and [run_markdown]
+                // wraps the result in `$…$`. A paragraph that is maths ALL
+                // THROUGH still takes the `all_math` branch above and becomes
+                // a block of its own, which is the case where the equation
+                // genuinely did stand alone in OneNote.
+                //
+                // Blast radius, measured over the owner's whole notebook
+                // (`dump_one --pkg`, 329 pages): 1154 boxes → 1148, on TWO
+                // pages. One is the reference page. The other five boxes are
+                // all on "M: Eigenvectors and Eigenvalues", every one of them
+                // a sentence of the shape "so the eigenvector is ⟨column
+                // vector⟩" — which is exactly the sentence this restores.
                 out.push(Line {
                     depth,
                     tags,
@@ -8116,8 +8089,18 @@ mod tests {
     /// of them and the brace, the array and the delimiters all vanished. The
     /// kinds come from the per-run sidecar 0x3499, and this is the shape that
     /// has to survive it.
+    ///
+    /// It also has to survive it **in the sentence it was written in**. This
+    /// test used to expect two boxes — `("text", "f(n) =")` and a separate
+    /// `("math", …)` — and the owner reported the result: "it seems like we
+    /// cant have maths in the same box and on the same line as text… i think
+    /// it got broken out into its own thing." OneNote's own PDF export of the
+    /// page settles it: the prose ends at x=246.3 on baseline y=407.69 and the
+    /// equation's first glyph is at x=252.9 on that same line, growing the
+    /// line upwards and downwards (y 380.3…428.0) rather than leaving it. One
+    /// box, `$…$` inline, is the shape that matches.
     #[test]
-    fn a_piecewise_definition_imports_as_a_cases_block() {
+    fn a_piecewise_definition_imports_inline_in_its_sentence() {
         let mut f = OneFile::new();
         let (space_guid, page_guid, dir_guid) = ([0xE3; 16], [0x53; 16], [0xEB; 16]);
         // "f(n) = " then 𝑥⟨{ ⟨█ ⟨/ n ¦ 2 ⟩ ¦ −x ⟩ ⟩ — the reference page's own
@@ -8193,13 +8176,10 @@ mod tests {
             .collect();
         assert_eq!(
             shapes,
-            [
-                ("text", "f(n) ="),
-                ("math", r"x\begin{cases}\frac{n}{2} \\ −x\end{cases}"),
-            ],
+            [("text", r"f(n) = $x\begin{cases}\frac{n}{2} \\ −x\end{cases}$")],
             "the brace and the stacked rows must both survive, and the equation \
-             must leave the sentence for a BLOCK of its own without taking any \
-             of the sentence with it"
+             must stay in the sentence it was written in — ONE box, delimited \
+             inline, the way OneNote's own export sets it"
         );
     }
 
