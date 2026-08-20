@@ -4,6 +4,19 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed — maths in a sentence is full size again, and the answer comes to you
+
+- **Inline maths is no longer shrunk.** A fraction is the same size in a
+  sentence as in a box of its own, and the line makes room for it.
+- **It sits on the line properly.** Clicking into an equation inside a
+  sentence used to nudge the maths up and the words down, so the equation
+  looked like a superscript. Nothing moves now.
+- **Type `=` then a space and the answer appears** — `2+3= ` becomes
+  `2+3=5`, right where you are typing. The live answer that used to sit at
+  the top of the window is gone; it works out only what you wrote since
+  the last `=`, and if it can't be worked out you simply get a space.
+- Symbol tooltips read `name (\x)` instead of `name — type \x`.
+
 ### Fixed — the calculator answers real maths, and equations show up everywhere
 
 - **The live "= answer" works for fractions, powers and roots now.** It only
