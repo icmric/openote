@@ -4,6 +4,19 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — sin 30 is a half
+
+- **Sine, cosine and tangent were working in radians**, so `sin(30)` came
+  back as −0.988. Angles are in degrees now, the way a school calculator
+  does it — and if you want radians, put π in the angle: `sin(π/6)` is a
+  half too. A degree sign works as well: `sin(30°)`.
+- **`sin⁻¹` and its friends did not work at all** — they were being read as
+  "one over sin". `sin⁻¹(0.5)` is 30 now, and the inverses give you degrees
+  back because degrees go in.
+- **The degree symbol was ignored**, so `30°` could not be worked out.
+- `sin(180)` showed `1.22464679915e-16`. It shows `0`.
+- **The answer's box is a soft grey panel** instead of an outline.
+
 ### Fixed — three wrong answers, and the answer you can click
 
 - **`sin(x)²` was working out as `sin(x²)`.** Typing `sin(2)^2` gave you
