@@ -157,6 +157,16 @@ abstract class OnoteEditSession {
   /// selection model of its own.
   void setSelection(int base, int extent) {}
 
+  /// Start an equation AT THE CARET, inside this paragraph.
+  ///
+  /// Alt+= used to drop a separate equation block below the text, because the
+  /// only route into an inline equation was knowing to type two dollar signs —
+  /// which is why the owner reported that Openote "doesnt seem to allow me to
+  /// do equations inline with a regular text block yet". Returns false when
+  /// the engine has no inline maths of its own, and the caller then falls back
+  /// to a block.
+  bool startInlineMath() => false;
+
   void dispose();
 }
 

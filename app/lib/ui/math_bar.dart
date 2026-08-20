@@ -1,4 +1,4 @@
-/// The **Maths** tab of the toolbar (plan: v0.18 §5.2, revised twice).
+/// The **Maths** tab of the toolbar (plan: v0.18 §5.2, revised four times).
 ///
 /// It appears only while an equation is being written and goes away the moment
 /// you finish — a contextual tab, the way OneNote does it.
@@ -8,25 +8,37 @@
 /// onenote."*
 ///
 /// **Round two** put it in the toolbar and it was, in their word, chaotic —
-/// and measurably so. The row came to **1725–2230 px** against an app whose
-/// default window is **1280**, so the search box, the answer and the LaTeX
-/// escape hatch were simply off the right-hand edge, with no scrollbar and a
-/// mouse wheel that did nothing. Twenty-seven controls, eighteen of them
-/// ragged-width shape chips in a flat undifferentiated run, then eight
-/// word-labelled drop-downs. Every symbol gallery it opened was **one symbol
-/// per row** — Greek was a 1119 px column — because a `Container` with an
-/// `alignment` expands to its loose constraints, so every chip was full width.
+/// and measurably so: **1725–2230 px** against an app whose default window is
+/// **1280**, with no scrollbar and a mouse wheel that did nothing, so the
+/// search box and the LaTeX escape hatch sat off the right-hand edge.
+/// Twenty-seven controls, eighteen ragged-width chips in a flat run, then
+/// eight word-labelled drop-downs — each of which opened a gallery **one
+/// symbol per row** (Greek was a 1119 px column), because a `Container` with
+/// an `alignment` expands to its loose constraints.
 ///
-/// **This round: twelve controls, grouped.** Eight shapes a student reaches
-/// for daily, then one door per kind of thing:
+/// **Round three** collapsed all of that to twelve controls behind one
+/// Symbols door, which fitted — and then had room to spare. The owner: *"We
+/// have more space to play with in that bar than your using, so we can break
+/// symbols, opperators, large opperators, functions, etc out into their own
+/// things."*
+///
+/// **Round four — this one.** A door per KIND of thing, because one marked
+/// "Symbols" is a filing cabinet: a student after a summation still has to
+/// know it is filed under symbols rather than under shapes.
 ///
 /// ```
-///  ½  x²  √  Σ  ∫  (□)  {cases  [matrix]  │  ⊞ More shapes ▾  Ω Symbols ▾  │  = 0.5   ⋯
+///  1/2  x^2  root  (box)  words  |  Shapes Big Operators Compare Greek
+///                                   Sets Functions More  |  find  = 0.5  ...
 /// ```
 ///
-/// The rules kept from round two: the shapes never move (their positions ARE
-/// the muscle memory), every tooltip teaches the keyboard route, the search
-/// speaks plain student, and the LaTeX view is one item behind `⋯`.
+/// Every door carries its arrow again (cut in round three for width, asked
+/// for back), the panels are owned by the BAR rather than by each button so a
+/// second door opens on the FIRST click, and the entrance is 90 ms rather than
+/// Material's ~300.
+///
+/// The rules kept throughout: the shapes never move (their positions ARE the
+/// muscle memory), every tooltip teaches the keyboard route, the search speaks
+/// plain student, and the LaTeX view is one item behind the ellipsis.
 library;
 
 import 'package:flutter/material.dart';
@@ -44,7 +56,7 @@ import '../theme/tokens.dart';
 /// at — so the chips pay for the doors, and these are the five that survive a
 /// "would a student reach for this today" test.
 const List<String> kMathQuickShapes = [
-  'frac', 'power', 'sqrt', 'paren', 'words',
+  'frac', 'power', 'sqrt', 'paren',
 ];
 
 /// One door per KIND of thing, with the room the row actually has.
@@ -64,27 +76,55 @@ const List<String> kMathQuickShapes = [
 /// the other comparisons rather than with the arithmetic it is filed under.
 typedef MathDoor = ({String label, String tip, List<String> ids});
 
+/// Ordered so a student reading left to right meets things in the order they
+/// meet them at school, and so the pairs that belong together sit together.
+///
+/// The audit found the first cut was ordered by how the inventory happened to
+/// be typed: `determinant` with no `matrix` anywhere, `prime` three chips from
+/// the derivative it belongs beside, `sin` eighteen chips from `sin⁻¹`, and
+/// absolute value, piecewise and matrix in **no door at all** — reachable only
+/// by searching for them.
 const List<MathDoor> kMathDoors = [
   (
     label: 'Shapes',
-    tip: 'Roots, derivatives, brackets, accents',
+    tip: 'Indices, roots, brackets, grids, accents',
     ids: [
-      'subscript', 'subsup', 'nthroot', 'ddx', 'partial', 'binom',
-      'floor', 'ceil', 'determinant', 'prime',
+      // Scripts, together.
+      'subscript', 'subsup',
+      // Roots.
+      'nthroot',
+      // Calculus, and the prime that belongs with it.
+      'ddx', 'partial', 'prime',
+      // Brackets that grow — abs, floor and ceil are the same idea.
+      'abs', 'floor', 'ceil',
+      // Grids: the determinant now has its matrix beside it.
+      'matrix', 'determinant', 'cases',
+      // Counting.
+      'binom',
+      // Accents last: a decoration on something already written.
       'bar', 'hat', 'vec', 'dot', 'tilde',
+      // Words inside maths — "if", "where" — belong with the other things you
+      // put INTO an equation rather than on the row itself.
+      'words',
     ],
   ),
   (
-    label: 'Big',
-    tip: 'Sums, integrals, products, limits',
-    ids: ['sum', 'int', 'iint', 'oint', 'prod', 'lim'],
+    // Not "Big": a door named after a size tells a student nothing. These are
+    // the operators that carry their limits, and the symbols say so faster
+    // than any word available at this width.
+    label: '∑ ∫',
+    tip: 'Sums, integrals, products and limits',
+    ids: ['sum', 'prod', 'int', 'iint', 'oint', 'lim'],
   ),
   (
     label: 'Operators',
     tip: 'Plus or minus, times, divide, and the rest',
     ids: [
-      'pm', 'times', 'div', 'cdot', 'percent', 'factorial', 'degree',
-      'cup', 'cap', 'setminus', 'oplus', 'land', 'lor', 'lnot',
+      // Arithmetic first — this is what the door is for.
+      'pm', 'times', 'div', 'cdot',
+      // Then the ones that hang off a number.
+      'percent', 'degree', 'factorial',
+      // Then the odds and ends.
       'infty', 'ldots', 'propto', 'nabla',
     ],
   ),
@@ -92,9 +132,14 @@ const List<MathDoor> kMathDoors = [
     label: 'Compare',
     tip: 'Equals, inequalities, arrows',
     ids: [
-      'eq', 'neq', 'approx', 'leq', 'geq', 'lt', 'gt', 'll', 'gg',
-      'equiv', 'cong', 'sim', 'to', 'gets', 'leftrightarrow',
-      'implies', 'impliedby', 'iff', 'mapsto', 'therefore', 'because',
+      // Equality, then inequality in the order a textbook introduces it:
+      // strict before "or equal", and never split across a row break.
+      'eq', 'neq', 'approx', 'equiv', 'cong',
+      'lt', 'gt', 'leq', 'geq', 'll', 'gg', 'sim',
+      // Arrows, then the two that read as words.
+      'to', 'gets', 'leftrightarrow', 'mapsto',
+      'implies', 'impliedby', 'iff',
+      'therefore', 'because',
     ],
   ),
   (
@@ -103,12 +148,16 @@ const List<MathDoor> kMathDoors = [
     ids: [],
   ),
   (
+    // Set WORK, not set membership: the operators that combine sets used to
+    // live under Operators, so doing any of it meant two doors.
     label: 'Sets',
-    tip: 'Membership, subsets, number systems, logic',
+    tip: 'Membership, subsets, number systems, and logic',
     ids: [
-      'in', 'notin', 'subset', 'subseteq', 'notsubset', 'emptyset',
+      'in', 'notin', 'subset', 'subseteq', 'notsubset',
+      'cup', 'cap', 'setminus', 'emptyset',
       'naturals', 'integers', 'rationals', 'reals', 'complex',
-      'forall', 'exists', 'mid', 'nmid',
+      'forall', 'exists', 'lnot', 'land', 'lor', 'oplus',
+      'mid', 'nmid',
     ],
   ),
   (
@@ -117,8 +166,10 @@ const List<MathDoor> kMathDoors = [
     ids: [],
   ),
   (
-    label: 'More',
-    tip: 'Geometry, statistics, science',
+    // Renamed from "More", which shared its name with the row's own ellipsis
+    // menu and said nothing about what was behind it.
+    label: 'Subjects',
+    tip: 'Geometry, statistics and science',
     ids: [],
   ),
 ];
@@ -127,7 +178,7 @@ const List<MathDoor> kMathDoors = [
 const Map<String, List<MathCat>> kMathDoorCats = {
   'Greek': [MathCat.greek],
   'Functions': [MathCat.functions],
-  'More': [MathCat.geometry, MathCat.stats, MathCat.science],
+  'Subjects': [MathCat.geometry, MathCat.stats, MathCat.science],
 };
 
 /// What a door shows, resolved from either source.
@@ -142,7 +193,42 @@ List<MathItem> mathDoorItems(MathDoor door) {
   ];
 }
 
-class MathBar extends StatelessWidget {
+
+/// A door's contents, in the sections they should be read in.
+///
+/// Most doors are one list and get no heading — the owner's own judgement,
+/// and it holds: a heading over the only group on screen is a label for
+/// nothing. `More` is the exception, because it is three unrelated subjects
+/// sharing a door, and a student looking for an angle should not have to scan
+/// past the statistics to find it.
+typedef MathGroup = ({String title, List<MathItem> items});
+
+List<MathGroup> mathDoorGroups(MathDoor door) {
+  final cats = kMathDoorCats[door.label];
+  if (cats != null) {
+    return [
+      for (final c in cats)
+        if (mathItemsIn(c).isNotEmpty)
+          (title: c.title, items: mathItemsIn(c))
+    ];
+  }
+  return [(title: door.label, items: mathDoorItems(door))];
+}
+
+/// One panel at a time, owned by the BAR rather than by each button.
+///
+/// Three things the owner asked for fall out of that ownership, and none of
+/// them is reachable while every door runs its own `showMenu`:
+///
+///  * **Clicking a second door while one is open opens it straight away.**
+///    A modal route's barrier swallows that first click, so it used to take
+///    two — close, then open. The barrier here reports where it was pressed,
+///    and if that was over another door, the bar opens it in the same gesture.
+///  * **The animation is quick.** `showMenu` runs Material's ~300 ms route
+///    transition; this is a 90 ms fade and a slight rise, which is the same
+///    register as the toolbar's own tab switch.
+///  * **The arrow is back.** It was cut for row width; see [_DoorButton].
+class MathBar extends StatefulWidget {
   const MathBar({
     super.key,
     required this.onInsert,
@@ -165,30 +251,274 @@ class MathBar extends StatelessWidget {
   /// Put the answer into the equation — `= 0.5` appended at the caret.
   final VoidCallback? onUseResult;
 
-  /// Symbols used lately, newest first. Shown at the top of the symbol panel,
+  /// Symbols used lately, newest first. Shown at the top of the search panel,
   /// never inline on the row: a chip that changes identity under the pointer
   /// is worse than no shortcut at all.
   final List<String> recentIds;
 
   @override
+  State<MathBar> createState() => _MathBarState();
+}
+
+/// How long a panel takes to appear. Short on purpose — a menu you are about
+/// to read should not be animating while you read it.
+const Duration kMathMenuFade = Duration(milliseconds: 90);
+
+class _MathBarState extends State<MathBar> {
+  /// One key per door, so the barrier can work out which door a click landed
+  /// on without any of them knowing about each other.
+  final Map<String, GlobalKey> _doorKeys = {};
+  final _searchKey = GlobalKey();
+  final _search = TextEditingController();
+
+  OverlayEntry? _entry;
+  String? _open;
+
+  GlobalKey _keyFor(String label) =>
+      _doorKeys.putIfAbsent(label, () => GlobalKey());
+
+  @override
+  void dispose() {
+    _entry?.remove();
+    _entry = null;
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _close() {
+    _entry?.remove();
+    _entry = null;
+    if (mounted) setState(() => _open = null);
+    _open = null;
+  }
+
+  /// A press that landed outside the panel. Close — and if it landed on
+  /// another door, open that one now rather than making the student click a
+  /// second time.
+  void _barrierPressed(Offset global) {
+    // Which door was open BEFORE the close, so pressing that same door reads
+    // as "shut it" rather than closing and immediately reopening it.
+    final was = _open;
+    _close();
+    Rect? rectOf(GlobalKey k) {
+      final box = k.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) return null;
+      return box.localToGlobal(Offset.zero) & box.size;
+    }
+
+    for (final door in kMathDoors) {
+      final r = rectOf(_keyFor(door.label));
+      if (r != null && r.contains(global)) {
+        if (was != door.label) _toggle(door.label);
+        return;
+      }
+    }
+    final s = rectOf(_searchKey);
+    if (s != null && s.contains(global) && was != '__search') {
+      _toggle('__search');
+    }
+  }
+
+  void _toggle(String label) {
+    if (_open == label) {
+      _close();
+      return;
+    }
+    _close();
+    final key = label == '__search' ? _searchKey : _keyFor(label);
+    final box = key.currentContext?.findRenderObject() as RenderBox?;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null || !box.hasSize) return;
+    final origin = box.localToGlobal(Offset.zero, ancestor: overlay);
+    final panelWidth = label == '__search' ? 336.0 : 320.0;
+    // Never off the right-hand edge, and never behind the left one.
+    final maxLeft = overlay.size.width - panelWidth - 8;
+    final left = maxLeft <= 8 ? 8.0 : origin.dx.clamp(8.0, maxLeft);
+
+    _entry = OverlayEntry(
+      builder: (ctx) => Stack(children: [
+        // Opaque, so a click on the page does not also act on the page — but
+        // it reports where it landed, which is what makes door-to-door work.
+        Positioned.fill(
+          child: Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (e) => _barrierPressed(e.position),
+            child: const SizedBox.expand(),
+          ),
+        ),
+        Positioned(
+          left: left.toDouble(),
+          top: origin.dy + box.size.height + 2,
+          width: panelWidth,
+          child: _Fade(
+            child: Material(
+              elevation: 8,
+              borderRadius: BorderRadius.circular(8),
+              clipBehavior: Clip.antiAlias,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: label == '__search'
+                    ? _searchPanel()
+                    : _doorPanel(
+                        kMathDoors.firstWhere((d) => d.label == label)),
+              ),
+            ),
+          ),
+        ),
+      ]),
+    );
+    Overlay.of(context).insert(_entry!);
+    setState(() => _open = label);
+  }
+
+  void _pick(MathItem item) {
+    _close();
+    widget.onInsert(item);
+  }
+
+  Widget _doorPanel(MathDoor door) {
+    final s = context.surfaces;
+    final groups = mathDoorGroups(door);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 340),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final g in groups) ...[
+              // A heading only where a door holds more than one KIND of thing.
+              // The owner doubted headings were needed and was mostly right —
+              // most doors are one list and get none.
+              if (groups.length > 1)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
+                  child: Text(g.title,
+                      style: OnoteType.small.copyWith(
+                          color: s.textSecondary,
+                          fontWeight: FontWeight.w600)),
+                ),
+              Wrap(
+                spacing: 3,
+                runSpacing: 3,
+                children: [
+                  for (final i in g.items)
+                    MathChip(item: i, surfaces: s, onTap: _pick)
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _searchPanel() {
+    final s = context.surfaces;
+    return StatefulBuilder(builder: (ctx, setLocal) {
+      final q = _search.text.trim();
+      final hits = q.isEmpty ? const <MathItem>[] : searchMathItems(q);
+      return SizedBox(
+        height: 300,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 32,
+              child: TextField(
+                controller: _search,
+                autofocus: true,
+                style: OnoteType.small,
+                decoration: InputDecoration(
+                  isDense: true,
+                  prefixIcon:
+                      Icon(Icons.search, size: 15, color: s.textSecondary),
+                  prefixIconConstraints:
+                      const BoxConstraints(minWidth: 26, minHeight: 20),
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                  border: const OutlineInputBorder(),
+                  hintText: 'What are you after? "not equal", "theta"',
+                  hintStyle: OnoteType.small.copyWith(color: s.textSecondary),
+                ),
+                onChanged: (_) => setLocal(() {}),
+                onSubmitted: (_) {
+                  if (hits.isNotEmpty) _pick(hits.first);
+                },
+              ),
+            ),
+            const SizedBox(height: 6),
+            Expanded(
+              child: SingleChildScrollView(
+                child: q.isEmpty
+                    ? _panelSection(
+                        'Recent',
+                        [
+                          for (final id in widget.recentIds)
+                            if (mathItemsById[id] case final i?) i
+                        ],
+                        s)
+                    : hits.isEmpty
+                        ? Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Text(
+                              "Openote doesn't have that as a button yet. "
+                              'Anything at all can be written by hand from '
+                              '⋯ ▸ Write the LaTeX by hand.',
+                              style: OnoteType.small
+                                  .copyWith(color: s.textSecondary),
+                            ),
+                          )
+                        : _panelSection(
+                            'Matches — Enter takes the first', hits, s),
+              ),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  Widget _panelSection(String title, List<MathItem> items, OnoteSurfaces s) =>
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
+            child: Text(title,
+                style: OnoteType.small.copyWith(
+                    color: s.textSecondary, fontWeight: FontWeight.w600)),
+          ),
+          Wrap(
+            spacing: 3,
+            runSpacing: 3,
+            children: [
+              for (final i in items) MathChip(item: i, surfaces: s, onTap: _pick)
+            ],
+          ),
+        ],
+      );
+
+  @override
   Widget build(BuildContext context) {
     final s = context.surfaces;
 
-    if (latexMode) {
+    if (widget.latexMode) {
       return Row(mainAxisSize: MainAxisSize.min, children: [
         Padding(
           padding: const EdgeInsets.only(left: 4, right: 10),
           child: Text(
-            'Writing the LaTeX by hand — anything the buttons can\'t do goes '
+            "Writing the LaTeX by hand — anything the buttons can't do goes "
             'here.',
             style: OnoteType.small.copyWith(color: s.textSecondary),
           ),
         ),
-        _AnswerSlot(result: result, onUse: onUseResult, surfaces: s),
+        _AnswerSlot(
+            result: widget.result, onUse: widget.onUseResult, surfaces: s),
         _MoreMenu(
-          latexMode: latexMode,
-          latexAvailable: latexAvailable,
-          onToggleLatex: onToggleLatex,
+          latexMode: widget.latexMode,
+          latexAvailable: widget.latexAvailable,
+          onToggleLatex: widget.onToggleLatex,
           surfaces: s,
         ),
       ]);
@@ -197,20 +527,134 @@ class MathBar extends StatelessWidget {
     return Row(mainAxisSize: MainAxisSize.min, children: [
       for (final id in kMathQuickShapes)
         if (mathItemsById[id] case final item?)
-          MathChip(item: item, onTap: onInsert, surfaces: s),
+          MathChip(item: item, onTap: widget.onInsert, surfaces: s),
       _Sep(surfaces: s),
       for (final door in kMathDoors)
-        _DoorButton(door: door, onInsert: onInsert, surfaces: s),
+        _DoorButton(
+          key: _keyFor(door.label),
+          label: door.label,
+          tooltip: door.tip,
+          open: _open == door.label,
+          surfaces: s,
+          onTap: () => _toggle(door.label),
+        ),
       _Sep(surfaces: s),
-      _SearchButton(onInsert: onInsert, surfaces: s, recentIds: recentIds),
-      _AnswerSlot(result: result, onUse: onUseResult, surfaces: s),
+      _DoorButton(
+        key: _searchKey,
+        icon: Icons.search,
+        tooltip: 'Find a symbol by name',
+        open: _open == '__search',
+        surfaces: s,
+        onTap: () => _toggle('__search'),
+      ),
+      _AnswerSlot(
+          result: widget.result, onUse: widget.onUseResult, surfaces: s),
       _MoreMenu(
-        latexMode: latexMode,
-        latexAvailable: latexAvailable,
-        onToggleLatex: onToggleLatex,
+        latexMode: widget.latexMode,
+        latexAvailable: widget.latexAvailable,
+        onToggleLatex: widget.onToggleLatex,
         surfaces: s,
       ),
     ]);
+  }
+}
+
+/// The panel's entrance: a quick fade and a 4 px rise, matching the register
+/// the toolbar already uses for a tab switch.
+class _Fade extends StatefulWidget {
+  const _Fade({required this.child});
+  final Widget child;
+
+  @override
+  State<_Fade> createState() => _FadeState();
+}
+
+class _FadeState extends State<_Fade> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+      vsync: this, duration: kMathMenuFade)
+    ..forward();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final curve = CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
+    return FadeTransition(
+      opacity: curve,
+      child: AnimatedBuilder(
+        animation: curve,
+        builder: (_, child) => Transform.translate(
+          offset: Offset(0, 4 * (1 - curve.value)),
+          child: child,
+        ),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// A door on the row.
+///
+/// **The arrow is back.** It was cut last round to save 120 px of row width,
+/// and the owner asked for it: *"id like a little arrow on the menu buttons up
+/// top when there is a drop down to make it clear they are a menu."* Right —
+/// without it a door is indistinguishable from a button that inserts
+/// something, which is what every chip beside it does. It is a 12 px caret
+/// rather than the 15 px default, and the row was re-measured with it.
+///
+/// The button also shows when its own panel is open, so the row says where you
+/// are rather than leaving the panel to float unattached.
+class _DoorButton extends StatelessWidget {
+  const _DoorButton({
+    super.key,
+    this.label,
+    this.icon,
+    required this.tooltip,
+    required this.open,
+    required this.surfaces,
+    required this.onTap,
+  });
+
+  final String? label;
+  final IconData? icon;
+  final String tooltip;
+  final bool open;
+  final OnoteSurfaces surfaces;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    final ink = open ? accent : surfaces.textPrimary;
+    return Padding(
+      padding: const EdgeInsets.only(right: 3),
+      child: Tooltip(
+        message: tooltip,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(5),
+          onTap: onTap,
+          child: Container(
+            height: OnoteSize.button,
+            padding: EdgeInsets.only(left: label == null ? 5 : 6, right: 1),
+            decoration: BoxDecoration(
+              color: open ? accent.withValues(alpha: 0.10) : null,
+              borderRadius: BorderRadius.circular(5),
+              border: Border.all(color: open ? accent : surfaces.border),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              if (icon != null) Icon(icon, size: OnoteIcon.sm, color: ink),
+              if (label != null)
+                Text(label!, style: OnoteType.small.copyWith(color: ink)),
+              Icon(Icons.arrow_drop_down, size: 11, color: ink),
+            ]),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -220,7 +664,7 @@ class _Sep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         child: SizedBox(
           height: 20,
           child: VerticalDivider(width: 1, color: surfaces.border),
@@ -249,7 +693,7 @@ class _AnswerSlot extends StatelessWidget {
   Widget build(BuildContext context) {
     final r = result;
     return SizedBox(
-      width: 104,
+      width: 84,
       height: OnoteSize.button,
       child: r == null
           ? const SizedBox.shrink()
@@ -319,305 +763,7 @@ class _MoreMenu extends StatelessWidget {
       );
 }
 
-class _Gallery extends StatelessWidget {
-  const _Gallery({required this.width, required this.children});
-  final double width;
-  final List<Widget> children;
 
-  @override
-  Widget build(BuildContext context) => SizedBox(
-        width: width,
-        child: Wrap(spacing: 3, runSpacing: 3, children: children),
-      );
-}
-
-/// A gallery, laid out as a GRID.
-///
-/// Width and height are fixed here and every chip inside is explicitly sized,
-/// because a `Container` with an `alignment` expands to its loose constraints
-/// — which is why every gallery used to come out one symbol per row.
-/// One door on the row, named for what is behind it.
-class _DoorButton extends StatelessWidget {
-  const _DoorButton({
-    required this.door,
-    required this.onInsert,
-    required this.surfaces,
-  });
-
-  final MathDoor door;
-  final ValueChanged<MathItem> onInsert;
-  final OnoteSurfaces surfaces;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = mathDoorItems(door);
-    return _MenuButton(
-      label: door.label,
-      tooltip: door.tip,
-      surfaces: surfaces,
-      builder: (close) => ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 320),
-        child: SingleChildScrollView(
-          child: _Gallery(
-            width: 320,
-            children: [
-              for (final i in items)
-                MathChip(
-                  item: i,
-                  surfaces: surfaces,
-                  onTap: (x) {
-                    close();
-                    onInsert(x);
-                  },
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The search, on its own small button.
-///
-/// It is the answer to "I don't know what this is called or which door it is
-/// behind" — which is a different question from any of the doors, so it gets
-/// its own control rather than living inside one of them.
-class _SearchButton extends StatefulWidget {
-  const _SearchButton({
-    required this.onInsert,
-    required this.surfaces,
-    required this.recentIds,
-  });
-
-  final ValueChanged<MathItem> onInsert;
-  final OnoteSurfaces surfaces;
-  final List<String> recentIds;
-
-  @override
-  State<_SearchButton> createState() => _SearchButtonState();
-}
-
-class _SearchButtonState extends State<_SearchButton> {
-  final _search = TextEditingController();
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = widget.surfaces;
-    return _MenuButton(
-      icon: Icons.search,
-      tooltip: 'Find a symbol by name',
-      surfaces: s,
-      onClosed: _search.clear,
-      builder: (close) => StatefulBuilder(
-        builder: (ctx, setLocal) {
-          final q = _search.text.trim();
-          final hits = q.isEmpty ? const <MathItem>[] : searchMathItems(q);
-          void pick(MathItem i) {
-            close();
-            widget.onInsert(i);
-          }
-
-          return SizedBox(
-            width: 336,
-            height: 300,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  height: 32,
-                  child: TextField(
-                    controller: _search,
-                    autofocus: true,
-                    style: OnoteType.small,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      prefixIcon:
-                          Icon(Icons.search, size: 15, color: s.textSecondary),
-                      prefixIconConstraints:
-                          const BoxConstraints(minWidth: 26, minHeight: 20),
-                      contentPadding: const EdgeInsets.symmetric(
-                          vertical: 6, horizontal: 4),
-                      border: const OutlineInputBorder(),
-                      hintText: 'What are you after? "not equal", "theta"',
-                      hintStyle:
-                          OnoteType.small.copyWith(color: s.textSecondary),
-                    ),
-                    onChanged: (_) => setLocal(() {}),
-                    onSubmitted: (_) {
-                      if (hits.isNotEmpty) pick(hits.first);
-                    },
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: q.isEmpty
-                        ? _section(
-                            'Recent',
-                            [
-                              for (final id in widget.recentIds)
-                                if (mathItemsById[id] case final i?) i
-                            ],
-                            pick,
-                            s,
-                          )
-                        : hits.isEmpty
-                            ? Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: Text(
-                                  "Openote doesn't have that as a button yet. "
-                                  'Anything at all can be written by hand from '
-                                  '⋯ ▸ Write the LaTeX by hand.',
-                                  style: OnoteType.small
-                                      .copyWith(color: s.textSecondary),
-                                ),
-                              )
-                            : _section('Matches — Enter takes the first', hits,
-                                pick, s),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _section(String title, List<MathItem> items,
-          ValueChanged<MathItem> pick, OnoteSurfaces s) =>
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
-            child: Text(title,
-                style: OnoteType.small.copyWith(
-                    color: s.textSecondary, fontWeight: FontWeight.w600)),
-          ),
-          Wrap(
-            spacing: 3,
-            runSpacing: 3,
-            children: [
-              for (final i in items)
-                MathChip(item: i, surfaces: s, onTap: pick),
-            ],
-          ),
-        ],
-      );
-}
-
-/// A labelled door on the row, opening a panel underneath it.
-class _MenuButton extends StatefulWidget {
-  const _MenuButton({
-    this.icon,
-    this.label,
-    required this.tooltip,
-    required this.surfaces,
-    required this.builder,
-    this.onClosed,
-  });
-
-  /// A door carries a WORD; the search carries a glyph. Both, and the row
-  /// stops reading as a row of controls and starts reading as a paragraph.
-  final IconData? icon;
-  final String? label;
-  final String tooltip;
-  final OnoteSurfaces surfaces;
-  final Widget Function(VoidCallback close) builder;
-  final VoidCallback? onClosed;
-
-  @override
-  State<_MenuButton> createState() => _MenuButtonState();
-}
-
-class _MenuButtonState extends State<_MenuButton> {
-  final _key = GlobalKey();
-
-  Future<void> _open() async {
-    final box = _key.currentContext?.findRenderObject() as RenderBox?;
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (box == null || overlay == null) return;
-    final origin = box.localToGlobal(Offset.zero, ancestor: overlay);
-    final rect = RelativeRect.fromLTRB(
-      origin.dx,
-      origin.dy + box.size.height + 2,
-      overlay.size.width - origin.dx - 340,
-      0,
-    );
-    await showMenu<void>(
-      context: context,
-      position: rect,
-      // ONE item holding the whole panel: an entry per symbol would be a
-      // forty-row list to scroll for a character you can already see.
-      items: [
-        PopupMenuItem<void>(
-          enabled: false,
-          padding: EdgeInsets.zero,
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: widget.builder(() => Navigator.of(context).pop()),
-          ),
-        ),
-      ],
-    );
-    widget.onClosed?.call();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final label = widget.label;
-    return Padding(
-      padding: const EdgeInsets.only(right: 3),
-      child: Tooltip(
-        message: widget.tooltip,
-        child: InkWell(
-          key: _key,
-          borderRadius: BorderRadius.circular(5),
-          onTap: _open,
-          child: Container(
-            height: OnoteSize.button,
-            padding: EdgeInsets.symmetric(horizontal: label == null ? 6 : 8),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(5),
-              border: Border.all(color: widget.surfaces.border),
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              if (widget.icon != null)
-                Icon(widget.icon,
-                    size: OnoteIcon.sm, color: widget.surfaces.textPrimary),
-              if (label != null)
-                Text(label,
-                    style: OnoteType.small
-                        .copyWith(color: widget.surfaces.textPrimary)),
-              // No drop-down caret on a labelled door: eight of them is 120 px
-              // of pure decoration on a row that has to fit 1280.
-              if (label == null)
-                Icon(Icons.arrow_drop_down,
-                    size: 15, color: widget.surfaces.textSecondary),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// One palette button. Draws its own notation where a picture says it best (a
-/// fraction), plain text where a character does (π, ≤).
-///
-/// **Fixed size, deliberately.** The row used to have ragged widths because
-/// each chip sized to its own face, and the galleries were one-per-row because
-/// a `Container` with an `alignment` expands to fill loose constraints. An
-/// explicit box fixes both, and a grid of equal cells is easier to aim at.
 class MathChip extends StatelessWidget {
   const MathChip({
     super.key,

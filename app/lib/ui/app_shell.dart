@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../canvas/media_drop.dart';
 import '../canvas/page_canvas.dart';
+import '../math/math_field.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../core/onote_ffi.dart';
@@ -129,13 +130,25 @@ class _AppShellState extends State<AppShell> {
 
   /// True when a real text field (block editor, page title, find, or any
   /// dialog field) currently owns the keyboard.
+  /// Is an EDITOR holding the keyboard?
+  ///
+  /// This gate is what makes the shell stand down: while it is true, chords
+  /// that belong to the canvas (Ctrl+C, Ctrl+X, Delete, the arrows) are left
+  /// alone for whatever is being typed into.
+  ///
+  /// A `MathField` counts, and used not to. It is a bare `Focus` rather than
+  /// an `EditableText` — it has no linear string to own — so the shell did not
+  /// recognise it as an editor and **Ctrl+X cut the whole block out from under
+  /// a student mid-equation.** The field's own Ctrl+X never even ran: the
+  /// shell's global handler sees the key first, before focus dispatch.
   bool _editableFocused() {
     final ctx = FocusManager.instance.primaryFocus?.context;
     if (ctx == null) return false;
-    if (ctx.widget is EditableText) return true;
+    bool isEditor(Widget w) => w is EditableText || w is MathField;
+    if (isEditor(ctx.widget)) return true;
     var found = false;
     ctx.visitAncestorElements((e) {
-      if (e.widget is EditableText) {
+      if (isEditor(e.widget)) {
         found = true;
         return false;
       }
@@ -209,6 +222,21 @@ class _AppShellState extends State<AppShell> {
     Offset at;
     if (ae != null && ae.block.type == BlockType.text) {
       final sel = ae.controller.selection;
+
+      // **Writing in a paragraph, nothing selected.** This is the ordinary
+      // case, and it used to drop a separate equation block below the
+      // paragraph — which is why the owner reported that Openote "doesnt seem
+      // to allow me to do equations inline with a regular text block yet".
+      // Inline maths worked; there was simply no way to ASK for it that did
+      // not involve knowing to type two dollar signs. Alt+= in a paragraph now
+      // always means "an equation here"; Alt+Shift+= is the way to a block.
+      if (!forceBlock &&
+          sel.isValid &&
+          sel.isCollapsed &&
+          (app.activeSession?.startInlineMath() ?? false)) {
+        return;
+      }
+
       if (sel.isValid && !sel.isCollapsed) {
         seed = ae.controller.text.substring(sel.start, sel.end).trim();
         if (seed.isNotEmpty && !forceBlock) {

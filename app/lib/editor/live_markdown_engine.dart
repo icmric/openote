@@ -110,6 +110,36 @@ class _LiveMarkdownSession extends OnoteEditSession {
     controller.onMathTap = _editInlineMath;
   }
 
+  /// Alt+= in a paragraph: an empty equation AT THE CARET, opened for editing.
+  ///
+  /// The `$$` pair is written first so the equation has somewhere to live, and
+  /// the card edits that span — which means the sentence rewrites live as the
+  /// student types, and closing it empty takes the dollars away again. Two
+  /// bare dollars do not match the inline grammar (it needs a non-space
+  /// between them), so nothing renders as maths until there is maths.
+  @override
+  bool startInlineMath() {
+    final ctx = _lastContext;
+    if (ctx == null || !ctx.mounted) return false;
+    final sel = controller.selection;
+    if (!sel.isValid) return false;
+    final start = sel.start;
+    _applyEdit(TextEditingValue(
+      text: controller.text.replaceRange(sel.start, sel.end, r'$$'),
+      selection: TextSelection.collapsed(offset: start + 1),
+      composing: TextRange.empty,
+    ));
+    // The field's own rect: the card hangs under the paragraph rather than
+    // under a character, because the caret's rect is not knowable until after
+    // the edit has laid out and the student is waiting.
+    final box = _focus.context?.findRenderObject() as RenderBox?;
+    final anchor = box == null || !box.hasSize
+        ? const Rect.fromLTWH(0, 0, 1, 1)
+        : box.localToGlobal(Offset.zero) & box.size;
+    _editInlineMath(start, start + 2, '', anchor);
+    return true;
+  }
+
   /// One click on an equation in a sentence opens it for editing (v0.18 §7).
   ///
   /// The range is re-derived on every keystroke rather than remembered,

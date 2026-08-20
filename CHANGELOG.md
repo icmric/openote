@@ -61,6 +61,34 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **Undo takes back what you just typed, not the whole equation.** Ctrl+Z after
   a typo used to delete the equation and its box.
 
+### Fixed — equations in a sentence, a summation you can navigate, and a box that grows
+
+- **Alt+= in a paragraph now makes an equation right there**, in the sentence,
+  and opens it for editing. Before, it dropped a separate equation below your
+  paragraph — there was no way to ask for an inline one unless you knew to
+  type two dollar signs.
+- **The summation sign can no longer be walked into, typed over, or deleted by
+  accident.** Its own row was an ordinary box: typing in it threw the limits
+  off the sign for good, and two backspaces deleted the ∑ with nothing to show
+  it had gone. Up and down now simply swap the two limits.
+- **The equation box grows with what you write**, and scrolls when it reaches
+  its limit. It used to be pinned to its width, so anything longer was clipped
+  off the edge — worst on a summation, whose limits sit above the sign and make
+  it much wider than it looks.
+- **`\infty` works.** So does every other symbol's proper name — the shortcuts
+  were the only thing being listened for.
+
+### Changed — the maths bar has a button per kind of thing
+
+- **Shapes · ∑∫ · Operators · Compare · Greek · Sets · Functions · Subjects**,
+  each with a drop-down arrow so it reads as a menu, and clicking a second one
+  while another is open now opens it on the first click. The menus are quicker
+  to appear, too.
+- Absolute value, piecewise and matrix had no button at all and could only be
+  found by searching. Set operations (∪ ∩ ∖) moved in with the rest of the set
+  work, `sin⁻¹` sits beside `sin`, and the determinant has its matrix next to
+  it.
+
 ### Fixed — two ways an equation could still lose your work
 
 - **Ctrl+X no longer deletes the whole box.** Pressed while writing an

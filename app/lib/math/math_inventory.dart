@@ -556,9 +556,14 @@ final List<MathItem> _science = [
 /// Upright function names — the rule every textbook follows, applied without
 /// the student having to know it exists.
 final List<MathItem> _functions = () {
+  // Ordered so an inverse can sit next to what it inverts (the list is built
+  // in two passes below, and the panel reads in this order). `sin cos tan`
+  // first because that is the order every trigonometry chapter uses.
   const plain = [
-    'sin', 'cos', 'tan', 'sec', 'csc', 'cot',
-    'sinh', 'cosh', 'tanh', 'ln', 'log', 'exp',
+    'sin', 'cos', 'tan',
+    'sec', 'csc', 'cot',
+    'sinh', 'cosh', 'tanh',
+    'ln', 'log', 'exp',
     'max', 'min', 'gcd', 'det', 'arg', 'deg',
   ];
   return <MathItem>[
@@ -662,14 +667,30 @@ List<MathItem> mathItemsIn(MathCat cat) =>
 /// wins, which is why Common is listed before Greek above.
 final Map<String, MathItem> mathControlWords = () {
   final out = <String, MathItem>{};
+
+  // **A symbol answers to its own name.** The table was keyed off `typeIt`
+  // alone, and `typeIt` is the SHORTEST route rather than the canonical one —
+  // infinity advertises `\oo`, so `\infty`, the name every student who has
+  // met LaTeX would reach for, produced nothing at all. Registering the
+  // command a symbol actually emits fixes that for every row at once, and the
+  // advertised shortcut still wins where the two differ.
+  for (final i in mathItems) {
+    for (final n in i.build()) {
+      if (n is! MSym) continue;
+      final m = RegExp(r'^\\([A-Za-z]+)$').firstMatch(n.tex);
+      if (m != null) out.putIfAbsent(m.group(1)!, () => i);
+    }
+  }
+
   for (final i in mathItems) {
     final t = i.typeIt;
     if (t == null || t.isEmpty) continue;
     final m = RegExp(r'^\\([A-Za-z]+)$').firstMatch(t);
     if (m == null) continue;
     // Keyed WITHOUT the backslash — the editor has already consumed it as its
-    // own atom by the time it looks a command up.
-    out.putIfAbsent(m.group(1)!, () => i);
+    // own atom by the time it looks a command up. The advertised route wins
+    // over the derived one, which is why this pass runs second.
+    out[m.group(1)!] = i;
   }
   return out;
 }();

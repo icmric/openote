@@ -81,6 +81,17 @@ class MRow {
   }
 }
 
+/// The operators that carry their limits ON the sign rather than beside it.
+///
+/// A script whose base is exactly one of these is an N-ARY: the base is the
+/// operator itself, not something the student wrote, so it is not a box they
+/// should ever be able to walk into. See [MScript.fixedBase].
+const Set<String> kBigOperators = {
+  r'\sum', r'\prod', r'\coprod', r'\int', r'\iint', r'\iiint', r'\oint',
+  r'\bigcup', r'\bigcap', r'\bigvee', r'\bigwedge', r'\bigoplus',
+  r'\lim', r'\limsup', r'\liminf', r'\max', r'\min', r'\sup', r'\inf',
+};
+
 /// One element of a row: an atom, or a structure with slots of its own.
 sealed class MNode {
   /// The row this node sits in. Maintained by [MRow]; never set by hand.
@@ -94,9 +105,17 @@ sealed class MNode {
 
   String texOf(MathTexCtx c);
 
-  /// True when every slot is empty, so removing the node loses nothing.
-  /// This is what lets Backspace delete a structure the student has already
-  /// emptied, while refusing to delete one that still holds their work.
+  /// Every row this node OWNS, navigable or not.
+  ///
+  /// [slots] is where the caret may go; this is where the content lives. They
+  /// differ for an n-ary, whose base holds the operator sign itself — the
+  /// caret must never enter it, but unwrapping the node must not throw the
+  /// sign away either.
+  List<MRow> get contentSlots => slots;
+
+  /// True when every slot the student can reach is empty, so removing the node
+  /// loses nothing they wrote. This is what lets Backspace delete a structure
+  /// already emptied while refusing to delete one that still holds work.
   bool get isBlank => slots.every((s) => s.isEmpty);
 }
 
@@ -202,8 +221,38 @@ class MScript extends MNode {
   MRow ensureSub() => sub ??= _own(MRow(), 'sub');
   MRow ensureSup() => sup ??= _own(MRow(), 'sup');
 
+  /// Is the base the operator ITSELF rather than something the student wrote?
+  ///
+  /// Computed, never stored, so the parser, the palette and the build-up rules
+  /// cannot disagree about it. Everything that went wrong around a summation
+  /// came from the base being an ordinary navigable box:
+  ///
+  ///  * Up from the lower limit landed IN it rather than on the upper limit.
+  ///  * The caret sitting there made the script attach to the caret rule, so
+  ///    the limits jumped off the sign and sat beside it — the owner's "they
+  ///    sometimes move to the front".
+  ///  * Typing there brace-wrapped the operator and stored the limits beside
+  ///    the sign permanently.
+  ///  * Two Backspaces from the front of the lower limit deleted the summation
+  ///    sign with nothing to show it had gone.
+  ///
+  /// None of those is reachable once the caret cannot get in.
+  bool get fixedBase {
+    if (base.length != 1) return false;
+    final only = base.children.first;
+    return only is MSym && kBigOperators.contains(only.tex);
+  }
+
   @override
-  List<MRow> get slots => [base, if (sub != null) sub!, if (sup != null) sup!];
+  List<MRow> get slots => [
+        if (!fixedBase) base,
+        if (sub != null) sub!,
+        if (sup != null) sup!,
+      ];
+
+  @override
+  List<MRow> get contentSlots =>
+      [base, if (sub != null) sub!, if (sup != null) sup!];
 
   @override
   String texOf(MathTexCtx c) {

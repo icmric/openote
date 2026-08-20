@@ -120,6 +120,19 @@ Drawing
     drawing interpretation for flowcharts
     text interpretation, shape interpretation
 
+Everything in one box
+    "My dream is that we could have every data type in a single box. For some
+    like images and videos it may not be plausible to have them inline in
+    which case it can be split onto its own line, however if everything could
+    be truly inlined that would be incredible."
+    → Three things already inline inside a text box today: pictures
+      (![](sha256:…)), flashcards, and — since v0.18 — maths ($…$). All three
+      go through ONE mechanism in editor/live_markdown_controller.dart: a
+      placeholder that occupies exactly one code unit, so not a single caret
+      offset moves. That is the existence proof; the open question is whether
+      one general inline-atom syntax can carry every block type instead of a
+      bespoke regex per kind. Designed in docs/planning/v0.18-visual-maths.md.
+
 Consistency/UX
     Ensure all blocks are consistent in their behaviours, being able to be copy and pasted, consistent navigation, formatting etc. Most objects should be able to share a box with each other, however for stuff like code blocks could stick with being their own thing if its not practical to mix them in.
     → v0.7.1 took the concrete half: code blocks now respect click

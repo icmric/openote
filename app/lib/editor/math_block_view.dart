@@ -162,6 +162,33 @@ class _MathBlockViewState extends State<MathBlockView> {
     return r.isOk ? r : null;
   }
 
+  /// The widest an equation may push its own box before it starts scrolling
+  /// instead. Past this a block stops being a block and starts being the page.
+  static const double _kMaxMathWidth = 900;
+
+  /// Widen the block to whatever is actually being written.
+  ///
+  /// Measured from the laid-out equation rather than guessed from the LaTeX:
+  /// the caret rule, the empty `\square` boxes and a summation's stacked
+  /// limits all add width that no amount of string-inspection would predict.
+  /// Grow only — never shrink — because shrinking mid-keystroke makes the box
+  /// twitch while you type, and a student who has widened it by hand should
+  /// keep that width.
+  void _growToFit() {
+    if (!mounted || _latexMode) return;
+    final box = _fieldKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    const chrome = 24.0; // the block's own padding, both sides
+    final need = box.size.width + chrome;
+    final have = widget.block.w;
+    if (need <= have + 1) return;
+    final target = need > _kMaxMathWidth ? _kMaxMathWidth : need;
+    if (target <= have + 1) return;
+    widget.block.w = target;
+    widget.block.updatedAt = nowMs();
+    widget.app.updateBlock(widget.block);
+  }
+
   void _leaveEquation() {
     widget.app.select(widget.block.id, edit: false);
   }
@@ -194,13 +221,35 @@ class _MathBlockViewState extends State<MathBlockView> {
         padding: const EdgeInsets.all(10),
         child: _latexMode
             ? _latexEditor(textColor)
-            : MathField(
-                key: _fieldKey,
-                focusNode: _fieldFocus,
-                editor: _editor!,
-                textStyle: TextStyle(fontSize: 22, color: textColor),
-                onChanged: _commitLatex,
-                onExit: (_) => _leaveEquation(),
+            // **The box grows, and scrolls when it cannot.**
+            //
+            // While editing, the equation was pinned to `Block.w` with no
+            // strategy at all — no scroll, no scale, no growth — so anything
+            // wider was clipped away and Flutter painted the overflow stripe.
+            // Reported against a summation, whose limits stack ABOVE the sign
+            // and make it far wider than the same maths reads inline; one
+            // press of a toolbar button could put the very box you have to
+            // type into off the right-hand edge.
+            //
+            // Two halves, and both are needed. The scroll view means overflow
+            // is structurally impossible, whatever the equation. The growth
+            // means it is rarely reached, because the box widens to what is
+            // actually being written — up to [_kMaxMathWidth], after which
+            // scrolling takes over rather than the block eating the page.
+            : SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: LayoutBuilder(builder: (ctx, box) {
+                  WidgetsBinding.instance.addPostFrameCallback(
+                      (_) => _growToFit());
+                  return MathField(
+                    key: _fieldKey,
+                    focusNode: _fieldFocus,
+                    editor: _editor!,
+                    textStyle: TextStyle(fontSize: 22, color: textColor),
+                    onChanged: _commitLatex,
+                    onExit: (_) => _leaveEquation(),
+                  );
+                }),
               ),
       );
     }

@@ -267,6 +267,115 @@ void main() {
     });
   });
 
+  group('a summation is one object, not a box you can fall into', () {
+    // The owner: "now the numbers are on top of the summation symbol which is
+    // great, although the navigation there is a bit funky. Depending on what i
+    // do they sometimes move to the front which isnt ideal."
+    //
+    // All of it came from one thing: the ∑'s own row was an ordinary,
+    // navigable, editable box. The caret could walk in, and then typing
+    // brace-wrapped the operator (which throws the limits off the sign for
+    // good), the caret rule itself became the thing the script attached to,
+    // and two Backspaces deleted the ∑ with nothing to show it had gone.
+
+    MathEditor sum() => MathEditor.empty()..insertItem(mathItemsById['sum']!);
+
+    test('the caret can never enter the operator row', () {
+      for (final id in ['sum', 'int', 'prod', 'lim', 'iint', 'oint']) {
+        final e = MathEditor.empty()..insertItem(mathItemsById[id]!);
+        final reachable = <String>{};
+        // Walk the whole equation both ways and collect every row visited.
+        e.placeAtStart();
+        for (var i = 0; i < 40 && e.moveRight(); i++) {
+          reachable.add(e.caretRow.name);
+        }
+        e.placeAtEnd();
+        for (var i = 0; i < 40 && e.moveLeft(); i++) {
+          reachable.add(e.caretRow.name);
+        }
+        expect(reachable, isNot(contains('base')),
+            reason: '$id lets the caret into the operator\'s own row');
+      }
+    });
+
+    test('up and down swap the two limits, and keep swapping', () {
+      final e = sum();
+      expect(e.caretRow.name, 'sub', reason: 'the lower limit comes first');
+      expect(e.moveUp(), isTrue);
+      expect(e.caretRow.name, 'sup', reason: 'up goes to the top one');
+      expect(e.moveUp(), isTrue);
+      expect(e.caretRow.name, 'sub', reason: 'and again brings you back');
+      expect(e.moveDown(), isTrue);
+      expect(e.caretRow.name, 'sup');
+    });
+
+    test('backspacing out of the lower limit cannot delete the sign', () {
+      final e = sum();
+      e.insertChar('n');
+      e.caretIndex = 0;
+      // Two presses used to take the ∑ itself; a third scrambled the rest.
+      for (var i = 0; i < 3; i++) {
+        e.backspace();
+        if (e.latex.isEmpty) break;
+        expect(e.latex, contains(r'\sum'),
+            reason: 'press ${i + 1} lost the summation sign: ${e.latex}');
+      }
+    });
+
+    test('and forward Delete cannot eat it either', () {
+      final e = sum();
+      e.insertChar('n');
+      e.placeAtStart();
+      for (var i = 0; i < 3; i++) {
+        e.delete();
+        if (e.latex.isEmpty) break;
+        expect(e.latex, contains(r'\sum'),
+            reason: 'delete ${i + 1} lost the sign: ${e.latex}');
+      }
+    });
+
+    test('an emptied summation goes altogether, sign and all', () {
+      // The one case where losing the ∑ is right: there is nothing left.
+      final e = sum();
+      expect(e.latex, contains(r'\sum'));
+      e.placeAtEnd();
+      e.backspace();
+      expect(e.latex, '', reason: 'an empty summation is nothing to keep');
+    });
+
+    test('the limits stay ON the sign however you get there', () {
+      // The braced-base defect renders the limits beside the sign instead of
+      // above and below it, and nothing in the stored string says so unless
+      // you know to look.
+      final e = sum();
+      e.insertChar('i');
+      e.moveUp();
+      e.insertChar('n');
+      expect(e.latex, startsWith(r'\sum'),
+          reason: 'a braced base is a different equation: ${e.latex}');
+      expect(e.latex, isNot(contains('{\\sum')));
+    });
+
+    test('a big operator typed with ^ still gets the sign as its base', () {
+      // ∬ and ∮ are plain symbols until a script lands on them, and an
+      // operator used not to count as an operand — so the limits attached to
+      // an EMPTY base and sat beside an invisible atom.
+      final e = MathEditor.empty()..insertItem(mathItemsById['iint']!);
+      e.insertChar('^');
+      e.insertChar('2');
+      expect(e.latex, contains(r'\iint'));
+      expect(e.latex, isNot(startsWith('{}')),
+          reason: 'the limit attached to nothing: ${e.latex}');
+    });
+
+    test('a plain power still walks base to script as it always did', () {
+      // The fixed-base rule must not touch ordinary algebra.
+      final e = MathEditor.empty()..insertItem(mathItemsById['power']!);
+      expect(e.caretRow.name, 'base',
+          reason: 'x^2 has a base the student writes in');
+    });
+  });
+
   group('moving around', () {
     test('Tab walks the boxes still waiting to be filled', () {
       final e = MathEditor.empty();

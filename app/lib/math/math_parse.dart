@@ -40,7 +40,12 @@ final Set<String> _knownSymbols = () {
   // itself had written.
   void collect(MNode n) {
     if (n is MSym && n.tex.startsWith('\\')) out.add(n.tex);
-    for (final slot in n.slots) {
+    // `contentSlots`, not `slots`: an n-ary's operator sign lives in a row the
+    // caret deliberately cannot enter, so a navigable-only walk drops \sum,
+    // \int, \prod and \lim — and the app then refused to re-open equations it
+    // had written itself. Same failure as the original top-level-only scan,
+    // one level further in.
+    for (final slot in n.contentSlots) {
       for (final child in slot.children) {
         collect(child);
       }

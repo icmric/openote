@@ -232,6 +232,15 @@ class MathEditor {
       return null;
     }
     if (owner is MScript) {
+      // An n-ary has no navigable base, so up and down simply swap the two
+      // limits — the owner's model: "if im on the bottom one id like to press
+      // up and have it move me to the top one, and if i press it again
+      // probably move me down to the bottom one".
+      if (owner.fixedBase) {
+        if (identical(from, owner.sub)) return owner.sup;
+        if (identical(from, owner.sup)) return owner.sub;
+        return null;
+      }
       if (up) {
         if (identical(from, owner.base)) return owner.sup;
         if (owner.sub != null && identical(from, owner.sub)) return owner.base;
@@ -549,8 +558,14 @@ class MathEditor {
         return k;
       case MClass.letter || MClass.func:
         return end - 1;
+      case MClass.op:
+        // Most operators are not operands — `1+^2` should leave the box empty.
+        // A BIG operator is the exception: `\iint` then `^` has to put the
+        // limit on the sign, and treating it like a plus left the base empty
+        // so the limits sat beside an invisible atom.
+        return kBigOperators.contains(n.tex) ? end - 1 : end;
       default:
-        return end; // an operator is not an operand — leave the box empty
+        return end;
     }
   }
 
@@ -735,7 +750,9 @@ class MathEditor {
   /// still holds work: the frame goes, every character they typed stays.
   void _unwrap(MNode n, int at, MRow row) {
     if (at < 0) return;
-    final contents = [for (final s in n.slots) ...s.drain()];
+    // contentSlots, not slots: an n-ary's operator sign lives in a row the
+    // caret cannot reach, and unwrapping must not throw it away.
+    final contents = [for (final s in n.contentSlots) ...s.drain()];
     row.removeAt(at);
     row.insertAll(at, contents);
     caretRow = row;

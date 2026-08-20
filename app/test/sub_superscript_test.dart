@@ -691,6 +691,36 @@ void main() {
       await settle(tester);
     });
 
+    testWidgets('Alt+= with the caret in a paragraph stays IN the paragraph',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The reported gap: "Doesnt seem to allow me to do equations inline with
+      // a regular text block yet." Inline maths worked — there was simply no
+      // way to ask for it that did not involve knowing to type two dollar
+      // signs, because Alt+= with nothing selected dropped a separate block
+      // below the paragraph.
+      await pumpShell(tester);
+      await editWholeWord(tester);
+      // Collapse the selection: caret in the text, nothing highlighted.
+      final ctrl = app.activeEditor!.controller;
+      ctrl.selection = TextSelection.collapsed(offset: ctrl.text.length);
+      await tester.pumpAndSettle();
+
+      expect(await key(tester, LogicalKeyboardKey.equal, alt: true), isTrue);
+      await tester.pumpAndSettle();
+      expect(app.blocks.where((b) => b.type == BlockType.math), isEmpty,
+          reason: 'an equation asked for inside a paragraph belongs there');
+      final prose = app.blocks
+          .where((b) => b.type == BlockType.text)
+          .map((b) => b.content['text'] as String? ?? '')
+          .join();
+      expect(prose, contains(r'$$'),
+          reason: 'the empty equation is anchored in the sentence, ready to '
+              'be typed into — and two bare dollars do not render as maths, '
+              'so nothing shows until there is something to show');
+      await settle(tester);
+    });
+
     testWidgets('Alt+= inside an equation does not spawn a second one',
         (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');

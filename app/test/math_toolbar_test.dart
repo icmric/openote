@@ -25,6 +25,9 @@ import 'package:openote/ui/math_bar.dart';
 
 import 'support/sqlite.dart';
 
+/// One backslash, named so the expectations read as what a student types.
+const String bs = '\\';
+
 void main() {
   var haveSqlite = false;
   setUpAll(() => haveSqlite = initSqliteForTests());
@@ -245,7 +248,11 @@ void main() {
     testWidgets('the whole row fits a 1280 px window', (tester) async {
       await pumpBar(tester, onInsert: (_) {}, result: '0.16666666');
       final w = tester.getSize(find.byType(MathBar)).width;
-      expect(w, lessThan(1200),
+      // Measured, and reported here so a regression names its own number.
+      // Below this the row scrolls (drag or wheel, added with the doors) —
+      // but the first cut was 1725-2230 px with NO scroll at all, and half of
+      // "chaotic" was controls the student could not reach.
+      expect(w, lessThan(1150),
           reason: 'measured ' + w.toString() + ' px; the row has to fit the '
               'smallest window the app opens, which is 1280');
     });
@@ -340,6 +347,70 @@ void main() {
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
       expect(got?.id, 'neq');
+    });
+
+    testWidgets('every door wears a drop-down arrow', (tester) async {
+      // The owner: "id like a little arrow on the menu buttons up top when
+      // there is a drop down to make it clear they are a menu." Without one a
+      // door is indistinguishable from the chips beside it, every one of
+      // which inserts something on the first click.
+      await pumpBar(tester, onInsert: (_) {});
+      final arrows = find.descendant(
+        of: find.byType(MathBar),
+        matching: find.byIcon(Icons.arrow_drop_down),
+      );
+      expect(arrows, findsNWidgets(kMathDoors.length + 1),
+          reason: 'one per door, plus the search');
+    });
+
+    testWidgets('clicking a second door opens it in the SAME click',
+        (tester) async {
+      // A modal barrier swallows that first press, so it used to take two —
+      // close, then open. Measured by what is on screen after ONE tap.
+      await pumpBar(tester, onInsert: (_) {});
+      await tester.tap(find.text('Greek'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MathChip), findsWidgets);
+      final greekChips = find.byType(MathChip).evaluate().length;
+
+      await tester.tap(find.text('Sets'));
+      await tester.pumpAndSettle();
+      final setsChips = find.byType(MathChip).evaluate().length;
+      expect(setsChips, isNot(greekChips),
+          reason: 'one tap has to land on the second door, not just dismiss '
+              'the first');
+      // And the Sets panel really is the one showing.
+      expect(find.byTooltip('is in — type ' + bs + 'in'), findsOneWidget);
+    });
+
+    testWidgets('clicking the open door again closes it', (tester) async {
+      await pumpBar(tester, onInsert: (_) {});
+      final closed = find.byType(MathChip).evaluate().length;
+      await tester.tap(find.text('Greek'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MathChip).evaluate().length, greaterThan(closed));
+      await tester.tap(find.text('Greek'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MathChip).evaluate().length, closed);
+    });
+
+    testWidgets('the More door groups its three subjects under headings',
+        (tester) async {
+      // Most doors are one list and get no heading — a label for the only
+      // group on screen is a label for nothing. `More` is three unrelated
+      // subjects sharing a door, which is the case that earns them.
+      await pumpBar(tester, onInsert: (_) {});
+      await tester.tap(find.text('Subjects'));
+      await tester.pumpAndSettle();
+      expect(find.text('Geometry'), findsOneWidget);
+      expect(find.text('Stats'), findsOneWidget);
+      expect(find.text('Science'), findsOneWidget);
+
+      // …and a single-subject door does not get one.
+      await tester.tap(find.text('Greek'));
+      await tester.pumpAndSettle();
+      expect(find.text('Greek'), findsOneWidget,
+          reason: 'only the door itself, not a heading repeating its name');
     });
 
     testWidgets('a search miss says so IN the panel, and points somewhere',
