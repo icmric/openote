@@ -551,11 +551,13 @@ String inlineMathKey(String tex) => 'inline-math:$tex';
 
 /// Paint one equation off screen, at [_mathRasterEm] logical pixels per em.
 ///
-/// `inline: true` selects TeX's *text* style, which is what the screen uses
-/// for `$…$` (see `OnoteMath.compact`) and what OneNote's own export uses —
-/// its inline fractions have numerators at 0.727 of the prose size, i.e.
-/// script size. Rasterising an inline equation in display style would print it
-/// noticeably bigger than the app draws it.
+/// **Display style, inline or not** — because that is what the screen does
+/// now. It used to be TeX's *text* style here, matching both `OnoteMath` and
+/// OneNote's own export (whose inline fractions sit at 0.727 of the prose
+/// size). The owner overruled that on screen — *"i want it to still be full
+/// size even when inlined with text"* — and a printout smaller than the app
+/// draws is the same complaint in a different medium. [inline] still says
+/// which kind of equation this is, for the caller's layout.
 Future<Uint8List?> _rasteriseTex(String tex, {required bool inline}) =>
     // 3x, so the equation is still crisp when the reader zooms in — the whole
     // complaint about the OLD raster exporter was that its output went to mush.
@@ -564,7 +566,7 @@ Future<Uint8List?> _rasteriseTex(String tex, {required bool inline}) =>
       // Without it an `\begin{align}` equation drew on the page and printed as
       // backslashes in the PDF — the export would have been half the fix.
       Math.tex(renderableLatex(tex),
-          mathStyle: inline ? MathStyle.text : MathStyle.display,
+          mathStyle: MathStyle.display,
           textStyle: const TextStyle(fontSize: _mathRasterEm, color: Colors.black),
           onErrorFallback: (_) => const SizedBox.shrink()),
       pixelRatio: _mathPixelRatio,

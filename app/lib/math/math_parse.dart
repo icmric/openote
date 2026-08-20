@@ -300,10 +300,23 @@ class _Parser {
         final d = _argument(depth);
         row.add(MFrac(num: n, den: d));
         return;
-      case r'\boxed' || r'\fbox':
+      case r'\boxed':
         // An answer the app worked out (see [MAnswer]). Reading it back as an
         // answer rather than as ordinary digits is what makes the box, and
         // the decimal/fraction toggle, survive a save and reload.
+        //
+        // `\boxed` ONLY. `\fbox` was here too and had to go: the tree can
+        // only write one of them back, so opening and saving an imported
+        // equation silently rewrote the student's `\fbox{a+b}` into
+        // `\boxed{a+b}` — the exact "never silently reshaped" rule this
+        // parser exists to keep. Unrecognised, it goes to the LaTeX view with
+        // its source intact.
+        //
+        // A `\boxed` a student wrote themselves IS taken as an answer, and
+        // that is accepted: the box means the same thing either way, and the
+        // only consequence is that a click can rewrite 0.75 as 3/4 — a
+        // change of form, never of value, and reversible with a second
+        // click.
         row.add(MAnswer(content: _argument(depth)));
         return;
       case r'\binom' || r'\dbinom' || r'\tbinom':
