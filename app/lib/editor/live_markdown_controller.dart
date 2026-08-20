@@ -1266,9 +1266,7 @@ class LiveMarkdownController extends TextEditingController {
           child: editingHere
               ? mathEditorBuilder!(c.inner, cBase)
               : InlineMathAtom(
-                  latex: c.kind == MdInline.mathDisplay
-                      ? '\\displaystyle ${c.inner}'
-                      : c.inner,
+                  latex: c.inner,
                   style: cBase,
                   onTap: tap == null
                       ? null

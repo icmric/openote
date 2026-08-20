@@ -22,7 +22,9 @@
 /// is no error state while writing.
 library;
 
+import 'evaluate.dart';
 import 'math_inventory.dart';
+import 'math_linear_projection.dart';
 import 'linear_math.dart';
 import 'math_parse.dart';
 import 'math_tree.dart';
@@ -568,6 +570,11 @@ class MathEditor {
         // both put the space inside the box the command had just opened, so
         // `\sqrt` came out as a root with a space already under it.
         if (_buildControlWord()) return true;
+        // `2+3=` and a space writes `5` — the calculator where the student is
+        // already looking. It used to live as a readout at the top of the
+        // window, which the owner found unintuitive: an answer belongs in the
+        // equation, at the moment you ask for it.
+        if (answerAfterEquals()) return true;
         caretRow.insert(caretIndex, MSym(spaceTex));
         caretIndex++;
         return true;
@@ -667,6 +674,64 @@ class MathEditor {
       return;
     }
     insertItem(item);
+  }
+
+  /// Typing `=` then a space: work out what is in front of it and write the
+  /// answer down (owner, v0.21).
+  ///
+  /// Deliberately narrow, because a wrong number is far worse than no number:
+  ///
+  ///  * only the run since the LAST `=` is evaluated, so `x=2+3=` answers 5
+  ///    rather than choking on the unknown x;
+  ///  * the run is read through [rowToLinear], the same projection the
+  ///    calculator uses, which REFUSES anything without a numeric meaning —
+  ///    a matrix, a subscripted name, a words box;
+  ///  * an expression with a letter in it does not evaluate, so `y=mx+c=`
+  ///    simply leaves you a space, exactly as before.
+  ///
+  /// Returns false whenever any of that fails, and the space is then just a
+  /// space — the student never has to know the feature was considered.
+  bool answerAfterEquals() {
+    if (caretIndex < 2) return false;
+    final eq = caretRow.children[caretIndex - 1];
+    if (eq is! MSym || eq.tex != '=') return false;
+
+    // Back to the previous `=`, or the start of the row.
+    var from = 0;
+    for (var i = caretIndex - 2; i >= 0; i--) {
+      final n = caretRow.children[i];
+      if (n is MSym && n.tex == '=') {
+        from = i + 1;
+        break;
+      }
+    }
+    if (caretIndex - 1 - from <= 0) return false;
+
+    // Borrowed by LIST manipulation, never re-parented: the probe row must
+    // not touch the tree it is reading (the same trick [selectionLatex] uses).
+    final slice = MRow();
+    for (var i = from; i < caretIndex - 1; i++) {
+      slice.children.add(caretRow.children[i]);
+    }
+    final linear = rowToLinear(slice).trim();
+    slice.children.clear();
+    if (linear.isEmpty) return false;
+
+    final r = evaluateLinear(linear);
+    if (!r.isOk) return false;
+    final answer = r.display;
+    // `undefined`, `∞` and the like are honest readings but not maths a
+    // student can go on typing with.
+    if (answer.isEmpty || !RegExp(r'^-?[0-9.]+$').hasMatch(answer)) {
+      return false;
+    }
+    for (final ch in answer.split('')) {
+      caretRow.insert(caretIndex, MSym(ch, cls: classOf(ch)));
+      caretIndex++;
+    }
+    _openText = null;
+    clearSelection();
+    return true;
   }
 
   /// `sin(` goes upright, the way every textbook sets it — WITHOUT needing

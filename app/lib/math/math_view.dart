@@ -29,25 +29,28 @@ class OnoteMath extends StatelessWidget {
   final String tex;
   final TextStyle textStyle;
 
-  /// Inline use (mid-sentence): the explanation moves into a tooltip so a
-  /// paragraph isn't broken open by a notice box, AND the equation is set in
-  /// TeX's *text* style rather than *display* style.
+  /// Inline use (mid-sentence): the explanation moves into a tooltip, so a
+  /// paragraph isn't broken open by a notice box.
   ///
-  /// That second half is measured, not stylistic. In OneNote's own PDF export
-  /// of "Finite and Infinite Countable Sets", the inline `f(n) = ⟨cases⟩` has
-  /// prose at 10.82 pt and the fractions' numerators and denominators at
-  /// 7.87 pt — a 0.727 ratio, i.e. script size, i.e. `\textstyle`. Ours ran at
-  /// `Math.tex`'s default `MathStyle.display`, which sets numerator and
-  /// denominator at FULL size, so an inline fraction came out around 40%
-  /// taller than the source it was imported from and shoved its line apart by
-  /// that much more than OneNote does.
+  /// It used to mean TeX *text* style as well — script-size numerators,
+  /// limits beside the sign rather than above it — to match OneNote's own
+  /// export (measured there at a 0.727 ratio). **The owner has overruled
+  /// that**: *"i want it to still be full size even when inlined with text,
+  /// even if it ends up being taller than the text (which means we need to
+  /// account for the increased line height too)"*. So the STYLE is display
+  /// everywhere now and the line grows to fit; `compact` still says where the
+  /// equation lives, for the failure presentation.
   final bool compact;
 
   @override
   Widget build(BuildContext context) => Math.tex(
         renderableLatex(tex),
         textStyle: textStyle,
-        mathStyle: compact ? MathStyle.text : MathStyle.display,
+        // Display style, wherever it sits. A fraction is the same size in a
+        // sentence as in a box of its own; the line box grows to hold it,
+        // which a non-forced strut already allows for (see the field's
+        // `strutStyle` note in live_markdown_engine.dart).
+        mathStyle: MathStyle.display,
         onErrorFallback: (e) => MathSourceFallback(
           tex: tex,
           note: mathDisplayProblem(e),

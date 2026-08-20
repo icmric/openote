@@ -262,8 +262,6 @@ class MathBar extends StatefulWidget {
     required this.latexMode,
     required this.onToggleLatex,
     this.latexAvailable = true,
-    this.result,
-    this.onUseResult,
     this.recentIds = const [],
   });
 
@@ -272,11 +270,12 @@ class MathBar extends StatefulWidget {
   final VoidCallback onToggleLatex;
   final bool latexAvailable;
 
-  /// The live arithmetic answer, when the equation reduces to one.
-  final String? result;
-
-  /// Put the answer into the equation — `= 0.5` appended at the caret.
-  final VoidCallback? onUseResult;
+  // The bar used to carry a live `= 42` readout with a button to put the
+  // answer in. The owner: *"rather than having it appear up the top though
+  // since that isnt intuitive, maybe we make it so that … when the person
+  // puts an = sign and presses space afterwards it inserts the solution?"*
+  // The answer now lands where the caret already is — see
+  // `MathEditor.answerAfterEquals` — and this row says nothing about it.
 
   /// Symbols used lately, newest first. Shown at the top of the search panel,
   /// never inline on the row: a chip that changes identity under the pointer
@@ -540,8 +539,6 @@ class _MathBarState extends State<MathBar> {
             style: OnoteType.small.copyWith(color: s.textSecondary),
           ),
         ),
-        _AnswerSlot(
-            result: widget.result, onUse: widget.onUseResult, surfaces: s),
         _MoreMenu(
           latexMode: widget.latexMode,
           latexAvailable: widget.latexAvailable,
@@ -574,8 +571,6 @@ class _MathBarState extends State<MathBar> {
         surfaces: s,
         onTap: () => _toggle('__search'),
       ),
-      _AnswerSlot(
-          result: widget.result, onUse: widget.onUseResult, surfaces: s),
       _MoreMenu(
         latexMode: widget.latexMode,
         latexAvailable: widget.latexAvailable,
@@ -699,56 +694,6 @@ class _Sep extends StatelessWidget {
       );
 }
 
-/// The answer, in a slot of FIXED width.
-///
-/// It used to be built only when there was one, so the row jumped 30–177 px
-/// sideways as the student typed and, on a long decimal, pushed the LaTeX
-/// button off the edge. A slot that is always there cannot do that. Clicking
-/// it writes the answer into the equation — a calculator OneNote charges for.
-class _AnswerSlot extends StatelessWidget {
-  const _AnswerSlot({
-    required this.result,
-    required this.onUse,
-    required this.surfaces,
-  });
-
-  final String? result;
-  final VoidCallback? onUse;
-  final OnoteSurfaces surfaces;
-
-  @override
-  Widget build(BuildContext context) {
-    final r = result;
-    return SizedBox(
-      width: 84,
-      height: OnoteSize.button,
-      child: r == null
-          ? const SizedBox.shrink()
-          : Tooltip(
-              message: 'What this works out to — click to put it in',
-              child: InkWell(
-                borderRadius: BorderRadius.circular(5),
-                onTap: onUse,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      '= $r',
-                      overflow: TextOverflow.ellipsis,
-                      style: OnoteType.small.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: surfaces.textPrimary,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-    );
-  }
-}
-
 /// The Advanced fold, and the things that belong beside it. One `⋯`, so the
 /// row is not carrying a word-labelled button a student will never press.
 class _MoreMenu extends StatelessWidget {
@@ -811,8 +756,12 @@ class MathChip extends StatelessWidget {
     // The tooltip is a teaching surface: what a student would call it, then
     // the keyboard route. Every press is a chance to make the next one
     // unnecessary.
-    final tip =
-        item.typeIt == null ? item.name : '${item.name} — type ${item.typeIt}';
+    // `name (REPLACE_BX)`, not `name — type REPLACE_BX`: the owner's call, and the
+    // shorter form reads as one label instead of a sentence with an
+    // instruction buried in it.
+    final tip = item.typeIt == null
+        ? item.name
+        : '${item.name} (${item.typeIt})';
 
     return Padding(
       padding: const EdgeInsets.only(right: 3),

@@ -550,8 +550,6 @@ class _CommandBarState extends State<CommandBar> {
       latexMode: m.latexMode,
       latexAvailable: m.latexAvailable,
       onToggleLatex: m.toggleLatex,
-      result: m.result,
-      onUseResult: m.useResult,
       recentIds: app.recentMathIds,
     );
   }

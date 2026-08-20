@@ -115,6 +115,8 @@ const List<KeySection> keyboardMap = [
         'LaTeX, so it pastes into Word, Overleaf or a message'),
     KeyBinding('Enter', 'Another row of a piecewise or a matrix'),
     KeyBinding('&', 'Another column of a matrix'),
+    KeyBinding('= then space',
+        'Works out what you have written and puts the answer in'),
   ]),
   KeySection('In a table', [
     KeyBinding('Tab / Shift+Tab', 'Next / previous cell'),

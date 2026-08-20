@@ -26,12 +26,10 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import 'active_math.dart';
-import 'evaluate.dart';
 import 'linear_math.dart';
 import 'math_editor.dart';
 import 'math_field.dart';
 import 'math_inventory.dart';
-import 'math_linear_projection.dart';
 import 'math_view.dart';
 
 /// Where the equation lives, which decides display vs text style, what Enter
@@ -147,10 +145,6 @@ class EquationEditorState extends State<EquationEditor> {
   /// A palette press, routed here from the Maths tab.
   void insertItem(MathItem item) => _fieldKey.currentState?.insertItem(item);
 
-  /// The calculator's answer, appended as `= …`.
-  void insertResult(String value) =>
-      _fieldKey.currentState?.insertResult(value);
-
   bool get isEmpty => _latexMode
       ? _source.text.trim().isEmpty
       : (_editor?.isEmpty ?? true);
@@ -158,21 +152,6 @@ class EquationEditorState extends State<EquationEditor> {
   String get latex => _latexMode
       ? (_source.text.trim().isEmpty ? '' : linearToLatex(_source.text.trim()))
       : (_editor?.latex ?? '');
-
-  // ── the calculator ───────────────────────────────────────────────────────
-
-  EvalResult? get _evaluated {
-    // The VISUAL tree is projected into the linear grammar the evaluator was
-    // written for. Feeding it the canonical LaTeX instead is why the answer
-    // readout was dead for a fraction, a power or a root built visually -
-    // evaluateLinear has no backslash and no brace, by design.
-    final src = _latexMode
-        ? _source.text.trim()
-        : (_editor == null ? '' : rowToLinear(_editor!.root).trim());
-    if (src.isEmpty) return null;
-    final r = evaluateLinear(src);
-    return r.isOk ? r : null;
-  }
 
   void _toggleLatexMode() {
     // Inline placement cannot swap a TextField into its span — a real text
@@ -258,8 +237,6 @@ class EquationEditorState extends State<EquationEditor> {
       latexMode: _latexMode,
       latexAvailable: _latexMode || _editor != null,
       toggleLatex: _toggleLatexMode,
-      result: _evaluated?.display,
-      useResult: () => insertResult(_evaluated?.display ?? ''),
     ));
 
     if (_latexMode) return _latexEditor(context);

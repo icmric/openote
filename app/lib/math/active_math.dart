@@ -24,8 +24,6 @@ class ActiveMathEditor {
     required this.latexMode,
     required this.latexAvailable,
     required this.toggleLatex,
-    this.result,
-    this.useResult,
   });
 
   /// Whoever registered this — the `State` object of the editor. Used only so
@@ -45,10 +43,10 @@ class ActiveMathEditor {
 
   final VoidCallback toggleLatex;
 
-  /// The live arithmetic result (`= 42`), when the expression reduces to one.
-  final String? result;
-
-  /// Put that result into the equation. A calculator OneNote paywalls; the
-  /// click is what turns it from a readout into a tool.
-  final VoidCallback? useResult;
+  // There WAS a live `= 42` readout on the bar here, with a button to put the
+  // answer in. The owner: *"rather than having it appear up the top though
+  // since that isnt intuitive, maybe we make it so that … when the person
+  // puts an = sign and presses space afterwards it inserts the solution?"*
+  // So the answer arrives where the student is typing — `MathEditor
+  // .answerAfterEquals` — and the toolbar carries nothing about it.
 }

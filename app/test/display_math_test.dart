@@ -107,8 +107,11 @@ void main() {
           reason: 'THE defect: the inner pair matched alone and a literal '
               'dollar stood on each side of the atom');
       final math = tester.widget<OnoteMath>(find.byType(OnoteMath));
-      expect(math.tex, contains(r'\displaystyle'),
-          reason: 'double dollars are the author asking for display style');
+      expect(math.tex, r'E=mc^2',
+          reason: 'the atom carries the equation and nothing else — the '
+              r'`\displaystyle` prefix this used to need is redundant now '
+              'that every equation is set in display style, in a sentence '
+              'exactly as in a box of its own');
       expect(c.text, r'so $$E=mc^2$$ holds',
           reason: 'the buffer keeps every code unit, as ever');
     });

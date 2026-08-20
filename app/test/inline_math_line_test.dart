@@ -200,19 +200,25 @@ void main() {
             'sets it; measured ${axisEm}em above the baseline');
   });
 
-  testWidgets('inline maths is set in TeX text style, not display style',
+  testWidgets('inline maths is set at FULL size — the owner overruled parity',
       (tester) async {
-    // OneNote's export puts the inline fractions\' numerators at 0.727 of the
-    // prose size — script size, which is what `\textstyle` gives. Ours ran at
-    // `Math.tex`'s default `MathStyle.display`, whose numerators are FULL
-    // size, so every imported inline fraction was ~40% too tall and shoved
-    // its line apart by that much more than the source it came from.
+    // This test used to assert the opposite, and the reasoning was sound:
+    // OneNote's own export puts inline fractions' numerators at 0.727 of the
+    // prose size — script size, i.e. `	extstyle` — so matching it kept an
+    // imported note looking like its source.
+    //
+    // The owner has overruled it on sight: *"everything has now gone to being
+    // super small … i want it to still be full size even when inlined with
+    // text, even if it ends up being taller than the text (which means we
+    // need to account for the increased line height too)"*. Parity with
+    // OneNote lost to legibility, which is the right way round for a student
+    // reading their own notes.
     Future<double> heightOf({required bool compact}) async {
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,
-            child: OnoteMath(r'\frac{n}{2}',
+            child: OnoteMath(r'rac{n}{2}',
                 textStyle: base, compact: compact),
           ),
         ),
@@ -223,8 +229,8 @@ void main() {
 
     final inline = await heightOf(compact: true);
     final display = await heightOf(compact: false);
-    expect(inline, lessThan(display * 0.85),
-        reason: 'an inline fraction must be set smaller than a displayed one '
+    expect(inline, display,
+        reason: 'the same fraction is the same size wherever it sits '
             '(inline $inline, display $display)');
   });
 }

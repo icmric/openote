@@ -49,8 +49,11 @@ class MathField extends StatefulWidget {
   final void Function(MathExit how)? onExit;
   final bool autofocus;
 
-  /// Inline use: text style rather than display style, so the equation sits at
-  /// the size of the sentence around it.
+  /// Inline use: the equation sits inside a sentence rather than in a box of
+  /// its own. It is drawn at the SAME size either way (the owner's call — see
+  /// [OnoteMath.compact]); what this changes is the failure presentation and
+  /// the selection reserve, which inline would shove the sentence's baseline
+  /// around.
   final bool compact;
 
   final FocusNode? focusNode;
@@ -104,19 +107,6 @@ class MathFieldState extends State<MathField> {
   /// keystroke lands in the equation rather than nowhere.
   void insertItem(MathItem item) {
     _e.insertItem(item);
-    _focus.requestFocus();
-    _changed();
-  }
-
-  /// Write the calculator's answer into the equation, at the end: `… = 0.5`.
-  void insertResult(String value) {
-    if (value.isEmpty) return;
-    _e.placeAtEnd();
-    // `'=\$value'` before — an ESCAPED dollar, so the button typed the seven
-    // literal characters `=$value` into the equation instead of the answer.
-    for (final ch in '=$value'.split('')) {
-      _e.insertChar(ch);
-    }
     _focus.requestFocus();
     _changed();
   }
@@ -490,7 +480,22 @@ class MathFieldState extends State<MathField> {
           onPointerMove: _pointerMove,
           onPointerUp: _endGesture,
           onPointerCancel: _endGesture,
-          child: Stack(
+          // **A Column, NOT a Stack** — and the whole reason is one line of
+          // Flutter: `RenderStack` reports no baseline, while `RenderFlex`
+          // forwards its first child's. A `WidgetSpan` that asks for
+          // `PlaceholderAlignment.baseline` and is handed no baseline falls
+          // back to standing the whole box above the line, which is exactly
+          // what the owner saw: "if i type some text then insert maths it
+          // will do it all as superscript". Measured in a baseline `Row`: a
+          // bare `OnoteMath` sat 4.5px down, ON the line; the same equation
+          // inside this field sat at y=0, hard against the top.
+          //
+          // The probes still ride along as a second child, and cost the
+          // layout nothing: an offstage child lays out (so it can be
+          // measured) and reports zero size.
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // **The highlight's height, reserved permanently** (v0.20
               // E.2.3). `\fcolorbox` costs exactly kSelectionBoxEm in height
@@ -511,8 +516,18 @@ class MathFieldState extends State<MathField> {
                 // kSelectionBoxEm, because the box around the short run never
                 // reaches the structure's height — accepted, and far rarer
                 // than Ctrl+A.
+                // …and only in a BLOCK. Inline, this reserve was measured
+                // doing real damage: it inflates the placeholder, which
+                // grows the line box, which pushes the sentence's baseline
+                // DOWN 8.3px while the equation's own ink moves only 2.9px —
+                // leaving the maths sitting 5.4px above the words at a 14px
+                // font. That is precisely the owner's report, "if i type some
+                // text then insert maths it will do it all as superscript",
+                // and it appeared the moment you clicked in. A block has no
+                // sentence to sit on, so it keeps the reserve and its
+                // highlight still costs nothing.
                 padding: EdgeInsets.symmetric(
-                    vertical: _e.hasSelection
+                    vertical: widget.compact || _e.hasSelection
                         ? 0
                         : (widget.textStyle.fontSize ?? 14) *
                             (kSelectionBoxEm / 2)),
@@ -535,12 +550,30 @@ class MathFieldState extends State<MathField> {
               ),
               // The hit-table probes: every prefix of the row, laid out and
               // never painted, alive for exactly one pointer gesture.
+              //
+              // `OverflowBox` hands them UNBOUNDED width, which the `Stack`
+              // this replaced gave them for free. Without it a prefix wider
+              // than the paragraph would be measured at the paragraph's
+              // width, and every boundary past that point would be wrong —
+              // clicks landing in the wrong place only in long equations,
+              // the worst kind of bug to notice.
               if (_probeTexes != null)
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  child: Offstage(
-                    child: Column(
+                Offstage(
+                  // Zero-sized on the outside, unbounded on the inside: the
+                  // `SizedBox` gives the `OverflowBox` something finite to
+                  // size ITSELF to (a Column hands its children unbounded
+                  // height, which an OverflowBox asserts on), and the
+                  // OverflowBox then hands the probes the unbounded width
+                  // they need to be measured at their true size.
+                  child: SizedBox(
+                    width: 0,
+                    height: 0,
+                    child: OverflowBox(
+                      alignment: Alignment.topLeft,
+                      maxWidth: double.infinity,
+                      maxHeight: double.infinity,
+                      child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         for (var i = 0; i < _probeTexes!.length; i++)
@@ -552,7 +585,8 @@ class MathFieldState extends State<MathField> {
                               compact: widget.compact,
                             ),
                           ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

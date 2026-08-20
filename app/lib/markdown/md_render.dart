@@ -706,16 +706,11 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
           // `compact`: this one sits MID-SENTENCE, so an explanation box
           // would break the paragraph open. It moves into a tooltip instead —
           // and the equation is set in TeX text style, not display style.
-          // The DOUBLE-dollar form is the author asking for display style,
-          // mid-sentence or not; a full display LINE never reaches here (the
-          // whole-line branch above takes it first).
-          child: OnoteMath(
-            c.kind == MdInline.mathDisplay
-                ? '\\displaystyle ${c.inner}'
-                : c.inner,
-            textStyle: base,
-            compact: true,
-          ),
+          // No `\\displaystyle` prefix any more: every equation is set in
+          // display style now, in a sentence exactly as in a box of its own,
+          // so the double-dollar form differs only in being centred on a line
+          // of its own (the whole-line branch above).
+          child: OnoteMath(c.inner, textStyle: base, compact: true),
         ));
       case MdInline.extLink:
         spans.add(WidgetSpan(

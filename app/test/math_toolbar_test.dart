@@ -153,7 +153,7 @@ void main() {
     registerEditor(inserted: inserted, onToggle: () => toggled++);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('fraction — type 1/2'));
+    await tester.tap(find.byTooltip('fraction (1/2)'));
     await tester.pumpAndSettle();
     expect(inserted.single.id, 'frac');
 
@@ -223,7 +223,6 @@ void main() {
       WidgetTester tester, {
       required ValueChanged<MathItem> onInsert,
       bool latexMode = false,
-      String? result,
       VoidCallback? onToggle,
       List<String> recents = const ['theta', 'pi'],
     }) async {
@@ -234,7 +233,6 @@ void main() {
             alignment: Alignment.topLeft,
             child: MathBar(
               latexMode: latexMode,
-              result: result,
               recentIds: recents,
               onToggleLatex: onToggle ?? () {},
               onInsert: onInsert,
@@ -246,7 +244,7 @@ void main() {
     }
 
     testWidgets('the whole row fits a 1280 px window', (tester) async {
-      await pumpBar(tester, onInsert: (_) {}, result: '0.16666666');
+      await pumpBar(tester, onInsert: (_) {});
       final w = tester.getSize(find.byType(MathBar)).width;
       // Measured, and reported here so a regression names its own number.
       // Below this the row scrolls (drag or wheel, added with the doors) —
@@ -257,15 +255,14 @@ void main() {
               'smallest window the app opens, which is 1280');
     });
 
-    testWidgets('the answer sits in a fixed slot, so nothing slides',
+    testWidgets('the row carries no answer readout at all any more',
         (tester) async {
+      // It used to hold a live `= 42` slot. The owner found the top of the
+      // window an unintuitive place for an answer, so it moved to the caret
+      // (`= ` writes it) and the row lost a control rather than gaining one.
       await pumpBar(tester, onInsert: (_) {});
-      final without = tester.getSize(find.byType(MathBar)).width;
-      await pumpBar(tester, onInsert: (_) {}, result: '0.166666666');
-      final withAnswer = tester.getSize(find.byType(MathBar)).width;
-      expect(withAnswer, without,
-          reason: 'the row used to grow by up to 177 px as the answer '
-              'appeared, shoving the controls at its end sideways mid-typing');
+      expect(find.textContaining('='), findsNothing,
+          reason: 'no readout, and nothing left behind where it stood');
     });
 
     testWidgets('every quick shape draws as notation, not as source',
@@ -274,9 +271,11 @@ void main() {
       expect(find.byType(MathSourceFallback), findsNothing);
       for (final id in kMathQuickShapes) {
         final item = mathItemsById[id]!;
+        // `name (\x)` — the owner's format: one label to read, not a
+        // sentence with an instruction buried in the middle of it.
         final tip = item.typeIt == null
             ? item.name
-            : item.name + ' — type ' + item.typeIt!;
+            : item.name + ' (' + item.typeIt! + ')';
         expect(find.byTooltip(tip), findsOneWidget,
             reason: id + ' is missing from the quick shapes');
       }
@@ -312,7 +311,7 @@ void main() {
           reason: chips.toString() + ' chips on ' + rows.length.toString() +
               ' rows is a column, not a grid');
 
-      await tester.tap(find.byTooltip(r'nth root — type \root').first);
+      await tester.tap(find.byTooltip(r'nth root (\root)').first);
       await tester.pumpAndSettle();
       expect(got?.id, 'nthroot');
     });
@@ -380,7 +379,7 @@ void main() {
           reason: 'one tap has to land on the second door, not just dismiss '
               'the first');
       // And the Sets panel really is the one showing.
-      expect(find.byTooltip('is in — type ' + bs + 'in'), findsOneWidget);
+      expect(find.byTooltip('is in (' + bs + 'in)'), findsOneWidget);
     });
 
     testWidgets('clicking the open door again closes it', (tester) async {

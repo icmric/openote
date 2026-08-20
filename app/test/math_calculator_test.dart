@@ -91,6 +91,62 @@ void main() {
     });
   });
 
+  group('typing `= ` writes the answer down', () {
+    // The owner: *"rather than having it appear up the top though since that
+    // isnt intuitive, maybe we make it so that … when the person puts an =
+    // sign and presses space afterwards it inserts the solution?"*
+    MathEditor after(String chars) {
+      final e = typed(chars);
+      e.insertChar(' ');
+      return e;
+    }
+
+    test('2+3= and a space gives 5', () {
+      expect(after('2+3=').latex, '2+3=5');
+    });
+
+    test('a fraction answers too — the tree, not the LaTeX', () {
+      // `/` builds the fraction and leaves the caret IN the denominator, so
+      // the student steps out of it before finishing the sum, exactly as they
+      // would on screen. (Left inside, `= ` works out the denominator's own
+      // row — also right, just not what this test is about.)
+      final e = typed('1/2');
+      e.placeAtEnd();
+      e.insertChar('=');
+      e.insertChar(' ');
+      expect(e.latex, contains('0.5'),
+          reason: 'the answer comes through the same projection of the TREE '
+              'that finally made the calculator work at all');
+    });
+
+    test('only the run since the LAST = is worked out', () {
+      // `x` is unknown, so an answer for the whole line is impossible — but
+      // the part the student just wrote is not.
+      expect(after('x=2+3=').latex, endsWith('=5'));
+    });
+
+    test('an expression with an unknown in it just gives you a space', () {
+      final e = after('y=m*x=');
+      expect(e.latex, isNot(contains('=5')));
+      expect(e.latex, contains(r'\ '),
+          reason: 'the space is a space, and the student never learns the '
+              'feature was even considered');
+    });
+
+    test('nothing before the = means nothing to work out', () {
+      expect(after('=').latex, contains(r'\ '));
+    });
+
+    test('an answer with no digits — undefined, infinity — is refused', () {
+      expect(after('1/0 =').latex, isNot(contains('inf')));
+      expect(after('1/0 =').latex, isNot(contains('undefined')));
+    });
+
+    test('and it never fires without the space', () {
+      expect(typed('2+3=').latex, '2+3=');
+    });
+  });
+
   group('through the Maths tab, on the real widget', () {
     var haveSqlite = false;
     setUpAll(() => haveSqlite = initSqliteForTests());
@@ -128,16 +184,20 @@ void main() {
       ));
       await tester.pump();
 
-      expect(app.activeMath, isNotNull);
-      expect(app.activeMath!.result, '0.5',
-          reason: 'the readout the Maths tab shows — dead for every fraction '
-              'before the projection');
+      expect(app.activeMath, isNotNull,
+          reason: 'the Maths tab still finds the equation — it just carries '
+              'no answer readout any more');
 
-      app.activeMath!.useResult!();
+      // The answer arrives by typing, in the equation, through the real
+      // widget: `= ` at the end of a half-written sum.
+      editor.placeAtEnd();
+      editor.insertChar('=');
+      editor.insertChar(' ');
       await tester.pump();
-      expect(latest, contains('=0.5'),
-          reason: 'the answer button writes "= 0.5" into the equation — and '
-              'until 482b9e2 it wrote the literal characters =\$value');
+      expect(editor.latex, contains('0.5'),
+          reason: 'a fraction built visually works out to 0.5 — the whole '
+              'point of projecting the tree instead of its LaTeX');
+      expect(latest, isNotNull);
     });
   });
 }
