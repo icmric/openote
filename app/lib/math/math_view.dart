@@ -4,6 +4,7 @@ import 'package:flutter_math_fork/flutter_math.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import 'latex_compat.dart';
+import 'math_parse.dart';
 
 /// The one place the app turns LaTeX into something on screen.
 ///
@@ -116,5 +117,85 @@ class MathSourceFallback extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+
+/// Everything the app agrees is "maths on the clipboard".
+///
+/// One place, because the answer is needed by four: the equation's own Ctrl+C,
+/// its Ctrl+V, a paste into a paragraph, and a paste onto the canvas. They
+/// disagreed before, and the symptom was always the same — the student looked
+/// at backslashes.
+class MathClipboard {
+  MathClipboard._();
+
+  /// The wrappers people actually paste. `$…$` and `$$…$$` are Markdown's;
+  /// `\(…\)` and `\[…\]` are what ChatGPT, MathJax and most LaTeX editors
+  /// hand you, and both were recognised by the renderer and by neither paste
+  /// path.
+  static const List<(String, String)> _wrappers = [
+    (r'$$', r'$$'),
+    (r'\[', r'\]'),
+    (r'\(', r'\)'),
+    (r'$', r'$'),
+  ];
+
+  /// Strip any delimiters off, so the inside can be parsed as maths.
+  static String unwrap(String source) {
+    var t = source.trim();
+    for (final (open, close) in _wrappers) {
+      if (t.length > open.length + close.length &&
+          t.startsWith(open) &&
+          t.endsWith(close)) {
+        return t.substring(open.length, t.length - close.length).trim();
+      }
+    }
+    return t;
+  }
+
+  /// Wrap for a SENTENCE. Copying without the dollars is why a pasted equation
+  /// stayed plain text in a paragraph for ever — nothing downstream could tell
+  /// it was maths.
+  ///
+  /// A trailing `\ ` is dropped: the inline grammar requires a non-space
+  /// before the closing `$` (Pandoc's rule, and the thing that stops two
+  /// prices in one sentence becoming an equation), so an equation ending in a
+  /// typed space would have printed its own source.
+  static String wrapInline(String latex) {
+    var t = latex.trim();
+    // A trailing typed space serialises as `\ `, and `trim()` takes only
+    // the space — leaving a DANGLING backslash, which breaks the render more
+    // thoroughly than the space did. Both halves have to go.
+    while (t.isNotEmpty && (t.endsWith(r'\') || t.endsWith(r'\ '))) {
+      t = t.substring(0, t.length - 1).trimRight();
+    }
+    if (t.isEmpty) return '';
+    return '\$$t\$';
+  }
+
+  /// Does this text look like maths a student meant to paste as maths?
+  ///
+  /// Deliberately narrow. A false positive turns someone's prose into an
+  /// equation, which is worse than a false negative leaving them to press the
+  /// button — so it wants either real delimiters or a backslash command, and
+  /// it will not fire on a single line of ordinary words.
+  static bool looksLikeMaths(String source) {
+    final t = source.trim();
+    if (t.isEmpty || t.contains('\n')) return false;
+    for (final (open, close) in _wrappers) {
+      if (t.length > open.length + close.length &&
+          t.startsWith(open) &&
+          t.endsWith(close)) {
+        return true;
+      }
+    }
+    // Not "does it contain a backslash word" — `C:\\Users\\me` does, and a
+    // pasted file path becoming an equation is exactly the false positive
+    // that costs more than the miss. The honest test is whether it would
+    // actually PARSE as maths, which is self-maintaining: every command the
+    // editor learns, this learns with it.
+    if (!t.contains(r'\')) return false;
+    return parseLatex(t).supported;
   }
 }

@@ -17,6 +17,7 @@ import 'package:openote/math/math_editor.dart';
 import 'package:openote/math/math_inventory.dart';
 import 'package:openote/math/math_tree.dart';
 import 'package:openote/math/math_view.dart';
+import 'package:openote/ui/math_bar.dart';
 
 void main() {
   Future<bool> drawn(WidgetTester tester, String tex) async {
@@ -86,6 +87,46 @@ void main() {
       for (final item in mathItems) {
         expect(item.label != null || item.preview != null, isTrue,
             reason: '${item.id} would render as a blank button');
+      }
+    });
+
+    test('every symbol is reachable by BROWSING, not just by search', () {
+      // Adding a symbol used to put it behind no door at all — findable only
+      // by knowing to search for the thing you are trying to find. Measured
+      // after one batch of additions: 44 of 230 items were unreachable this
+      // way. The doors sweep up their categories now, so this is the property
+      // that keeps a new row from quietly disappearing.
+      final reachable = <String>{...kMathQuickShapes};
+      for (final d in kMathDoors) {
+        for (final i in mathDoorItems(d)) {
+          reachable.add(i.id);
+        }
+      }
+      final orphans = [
+        for (final i in mathItems)
+          if (!reachable.contains(i.id)) i.id
+      ];
+      expect(orphans, isEmpty,
+          reason: 'behind no door: ${orphans.join(", ")}');
+    });
+
+    test('the Greek alphabet is the WHOLE alphabet', () {
+      // Asked for the Greek alphabet, "some of it" is a wrong answer. TeX
+      // names only eleven capitals — the other thirteen are drawn as Latin
+      // capitals, which is what they ARE — and a student hunting for capital
+      // sigma has no way to know which eleven are special.
+      const names = [
+        'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta',
+        'iota', 'kappa', 'lambda', 'mu', 'nu', 'xi', 'omicron', 'pi', 'rho',
+        'sigma', 'tau', 'upsilon', 'phi', 'chi', 'psi', 'omega',
+      ];
+      final greek = mathItemsIn(MathCat.greek).map((i) => i.name).toSet();
+      for (final n in names) {
+        expect(greek, contains('capital $n'), reason: 'no capital $n');
+      }
+      // Lower case: `omicron` has no distinct glyph and is deliberately absent.
+      for (final n in names.where((n) => n != 'omicron')) {
+        expect(greek, contains(n), reason: 'no lower-case $n');
       }
     });
 

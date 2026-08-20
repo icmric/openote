@@ -6,7 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/live_markdown_controller.dart';
 import 'package:openote/math/math_editor.dart';
+import 'package:openote/markdown/md_syntax.dart';
 import 'package:openote/math/math_field.dart';
+import 'package:openote/math/math_view.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -60,8 +62,11 @@ void main() {
       editor.insertSource(r'\frac{1}{2}');
       await pump(tester);
       await chord(tester, LogicalKeyboardKey.keyX);
-      expect(clipboard['text'], r'\frac{1}{2}',
-          reason: 'the equation has to reach the clipboard');
+      // WITH the dollars: copying bare LaTeX is why a pasted equation stayed
+      // plain text in a paragraph for ever — nothing downstream could tell it
+      // was maths, so it never converted and never even flashed.
+      expect(clipboard['text'], r'$\frac{1}{2}$',
+          reason: 'the equation has to reach the clipboard, saying it is one');
       expect(editor.latex, '', reason: 'and be gone from the equation');
       expect(commits, isNotEmpty,
           reason: 'the block has to be told, or the cut is not saved');
@@ -71,7 +76,7 @@ void main() {
       editor.insertSource(r'x^{2}');
       await pump(tester);
       await chord(tester, LogicalKeyboardKey.keyC);
-      expect(clipboard['text'], r'x^{2}');
+      expect(clipboard['text'], r'$x^{2}$');
       expect(editor.latex, r'x^{2}');
     });
 
@@ -98,6 +103,75 @@ void main() {
       expect(e.latex, '');
       e.insertSource(taken);
       expect(e.latex, r'\sqrt{x+1}');
+    });
+  });
+
+  group('maths on the clipboard says it is maths', () {
+    // Every one of these ended with a student looking at backslashes: the
+    // equation's own Ctrl+C wrote LaTeX with NO delimiters, so pasting it into
+    // a sentence was plain text for ever — it never converted and never even
+    // flashed, which is exactly what was reported.
+
+    test('copying wraps it, so anywhere it lands can tell', () {
+      expect(MathClipboard.wrapInline(r'\frac{1}{2}'), r'$\frac{1}{2}$');
+    });
+
+    test('and a trailing typed space is dropped rather than breaking it', () {
+      // The inline grammar needs a non-space before the closing `$` — Pandoc's
+      // rule, and the thing that stops two prices in one sentence becoming an
+      // equation. An equation ending in a typed space would have printed its
+      // own source.
+      final wrapped = MathClipboard.wrapInline('x' + r'\ ');
+      expect(wrapped, r'$x$');
+      expect(mdInlineRe.firstMatch('a ' + wrapped + ' b'), isNotNull);
+    });
+
+    test('every flavour of delimiter comes off on the way in', () {
+      // `$…$` and `$$…$$` are Markdown's; `\(…\)` and `\[…\]` are what
+      // ChatGPT, MathJax and most LaTeX editors hand you. All four were
+      // understood by the renderer and by neither paste path.
+      for (final wrapped in [
+        r'$\frac{1}{2}$',
+        r'$$\frac{1}{2}$$',
+        r'\(\frac{1}{2}\)',
+        r'\[\frac{1}{2}\]',
+        r'  \frac{1}{2}  ',
+      ]) {
+        expect(MathClipboard.unwrap(wrapped), r'\frac{1}{2}',
+            reason: 'could not unwrap $wrapped');
+      }
+    });
+
+    test('and the round trip holds', () {
+      final e = MathEditor.empty()..insertSource(r'$\frac{n}{2}$');
+      expect(e.latex, r'\frac{n}{2}');
+      final e2 = MathEditor.empty()..insertSource(r'\(\frac{n}{2}\)');
+      expect(e2.latex, r'\frac{n}{2}');
+    });
+
+    test('prose is NOT turned into an equation', () {
+      // A false positive rewrites someone's writing; a false negative leaves
+      // them to press a button. Only one of those is recoverable.
+      for (final plain in [
+        'just some words',
+        'the cost is 5 dollars',
+        'a line\nand another',
+        '',
+        r'C:\\Users\\me',
+      ]) {
+        expect(MathClipboard.looksLikeMaths(plain), isFalse, reason: plain);
+      }
+    });
+
+    test('but real maths is', () {
+      for (final maths in [
+        r'$x^2$',
+        r'\(\frac{1}{2}\)',
+        r'\frac{1}{2}',
+        r'\sum_{n=1}^{\infty}',
+      ]) {
+        expect(MathClipboard.looksLikeMaths(maths), isTrue, reason: maths);
+      }
     });
   });
 

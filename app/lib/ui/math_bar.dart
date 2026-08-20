@@ -76,6 +76,20 @@ const List<String> kMathQuickShapes = [
 /// the other comparisons rather than with the arithmetic it is filed under.
 typedef MathDoor = ({String label, String tip, List<String> ids});
 
+/// The categories a door SWEEPS UP after its explicit list.
+///
+/// Without this, adding a symbol to the inventory put it behind no door at all
+/// — reachable only by knowing to search for it. Measured after one batch of
+/// additions: 44 of 230 items were unreachable by browsing. The explicit list
+/// stays, because order is a judgement no rule can make; anything not named
+/// there is appended, so a new symbol is browsable the moment it exists.
+const Map<String, List<MathCat>> kMathDoorSweeps = {
+  'Shapes': [MathCat.structure],
+  'Operators': [MathCat.common],
+  'Compare': [MathCat.compare],
+  'Sets': [MathCat.sets],
+};
+
 /// Ordered so a student reading left to right meets things in the order they
 /// meet them at school, and so the pairs that belong together sit together.
 ///
@@ -181,16 +195,29 @@ const Map<String, List<MathCat>> kMathDoorCats = {
   'Subjects': [MathCat.geometry, MathCat.stats, MathCat.science],
 };
 
-/// What a door shows, resolved from either source.
+/// Every id named explicitly by SOME door, so a sweep can skip them.
+final Set<String> _explicitlyPlaced = {
+  for (final d in kMathDoors) ...d.ids,
+  ...kMathQuickShapes,
+};
+
+/// What a door shows: its curated list first, then anything of its categories
+/// that nobody placed by hand.
 List<MathItem> mathDoorItems(MathDoor door) {
   final cats = kMathDoorCats[door.label];
   if (cats != null) {
     return [for (final c in cats) ...mathItemsIn(c)];
   }
-  return [
+  final out = <MathItem>[
     for (final id in door.ids)
       if (mathItemsById[id] case final i?) i
   ];
+  for (final c in kMathDoorSweeps[door.label] ?? const <MathCat>[]) {
+    for (final i in mathItemsIn(c)) {
+      if (!_explicitlyPlaced.contains(i.id)) out.add(i);
+    }
+  }
+  return out;
 }
 
 

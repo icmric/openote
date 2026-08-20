@@ -61,6 +61,31 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **Undo takes back what you just typed, not the whole equation.** Ctrl+Z after
   a typo used to delete the equation and its box.
 
+### Added — highlight part of an equation, and a lot more symbols
+
+- **You can highlight inside an equation now** — Shift with the arrow keys,
+  Shift+Home/End, or Ctrl+A — and **cut or copy just that part** instead of the
+  whole thing. Dragging across a fraction takes the whole fraction, because
+  half of one is not an equation.
+- **The whole Greek alphabet**, capitals included. Only eleven capitals have a
+  LaTeX name, which is why the rest were missing; they are all there now.
+- **The "nots"**: ≮ ≯ ≰ ≱ ≁ ≇ ≢ ∦ ⊈ ⊅ ⊉ ∄ ↛ ⇏ ⇎ — and about forty other
+  symbols besides, from ∓ ∘ ⊗ ⊙ ⋯ ⋮ to ⊨ ⊢ ⊇ ∋ ℵ ↪ ↗ ∡.
+- Every symbol is now reachable by **browsing** as well as searching. Forty-four
+  of them could previously only be found if you already knew to search for it.
+
+### Fixed — pasted maths turns into maths
+
+- **Copying an equation now says it is an equation.** Pasted into a sentence it
+  used to stay as plain LaTeX for ever — nothing could tell it was maths.
+- **`\(…\)` and `\[…\]` are understood** — what ChatGPT and most LaTeX
+  editors give you — as well as `$…$` and `$$…$$`.
+- **Pasting maths into a paragraph turns it into an equation** rather than
+  leaving backslashes in your sentence. Ordinary writing and file paths are
+  left alone.
+- An equation ending in a typed space no longer breaks and prints its own
+  source.
+
 ### Fixed — equations in a sentence, a summation you can navigate, and a box that grows
 
 - **Alt+= in a paragraph now makes an equation right there**, in the sentence,

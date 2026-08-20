@@ -26,6 +26,7 @@ import 'math_inventory.dart';
 import 'linear_math.dart';
 import 'math_parse.dart';
 import 'math_tree.dart';
+import 'math_view.dart';
 
 class MathEditor {
   MathEditor._(this.root) {
@@ -81,6 +82,9 @@ class MathEditor {
           caretIndex: caretIndex,
           decorate: true,
           activeText: _openText,
+          selectionRow: selectionRow,
+          selectionStart: selectionStart,
+          selectionEnd: selectionEnd,
           accent: style.accent,
           tint: style.tint,
           dim: style.dim,
@@ -91,18 +95,100 @@ class MathEditor {
   /// a keystroke is going into words or into maths.
   MText? get openText => _openText;
 
+  // ───────────────────────────────────────────────────────── selection
+  //
+  // **A selection is a contiguous run of siblings in ONE row.** Not a range
+  // over the whole tree: a run that started in a numerator and ended outside
+  // the fraction would have no meaning to copy, cut or replace, and every
+  // operation on it would need a special case. Shift+arrow therefore steps
+  // OVER a structure rather than into it — selecting a fraction selects the
+  // whole fraction, which is what a student means by dragging across one.
+
+  MRow? _anchorRow;
+  int _anchorIndex = -1;
+
+  bool get hasSelection =>
+      _anchorRow != null &&
+      identical(_anchorRow, caretRow) &&
+      _anchorIndex != caretIndex;
+
+  MRow? get selectionRow => hasSelection ? caretRow : null;
+  int get selectionStart =>
+      hasSelection ? (_anchorIndex < caretIndex ? _anchorIndex : caretIndex) : -1;
+  int get selectionEnd =>
+      hasSelection ? (_anchorIndex < caretIndex ? caretIndex : _anchorIndex) : -1;
+
+  /// Forget the highlight. Every plain movement does this — a selection that
+  /// survives an arrow key is one the student has stopped seeing.
+  void clearSelection() {
+    _anchorRow = null;
+    _anchorIndex = -1;
+  }
+
+  /// Shift+←/→. Steps over structures rather than into them, and stops at the
+  /// row's own edges, which is what keeps the run contiguous by construction.
+  bool extendBy(int delta) {
+    _openText = null;
+    if (_anchorRow == null || !identical(_anchorRow, caretRow)) {
+      _anchorRow = caretRow;
+      _anchorIndex = caretIndex;
+    }
+    final next = caretIndex + delta;
+    if (next < 0 || next > caretRow.length) return false;
+    caretIndex = next;
+    return true;
+  }
+
+  /// Ctrl+A — everything in the row the caret is in, which for an equation
+  /// with no structures is the whole equation.
+  bool selectAll() {
+    if (caretRow.isEmpty) return false;
+    _openText = null;
+    _anchorRow = caretRow;
+    _anchorIndex = 0;
+    caretIndex = caretRow.length;
+    return true;
+  }
+
+  /// The highlighted run as canonical LaTeX — what goes on the clipboard.
+  String get selectionLatex {
+    if (!hasSelection) return '';
+    final slice = MRow();
+    for (var i = selectionStart; i < selectionEnd; i++) {
+      slice.children.add(caretRow.children[i]);
+    }
+    final out = rowToTex(slice, kStoreCtx);
+    slice.children.clear();
+    return out;
+  }
+
+  /// Remove the highlighted run. Returns false when there was none.
+  bool deleteSelection() {
+    if (!hasSelection) return false;
+    final start = selectionStart, end = selectionEnd;
+    for (var i = end; i > start; i--) {
+      caretRow.removeAt(i - 1);
+    }
+    caretIndex = start;
+    clearSelection();
+    _openText = null;
+    return true;
+  }
+
   // ───────────────────────────────────────────────────────── movement
 
   void placeAtEnd() {
     caretRow = root;
     caretIndex = root.length;
     _openText = null;
+    clearSelection();
   }
 
   void placeAtStart() {
     caretRow = root;
     caretIndex = 0;
     _openText = null;
+    clearSelection();
   }
 
   /// Put the caret in the first box left to fill, or at the end if there
@@ -142,6 +228,7 @@ class MathEditor {
 
   bool moveRight() {
     _openText = null;
+    clearSelection();
     if (caretIndex < caretRow.length) {
       final n = caretRow.children[caretIndex];
       final slots = n.slots;
@@ -158,6 +245,7 @@ class MathEditor {
 
   bool moveLeft() {
     _openText = null;
+    clearSelection();
     if (caretIndex > 0) {
       final n = caretRow.children[caretIndex - 1];
       final slots = n.slots;
@@ -207,6 +295,7 @@ class MathEditor {
 
   bool _vertical({required bool up}) {
     _openText = null;
+    clearSelection();
     var row = caretRow;
     // Climb until some ancestor offers a move in that direction — so ↑ from
     // deep inside a denominator still reaches the numerator.
@@ -343,6 +432,12 @@ class MathEditor {
       return true;
     }
 
+    // Delimiters come off first, whichever flavour: `$…$`, `$$…$$`, and the
+    // `\(…\)` / `\[…\]` that ChatGPT and every LaTeX editor hand you. All
+    // four were understood by the renderer and by neither paste path, so the
+    // student saw backslashes at both ends of their own equation.
+    source = MathClipboard.unwrap(source);
+
     // The LINEAR reading goes first, but only when it actually says something
     // different. `1/2` is perfectly valid LaTeX — three ordinary atoms — so a
     // LaTeX-first order pasted it as the characters `1/2` rather than as the
@@ -364,6 +459,7 @@ class MathEditor {
     // typed after a π landed inside the preceding \text{…} instead of in the
     // equation, which looks like the keyboard has stopped working.
     _openText = null;
+    deleteSelection();
     final nodes = item.build();
     caretRow.insertAll(caretIndex, nodes);
     caretIndex += nodes.length;
@@ -381,6 +477,8 @@ class MathEditor {
   /// One typed character. Returns false only when nothing at all happened.
   bool insertChar(String ch) {
     if (ch.isEmpty) return false;
+    // Typing over a highlight replaces it, the way it does in every editor.
+    deleteSelection();
 
     if (_openText != null && ch != '\n') {
       // Inside `\text{…}`: letters, spaces and punctuation are words, not
@@ -663,6 +761,7 @@ class MathEditor {
   /// Returns false only at the very start of the equation, which the caller
   /// reads as "leave".
   bool backspace() {
+    if (deleteSelection()) return true;
     if (_openText != null && _openText!.text.isNotEmpty) {
       final t = _openText!;
       t.text = t.text.substring(0, t.text.length - 1);
@@ -763,6 +862,7 @@ class MathEditor {
   /// Delete forward. Symmetric with [backspace] but takes the node ahead —
   /// and leaves the caret where it was, in front of what is now there.
   bool delete() {
+    if (deleteSelection()) return true;
     if (caretIndex >= caretRow.length) return false;
     final n = caretRow.children[caretIndex];
     if (n is MText) {

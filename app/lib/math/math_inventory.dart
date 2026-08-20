@@ -429,26 +429,51 @@ final List<MathItem> _greek = () {
     ('sigma', 'σ'), ('tau', 'τ'), ('upsilon', 'υ'), ('phi', 'φ'),
     ('chi', 'χ'), ('psi', 'ψ'), ('omega', 'ω'),
   ];
-  const upper = <(String, String)>[
-    ('Gamma', 'Γ'), ('Delta', 'Δ'), ('Theta', 'Θ'), ('Lambda', 'Λ'),
-    ('Xi', 'Ξ'), ('Pi', 'Π'), ('Sigma', 'Σ'), ('Upsilon', 'Υ'),
-    ('Phi', 'Φ'), ('Psi', 'Ψ'), ('Omega', 'Ω'),
+  // **All twenty-four capitals**, not the eleven LaTeX happens to name.
+  //
+  // TeX has no `\Alpha`, `\Beta`, `\Rho` and so on for a reason: capital
+  // alpha IS a capital A, so the command would be a synonym for a letter you
+  // can already type. That is a typesetter's reason, not a student's — asked
+  // for the Greek alphabet, "some of it" is a wrong answer, and a student
+  // hunting for capital sigma has no way to know that eleven of the
+  // twenty-four are special. Each of the other thirteen inserts the Latin
+  // capital it is drawn as, which is exactly what it looks like set.
+  const upper = <(String, String, String)>[
+    ('Alpha', 'Α', 'A'), ('Beta', 'Β', 'B'), ('Gamma', 'Γ', r'\Gamma'),
+    ('Delta', 'Δ', r'\Delta'), ('Epsilon', 'Ε', 'E'), ('Zeta', 'Ζ', 'Z'),
+    ('Eta', 'Η', 'H'), ('Theta', 'Θ', r'\Theta'), ('Iota', 'Ι', 'I'),
+    ('Kappa', 'Κ', 'K'), ('Lambda', 'Λ', r'\Lambda'), ('Mu', 'Μ', 'M'),
+    ('Nu', 'Ν', 'N'), ('Xi', 'Ξ', r'\Xi'), ('Omicron', 'Ο', 'O'),
+    ('Pi', 'Π', r'\Pi'), ('Rho', 'Ρ', 'P'), ('Sigma', 'Σ', r'\Sigma'),
+    ('Tau', 'Τ', 'T'), ('Upsilon', 'Υ', r'\Upsilon'), ('Phi', 'Φ', r'\Phi'),
+    ('Chi', 'Χ', 'X'), ('Psi', 'Ψ', r'\Psi'), ('Omega', 'Ω', r'\Omega'),
   ];
   return [
-    for (final (n, glyph) in [...lower, ...upper])
+    for (final (n, glyph) in lower)
       _symbol(
         id: 'greek-$n',
         cat: MathCat.greek,
-        // `epsilon` renders as the round ε students are taught, not \epsilon's
-        // lunate ϵ; `phi` likewise.
-        name: n.toLowerCase() == n ? n : 'capital ${n.toLowerCase()}',
+        name: n,
         label: glyph,
+        // `epsilon` renders as the round ε students are taught, not
+        // \epsilon's lunate ϵ; `phi` likewise.
         tex: switch (n) {
           'epsilon' => r'\varepsilon',
           'phi' => r'\varphi',
           _ => '\\$n',
         },
         typeIt: '\\$n',
+      ),
+    for (final (n, glyph, tex) in upper)
+      _symbol(
+        id: 'greek-$n',
+        cat: MathCat.greek,
+        name: 'capital ${n.toLowerCase()}',
+        label: glyph,
+        tex: tex,
+        // Only the eleven TeX names answer to a backslash; the rest are
+        // ordinary capitals and the student simply types them.
+        typeIt: tex.startsWith('\\') ? tex : null,
       ),
   ];
 }();
@@ -639,6 +664,80 @@ final List<MathItem> _functions = () {
   ];
 }();
 
+/// The negations, kept together.
+///
+/// The owner: *"missing the nots for some of the chars, those sorts of
+/// things."* A student who has ≤ and needs ≰ should not have to know that TeX
+/// spells it `\\nleq` — the door has both, side by side, and the plain-words
+/// search finds either by "not".
+final List<MathItem> _negations = [
+  _symbol(id: 'nless', cat: MathCat.compare, name: 'not less than', label: '≮', tex: r'\nless', cls: MClass.rel, aliases: ['not smaller']),
+  _symbol(id: 'ngtr', cat: MathCat.compare, name: 'not greater than', label: '≯', tex: r'\ngtr', cls: MClass.rel, aliases: ['not bigger']),
+  _symbol(id: 'nleq', cat: MathCat.compare, name: 'not less than or equal', label: '≰', tex: r'\nleq', cls: MClass.rel),
+  _symbol(id: 'ngeq', cat: MathCat.compare, name: 'not greater than or equal', label: '≱', tex: r'\ngeq', cls: MClass.rel),
+  _symbol(id: 'nsim', cat: MathCat.compare, name: 'not similar to', label: '≁', tex: r'\nsim', cls: MClass.rel),
+  _symbol(id: 'ncong', cat: MathCat.compare, name: 'not congruent to', label: '≇', tex: r'\ncong', cls: MClass.rel),
+  _symbol(id: 'nequiv', cat: MathCat.compare, name: 'not identical to', label: '≢', tex: r'\not\equiv', cls: MClass.rel),
+  _symbol(id: 'nparallel', cat: MathCat.geometry, name: 'not parallel to', label: '∦', tex: r'\nparallel', cls: MClass.rel),
+  _symbol(id: 'nsubseteq', cat: MathCat.sets, name: 'not a subset of or equal', label: '⊈', tex: r'\nsubseteq', cls: MClass.rel),
+  _symbol(id: 'nsupset', cat: MathCat.sets, name: 'does not contain', label: '⊅', tex: r'\not\supset', cls: MClass.rel),
+  _symbol(id: 'nsupseteq', cat: MathCat.sets, name: 'does not contain or equal', label: '⊉', tex: r'\nsupseteq', cls: MClass.rel),
+  _symbol(id: 'nexists', cat: MathCat.sets, name: 'there is no', label: '∄', tex: r'\nexists', aliases: ['does not exist', 'none']),
+  _symbol(id: 'nrightarrow', cat: MathCat.compare, name: 'does not go to', label: '↛', tex: r'\nrightarrow', cls: MClass.rel),
+  _symbol(id: 'nimplies', cat: MathCat.compare, name: 'does not imply', label: '⇏', tex: r'\nRightarrow', cls: MClass.rel),
+  _symbol(id: 'niff', cat: MathCat.compare, name: 'not equivalent to', label: '⇎', tex: r'\nLeftrightarrow', cls: MClass.rel),
+];
+
+/// The rest of what a student reaches for. Anything here that the renderer
+/// cannot draw is cut by `math_inventory_test`'s generated sweep before it can
+/// ever reach a button — that is what makes adding to this list safe.
+final List<MathItem> _extras = [
+  // Arithmetic and grouping.
+  _symbol(id: 'mp', cat: MathCat.common, name: 'minus or plus', label: '∓', tex: r'\mp', cls: MClass.op),
+  _symbol(id: 'ast', cat: MathCat.common, name: 'star operator', label: '∗', tex: r'\ast', cls: MClass.op, aliases: ['times', 'convolution']),
+  _symbol(id: 'circ', cat: MathCat.common, name: 'composed with', label: '∘', tex: r'\circ', cls: MClass.op, aliases: ['ring', 'of']),
+  _symbol(id: 'bullet', cat: MathCat.common, name: 'bullet', label: '∙', tex: r'\bullet', cls: MClass.op),
+  _symbol(id: 'otimes', cat: MathCat.common, name: 'tensor product', label: '⊗', tex: r'\otimes', cls: MClass.op),
+  _symbol(id: 'odot', cat: MathCat.common, name: 'circled dot', label: '⊙', tex: r'\odot', cls: MClass.op),
+  _symbol(id: 'surd', cat: MathCat.common, name: 'root sign', label: '√', tex: r'\surd'),
+  _symbol(id: 'partial-sym', cat: MathCat.common, name: 'partial', label: '∂', tex: r'\partial', aliases: ['curly d', 'del']),
+  _symbol(id: 'vdots', cat: MathCat.common, name: 'vertical dots', label: '⋮', tex: r'\vdots', aliases: ['and so on down']),
+  _symbol(id: 'cdots', cat: MathCat.common, name: 'middle dots', label: '⋯', tex: r'\cdots', aliases: ['and so on']),
+  _symbol(id: 'ddots', cat: MathCat.common, name: 'diagonal dots', label: '⋱', tex: r'\ddots'),
+  // Relations that come up in proofs.
+  _symbol(id: 'simeq', cat: MathCat.compare, name: 'asymptotically equal', label: '≃', tex: r'\simeq', cls: MClass.rel),
+  _symbol(id: 'doteq', cat: MathCat.compare, name: 'approaches the limit', label: '≐', tex: r'\doteq', cls: MClass.rel),
+  _symbol(id: 'models', cat: MathCat.sets, name: 'models', label: '⊨', tex: r'\models', cls: MClass.rel, aliases: ['entails', 'satisfies']),
+  _symbol(id: 'vdash', cat: MathCat.sets, name: 'proves', label: '⊢', tex: r'\vdash', cls: MClass.rel, aliases: ['turnstile', 'yields']),
+  _symbol(id: 'supset', cat: MathCat.sets, name: 'contains', label: '⊃', tex: r'\supset', cls: MClass.rel, aliases: ['superset']),
+  _symbol(id: 'supseteq', cat: MathCat.sets, name: 'contains or equals', label: '⊇', tex: r'\supseteq', cls: MClass.rel),
+  _symbol(id: 'subsetneq', cat: MathCat.sets, name: 'strictly a subset of', label: '⊊', tex: r'\subsetneq', cls: MClass.rel, aliases: ['proper subset']),
+  _symbol(id: 'ni', cat: MathCat.sets, name: 'contains the element', label: '∋', tex: r'\ni', cls: MClass.rel),
+  _symbol(id: 'varnothing', cat: MathCat.sets, name: 'the empty set', label: '∅', tex: r'\varnothing', aliases: ['nothing', 'null']),
+  _symbol(id: 'aleph', cat: MathCat.sets, name: 'aleph', label: 'ℵ', tex: r'\aleph', aliases: ['cardinality', 'infinity of sets']),
+  _symbol(id: 'primes', cat: MathCat.sets, name: 'prime numbers', label: 'ℙ', tex: r'\mathbb{P}', aliases: ['probability']),
+  // Arrows.
+  _symbol(id: 'uparrow', cat: MathCat.compare, name: 'up arrow', label: '↑', tex: r'\uparrow', cls: MClass.rel),
+  _symbol(id: 'downarrow', cat: MathCat.compare, name: 'down arrow', label: '↓', tex: r'\downarrow', cls: MClass.rel),
+  _symbol(id: 'longrightarrow', cat: MathCat.compare, name: 'long arrow', label: '⟶', tex: r'\longrightarrow', cls: MClass.rel),
+  _symbol(id: 'hookrightarrow', cat: MathCat.compare, name: 'injects into', label: '↪', tex: r'\hookrightarrow', cls: MClass.rel),
+  _symbol(id: 'nearrow', cat: MathCat.compare, name: 'increasing', label: '↗', tex: r'\nearrow', cls: MClass.rel, aliases: ['rising']),
+  _symbol(id: 'searrow', cat: MathCat.compare, name: 'decreasing', label: '↘', tex: r'\searrow', cls: MClass.rel, aliases: ['falling']),
+  // Geometry and measurement.
+  _symbol(id: 'measuredangle', cat: MathCat.geometry, name: 'measured angle', label: '∡', tex: r'\measuredangle'),
+  _symbol(id: 'square-shape', cat: MathCat.geometry, name: 'square', label: '□', tex: r'\square', aliases: ['quadrilateral']),
+  _symbol(id: 'diamond', cat: MathCat.geometry, name: 'diamond', label: '⋄', tex: r'\diamond'),
+  _symbol(id: 'therefore-geo', cat: MathCat.geometry, name: 'right angle', label: '⦜', tex: r'\perp'),
+  // Physics and stats.
+  _symbol(id: 'propto-sci', cat: MathCat.science, name: 'proportional to', label: '∝', tex: r'\propto', cls: MClass.rel),
+  _symbol(id: 'ell', cat: MathCat.science, name: 'length', label: 'ℓ', tex: r'\ell'),
+  _symbol(id: 'Re', cat: MathCat.science, name: 'real part', label: 'ℜ', tex: r'\Re'),
+  _symbol(id: 'Im', cat: MathCat.science, name: 'imaginary part', label: 'ℑ', tex: r'\Im'),
+  _symbol(id: 'mho', cat: MathCat.stats, name: 'sample space', label: 'Ω', tex: r'\Omega', aliases: ['omega', 'outcomes']),
+  _symbol(id: 'binomial', cat: MathCat.stats, name: 'binomial distribution', label: 'B', tex: 'B', cls: MClass.letter),
+  _symbol(id: 'normal', cat: MathCat.stats, name: 'normal distribution', label: 'N', tex: 'N', cls: MClass.letter, aliases: ['gaussian']),
+];
+
 /// THE table. Everything the editor offers, in palette order.
 final List<MathItem> mathItems = [
   ..._structures,
@@ -650,6 +749,8 @@ final List<MathItem> mathItems = [
   ..._geometry,
   ..._science,
   ..._functions,
+  ..._negations,
+  ..._extras,
 ];
 
 final Map<String, MathItem> mathItemsById = {

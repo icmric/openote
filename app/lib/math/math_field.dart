@@ -95,10 +95,20 @@ class MathFieldState extends State<MathField> {
 
   /// LaTeX goes on the clipboard, because that is what pastes into Word,
   /// Overleaf, a message to a classmate, or back into here.
+  ///
+  /// The HIGHLIGHT when there is one, the whole equation when there is not —
+  /// so Ctrl+C behaves the way it does in every other editor rather than
+  /// always taking everything, which is what the owner reported: "when i cut
+  /// it cuts all the content, id love to be able to highlight and cut only
+  /// part of the equation."
   void _copy() {
-    final tex = _e.latex.trim();
+    final tex = (_e.hasSelection ? _e.selectionLatex : _e.latex).trim();
     if (tex.isEmpty) return;
-    Clipboard.setData(ClipboardData(text: tex));
+    // WITH the dollars. Copying bare LaTeX is why a pasted equation stayed
+    // plain text in a paragraph for ever: nothing downstream could tell it was
+    // maths, so it never converted and never even flashed. `$…$` still pastes
+    // into Word, Overleaf and a message as the LaTeX it is.
+    Clipboard.setData(ClipboardData(text: MathClipboard.wrapInline(tex)));
   }
 
   /// Take whatever is on the clipboard as maths. LaTeX first; failing that the
@@ -148,18 +158,23 @@ class MathFieldState extends State<MathField> {
     // equation the student was in the middle of writing. That is the only
     // keystroke in the editor that could still lose work.
     //
-    // There is no selection model yet (v0.18 phase 3), so copy and cut take the
-    // whole equation. Said plainly rather than half-built: a Ctrl+C that copies
-    // more than you highlighted is a surprise, but a Ctrl+X that deletes your
-    // note is a bug.
+    // Both act on the HIGHLIGHT when there is one and on the whole equation
+    // when there is not — the owner: "when i cut it cuts all the content, id
+    // love to be able to highlight and cut only part of the equation."
+    // Shift+arrows, Shift+Home/End and Ctrl+A make one.
     if (ctrl && k == LogicalKeyboardKey.keyC) {
       _copy();
       return KeyEventResult.handled;
     }
     if (ctrl && k == LogicalKeyboardKey.keyX) {
       _copy();
-      _e.clear();
+      // Cut what was highlighted; only take everything when nothing was.
+      if (!_e.deleteSelection()) _e.clear();
       _changed();
+      return KeyEventResult.handled;
+    }
+    if (ctrl && k == LogicalKeyboardKey.keyA) {
+      if (_e.selectAll()) _changed();
       return KeyEventResult.handled;
     }
     if (ctrl && k == LogicalKeyboardKey.keyV) {
@@ -195,6 +210,13 @@ class MathFieldState extends State<MathField> {
         return KeyEventResult.handled;
 
       case LogicalKeyboardKey.arrowLeft:
+        // Shift EXTENDS rather than moves, and stops at the row's edge — see
+        // the note on `MathEditor.extendBy` for why a highlight never crosses
+        // out of the row it started in.
+        if (shift) {
+          if (_e.extendBy(-1)) _changed();
+          return KeyEventResult.handled;
+        }
         if (_e.moveLeft()) {
           _changed();
         } else {
@@ -203,6 +225,10 @@ class MathFieldState extends State<MathField> {
         return KeyEventResult.handled;
 
       case LogicalKeyboardKey.arrowRight:
+        if (shift) {
+          if (_e.extendBy(1)) _changed();
+          return KeyEventResult.handled;
+        }
         if (_e.moveRight()) {
           _changed();
         } else {
@@ -219,12 +245,20 @@ class MathFieldState extends State<MathField> {
         return KeyEventResult.handled;
 
       case LogicalKeyboardKey.home:
-        _e.placeAtStart();
+        if (shift) {
+          while (_e.extendBy(-1)) {}
+        } else {
+          _e.placeAtStart();
+        }
         _changed();
         return KeyEventResult.handled;
 
       case LogicalKeyboardKey.end:
-        _e.placeAtEnd();
+        if (shift) {
+          while (_e.extendBy(1)) {}
+        } else {
+          _e.placeAtEnd();
+        }
         _changed();
         return KeyEventResult.handled;
 

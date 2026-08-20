@@ -446,6 +446,9 @@ class MathTexCtx {
     this.caretIndex = -1,
     this.decorate = false,
     this.activeText,
+    this.selectionRow,
+    this.selectionStart = -1,
+    this.selectionEnd = -1,
     this.accent = '#2563EB',
     this.tint = '#DBEAFE',
     this.dim = '#9CA3AF',
@@ -454,6 +457,14 @@ class MathTexCtx {
   final MRow? caretRow;
   final int caretIndex;
   final bool decorate;
+
+  /// The highlighted run: a contiguous slice of ONE row. Drawn with
+  /// `\fcolorbox`, because `\colorbox` never paints its fill in
+  /// flutter_math_fork 0.7.4 — the same discovery that made the active-slot
+  /// box visible.
+  final MRow? selectionRow;
+  final int selectionStart;
+  final int selectionEnd;
 
   /// The words box being filled, so an empty one can show as the active slot
   /// rather than as nothing at all.
@@ -486,6 +497,11 @@ class MathTexCtx {
   /// fill keeps the shape it was meant to have.
   String get activeSlotTex =>
       '\\fcolorbox{$tint}{$tint}{\$\\textcolor{$accent}{\\square}\$}';
+
+  /// Opens the highlight. The content between this and [selectionClose] is
+  /// re-entered as maths, so anything at all can sit inside it.
+  String get selectionOpen => '\\fcolorbox{$tint}{$tint}{\$';
+  String get selectionClose => '\$}';
 }
 
 /// The plain context used for storage and for read-only rendering.
@@ -502,10 +518,16 @@ String rowToTex(MRow r, MathTexCtx c) {
     return caretHere ? c.activeSlotTex : c.idleSlotTex;
   }
 
+  final selHere = c.decorate &&
+      identical(r, c.selectionRow) &&
+      c.selectionStart >= 0 &&
+      c.selectionEnd > c.selectionStart;
+
   final b = StringBuffer();
   var prevEndsScript = false;
   for (var i = 0; i < r.children.length; i++) {
     if (caretHere && i == c.caretIndex) b.write(c.caretTex);
+    if (selHere && i == c.selectionStart) b.write(c.selectionOpen);
     final n = r.children[i];
     // **Two scripts cannot touch.** `x^{2}` followed by the degree sign or a
     // prime emits `x^{2}^\circ` — a double superscript, which TeX refuses, so
@@ -513,6 +535,7 @@ String rowToTex(MRow r, MathTexCtx c) {
     // between them is the standard fix and costs nothing on screen.
     if (prevEndsScript && n is MSym && n.startsScript) b.write('{}');
     b.write(n.texOf(c));
+    if (selHere && i + 1 == c.selectionEnd) b.write(c.selectionClose);
     prevEndsScript = n is MScript || (n is MSym && n.startsScript);
   }
   if (caretHere && c.caretIndex >= r.children.length) b.write(c.caretTex);
