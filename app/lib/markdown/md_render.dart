@@ -679,6 +679,8 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
                   : Color(0xFF000000 | v)),
         ));
       case MdInline.math:
+      case MdInline.mathDisplay:
+      case MdInline.mathPadded:
         spans.add(WidgetSpan(
           // BASELINE, not `middle`. An equation mid-sentence has to sit on the
           // sentence's baseline the way a word does — that is what "maths on
@@ -704,7 +706,16 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
           // `compact`: this one sits MID-SENTENCE, so an explanation box
           // would break the paragraph open. It moves into a tooltip instead —
           // and the equation is set in TeX text style, not display style.
-          child: OnoteMath(c.inner, textStyle: base, compact: true),
+          // The DOUBLE-dollar form is the author asking for display style,
+          // mid-sentence or not; a full display LINE never reaches here (the
+          // whole-line branch above takes it first).
+          child: OnoteMath(
+            c.kind == MdInline.mathDisplay
+                ? '\\displaystyle ${c.inner}'
+                : c.inner,
+            textStyle: base,
+            compact: true,
+          ),
         ));
       case MdInline.extLink:
         spans.add(WidgetSpan(

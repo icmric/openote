@@ -8,7 +8,6 @@
 // the linear grammar. These tests run the whole chain: keystrokes → tree →
 // projection → evaluator → the Maths tab's readout → the answer button.
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/math/equation_editor.dart';

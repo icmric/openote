@@ -144,11 +144,19 @@ void main() {
     });
 
     test('and it declines where a real equation could match', () {
-      // In `$$x$$` the pair at index 0 is followed by `x`, so the empty branch
-      // stands down and the filled one takes `$x$`.
+      // `$$x$$` is a DISPLAY equation now — both pairs one match (v0.20 D.5).
+      // Before that grammar existed, the single-dollar form took the inner
+      // pair and left a literal stray dollar on each side the moment the
+      // caret entered the block.
       final m = mdInlineRe.firstMatch(r'$$x$$');
-      expect(classifyInline(m!).kind, MdInline.math,
-          reason: 'a display equation must not be read as an empty one');
+      final c = classifyInline(m!);
+      expect(c.kind, MdInline.mathDisplay,
+          reason: 'a display equation must be read whole, never as an empty '
+              'pair plus scraps');
+      expect(c.inner, 'x');
+      expect(m.start, 0);
+      expect(m.end, r'$$x$$'.length,
+          reason: 'BOTH dollar pairs belong to the match');
     });
 
     test('an empty equation reads as NOTHING, never as dollars', () {

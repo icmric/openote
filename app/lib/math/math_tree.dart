@@ -454,6 +454,7 @@ class MathTexCtx {
     this.selectionTint = '#B9C0F5',
     this.dim = '#9CA3AF',
     this.display = true,
+    this.showEmptySlots = false,
   });
 
   final MRow? caretRow;
@@ -493,6 +494,14 @@ class MathTexCtx {
   /// you select it — measured at 44.2px tall plain, 41.1px boxed.
   final bool display;
 
+  /// Draw a SAVED empty slot as the small dim square instead of nothing.
+  /// Read mode and print only: with the plain storage ctx an empty slot
+  /// serialises to bare `{}`, which TeX draws as a hole — a half-filled
+  /// fraction became a bar over nothing, with no marker that anything was
+  /// unfinished. "What you see is what prints" (v0.18 5.3) needs the square
+  /// everywhere the equation shows; STORAGE keeps the bare braces.
+  final bool showEmptySlots;
+
   /// The caret. Sized in `ex`, not `em`: an `em` rule is measured against the
   /// font size where it sits, so nesting made the caret GROW — measured at
   /// 2.9× too tall inside a script of a script, when it should shrink with the
@@ -531,7 +540,9 @@ String rowToTex(MRow r, MathTexCtx c) {
   var caretHere = c.decorate && identical(r, c.caretRow);
 
   if (r.children.isEmpty) {
-    if (!c.decorate) return '';
+    if (!c.decorate) {
+      return c.showEmptySlots && r.owner != null ? c.idleSlotTex : '';
+    }
     // The root of an equation isn't a "box to fill" — an empty one should show
     // a caret, not a placeholder square the student has to delete.
     if (r.owner == null) return caretHere ? c.caretTex : '';

@@ -17,6 +17,7 @@ import 'package:super_clipboard/super_clipboard.dart';
 
 import '../editor/text_block_view.dart';
 import '../export/csv_import.dart';
+import '../math/math_view.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart';
@@ -306,21 +307,77 @@ Future<PasteResult> pasteOntoCanvas(AppState app, Offset at,
   if (reader.canProvide(Formats.plainText)) {
     final text = await reader.readValue(Formats.plainText);
     if (text != null && text.trim().isNotEmpty) {
-      // Text pastes into a NEW text block rather than the focused editor:
-      // this path only runs when the canvas has focus, and a block is what
-      // the canvas can hold.
-      final b = app.addBlock(Block(
-        type: BlockType.text,
-        x: at.dx,
-        y: at.dy,
-        w: 360,
-        content: {'text': text},
-      ));
-      app.select(b.id, edit: true);
+      insertPastedText(app, text, at);
       return PasteResult.text;
     }
   }
   return PasteResult.nothing;
+}
+
+/// Paste [text] onto the page at [at]: a MATHS block when the text IS an
+/// equation, an ordinary text block otherwise.
+///
+/// The maths branch is what stops pasting `$\frac{1}{2}$` from landing as a
+/// text block showing raw LaTeX source — the one thing the equation editor
+/// promised nobody would have to read. `looksLikeMaths` is deliberately
+/// narrow (a sentence with two prices in it stays a sentence), and `unwrap`
+/// strips the `$…$` so the stored latex is exactly what typing it into the
+/// equation editor would have stored.
+Block insertPastedText(AppState app, String text, Offset at) {
+  if (MathClipboard.looksLikeMaths(text)) {
+    // Mirrors AppState.insertEquation — same width, selected and open for
+    // editing — so a pasted equation IS the block the equation button makes,
+    // not a lookalike that drifts when the real one changes.
+    final b = app.addBlock(Block(
+      type: BlockType.math,
+      x: at.dx,
+      y: at.dy,
+      w: 360,
+      content: {'latex': MathClipboard.unwrap(text), 'display': true},
+    ));
+    app.select(b.id, edit: true);
+    return b;
+  }
+  // Text pastes into a NEW text block rather than the focused editor:
+  // this path only runs when the canvas has focus, and a block is what
+  // the canvas can hold.
+  final b = app.addBlock(Block(
+    type: BlockType.text,
+    x: at.dx,
+    y: at.dy,
+    w: 360,
+    content: {'text': text},
+  ));
+  app.select(b.id, edit: true);
+  return b;
+}
+
+/// What the system clipboard is offering, read WITHOUT inserting anything.
+///
+/// Exists for one decision: a canvas Ctrl+V has two clipboards to choose
+/// between — the system's and the app's own cut/copied blocks — and it must
+/// know what the system holds before letting either act. [pasteOntoCanvas]
+/// cannot answer that question, because by the time it has answered it has
+/// already pasted. Kinds mirror [pasteOntoCanvas]'s priority order exactly:
+/// a clipboard holding both an image and text reports the image, because
+/// that is what would paste.
+Future<({PasteResult kind, String? text})> probeClipboard() async {
+  final clipboard = SystemClipboard.instance;
+  if (clipboard == null) return (kind: PasteResult.nothing, text: null);
+  final reader = await clipboard.read();
+  for (final fmt in [Formats.png, Formats.jpeg, Formats.gif, Formats.webp]) {
+    if (reader.canProvide(fmt)) return (kind: PasteResult.image, text: null);
+  }
+  if (reader.canProvide(Formats.fileUri)) {
+    return (kind: PasteResult.files, text: null);
+  }
+  if (reader.canProvide(Formats.plainText)) {
+    final text = await reader.readValue(Formats.plainText);
+    if (text != null && text.trim().isNotEmpty) {
+      return (kind: PasteResult.text, text: text);
+    }
+  }
+  return (kind: PasteResult.nothing, text: null);
 }
 
 /// The clipboard's image, if it holds one.

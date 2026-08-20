@@ -24,11 +24,17 @@
 /// a correct equation stops working.
 library;
 
+import 'math_parse.dart';
+import 'math_tree.dart';
+
 /// LaTeX that says the same thing, in the dialect the renderer speaks.
 String renderableLatex(String tex) {
   var s = tex.trim();
   if (s.isEmpty) return s;
   s = _unwrapDelimiters(s);
+  // AFTER the delimiters come off: a wrapped equation would fail the parse
+  // and keep its holes.
+  s = _withEmptySlotMarkers(s);
   s = _rewriteEnvironments(s);
   s = _rewriteControlSequences(s);
   s = _wrapTopLevelBreaks(s);
@@ -290,3 +296,36 @@ String? _errorMessage(Object error) {
     return null;
   }
 }
+
+/// A saved equation with EMPTY slots gets its squares back (v0.18 5.3).
+///
+/// `\frac{}{2}` is the canonical storage for a half-filled fraction, and TeX
+/// draws the empty group as NOTHING - a bar over a hole, in read mode and in
+/// the PDF, with no sign anything is unfinished. Re-serialising through the
+/// tree with [MathTexCtx.showEmptySlots] puts the same small dim square there
+/// that the editor shows. Guarded three ways: only strings that carry an
+/// empty group are touched, a parse failure leaves the string exactly as it
+/// was (the editor's decorated strings land here too and must pass through),
+/// and a small cache keeps the parse off the paint path.
+String _withEmptySlotMarkers(String s) {
+  if (!s.contains('{}')) return s;
+  final hit = _emptySlotCache[s];
+  if (hit != null) return hit;
+  final r = parseLatex(s);
+  // Only strings the tree provably ROUND-TRIPS are transformed. The parser
+  // reads the script-separator `{}` as an empty group and drops it, so
+  // re-serialising `x^{2}{}^{\circ}` would emit the double superscript the
+  // separator exists to prevent - the renderer refuses it and the equation
+  // vanishes. Editor-canonical strings round-trip by construction; anything
+  // else passes through exactly as it was.
+  final out = r.supported &&
+          r.root != null &&
+          rowToTex(r.root!, kStoreCtx) == s
+      ? rowToTex(r.root!, _kEmptySlotCtx)
+      : s;
+  if (_emptySlotCache.length > 256) _emptySlotCache.clear();
+  return _emptySlotCache[s] = out;
+}
+
+const MathTexCtx _kEmptySlotCtx = MathTexCtx(showEmptySlots: true);
+final Map<String, String> _emptySlotCache = {};

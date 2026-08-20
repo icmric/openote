@@ -101,11 +101,19 @@ class LiveMarkdownController extends TextEditingController {
       if (r.kind != MdRunKind.math) continue;
       final s = r.start - 1; // the run records the HIDDEN remainder
       if (offset >= s && offset <= r.end) {
-        return (
-          start: s,
-          end: r.end,
-          inner: text.substring(r.start, r.end == s + 2 ? r.start : r.end - 1),
-        );
+        // The inner sheds however many dollars wrap it — one for $x$, two
+        // for the display form — so what reaches MathEditor.open is LaTeX,
+        // never delimiters. An inner cannot itself contain a dollar (the
+        // grammar forbids it), so trimming is exact.
+        final full = text.substring(s, r.end);
+        var a = 0, b = full.length;
+        while (a < b && full.codeUnitAt(a) == 0x24) {
+          a++;
+        }
+        while (b > a && full.codeUnitAt(b - 1) == 0x24) {
+          b--;
+        }
+        return (start: s, end: r.end, inner: full.substring(a, b).trim());
       }
     }
     return null;
@@ -116,7 +124,7 @@ class LiveMarkdownController extends TextEditingController {
   /// through the field: the field never sees a keystroke aimed at a
   /// `WidgetSpan`.
   void replaceMathAt(int start, int end, String latex,
-      {bool keepEmptyPair = false, int? caretAt}) {
+      {bool keepEmptyPair = false, int? caretAt, int dollars = 1}) {
     // `start == end` is LEGITIMATE: it means the equation is currently
     // zero-length, which is exactly what happens the moment a student clears
     // the card to retype. Rejecting it left the caller's idea of where the
@@ -129,9 +137,10 @@ class LiveMarkdownController extends TextEditingController {
     // [keepEmptyPair]: while the equation is being edited IN PLACE, an
     // emptied one must stay `$$` — removing the dollars would unmount the
     // very editor the student is typing into. The pair is swept on close.
+    final wrap = r'$' * dollars;
     final next = tidy.isEmpty
         ? (keepEmptyPair ? '\$\$' : '')
-        : '\$$tidy\$';
+        : '${wrap}${tidy}${wrap}';
     value = TextEditingValue(
       text: text.replaceRange(start, end, next),
       selection: TextSelection.collapsed(offset: caretAt ?? (start + next.length)),
@@ -329,7 +338,10 @@ class LiveMarkdownController extends TextEditingController {
       // caret has to cross the whole of it in one step, or a student pressing
       // Left inside their own sentence gets twelve dead keystrokes. Recorded
       // as a single hidden span from just after the object to the end.
-      if (c.kind == MdInline.math || c.kind == MdInline.mathEmpty) {
+      if (c.kind == MdInline.math ||
+          c.kind == MdInline.mathDisplay ||
+          c.kind == MdInline.mathPadded ||
+          c.kind == MdInline.mathEmpty) {
         out.add((
           start: regionStart + m.start + 1,
           end: regionStart + m.end,
@@ -1230,7 +1242,10 @@ class LiveMarkdownController extends TextEditingController {
       // source trails at a hairline behind it, so the paragraph keeps exactly
       // as many code units as the buffer and not one caret offset moves. The
       // same placeholder trick as the pictures, the cards and the list gutter.
-      if (c.kind == MdInline.math || c.kind == MdInline.mathEmpty) {
+      if (c.kind == MdInline.math ||
+          c.kind == MdInline.mathDisplay ||
+          c.kind == MdInline.mathPadded ||
+          c.kind == MdInline.mathEmpty) {
         final full = sub.substring(m.start, m.end);
         final from = regionStart + m.start, to = regionStart + m.end;
         final tap = onMathTap;
@@ -1251,7 +1266,9 @@ class LiveMarkdownController extends TextEditingController {
           child: editingHere
               ? mathEditorBuilder!(c.inner, cBase)
               : InlineMathAtom(
-                  latex: c.inner,
+                  latex: c.kind == MdInline.mathDisplay
+                      ? '\\displaystyle ${c.inner}'
+                      : c.inner,
                   style: cBase,
                   onTap: tap == null
                       ? null
@@ -1267,6 +1284,8 @@ class LiveMarkdownController extends TextEditingController {
       final TextStyle inner;
       switch (c.kind) {
         case MdInline.mathEmpty:
+        case MdInline.mathDisplay:
+        case MdInline.mathPadded:
           // Handled above with the filled form; listed to keep the switch
           // total.
           openLen = closeLen = 0;

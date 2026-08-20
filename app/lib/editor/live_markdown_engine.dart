@@ -178,6 +178,11 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// duplicating the equation or eating the words after it.
   String? _mathSelfText;
 
+  /// How many dollars wrap THIS equation — 1 for $x$, 2 for the display
+  /// form. Writing an edit back with the wrong count would silently demote a
+  /// display equation to an inline one on the first keystroke.
+  int _mathDollars = 1;
+
   /// Whether startInlineMath injected a trailing space (the mid-word case),
   /// so the empty sweep can take it back out — Alt+= then Escape used to
   /// leave the word permanently split.
@@ -256,6 +261,12 @@ class _LiveMarkdownSession extends OnoteEditSession {
     _mathStart = start;
     _mathEnd = end;
     _mathEditor = ed;
+    // The empty pair $$ is INLINE (it is the chip); only a filled $$x$$
+    // is a display equation.
+    _mathDollars =
+        end - start >= 4 && controller.text.codeUnitAt(start + 1) == 0x24
+            ? 2
+            : 1;
     controller.editingMathAt = start;
     _mathSelfText = controller.text;
     // Park the host caret INSIDE the run - offset start+1 is "this equation"
@@ -285,11 +296,12 @@ class _LiveMarkdownSession extends OnoteEditSession {
     // An emptied equation stays as its `$$` pair WHILE editing - removing
     // the dollars would unmount the very editor the student is typing into.
     // The pair is swept on close.
-    final written = tidy.isEmpty ? '\$\$' : '\$${tidy}\$';
+    final wrap = r'$' * _mathDollars;
+    final written = tidy.isEmpty ? '\$\$' : '${wrap}${tidy}${wrap}';
     _mathSelfEditing = true;
     try {
       controller.replaceMathAt(start, _mathEnd, tidy,
-          keepEmptyPair: true, caretAt: start + 1);
+          keepEmptyPair: true, caretAt: start + 1, dollars: _mathDollars);
     } finally {
       _mathSelfEditing = false;
     }

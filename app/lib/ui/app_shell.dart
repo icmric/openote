@@ -526,7 +526,9 @@ class _AppShellState extends State<AppShell> {
         // System clipboard first (an image from a screenshot tool), our own
         // block clipboard second. The reverse order would make Ctrl+V paste a
         // stale block instead of the screenshot just taken — and copying a
-        // block is far rarer than copying an image from elsewhere.
+        // block is far rarer than copying an image from elsewhere. The one
+        // exception lives in _pasteFromSystemOrBlocks: plain text that is
+        // OLDER than the blocks loses to them.
         _pasteFromSystemOrBlocks();
         return true;
       }
@@ -1077,8 +1079,21 @@ class _AppShellState extends State<AppShell> {
   Future<void> _pasteFromSystemOrBlocks() async {
     final at = app.canvas.screenToPage(Offset(
         app.canvas.viewport.width / 2, app.canvas.viewport.height / 2));
-    final result = await pasteOntoCanvas(app, at,
-        dark: Theme.of(context).brightness == Brightness.dark);
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    // Images and files keep first claim — a screenshot just taken must beat
+    // a block copied minutes ago (the comment at the Ctrl+V key handler).
+    // But when the system offers ONLY plain text, that text can be the OLDER
+    // of the two: cutting an equation block and pasting used to resurrect
+    // the `$…$` its own Ctrl+C had left on the system clipboard, instead of
+    // the block just cut. So look before pasting, and let the newer
+    // clipboard win.
+    final probe = await probeClipboard();
+    if (probe.kind == PasteResult.text &&
+        await app.blockClipboardIsNewer(probe.text)) {
+      app.pasteBlocks();
+      return;
+    }
+    final result = await pasteOntoCanvas(app, at, dark: dark);
     if (result == PasteResult.nothing && app.canPasteBlocks) {
       app.pasteBlocks();
     }

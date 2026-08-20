@@ -19,6 +19,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../markdown/md_render.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart';
@@ -983,14 +984,29 @@ class _StudyPanelState extends State<StudyPanel> {
   Widget _front(Flashcard c, TagKind kind, bool dark) {
     const style =
         TextStyle(fontSize: 15, fontWeight: FontWeight.w600, height: 1.42);
-    if (!c.isCloze) return SelectableText(c.front, style: style);
+    // Through the shared inline renderer, never a bare string: a question
+    // like `What is $\frac{d}{dx}x^2$?` used to show its raw backslashes on
+    // the one screen built for remembering it (open finding, v0.18 §13.6).
+    if (!c.isCloze) {
+      return SelectableText.rich(
+          TextSpan(children: inlineSpans(c.front, style, dark)),
+          style: style);
+    }
     final parts = c.front.split('[…]');
     return SelectableText.rich(TextSpan(children: [
       for (var i = 0; i < parts.length; i++) ...[
-        TextSpan(text: parts[i]),
+        TextSpan(children: inlineSpans(parts[i], style, dark)),
         if (i < parts.length - 1)
           TextSpan(
-            text: _revealed ? c.back : '      ',
+            // The revealed answer goes through the renderer too — a blanked
+            // formula must drop back into the sentence as maths, not source.
+            // The unrevealed blank keeps its literal en-spaces: only its
+            // underline is meant to show.
+            children: _revealed
+                ? inlineSpans(c.back, style.copyWith(color: kind.color), dark)
+                : const [
+                    TextSpan(text: '      ')
+                  ],
             style: TextStyle(
               color: _revealed ? kind.color : null,
               decoration: TextDecoration.underline,
@@ -1036,7 +1052,14 @@ class _StudyPanelState extends State<StudyPanel> {
                   letterSpacing: .7,
                   color: kind.color)),
           const SizedBox(height: 6),
-          SelectableText(c.back,
+          // The answer is where the maths usually lives — `$E=mc^2$` shown
+          // as backslashes here is the flashcard defect this panel had.
+          SelectableText.rich(
+              TextSpan(
+                  children: inlineSpans(
+                      c.back,
+                      const TextStyle(fontSize: 13, height: 1.45),
+                      dark)),
               style: const TextStyle(fontSize: 13, height: 1.45)),
         ],
       ),

@@ -6,6 +6,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart'; // ThemeMode + widgets
 import 'package:path/path.dart' as p;
+import 'package:super_clipboard/super_clipboard.dart'
+    show Formats, SystemClipboard;
 
 import '../canvas/align_guides.dart';
 import '../canvas/canvas_controller.dart';
@@ -5271,13 +5273,67 @@ class AppState extends ChangeNotifier
   String? _blockClipboard;
   bool get canPasteBlocks => _blockClipboard != null;
 
+  /// When the block clipboard was filled (ms since epoch), and what the
+  /// SYSTEM clipboard's plain text was at that same moment. Together they
+  /// let a canvas Ctrl+V answer "which clipboard is newer?" — the OS cannot
+  /// be asked when its text arrived, but if at paste time it still holds the
+  /// very text it held when the blocks were copied, that text is the OLDER
+  /// of the two. Without this, cutting an equation block and pressing Ctrl+V
+  /// resurrected the `$…$` its own Ctrl+C had left on the system clipboard
+  /// earlier, instead of bringing back the block just cut.
+  int _blockClipboardAt = 0;
+  Future<String?>? _systemTextWhenCopied;
+
+  /// Reads the system clipboard's plain text for the newer-clipboard check.
+  /// A function field so tests can stand in a fake — the test harness has no
+  /// real clipboard to read.
+  @visibleForTesting
+  Future<String?> Function() readSystemClipboardText = _systemPlainText;
+
+  static Future<String?> _systemPlainText() async {
+    // Defensive to the bone: this runs as a side effect of COPYING, and a
+    // clipboard that cannot be read (a headless test, a platform channel not
+    // yet up, another app holding the clipboard open on Windows) must never
+    // turn Ctrl+C into an error. A null snapshot only means the
+    // newer-clipboard check stands down and the old paste order applies.
+    try {
+      final clipboard = SystemClipboard.instance;
+      if (clipboard == null) return null; // unsupported platform
+      final reader = await clipboard.read();
+      if (!reader.canProvide(Formats.plainText)) return null;
+      return await reader.readValue(Formats.plainText);
+    } catch (_) {
+      return null;
+    }
+  }
+
   void copySelectedBlocks() {
     if (selectedIds.isEmpty) return;
     _blockClipboard = jsonEncode([
       for (final b in blocks.where((b) => selectedIds.contains(b.id)))
         b.toJson()
     ]);
+    _blockClipboardAt = DateTime.now().millisecondsSinceEpoch;
+    // Kept as a Future rather than its value: Ctrl+X → Ctrl+V can land
+    // before a clipboard read completes, and the paste decision awaits the
+    // snapshot instead of racing it.
+    _systemTextWhenCopied = readSystemClipboardText();
     notifyListeners();
+  }
+
+  /// Should a canvas Ctrl+V paste OUR copied blocks instead of the plain
+  /// text the system clipboard offers right now?
+  ///
+  /// True only when the blocks are the newer of the two: the system still
+  /// holds exactly what it held when the blocks were copied, so nothing has
+  /// been copied since and a paste means the blocks. Text that differs from
+  /// the snapshot must have arrived AFTER the copy, and fresh text — like a
+  /// fresh screenshot — is what the person most recently chose, so it wins.
+  Future<bool> blockClipboardIsNewer(String? systemTextNow) async {
+    if (_blockClipboard == null || _blockClipboardAt == 0) return false;
+    final snapshot = _systemTextWhenCopied;
+    if (snapshot == null) return false;
+    return systemTextNow == await snapshot;
   }
 
   void cutSelectedBlocks() {

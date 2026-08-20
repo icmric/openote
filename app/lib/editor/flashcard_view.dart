@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../markdown/md_render.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import 'wrap_selection.dart';
@@ -151,21 +152,7 @@ class _FlipCardState extends State<FlipCard>
                     const SizedBox(height: OnoteSpace.x3),
                     Flexible(
                       child: SingleChildScrollView(
-                        child: Text(
-                          text.trim().isEmpty
-                              ? (back ? 'No answer yet' : 'No question yet')
-                              : text,
-                          style: OnoteType.ui.copyWith(
-                            fontSize: widget.compact ? 14 : 16,
-                            height: 1.4,
-                            color: text.trim().isEmpty
-                                ? OnoteColors.graphite400
-                                : null,
-                            fontStyle: text.trim().isEmpty
-                                ? FontStyle.italic
-                                : FontStyle.normal,
-                          ),
-                        ),
+                        child: _faceText(text, back: back, dark: dark),
                       ),
                     ),
                     const SizedBox(height: OnoteSpace.x3),
@@ -187,6 +174,27 @@ class _FlipCardState extends State<FlipCard>
         ),
       ),
     );
+  }
+
+  /// The face's text, through the shared inline renderer rather than a bare
+  /// [Text]: a card that asks `What is $\frac{d}{dx}x^2$?` used to show its
+  /// raw backslashes — on a study card, the single most natural place for
+  /// maths in the whole app (open finding since v0.18 §13.6). The deck reader
+  /// always passed the dollars through; only the drawing was missing.
+  Widget _faceText(String text, {required bool back, required bool dark}) {
+    final style = OnoteType.ui.copyWith(
+      fontSize: widget.compact ? 14 : 16,
+      height: 1.4,
+    );
+    if (text.trim().isEmpty) {
+      return Text(
+        back ? 'No answer yet' : 'No question yet',
+        style: style.copyWith(
+            color: OnoteColors.graphite400, fontStyle: FontStyle.italic),
+      );
+    }
+    return Text.rich(TextSpan(children: inlineSpans(text, style, dark)),
+        style: style);
   }
 }
 

@@ -22,6 +22,19 @@ enum MdInline {
   bareUrl,
   math,
 
+  /// `$$inner$$` — BOTH dollar pairs are part of the match, so the live editor
+  /// draws one atom where the read renderer draws its centred line. Before
+  /// this the inline form took only the INNER pair and left a literal stray
+  /// dollar on each side the moment the caret entered the block — measured:
+  /// a 65px centred equation collapsing to dollar + 21px atom + dollar.
+  mathDisplay,
+
+  /// `$ x $` — one space of padding each side, accepted ONLY when the inner
+  /// run carries a backslash command. Money never contains a backslash; the
+  /// guard is the same narrowness rule MathClipboard.looksLikeMaths applies,
+  /// for the same reason (v0.20 $.5).
+  mathPadded,
+
   /// `$$` with nothing between: an equation the student has started
   /// but not yet written into. Drawn as the same empty box they already
   /// see inside a half-filled fraction.
@@ -134,6 +147,16 @@ const String _math = r'(\$([^\s$\n](?:[^$\n]*[^\s$\n])?)\$(?!\d))';
 // before. The empty capture group is what gives the classifier an inner of
 // `''`, which is how every consumer recognises "nothing here yet".
 const String _mathEmpty = r'((?<!\$)\$()\$(?![^\s]))';
+
+// Both pairs consumed — see [MdInline.mathDisplay]. The inner guards are
+// `_math`'s own (non-space at both ends, no trailing digit), so the money
+// rule holds here too.
+const String _mathDisplay =
+    r'(\$\$([^\s\$\n](?:[^\$\n]*[^\s\$\n])?)\$\$(?!\d))';
+
+// One space of padding, backslash-guarded — see [MdInline.mathPadded].
+const String _mathPadded =
+    r'(\$ ([^\$\n]*\\[a-zA-Z]+[^\$\n]*) \$)';
 const String _colour =
     r'(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})';
 const String _wiki = r'(\[\[([^\]|]+)(?:\|([^\]]+))?\]\])';
@@ -159,7 +182,11 @@ const _order = <MapEntry<MdInline, int>>[
   MapEntry(MdInline.subscript, 2),
   MapEntry(MdInline.superscript, 2),
   MapEntry(MdInline.code, 2),
+  // Display first: at the same offset `$$x$$` must be read whole, or the
+  // single-dollar form takes the inner pair and strands a dollar each side.
+  MapEntry(MdInline.mathDisplay, 2),
   MapEntry(MdInline.math, 2),
+  MapEntry(MdInline.mathPadded, 2),
   // AFTER the filled form, so `$x$` always wins where it can.
   MapEntry(MdInline.mathEmpty, 2),
   MapEntry(MdInline.bareUrl, 2),
@@ -179,6 +206,8 @@ String _patternFor(MdInline k) => switch (k) {
       MdInline.superscript => _sup,
       MdInline.code => _code,
       MdInline.math => _math,
+      MdInline.mathDisplay => _mathDisplay,
+      MdInline.mathPadded => _mathPadded,
       MdInline.mathEmpty => _mathEmpty,
       MdInline.bareUrl => _bare,
     };
@@ -190,6 +219,8 @@ int _openLen(MdInline k) => switch (k) {
       MdInline.underline => 2,
       MdInline.italic || MdInline.code || MdInline.math => 1,
       MdInline.mathEmpty => 1,
+      // The opening '$$' / '$ ' and their mirrored closers.
+      MdInline.mathDisplay || MdInline.mathPadded => 2,
       MdInline.subscript || MdInline.superscript => 1,
       _ => -1,
     };

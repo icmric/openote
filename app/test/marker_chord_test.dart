@@ -67,7 +67,11 @@ void main() {
     test('marks whose inner class excludes their own marker cap at one', () {
       expect(ladders['^'], [1]);
       expect(ladders['`'], [1]);
-      expect(ladders[r'$'], [1]);
+      // The dollar grew a SECOND rung when the display grammar landed
+      // (v0.20 D.5): one press wraps an inline equation, a second press
+      // makes it display maths — the inline-to-display toggle v0.18 s7
+      // promised, arriving through the same ladder bold already taught.
+      expect(ladders[r'$'], [1, 2]);
     });
 
     test('highlight and underline ladders START at two', () {
@@ -247,7 +251,7 @@ void main() {
 
     test('one-rung ladders wrap once and refuse the second press', () {
       if (!haveSqlite) return;
-      for (final ch in ['`', '^', r'$']) {
+      for (final ch in ['`', '^']) {
         edit('a wo|rd');
         app.cycleMarker(ch);
         expect(c.text, 'a ${ch}word$ch', reason: '$ch wrapped the word');
@@ -255,6 +259,20 @@ void main() {
         expect(c.text, 'a ${ch}word$ch',
             reason: '$ch has one rung and must stay on it');
       }
+    });
+
+    test('the dollar ladder climbs to display maths and stops', () {
+      if (!haveSqlite) return;
+      // Inline to display in one more press (v0.18 s7's promised toggle);
+      // the third press has nowhere to go and must change nothing.
+      edit('a wo|rd');
+      app.cycleMarker(r'$');
+      expect(c.text, r'a $word$', reason: 'first press: an inline equation');
+      app.cycleMarker(r'$');
+      expect(c.text, r'a $$word$$', reason: 'second press: display maths');
+      app.cycleMarker(r'$');
+      expect(c.text, r'a $$word$$',
+          reason: 'no third rung exists, so nothing may change');
     });
 
     test('highlight is reached in ONE press, because =x= is not a mark', () {

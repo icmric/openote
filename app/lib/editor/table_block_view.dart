@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../markdown/md_render.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -212,11 +213,22 @@ class _TableBlockViewState extends State<TableBlockView> {
           fontWeight: r == 0 ? FontWeight.w600 : FontWeight.w400,
           color: dark ? OnoteColors.moon100 : OnoteColors.graphite700);
       if (!editing) {
+        // Through the shared inline renderer, not a bare Text (open finding
+        // since v0.18 §13.6): a formula table's $x^2$ used to show its dollar
+        // signs and backslashes literally when read, and **bold** kept its
+        // asterisks — table cells were the one read view that skipped the
+        // Markdown grammar every text block already renders. The raw source
+        // still shows while the cell is being edited, same as text blocks.
         return Container(
           constraints: const BoxConstraints(minHeight: 30),
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           color: r == 0 ? headerFill : null,
-          child: Text(cells[r][c].isEmpty ? ' ' : cells[r][c], style: style),
+          child: Text.rich(
+            TextSpan(
+                children: inlineSpans(
+                    cells[r][c].isEmpty ? ' ' : cells[r][c], style, dark)),
+            style: style,
+          ),
         );
       }
       return Container(
