@@ -4,6 +4,35 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — the calculator answers real maths, and equations show up everywhere
+
+- **The live "= answer" works for fractions, powers and roots now.** It only
+  ever answered flat sums like 1+2 — anything actually built with the editor
+  was silently ignored. The answer button also used to type the literal
+  characters `=$value`; it types the answer.
+- **Maths shows in tables, on flashcards and in study review.** All three
+  drew raw backslashes before — a formula revision table or a maths
+  flashcard simply didn't work.
+- **`$$…$$` display maths no longer falls apart when you click into the
+  text**, and pressing the equation shortcut twice on a word now steps it up
+  from inline to display maths.
+- **A matrix can grow columns, not just rows**: press `&` inside it — the
+  same key adds a column in a 3-vector, a 2×3 grid, an augmented matrix.
+- **Typing `sin(` sets it upright like a textbook**, no backslash needed.
+- **Pasting maths onto the page makes an equation**, and maths the editor
+  can't read is left on your clipboard with a plain message instead of
+  being silently rewritten into typeset backslashes.
+- **Cut a block, paste it back — you get the block**, not older clipboard
+  text its own copy had left behind.
+- Two equations in one paragraph behave; undo works inside an equation and
+  can no longer scramble a sentence from under one; arrowing around an
+  equation no longer wipes your redo; a half-filled fraction saved and
+  reopened shows its empty box instead of a bar over nothing.
+- **An import-repair step could silently delete dollar signs between two
+  equations in one block** (merging them, or eating the second one's
+  markers) every time a page was opened. Fixed at the source; takes effect
+  after the next app build.
+
 ### Changed — equations in a sentence are edited in the sentence
 
 - **The little card is gone.** Click an equation inside your text (or press
