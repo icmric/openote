@@ -4,6 +4,24 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — three wrong answers, and the answer you can click
+
+- **`sin(x)²` was working out as `sin(x²)`.** Typing `sin(2)^2` gave you
+  sin of 4. It gives you the square of sin 2, like every calculator and
+  every textbook. (`sin x²` with no brackets still means sin of x squared,
+  because that is what it means in school notation.)
+- **The cube root of a negative number said `undefined`.** `(-8)^(1/3)` is
+  -2 now, so curves like x^(1/3) work either side of zero.
+- **Two symbols side by side were read as one made-up name.** Typing π then
+  e gave `unknown "pie"`; it multiplies them. `2πr` now tells you `r` is
+  the unknown instead of inventing `pir`.
+- **Answers the app works out are boxed, and you can click them.** The box
+  says this was calculated rather than typed, and shows you where to click.
+  Clicking switches between a decimal and a fraction — and if you were
+  working in fractions you get a fraction to start with. Whole numbers and
+  untidy decimals do not offer a switch, because they have nothing to
+  switch to.
+
 ### Changed — maths in a sentence is full size again, and the answer comes to you
 
 - **Inline maths is no longer shrunk.** A fraction is the same size in a

@@ -70,6 +70,14 @@ The symbol/structure palette is generated from the autocorrect + structure table
 - Built constructs are **atoms** for cursor motion (←/→ steps over; ↓ enters slot-wise). Backspace at a structure's right edge steps **inside** it and deletes from there; it never removes a filled structure whole, and never emits undrawable TeX (superseding the original "de-builds" rule — de-building measured wrong three ways, see v0.18 plan §13).
 - **Selection** is a contiguous run of siblings in ONE row — a fraction is taken whole, never half. Made by Shift+←/→, Shift+Home/End, Ctrl+A, or the pointer: click places the caret at the nearest atom boundary, drag highlights, Shift+click extends, double-click takes the atom under the pointer. Copy/cut act on the highlight when there is one, the whole equation when not; copy always wraps in `$…$` so it round-trips as maths.
 - **Inline equations are edited in place** (v0.20): the same editor mounts inside the sentence's own span. The caret crosses an equation in one step from outside; ←/→ at its edge, Backspace at its right edge and Delete at its left all step INSIDE. Escape/Enter finish; an equation left empty is swept, leaving no `$$`.
+- **An answer the app worked out is an object, not digits.** Typing `=` then a
+  space works out the run since the last `=` and writes the answer down,
+  boxed. It serialises as `\boxed{…}` — real LaTeX, so it exports and
+  round-trips, and the box is what distinguishes a computed answer from a
+  typed one. It is atomic to the caret. Clicking it switches between a
+  decimal and a fraction; the fraction is offered when the WORKING was
+  fractional, and refused when there is nothing to switch to (a whole
+  number, or a decimal no tidy fraction reproduces).
 - **Nesting is unlimited**; rendering guarantees correct layout per the KaTeX box model (subset caveat §1).
 
 ## 6. Export & interchange
