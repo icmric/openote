@@ -63,6 +63,16 @@ class MathHitTable {
     return best;
   }
 
+  /// The child under [dx], or -1 when the pointer is PAST the row's own
+  /// extent. Clicking to the right of an equation is how a student puts the
+  /// caret at the end, so a clamped answer would make the last thing in the
+  /// row un-clickable-past — you would toggle the answer every time you
+  /// aimed for the end.
+  int childStrictlyAt(double dx) {
+    if (row.isEmpty || dx < bounds.first || dx > bounds.last) return -1;
+    return childAt(dx);
+  }
+
   /// The child under [dx] — what a double-click selects. Clamped to the row,
   /// so a double-click in the margin takes the nearest end child.
   int childAt(double dx) {

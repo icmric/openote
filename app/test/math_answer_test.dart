@@ -293,4 +293,36 @@ void main() {
         reason: 'one click on the box switched the fraction to a decimal — '
             'the box is what advertises that the click is there');
   });
+
+  testWidgets('but clicking PAST the equation still just places the caret',
+      (tester) async {
+    // Clicking to the right of an equation is how a student puts the caret at
+    // the end. If that toggled the answer — the last thing in the row — the
+    // end of the equation would be unreachable by mouse.
+    final e = answered('1/2');
+    final was = e.latex;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 600,
+            child: MathField(
+              editor: e,
+              textStyle: const TextStyle(fontSize: 22),
+              onChanged: (_) {},
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    final r = tester.getRect(find.byType(MathField));
+    await tester.tapAt(Offset(r.right - 4, r.center.dy));
+    await tester.pump();
+    await tester.pump();
+    expect(e.latex, was, reason: 'nothing switched; the click was past the '
+        'end of the maths, not on the answer');
+  });
 }

@@ -233,7 +233,7 @@ class MathFieldState extends State<MathField> {
     // `toggleAnswer` declines when there is nothing to switch to (a whole
     // number, or a decimal with no tidy fraction), and then this falls
     // through to placing the caret exactly as any other click would.
-    final onAnswer = _e.answerAt(hits.childAt(_pendingDx));
+    final onAnswer = _e.answerAt(hits.childStrictlyAt(_pendingDx));
     if (!_pendingShift && onAnswer != null && _e.toggleAnswer(onAnswer)) {
       setState(() {
         _probeTexes = null;
