@@ -23,6 +23,7 @@ import 'package:flutter/material.dart';
 import '../math/active_math.dart';
 import '../math/math_editor.dart';
 import '../math/math_field.dart';
+import '../math/math_tree.dart';
 import '../math/math_view.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
@@ -245,7 +246,39 @@ class InlineMathAtom extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final math = OnoteMath(latex, textStyle: style, compact: true);
+    // **An equation with nothing in it yet.** Alt+= writes `$$` at the caret,
+    // and without this the student saw two dollar signs appear in the middle
+    // of their sentence — the owner: "It shows the $$ around it while its in
+    // that mode ... id like to make it super clean and not have random things
+    // popup as this would be jarring to a user who doesnt know LaTeX or
+    // markdown."
+    //
+    // What they see instead is the SAME empty box the editor already draws
+    // inside a half-filled fraction: one affordance, learned once, in the only
+    // place a student has already met it. Not a wide "Type equation here" —
+    // OneNote can afford that because its equation is on its own line, and
+    // four words mid-sentence would shove the paragraph apart.
+    final surfaces = Theme.of(context).extension<OnoteSurfaces>() ??
+        (Theme.of(context).brightness == Brightness.dark
+            ? OnoteSurfaces.dark
+            : OnoteSurfaces.light);
+    final accent = Theme.of(context).colorScheme.primary;
+    final math = latex.trim().isEmpty
+        ? OnoteMath(
+            MathTexCtx(
+              accent: _hex(accent),
+              tint: _hex(Color.alphaBlend(
+                accent.withValues(
+                    alpha: Theme.of(context).brightness == Brightness.dark
+                        ? 0.34
+                        : 0.18),
+                surfaces.chrome,
+              )),
+            ).activeSlotTex,
+            textStyle: style,
+            compact: true,
+          )
+        : OnoteMath(latex, textStyle: style, compact: true);
     if (onTap == null) return math;
     return Builder(builder: (ctx) {
       return MouseRegion(
@@ -267,4 +300,10 @@ class InlineMathAtom extends StatelessWidget {
       );
     });
   }
+}
+
+
+String _hex(Color c) {
+  final v = c.toARGB32() & 0xFFFFFF;
+  return '#${v.toRadixString(16).padLeft(6, '0').toUpperCase()}';
 }

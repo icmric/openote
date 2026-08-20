@@ -287,7 +287,7 @@ class LiveMarkdownController extends TextEditingController {
       // caret has to cross the whole of it in one step, or a student pressing
       // Left inside their own sentence gets twelve dead keystrokes. Recorded
       // as a single hidden span from just after the object to the end.
-      if (c.kind == MdInline.math) {
+      if (c.kind == MdInline.math || c.kind == MdInline.mathEmpty) {
         out.add((
           start: regionStart + m.start + 1,
           end: regionStart + m.end,
@@ -1186,7 +1186,7 @@ class LiveMarkdownController extends TextEditingController {
       // source trails at a hairline behind it, so the paragraph keeps exactly
       // as many code units as the buffer and not one caret offset moves. The
       // same placeholder trick as the pictures, the cards and the list gutter.
-      if (c.kind == MdInline.math) {
+      if (c.kind == MdInline.math || c.kind == MdInline.mathEmpty) {
         final full = sub.substring(m.start, m.end);
         final from = regionStart + m.start, to = regionStart + m.end;
         final tap = onMathTap;
@@ -1215,6 +1215,11 @@ class LiveMarkdownController extends TextEditingController {
       var openLen = c.openLen, closeLen = c.closeLen;
       final TextStyle inner;
       switch (c.kind) {
+        case MdInline.mathEmpty:
+          // Handled above with the filled form; listed to keep the switch
+          // total.
+          openLen = closeLen = 0;
+          inner = cBase;
         case MdInline.boldItalic:
           inner = cBase.copyWith(
               fontWeight: FontWeight.w600, fontStyle: FontStyle.italic);

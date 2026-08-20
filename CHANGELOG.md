@@ -61,6 +61,13 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **Undo takes back what you just typed, not the whole equation.** Ctrl+Z after
   a typo used to delete the equation and its box.
 
+### Fixed — starting an equation in a sentence no longer shows `$$`
+
+- Press Alt+= in a paragraph and you get **the same empty box you already see
+  inside a half-filled fraction**, right where the caret was. Before, two
+  dollar signs appeared in the middle of your sentence.
+- **Pasting maths into a paragraph no longer pastes it twice.**
+
 ### Added — highlight part of an equation, and a lot more symbols
 
 - **You can highlight inside an equation now** — Shift with the arrow keys,

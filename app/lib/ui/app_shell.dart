@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 import '../canvas/media_drop.dart';
 import '../canvas/page_canvas.dart';
 import '../math/math_field.dart';
-import '../math/math_view.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../core/onote_ffi.dart';
@@ -452,14 +451,11 @@ class _AppShellState extends State<AppShell> {
         // falls through to the field's own paste, because breaking plain-text
         // paste into a note would be a far worse bug than the one being fixed.
         if (k == LogicalKeyboardKey.keyV) {
-          // MATHS on the clipboard, pasted into a paragraph. Without this the
-          // LaTeX arrived as plain text and stayed plain text for ever —
-          // nothing downstream could tell it was maths, so it never converted.
-          // Wrapping it in `$…$` is all the live editor needs to draw it as an
-          // equation on the very next frame. Deliberately narrow (see
-          // `MathClipboard.looksLikeMaths`): turning someone's prose into an
-          // equation is worse than leaving them to press the button.
-          _pasteMathsIntoEditor();
+          // Maths on the clipboard is handled by `MathPasteFormatter` on the
+          // field itself. It cannot be done here: reading the clipboard is a
+          // Future, so by the time the answer came back the field had already
+          // inserted the raw text — and inserting the wrapped form as well
+          // pasted the equation TWICE.
           _pasteImageIntoEditor();
           return false; // never swallow the keystroke
         }
@@ -1012,17 +1008,6 @@ class _AppShellState extends State<AppShell> {
   /// image and text still pastes the text if the image read fails. In the
   /// normal case the image read wins the race by a frame and the text branch
   /// finds nothing to do.
-  /// Paste maths into the paragraph the caret is in, as maths.
-  Future<void> _pasteMathsIntoEditor() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    final text = data?.text;
-    if (text == null || !MathClipboard.looksLikeMaths(text)) return;
-    if (!mounted) return;
-    final wrapped = MathClipboard.wrapInline(MathClipboard.unwrap(text));
-    if (wrapped.isEmpty) return;
-    app.insertTextAtActiveCursor(wrapped);
-  }
-
   Future<void> _pasteImageIntoEditor() async {
     final ae = app.activeEditor;
     if (ae == null) return;

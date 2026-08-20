@@ -21,6 +21,11 @@ enum MdInline {
   extLink,
   bareUrl,
   math,
+
+  /// `$$` with nothing between: an equation the student has started
+  /// but not yet written into. Drawn as the same empty box they already
+  /// see inside a half-filled fraction.
+  mathEmpty,
   colour,
   boldItalic,
   bold,
@@ -115,6 +120,20 @@ const String _sup = r'(\^([^\s^]+)\^)';
 // price pair specifically, since "5 and lunch is" ends in a non-space and
 // would otherwise satisfy the rest.
 const String _math = r'(\$([^\s$\n](?:[^$\n]*[^\s$\n])?)\$(?!\d))';
+
+// An equation that is EMPTY — the two dollars Alt+= writes at the caret before
+// the student has typed anything into it.
+//
+// It has to be part of the grammar, because the live editor draws whatever the
+// grammar finds and shows anything it does not find as literal source: two
+// dollar signs appearing mid-sentence, which is exactly the "random things
+// popup" a student who has never heard of Markdown should never meet.
+//
+// The trailing guard keeps it off a display equation — in `$$x$$` the pair at
+// index 0 is followed by `x`, so this declines and `_math` takes `$x$` as
+// before. The empty capture group is what gives the classifier an inner of
+// `''`, which is how every consumer recognises "nothing here yet".
+const String _mathEmpty = r'((?<!\$)\$()\$(?![^\s]))';
 const String _colour =
     r'(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})';
 const String _wiki = r'(\[\[([^\]|]+)(?:\|([^\]]+))?\]\])';
@@ -141,6 +160,8 @@ const _order = <MapEntry<MdInline, int>>[
   MapEntry(MdInline.superscript, 2),
   MapEntry(MdInline.code, 2),
   MapEntry(MdInline.math, 2),
+  // AFTER the filled form, so `$x$` always wins where it can.
+  MapEntry(MdInline.mathEmpty, 2),
   MapEntry(MdInline.bareUrl, 2),
 ];
 
@@ -158,6 +179,7 @@ String _patternFor(MdInline k) => switch (k) {
       MdInline.superscript => _sup,
       MdInline.code => _code,
       MdInline.math => _math,
+      MdInline.mathEmpty => _mathEmpty,
       MdInline.bareUrl => _bare,
     };
 
@@ -167,6 +189,7 @@ int _openLen(MdInline k) => switch (k) {
       MdInline.bold || MdInline.strike || MdInline.highlight => 2,
       MdInline.underline => 2,
       MdInline.italic || MdInline.code || MdInline.math => 1,
+      MdInline.mathEmpty => 1,
       MdInline.subscript || MdInline.superscript => 1,
       _ => -1,
     };

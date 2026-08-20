@@ -652,6 +652,11 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
     // so reading and writing can never disagree about what a run of text is.
     final c = classifyInline(m);
     switch (c.kind) {
+      case MdInline.mathEmpty:
+        // An equation started and never written into. It should not survive to
+        // a saved note at all — the editor sweeps it on the way out — but if
+        // one ever does, it reads as NOTHING rather than as two dollar signs.
+        break;
       case MdInline.wikiLink:
         final label = c.label!;
         final id = c.target;

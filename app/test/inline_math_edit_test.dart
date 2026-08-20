@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/inline_math_editor.dart';
 import 'package:openote/editor/live_markdown_controller.dart';
+import 'package:openote/markdown/md_render.dart';
 import 'package:openote/markdown/md_syntax.dart';
 import 'package:openote/math/math_view.dart';
 
@@ -113,6 +114,50 @@ void main() {
       final c = make(r'$x$');
       c.replaceMathAt(-1, 99, 'y');
       expect(c.text, r'$x$');
+    });
+  });
+
+  group('an equation you have started but not written', () {
+    // The owner: "It shows the $$ around it while its in that mode ... id like
+    // to make it super clean and not have random things popup as this would be
+    // jarring to a user who doesnt know LaTeX or markdown."
+    //
+    // Alt+= writes `$$` at the caret so the equation has somewhere to live.
+    // Without a grammar branch for it the live editor drew whatever it could
+    // not classify as literal source — two dollar signs, mid-sentence.
+
+    testWidgets('draws a box to type in, not two dollar signs', (tester) async {
+      final c = make(r'the area is $$ here');
+      await pump(tester, c);
+      // ONE atom, drawn — not two dollars printed as text.
+      expect(find.byType(OnoteMath), findsOneWidget);
+      expect(find.byType(MathSourceFallback), findsNothing);
+      // …and the buffer keeps every code unit, as ever.
+      expect(c.text, r'the area is $$ here');
+    });
+
+    test('the grammar recognises the empty pair', () {
+      final m = mdInlineRe.firstMatch(r'the area is $$ here');
+      expect(m, isNotNull);
+      expect(classifyInline(m!).kind, MdInline.mathEmpty);
+      expect(classifyInline(m).inner, '');
+    });
+
+    test('and it declines where a real equation could match', () {
+      // In `$$x$$` the pair at index 0 is followed by `x`, so the empty branch
+      // stands down and the filled one takes `$x$`.
+      final m = mdInlineRe.firstMatch(r'$$x$$');
+      expect(classifyInline(m!).kind, MdInline.math,
+          reason: 'a display equation must not be read as an empty one');
+    });
+
+    test('an empty equation reads as NOTHING, never as dollars', () {
+      // It should never survive to a saved note — the editor sweeps it on the
+      // way out — but if one does, a reader sees nothing rather than `$$`.
+      final spans =
+          inlineSpans(r'a $$ b', const TextStyle(fontSize: 14), false);
+      final text = spans.whereType<TextSpan>().map((s) => s.text ?? '').join();
+      expect(text, isNot(contains(r'$$')));
     });
   });
 

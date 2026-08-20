@@ -11,6 +11,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'inline_math_editor.dart';
 import 'list_editing.dart';
+import 'math_paste_formatter.dart';
 import 'live_markdown_controller.dart';
 import 'onote_text_editor.dart';
 import 'unicode_input.dart';
@@ -422,7 +423,12 @@ class _LiveMarkdownSession extends OnoteEditSession {
       strutStyle:
           StrutStyle.fromTextStyle(s.baseStyle, forceStrutHeight: false),
       cursorColor: Theme.of(context).colorScheme.primary,
-      inputFormatters: [WrapSelectionFormatter()],
+      inputFormatters: const [
+        WrapSelectionFormatter(),
+        // Maths pasted into a paragraph arrives as maths. See the file
+        // header for why this is a formatter and not a key handler.
+        MathPasteFormatter(),
+      ],
       decoration: InputDecoration(
         isDense: true,
         // Zero, not the dense default: InputDecorator otherwise adds 8px
