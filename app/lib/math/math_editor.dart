@@ -70,6 +70,20 @@ class MathEditor {
 
   bool get isEmpty => root.isEmpty;
 
+  /// Replace this editor's contents with [other]'s tree, keeping THIS
+  /// identity. The LaTeX view closing back into the visual editor needs it
+  /// when the tree is owned by the host (the inline session): every reference
+  /// to the editor must stay valid across the round-trip, so the tree moves
+  /// rather than the editor being replaced.
+  void adopt(MathEditor other) {
+    root.children.clear();
+    root.addAll(other.root.drain());
+    caretRow = root;
+    caretIndex = root.length;
+    _openText = null;
+    clearSelection();
+  }
+
   /// Canonical LaTeX — what goes to storage, export and the PDF. Identical in
   /// shape to what the old string editor stored.
   String get latex => rowToTex(root, kStoreCtx);

@@ -157,6 +157,31 @@ class _AppShellState extends State<AppShell> {
     return found;
   }
 
+  /// Whether the primary focus sits in a [MathField] specifically — gate TWO
+  /// and THREE of v0.20 B.2.6. While an equation holds the keyboard, the
+  /// shell's formatting chords must stand down (Ctrl+B used to BOLD THE
+  /// PARAGRAPH from inside an inline equation) and the Escape ladder must
+  /// leave the keystroke to the field, whose onExit knows where the caret
+  /// goes. `_editableFocused` says "someone is typing"; this says "and it is
+  /// an equation".
+  bool _mathFieldFocused() {
+    final ctx = FocusManager.instance.primaryFocus?.context;
+    if (ctx == null) return false;
+    if (ctx.widget is MathField) return true;
+    var found = false;
+    ctx.visitAncestorElements((e) {
+      if (e.widget is MathField) {
+        found = true;
+        return false;
+      }
+      // An EditableText between the focus and any MathField means the focus
+      // is in ordinary text (the LaTeX source view, a nested field) — stop.
+      if (e.widget is EditableText) return false;
+      return true;
+    });
+    return found;
+  }
+
   /// The `=` key, however the platform reports it. `add` is the `+` CHARACTER
   /// — what a shifted `=` becomes on a layout that hands Flutter the shifted
   /// logical key — and `numpadAdd` is the keypad's own. The zoom chords below
@@ -294,6 +319,11 @@ class _AppShellState extends State<AppShell> {
       // the dialog's own text field on the way past. Traversal already
       // checked this; the ladder never did.
       if (_routeOnTop) return false;
+      // While an equation holds the keyboard, Escape means "leave the
+      // equation" and nothing else — the field's own handler runs onExit,
+      // and the HOST decides where the caret lands. Without this gate one
+      // Escape both closed the equation AND deselected the block.
+      if (_mathFieldFocused()) return false;
       if (app.findOpen) {
         app.toggleFind();
         return true;
@@ -341,7 +371,8 @@ class _AppShellState extends State<AppShell> {
     if (HardwareKeyboard.instance.isAltPressed &&
         !ctrl &&
         _isEqualsKey(k) &&
-        !_routeOnTop) {
+        !_routeOnTop &&
+        !_mathFieldFocused()) {
       // Shift keeps the old behaviour: a display equation in a block of its
       // own. Plain Alt+= now wraps a selection where it stands.
       _startEquation(forceBlock: HardwareKeyboard.instance.isShiftPressed);
@@ -387,7 +418,7 @@ class _AppShellState extends State<AppShell> {
     // While typing: allow only formatting accelerators; everything else
     // flows to the field untouched.
     if (editable) {
-      if (ctrl && app.activeEditor != null) {
+      if (ctrl && app.activeEditor != null && !_mathFieldFocused()) {
         if (k == LogicalKeyboardKey.keyB) {
           app.wrapSelection('**');
           return true;

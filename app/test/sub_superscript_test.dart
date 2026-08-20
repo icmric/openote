@@ -718,6 +718,18 @@ void main() {
           reason: 'the empty equation is anchored in the sentence, ready to '
               'be typed into — and two bare dollars do not render as maths, '
               'so nothing shows until there is something to show');
+      // Close it the way a student would. Left open, the session's dispose
+      // would run the empty sweep DURING binding teardown and arm the save
+      // debounce after the last flush - and the sweep itself deserves the
+      // assertion: Escape must not leave `$$` in the note.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      final after = app.blocks
+          .where((b) => b.type == BlockType.text)
+          .map((b) => b.content['text'] as String? ?? '')
+          .join();
+      expect(after.contains(r'$$'), isFalse,
+          reason: 'an abandoned empty equation is swept, not saved');
       await settle(tester);
     });
 

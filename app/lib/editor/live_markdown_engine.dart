@@ -9,6 +9,9 @@ import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import '../math/equation_editor.dart';
+import '../math/math_editor.dart';
+import '../math/math_field.dart';
 import 'inline_math_editor.dart';
 import 'list_editing.dart';
 import 'math_paste_formatter.dart';
@@ -108,59 +111,208 @@ class _LiveMarkdownSession extends OnoteEditSession {
     controller.onSelfEdit = () => onChanged(controller.text);
     // Forwarded, not handled: only the host may touch the block (ADR-0004).
     controller.requestExtraWidth = (extra) => requestExtraWidth?.call(extra);
-    controller.onMathTap = _editInlineMath;
+    controller.onMathTap = (start, end, latex, _) =>
+        enterInlineMath(start, end, latex, atStart: false);
+    controller.mathEditorBuilder = _buildInlineEditor;
+    // A click that lands OUTSIDE the equation is the one signal the student
+    // has left it - the host caret is parked inside the run while editing,
+    // so any selection outside [start, end] means "close" (v0.20 B.2.5).
+    controller.addListener(_maybeCloseOnCaretExit);
   }
 
   /// Alt+= in a paragraph: an empty equation AT THE CARET, opened for editing.
   ///
-  /// The `$$` pair is written first so the equation has somewhere to live, and
-  /// the card edits that span — which means the sentence rewrites live as the
-  /// student types, and closing it empty takes the dollars away again. Two
-  /// bare dollars do not match the inline grammar (it needs a non-space
-  /// between them), so nothing renders as maths until there is maths.
+  /// The `$$` pair is written first so the equation has somewhere to live -
+  /// caret arithmetic requires a placeholder to stand on at least one real
+  /// code unit (v0.20 C.2) - and the editor then mounts IN that span. No
+  /// card, no dollars on screen: the student sees the same empty tint chip a
+  /// half-filled fraction already taught them, at the exact place they were
+  /// typing.
   @override
   bool startInlineMath() {
-    final ctx = _lastContext;
-    if (ctx == null || !ctx.mounted) return false;
     final sel = controller.selection;
     if (!sel.isValid) return false;
     final start = sel.start;
+    var pair = '\$\$';
+    // The empty-pair grammar declines when glued to a following word (that
+    // guard is what keeps it off a display equation's opening), so mid-word
+    // the pair takes a space with it - the word boundary the sentence would
+    // need anyway.
+    final t = controller.text;
+    if (sel.end < t.length && !_isSpace(t.codeUnitAt(sel.end))) {
+      pair = '\$\$ ';
+    }
     _applyEdit(TextEditingValue(
-      text: controller.text.replaceRange(sel.start, sel.end, r'$$'),
+      text: t.replaceRange(sel.start, sel.end, pair),
       selection: TextSelection.collapsed(offset: start + 1),
       composing: TextRange.empty,
     ));
-    // The field's own rect: the card hangs under the paragraph rather than
-    // under a character, because the caret's rect is not knowable until after
-    // the edit has laid out and the student is waiting.
+    enterInlineMath(start, start + 2, '', atStart: true);
+    return true;
+  }
+
+  static bool _isSpace(int cu) => cu == 0x20 || cu == 0x09 || cu == 0x0A;
+
+  // -- In-place inline equation editing (v0.20 B) ---------------------------
+  //
+  // The equation is edited WHERE IT SITS: the span that draws it carries the
+  // live [EquationEditor] while it is being written. Everything that must
+  // survive a keystroke lives HERE in the session - the span is rebuilt on
+  // every buffer change, so a State down there owns nothing.
+
+  int? _mathStart;
+  int _mathEnd = 0;
+  MathEditor? _mathEditor;
+  final FocusNode _mathFocus = FocusNode();
+  final GlobalKey<EquationEditorState> _mathKey =
+      GlobalKey<EquationEditorState>();
+
+  @override
+  bool get inlineMathFocused => _mathFocus.hasFocus;
+
+  Widget _buildInlineEditor(String latex, TextStyle base) {
+    final ed = _mathEditor;
+    // The builder can race a close by one frame; drawing nothing for it is
+    // right because the very next span rebuild goes back to the atom.
+    if (ed == null) return const SizedBox.shrink();
+    return EquationEditor(
+      key: _mathKey,
+      app: app,
+      placement: EquationPlacement.inline,
+      textStyle: base,
+      editor: ed,
+      focusNode: _mathFocus,
+      onChanged: _inlineMathChanged,
+      onExit: closeInlineMath,
+    );
+  }
+
+  /// One click on an equation in a sentence - or the caret crossing into it,
+  /// or Alt+= - and it is being edited, in place.
+  void enterInlineMath(int start, int end, String latex,
+      {required bool atStart}) {
+    final ed = MathEditor.open(latex);
+    if (ed == null) {
+      // The tree cannot hold this equation (an import using a construct we
+      // don't model). The LaTeX escape hatch edits it as source instead -
+      // never silently reshaped (v0.18 6.6).
+      _openSourcePanel(start, end, latex);
+      return;
+    }
+    if (atStart) {
+      ed.placeAtStart();
+    } else {
+      ed.placeAtEnd();
+    }
+    _mathStart = start;
+    _mathEnd = end;
+    _mathEditor = ed;
+    controller.editingMathAt = start;
+    // Park the host caret INSIDE the run - offset start+1 is "this equation"
+    // (v0.20 B.4) - and repaint the span tree so the editor mounts.
+    controller.selection = TextSelection.collapsed(offset: start + 1);
+    controller.refreshSpans();
+  }
+
+  /// Every keystroke inside the equation, written straight through to the
+  /// sentence. The re-derived end is what keeps a growing equation from
+  /// overwriting the word after it.
+  void _inlineMathChanged(String next) {
+    final start = _mathStart;
+    if (start == null) return;
+    final tidy = next.trim();
+    // An emptied equation stays as its `$$` pair WHILE editing - removing
+    // the dollars would unmount the very editor the student is typing into.
+    // The pair is swept on close.
+    final written = tidy.isEmpty ? '\$\$' : '\$${tidy}\$';
+    controller.replaceMathAt(start, _mathEnd, tidy,
+        keepEmptyPair: true, caretAt: start + 1);
+    _mathEnd = start + written.length;
+    onChanged(controller.text);
+    _scheduleSpellCheck();
+  }
+
+  /// The ONE exit path (v0.20 B.2.5): keyboard exits, clicks elsewhere and
+  /// teardown all come through here, so the empty sweep and the caret's
+  /// landing place cannot disagree between routes.
+  void closeInlineMath(MathExit how, {bool reposition = true}) {
+    final start = _mathStart;
+    if (start == null) return;
+    final end = _mathEnd;
+    final latex = (_mathEditor?.latex ?? '').trim();
+    _mathStart = null;
+    _mathEditor = null;
+    controller.editingMathAt = null;
+    if (latex.isEmpty) {
+      // Alt+= then Escape must not leave `$$` in the note for ever.
+      controller.replaceMathAt(start, end, '');
+      onChanged(controller.text);
+    } else if (reposition) {
+      final off = how == MathExit.left ? start : end;
+      controller.selection = TextSelection.collapsed(
+          offset: off > controller.text.length ? controller.text.length : off);
+    }
+    controller.refreshSpans();
+    if (reposition) _focus.requestFocus();
+  }
+
+  void _maybeCloseOnCaretExit() {
+    final start = _mathStart;
+    if (start == null) return;
+    final sel = controller.selection;
+    if (!sel.isValid) return;
+    if (sel.baseOffset < start || sel.baseOffset > _mathEnd) {
+      // The student clicked somewhere else in the paragraph; the host's own
+      // tap already placed the caret, so don't yank it back.
+      closeInlineMath(MathExit.done, reposition: false);
+    }
+  }
+
+  /// The caret crossing an equation's edge steps INSIDE it rather than over
+  /// it (v0.20 B.4) - Backspace and Delete at an edge do the same instead of
+  /// eating a `$` nobody can see (B.5).
+  bool _enterMathAtEdge({required bool fromRight}) {
+    final sel = controller.selection;
+    if (!sel.isValid || !sel.isCollapsed) return false;
+    final at = sel.baseOffset;
+    final run = controller.mathRunNear(at);
+    if (run == null) return false;
+    if (fromRight && at == run.end) {
+      enterInlineMath(run.start, run.end, run.inner, atStart: false);
+      return true;
+    }
+    if (!fromRight && at == run.start) {
+      enterInlineMath(run.start, run.end, run.inner, atStart: true);
+      return true;
+    }
+    return false;
+  }
+
+  /// An equation the visual tree cannot hold, edited as source in a small
+  /// anchored panel - the only surviving overlay (v0.20 A.5).
+  void _openSourcePanel(int start, int end, String latex) {
+    final ctx = _lastContext;
+    if (ctx == null || !ctx.mounted) return;
     final box = _focus.context?.findRenderObject() as RenderBox?;
     final anchor = box == null || !box.hasSize
         ? const Rect.fromLTWH(0, 0, 1, 1)
         : box.localToGlobal(Offset.zero) & box.size;
-    _editInlineMath(start, start + 2, '', anchor);
-    return true;
-  }
-
-  /// One click on an equation in a sentence opens it for editing (v0.18 §7).
-  ///
-  /// The range is re-derived on every keystroke rather than remembered,
-  /// because rewriting the equation changes its own length: holding the
-  /// original `end` would make the second character of a longer equation
-  /// overwrite the word after it.
-  void _editInlineMath(int start, int end, String latex, Rect anchor) {
-    final ctx = _lastContext;
-    if (ctx == null || !ctx.mounted) return;
     var current = end;
-    InlineMathPopover.show(
+    EquationSourcePanel.show(
       ctx,
-      app: app,
       anchor: anchor,
       latex: latex,
       onChanged: (next) {
         final tidy = next.trim();
-        final written = tidy.isEmpty ? '' : '\$$tidy\$';
-        controller.replaceMathAt(start, current, tidy);
+        final written = tidy.isEmpty ? '' : '\$${tidy}\$';
+        // Re-derived when possible: an edit the panel did not make (undo
+        // under the open panel) leaves `current` stale, and a write against
+        // a stale end lands on the words AFTER the equation.
+        final run = controller.mathRunNear(start);
+        final stop = run != null && run.start == start ? run.end : current;
+        controller.replaceMathAt(start, stop, tidy);
         current = start + written.length;
+        onChanged(controller.text);
       },
       onDone: () => _focus.requestFocus(),
     );
@@ -223,6 +375,12 @@ class _LiveMarkdownSession extends OnoteEditSession {
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    // Gate ONE of three (v0.20 B.2.6): while an inline equation holds the
+    // keyboard, every keystroke that bubbles up here was already offered to
+    // the equation and declined - it belongs to nobody else in this session.
+    // Above the Alt+X check on purpose: Alt+X would otherwise rewrite the
+    // code point at the HOST caret while the student is inside an equation.
+    if (inlineMathFocused) return KeyEventResult.ignored;
     if (isAltXChord(event) && _applyAltX()) return KeyEventResult.handled;
     // A REPEAT counts. Holding Enter on `- item` fires one down event and
     // then repeats, and skipping those let the field insert plain newlines
@@ -236,6 +394,17 @@ class _LiveMarkdownSession extends OnoteEditSession {
       return KeyEventResult.ignored;
     }
     final k = event.logicalKey;
+    // The caret crossing an equation steps INSIDE it, one step, from either
+    // side (v0.20 B.4). Only a plain arrow: Shift+arrow selects OVER the
+    // equation as a unit, which is its own correct behaviour (E.4).
+    if (!hw.isShiftPressed && k == LogicalKeyboardKey.arrowLeft) {
+      if (_enterMathAtEdge(fromRight: true)) return KeyEventResult.handled;
+      return KeyEventResult.ignored;
+    }
+    if (!hw.isShiftPressed && k == LogicalKeyboardKey.arrowRight) {
+      if (_enterMathAtEdge(fromRight: false)) return KeyEventResult.handled;
+      return KeyEventResult.ignored;
+    }
     final TextEditingValue? next;
     if (k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) {
       next = hw.isShiftPressed
@@ -251,6 +420,13 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // exists to remove, reappearing on the one keystroke that declines.
       if (next == null) return KeyEventResult.handled;
     } else if (k == LogicalKeyboardKey.backspace) {
+      // Backspace at an equation's right edge steps INSIDE it (v0.20 B.5) -
+      // the default would eat the closing dollar nobody can see and revert
+      // the whole equation to source, the exact defect class markerAwareDelete
+      // exists to prevent for `**bold**`.
+      if (!hw.isShiftPressed && _enterMathAtEdge(fromRight: true)) {
+        return KeyEventResult.handled;
+      }
       // The list unwrap first — it owns the start of a list item's body, which
       // is a different position from any marker edge.
       next = hw.isShiftPressed
@@ -258,6 +434,10 @@ class _LiveMarkdownSession extends OnoteEditSession {
           : handleListBackspace(controller.value) ??
               controller.markerAwareDelete(controller.value, forward: false);
     } else if (k == LogicalKeyboardKey.delete) {
+      // Delete at an equation's left edge is Backspace's mirror: step in.
+      if (!hw.isShiftPressed && _enterMathAtEdge(fromRight: false)) {
+        return KeyEventResult.handled;
+      }
       // Delete has no list behaviour, only the marker edges. See
       // LiveMarkdownController.markerAwareDelete for why the default is wrong
       // now that the markers cannot be seen.
@@ -406,9 +586,15 @@ class _LiveMarkdownSession extends OnoteEditSession {
     );
   }
 
-  Widget _field(BuildContext context, TextSurface s) => TextField(
+  Widget _field(BuildContext context, TextSurface s) => ListenableBuilder(
+      // The host keeps focus while an inline equation is edited (the field is
+      // its focus DESCENDANT), so without this the paragraph blinks a second
+      // caret right next to the equation's own.
+      listenable: _mathFocus,
+      builder: (context, _) => TextField(
       controller: controller,
       focusNode: _focus,
+      showCursor: !_mathFocus.hasFocus,
       maxLines: null,
       style: s.baseStyle,
       // NON-FORCED strut, explicitly. TextField's default when none is
@@ -462,7 +648,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
       onChanged: (v) {
         onChanged(v);
         _scheduleSpellCheck();
-      });
+      }));
 
   /// Correction items for the word under the caret, plus "Add to dictionary".
   /// Empty when the click didn't land on a misspelling — the menu then looks
@@ -523,12 +709,15 @@ class _LiveMarkdownSession extends OnoteEditSession {
   @override
   void dispose() {
     _disposed = true;
-    // A card left open over a torn-down block would edit a buffer nobody is
-    // showing any more.
-    InlineMathPopover.dismiss();
+    // The one exit path runs even on teardown, so Alt+= followed by clicking
+    // a different block cannot leave an empty `$$` in the note.
+    closeInlineMath(MathExit.done, reposition: false);
+    EquationSourcePanel.dismiss();
     _lastContext = null;
     _spellDebounce?.cancel();
+    controller.removeListener(_maybeCloseOnCaretExit);
     controller.dispose();
     _focus.dispose();
+    _mathFocus.dispose();
   }
 }

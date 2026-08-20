@@ -157,6 +157,14 @@ abstract class OnoteEditSession {
   /// selection model of its own.
   void setSelection(int base, int extent) {}
 
+  /// True while an inline equation INSIDE this session holds the keyboard.
+  ///
+  /// The one flag every gate reads (v0.20 §B.2.6): the session's own key
+  /// handler stands down, and the shell's formatting chords and Escape ladder
+  /// leave the keystroke to the equation. Three gates, one truth — the
+  /// alternative was three copies of "is a MathField focused?" drifting apart.
+  bool get inlineMathFocused => false;
+
   /// Start an equation AT THE CARET, inside this paragraph.
   ///
   /// Alt+= used to drop a separate equation block below the text, because the

@@ -75,11 +75,48 @@ class LiveMarkdownController extends TextEditingController {
   /// which is what a read-only surface wants.
   void Function(int start, int end, String latex, Rect anchor)? onMathTap;
 
+  /// The buffer offset of the opening dollar of the equation being edited IN
+  /// PLACE, or null when none is. While set, the math branch of
+  /// [buildTextSpan] mounts [mathEditorBuilder] instead of the read-only atom,
+  /// so the equation is edited exactly where it sits in the sentence
+  /// (v0.20 §B.2).
+  int? editingMathAt;
+
+  /// Builds the live equation editor for the span at [editingMathAt]. Owned
+  /// by the session — the SPAN is rebuilt on every keystroke, so nothing that
+  /// must survive one may live in the widget this returns.
+  Widget Function(String latex, TextStyle base)? mathEditorBuilder;
+
+  /// Rebuild the span tree without a text change. Entering and leaving
+  /// in-place equation editing changes what the span SHOWS, not what the
+  /// buffer HOLDS, and nothing else tells the field to re-ask for spans.
+  void refreshSpans() => notifyListeners();
+
+  /// The `\$…\$` (or bare `\$\$`) whose SOURCE range contains [offset],
+  /// edges included — or null. `start` is the opening dollar, `end` one past
+  /// the closing one, `inner` the LaTeX between. The session's caret-crossing
+  /// and Backspace-at-the-edge rules are built on this.
+  ({int start, int end, String inner})? mathRunNear(int offset) {
+    for (final r in _runs()) {
+      if (r.kind != MdRunKind.math) continue;
+      final s = r.start - 1; // the run records the HIDDEN remainder
+      if (offset >= s && offset <= r.end) {
+        return (
+          start: s,
+          end: r.end,
+          inner: text.substring(r.start, r.end == s + 2 ? r.start : r.end - 1),
+        );
+      }
+    }
+    return null;
+  }
+
   /// Replace the `$…$` at [start]..[end] with [latex], or remove it when
   /// [latex] is empty. Used by the inline equation editor, which cannot go
   /// through the field: the field never sees a keystroke aimed at a
   /// `WidgetSpan`.
-  void replaceMathAt(int start, int end, String latex) {
+  void replaceMathAt(int start, int end, String latex,
+      {bool keepEmptyPair = false, int? caretAt}) {
     // `start == end` is LEGITIMATE: it means the equation is currently
     // zero-length, which is exactly what happens the moment a student clears
     // the card to retype. Rejecting it left the caller's idea of where the
@@ -89,10 +126,15 @@ class LiveMarkdownController extends TextEditingController {
     // Only a genuinely inverted or out-of-range span is refused.
     if (start < 0 || end > text.length || start > end) return;
     final tidy = latex.trim();
-    final next = tidy.isEmpty ? '' : '\$$tidy\$';
+    // [keepEmptyPair]: while the equation is being edited IN PLACE, an
+    // emptied one must stay `$$` — removing the dollars would unmount the
+    // very editor the student is typing into. The pair is swept on close.
+    final next = tidy.isEmpty
+        ? (keepEmptyPair ? '\$\$' : '')
+        : '\$$tidy\$';
     value = TextEditingValue(
       text: text.replaceRange(start, end, next),
-      selection: TextSelection.collapsed(offset: start + next.length),
+      selection: TextSelection.collapsed(offset: caretAt ?? (start + next.length)),
       composing: TextRange.empty,
     );
     onSelfEdit?.call();
@@ -293,6 +335,7 @@ class LiveMarkdownController extends TextEditingController {
           end: regionStart + m.end,
           openLen: m.end - m.start - 1,
           closeLen: 0,
+          kind: MdRunKind.math,
         ));
         continue;
       }
@@ -311,6 +354,7 @@ class LiveMarkdownController extends TextEditingController {
         end: regionStart + m.end,
         openLen: c.openLen,
         closeLen: c.closeLen,
+        kind: MdRunKind.marker,
       ));
     }
   }
@@ -1190,6 +1234,11 @@ class LiveMarkdownController extends TextEditingController {
         final full = sub.substring(m.start, m.end);
         final from = regionStart + m.start, to = regionStart + m.end;
         final tap = onMathTap;
+        // In-place editing: THIS equation is the one being written, so the
+        // span carries the live editor instead of the drawing. Same source
+        // accounting, same baseline — the paragraph cannot tell the
+        // difference, which is the whole invariant (v0.20 §B.2).
+        final editingHere = from == editingMathAt && mathEditorBuilder != null;
         out.add(_SourceSpan(
           source: full.substring(0, 1),
           // BASELINE: an equation mid-sentence sits on the sentence's
@@ -1199,13 +1248,15 @@ class LiveMarkdownController extends TextEditingController {
           // the text jumps on click-in.
           alignment: PlaceholderAlignment.baseline,
           baseline: TextBaseline.alphabetic,
-          child: InlineMathAtom(
-            latex: c.inner,
-            style: cBase,
-            onTap: tap == null
-                ? null
-                : (rect) => tap(from, to, c.inner, rect),
-          ),
+          child: editingHere
+              ? mathEditorBuilder!(c.inner, cBase)
+              : InlineMathAtom(
+                  latex: c.inner,
+                  style: cBase,
+                  onTap: tap == null
+                      ? null
+                      : (rect) => tap(from, to, c.inner, rect),
+                ),
         ));
         out.add(TextSpan(text: full.substring(1), style: _hidden(cBase)));
         last = m.end;
@@ -1381,8 +1432,14 @@ class _SourceSpan extends WidgetSpan {
   final double? width;
 }
 
+/// What a hidden-marker run stands for. Backspace at a marker edge and
+/// Backspace at an equation's edge are different operations — one splices
+/// text, the other steps INSIDE the equation (v0.20 §B.5) — and telling them
+/// apart by the shape of the offsets was one refactor away from wrong.
+enum MdRunKind { marker, math }
+
 /// One inline construct with hidden markers, in source offsets.
-typedef _MdRun = ({int start, int end, int openLen, int closeLen});
+typedef _MdRun = ({int start, int end, int openLen, int closeLen, MdRunKind kind});
 
 /// A list line's body region and the x its text should start on.
 typedef _ListBody = ({int from, int to, double hang});

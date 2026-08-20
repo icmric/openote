@@ -64,7 +64,20 @@ class MathFieldState extends State<MathField> {
   MathEditor get _e => widget.editor;
 
   @override
+  void initState() {
+    super.initState();
+    // The empty-state chip (below) draws differently focused vs not, and a
+    // focus flip is the one change that arrives without a keystroke.
+    _focus.addListener(_focusFlipped);
+  }
+
+  void _focusFlipped() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    _focus.removeListener(_focusFlipped);
     _own?.dispose();
     super.dispose();
   }
@@ -86,7 +99,9 @@ class MathFieldState extends State<MathField> {
   void insertResult(String value) {
     if (value.isEmpty) return;
     _e.placeAtEnd();
-    for (final ch in '=\$value'.split('')) {
+    // `'=\$value'` before — an ESCAPED dollar, so the button typed the seven
+    // literal characters `=$value` into the equation instead of the answer.
+    for (final ch in '=$value'.split('')) {
       _e.insertChar(ch);
     }
     _focus.requestFocus();
@@ -343,7 +358,17 @@ class MathFieldState extends State<MathField> {
           }
         },
         child: OnoteMath(
-          _e.renderTex(ctx),
+          // **An empty INLINE equation shows the tint chip, not nothing.**
+          // The root row deliberately renders as a bare caret when empty
+          // (a block has its own chrome saying "equation"), but mid-sentence
+          // a lone hairline is invisible — the student would have no idea
+          // where their equation is. The chip is the same affordance a
+          // half-filled fraction already taught them (v0.20 C.1).
+          widget.compact && _e.isEmpty
+              ? (_focus.hasFocus
+                  ? '${ctx.caretTex}${ctx.activeSlotTex}'
+                  : ctx.activeSlotTex)
+              : _e.renderTex(ctx),
           textStyle: widget.textStyle,
           compact: widget.compact,
         ),

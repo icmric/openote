@@ -1,16 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../math/active_math.dart';
-import '../math/evaluate.dart';
-import '../math/linear_math.dart';
-import '../math/math_editor.dart';
-import '../math/math_field.dart';
+import '../math/equation_editor.dart';
 import '../math/math_view.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
-import '../theme/tokens.dart';
-import 'wrap_selection.dart';
 
 /// Math block: the equation is built VISUALLY while editing — symbols drawn as
 /// they will print, with dotted boxes showing where characters go — and drawn
@@ -20,9 +14,12 @@ import 'wrap_selection.dart';
 /// owner's report, which is the whole reason: *"for a highschool student or
 /// someone non-technical this isnt going to work."*
 ///
-/// The LaTeX view is still here, one button away, and is where an equation
-/// goes when the visual editor cannot safely hold it (see [_openVisual]).
-/// Storage is unchanged: canonical LaTeX in `content['latex']`.
+/// The editing machinery itself — the `MathEditor` lifecycle, the LaTeX
+/// escape hatch, the palette registration, the calculator — lives in
+/// [EquationEditor], shared verbatim with the inline equation editor (v0.20
+/// §A). What stays HERE is what only a block can answer: where the equation
+/// is stored (`content['latex']`), how undo coalesces, when an empty husk is
+/// removed, and how much wider the box may grow.
 class MathBlockView extends StatefulWidget {
   const MathBlockView({super.key, required this.block, required this.app});
   final Block block;
@@ -33,45 +30,12 @@ class MathBlockView extends StatefulWidget {
 }
 
 class _MathBlockViewState extends State<MathBlockView> {
-  late final TextEditingController _controller;
-  final _latexFocus = FocusNode();
-  final _fieldFocus = FocusNode();
-  final _fieldKey = GlobalKey<MathFieldState>();
-
-  MathEditor? _editor;
-  bool _latexMode = false;
   bool _wasEditing = false;
   bool _undoPushed = false;
 
   bool get editing => widget.app.editingBlockId == widget.block.id;
 
   String get _latex => widget.block.content['latex'] as String? ?? '';
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(
-        text: widget.block.content['linearSource'] as String? ?? _latex);
-    _openVisual();
-  }
-
-  /// Try to open the stored equation for visual editing. An equation the tree
-  /// cannot hold — an import using a construct we don't model — opens in the
-  /// LaTeX view instead, with its source untouched. Guessing here would mean
-  /// dropping half a student's equation on their first keystroke.
-  void _openVisual() {
-    _editor = MathEditor.open(_latex);
-    _latexMode = _editor == null;
-  }
-
-  @override
-  void dispose() {
-    widget.app.clearActiveMath(this);
-    _controller.dispose();
-    _latexFocus.dispose();
-    _fieldFocus.dispose();
-    super.dispose();
-  }
 
   /// When the last undo point was taken, so a burst of typing is one step.
   int _lastUndoAt = 0;
@@ -110,24 +74,11 @@ class _MathBlockViewState extends State<MathBlockView> {
     widget.app.markDirty();
   }
 
-  /// The LaTeX view still accepts the linear grammar, so someone who learned
-  /// `1/2` or `\sum_(n=1)^oo` keeps it.
-  void _commitSource(String v) {
-    _pushUndoOnce();
-    final src = v.trim();
-    widget.block.content['linearSource'] = v;
-    widget.block.content['latex'] = src.isEmpty ? '' : linearToLatex(src);
-    widget.block.content['display'] = true;
-    widget.block.updatedAt = nowMs();
-    widget.app.markDirty();
-  }
-
   void _handleExitTransition() {
     if (_wasEditing && !editing) {
       _undoPushed = false;
-      // The toolbar's Maths tab is showing THIS equation's buttons; it has to
-      // go when the equation does.
-      widget.app.clearActiveMath(this);
+      // The Maths tab itself is cleared by EquationEditor's own dispose —
+      // this widget no longer owns the registration.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if ((widget.block.content['latex'] as String? ?? '').trim().isEmpty) {
@@ -135,51 +86,25 @@ class _MathBlockViewState extends State<MathBlockView> {
         }
       });
     }
-    if (!_wasEditing && editing) {
-      // Re-read on the way IN: the equation may have changed underneath us
-      // (undo, sync, an AI edit through MCP) since this widget was built.
-      _openVisual();
-    }
     _wasEditing = editing;
-  }
-
-  void _toggleLatexMode() {
-    setState(() {
-      if (_latexMode) {
-        _openVisual();
-        if (_editor != null) _editor!.placeAtEnd();
-      } else {
-        _controller.text = _latex;
-        _latexMode = true;
-      }
-    });
-  }
-
-  EvalResult? get _evaluated {
-    final src = _latexMode ? _controller.text.trim() : _latex;
-    if (src.isEmpty) return null;
-    final r = evaluateLinear(src);
-    return r.isOk ? r : null;
   }
 
   /// The widest an equation may push its own box before it starts scrolling
   /// instead. Past this a block stops being a block and starts being the page.
   static const double _kMaxMathWidth = 900;
 
-  /// Widen the block to whatever is actually being written.
+  /// Widen the block to what is actually being written.
   ///
-  /// Measured from the laid-out equation rather than guessed from the LaTeX:
-  /// the caret rule, the empty `\square` boxes and a summation's stacked
-  /// limits all add width that no amount of string-inspection would predict.
-  /// Grow only — never shrink — because shrinking mid-keystroke makes the box
-  /// twitch while you type, and a student who has widened it by hand should
-  /// keep that width.
-  void _growToFit() {
-    if (!mounted || _latexMode) return;
-    final box = _fieldKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return;
+  /// [fieldWidth] is measured from the laid-out equation rather than guessed
+  /// from the LaTeX: the caret rule, the empty `\square` boxes and a
+  /// summation's stacked limits all add width no string-inspection would
+  /// predict. Grow only — never shrink — because shrinking mid-keystroke makes
+  /// the box twitch while you type, and a student who has widened it by hand
+  /// should keep that width.
+  void _growToWidth(double fieldWidth) {
+    if (!mounted) return;
     const chrome = 24.0; // the block's own padding, both sides
-    final need = box.size.width + chrome;
+    final need = fieldWidth + chrome;
     final have = widget.block.w;
     if (need <= have + 1) return;
     final target = need > _kMaxMathWidth ? _kMaxMathWidth : need;
@@ -200,57 +125,20 @@ class _MathBlockViewState extends State<MathBlockView> {
     final textColor = dark ? OnoteColors.moon0 : OnoteColors.graphite900;
 
     if (editing) {
-      // The palette lives in the toolbar's Maths tab, not in this box (v0.18
-      // §5.2 as revised). Registered from `build`, like `setActiveEditor`, and
-      // therefore WITHOUT a notify — the rebuild that reveals the tab rides
-      // the `select(edit: true)` notify that opened this editor.
-      widget.app.setActiveMath(ActiveMathEditor(
-        owner: this,
-        insert: (item) {
-          widget.app.noteMathUse(item.id);
-          _fieldKey.currentState?.insertItem(item);
-        },
-        latexMode: _latexMode,
-        latexAvailable: _latexMode || _editor != null,
-        toggleLatex: _toggleLatexMode,
-        result: _evaluated?.display,
-        useResult: () => _fieldKey.currentState?.insertResult(
-            _evaluated?.display ?? ''),
-      ));
       return Padding(
         padding: const EdgeInsets.all(10),
-        child: _latexMode
-            ? _latexEditor(textColor)
-            // **The box grows, and scrolls when it cannot.**
-            //
-            // While editing, the equation was pinned to `Block.w` with no
-            // strategy at all — no scroll, no scale, no growth — so anything
-            // wider was clipped away and Flutter painted the overflow stripe.
-            // Reported against a summation, whose limits stack ABOVE the sign
-            // and make it far wider than the same maths reads inline; one
-            // press of a toolbar button could put the very box you have to
-            // type into off the right-hand edge.
-            //
-            // Two halves, and both are needed. The scroll view means overflow
-            // is structurally impossible, whatever the equation. The growth
-            // means it is rarely reached, because the box widens to what is
-            // actually being written — up to [_kMaxMathWidth], after which
-            // scrolling takes over rather than the block eating the page.
-            : SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: LayoutBuilder(builder: (ctx, box) {
-                  WidgetsBinding.instance.addPostFrameCallback(
-                      (_) => _growToFit());
-                  return MathField(
-                    key: _fieldKey,
-                    focusNode: _fieldFocus,
-                    editor: _editor!,
-                    textStyle: TextStyle(fontSize: 22, color: textColor),
-                    onChanged: _commitLatex,
-                    onExit: (_) => _leaveEquation(),
-                  );
-                }),
-              ),
+        child: EquationEditor(
+          app: widget.app,
+          placement: EquationPlacement.block,
+          textStyle: TextStyle(fontSize: 22, color: textColor),
+          latex: _latex,
+          linearSource: widget.block.content['linearSource'] as String?,
+          onLinearChanged: (v) =>
+              widget.block.content['linearSource'] = v,
+          onChanged: _commitLatex,
+          onExit: (_) => _leaveEquation(),
+          onWidthWanted: _growToWidth,
+        ),
       );
     }
 
@@ -284,50 +172,4 @@ class _MathBlockViewState extends State<MathBlockView> {
       ),
     );
   }
-
-  Widget _latexEditor(Color textColor) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _latexMode && !_latexFocus.hasFocus) {
-        _latexFocus.requestFocus();
-      }
-    });
-    final preview = linearToLatex(_controller.text);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextField(
-          controller: _controller,
-          focusNode: _latexFocus,
-          maxLines: null,
-          style: const TextStyle(
-              fontFamily: 'JetBrains Mono',
-              fontFamilyFallback: onoteFontFallback,
-              fontSize: 14),
-          inputFormatters: const [
-            WrapSelectionFormatter(
-                pairs: WrapSelectionFormatter.bracketPairs,
-                autoCloseFences: false)
-          ],
-          decoration: OnoteInput.bare.copyWith(
-            hintText: r'LaTeX or linear maths… e.g. \sum_(n=1)^oo 1/n^2',
-          ),
-          onChanged: (v) {
-            _commitSource(v);
-            setState(() {});
-          },
-        ),
-        if (preview.isNotEmpty) ...[
-          const Divider(height: 14),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: OnoteMath(preview,
-                textStyle: TextStyle(fontSize: 20, color: textColor)),
-          ),
-        ],
-      ],
-    );
-  }
-
 }

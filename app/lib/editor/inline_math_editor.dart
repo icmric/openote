@@ -1,44 +1,42 @@
-/// Editing an equation that lives inside a sentence (plan: v0.18 §7).
+/// Inline maths in a sentence: the drawing, and the one surviving overlay.
 ///
-/// **Why this exists at all.** The live editor now draws an inline `$…$` as
-/// the equation rather than as source, which is the whole point — but it also
-/// means the caret can no longer walk into the middle of it. Without a way in,
-/// making inline maths look right would have made it read-only, which is a
-/// worse bug than the one being fixed. This is the way in: one click.
+/// **The card is gone** (v0.20 §A.4). An inline equation used to be edited in
+/// a floating panel under the paragraph, which meant a second place on screen
+/// showing the same maths, a 420 px card "nowhere near where you were
+/// typing", and a focus fight between the card and the paragraph that
+/// scattered keystrokes between the two — reported as "randomly overwriting
+/// characters, going in weird orders". The equation is now edited IN PLACE:
+/// `live_markdown_engine.enterInlineMath` mounts the shared [EquationEditor]
+/// inside the very span that draws the equation, so there is nothing to
+/// anchor, nothing to fight with, and one editor to maintain.
 ///
-/// **How it differs from the plan, stated rather than buried.** §7 chose an
-/// overlay drawn at exactly the equation's rect, matching font size and
-/// baseline so the swap is invisible. What is built here anchors a small
-/// editing card *under* the equation instead, with the equation in the
-/// sentence updating live as you type. The reason is honest: pixel-matching a
-/// `WidgetSpan`'s baseline inside a `TextField` across three platforms and two
-/// themes is a lot of fragile measurement to buy a transition effect, and
-/// every frame of it would be a place for the equation to jump. The card
-/// carries the same [MathField] and the same maths bar the block editor uses,
-/// so the *editing* is identical; only the choreography is simpler.
+/// What this file still owns:
+///  * [InlineMathAtom] — the equation as it appears in the sentence when it
+///    is NOT being edited: drawn, and clickable.
+///  * [EquationSourcePanel] — the LaTeX escape hatch for an equation the
+///    visual tree cannot hold (an import using a construct we don't model).
+///    It needs platform text input — IME, selection handles, a system caret —
+///    which is exactly what a `MathField` deliberately does without, and a
+///    real `TextField` inside a `WidgetSpan` would open a second
+///    `TextInputConnection` inside the host's. So this one case keeps a
+///    floating panel (v0.20 §A.5).
 library;
 
 import 'package:flutter/material.dart';
 
-import '../math/active_math.dart';
-import '../math/math_editor.dart';
-import '../math/math_field.dart';
+import '../math/linear_math.dart';
 import '../math/math_tree.dart';
 import '../math/math_view.dart';
-import '../state/app_state.dart';
+import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
+import 'wrap_selection.dart';
 
-/// Opens the editing card for one inline equation.
-///
-/// [anchor] is the equation's rect in global coordinates. [onChanged] receives
-/// the new LaTeX on every keystroke — the sentence rewrites live, so what the
-/// student sees in the card and what is in their note never differ. An empty
-/// string means "the equation is gone", which the caller removes.
-class InlineMathPopover {
-  InlineMathPopover._(this._entry);
+/// The LaTeX source panel for ONE inline equation the tree cannot hold.
+class EquationSourcePanel {
+  EquationSourcePanel._(this._entry);
 
   final OverlayEntry _entry;
-  static InlineMathPopover? _open;
+  static EquationSourcePanel? _open;
 
   static bool get isOpen => _open != null;
 
@@ -49,7 +47,6 @@ class InlineMathPopover {
 
   static void show(
     BuildContext context, {
-    required AppState app,
     required Rect anchor,
     required String latex,
     required ValueChanged<String> onChanged,
@@ -58,17 +55,10 @@ class InlineMathPopover {
     dismiss();
     final overlay = Overlay.maybeOf(context);
     if (overlay == null) return;
-
-    // An equation the tree can't hold opens as source, exactly as the block
-    // does — never silently reshaped on the first keystroke (§6.6).
-    final editor = MathEditor.open(latex);
-
     late OverlayEntry entry;
     entry = OverlayEntry(
-      builder: (ctx) => _InlineMathCard(
-        app: app,
+      builder: (ctx) => _SourcePanel(
         anchor: anchor,
-        editor: editor,
         latex: latex,
         onChanged: onChanged,
         onDone: () {
@@ -78,46 +68,33 @@ class InlineMathPopover {
       ),
     );
     overlay.insert(entry);
-    _open = InlineMathPopover._(entry);
+    _open = EquationSourcePanel._(entry);
   }
 }
 
-class _InlineMathCard extends StatefulWidget {
-  const _InlineMathCard({
-    required this.app,
+class _SourcePanel extends StatefulWidget {
+  const _SourcePanel({
     required this.anchor,
-    required this.editor,
     required this.latex,
     required this.onChanged,
     required this.onDone,
   });
 
-  final AppState app;
   final Rect anchor;
-  final MathEditor? editor;
   final String latex;
   final ValueChanged<String> onChanged;
   final VoidCallback onDone;
 
   @override
-  State<_InlineMathCard> createState() => _InlineMathCardState();
+  State<_SourcePanel> createState() => _SourcePanelState();
 }
 
-class _InlineMathCardState extends State<_InlineMathCard> {
-  final _fieldKey = GlobalKey<MathFieldState>();
+class _SourcePanelState extends State<_SourcePanel> {
   late final TextEditingController _source =
       TextEditingController(text: widget.latex);
-  late bool _latexMode = widget.editor == null;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.editor?.placeAtEnd();
-  }
 
   @override
   void dispose() {
-    widget.app.clearActiveMath(this);
     _source.dispose();
     super.dispose();
   }
@@ -129,39 +106,19 @@ class _InlineMathCardState extends State<_InlineMathCard> {
             ? OnoteSurfaces.dark
             : OnoteSurfaces.light);
     final screen = MediaQuery.of(context).size;
-    const cardWidth = 420.0;
+    const panelWidth = 420.0;
 
-    // Under the equation by default; above it when there is no room below, so
-    // the card never hangs off the bottom of the window.
+    // Under the equation by default; above it when there is no room below.
     final below = widget.anchor.bottom + 6;
     final wantsAbove = below + 220 > screen.height;
     // `clamp` throws when its upper bound falls below its lower one, which is
-    // what a window narrower than the card does — measured at 436 px, where
+    // what a window narrower than the panel does — measured at 436 px, where
     // tapping an inline equation threw ArgumentError instead of opening it.
-    // A card wider than the window simply starts at the left margin.
-    final maxLeft = screen.width - cardWidth - 8;
+    final maxLeft = screen.width - panelWidth - 8;
     final left = maxLeft <= 8.0 ? 8.0 : widget.anchor.left.clamp(8.0, maxLeft);
 
-    // The palette is the toolbar's Maths tab, the same one the block editor
-    // drives — so this card holds ONLY the equation. Registered from `build`
-    // without a notify, matching the block editor.
-    widget.app.setActiveMath(ActiveMathEditor(
-      owner: this,
-      insert: (item) {
-        widget.app.noteMathUse(item.id);
-        _fieldKey.currentState?.insertItem(item);
-      },
-      latexMode: _latexMode,
-      latexAvailable: widget.editor != null,
-      toggleLatex: () => setState(() {
-        _latexMode = !_latexMode;
-        if (_latexMode) _source.text = widget.editor?.latex ?? '';
-      }),
-    ));
-
+    final preview = linearToLatex(_source.text);
     return Stack(children: [
-      // Tapping anywhere else finishes — the same "click away commits" rule
-      // every other editor in the app follows.
       Positioned.fill(
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
@@ -172,7 +129,7 @@ class _InlineMathCardState extends State<_InlineMathCard> {
         left: left.toDouble(),
         top: wantsAbove ? null : below,
         bottom: wantsAbove ? screen.height - widget.anchor.top + 6 : null,
-        width: cardWidth,
+        width: panelWidth,
         child: Material(
           elevation: 8,
           borderRadius: BorderRadius.circular(10),
@@ -183,27 +140,36 @@ class _InlineMathCardState extends State<_InlineMathCard> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (_latexMode)
-                  TextField(
-                    controller: _source,
-                    autofocus: true,
-                    maxLines: null,
-                    style: const TextStyle(
-                        fontFamily: 'JetBrains Mono', fontSize: 13),
-                    decoration: const InputDecoration(
-                        isDense: true, border: OutlineInputBorder()),
-                    onChanged: widget.onChanged,
-                  )
-                else
-                  MathField(
-                    key: _fieldKey,
-                    editor: widget.editor!,
-                    compact: false,
-                    textStyle: TextStyle(
-                        fontSize: 20, color: surfaces.textPrimary),
-                    onChanged: widget.onChanged,
-                    onExit: (_) => widget.onDone(),
+                TextField(
+                  controller: _source,
+                  autofocus: true,
+                  maxLines: null,
+                  style: const TextStyle(
+                      fontFamily: 'JetBrains Mono',
+                      fontFamilyFallback: onoteFontFallback,
+                      fontSize: 13),
+                  inputFormatters: const [
+                    WrapSelectionFormatter(
+                        pairs: WrapSelectionFormatter.bracketPairs,
+                        autoCloseFences: false)
+                  ],
+                  decoration: const InputDecoration(
+                      isDense: true, border: OutlineInputBorder()),
+                  onChanged: (v) {
+                    widget.onChanged(v);
+                    setState(() {});
+                  },
+                ),
+                if (preview.isNotEmpty) ...[
+                  const Divider(height: 14),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: OnoteMath(preview,
+                        textStyle: TextStyle(
+                            fontSize: 18, color: surfaces.textPrimary)),
                   ),
+                ],
                 const SizedBox(height: 4),
                 Align(
                   alignment: Alignment.centerRight,
@@ -301,7 +267,6 @@ class InlineMathAtom extends StatelessWidget {
     });
   }
 }
-
 
 String _hex(Color c) {
   final v = c.toARGB32() & 0xFFFFFF;
