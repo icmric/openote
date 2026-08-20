@@ -284,11 +284,24 @@ class EquationEditorState extends State<EquationEditor> {
       ),
     );
 
-    if (widget.placement == EquationPlacement.inline) return field;
+    // **The box grows, and scrolls when it cannot** (v0.18 §14 fix) — now at
+    // BOTH sites. Inline, the paragraph hands the span a finite width; capping
+    // at it makes the measured 112px RenderLine overflow structurally
+    // impossible, and `onWidthWanted` asks the paragraph's own box to widen
+    // so the cap is rarely felt.
+    if (widget.placement == EquationPlacement.inline) {
+      return LayoutBuilder(builder: (ctx, cons) {
+        if (!cons.maxWidth.isFinite) return field;
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: cons.maxWidth),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: field,
+          ),
+        );
+      });
+    }
 
-    // **The box grows, and scrolls when it cannot** (v0.18 §14 fix, kept
-    // verbatim). The scroll view makes overflow structurally impossible; the
-    // growth request means it is rarely reached.
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: field,

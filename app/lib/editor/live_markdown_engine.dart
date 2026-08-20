@@ -184,6 +184,17 @@ class _LiveMarkdownSession extends OnoteEditSession {
       focusNode: _mathFocus,
       onChanged: _inlineMathChanged,
       onExit: closeInlineMath,
+      // A summation's stacked limits are far wider than the same maths reads
+      // inline; without this the equation hits the paragraph's edge and
+      // starts scrolling inside its span. The deficit seam is the one
+      // in-flow images already widen the box through (ADR-0004: the engine
+      // may not touch the block).
+      onWidthWanted: (w) {
+        final avail = controller.layoutWidth;
+        if (avail == null) return;
+        final extra = w + 16 - avail;
+        if (extra > 0) requestExtraWidth?.call(extra);
+      },
     );
   }
 
