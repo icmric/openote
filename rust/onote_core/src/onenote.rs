@@ -3176,8 +3176,17 @@ pub fn unwrap_needless_math(text: &str) -> String {
             Some(rel) => {
                 let inner: String = chars[i + 1..i + 1 + rel].iter().collect();
                 if inner.is_empty() || is_real_notation(&inner) {
+                    // The WHOLE equation is kept, closing dollar included.
+                    // Pushing only the opener and rescanning let the closing
+                    // `$` re-pair with the NEXT equation's opener: two
+                    // equations in one block merged into one, and when the
+                    // prose between carried no notation characters both of
+                    // its dollars were silently DELETED. This runs on every
+                    // page open, so the damage was permanent and unprompted.
                     out.push('$');
-                    i += 1;
+                    out.push_str(&inner);
+                    out.push('$');
+                    i += rel + 2;
                 } else {
                     out.push_str(&inner);
                     i += rel + 2;
@@ -5981,6 +5990,23 @@ mod tests {
         }
         // Display maths is a different dialect and is left alone.
         assert_eq!(unwrap_needless_math("$$x^2$$"), "$$x^2$$");
+
+        // TWO equations in one block stay two. The keep-branch used to push
+        // only the opening dollar and rescan, so the first equation's CLOSER
+        // re-paired with the second's OPENER — "a $x^2$ b $y^2$ c" merged
+        // into one equation, and prose between two equations could lose both
+        // its dollars outright. Found by a review agent while testing maths
+        // flashcards; this runs on every page open.
+        let two = "a $x^2$ b $y^2$ c";
+        assert_eq!(unwrap_needless_math(two), two);
+        // `$1$` unwrapping to `1` is this function's designed job — the
+        // corruption was the FIRST equation losing its closer to it.
+        assert_eq!(
+            unwrap_needless_math(
+                "What is $\\frac{1}{2}+\\frac{1}{2}$? It is $1$."
+            ),
+            "What is $\\frac{1}{2}+\\frac{1}{2}$? It is 1."
+        );
         // A lone dollar is a dollar.
         assert_eq!(unwrap_needless_math("costs $5 today"), "costs $5 today");
         // Mixed line: unwrap the symbol, keep the equation.
