@@ -352,4 +352,82 @@ void main() {
     expect(e.latex, was, reason: 'nothing switched; the click was past the '
         'end of the maths, not on the answer');
   });
+
+  group('what the review found', () {
+    test('a bare letter is a NAME, not a sum — E= does not write e', () {
+      // A physics student typing E, =, space had 2.71828182846 written into
+      // their page: `e` is a constant to the evaluator, and names are
+      // lowercased. Same for pi, phi and tau.
+      for (final letter in ['E', 'e', 'P']) {
+        final e = MathEditor.empty();
+        e.insertChar(letter);
+        e.insertChar('=');
+        e.insertChar(' ');
+        expect(e.latex, isNot(contains('boxed')), reason: letter);
+      }
+    });
+
+    test('…but a lone root or fraction is still a calculation', () {
+      final e = MathEditor.empty()..insertSource(r'\sqrt{16}');
+      e.placeAtEnd();
+      e.insertChar('=');
+      e.insertChar(' ');
+      expect(e.latex, contains(r'\boxed{4}'),
+          reason: 'one NODE is not one symbol — this is a real sum');
+    });
+
+    test('a fractional sum landing on a whole number says 1, not 1/1', () {
+      // Six sixths lands on 0.9999999999999999, and the first convergent of
+      // any value is floor(v)/1 — so it was accepted as `1/1` and the
+      // student read "one over one".
+      final e = MathEditor.empty();
+      for (final ch in '1/6'.split('')) {
+        e.insertChar(ch);
+      }
+      e.placeAtEnd();
+      for (var k = 0; k < 5; k++) {
+        e.insertChar('+');
+        for (final ch in '1/6'.split('')) {
+          e.insertChar(ch);
+        }
+        e.placeAtEnd();
+      }
+      e.insertChar('=');
+      e.insertChar(' ');
+      expect(e.latex, isNot(contains(r'\frac{1}{1}')));
+      expect(e.latex, contains(r'\boxed{1}'));
+    });
+
+    test('rationalOf never answers with a denominator of 1', () {
+      for (final v in [
+        0.9999999999999999, 2.0000000000000004, 1e9 + 0.5, 1e-9, 3.0000000001,
+      ]) {
+        final r = rationalOf(v);
+        expect(r?.den, anyOf(isNull, greaterThan(1)), reason: '$v gave $r');
+      }
+    });
+
+    test('a toggle clears the highlight, so the next key does not eat it', () {
+      // The click LOOKED like it only changed a fraction to a decimal; the
+      // selection it left alive meant the next keystroke ran deleteSelection
+      // and took the student's working with it.
+      final e = answered('1/2');
+      e.selectAll();
+      expect(e.hasSelection, isTrue);
+      final a = answerIn(e)!;
+      expect(e.toggleAnswer(a), isTrue);
+      expect(e.hasSelection, isFalse);
+    });
+
+    test('the click looks up the ROOT row, which is what was measured', () {
+      // answerAt read `caretRow` while the hit table measured `root`, so
+      // with the caret inside a structure a click on one glyph rewrote a
+      // different answer entirely.
+      final e = answered('0.5+0.25');
+      e.insertChar('/'); // pulls the answer into a numerator; caret in den
+      expect(identical(e.caretRow, e.root), isFalse);
+      // root[0] is the leading `0`, not an answer — and must read as none.
+      expect(e.answerAt(0), isNull);
+    });
+  });
 }

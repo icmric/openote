@@ -720,9 +720,23 @@ class MathEditor {
     for (var i = from; i < caretIndex - 1; i++) {
       slice.children.add(caretRow.children[i]);
     }
+    // **A lone LETTER is a name, not a sum.** `e` is Euler's number to the
+    // evaluator and names are lowercased, so a physics student typing `E`,
+    // `=`, space — the ordinary way to start `E = mc^2` — had
+    // 2.71828182846 written into their page. Same for `e`, and `E` is what
+    // both the expected-value and capital-epsilon palette buttons insert.
+    //
+    // A lone letter is what a student is DEFINING. `\pi` is not a letter
+    // they typed but a symbol they chose, and nobody defines pi, so it
+    // still answers — as does a lone root or fraction, which is one NODE
+    // but not one letter.
+    final lone = slice.children.length == 1 ? slice.children.first : null;
+    final onlySymbol = lone is MSym &&
+        lone.tex.length == 1 &&
+        RegExp('[A-Za-z]').hasMatch(lone.tex);
     final linear = rowToLinear(slice).trim();
     slice.children.clear();
-    if (linear.isEmpty) return false;
+    if (linear.isEmpty || onlySymbol) return false;
 
     final r = evaluateLinear(linear);
     if (!r.isOk) return false;
@@ -785,6 +799,12 @@ class MathEditor {
   bool toggleAnswer(MAnswer a) {
     final value = evaluateLinear(rowToLinear(a.content));
     if (!value.isOk) return false;
+    // A click is a click: it ends any highlight, exactly as clicking
+    // anywhere else in the equation does. Leaving one alive meant the next
+    // keystroke ran `deleteSelection` and took the student's working with
+    // it — the click LOOKED like it had only changed a fraction to a
+    // decimal.
+    clearSelection();
     final showingFraction = a.content.children.any((c) => c is MFrac);
     if (showingFraction) {
       final digits = _digits(value.display);
@@ -800,10 +820,23 @@ class MathEditor {
     return true;
   }
 
-  /// The answer at [index] in the caret's row, if that child is one.
+  /// The answer at [index] in the ROOT row, if that child is one.
+  ///
+  /// The root, NOT the caret's row: the field's hit table is measured over
+  /// `root` (`MathHitTable.prefixTexes(_e.root)`), so an index from a click
+  /// only means anything there. Reading `caretRow` instead made the two
+  /// agree only while the caret happened to be in the root row — and the
+  /// moment it was inside a fraction or a script, a click on one glyph
+  /// silently rewrote a DIFFERENT answer somewhere else in the equation,
+  /// committed it, and placed no caret. Probe-proven.
+  ///
+  /// The consequence, taken deliberately: an answer nested inside a slot
+  /// cannot be clicked. There is no geometry for it — the hit table measures
+  /// root children only — so there is no honest target, and an answer is
+  /// only ever CREATED at the top level anyway.
   MAnswer? answerAt(int index) {
-    if (index < 0 || index >= caretRow.length) return null;
-    final n = caretRow.children[index];
+    if (index < 0 || index >= root.length) return null;
+    final n = root.children[index];
     return n is MAnswer ? n : null;
   }
 

@@ -371,8 +371,13 @@ class _Parser {
     {int maxDen = 10000, double eps = 1e-9}) {
   if (!v.isFinite) return null;
   if (v == v.roundToDouble()) return null; // a whole number is not a fraction
+  final mag = v.abs();
+  // Outside this band there is no fraction worth showing: a millionth is
+  // better read as a decimal, and above a billion the first convergent is
+  // always floor(v)/1, which is not a fraction at all.
+  if (mag < 1e-6 || mag > 1e9) return null;
   final neg = v < 0;
-  var x = v.abs();
+  var x = mag;
   // p/q are the convergents; the recurrence is the textbook one.
   var p0 = 0, q0 = 1, p1 = 1, q1 = 0;
   for (var step = 0; step < 40; step++) {
@@ -383,7 +388,13 @@ class _Parser {
     q0 = q1;
     p1 = p2;
     q1 = q2;
-    if (q1 != 0 && (p1 / q1 - v.abs()).abs() <= eps * v.abs().clamp(1, 1e9)) {
+    // **A denominator of 1 is not an answer.** The FIRST convergent is
+    // always floor(|v|)/1, so float noise — `1/6` six times lands on
+    // 0.9999999999999999 — used to be accepted as `1/1`, and the student
+    // read "one over one" where the answer is 1. The doc above promises a
+    // whole number returns null; this is what keeps that promise for the
+    // values that are only ALMOST whole.
+    if (q1 > 1 && (p1 / q1 - mag).abs() <= eps * (mag < 1 ? 1 : mag)) {
       return (num: neg ? -p1 : p1, den: q1);
     }
     final frac = x - a;

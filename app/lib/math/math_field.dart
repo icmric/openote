@@ -82,6 +82,19 @@ class MathFieldState extends State<MathField> {
   }
 
   @override
+  void didUpdateWidget(MathField old) {
+    super.didUpdateWidget(old);
+    // **A different equation means a different baseline.** The inline host
+    // mounts this field under a persistent GlobalKey and swaps the tree
+    // underneath it in one synchronous call, so no frame is built in
+    // between and this State — with the LAST equation's `_committed` —
+    // survives. The new equation's first edit was then compared against the
+    // old one's LaTeX and, when the two matched (the same worked line twice
+    // in a sentence), suppressed: the screen changed and the note did not.
+    if (!identical(old.editor, widget.editor)) _committed = _e.latex;
+  }
+
+  @override
   void dispose() {
     _focus.removeListener(_focusFlipped);
     _own?.dispose();
@@ -179,6 +192,15 @@ class MathFieldState extends State<MathField> {
   List<String>? _probeTexes;
   List<GlobalKey>? _probeKeys;
   MathHitTable? _hits;
+
+  /// An answer the press landed on, waiting for the release to switch it.
+  MAnswer? _armedAnswer;
+
+  /// Whether the button is still down. The hit table resolves a frame after
+  /// the press, and a quick tap is DOWN-UP inside that frame — so by the time
+  /// the answer under the pointer is known, the release may already have
+  /// happened and there is nothing left to wait for.
+  bool _pointerIsDown = false;
   double _pendingDx = 0;
   bool _pendingShift = false;
   bool _pendingDouble = false;
@@ -186,6 +208,7 @@ class MathFieldState extends State<MathField> {
   Offset _lastDownPos = Offset.zero;
 
   void _pointerDown(PointerDownEvent e) {
+    _pointerIsDown = true;
     // The PREVIOUS gesture's table dies here, not on pointer-up: a quick
     // click's post-frame resolve lands after the up, so up-clearing left the
     // old geometry alive and the next drag's first frame consulted boundaries
@@ -233,13 +256,23 @@ class MathFieldState extends State<MathField> {
     // `toggleAnswer` declines when there is nothing to switch to (a whole
     // number, or a decimal with no tidy fraction), and then this falls
     // through to placing the caret exactly as any other click would.
-    final onAnswer = _e.answerAt(hits.childStrictlyAt(_pendingDx));
-    if (!_pendingShift && onAnswer != null && _e.toggleAnswer(onAnswer)) {
+    // The toggle is ARMED here and fired on release (see [_endGesture]).
+    // Doing it on the press meant a drag that began on an answer switched it
+    // before selecting, and a double-click switched it twice — there and
+    // back, so the second click appeared to do nothing at all.
+    final onAnswer =
+        _pendingShift || _pendingDouble ? null : _e.answerAt(hits.childStrictlyAt(_pendingDx));
+    if (onAnswer != null) {
       setState(() {
         _probeTexes = null;
         _probeKeys = null;
       });
-      _changed();
+      if (_pointerIsDown) {
+        _armedAnswer = onAnswer;
+      } else if (_e.toggleAnswer(onAnswer)) {
+        // The tap was over before the geometry came back — fire now.
+        _changed();
+      }
       return;
     }
     if (_pendingDouble) {
@@ -258,8 +291,15 @@ class MathFieldState extends State<MathField> {
 
   void _pointerMove(PointerMoveEvent e) {
     if (e.buttons & kPrimaryButton == 0) return;
+    // Past the slop this is a DRAG, not a click, so whatever answer the
+    // press landed on stops being a toggle and the gesture becomes a
+    // selection like any other.
+    if (_armedAnswer != null &&
+        (e.localPosition - _lastDownPos).distance > 3) {
+      _armedAnswer = null;
+    }
     final h = _hits;
-    if (h == null) return;
+    if (h == null || _armedAnswer != null) return;
     final b = h.boundaryAt(e.localPosition.dx);
     if (b != _e.caretIndex || !_e.hasSelection) {
       _e.selectTo(b);
@@ -272,6 +312,14 @@ class MathFieldState extends State<MathField> {
   /// works" is worse than none.
   void _endGesture(PointerEvent _) {
     _hits = null;
+    _pointerIsDown = false;
+    final a = _armedAnswer;
+    _armedAnswer = null;
+    // A click that stayed put, on an answer: switch how it is written. It
+    // declines when there is nothing to switch to, and then the press has
+    // simply done nothing, which is the same as clicking a glyph that is
+    // not an answer.
+    if (a != null && _e.toggleAnswer(a)) _changed();
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent e) {
