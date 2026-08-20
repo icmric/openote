@@ -11,11 +11,13 @@
 /// maths keyboard for touch and the web build is Phase 3 of the plan.
 library;
 
+import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/tokens.dart';
 import 'math_editor.dart';
+import 'math_hit.dart';
 import 'math_inventory.dart';
 import 'math_tree.dart';
 import 'math_view.dart';
@@ -148,6 +150,95 @@ class MathFieldState extends State<MathField> {
     final c = e.character;
     if (c != null && _printable(c)) return c;
     return null;
+  }
+
+  // ─────────────────────────────────────────────── the pointer (v0.20 E.3)
+  //
+  // Click places the caret at the nearest atom boundary. Drag highlights.
+  // Shift+click extends. Double-click takes the atom under the pointer,
+  // whole — for a fraction, the fraction. Before this the field's only
+  // gesture was a tap that jumped the caret to the END and, worse, DESTROYED
+  // any keyboard-made highlight on its way — so for a mouse user, selection
+  // did not exist: "i cant highlight anything".
+  //
+  // Geometry comes from MathHitTable: the prefixes are laid out OFFSTAGE on
+  // pointer-down and resolved one frame later. A click answered a frame late
+  // is imperceptible; a caret that lands where you clicked, after years of
+  // landing at the end, is not.
+
+  List<String>? _probeTexes;
+  List<GlobalKey>? _probeKeys;
+  MathHitTable? _hits;
+  double _pendingDx = 0;
+  bool _pendingShift = false;
+  bool _pendingDouble = false;
+  DateTime _lastDown = DateTime.fromMillisecondsSinceEpoch(0);
+  Offset _lastDownPos = Offset.zero;
+
+  void _pointerDown(PointerDownEvent e) {
+    if (!_focus.hasFocus) _focus.requestFocus();
+    final now = DateTime.now();
+    final isDouble = now.difference(_lastDown).inMilliseconds < 400 &&
+        (e.localPosition - _lastDownPos).distance < 8;
+    _lastDown = now;
+    _lastDownPos = e.localPosition;
+    if (_e.root.isEmpty) return; // nothing to hit; focus was the whole job
+    _pendingDx = e.localPosition.dx;
+    _pendingShift = HardwareKeyboard.instance.isShiftPressed;
+    _pendingDouble = isDouble;
+    setState(() {
+      _probeTexes = MathHitTable.prefixTexes(_e.root);
+      _probeKeys = [for (final _ in _probeTexes!) GlobalKey()];
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _resolveGesture());
+  }
+
+  void _resolveGesture() {
+    if (!mounted || _probeTexes == null) return;
+    final bounds = <double>[];
+    for (final k in _probeKeys!) {
+      final b = k.currentContext?.findRenderObject() as RenderBox?;
+      if (b == null || !b.hasSize) {
+        setState(() {
+          _probeTexes = null;
+          _probeKeys = null;
+        });
+        return;
+      }
+      bounds.add(b.size.width);
+    }
+    final hits = MathHitTable(_e.root, bounds);
+    _hits = hits;
+    if (_pendingDouble) {
+      _e.selectChild(hits.childAt(_pendingDx));
+    } else if (_pendingShift) {
+      _e.selectTo(hits.boundaryAt(_pendingDx));
+    } else {
+      _e.placeAt(hits.boundaryAt(_pendingDx));
+    }
+    setState(() {
+      _probeTexes = null;
+      _probeKeys = null;
+    });
+    _changed();
+  }
+
+  void _pointerMove(PointerMoveEvent e) {
+    if (e.buttons & kPrimaryButton == 0) return;
+    final h = _hits;
+    if (h == null) return;
+    final b = h.boundaryAt(e.localPosition.dx);
+    if (b != _e.caretIndex || !_e.hasSelection) {
+      _e.selectTo(b);
+      _changed();
+    }
+  }
+
+  /// The table is built for one gesture and dies with it — the equation can
+  /// change the moment the button is up, and stale geometry that "mostly
+  /// works" is worse than none.
+  void _endGesture(PointerEvent _) {
+    _hits = null;
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent e) {
@@ -335,47 +426,109 @@ class MathFieldState extends State<MathField> {
         accent.withValues(alpha: dark ? 0.34 : 0.18),
         surfaces.chrome,
       )),
+      // Stronger than the slot tint on purpose. The slot tint measured
+      // 1.34:1 against the block's white editing fill — a one-atom highlight
+      // in it was invisible, reported as "i cant highlight anything". This is
+      // the same weight every text editor gives its selection.
+      selectionTint: _hex(Color.alphaBlend(
+        accent.withValues(alpha: dark ? 0.55 : 0.38),
+        surfaces.chrome,
+      )),
       dim: _hex(surfaces.textSecondary),
+      display: !widget.compact,
     );
 
     return Focus(
       focusNode: _focus,
       autofocus: widget.autofocus,
       onKeyEvent: _onKey,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        // Clicking an equation you are ALREADY in puts the caret at the end.
-        // True hit-testing inside the equation needs box geometry
-        // flutter_math_fork does not expose (v0.18 phase 3); until it does,
-        // predictable beats mysterious — the click used to do nothing at all,
-        // so the caret stayed wherever it happened to be.
-        onTap: () {
-          if (_focus.hasFocus) {
-            _e.placeAtEnd();
-            _changed();
-          } else {
-            _focus.requestFocus();
-          }
-        },
-        child: OnoteMath(
-          // **An empty INLINE equation shows the tint chip, not nothing.**
-          // The root row deliberately renders as a bare caret when empty
-          // (a block has its own chrome saying "equation"), but mid-sentence
-          // a lone hairline is invisible — the student would have no idea
-          // where their equation is. The chip is the same affordance a
-          // half-filled fraction already taught them (v0.20 C.1).
-          widget.compact && _e.isEmpty
-              ? (_focus.hasFocus
-                  ? '${ctx.caretTex}${ctx.activeSlotTex}'
-                  : ctx.activeSlotTex)
-              : _e.renderTex(ctx),
-          textStyle: widget.textStyle,
-          compact: widget.compact,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.text,
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: _pointerDown,
+          onPointerMove: _pointerMove,
+          onPointerUp: _endGesture,
+          onPointerCancel: _endGesture,
+          child: Stack(
+            children: [
+              // **The highlight's height, reserved permanently** (v0.20
+              // E.2.3). `\fcolorbox` costs exactly kSelectionBoxEm in height
+              // and there is no way to remove it — `\fboxsep=0pt` is refused,
+              // negative kerns are ignored, all measured. Without the reserve
+              // the equation grows the moment a highlight appears and
+              // everything around it — the line, the block, the wrap —
+              // jumps. Vertical only: width shifts are interior to the row
+              // and accepted.
+              Padding(
+                // Reserved only while NO highlight is drawn: the box adds
+                // kSelectionBoxEm to the selected run, so if the padding
+                // stayed, a full-row selection would grow the field by the
+                // same amount the reserve was meant to absorb (measured:
+                // +14.9px at 22px). With the swap, a flat row keeps its
+                // height exactly. The one case that still moves: a short
+                // selection beside a taller structure dips by up to
+                // kSelectionBoxEm, because the box around the short run never
+                // reaches the structure's height — accepted, and far rarer
+                // than Ctrl+A.
+                padding: EdgeInsets.symmetric(
+                    vertical: _e.hasSelection
+                        ? 0
+                        : (widget.textStyle.fontSize ?? 14) *
+                            (kSelectionBoxEm / 2)),
+                child: OnoteMath(
+                  // **An empty INLINE equation shows the tint chip, not
+                  // nothing.** The root row deliberately renders as a bare
+                  // caret when empty (a block has its own chrome saying
+                  // "equation"), but mid-sentence a lone hairline is
+                  // invisible — the student would have no idea where their
+                  // equation is. The chip is the same affordance a
+                  // half-filled fraction already taught them (v0.20 C.1).
+                  widget.compact && _e.isEmpty
+                      ? (_focus.hasFocus
+                          ? '${ctx.caretTex}${ctx.activeSlotTex}'
+                          : ctx.activeSlotTex)
+                      : _e.renderTex(ctx),
+                  textStyle: widget.textStyle,
+                  compact: widget.compact,
+                ),
+              ),
+              // The hit-table probes: every prefix of the row, laid out and
+              // never painted, alive for exactly one pointer gesture.
+              if (_probeTexes != null)
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  child: Offstage(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (var i = 0; i < _probeTexes!.length; i++)
+                          KeyedSubtree(
+                            key: _probeKeys![i],
+                            child: OnoteMath(
+                              _probeTexes![i],
+                              textStyle: widget.textStyle,
+                              compact: widget.compact,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
+
+/// What one `\fcolorbox` costs, in em, in BOTH width and height — measured at
+/// 12/14/16/22/30px, text and display style alike: 2 x (fboxsep 3pt +
+/// fboxrule 0.4pt). Pinned in a test so a flutter_math upgrade that changes
+/// it fails loudly instead of quietly reintroducing the selection jump.
+const double kSelectionBoxEm = 0.68;
 
 String _hex(Color c) {
   final v = c.toARGB32() & 0xFFFFFF;

@@ -451,7 +451,9 @@ class MathTexCtx {
     this.selectionEnd = -1,
     this.accent = '#2563EB',
     this.tint = '#DBEAFE',
+    this.selectionTint = '#B9C0F5',
     this.dim = '#9CA3AF',
+    this.display = true,
   });
 
   final MRow? caretRow;
@@ -475,7 +477,21 @@ class MathTexCtx {
   /// second rendering path.
   final String accent;
   final String tint;
+
+  /// The highlight's fill — its OWN colour, not [tint]. The slot tint is
+  /// deliberately faint (it sits under a box you are typing into); measured
+  /// against the block's white editing fill it is 1.34:1, and a one-atom
+  /// selection in it read as "nothing happened" — which is exactly what the
+  /// owner reported. A selection has to announce itself.
+  final String selectionTint;
+
   final String dim;
+
+  /// Display style (a block) vs text style (inline). Carried INTO the
+  /// highlight box: `\fcolorbox` resets its contents to text style, so
+  /// without this token a highlighted fraction physically SHRINKS the moment
+  /// you select it — measured at 44.2px tall plain, 41.1px boxed.
+  final bool display;
 
   /// The caret. Sized in `ex`, not `em`: an `em` rule is measured against the
   /// font size where it sits, so nesting made the caret GROW — measured at
@@ -499,8 +515,12 @@ class MathTexCtx {
       '\\fcolorbox{$tint}{$tint}{\$\\textcolor{$accent}{\\square}\$}';
 
   /// Opens the highlight. The content between this and [selectionClose] is
-  /// re-entered as maths, so anything at all can sit inside it.
-  String get selectionOpen => '\\fcolorbox{$tint}{$tint}{\$';
+  /// re-entered as maths, so anything at all can sit inside it — WITH the
+  /// style it had outside, or a selected fraction changes size (see
+  /// [display]).
+  String get selectionOpen => display
+      ? '\\fcolorbox{$selectionTint}{$selectionTint}{\$\\displaystyle '
+      : '\\fcolorbox{$selectionTint}{$selectionTint}{\$\\textstyle ';
   String get selectionClose => '\$}';
 }
 
@@ -508,7 +528,7 @@ class MathTexCtx {
 const MathTexCtx kStoreCtx = MathTexCtx();
 
 String rowToTex(MRow r, MathTexCtx c) {
-  final caretHere = c.decorate && identical(r, c.caretRow);
+  var caretHere = c.decorate && identical(r, c.caretRow);
 
   if (r.children.isEmpty) {
     if (!c.decorate) return '';
@@ -522,6 +542,11 @@ String rowToTex(MRow r, MathTexCtx c) {
       identical(r, c.selectionRow) &&
       c.selectionStart >= 0 &&
       c.selectionEnd > c.selectionStart;
+
+  // One or the other, never both: a text editor shows a highlight OR a
+  // caret. Both at once — the caret is always at one END of the highlight —
+  // read as a stray hairline glued to the box's edge.
+  if (selHere) caretHere = false;
 
   final b = StringBuffer();
   var prevEndsScript = false;

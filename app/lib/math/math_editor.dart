@@ -101,7 +101,9 @@ class MathEditor {
           selectionEnd: selectionEnd,
           accent: style.accent,
           tint: style.tint,
+          selectionTint: style.selectionTint,
           dim: style.dim,
+          display: style.display,
         ),
       );
 
@@ -186,6 +188,50 @@ class MathEditor {
     caretIndex = start;
     clearSelection();
     _openText = null;
+    return true;
+  }
+
+  // ───────────────────────────────────────────────────── pointer placement
+  //
+  // The mouse speaks in ROOT-ROW BOUNDARIES (MathHitTable): a click lands the
+  // caret at the nearest gap between top-level atoms, a drag runs between two
+  // of them. Boundaries keep every gesture's result contiguous by
+  // construction — the same rule Shift+arrow follows.
+
+  /// Put the caret at [index] in the root row. A click.
+  void placeAt(int index) {
+    caretRow = root;
+    caretIndex = index < 0
+        ? 0
+        : (index > root.length ? root.length : index);
+    _openText = null;
+    clearSelection();
+  }
+
+  /// Extend (or start) a highlight from wherever the caret is to [index] in
+  /// the root row. A drag, or Shift+click.
+  void selectTo(int index) {
+    _openText = null;
+    final to = index < 0 ? 0 : (index > root.length ? root.length : index);
+    if (_anchorRow == null ||
+        !identical(_anchorRow, root) ||
+        !identical(caretRow, root)) {
+      _anchorRow = root;
+      _anchorIndex = identical(caretRow, root) ? caretIndex : to;
+    }
+    caretRow = root;
+    caretIndex = to;
+  }
+
+  /// Highlight exactly the root-row child at [child]. A double-click — which
+  /// for a fraction selects the fraction, the whole thing a student means.
+  bool selectChild(int child) {
+    if (child < 0 || child >= root.length) return false;
+    _openText = null;
+    _anchorRow = root;
+    _anchorIndex = child;
+    caretRow = root;
+    caretIndex = child + 1;
     return true;
   }
 
