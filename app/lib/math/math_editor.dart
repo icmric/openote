@@ -482,9 +482,14 @@ class MathEditor {
   /// copied out of a message still arrives as maths, and finally the plain
   /// characters — pasting must never be refused outright, because the student
   /// can always see what they pasted and fix it.
-  void insertSource(String source) {
+  InsertOutcome insertSource(String source) {
     bool place(MathParseResult r) {
       if (!r.supported || r.root == null) return false;
+      // Pasting REPLACES the highlight, exactly as insertChar and insertItem
+      // do — it used to append after it instead, leaving the highlight
+      // spanning old and pasted content so the next keystroke's
+      // deleteSelection wiped the whole equation.
+      deleteSelection();
       final nodes = r.root!.drain();
       caretRow.insertAll(caretIndex, nodes);
       caretIndex += nodes.length;
@@ -504,13 +509,23 @@ class MathEditor {
     // fraction the sender meant. Where the linear grammar leaves the text
     // alone, nothing is preferred and the LaTeX path takes it.
     final linear = linearToLatex(source);
-    if (linear != source && place(parseLatex(linear))) return;
-    if (place(parseLatex(source))) return;
-    // Neither reading holds it: the characters go in as characters. Pasting is
-    // never refused — the student can see what arrived and fix it.
+    if (linear != source && place(parseLatex(linear))) {
+      return InsertOutcome.placed;
+    }
+    if (place(parseLatex(source))) return InsertOutcome.placed;
+    // LaTeX the tree cannot hold is REFUSED, untouched (v0.20 D.2). The old
+    // fallback escaped it character by character, and the escaping layer
+    // turned every backslash into `\backslash` — TYPESET backslashes that
+    // re-parse cleanly, so the student's own clipboard content was silently
+    // rewritten into something no undo could recover the meaning of.
+    // Measured: 22 of 79 realistic constructs landed there.
+    if (source.contains('\\')) return InsertOutcome.refused;
+    // Plain text goes in as the characters it is — visible, fixable.
+    deleteSelection();
     for (final ch in source.split('')) {
       insertChar(ch);
     }
+    return InsertOutcome.chars;
   }
 
   /// A palette press. Fresh nodes every time — see [MathItem.build].
@@ -654,10 +669,36 @@ class MathEditor {
     insertItem(item);
   }
 
-  /// `\sin(` goes upright, the way every textbook sets it. Folded into
-  /// [_buildControlWord], which looks the function names up in the same pass;
-  /// kept under its own name so the `(` handler reads for what it means.
-  bool _buildFunctionName() => _buildControlWord();
+  /// `sin(` goes upright, the way every textbook sets it — WITHOUT needing
+  /// the backslash. The `(` is what makes the intent unambiguous, so this
+  /// does not violate the no-greedy-conversion rule ("alpha doesnt convert,
+  /// \alpha does"): a bare word converts only when it is a known FUNCTION
+  /// name and the student has just opened its argument. Backspace hands the
+  /// letters back, as for every remembered conversion.
+  ///
+  /// (It used to alias [_buildControlWord], which requires the backslash —
+  /// so the `(` handler called the same function twice and plain `sin(`
+  /// never went upright at all.)
+  bool _buildFunctionName() {
+    var k = caretIndex;
+    final buf = StringBuffer();
+    while (k > 0) {
+      final n = caretRow.children[k - 1];
+      if (n is! MSym || n.cls != MClass.letter || n.tex.length != 1) break;
+      buf.write(n.tex);
+      k--;
+    }
+    if (buf.isEmpty) return false;
+    final word = String.fromCharCodes(buf.toString().codeUnits.reversed);
+    final item = mathItemsById['fn-${word}'];
+    if (item == null) return false;
+    for (var i = caretIndex; i > k; i--) {
+      caretRow.removeAt(i - 1);
+    }
+    caretIndex = k;
+    _insertRemembering(item, word);
+    return true;
+  }
 
   bool _buildOperatorRun(String ch) {
     for (final (run, item) in mathOperatorRuns) {
@@ -968,3 +1009,9 @@ class MathEditor {
     }
   }
 }
+
+/// What [MathEditor.insertSource] did with the clipboard. `refused` means the
+/// text was LaTeX the tree cannot hold and NOTHING changed — the caller tells
+/// the student it is still on their clipboard, because a paste that silently
+/// rewrites what was pasted is worse than one that declines.
+enum InsertOutcome { placed, chars, refused }

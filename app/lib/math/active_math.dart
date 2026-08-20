@@ -3,13 +3,13 @@
 /// The palette moved out of the equation's own box and into a contextual tab
 /// in the toolbar, the way OneNote does it. That put a gap between the buttons
 /// and the equation they act on: the bar is built by `CommandBar`, while the
-/// caret lives in a `MathField` somewhere else entirely — on the page, or in a
-/// card floating over a sentence.
+/// caret lives in a `MathField` somewhere else entirely — on the page, or
+/// inside the very sentence the equation sits in.
 ///
 /// This is the whole of what crosses that gap. Deliberately a record of
 /// closures rather than a reference to the widget: the toolbar has no business
-/// knowing which of the two editors it is talking to, and this way it cannot
-/// find out.
+/// knowing where the equation it is driving lives (a block of its own, or a
+/// span inside a sentence), and this way it cannot find out.
 library;
 
 import 'package:flutter/foundation.dart';

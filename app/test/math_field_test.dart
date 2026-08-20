@@ -53,6 +53,26 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('sin( goes upright with NO backslash — the ( says it all',
+      (tester) async {
+    await pump(tester);
+    await typeKeys(tester, 'sin(');
+    expect(editor.latex, contains(r'\sin'),
+        reason: 'the ( makes the intent unambiguous, so the no-greedy rule '
+            '(alpha stays letters, \alpha converts) is not violated — and '
+            'the old code called the backslash path twice, so plain sin( '
+            'never went upright at all');
+    expect(editor.latex, isNot(contains('s i n')));
+  });
+
+  testWidgets('but a name that is not a function stays letters',
+      (tester) async {
+    await pump(tester);
+    await typeKeys(tester, 'f(');
+    expect(editor.latex, isNot(contains(r'')),
+        reason: 'f(x) is a student naming a function, not calling ours');
+  });
+
   testWidgets('typing 1/2 draws a fraction and stores one', (tester) async {
     await pump(tester);
     await typeKeys(tester, '1/2');

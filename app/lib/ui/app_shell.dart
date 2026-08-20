@@ -418,6 +418,23 @@ class _AppShellState extends State<AppShell> {
     // While typing: allow only formatting accelerators; everything else
     // flows to the field untouched.
     if (editable) {
+      // Undo/redo INSIDE an equation go to the app's own stack. Unclaimed,
+      // Ctrl+Z reached nothing at all in a block equation (the 700ms
+      // coalescing built for exactly this was toolbar-only), and in an
+      // inline one it reached the host TextField's built-in UndoHistory —
+      // which rewrote the paragraph under the open session and corrupted
+      // the note (probe-proven).
+      if (ctrl && _mathFieldFocused()) {
+        if (k == LogicalKeyboardKey.keyZ && !shift) {
+          app.undo();
+          return true;
+        }
+        if ((k == LogicalKeyboardKey.keyZ && shift) ||
+            k == LogicalKeyboardKey.keyY) {
+          app.redo();
+          return true;
+        }
+      }
       if (ctrl && app.activeEditor != null && !_mathFieldFocused()) {
         if (k == LogicalKeyboardKey.keyB) {
           app.wrapSelection('**');

@@ -733,7 +733,25 @@ void main() {
       await settle(tester);
     });
 
-    testWidgets('Alt+= inside an equation does not spawn a second one',
+    testWidgets('Ctrl+Z inside an equation goes to the app undo stack',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // Unclaimed, Ctrl+Z reached NOTHING in a block equation — the 700ms undo
+    // coalescing written for exactly this was toolbar-only — and in an inline
+    // one it reached the host TextField's own history, rewriting the
+    // paragraph under the open session (probe-proven corruption).
+    await pumpShell(tester);
+    await key(tester, LogicalKeyboardKey.equal, alt: true); // block equation
+    await tester.pumpAndSettle();
+    expect(await key(tester, LogicalKeyboardKey.keyZ, ctrl: true), isTrue,
+        reason: 'the shell claims Ctrl+Z while an equation holds the '
+            'keyboard, so it can never fall through to a text history');
+    expect(app.canRedo, isTrue,
+        reason: 'and it really ran the app undo, not a swallow');
+    await settle(tester);
+  });
+
+  testWidgets('Alt+= inside an equation does not spawn a second one',
         (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await pumpShell(tester);

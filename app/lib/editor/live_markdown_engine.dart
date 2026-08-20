@@ -139,8 +139,10 @@ class _LiveMarkdownSession extends OnoteEditSession {
     // the pair takes a space with it - the word boundary the sentence would
     // need anyway.
     final t = controller.text;
+    _mathPadded = false;
     if (sel.end < t.length && !_isSpace(t.codeUnitAt(sel.end))) {
       pair = '\$\$ ';
+      _mathPadded = true;
     }
     _applyEdit(TextEditingValue(
       text: t.replaceRange(sel.start, sel.end, pair),
@@ -163,6 +165,23 @@ class _LiveMarkdownSession extends OnoteEditSession {
   int? _mathStart;
   int _mathEnd = 0;
   MathEditor? _mathEditor;
+
+  /// True while the session itself is writing the buffer, so the foreign-
+  /// rewrite watcher does not fire on our own edits.
+  bool _mathSelfEditing = false;
+
+  /// The buffer as of our last own write — anything else that changes it is a
+  /// FOREIGN rewrite (undo restoring an older buffer, the toolbar's Bold
+  /// wrapping the word at the parked caret) and the session's cached anchors
+  /// are dead the moment it happens. Both routes were probe-proven to corrupt
+  /// the note: the next equation keystroke wrote the tree at the stale range,
+  /// duplicating the equation or eating the words after it.
+  String? _mathSelfText;
+
+  /// Whether startInlineMath injected a trailing space (the mid-word case),
+  /// so the empty sweep can take it back out — Alt+= then Escape used to
+  /// leave the word permanently split.
+  bool _mathPadded = false;
   final FocusNode _mathFocus = FocusNode();
   final GlobalKey<EquationEditorState> _mathKey =
       GlobalKey<EquationEditorState>();
@@ -202,6 +221,25 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// or Alt+= - and it is being edited, in place.
   void enterInlineMath(int start, int end, String latex,
       {required bool atStart}) {
+    // One session at a time. Equation B's atom stays tappable while A is
+    // open, and entering B without closing A left A's empty pair unswept —
+    // or, for an unsupported B, TWO editors writing the same buffer. Closing
+    // A may sweep characters out from under B's offsets, so they are
+    // re-based on what the sweep removed.
+    if (_mathStart != null) {
+      final before = controller.text.length;
+      final aStart = _mathStart!;
+      closeInlineMath(MathExit.done, reposition: false);
+      final removed = before - controller.text.length;
+      if (removed > 0 && aStart < start) {
+        start -= removed;
+        end -= removed;
+      }
+      final run = controller.mathRunNear(start);
+      if (run == null || run.start != start) return; // B moved; ask again
+      end = run.end;
+      latex = run.inner;
+    }
     final ed = MathEditor.open(latex);
     if (ed == null) {
       // The tree cannot hold this equation (an import using a construct we
@@ -219,6 +257,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
     _mathEnd = end;
     _mathEditor = ed;
     controller.editingMathAt = start;
+    _mathSelfText = controller.text;
     // Park the host caret INSIDE the run - offset start+1 is "this equation"
     // (v0.20 B.4) - and repaint the span tree so the editor mounts.
     controller.selection = TextSelection.collapsed(offset: start + 1);
@@ -231,14 +270,31 @@ class _LiveMarkdownSession extends OnoteEditSession {
   void _inlineMathChanged(String next) {
     final start = _mathStart;
     if (start == null) return;
+    // Re-derive the end from the buffer, never trust the cache: replaceMathAt
+    // silently refuses a stale range, and _mathEnd advancing anyway is how
+    // the screen and the saved note diverged. A run that has MOVED means a
+    // foreign rewrite beat the watcher to this keystroke — close, don't
+    // write over whatever is there now.
+    final run = controller.mathRunNear(start);
+    if (run == null || run.start != start) {
+      closeInlineMath(MathExit.done, reposition: false);
+      return;
+    }
+    _mathEnd = run.end;
     final tidy = next.trim();
     // An emptied equation stays as its `$$` pair WHILE editing - removing
     // the dollars would unmount the very editor the student is typing into.
     // The pair is swept on close.
     final written = tidy.isEmpty ? '\$\$' : '\$${tidy}\$';
-    controller.replaceMathAt(start, _mathEnd, tidy,
-        keepEmptyPair: true, caretAt: start + 1);
+    _mathSelfEditing = true;
+    try {
+      controller.replaceMathAt(start, _mathEnd, tidy,
+          keepEmptyPair: true, caretAt: start + 1);
+    } finally {
+      _mathSelfEditing = false;
+    }
     _mathEnd = start + written.length;
+    _mathSelfText = controller.text;
     onChanged(controller.text);
     _scheduleSpellCheck();
   }
@@ -254,10 +310,29 @@ class _LiveMarkdownSession extends OnoteEditSession {
     _mathStart = null;
     _mathEditor = null;
     controller.editingMathAt = null;
+    final pad = _mathPadded;
+    _mathPadded = false;
     if (latex.isEmpty) {
-      // Alt+= then Escape must not leave `$$` in the note for ever.
-      controller.replaceMathAt(start, end, '');
-      onChanged(controller.text);
+      // Alt+= then Escape must not leave `$$` in the note for ever. The
+      // sweep is VERIFIED first: after a foreign rewrite the cached range may
+      // hold someone else's characters, and deleting those would be a second
+      // corruption on the way out.
+      final t = controller.text;
+      if (end <= t.length && t.substring(start, end) == '\$\$') {
+        // The mid-word pad goes with it, or Alt+= then Escape in the middle
+        // of a word leaves it permanently split.
+        final stop = pad && end < t.length && t.codeUnitAt(end) == 0x20
+            ? end + 1
+            : end;
+        _mathSelfEditing = true;
+        try {
+          controller.replaceMathAt(start, stop, '');
+        } finally {
+          _mathSelfEditing = false;
+        }
+        _mathSelfText = controller.text;
+        onChanged(controller.text);
+      }
     } else if (reposition) {
       final off = how == MathExit.left ? start : end;
       controller.selection = TextSelection.collapsed(
@@ -269,7 +344,17 @@ class _LiveMarkdownSession extends OnoteEditSession {
 
   void _maybeCloseOnCaretExit() {
     final start = _mathStart;
-    if (start == null) return;
+    if (start == null || _mathSelfEditing) return;
+    // A buffer change the session did not make — undo restoring an older
+    // buffer, the toolbar's Bold wrapping the word at the parked caret — kills
+    // the cached anchors AND the tree's claim to match the note. The only
+    // safe move is out: close without repositioning and let the buffer's own
+    // grammar redraw whatever is really there. Both routes were probe-proven
+    // to corrupt the note when the session stayed open.
+    if (_mathSelfText != null && controller.text != _mathSelfText) {
+      closeInlineMath(MathExit.done, reposition: false);
+      return;
+    }
     final sel = controller.selection;
     if (!sel.isValid) return;
     if (sel.baseOffset < start || sel.baseOffset > _mathEnd) {
@@ -333,8 +418,8 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// an `Overlay`, since a session is not a widget.
   BuildContext? _lastContext;
 
-  /// Needed only so the inline equation card can register with the toolbar's
-  /// Maths tab — the session itself never reads the model.
+  /// Needed only so the in-place equation editor can register with the
+  /// toolbar's Maths tab — the session itself never reads the model.
   final AppState app;
   final LiveMarkdownController controller;
   final ValueChanged<String> onChanged;

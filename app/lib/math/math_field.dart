@@ -68,6 +68,7 @@ class MathFieldState extends State<MathField> {
   @override
   void initState() {
     super.initState();
+    _committed = _e.latex;
     // The empty-state chip (below) draws differently focused vs not, and a
     // focus flip is the one change that arrives without a keystroke.
     _focus.addListener(_focusFlipped);
@@ -84,9 +85,19 @@ class MathFieldState extends State<MathField> {
     super.dispose();
   }
 
+  /// The last LaTeX handed to the host, so pure caret movement commits
+  /// NOTHING. Every onChanged is an edit to the hosts — an undo snapshot, a
+  /// save debounce, a redo-stack clear — and arrow keys were firing all three
+  /// with a byte-identical payload: pressing Undo, clicking back in and
+  /// arrowing to the typo DESTROYED the redo it was meant to precede.
+  String? _committed;
+
   void _changed() {
     setState(() {});
-    widget.onChanged(_e.latex);
+    final now = _e.latex;
+    if (now == _committed) return;
+    _committed = now;
+    widget.onChanged(now);
   }
 
   /// A palette press, routed from the bar. Focus comes back here so the next
@@ -136,7 +147,16 @@ class MathFieldState extends State<MathField> {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final text = data?.text?.trim();
     if (text == null || text.isEmpty || !mounted) return;
-    _e.insertSource(text);
+    if (_e.insertSource(text) == InsertOutcome.refused) {
+      // Plain words, year-10 bar: no mention of parsing or LaTeX.
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
+        content: Text("That maths couldn't be read, so nothing was changed. "
+            "It's still on your clipboard — the LaTeX view (under ⋯ in the "
+            'Maths tab) can take it as it is.'),
+        duration: Duration(seconds: 5),
+      ));
+      return;
+    }
     _changed();
   }
 
@@ -176,6 +196,11 @@ class MathFieldState extends State<MathField> {
   Offset _lastDownPos = Offset.zero;
 
   void _pointerDown(PointerDownEvent e) {
+    // The PREVIOUS gesture's table dies here, not on pointer-up: a quick
+    // click's post-frame resolve lands after the up, so up-clearing left the
+    // old geometry alive and the next drag's first frame consulted boundaries
+    // measured for an equation that no longer exists.
+    _hits = null;
     if (!_focus.hasFocus) _focus.requestFocus();
     final now = DateTime.now();
     final isDouble = now.difference(_lastDown).inMilliseconds < 400 &&

@@ -7338,8 +7338,8 @@ class AppState extends ChangeNotifier
   /// student is actually looking at, and it moves every time the equation
   /// grows. A contextual toolbar tab stays put.
   ///
-  /// Both editors register here: the block on the page, and the small card
-  /// that opens over an equation sitting in a sentence.
+  /// Both placements register here: an equation block on the page, and the
+  /// in-place editor an equation inside a sentence opens as.
   ActiveMathEditor? activeMath;
 
   /// Symbols reached for lately, newest first, at most twelve. Shown at the top
