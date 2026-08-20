@@ -245,7 +245,9 @@ class InlineMathAtom extends StatelessWidget {
             compact: true,
           )
         : OnoteMath(latex, textStyle: style, compact: true);
-    if (onTap == null) return math;
+    if (onTap == null) {
+      return Semantics(label: 'equation', value: latex, child: math);
+    }
     return Builder(builder: (ctx) {
       return MouseRegion(
         cursor: SystemMouseCursors.click,
@@ -261,7 +263,11 @@ class InlineMathAtom extends StatelessWidget {
             final origin = box.localToGlobal(Offset.zero);
             onTap!(origin & box.size);
           },
-          child: math,
+          child: Semantics(
+            label: 'equation, double tap to edit',
+            value: latex,
+            child: math,
+          ),
         ),
       );
     });

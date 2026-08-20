@@ -410,6 +410,12 @@ class MathFieldState extends State<MathField> {
 
     final ch = _character(e);
     if (ch != null) {
+      // `&` inside a matrix means "next column", exactly as it does in the
+      // LaTeX the matrix serialises to. Anywhere else it is a character.
+      if (ch == '&' && _e.addMatrixColumn()) {
+        _changed();
+        return KeyEventResult.handled;
+      }
       if (_e.insertChar(ch)) _changed();
       return KeyEventResult.handled;
     }
@@ -463,7 +469,16 @@ class MathFieldState extends State<MathField> {
       display: !widget.compact,
     );
 
-    return Focus(
+    return Semantics(
+      // The minimum a screen reader deserves: the field announces itself and
+      // carries the equation's source. The LaTeX is jargon read aloud, but it
+      // is honest and it is SOMETHING - the field was a bare Focus that
+      // announced nothing at all. A spoken-maths walk of the tree is the
+      // real fix, recorded in the roadmap.
+      label: 'Equation',
+      value: _e.isEmpty ? 'empty' : _e.latex,
+      textField: true,
+      child: Focus(
       focusNode: _focus,
       autofocus: widget.autofocus,
       onKeyEvent: _onKey,
@@ -544,6 +559,7 @@ class MathFieldState extends State<MathField> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

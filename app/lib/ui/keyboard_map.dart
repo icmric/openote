@@ -114,6 +114,7 @@ const List<KeySection> keyboardMap = [
         'Copy, cut or paste the equation — it goes on the clipboard as '
         'LaTeX, so it pastes into Word, Overleaf or a message'),
     KeyBinding('Enter', 'Another row of a piecewise or a matrix'),
+    KeyBinding('&', 'Another column of a matrix'),
   ]),
   KeySection('In a table', [
     KeyBinding('Tab / Shift+Tab', 'Next / previous cell'),

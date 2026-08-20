@@ -990,6 +990,36 @@ class MathEditor {
 
   /// Add a row to the piecewise/matrix the caret is in — the Enter key in a
   /// display equation. False when the caret isn't inside one.
+  /// `&` inside a matrix: a new column, with the caret in it — the same
+  /// character LaTeX itself uses to separate columns, so the one group who
+  /// already know a way to say "next column" keep it, and Enter-for-row /
+  /// &-for-column make a full grid reachable from the keyboard. Outside a
+  /// matrix, `&` stays the character it is.
+  ///
+  /// This closes "the palette only makes 2x2" (open since v0.18 s13.6): a
+  /// 3-vector, a 2x3 grid or an augmented matrix needed the LaTeX view,
+  /// which defeats the year-10 bar for the whole linear-algebra topic.
+  bool addMatrixColumn() {
+    var row = caretRow;
+    while (true) {
+      final owner = row.owner;
+      if (owner == null) return false;
+      if (owner is MMatrix) {
+        final at = owner.locate(row);
+        if (at == null) return false;
+        owner.addColumnAfter(at.$2);
+        caretRow = owner.rows[at.$1][at.$2 + 1];
+        caretIndex = 0;
+        _openText = null;
+        clearSelection();
+        return true;
+      }
+      final parent = owner.parent;
+      if (parent == null) return false;
+      row = parent;
+    }
+  }
+
   bool addMatrixRow() {
     var row = caretRow;
     while (true) {

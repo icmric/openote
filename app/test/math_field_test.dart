@@ -53,6 +53,35 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('& inside a matrix adds a COLUMN, with the caret in it',
+      (tester) async {
+    await pump(tester);
+    editor.insertItem(mathItemsById['matrix']!);
+    await tester.pumpAndSettle();
+    // The palette makes a 2x2; a 3-vector or an augmented matrix needed the
+    // LaTeX view before this — the whole linear-algebra topic behind a fold.
+    await typeKeys(tester, '1');
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.digit7, character: '&');
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.digit7);
+    await tester.pumpAndSettle();
+    await typeKeys(tester, '2');
+    expect(editor.latex, contains('&'),
+        reason: 'the grid grew a column: & is the same character the LaTeX '
+            'serialisation itself uses to separate columns');
+    expect(RegExp('&').allMatches(editor.latex).length >= 2, isTrue,
+        reason: 'three columns in the first row means two separators');
+  });
+
+  testWidgets('& OUTSIDE a matrix is just a character', (tester) async {
+    await pump(tester);
+    await typeKeys(tester, 'a');
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.digit7, character: '&');
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.digit7);
+    await tester.pumpAndSettle();
+    expect(editor.latex, isNot(contains('cell')),
+        reason: 'no matrix appeared from nowhere');
+  });
+
   testWidgets('sin( goes upright with NO backslash — the ( says it all',
       (tester) async {
     await pump(tester);

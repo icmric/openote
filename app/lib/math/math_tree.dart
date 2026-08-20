@@ -419,6 +419,14 @@ class MMatrix extends MNode {
     rows.add([for (var k = 0; k < colCount; k++) _own(MRow(), 'cell$i,$k')]);
   }
 
+  /// A new column AFTER [after], in every row — a matrix stays rectangular
+  /// or its TeX does not compile.
+  void addColumnAfter(int after) {
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].insert(after + 1, _own(MRow(), 'cell$i,${after + 1}'));
+    }
+  }
+
   @override
   List<MRow> get slots => [for (final r in rows) ...r];
 
