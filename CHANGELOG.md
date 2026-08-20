@@ -4,6 +4,37 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed — equations in a sentence are edited in the sentence
+
+- **The little card is gone.** Click an equation inside your text (or press
+  Alt+=) and you now type straight into it, right where it sits — same
+  editor, same Maths tab, same calculator as an equation box. Backspace at
+  its edge steps inside it, the arrow keys walk in and out, Escape finishes,
+  and an equation you abandon empty disappears instead of leaving `$$`
+  behind.
+- **Typing no longer scatters.** The old card and the paragraph fought over
+  the keyboard after every keystroke, so characters could land in your
+  sentence in the wrong order. Editing in place ends the fight for good —
+  there is nothing left to fight with.
+- Both places now share literally the same editor code, so a fix in one is a
+  fix in the other. The inline editor gained the live calculator in the
+  bargain.
+
+### Added — highlight maths with the mouse
+
+- **Drag across an equation and it highlights.** Click puts the cursor where
+  you clicked (it used to jump to the end, always). Shift+click extends.
+  Double-click grabs the whole piece under the pointer — for a fraction, the
+  fraction. Cut, copy and delete act on the highlight, as everywhere else.
+- **You can see the highlight now.** It was drawn in a tint measured at
+  1.34:1 contrast against the page — invisible in practice. It uses a proper
+  selection colour, the equation no longer changes size while selected, and a
+  selected fraction no longer shrinks.
+- An equation being written inside a sentence can no longer overflow it: the
+  box asks the paragraph to widen, and scrolls if it truly cannot.
+- The calculator's "use answer" button typed the literal characters
+  `=$value` instead of the answer. Fixed, with the test it never had.
+
 ### Added — write maths by seeing it, not by learning LaTeX
 
 - **Equations are now built visually.** Press Alt+= and type `1/2`: the moment
