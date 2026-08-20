@@ -725,13 +725,79 @@ class MathEditor {
     if (answer.isEmpty || !RegExp(r'^-?[0-9.]+$').hasMatch(answer)) {
       return false;
     }
-    for (final ch in answer.split('')) {
-      caretRow.insert(caretIndex, MSym(ch, cls: classOf(ch)));
-      caretIndex++;
-    }
+    // **A fraction in, a fraction out.** The owner: *"if the equation is a
+    // fraction it should ideally give a fractional answer (if its a clean
+    // fraction, otherwise decimal)"*. So the question asked of the working is
+    // not "is the answer tidy" but "was the student thinking in fractions" —
+    // and only then whether it lands on a tidy one.
+    final wantsFraction = _looksLikeFractionWork(from, caretIndex - 1);
+    final rat = wantsFraction ? rationalOf(r.value) : null;
+    caretRow.insert(caretIndex,
+        MAnswer(content: rat == null ? _digits(answer) : _fractionRow(rat)));
+    caretIndex++;
     _openText = null;
     clearSelection();
     return true;
+  }
+
+  /// Was the working written with fractions in it? Looks at what the student
+  /// actually wrote, not at the answer — `1/4 + 1/4` deserves `1/2` even
+  /// though `0.5` is perfectly tidy.
+  bool _looksLikeFractionWork(int from, int to) {
+    for (var i = from; i < to; i++) {
+      final n = caretRow.children[i];
+      if (n is MFrac) return true;
+      if (n is MSym && n.tex == '/') return true;
+      // A fraction the student already toggled counts too, so `1/2 = 0.5`
+      // switched to a fraction does not flip back on the next line.
+      if (n is MAnswer && n.content.children.any((c) => c is MFrac)) return true;
+    }
+    return false;
+  }
+
+  static MRow _digits(String text) => MRow([
+        for (final ch in text.split('')) MSym(ch, cls: classOf(ch)),
+      ]);
+
+  static MRow _fractionRow(({int num, int den}) r) {
+    final neg = r.num < 0;
+    return MRow([
+      if (neg) MSym('-', cls: MClass.op),
+      MFrac(num: _digits('${r.num.abs()}'), den: _digits('${r.den}')),
+    ]);
+  }
+
+  /// Switch an answer between a decimal and a fraction — the click the box
+  /// around it advertises.
+  ///
+  /// Returns false when there is nothing to switch TO: a whole number has no
+  /// fraction worth showing, and a decimal that is not a tidy fraction (π,
+  /// √2, a long division) has none either. The caller leaves the answer alone
+  /// rather than offering a toggle that would do nothing, which is why
+  /// [rationalOf] returns null for a whole number by design.
+  bool toggleAnswer(MAnswer a) {
+    final value = evaluateLinear(rowToLinear(a.content));
+    if (!value.isOk) return false;
+    final showingFraction = a.content.children.any((c) => c is MFrac);
+    if (showingFraction) {
+      final digits = _digits(value.display);
+      a.content.children.clear();
+      a.content.addAll(digits.drain());
+      return true;
+    }
+    final rat = rationalOf(value.value);
+    if (rat == null) return false; // a whole number, or nothing tidy
+    final row = _fractionRow(rat);
+    a.content.children.clear();
+    a.content.addAll(row.drain());
+    return true;
+  }
+
+  /// The answer at [index] in the caret's row, if that child is one.
+  MAnswer? answerAt(int index) {
+    if (index < 0 || index >= caretRow.length) return null;
+    final n = caretRow.children[index];
+    return n is MAnswer ? n : null;
   }
 
   /// `sin(` goes upright, the way every textbook sets it — WITHOUT needing

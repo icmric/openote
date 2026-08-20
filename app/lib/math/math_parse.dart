@@ -300,6 +300,12 @@ class _Parser {
         final d = _argument(depth);
         row.add(MFrac(num: n, den: d));
         return;
+      case r'\boxed' || r'\fbox':
+        // An answer the app worked out (see [MAnswer]). Reading it back as an
+        // answer rather than as ordinary digits is what makes the box, and
+        // the decimal/fraction toggle, survive a save and reload.
+        row.add(MAnswer(content: _argument(depth)));
+        return;
       case r'\binom' || r'\dbinom' || r'\tbinom':
         row.add(MBinom(top: _argument(depth), bottom: _argument(depth)));
         return;

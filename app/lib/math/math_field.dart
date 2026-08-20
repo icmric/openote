@@ -224,6 +224,24 @@ class MathFieldState extends State<MathField> {
     }
     final hits = MathHitTable(_e.root, bounds);
     _hits = hits;
+    // **A click ON an answer switches how it is written**, decimal to
+    // fraction and back — the box around it is what advertises that the
+    // click is there to be made. It takes priority over placing the caret
+    // because an answer has no inside to put a caret in: it is one object,
+    // and the only thing a click on it could sensibly mean.
+    //
+    // `toggleAnswer` declines when there is nothing to switch to (a whole
+    // number, or a decimal with no tidy fraction), and then this falls
+    // through to placing the caret exactly as any other click would.
+    final onAnswer = _e.answerAt(hits.childAt(_pendingDx));
+    if (!_pendingShift && onAnswer != null && _e.toggleAnswer(onAnswer)) {
+      setState(() {
+        _probeTexes = null;
+        _probeKeys = null;
+      });
+      _changed();
+      return;
+    }
     if (_pendingDouble) {
       _e.selectChild(hits.childAt(_pendingDx));
     } else if (_pendingShift) {

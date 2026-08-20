@@ -373,6 +373,61 @@ class MBinom extends MNode {
 
 /// Grids: matrices, determinants, and piecewise `cases` — all the same shape
 /// with a different environment name and a different pair of edges.
+/// An answer the APP worked out, not something the student typed.
+///
+/// The owner asked for two things at once and they turn out to be the same
+/// object: *"id like for the auto calculated results to have a subtle box
+/// outlining them, this shows the area to click in … but also so people know
+/// that was calculated in app rather than typed up"*, and *"id then like to
+/// be able to click on the answer to switch it between dec and fraction"*.
+/// A box that means "computed" is exactly the target for the click that
+/// switches how it is written.
+///
+/// **It serialises as `oxed{…}`**, which is deliberate on three counts:
+/// it is real LaTeX, so an answer pasted into Word or Overleaf is a boxed
+/// number rather than a private marker; it draws identically in read mode,
+/// in edit mode and in print, because there is only one string; and it
+/// **round-trips** — the parser reads `oxed{…}` straight back into an
+/// answer, so the box, and the toggle, survive save and reload with no
+/// side-car metadata to drift out of step.
+///
+/// Nothing is cached. The value is recovered by projecting [content] and
+/// evaluating it, which is the same walk the calculator uses — two copies of
+/// one fact is exactly the drift this codebase keeps paying for.
+class MAnswer extends MNode {
+  MAnswer({MRow? content}) {
+    this.content = _own(content ?? MRow(), 'answer');
+  }
+
+  late final MRow content;
+
+  MRow _own(MRow r, String n) {
+    r.owner = this;
+    r.name = n;
+    return r;
+  }
+
+  /// NO slots: an answer is one object to the caret, so arrow keys step over
+  /// it and Backspace takes the whole thing. Editing it character by
+  /// character would make "the app worked this out" a lie.
+  @override
+  List<MRow> get slots => const [];
+
+  /// …but it IS content, so every sweep that collects what an equation
+  /// contains still walks inside. (Getting this distinction wrong is what
+  /// dropped `\sum` from the parser twice.)
+  @override
+  List<MRow> get contentSlots => [content];
+
+  @override
+  String texOf(MathTexCtx c) =>
+      // TWO backslashes: `'\boxed'` in a plain Dart string is the ESCAPE
+      // `\b`, a backspace character, so the equation serialised as
+      // `2+3=<BS>oxed{5}` and reopened as `2+3=oxed5`. The same trap the
+      // caret code carries a note about.
+      '\\boxed{${rowToTex(content, c)}}';
+}
+
 class MMatrix extends MNode {
   MMatrix({required this.env, required List<List<MRow>> cells}) {
     rows = [

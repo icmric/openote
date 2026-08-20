@@ -102,7 +102,9 @@ void main() {
     }
 
     test('2+3= and a space gives 5', () {
-      expect(after('2+3=').latex, '2+3=5');
+      // Boxed, because the app worked it out rather than the student typing
+      // it — see math_answer_test.dart for what that box carries.
+      expect(after('2+3=').latex, r'2+3=\boxed{5}');
     });
 
     test('a fraction answers too — the tree, not the LaTeX', () {
@@ -114,15 +116,16 @@ void main() {
       e.placeAtEnd();
       e.insertChar('=');
       e.insertChar(' ');
-      expect(e.latex, contains('0.5'),
-          reason: 'the answer comes through the same projection of the TREE '
-              'that finally made the calculator work at all');
+      // A FRACTION in, a fraction out — the owner's rule. The answer came
+      // through the same projection of the TREE that finally made the
+      // calculator work at all; how it is written is math_answer_test's job.
+      expect(e.latex, r'\frac{1}{2}=\boxed{\frac{1}{2}}');
     });
 
     test('only the run since the LAST = is worked out', () {
       // `x` is unknown, so an answer for the whole line is impossible — but
       // the part the student just wrote is not.
-      expect(after('x=2+3=').latex, endsWith('=5'));
+      expect(after('x=2+3=').latex, endsWith(r'=\boxed{5}'));
     });
 
     test('an expression with an unknown in it just gives you a space', () {
@@ -194,9 +197,10 @@ void main() {
       editor.insertChar('=');
       editor.insertChar(' ');
       await tester.pump();
-      expect(editor.latex, contains('0.5'),
-          reason: 'a fraction built visually works out to 0.5 — the whole '
-              'point of projecting the tree instead of its LaTeX');
+      expect(editor.latex, endsWith(r'\boxed{\frac{1}{2}}'),
+          reason: 'a fraction built visually works out at all — the whole '
+              'point of projecting the tree instead of its LaTeX — and it '
+              'answers in the fractions the student was thinking in');
       expect(latest, isNotNull);
     });
   });

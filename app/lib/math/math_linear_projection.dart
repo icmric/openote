@@ -31,6 +31,9 @@ String rowToLinear(MRow r) {
 
 String _nodeToLinear(MNode n) => switch (n) {
       MSym() => _symToLinear(n),
+      // An answer is a number like any other: `2+3=5` then `+1=` works out
+      // the 5 as readily as if it had been typed.
+      MAnswer() => rowToLinear(n.content),
       MFrac() => '((${rowToLinear(n.num)})/(${rowToLinear(n.den)}))',
       MScript() => _scriptToLinear(n),
       MSqrt() => n.degree == null
@@ -73,10 +76,17 @@ String _symToLinear(MSym s) {
     // Operators the evaluator spells differently.
     r'\times': '*', r'\cdot': '*', r'\div': '/', r'\pm': _veto,
     // Constants and named functions it knows by word.
+    //
+    // EVERY word carries a trailing space, constants included. Without it
+    // `\pi` followed by `e` concatenated into the single unknown name `pie`
+    // (measured), and `2\pi r` into `pir` — the evaluator takes the longest
+    // letter run as ONE name, so two adjacent words fuse. With the space the
+    // evaluator's own implicit-product rule takes over and reads them as the
+    // product they are.
     // Function words carry a trailing space - the evaluator's own
     // 'sin x' form. Without it a bare argument fused into one unknown
     // name: cos followed by 0 read as 'cos0'.
-    r'\pi': 'pi', r'\infty': 'inf',
+    r'\pi': 'pi ', r'\infty': 'inf ',
     r'\sin': 'sin ', r'\cos': 'cos ', r'\tan': 'tan ',
     r'\arcsin': 'asin ', r'\arccos': 'acos ', r'\arctan': 'atan ',
     r'\sinh': 'sinh ', r'\cosh': 'cosh ', r'\tanh': 'tanh ',

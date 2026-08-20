@@ -168,7 +168,7 @@ class _Parser {
     if (_eat('^')) {
       // Right-associative: 2^3^2 is 2^(3^2) = 512.
       final exp = _parseUnary();
-      return math.pow(base, exp).toDouble();
+      return _power(base, exp);
     }
     return base;
   }
@@ -247,9 +247,46 @@ class _Parser {
     skipSpace();
     final fn = _functions[name];
     if (fn == null) throw _EvalError('unknown "$name"');
+
+    // **A BRACKETED argument belongs to the function alone.** `sin(2)^2` was
+    // reading as `sin(2^2)` = sin 4 = -0.7568, because the argument was taken
+    // with `_parseUnary`, which swallows a following `^`. Returning the call's
+    // value at atom level lets `_parsePower` apply the `^` to the ANSWER,
+    // which is what every calculator and every textbook means.
+    //
+    // The bracket-LESS form keeps the old reading on purpose: `sin x^2` does
+    // mean sin(x squared) in school notation, and there is no bracket there
+    // to say otherwise.
+    if (!atEnd && s[i] == '(') {
+      i++;
+      final inner = parseExpression();
+      if (!_eat(')')) throw _EvalError('missing )');
+      return fn(inner);
+    }
     // log with an explicit base: log2(8), log10(100).
     final arg = _parseUnary();
     return fn(arg);
+  }
+
+  /// `x^y`, with the odd roots of negative numbers that `math.pow` refuses.
+  ///
+  /// `(-8)^(1/3)` returned NaN, so `y = x^(1/3)` — a standard curve-sketching
+  /// exercise — showed `undefined` for every negative x. `math.pow` is right
+  /// that there is no PRINCIPAL real root, but school maths means the real
+  /// one: when the exponent is p/q with q odd, the odd root exists and its
+  /// sign follows p. `cbrt` in the function table has had this branch all
+  /// along (`x < 0 ? -pow(-x, 1/3) : …`); `^` never got it.
+  static double _power(double base, double exp) {
+    if (base >= 0 || exp == exp.roundToDouble()) {
+      return math.pow(base, exp).toDouble();
+    }
+    final r = rationalOf(exp);
+    if (r != null && r.den.isOdd) {
+      final mag = math.pow(-base, exp).toDouble();
+      return r.num.isOdd ? -mag : mag;
+    }
+    // A genuinely complex result. NaN reads as "undefined", which is honest.
+    return double.nan;
   }
 
   static double _factorial(double v) {
@@ -313,4 +350,45 @@ class _Parser {
     'rad': (x) => x * math.pi / 180,
     'deg': (x) => x * 180 / math.pi,
   };
+}
+
+/// The fraction a decimal really is, or null when it is not a tidy one.
+///
+/// Continued fractions (the standard best-rational-approximation walk): each
+/// step takes the whole part and recurses on the reciprocal of what is left,
+/// which produces the convergents in order of increasing denominator. The
+/// first convergent that reproduces [v] to within [eps] is the answer, and
+/// the walk gives up past [maxDen].
+///
+/// Used for two things that turn out to be the same question: showing an
+/// answer as `1/2` instead of `0.5`, and knowing whether a negative number
+/// raised to a fractional power has a real odd root.
+///
+/// A WHOLE number returns null on purpose — `5` has no fraction worth
+/// showing, and the answer chip uses that null to know it must not offer a
+/// toggle that would do nothing.
+({int num, int den})? rationalOf(double v,
+    {int maxDen = 10000, double eps = 1e-9}) {
+  if (!v.isFinite) return null;
+  if (v == v.roundToDouble()) return null; // a whole number is not a fraction
+  final neg = v < 0;
+  var x = v.abs();
+  // p/q are the convergents; the recurrence is the textbook one.
+  var p0 = 0, q0 = 1, p1 = 1, q1 = 0;
+  for (var step = 0; step < 40; step++) {
+    final a = x.floor();
+    final p2 = a * p1 + p0, q2 = a * q1 + q0;
+    if (q2 > maxDen) break;
+    p0 = p1;
+    q0 = q1;
+    p1 = p2;
+    q1 = q2;
+    if (q1 != 0 && (p1 / q1 - v.abs()).abs() <= eps * v.abs().clamp(1, 1e9)) {
+      return (num: neg ? -p1 : p1, den: q1);
+    }
+    final frac = x - a;
+    if (frac.abs() < 1e-12) break;
+    x = 1 / frac;
+  }
+  return null;
 }
