@@ -134,6 +134,33 @@ void main() {
     });
   });
 
+  group('where an answer may appear at all', () {
+    test('NOT inside a fraction the student has not stepped out of', () {
+      // Typing `1/2=` and a space without leaving the denominator produced
+      // `rac{1}{2=2}` — an answer buried in the bottom of the fraction.
+      final e = typed('1/2=');
+      e.insertChar(' ');
+      expect(e.latex, isNot(contains('boxed')),
+          reason: 'an answer is the end of a line of working; inside a '
+              'denominator it is nonsense');
+      expect(e.latex, contains(r'\ '), reason: 'so it is just a space');
+    });
+
+    test('nor inside an exponent', () {
+      final e = typed('2^3=');
+      e.insertChar(' ');
+      expect(e.latex, isNot(contains('boxed')));
+    });
+
+    test('but it does the moment you step out', () {
+      final e = typed('1/2');
+      e.placeAtEnd();
+      e.insertChar('=');
+      e.insertChar(' ');
+      expect(e.latex, contains('boxed'));
+    });
+  });
+
   group('decimal by default, fraction when the working was fractional', () {
     test('plain arithmetic answers in decimal', () {
       expect(answered('2+3').latex, contains(r'\boxed{5}'));

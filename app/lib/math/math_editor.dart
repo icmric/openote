@@ -692,6 +692,13 @@ class MathEditor {
   /// Returns false whenever any of that fails, and the space is then just a
   /// space — the student never has to know the feature was considered.
   bool answerAfterEquals() {
+    // **Only at the top level of the equation.** An answer is the end of a
+    // line of working, and inside a structure it is nonsense: typing `1/2=`
+    // and a space without stepping out of the denominator first produced
+    // `rac{1}{2=2}` — the answer buried in the bottom of the fraction. A
+    // student who does that gets a plain space, which is the same quiet
+    // refusal every other unanswerable case gets.
+    if (!identical(caretRow, root)) return false;
     if (caretIndex < 2) return false;
     final eq = caretRow.children[caretIndex - 1];
     if (eq is! MSym || eq.tex != '=') return false;
