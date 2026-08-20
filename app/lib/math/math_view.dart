@@ -43,8 +43,21 @@ class OnoteMath extends StatelessWidget {
   final bool compact;
 
   @override
-  Widget build(BuildContext context) => Math.tex(
-        renderableLatex(tex),
+  Widget build(BuildContext context) {
+    // The answer panel's fill. Subtle by construction: the secondary text
+    // colour at a low alpha over the surface, so it reads as a quiet
+    // highlight in both themes and never as a border.
+    final surfaces = Theme.of(context).extension<OnoteSurfaces>() ??
+        (Theme.of(context).brightness == Brightness.dark
+            ? OnoteSurfaces.dark
+            : OnoteSurfaces.light);
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final fill = _hex(Color.alphaBlend(
+      surfaces.textSecondary.withValues(alpha: dark ? 0.26 : 0.13),
+      surfaces.chrome,
+    ));
+    return Math.tex(
+        renderableLatex(tex, answerFill: fill),
         textStyle: textStyle,
         // Display style, wherever it sits. A fraction is the same size in a
         // sentence as in a box of its own; the line box grows to hold it,
@@ -57,6 +70,12 @@ class OnoteMath extends StatelessWidget {
           compact: compact,
         ),
       );
+  }
+}
+
+String _hex(Color c) {
+  final v = c.toARGB32() & 0xFFFFFF;
+  return '#${v.toRadixString(16).padLeft(6, '0').toUpperCase()}';
 }
 
 /// What a student sees when the display, not the maths, is the limitation.

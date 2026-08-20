@@ -38,6 +38,13 @@ class EvalResult {
   String get display {
     if (!isOk) return error ?? 'error';
     if (value.isNaN) return 'undefined';
+    // **Zero reads as zero.** `sin(180)` lands on 1.22e-16 and `cos(90)` on
+    // 6.1e-17 — the answer is nought, and a student shown
+    // "1.22464679915e-16" has been handed floating point as if it were
+    // maths. Every school calculator does this, and the cost is that a real
+    // answer below a millionth of a millionth is called zero, which is not a
+    // number a notebook calculator is asked for.
+    if (value != 0 && value.abs() < 1e-12) return '0';
     if (value.isInfinite) return value.isNegative ? '-∞' : '∞';
     if (value == value.roundToDouble() && value.abs() < 1e15) {
       return value.toStringAsFixed(0);
@@ -180,6 +187,12 @@ class _Parser {
       if (i < s.length && s[i] == '!') {
         i++;
         v = _factorial(v);
+      } else if (i < s.length && s[i] == '°') {
+        // `30°` IS an angle in degrees, whatever the surrounding rule — the
+        // student said so. Converted here, once, so everything downstream
+        // works in radians as the maths library does.
+        i++;
+        v = v * math.pi / 180;
       } else {
         return v;
       }
@@ -245,8 +258,13 @@ class _Parser {
 
     // Function call: name(...) or name x (as in `sin x`).
     skipSpace();
-    final fn = _functions[name];
+    var fn = _functions[name];
     if (fn == null) throw _EvalError('unknown "$name"');
+    if (_givesAngle.contains(name)) {
+      // Degrees out, because degrees go in: `sin⁻¹(0.5)` is 30.
+      final inner = fn;
+      fn = (x) => inner(x) * 180 / math.pi;
+    }
 
     // **A BRACKETED argument belongs to the function alone.** `sin(2)^2` was
     // reading as `sin(2^2)` = sin 4 = -0.7568, because the argument was taken
@@ -259,13 +277,49 @@ class _Parser {
     // to say otherwise.
     if (!atEnd && s[i] == '(') {
       i++;
+      final from = i;
       final inner = parseExpression();
       if (!_eat(')')) throw _EvalError('missing )');
-      return fn(inner);
+      return fn(_asAngle(name, inner, s.substring(from, i - 1)));
     }
     // log with an explicit base: log2(8), log10(100).
+    final from = i;
     final arg = _parseUnary();
-    return fn(arg);
+    return fn(_asAngle(name, arg, s.substring(from, i)));
+  }
+
+  /// Trigonometry, and every function that takes an ANGLE.
+  static const Set<String> _takesAngle = {
+    'sin', 'cos', 'tan', 'sec', 'csc', 'cot',
+  };
+
+  /// Functions that hand an angle BACK.
+  static const Set<String> _givesAngle = {'asin', 'acos', 'atan'};
+
+  /// **An angle is in degrees unless it says otherwise.**
+  ///
+  /// The owner, on finding `sin(30)` answering -0.988: *"i dont think the sin
+  /// and cosine … are calculating properly, they are definitley giving the
+  /// wrong results. I also didnt test it, but id like it to be able to handle
+  /// radians (i.e. being able to put \pi in there)."* A year-10 student
+  /// writing `sin(30)` means thirty degrees, and every school calculator
+  /// agrees; the maths library underneath means radians, and nothing said so.
+  ///
+  /// The rule is one sentence: **degrees, unless the angle contains π (or a
+  /// degree sign, which has already converted itself, or the word `rad`).**
+  /// Nobody writes `sin(π/6)` meaning degrees, so the π in the angle is the
+  /// student telling us which they meant — which is exactly what was asked
+  /// for. The inverses give an angle BACK in degrees, so `sin⁻¹(0.5)` is 30
+  /// and `sin⁻¹(sin(30))` comes home.
+  static double _asAngle(String fn, double value, String src) {
+    if (!_takesAngle.contains(fn)) return value;
+    if (src.contains('pi') ||
+        src.contains('\u03c0') ||
+        src.contains('°') ||
+        src.contains('rad')) {
+      return value; // already radians
+    }
+    return value * math.pi / 180;
   }
 
   /// `x^y`, with the odd roots of negative numbers that `math.pow` refuses.

@@ -28,13 +28,14 @@ import 'math_parse.dart';
 import 'math_tree.dart';
 
 /// LaTeX that says the same thing, in the dialect the renderer speaks.
-String renderableLatex(String tex) {
+String renderableLatex(String tex, {String? answerFill}) {
   var s = tex.trim();
   if (s.isEmpty) return s;
   s = _unwrapDelimiters(s);
   // AFTER the delimiters come off: a wrapped equation would fail the parse
   // and keep its holes.
   s = _withEmptySlotMarkers(s);
+  if (answerFill != null) s = _paintAnswerBoxes(s, answerFill);
   s = _rewriteEnvironments(s);
   s = _rewriteControlSequences(s);
   s = _wrapTopLevelBreaks(s);
@@ -329,3 +330,61 @@ String _withEmptySlotMarkers(String s) {
 
 const MathTexCtx _kEmptySlotCtx = MathTexCtx(showEmptySlots: true);
 final Map<String, String> _emptySlotCache = {};
+
+/// Repaint every `\boxed{…}` as a soft filled panel in [fill].
+///
+/// The owner, on seeing the default: *"rather than the white outline like
+/// that, could we maybe do a more subtle grey background?"* `\boxed` draws a
+/// RULE in the current colour, which is a hard line; `\fcolorbox` with the same
+/// colour for border and fill is a panel with no line at all, and it is the
+/// one fill flutter_math actually paints (`\colorbox` lays out and paints
+/// nothing — measured, and the reason the caret's own slot chip uses
+/// `\fcolorbox` too).
+///
+/// The colour arrives as an argument rather than living here because STORAGE
+/// must stay theme-free: the note holds `\boxed{5}`, which is real LaTeX and
+/// exports as a boxed number, and only the renderer — which alone knows
+/// whether it is drawing on paper or in the dark — turns it into a grey
+/// panel. One rewrite, so read mode, edit mode and print agree.
+String _paintAnswerBoxes(String s, String fill) {
+  const marker = r'\boxed{';
+  if (!s.contains(marker)) return s;
+  final out = StringBuffer();
+  var i = 0;
+  while (i < s.length) {
+    final at = s.indexOf(marker, i);
+    if (at < 0) {
+      out.write(s.substring(i));
+      break;
+    }
+    out.write(s.substring(i, at));
+    // Walk the braces, so an answer holding a fraction keeps its own.
+    var depth = 1;
+    var j = at + marker.length;
+    while (j < s.length && depth > 0) {
+      if (s[j] == '{') depth++;
+      if (s[j] == '}') depth--;
+      j++;
+    }
+    if (depth != 0) {
+      // Unbalanced: leave the rest exactly as it came.
+      out.write(s.substring(at));
+      break;
+    }
+    final inner = s.substring(at + marker.length, j - 1);
+    out.write(r'\fcolorbox{');
+    out.write(fill);
+    out.write('}{');
+    out.write(fill);
+    // `\\displaystyle` INSIDE the panel: a `\\$` re-enters maths in TEXT
+    // style, which set the answer smaller than the working three
+    // characters to its left (measured 37.4px against 53.7px for the same
+    // fraction). The selection highlight carries the same token for the
+    // same reason.
+    out.write('}{\$\\displaystyle ');
+    out.write(inner);
+    out.write('\$}');
+    i = j;
+  }
+  return out.toString();
+}

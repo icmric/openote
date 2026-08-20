@@ -46,12 +46,14 @@ MAnswer? answerIn(MathEditor e) {
 
 void main() {
   group('the bugs that had to go first', () {
-    test('sin(2)^2 is (sin 2) squared, not sin of 4', () {
-      // Measured before the fix: -0.756802495308, i.e. sin(2^2). A calculator
-      // shows one wrong number; a graph would show the wrong SHAPE.
-      expect(evaluateLinear('sin(2)^2').value,
-          closeTo(evaluateLinear('sin(2)*sin(2)').value, 1e-12));
-      expect(evaluateLinear('sin(2)^2').value, closeTo(0.8268218, 1e-6));
+    test('sin(x)^2 is (sin x) squared, not sin of x squared', () {
+      // Measured before the fix: sin(2)^2 gave sin(2^2) = sin 4. The absolute
+      // value moved when angles became degrees; the RELATIONSHIP is the
+      // thing this test is about, so it is stated as one.
+      expect(evaluateLinear('sin(30)^2').value,
+          closeTo(evaluateLinear('sin(30)*sin(30)').value, 1e-12));
+      expect(evaluateLinear('sin(30)^2').value, closeTo(0.25, 1e-9),
+          reason: 'sin 30 is a half, so its square is a quarter');
     });
 
     test('…but sin x^2 without brackets still means sin of x squared', () {

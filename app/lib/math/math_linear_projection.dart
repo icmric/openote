@@ -48,10 +48,34 @@ String _nodeToLinear(MNode n) => switch (n) {
       MText() => _veto,
     };
 
+/// The inverse of each trig function, by the name the evaluator knows.
+const Map<String, String> _inverseOf = {
+  r'\sin': 'asin ', r'\cos': 'acos ', r'\tan': 'atan ',
+};
+
 String _scriptToLinear(MScript s) {
   // A subscript is a NAME (x₁), not arithmetic — refuse rather than misread
   // x_1 as x times 1. An n-ary's limits (∑, ∫) are far beyond a calculator.
   if (s.fixedBase || s.sub != null) return _veto;
+
+  final power = s.sup;
+  if (power != null && s.base.length == 1) {
+    final base = s.base.children.first;
+    final above = rowToLinear(power).trim();
+    // **`sin⁻¹` is the INVERSE, not one over sin.** The owner chose `⁻¹` over
+    // `arcsin` for the palette, so this is the app's own inverse
+    // trigonometry — and it projected to `(sin )^(-1)`, which the evaluator
+    // read as a reciprocal and then choked on. Every inverse trig button was
+    // dead to the calculator.
+    if (base is MSym && above == '-1') {
+      final inv = _inverseOf[base.tex];
+      if (inv != null) return inv;
+    }
+    // `30°` is an angle, not thirty to the power of a degree sign. The tree
+    // hangs the sign off the LAST digit (`3` then `0` with the script), so
+    // emitting the base and the sign bare lets the digits rejoin.
+    if (above == '°') return rowToLinear(s.base) + '°';
+  }
   final sup = s.sup == null ? '' : '^(${rowToLinear(s.sup!)})';
   return '(${rowToLinear(s.base)})$sup';
 }
@@ -91,6 +115,10 @@ String _symToLinear(MSym s) {
     r'\arcsin': 'asin ', r'\arccos': 'acos ', r'\arctan': 'atan ',
     r'\sinh': 'sinh ', r'\cosh': 'cosh ', r'\tanh': 'tanh ',
     r'\ln': 'ln ', r'\log': 'log ', r'\exp': 'exp ',
+    // A degree sign. The evaluator turns it into radians on the spot, so
+    // an angle written `30°` means degrees however the surrounding rule
+    // reads.
+    r'\circ': '°', r'\degree': '°',
     // A space atom is just spacing.
     r'\ ': ' ',
     // Punctuation TeX spells with commands.
