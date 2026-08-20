@@ -78,7 +78,12 @@ class _CommandBarState extends State<CommandBar> {
     final id = app.editingBlockId;
     if (id != null) {
       for (final b in app.blocks) {
-        if (b.id == id) return b.type == BlockType.math;
+        // `return` on a match, not on a miss. Written the other way round it
+        // answered "no" for every INLINE equation and never reached the line
+        // below — the block being edited there is the paragraph, which is a
+        // text block — so the whole Maths tab was dead code for an equation in
+        // a sentence, which is the case it was most needed for.
+        if (b.id == id && b.type == BlockType.math) return true;
       }
     }
     // An equation inside a sentence: the block being edited is TEXT, so only
