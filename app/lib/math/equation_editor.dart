@@ -31,6 +31,7 @@ import 'linear_math.dart';
 import 'math_editor.dart';
 import 'math_field.dart';
 import 'math_inventory.dart';
+import 'math_linear_projection.dart';
 import 'math_view.dart';
 
 /// Where the equation lives, which decides display vs text style, what Enter
@@ -161,7 +162,13 @@ class EquationEditorState extends State<EquationEditor> {
   // ── the calculator ───────────────────────────────────────────────────────
 
   EvalResult? get _evaluated {
-    final src = _latexMode ? _source.text.trim() : _currentLatex();
+    // The VISUAL tree is projected into the linear grammar the evaluator was
+    // written for. Feeding it the canonical LaTeX instead is why the answer
+    // readout was dead for a fraction, a power or a root built visually -
+    // evaluateLinear has no backslash and no brace, by design.
+    final src = _latexMode
+        ? _source.text.trim()
+        : (_editor == null ? '' : rowToLinear(_editor!.root).trim());
     if (src.isEmpty) return null;
     final r = evaluateLinear(src);
     return r.isOk ? r : null;
