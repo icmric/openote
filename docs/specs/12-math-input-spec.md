@@ -67,8 +67,9 @@ Notation: `⟨op⟩` = operand — a single token, or a group in `(…)`/`{…}`
 The symbol/structure palette is generated from the autocorrect + structure tables: **Structures** (fraction, script, radical, integral, n-ary, matrix, cases, accent, delimiter) insert linear **templates with placeholder slots** (`\frac` inserts `⟨□⟩/⟨□⟩` with the caret in the first slot; Tab cycles slots); **Symbols** tabs (Greek, operators, relations, arrows, sets/logic, misc) insert characters. Every palette entry shows its linear form as a learn-by-hover tooltip — the palette teaches the syntax.
 
 ## 5. Editing model
-- Built constructs are **atoms** for cursor motion (←/→ steps over; ↓ enters slot-wise), Backspace de-builds (§2).
-- Selection inside math is slot-aware; copy yields linear form (plain-text targets) or LaTeX (rich targets, configurable).
+- Built constructs are **atoms** for cursor motion (←/→ steps over; ↓ enters slot-wise). Backspace at a structure's right edge steps **inside** it and deletes from there; it never removes a filled structure whole, and never emits undrawable TeX (superseding the original "de-builds" rule — de-building measured wrong three ways, see v0.18 plan §13).
+- **Selection** is a contiguous run of siblings in ONE row — a fraction is taken whole, never half. Made by Shift+←/→, Shift+Home/End, Ctrl+A, or the pointer: click places the caret at the nearest atom boundary, drag highlights, Shift+click extends, double-click takes the atom under the pointer. Copy/cut act on the highlight when there is one, the whole equation when not; copy always wraps in `$…$` so it round-trips as maths.
+- **Inline equations are edited in place** (v0.20): the same editor mounts inside the sentence's own span. The caret crosses an equation in one step from outside; ←/→ at its edge, Backspace at its right edge and Delete at its left all step INSIDE. Escape/Enter finish; an equation left empty is swept, leaving no `$$`.
 - **Nesting is unlimited**; rendering guarantees correct layout per the KaTeX box model (subset caveat §1).
 
 ## 6. Export & interchange
