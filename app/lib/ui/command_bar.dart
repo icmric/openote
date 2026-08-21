@@ -224,8 +224,12 @@ class _CommandBarState extends State<CommandBar> {
                                 const Icon(Icons.folder_zip_outlined, size: 18),
                             onPressed: () =>
                                 _export(context, materializeNotebook),
-                            child:
-                                const Text('Materialize notebook to folder…'),
+                            // Say what lands on disk. "Materialize" is
+                            // this codebase's own architecture vocabulary
+                            // (`sync/materializer.dart`) and appears in no
+                            // other user-visible string in the app.
+                            child: const Text(
+                                'Save the whole notebook as folders and files…'),
                           ),
                         ],
                       ),

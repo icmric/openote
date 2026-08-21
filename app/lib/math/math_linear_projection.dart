@@ -193,6 +193,8 @@ String _nodeToLinear(MNode n) => switch (n) {
           // An nth root is a fractional power; the evaluator has no rootn().
           : '((${rowToLinear(n.radicand)})^(1/(${rowToLinear(n.degree!)})))',
       MDelim() => _delimToLinear(n),
+      // `gcd(a,b)` reads across to the calculator exactly as it is written.
+      MCall() => '${n.name}(${n.args.map(rowToLinear).join(',')})',
       // A choose, a matrix, an accent, a words box: no single number to be.
       MBinom() => _veto,
       MMatrix() => _veto,
@@ -206,6 +208,21 @@ const Map<String, String> _inverseOf = {
 };
 
 String _scriptToLinear(MScript s) {
+  // **A log with a base under it**: `log₂ 8`, which is how a textbook and a
+  // Casio both write it, and how this app's own "log to a base" button
+  // builds it. The evaluator spells the same thing `log2(8)`, so the base
+  // simply joins the name. Whole numbers only — `log_x` is algebra, not
+  // arithmetic, and refusing is the honest answer.
+  final under = s.sub;
+  if (!s.fixedBase && under != null && s.sup == null && s.base.length == 1) {
+    final base = s.base.children.first;
+    final digits = rowToLinear(under).trim();
+    if (base is MSym &&
+        (base.tex == r'\log' || base.tex == r'\ln') &&
+        RegExp(r'^[0-9]+$').hasMatch(digits)) {
+      return 'log$digits ';
+    }
+  }
   // A subscript is a NAME (x₁), not arithmetic — refuse rather than misread
   // x_1 as x times 1. An n-ary's limits (∑, ∫) are far beyond a calculator.
   if (s.fixedBase || s.sub != null) return _veto;
@@ -267,6 +284,10 @@ String _symToLinear(MSym s) {
     r'\arcsin': 'asin ', r'\arccos': 'acos ', r'\arctan': 'atan ',
     r'\sinh': 'sinh ', r'\cosh': 'cosh ', r'\tanh': 'tanh ',
     r'\ln': 'ln ', r'\log': 'log ', r'\exp': 'exp ',
+    // A remainder, written the way it is written: `17 mod 5`. The spaces
+    // matter — without them `17mod5` is a name the evaluator has never heard
+    // of.
+    r'\bmod': ' mod ',
     // A degree sign. The evaluator turns it into radians on the spot, so
     // an angle written `30°` means degrees however the surrounding rule
     // reads.

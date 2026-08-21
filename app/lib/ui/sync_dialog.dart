@@ -616,8 +616,9 @@ class _SyncDialogState extends State<_SyncDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Extra copies',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        // No heading: the disclosure row that opened this is still on screen
+        // directly above and already says "Extra copies", in the same size and
+        // the same weight.
         const SizedBox(height: 2),
         Text(
           'A mirror keeps one up-to-date copy somewhere else; a backup keeps '
@@ -1628,8 +1629,7 @@ class _GitSectionState extends State<_GitSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Sync with git',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        // Same as "Extra copies": the disclosure row above says this already.
         const SizedBox(height: 4),
         Text(
           available == false

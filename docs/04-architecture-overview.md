@@ -188,7 +188,10 @@ OneNote's mistakes: an undocumented binary; one fragile file per section; a hard
 - **Input modes:** (1) **LaTeX**; (2) **UnicodeMath-style linear input** — typing `\sum`, `/`, `^`, `_`, `\int`, `&`/`@` for matrices — that **builds up into 2-D as you type** (the OneNote experience, satisfying MATH-2/5), normalized to canonical LaTeX on commit; (3) optional **AsciiMath** casual mode; (4) later, **ink-to-math**. A **symbol/structure palette / virtual math keyboard** (MathLive-style) aids discovery.
 - **Rendering:** native (`flutter_math_fork`, a KaTeX-subset Dart renderer, no WebView) or web (KaTeX for speed / MathJax for coverage / MathLive for interactive editing), depending on posture. Renders crisply at any zoom/theme and stays editable (source preserved).
 - **A reusable bridge:** `UnicodeMathML` (Murray Sargent's reference implementation) translates UnicodeMath↔LaTeX/MathML and is worth mining for the build-up grammar.
-- **Non-goal:** solving/graphing (Vision §9) — we make equations beautiful to *write*, not to *solve*.
+- **Non-goal:** solving (Vision §9) — we make equations beautiful to *write*,
+  not to *solve*. **Graphing came in at v0.23** on the owner's call and does
+  not change that line: a graph draws what an equation already says, and
+  rearranges nothing.
 
 The linear-input grammar deserves its own **Math Input Specification** in the next pass (it is subtle — spacing is semantically load-bearing in UnicodeMath).
 

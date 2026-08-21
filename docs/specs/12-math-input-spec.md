@@ -22,7 +22,13 @@
 - **Input is multi-syntax, normalized on commit.** Users may type the **Openote linear syntax** (§3 — UnicodeMath-flavored, the OneNote experience), raw **LaTeX**, or (later) AsciiMath; all normalize to canonical LaTeX when a construct **builds up**.
 - **Build-as-you-type.** Inside a math region, the editor continuously parses the linear buffer and replaces completed constructs with their 2-D rendering *in place* (the math analogue of TEXT-2's inline Markdown). The not-yet-committed tail stays visible as linear text at the caret.
 - **Rendering** is native (`flutter_math_fork`, KaTeX-subset) so math is a first-class canvas citizen at any zoom. Coverage gaps vs. full LaTeX are tracked; constructs outside the renderer's subset fall back to a source-styled chip (never silent loss).
-- **Non-goal:** solving, CAS, graphing (Vision §9).
+- **Non-goal:** solving and CAS (Vision §9). A worked answer with steps is
+  a genuinely deep well and stays out.
+- **GRAPHING IS IN, from v0.23**, at the owner's explicit request. It is not
+  a CAS: nothing is solved and nothing is rearranged. A curve is `f(x)`
+  sampled and drawn, which is the same evaluator the calculator already uses
+  compiled once instead of per point — see `math/graph_plot.dart` and
+  `docs/planning/v0.23-tidy-maths-and-graphs.md`.
 
 ## 2. Entering & leaving math
 

@@ -114,6 +114,12 @@ class _LiveMarkdownSession extends OnoteEditSession {
     controller.onMathTap = (start, end, latex, _) =>
         enterInlineMath(start, end, latex, atStart: false);
     controller.mathEditorBuilder = _buildInlineEditor;
+    controller.graphLinkTint = (latex) {
+      final host = app.editingBlockId;
+      if (host == null) return null;
+      return app.inlineGraphTint(host, latex,
+          editing: _graphAnchor != null && _graphAnchor == latex.trim());
+    };
     // A click that lands OUTSIDE the equation is the one signal the student
     // has left it - the host caret is parked inside the run while editing,
     // so any selection outside [start, end] means "close" (v0.20 B.2.5).
@@ -208,6 +214,11 @@ class _LiveMarkdownSession extends OnoteEditSession {
       focusNode: _mathFocus,
       onChanged: _inlineMathChanged,
       onExit: closeInlineMath,
+      // **The same menu entry a block equation has.** The link is anchored to
+      // what the equation SAYS rather than to where it sits, because where it
+      // sits is a character offset that every keystroke in the paragraph
+      // moves. `_graphAnchor` is what the graph will follow from here.
+      onDrawGraph: _drawGraph,
       // A summation's stacked limits are far wider than the same maths reads
       // inline; without this the equation hits the paragraph's edge and
       // starts scrolling inside its span. The deficit seam is the one
@@ -268,11 +279,40 @@ class _LiveMarkdownSession extends OnoteEditSession {
             ? 2
             : 1;
     controller.editingMathAt = start;
+    _graphAnchor = ed.latex.trim();
     _mathSelfText = controller.text;
     // Park the host caret INSIDE the run - offset start+1 is "this equation"
     // (v0.20 B.4) - and repaint the span tree so the editor mounts.
     controller.selection = TextSelection.collapsed(offset: start + 1);
     controller.refreshSpans();
+  }
+
+  /// The paragraph this session is editing.
+  ///
+  /// Asked of the model rather than held: the session is deliberately given
+  /// no `Block` (ADR-0004 — only the host may touch one), and NAMING the
+  /// block for a link is not touching it. An equation is only ever open while
+  /// its own paragraph is the one being edited, so this is that paragraph.
+  String? get _hostBlockId => app.editingBlockId;
+
+  /// What any graph made from this equation is currently following.
+  ///
+  /// Set when the equation is opened and moved forward on every keystroke, so
+  /// the graph is always chasing the text it last saw rather than the text it
+  /// was born with.
+  String? _graphAnchor;
+
+  /// A graph of the equation being written, beside the paragraph.
+  void _drawGraph() {
+    final ed = _mathEditor;
+    if (ed == null) return;
+    final latex = ed.latex.trim();
+    if (latex.isEmpty) return;
+    app.pushUndo();
+    final host = _hostBlockId;
+    if (host == null) return;
+    app.insertGraph(latex: latex, from: host, fromLatex: latex);
+    _graphAnchor = latex;
   }
 
   /// Every keystroke inside the equation, written straight through to the
@@ -307,6 +347,16 @@ class _LiveMarkdownSession extends OnoteEditSession {
     }
     _mathEnd = start + written.length;
     _mathSelfText = controller.text;
+    // **Any graph of this equation redraws now**, not on a timer: the owner
+    // asked to see the graph change as they type, and a compiled curve costs
+    // microseconds a sample. The anchor moves with it, so the next keystroke
+    // finds the same graph again.
+    final was = _graphAnchor;
+    final host = _hostBlockId;
+    if (was != null && host != null && was != tidy) {
+      app.pushInlineEquationToGraphs(host, was, tidy);
+      _graphAnchor = tidy;
+    }
     onChanged(controller.text);
     _scheduleSpellCheck();
   }

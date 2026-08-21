@@ -23,6 +23,11 @@
 ///  * *Apply a template* — laying out a whole page is not adding something to
 ///    it. It lives beside `Save as template…` in the page's own menu, which
 ///    is where its own "no templates yet" message already sends people.
+///  * *Graph* — a graph is a graph OF something, and a blank one would be a
+///    box with nothing to edit: a graph has no editor of its own, it follows
+///    an equation. The route is the equation's own `⋯` menu, "Draw the
+///    graph", which is the same one press whether the equation is in a box or
+///    in a sentence.
 ///
 /// ### Where the thing lands
 ///

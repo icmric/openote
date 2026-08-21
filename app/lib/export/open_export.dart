@@ -225,6 +225,16 @@ _Markdown _pageMarkdown(String title, List<Block> blocks, String assetPrefix) {
       case BlockType.math:
         final latex = b.content['latex'] as String? ?? '';
         if (latex.isNotEmpty) buf.writeln('\$\$\n$latex\n\$\$\n');
+      case BlockType.graph:
+        // A curve has no Markdown, so what travels is the equation it is
+        // a curve OF — written as an equation on its own line, which a
+        // re-import can do something with. A missing case here writes
+        // nothing at all, which is how `board` was left out of this file
+        // for a whole release.
+        final gtex = b.content['latex'] as String? ?? '';
+        if (gtex.isNotEmpty) {
+          buf.writeln('Graph of:\n\n\$\$\n$gtex\n\$\$\n');
+        }
       case BlockType.code:
         final lang = b.content['language'] as String? ?? '';
         buf.writeln('```$lang\n${b.content['source'] ?? ''}\n```\n');
@@ -271,6 +281,15 @@ Map<String, dynamic> _jsonCanvas(List<Block> blocks, String assetPrefix) {
           'id': b.id,
           'type': 'text',
           'text': b.content['text'] as String? ?? '',
+          'x': x, 'y': y, 'width': w, 'height': h,
+        });
+      case BlockType.graph:
+        // JSON Canvas has no curve, so a graph travels as the text of its
+        // equation. Better a readable node than a hole in the file.
+        nodes.add({
+          'id': b.id,
+          'type': 'text',
+          'text': 'Graph of \$${b.content['latex'] ?? ''}\$',
           'x': x, 'y': y, 'width': w, 'height': h,
         });
       case BlockType.math:

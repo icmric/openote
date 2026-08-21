@@ -24,6 +24,7 @@ class ActiveMathEditor {
     required this.latexMode,
     required this.latexAvailable,
     required this.toggleLatex,
+    this.drawGraph,
   });
 
   /// Whoever registered this — the `State` object of the editor. Used only so
@@ -42,6 +43,14 @@ class ActiveMathEditor {
   final bool latexAvailable;
 
   final VoidCallback toggleLatex;
+
+  /// Draw the equation being written, as a graph beside it.
+  ///
+  /// A CLOSURE, and null when this equation cannot be graphed — not a stored
+  /// `bool canGraph`, because `setActiveMath` is called from the editor's own
+  /// `build` and deliberately does not notify: a value captured there would
+  /// be one keystroke stale for ever. The row asks when the menu opens.
+  final VoidCallback? drawGraph;
 
   // There WAS a live `= 42` readout on the bar here, with a button to put the
   // answer in. The owner: *"rather than having it appear up the top though

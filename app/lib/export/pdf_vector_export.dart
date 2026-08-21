@@ -35,6 +35,7 @@ import 'package:pdf/widgets.dart' as pw;
 import '../canvas/ink_painter.dart' show colorFromHex;
 import '../math/latex_compat.dart';
 import '../media/pdf_pages.dart';
+import '../math/graph_plot.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import 'md_common.dart';
@@ -332,6 +333,7 @@ pw.Widget? _blockWidget(AppState app, Block b, double sheetTop,
     BlockType.text || BlockType.code => _textWidget(app, b, maths),
     BlockType.table => _tableWidget(b),
     BlockType.embed => _embedWidget(app, b, h),
+    BlockType.graph => _graphWidget(b, h),
     _ => null,
   };
   if (child == null) return null;
@@ -963,6 +965,93 @@ double _invisibleFontSize(double wPt, double hPt, int chars) {
 /// the screen, but it multiplies the point count by ~4 and a 65 000-stroke
 /// notebook is already the biggest thing in the file — and at print resolution
 /// the difference is a fraction of a millimetre of nib shape.
+/// A graph, drawn as REAL PATHS rather than a picture of one.
+///
+/// The same route ink takes, for the same reason: a curve is a polyline, and a
+/// vector PDF that rasterised it would print a blurry graph on a page where
+/// everything else is sharp. It also means a printed graph is the same curve
+/// the screen drew, sampled at print resolution.
+///
+/// This case existing at all is the point: five switches in this codebase skip
+/// an unhandled block type in silence, and the last type added was left out of
+/// three of them for a whole release — a graph would simply have been absent
+/// from every PDF and every printout, with nothing to say so.
+pw.Widget? _graphWidget(Block b, double h) {
+  final source = graphSourceFromLatex(b.content['latex'] as String? ?? '');
+  if (!source.isOk) return null;
+  final view = GraphView.fromJson(b.content['view']);
+  final wpt = b.w / _pxPerPoint;
+  final hpt = h / _pxPerPoint;
+  // Print resolution, not screen: a curve is cheap and the page is not
+  // redrawn per frame.
+  final plot = source.verticalAt != null
+      ? Plot(pieces: const [], view: view)
+      : plotFunction(source.fn!, view,
+          samples: (b.w * 2).clamp(2, 4000).round(),
+          fitY: b.content['fitY'] != false);
+  final v = plot.view;
+  if (!v.isSane) return null;
+
+  return pw.SizedBox(
+    width: wpt,
+    height: hpt,
+    child: pw.CustomPaint(
+      size: PdfPoint(wpt, hpt),
+      painter: (canvas, size) {
+        double px(double x) => (x - v.x0) / v.width * size.x;
+        // PDF's y axis points UP from the bottom-left, which is the direction
+        // maths uses — so this one, unlike the screen's, does not flip.
+        double py(double y) => (y - v.y0) / v.height * size.y;
+
+        canvas
+          ..setStrokeColor(PdfColors.grey400)
+          ..setLineWidth(0.3);
+        final stepX = gridStep(v.width);
+        final stepY = gridStep(v.height);
+        for (var x = (v.x0 / stepX).ceil() * stepX; x <= v.x1; x += stepX) {
+          canvas
+            ..moveTo(px(x), 0)
+            ..lineTo(px(x), size.y);
+        }
+        for (var y = (v.y0 / stepY).ceil() * stepY; y <= v.y1; y += stepY) {
+          canvas
+            ..moveTo(0, py(y))
+            ..lineTo(size.x, py(y));
+        }
+        canvas.strokePath();
+
+        canvas
+          ..setStrokeColor(PdfColors.grey700)
+          ..setLineWidth(0.6)
+          ..moveTo(0, py(0).clamp(0, size.y))
+          ..lineTo(size.x, py(0).clamp(0, size.y))
+          ..moveTo(px(0).clamp(0, size.x), 0)
+          ..lineTo(px(0).clamp(0, size.x), size.y)
+          ..strokePath();
+
+        canvas
+          ..setStrokeColor(const PdfColor(0.11, 0.42, 0.66))
+          ..setLineWidth(1)
+          ..setLineCap(PdfLineCap.round)
+          ..setLineJoin(PdfLineJoin.round);
+        if (source.verticalAt != null) {
+          canvas
+            ..moveTo(px(source.verticalAt!), 0)
+            ..lineTo(px(source.verticalAt!), size.y);
+        }
+        for (final piece in plot.pieces) {
+          if (piece.length < 2) continue;
+          canvas.moveTo(px(piece.first.dx), py(piece.first.dy));
+          for (var k = 1; k < piece.length; k++) {
+            canvas.lineTo(px(piece[k].dx), py(piece[k].dy));
+          }
+        }
+        canvas.strokePath();
+      },
+    ),
+  );
+}
+
 pw.Widget? _inkWidget(Block b, double h) {
   final raw = (b.content['strokes'] as List?) ?? const [];
   if (raw.isEmpty) return null;

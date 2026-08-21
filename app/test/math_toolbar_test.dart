@@ -340,7 +340,9 @@ void main() {
           reason: chips.toString() + ' chips on ' + rows.length.toString() +
               ' rows is a column, not a grid');
 
-      await tester.tap(find.byTooltip(r'nth root (\root)').first);
+      // `\rt` is the advertised route now; `\root` still works but is not
+      // what the tooltip teaches.
+      await tester.tap(find.byTooltip(r'nth root (\rt)').first);
       await tester.pumpAndSettle();
       expect(got?.id, 'nthroot');
     });

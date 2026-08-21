@@ -76,6 +76,13 @@ class LiveMarkdownController extends TextEditingController {
   /// which is what a read-only surface wants.
   void Function(int start, int end, String latex, Rect anchor)? onMathTap;
 
+  /// **Does this equation have a graph worth pointing at right now?**
+  ///
+  /// Supplied by the session, which is the only thing here that can reach the
+  /// page. Asked per equation and answered with a colour or null, so the
+  /// controller never learns what a graph is.
+  Color? Function(String latex)? graphLinkTint;
+
   /// The buffer offset of the opening dollar of the equation being edited IN
   /// PLACE, or null when none is. While set, the math branch of
   /// [buildTextSpan] mounts [mathEditorBuilder] instead of the read-only atom,
@@ -1274,6 +1281,7 @@ class LiveMarkdownController extends TextEditingController {
               : InlineMathAtom(
                   latex: c.inner,
                   style: mBase,
+                  linkTint: graphLinkTint?.call(c.inner),
                   onTap: tap == null
                       ? null
                       : (rect) => tap(from, to, c.inner, rect),

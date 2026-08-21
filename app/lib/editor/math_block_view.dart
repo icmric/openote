@@ -71,6 +71,12 @@ class _MathBlockViewState extends State<MathBlockView> {
     widget.block.content['latex'] = latex.trim();
     widget.block.content['display'] = true;
     widget.block.updatedAt = nowMs();
+    // **Every graph following this equation redraws now**, not on a timer:
+    // the owner asked to *"see the graph change as i type"*, and a compiled
+    // curve costs microseconds a sample, so there is nothing to debounce.
+    // Notify only when something actually moved — a keystroke that changes
+    // no graph must not rebuild the page.
+    widget.app.pushEquationToGraphs(widget.block.id, latex.trim());
     widget.app.markDirty();
   }
 
@@ -114,6 +120,14 @@ class _MathBlockViewState extends State<MathBlockView> {
     widget.app.updateBlock(widget.block);
   }
 
+  /// A graph of this equation, beside it, following it from now on.
+  void _drawGraph() {
+    final latex = _latex.trim();
+    if (latex.isEmpty) return;
+    widget.app.pushUndo();
+    widget.app.insertGraph(latex: latex, from: widget.block.id);
+  }
+
   void _leaveEquation() {
     widget.app.select(widget.block.id, edit: false);
   }
@@ -138,6 +152,7 @@ class _MathBlockViewState extends State<MathBlockView> {
               widget.block.content['linearSource'] = v,
           onChanged: _commitLatex,
           onExit: (_) => _leaveEquation(),
+          onDrawGraph: _drawGraph,
           onWidthWanted: _growToWidth,
         ),
       );

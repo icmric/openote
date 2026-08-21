@@ -163,11 +163,14 @@ class _Parser {
 
   /// Parses until a token that belongs to the caller (`}`, `&`, `\\`,
   /// `\right`, `\end`) or the end of the input.
-  MRow parseRow({required int depth}) {
+  MRow parseRow({required int depth, bool stopAtComma = false}) {
     final row = MRow();
     while (!atEnd && unknown == null) {
       final c = s[i];
       if (c == '}' || c == '&') break;
+      // A comma separates one argument of a call from the next; anywhere else
+      // it is an ordinary character and this flag is false.
+      if (stopAtComma && c == ',') break;
       if (c == r'\' && (_peekCmd() == r'\\' || _peekCmd() == r'\right' || _peekCmd() == r'\end')) {
         break;
       }
@@ -391,6 +394,21 @@ class _Parser {
         }
         if (_fontWrappers.contains(cmd)) {
           final arg = _rawBraced();
+          // **A multi-argument call comes back as one node**, so its empty
+          // boxes survive a save and a reopen. Only the names that REQUIRE
+          // more than one argument, and only when a bracket follows: a
+          // hand-written `\mathrm{gcd}` on its own is still a symbol,
+          // and `\sin \left(x \right)` is untouched because `sin` is not on
+          // the list.
+          if (cmd == r'\mathrm' &&
+              kCallFunctions.containsKey(arg) &&
+              _peekCmd() == r'\left') {
+            final call = _tryCall(arg, depth);
+            if (call != null) {
+              row.add(call);
+              return;
+            }
+          }
           row.add(MSym('$cmd{$arg}',
               cls: cmd == r'\operatorname' ? MClass.func : MClass.letter));
           return;
@@ -412,6 +430,40 @@ class _Parser {
         }
         _fail(cmd);
     }
+  }
+
+  /// `\left( a,b \right)` after a call's name, split on top-level commas.
+  ///
+  /// Returns null and rewinds when it is not that after all, so a name on the
+  /// list followed by something else still parses as it always did.
+  MCall? _tryCall(String name, int depth) {
+    final save = i;
+    _readCmd(); // \left
+    final open = _readDelimToken();
+    if (open != '(') {
+      i = save;
+      return null;
+    }
+    final args = <MRow>[];
+    while (true) {
+      args.add(parseRow(depth: depth + 1, stopAtComma: true));
+      if (!atEnd && s[i] == ',') {
+        i++;
+        continue;
+      }
+      break;
+    }
+    if (_peekCmd() != r'\right') {
+      i = save;
+      return null;
+    }
+    _readCmd();
+    final close = _readDelimToken();
+    if (close != ')') {
+      i = save;
+      return null;
+    }
+    return MCall(name: name, args: args);
   }
 
   MNode _matrix(String env, int depth) {

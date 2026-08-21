@@ -87,7 +87,8 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
     case 'bg':
       if (context.mounted) {
         final hex = await showOnoteColorPicker(context, app,
-            initial: b.content['bg'] as String?);
+            initial: b.content['bg'] as String?,
+            title: 'Background colour');
         if (hex != null) {
           app.pushUndo();
           b.content['bg'] = hex;

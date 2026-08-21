@@ -301,6 +301,84 @@ class MSqrt extends MNode {
 
 /// Brackets that grow with what is inside them. `right` may be `.` for a
 /// one-sided delimiter — which is exactly what a piecewise brace is.
+/// **The functions that need more than one thing**, and how many they need.
+///
+/// The list is short on purpose and every entry is on a school calculator: a
+/// Casio fx-82 AU PLUS II or its fx-991 sibling has the greatest common
+/// divisor, the lowest common multiple, the remainder, and nCr and nPr.
+/// Nothing a single argument can express is here — `sin`, `log` and `sqrt` all
+/// take one thing, and asking for a comma would be an invented ceremony.
+///
+/// Shared by three places that must agree: the palette builds the template,
+/// the parser reads it back, and the calculator works it out.
+const Map<String, int> kCallFunctions = {
+  'gcd': 2,
+  'lcm': 2,
+  // No `mod` here: a remainder is WRITTEN between its two numbers
+  // (`17 mod 5`), which is what the palette's own button already inserts, so
+  // a template would be a second way to say one thing. The calculator
+  // understands `mod(17, 5)` as well, for anyone who types it.
+  'max': 2,
+  'min': 2,
+  'nCr': 2,
+  'nPr': 2,
+};
+
+/// **A function that needs more than one thing**: `gcd(a, b)`, `mod(7, 3)`.
+///
+/// The owner: *"id like you to fill out the format by default when inserting
+/// it, so \gcd will add gcd( , ), with the spaces being the boxes we already
+/// have elsewhere, this should be the case for anything that REQUIRES multiple
+/// arguments, stuff like sin and whatever shouldnt do that as they have only a
+/// single argument."*
+///
+/// **Why this is a node and not three atoms.** An empty box is not a node at
+/// all — it is an empty [MRow] that some structure OWNS (see the
+/// `idleSlotTex` walk in [rowToTex]). A bracket holds exactly one body row, so
+/// `gcd(□, □)` cannot be built from an [MSym] and an [MDelim]: there is
+/// nowhere for the second box to live. One node with one row per argument is
+/// the smallest thing that works, and it gives Tab a list of holes to walk for
+/// free.
+///
+/// **The serialisation is ordinary LaTeX**, so an equation still pastes into
+/// Word, Overleaf or a message and reads as itself. `\mathrm{gcd}` rather than
+/// `\gcd` for every name, because half of these — `lcm`, `nCr`, `nPr` — have
+/// no standard macro, and one shape for all of them is one thing to get right.
+/// `\operatorname` would be the more correct macro and this renderer cannot
+/// draw it in front of a `\left(` at all — probed, every name, every form. A hand-typed `\gcd\left(a,b\right)` is left exactly as it was, as an
+/// [MSym] beside an [MDelim]; it evaluates the same way and this node simply
+/// is not involved.
+class MCall extends MNode {
+  MCall({required this.name, List<MRow>? args, int arity = 2}) {
+    final rows = args ?? [for (var i = 0; i < arity; i++) MRow()];
+    this.args = [
+      for (var i = 0; i < rows.length; i++) _own(rows[i], 'arg${i + 1}'),
+    ];
+  }
+
+  /// The upright name as it is printed and as the calculator knows it.
+  final String name;
+
+  late final List<MRow> args;
+
+  MRow _own(MRow r, String n) {
+    r.owner = this;
+    r.name = n;
+    return r;
+  }
+
+  @override
+  List<MRow> get slots => args;
+
+  /// The same spacing [MDelim] uses, so the two round-trip identically and a
+  /// second serialisation is byte-for-byte the first.
+  @override
+  String texOf(MathTexCtx c) =>
+      '\\mathrm{$name}\\left( '
+      '${args.map((a) => rowToTex(a, c)).join(',')}'
+      '\\right) ';
+}
+
 class MDelim extends MNode {
   MDelim({required this.left, required this.right, MRow? body}) {
     this.body = _own(body ?? MRow(), 'body');

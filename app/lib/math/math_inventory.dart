@@ -40,6 +40,7 @@ class MathItem {
     this.preview,
     this.aliases = const [],
     this.typeIt,
+    this.alsoTypeIt = const [],
   });
 
   /// Stable identifier — used by "recently used" and by tests.
@@ -57,6 +58,14 @@ class MathItem {
 
   /// Extra words that should find this. "to the power", "choose", "surd".
   final List<String> aliases;
+
+  /// Other commands that build the same thing.
+  ///
+  /// [typeIt] is the ONE route a tooltip advertises; these are the ones a
+  /// student might reasonably reach for anyway. `\root` was the advertised
+  /// route to an nth root before `\rt` took over, and a shortcut that used
+  /// to work and silently stopped is worse than one that never existed.
+  final List<String> alsoTypeIt;
 
   /// The keyboard route, shown in the tooltip and honoured by autocorrect.
   /// A bare word (`alpha`, `sqrt`) becomes a space-triggered control word; a
@@ -148,14 +157,32 @@ final List<MathItem> _structures = [
     typeIt: r'\sqrt',
     build: () => [MSqrt()],
   ),
+  // **The root family you can type.** `\rt` opens a root with an empty index
+  // box; `\cbrt` is the cube root; and `\2rt`, `\3rt`, `\7rt` fill the index
+  // in for you (see `_buildControlWord`). A bare radical means two, so `\2rt`
+  // deliberately DRAWS the two — the owner: *"in the case where someone does
+  // \2rt, we should render the 2 even though its otherwise assumed its 2"*.
   MathItem(
     id: 'nthroot',
     cat: MathCat.structure,
     name: 'nth root',
     preview: r'\sqrt[\square]{\square}',
-    aliases: ['cube root', 'root', 'radical'],
-    typeIt: r'\root',
+    aliases: ['root', 'radical', 'fourth root', 'fifth root', 'index'],
+    typeIt: r'\rt',
+    alsoTypeIt: [r'\root', r'\nrt'],
     build: () => [MSqrt(degree: MRow())],
+  ),
+  MathItem(
+    id: 'cbrt',
+    cat: MathCat.structure,
+    name: 'cube root',
+    preview: r'\sqrt[3]{\square}',
+    aliases: ['third root', 'root', 'radical'],
+    typeIt: r'\cbrt',
+    alsoTypeIt: [r'\3rt'],
+    build: () => [
+      MSqrt(degree: MRow([_s('3', cls: MClass.digit)])),
+    ],
   ),
   MathItem(
     id: 'sum',
@@ -589,7 +616,9 @@ final List<MathItem> _functions = () {
     'sec', 'csc', 'cot',
     'sinh', 'cosh', 'tanh',
     'ln', 'log', 'exp',
-    'max', 'min', 'gcd', 'det', 'arg', 'deg',
+    // `max`, `min` and `gcd` used to be here, and a one-argument `max` is
+    // nonsense — they are templates now, below.
+    'det', 'arg', 'deg',
   ];
   return <MathItem>[
     for (final f in plain)
@@ -602,7 +631,7 @@ final List<MathItem> _functions = () {
           'ln' => ['natural log'],
           'log' => ['logarithm'],
           'exp' => ['e to the'],
-          'gcd' => ['highest common factor', 'hcf'],
+          'det' => ['determinant'],
           _ => const [],
         },
         typeIt: '\\$f',
@@ -624,6 +653,40 @@ final List<MathItem> _functions = () {
             sup: MRow([_s('-', cls: MClass.op), _s('1', cls: MClass.digit)]),
           )
         ],
+      ),
+    // **The ones that need more than one thing.** The owner: *"id like you to
+    // fill out the format by default when inserting it, so \gcd will add
+    // gcd( , ), with the spaces being the boxes we already have elsewhere,
+    // this should be the case for anything that REQUIRES multiple arguments,
+    // stuff like sin and whatever shouldnt do that as they have only a single
+    // argument."*
+    //
+    // Every name here is on a school calculator. The preview draws the shape
+    // you are about to get, boxes and all, so the button IS the instruction.
+    for (final c in const [
+      (
+        'gcd',
+        'greatest common divisor',
+        ['highest common factor', 'hcf', 'gcf'],
+      ),
+      ('lcm', 'lowest common multiple', ['least common multiple']),
+      ('max', 'larger of', ['maximum', 'biggest', 'greater']),
+      ('min', 'smaller of', ['minimum', 'smallest', 'lesser']),
+      (
+        'nCr',
+        'combinations',
+        ['n choose r', 'choose', 'binomial coefficient'],
+      ),
+      ('nPr', 'permutations', ['arrangements', 'ordered choices']),
+    ])
+      MathItem(
+        id: 'fn-${c.$1}',
+        cat: MathCat.functions,
+        name: c.$2,
+        preview: r'\mathrm{' '${c.$1}' r'}\left(\square,\square \right)',
+        aliases: c.$3,
+        typeIt: '\\${c.$1}',
+        build: () => [MCall(name: c.$1)],
       ),
     MathItem(
       id: 'fn-logbase',
@@ -648,9 +711,11 @@ final List<MathItem> _functions = () {
     MathItem(
       id: 'fn-mod',
       cat: MathCat.functions,
-      name: 'modulo',
-      preview: r'\bmod',
-      aliases: ['mod', 'remainder'],
+      // The word a student is taught. "Modulo" is the one they meet later.
+      name: 'remainder',
+      preview: r'a \bmod b',
+      aliases: ['mod', 'modulo', 'remainder after dividing', 'left over'],
+      typeIt: r'\mod',
       build: () => [_s(r'\bmod', cls: MClass.op)],
     ),
     MathItem(
@@ -793,6 +858,16 @@ final Map<String, MathItem> mathControlWords = () {
     // over the derived one, which is why this pass runs second.
     out[m.group(1)!] = i;
   }
+  // The routes an item answers to but does not advertise. Third pass and
+  // `putIfAbsent`, so nothing here can take a word away from an advertised
+  // shortcut.
+  for (final i in mathItems) {
+    for (final t in i.alsoTypeIt) {
+      final m = RegExp(r'^\\([A-Za-z0-9]+)$').firstMatch(t);
+      if (m != null) out.putIfAbsent(m.group(1)!, () => i);
+    }
+  }
+
   return out;
 }();
 

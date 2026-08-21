@@ -264,6 +264,7 @@ class MathBar extends StatefulWidget {
     required this.onToggleLatex,
     this.latexAvailable = true,
     this.angleMode = AngleMode.degrees,
+    this.onDrawGraph,
     this.onToggleAngleMode,
     this.recentIds = const [],
   });
@@ -275,6 +276,9 @@ class MathBar extends StatefulWidget {
 
   /// Degrees or radians, and the way to change it.
   final AngleMode angleMode;
+
+  /// Draw this equation as a graph, or null when it cannot be.
+  final VoidCallback? onDrawGraph;
   final VoidCallback? onToggleAngleMode;
 
   // The bar used to carry a live `= 42` readout with a button to put the
@@ -555,6 +559,7 @@ class _MathBarState extends State<MathBar> {
           latexMode: widget.latexMode,
           latexAvailable: widget.latexAvailable,
           onToggleLatex: widget.onToggleLatex,
+          onDrawGraph: widget.onDrawGraph,
           surfaces: s,
         ),
       ]);
@@ -592,6 +597,7 @@ class _MathBarState extends State<MathBar> {
         latexMode: widget.latexMode,
         latexAvailable: widget.latexAvailable,
         onToggleLatex: widget.onToggleLatex,
+        onDrawGraph: widget.onDrawGraph,
         surfaces: s,
       ),
     ]);
@@ -779,12 +785,17 @@ class _MoreMenu extends StatelessWidget {
     required this.latexAvailable,
     required this.onToggleLatex,
     required this.surfaces,
+    this.onDrawGraph,
   });
 
   final bool latexMode;
   final bool latexAvailable;
   final VoidCallback onToggleLatex;
   final OnoteSurfaces surfaces;
+
+  /// Null when this equation has no graph in it — an equation in a sentence,
+  /// which has no id for a graph to follow.
+  final VoidCallback? onDrawGraph;
 
   @override
   Widget build(BuildContext context) => PopupMenuButton<String>(
@@ -793,8 +804,17 @@ class _MoreMenu extends StatelessWidget {
         icon: Icon(Icons.more_horiz, size: OnoteIcon.sm, color: surfaces.textPrimary),
         onSelected: (v) {
           if (v == 'latex') onToggleLatex();
+          if (v == 'graph') onDrawGraph?.call();
         },
         itemBuilder: (_) => [
+          // First, because it is the one that makes something new. It costs
+          // the row no width at all, which is why it lives here rather than
+          // as an eleventh button.
+          if (onDrawGraph != null)
+            const PopupMenuItem<String>(
+              value: 'graph',
+              child: Text('Draw the graph'),
+            ),
           PopupMenuItem<String>(
             value: 'latex',
             enabled: latexAvailable,

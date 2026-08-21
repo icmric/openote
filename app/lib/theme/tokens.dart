@@ -415,3 +415,16 @@ abstract final class OnoteInput {
     focusedErrorBorder: InputBorder.none,
   );
 }
+
+/// **The colour that says a graph and its equation are the same thing.**
+///
+/// The owner: *"a border of some colour (not jarring, should be somewhat
+/// subtle and in theme, yet clear enough that it imedietley stands out)"*.
+///
+/// Deliberately NOT the accent: the accent means "selected", and a selected
+/// graph would then wear one colour for two different reasons. A teal reads
+/// as a relationship rather than a state, sits in the same family as the rest
+/// of the palette, and clears AA against both the light and the dark raised
+/// surface.
+const Color kGraphLinkColour = Color(0xFF1E8E93);
+

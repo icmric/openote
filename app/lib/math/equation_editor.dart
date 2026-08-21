@@ -52,6 +52,7 @@ class EquationEditor extends StatefulWidget {
     this.onLinearChanged,
     this.autofocus = true,
     this.focusNode,
+    this.onDrawGraph,
   });
 
   /// Only for `setActiveMath` / `noteMathUse` — the toolbar's Maths tab has to
@@ -94,6 +95,15 @@ class EquationEditor extends StatefulWidget {
 
   final bool autofocus;
   final FocusNode? focusNode;
+
+  /// Draw this equation as a graph beside it.
+  ///
+  /// Supplied by the HOST, because only the host knows what a graph would
+  /// follow: a block equation is followed by its id, an equation in a
+  /// sentence by what it says. The editor itself stays placement-blind, which
+  /// is the rule this whole file exists to keep — and it is what makes the
+  /// menu entry appear identically in both.
+  final VoidCallback? onDrawGraph;
 
   @override
   State<EquationEditor> createState() => EquationEditorState();
@@ -238,6 +248,7 @@ class EquationEditorState extends State<EquationEditor> {
       latexMode: _latexMode,
       latexAvailable: _latexMode || _editor != null,
       toggleLatex: _toggleLatexMode,
+      drawGraph: widget.onDrawGraph,
     ));
 
     if (_latexMode) return _latexEditor(context);

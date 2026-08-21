@@ -130,6 +130,13 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
         }
       case BlockType.ink:
         inkCount += (b.content['strokes'] as List?)?.length ?? 0;
+      case BlockType.graph:
+        // Markdown has no picture of a curve, so it carries the equation the
+        // curve is OF — which is the thing a reader (or a re-import) can do
+        // something with. Silently writing nothing is what a missing case
+        // does, and it is why this one is here.
+        final latex = b.content['latex'] as String? ?? '';
+        if (latex.isNotEmpty) buf.writeln('Graph of \$$latex\$\n');
       case BlockType.board:
         // A board's Markdown projection: one heading per column, cards as a
         // list. Round enough that a reader (or a re-import) keeps the

@@ -43,6 +43,7 @@ import '../api/mcp_server.dart';
 import '../update/app_update.dart';
 import '../sync/github_api.dart';
 import '../store/repository.dart';
+import '../theme/tokens.dart';
 import 'page_protection.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
@@ -7504,6 +7505,155 @@ class AppState extends ChangeNotifier
     ));
     select(b.id, edit: true);
     return b;
+  }
+
+  // ── Graphs (v0.23 §5) ────────────────────────────────────────
+
+  /// **Draw this equation.**
+  ///
+  /// The owner: *"have it insert a graph, not touching the written equation
+  /// but inserting a new graph element on the page which i can move around
+  /// seperatley but is still tied to that equation."*
+  ///
+  /// So: a new block beside the equation, carrying its own copy of the latex
+  /// AND a note of where the latex came from. [from] is the id of the maths
+  /// BLOCK it follows; leave it null for an equation that has no id of its
+  /// own — one inside a sentence — and the graph is simply a graph of what
+  /// it was given.
+  /// [fromLatex] marks an equation INSIDE A SENTENCE, which has no id of its
+  /// own. The link is anchored to what the equation SAYS rather than to where
+  /// it sits, because where it sits is a character offset that every
+  /// keystroke in the paragraph moves. See [pushInlineEquationToGraphs].
+  Block insertGraph(
+      {required String latex, String? from, String? fromLatex, Offset? at}) {
+    final near = from == null
+        ? null
+        : blocks.where((b) => b.id == from).firstOrNull;
+    // Beside the equation, not on top of it: to its right if there is room on
+    // the page, underneath it otherwise.
+    final where = at ??
+        (near == null
+            ? canvas.screenToPage(Offset(
+                canvas.viewport.width / 2, canvas.viewport.height / 2))
+            : Offset(near.x + near.w + 24, near.y));
+    final b = addBlock(Block(
+      type: BlockType.graph,
+      x: where.dx,
+      y: where.dy,
+      w: 360,
+      h: 260,
+      content: {
+        'latex': latex.trim(),
+        if (from != null) 'from': from,
+        if (fromLatex != null) 'fromLatex': fromLatex.trim(),
+        'fitY': true,
+      },
+    ));
+    select(b.id);
+    return b;
+  }
+
+  /// Every graph on this page that follows the maths BLOCK [equationId].
+  Iterable<Block> graphsFollowing(String equationId) => blocks.where((b) =>
+      b.type == BlockType.graph &&
+      b.content['from'] == equationId &&
+      b.content['fromLatex'] == null);
+
+  /// Every graph that follows one particular equation inside a sentence.
+  Iterable<Block> graphsFollowingInline(String blockId, String latex) {
+    final want = latex.trim();
+    return blocks.where((b) =>
+        b.type == BlockType.graph &&
+        b.content['from'] == blockId &&
+        b.content['fromLatex'] == want);
+  }
+
+  /// **Keep the graphs in step with an equation inside a sentence.**
+  ///
+  /// Anchored to the equation's own text, not to its position: a paragraph's
+  /// offsets shift on every keystroke, and an index into "the nth equation"
+  /// drifts the moment one is added or removed. [was] is what the graph is
+  /// currently following, [now] is what it should follow from here.
+  bool pushInlineEquationToGraphs(String blockId, String was, String now) {
+    if (was.trim() == now.trim()) return false;
+    var changed = false;
+    for (final g in graphsFollowingInline(blockId, was).toList()) {
+      g.content['latex'] = now.trim();
+      g.content['fromLatex'] = now.trim();
+      g.updatedAt = nowMs();
+      changed = true;
+    }
+    if (changed) notifyListeners();
+    return changed;
+  }
+
+  /// The link colour for one equation inside a sentence, or null.
+  ///
+  /// Same rule as [graphLinkHighlight]: there must be a link, and one end of
+  /// it must be the thing being looked at. Here that means the graph is
+  /// selected, or this is the equation currently open for editing.
+  Color? inlineGraphTint(String blockId, String latex, {bool editing = false}) {
+    final linked = graphsFollowingInline(blockId, latex);
+    if (linked.isEmpty) return null;
+    if (editing) return kGraphLinkColour;
+    return linked.any((g) => selectedIds.contains(g.id))
+        ? kGraphLinkColour
+        : null;
+  }
+
+  /// **Keep the graphs in step with the equation they follow.**
+  ///
+  /// Called from the maths block's own commit, so a graph redraws as the
+  /// equation is typed — which is what the owner asked for: *"if i then
+  /// update it to y = 2x+6 that change is reflected in the graph."*
+  ///
+  /// Redraws only when something actually moved: a keystroke that changes no
+  /// graph must not rebuild the page.
+  bool pushEquationToGraphs(String equationId, String latex) {
+    var changed = false;
+    for (final g in graphsFollowing(equationId)) {
+      if (g.content['latex'] == latex) continue;
+      g.content['latex'] = latex;
+      g.updatedAt = nowMs();
+      changed = true;
+    }
+    if (changed) notifyListeners();
+    return changed;
+  }
+
+  /// **The colour that says these two are the same thing**, or null when
+  /// there is nothing to say.
+  ///
+  /// The owner: *"when i click on the graph, it has a border of some colour
+  /// … and the linked equation gets its background highlighted to that
+  /// colour … This should work both ways … however should ONLY EVER be
+  /// visible when one is clicked AND there is a linked graph."*
+  ///
+  /// Both halves are in the condition: there must be a link, and one END of
+  /// it must be selected. DERIVED, never stored — a tint written into
+  /// `content['bg']` is the student's own chosen fill, and would be
+  /// permanent, would dirty the page and would sync.
+  Color? graphLinkHighlight(Block b) {
+    final selected = selectedIds;
+    if (selected.isEmpty) return null;
+    if (b.type == BlockType.graph) {
+      final from = b.content['from'];
+      if (from is! String) return null;
+      final eq = blocks.where((x) => x.id == from).firstOrNull;
+      if (eq == null) return null; // the equation is gone: no link to show
+      return (selected.contains(b.id) || selected.contains(eq.id))
+          ? kGraphLinkColour
+          : null;
+    }
+    if (b.type == BlockType.math) {
+      final linked = graphsFollowing(b.id).toList();
+      if (linked.isEmpty) return null;
+      if (selected.contains(b.id)) return kGraphLinkColour;
+      return linked.any((g) => selected.contains(g.id))
+          ? kGraphLinkColour
+          : null;
+    }
+    return null;
   }
 
   Block insertEquation({required Offset at, String seed = ''}) {

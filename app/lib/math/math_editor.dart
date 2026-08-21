@@ -534,13 +534,20 @@ class MathEditor {
   }
 
   /// A palette press. Fresh nodes every time — see [MathItem.build].
-  void insertItem(MathItem item) {
+  void insertItem(MathItem item) => insertNodes(item.build());
+
+  /// Drop built nodes at the caret and land it in the first empty box.
+  ///
+  /// The body [insertItem] used to be. Split out because the root family
+  /// (`\4rt`, `\12rt`) is a PATTERN rather than a palette entry — there is no
+  /// end to the numbers — and it must still arrive exactly the way a palette
+  /// press does, boxes and all.
+  void insertNodes(List<MNode> nodes) {
     // Pressing a symbol ENDS the words box. Leaving it armed meant the letters
     // typed after a π landed inside the preceding \text{…} instead of in the
     // equation, which looks like the keyboard has stopped working.
     _openText = null;
     deleteSelection();
-    final nodes = item.build();
     caretRow.insertAll(caretIndex, nodes);
     caretIndex += nodes.length;
     final structure = nodes.firstWhere(
@@ -592,7 +599,11 @@ class MathEditor {
         return true;
       case '(':
         _buildControlWord();
-        _buildFunctionName();
+        // **A template brings its own brackets.** `gcd(` used to insert the
+        // template AND then a second, empty pair after it; the function that
+        // built the template says so, and the `(` that asked for it has
+        // already been served.
+        if (_buildFunctionName()) return true;
         final d = MDelim(left: '(', right: ')');
         caretRow.insert(caretIndex, d);
         caretIndex++;
@@ -638,7 +649,15 @@ class MathEditor {
     final buf = StringBuffer();
     while (k > 0) {
       final n = caretRow.children[k - 1];
-      if (n is! MSym || n.cls != MClass.letter || n.tex.length != 1) break;
+      // Digits as well as letters, for `\2rt`. Safe because the leading `\`
+      // is still required below: a digit used to abort the walk, so nothing
+      // that converted before stops converting, and a bare `2rt` is still
+      // just three characters.
+      if (n is! MSym ||
+          (n.cls != MClass.letter && n.cls != MClass.digit) ||
+          n.tex.length != 1) {
+        break;
+      }
       buf.write(n.tex);
       k--;
     }
@@ -654,6 +673,27 @@ class MathEditor {
   bool _buildControlWord() {
     final (start, word) = _commandBefore();
     if (start < 0 || word.isEmpty) return false;
+    // **The root family.** `\4rt` is a fourth root with the four already in
+    // its index, `\12rt` a twelfth. Written as a pattern rather than twenty
+    // palette entries because there is no end to the numbers, and a student
+    // who has met `\3rt` should not have to wonder whether `\7rt` was one of
+    // the ones we thought of.
+    final root = RegExp(r'^([0-9]+)rt$').firstMatch(word);
+    if (root != null) {
+      final digits = root.group(1)!;
+      for (var i = caretIndex; i > start; i--) {
+        caretRow.removeAt(i - 1);
+      }
+      caretIndex = start;
+      insertNodes([
+        MSqrt(
+          degree: MRow([
+            for (final d in digits.split('')) MSym(d, cls: MClass.digit),
+          ]),
+        ),
+      ]);
+      return true;
+    }
     // Function names live under `fn-<name>`; everything else is a control word.
     final item = mathControlWords[word] ?? mathItemsById['fn-$word'];
     if (item == null) return false;
@@ -1278,7 +1318,9 @@ class MathEditor {
     }
     caretIndex = k;
     _insertRemembering(item, word);
-    return true;
+    // A template already has its brackets and its boxes; a plain function
+    // name does not, and the `(` the student typed still has work to do.
+    return item.build().first is MCall;
   }
 
   bool _buildOperatorRun(String ch) {
@@ -1523,6 +1565,21 @@ class MathEditor {
     if (k > 0) {
       caretRow = slots[k - 1];
       caretIndex = caretRow.length;
+      return true;
+    }
+    // **An empty index deletes itself**, leaving an ordinary square root.
+    // Without this, taking the 3 out of a cube root left `\sqrt[]{x}` — a
+    // root printing an empty box for ever, with no way back to a plain
+    // radical short of deleting the whole thing and starting again. A bare
+    // radical already MEANS two, so this is the same root either way.
+    if (owner is MSqrt &&
+        owner.degree != null &&
+        identical(caretRow, owner.degree) &&
+        caretRow.isEmpty) {
+      owner.degree = null;
+      caretRow = owner.radicand;
+      caretIndex = 0;
+      _openText = null;
       return true;
     }
     final parent = owner.parent;

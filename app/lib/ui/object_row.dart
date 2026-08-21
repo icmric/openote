@@ -105,6 +105,7 @@ class ObjectRow extends StatelessWidget {
         if (m == null) return const SizedBox(height: kObjectRowHeight);
         return EquationFace(
           math: m,
+          onDrawGraph: m.drawGraph,
           angleMode: app.angleMode,
           onToggleAngleMode: () => app.setAngleMode(
               app.angleMode == AngleMode.degrees
@@ -137,10 +138,14 @@ class EquationFace extends StatelessWidget {
     required this.math,
     required this.angleMode,
     required this.onToggleAngleMode,
+    this.onDrawGraph,
     this.recentIds = const [],
   });
 
   final ActiveMathEditor math;
+
+  /// Draw this equation, or null when it cannot be drawn from here.
+  final VoidCallback? onDrawGraph;
   final AngleMode angleMode;
   final VoidCallback onToggleAngleMode;
   final List<String> recentIds;
@@ -148,6 +153,7 @@ class EquationFace extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MathBar(
         onInsert: math.insert,
+        onDrawGraph: onDrawGraph,
         latexMode: math.latexMode,
         latexAvailable: math.latexAvailable,
         onToggleLatex: math.toggleLatex,

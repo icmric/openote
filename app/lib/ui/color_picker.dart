@@ -21,11 +21,16 @@ Color? onoteColorFromHex(String? hex) {
 /// Full colour picker per Style Guide §7a.3: preset palette grid →
 /// recent/custom row → custom area (hue slider + saturation/value field +
 /// RGBA sliders + hex). Returns an RRGGBB or RRGGBBAA hex string, or null.
+/// [title] names what the colour is FOR. The dialog used to say "Text
+/// colour" whichever caller opened it, so choosing "Background colour…" on a
+/// box put up a window headed "Text colour" — one of the two callers was
+/// always contradicting the menu item that opened it.
 Future<String?> showOnoteColorPicker(BuildContext context, AppState app,
-    {String? initial}) {
+    {String? initial, String title = 'Text colour'}) {
   return showOnoteDialog<String>(
     context: context,
-    builder: (ctx) => _ColorPickerDialog(app: app, initial: initial),
+    builder: (ctx) =>
+        _ColorPickerDialog(app: app, initial: initial, title: title),
   );
 }
 
@@ -33,9 +38,14 @@ Future<String?> showOnoteColorPicker(BuildContext context, AppState app,
 const _baseHues = <double>[0, 25, 48, 90, 140, 175, 210, 240, 275, 320];
 
 class _ColorPickerDialog extends StatefulWidget {
-  const _ColorPickerDialog({required this.app, this.initial});
+  const _ColorPickerDialog(
+      {required this.app, this.initial, required this.title});
   final AppState app;
   final String? initial;
+
+  /// What the colour is FOR, so the heading agrees with the menu item that
+  /// opened it.
+  final String title;
 
   @override
   State<_ColorPickerDialog> createState() => _ColorPickerDialogState();
@@ -113,7 +123,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
         );
 
     return AlertDialog(
-      title: const Text('Text colour'),
+      title: Text(widget.title),
       content: SizedBox(
         width: 340,
         child: SingleChildScrollView(

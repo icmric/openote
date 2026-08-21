@@ -180,12 +180,15 @@ class MathFieldState extends State<MathField> {
     final text = data?.text?.trim();
     if (text == null || text.isEmpty || !mounted) return;
     if (_e.insertSource(text) == InsertOutcome.refused) {
-      // Plain words, year-10 bar: no mention of parsing or LaTeX.
+      // Plain words, year-10 bar: no mention of parsing or LaTeX — and no
+      // directions, because the way out is already on screen. The `⋯` menu on
+      // the object row offers "Write the LaTeX by hand" the whole time an
+      // equation is open. This used to send people to the Maths TAB, which
+      // has not existed since the object row replaced it.
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
         content: Text("That maths couldn't be read, so nothing was changed. "
-            "It's still on your clipboard — the LaTeX view (under ⋯ in the "
-            'Maths tab) can take it as it is.'),
-        duration: Duration(seconds: 5),
+            "It's still on your clipboard."),
+        duration: Duration(seconds: 4),
       ));
       return;
     }

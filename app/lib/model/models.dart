@@ -283,6 +283,10 @@ enum BlockType {
   // the same `rawType` contract that made `flashcard` safe to add — an older
   // build shows "Unsupported block: board" and round-trips it untouched.
   board,
+  // A curve drawn from an equation. Additive under the same `rawType`
+  // contract that made `board` and `flashcard` safe: an older build shows
+  // "Unsupported block: graph" and round-trips it untouched.
+  graph,
   unknown
 }
 

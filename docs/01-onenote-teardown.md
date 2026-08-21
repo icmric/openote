@@ -169,7 +169,9 @@ While **winning on OneNote's weaknesses**: open/local/free format, Markdown, bac
 
 Learning from OneNote's *scope*, not just its faults:
 
-- **Math solving / CAS / graphing** — non-goal (deep, and the paywalled part).
+- **Math solving / CAS** — non-goal (deep, and the paywalled part).
+- **Graphing** — was on this list; shipped in v0.23. It is the cheap half:
+  drawing what an equation says needs no algebra, and OneNote charges for it.
 - **Handwriting recognition** — deferred; store ink losslessly first.
 - **Deep Office/Teams/Loop/Copilot integration** — not our audience.
 - **AI-first features** — not our positioning.

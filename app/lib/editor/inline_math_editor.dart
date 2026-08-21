@@ -202,10 +202,21 @@ class InlineMathAtom extends StatelessWidget {
     required this.latex,
     required this.style,
     this.onTap,
+    this.linkTint,
   });
 
   final String latex;
   final TextStyle style;
+
+  /// **This equation has a graph, and one of the two is being looked at.**
+  ///
+  /// The other half of `AppState.graphLinkHighlight`, which paints the same
+  /// thing behind a maths BLOCK. An equation in a sentence is drawn by a
+  /// different render path entirely, so a tint implemented only on the block
+  /// would simply not appear here — and the owner's rule is that it works
+  /// both ways. Null the rest of the time, which is nearly always: *"i dont
+  /// want the highlighting to be always there."*
+  final Color? linkTint;
 
   /// Called with the equation's rect in global coordinates.
   final void Function(Rect anchor)? onTap;
@@ -245,8 +256,19 @@ class InlineMathAtom extends StatelessWidget {
             compact: true,
           )
         : OnoteMath(latex, textStyle: style, compact: true);
+    final tint = linkTint;
+    final drawn = tint == null
+        ? math
+        : Container(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            decoration: BoxDecoration(
+              color: tint.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(OnoteRadius.sm),
+            ),
+            child: math,
+          );
     if (onTap == null) {
-      return Semantics(label: 'equation', value: latex, child: math);
+      return Semantics(label: 'equation', value: latex, child: drawn);
     }
     return Builder(builder: (ctx) {
       return MouseRegion(
@@ -264,9 +286,14 @@ class InlineMathAtom extends StatelessWidget {
             onTap!(origin & box.size);
           },
           child: Semantics(
-            label: 'equation, double tap to edit',
+            label: 'equation',
+            // The gesture belongs in the HINT, not in the name — and it is
+            // one press, which is the decision recorded eleven lines above.
+            // Baking "double tap" into the label described a gesture the
+            // widget does not have.
+            hint: 'activate to edit',
             value: latex,
-            child: math,
+            child: drawn,
           ),
         ),
       );

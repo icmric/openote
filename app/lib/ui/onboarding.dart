@@ -68,12 +68,26 @@ class _OnboardingState extends State<_Onboarding> {
   bool _importing = false;
   String? _error;
 
+  /// The exception itself, shown only if the student asks for it.
+  String? _errorDetail;
+
   Future<void> _open(String path) async {
     try {
       await app.openExistingNotebook(path);
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
-      if (mounted) setState(() => _error = '$e');
+      // A sentence first, the exception behind the fold. The very first
+      // screen of the app is the last place to print
+      // "FileSystemException: ... errno = 32" and nothing else — the two
+      // other failure surfaces in the app (`save_problem_dialog`,
+      // `open_notice_dialog`) go to real trouble to keep exactly this text
+      // behind "Details (advanced)", and this path had no such fold.
+      if (mounted) {
+        setState(() {
+          _error = "Openote couldn't open that notebook.";
+          _errorDetail = '$e';
+        });
+      }
     }
   }
 
@@ -264,6 +278,29 @@ class _OnboardingState extends State<_Onboarding> {
                 Text(_error!,
                     style: const TextStyle(
                         fontSize: 12, color: OnoteColors.danger)),
+                if (_errorDetail != null)
+                  Theme(
+                    // The divider lines an ExpansionTile draws by default cut
+                    // the dialog in half for one folded line of text.
+                    data: Theme.of(context)
+                        .copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      childrenPadding: EdgeInsets.zero,
+                      title: Text('Details (advanced)',
+                          style: OnoteType.caption
+                              .copyWith(color: context.surfaces.textSecondary)),
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: SelectableText(_errorDetail!,
+                              style: OnoteType.caption.copyWith(
+                                  fontFamily: 'JetBrains Mono',
+                                  color: context.surfaces.textSecondary)),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ],
           ),

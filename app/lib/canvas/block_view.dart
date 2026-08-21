@@ -6,6 +6,7 @@ import '../editor/board_block_view.dart';
 import '../editor/code_block_view.dart';
 import '../editor/file_block_view.dart';
 import '../editor/flashcard_block_view.dart';
+import '../editor/graph_block_view.dart';
 import '../editor/image_block_view.dart';
 import '../editor/math_block_view.dart';
 import '../editor/table_block_view.dart';
@@ -263,11 +264,16 @@ class _BlockViewState extends State<BlockView> {
     // its card dragging — grabbing either by the body must not move the
     // block out from under the gesture. They move by their bar, or Alt-drag,
     // like a text box.
+    // A graph's body drag PANS the graph, the same way an embed's belongs to
+    // its selection and a board's to its cards. Grabbing one by the middle
+    // must not slide the block out from under the gesture; it moves by its
+    // bar, or by Alt-drag, like a text box.
     _bodyDragMoves = _locked
         ? false
         : (!_editableType &&
                 b.type != BlockType.embed &&
-                b.type != BlockType.board) ||
+                b.type != BlockType.board &&
+                b.type != BlockType.graph) ||
             HardwareKeyboard.instance.isAltPressed;
     if (_bodyDragMoves) _dragStart(d);
   }
@@ -392,6 +398,7 @@ class _BlockViewState extends State<BlockView> {
         'Flashcard: ${b.content['front'] ?? 'empty'}',
       BlockType.embed => 'Window to another page',
       BlockType.board => 'Task board',
+      BlockType.graph => 'Graph of ${b.content['latex'] ?? 'an equation'}',
       _ => '${b.type.name} block',
     };
     return t.trim().isEmpty ? '${b.type.name} block' : t;
@@ -537,6 +544,7 @@ class _BlockViewState extends State<BlockView> {
       BlockType.flashcard => FlashcardBlockView(block: b, app: app),
       BlockType.embed => PortalBlockView(block: b, app: app),
       BlockType.board => BoardBlockView(block: b, app: app),
+      BlockType.graph => GraphBlockView(block: b, app: app),
       _ => Padding(
           padding: const EdgeInsets.all(8),
           child: Text('Unsupported block: ${b.type.name}',
@@ -600,7 +608,13 @@ class _BlockViewState extends State<BlockView> {
             // A chosen fill beats the hover/selection surface: the border
             // still carries those states, and a translucent tint the user
             // picked must not flicker opaque every time the mouse crosses it.
-            color: onoteColorFromHex(b.content['bg'] as String?) ??
+            // **The other end of a graph's link.** A tint, not a border,
+            // because the border already carries selection — and only while
+            // one end of the link is chosen, which is what
+            // `graphLinkHighlight` answers. Derived on every build, never
+            // stored: this must not dirty the page or survive the click.
+            color: app.graphLinkHighlight(b)?.withValues(alpha: 0.14) ??
+                onoteColorFromHex(b.content['bg'] as String?) ??
                 (editing || selected || _hover
                     ? (dark ? OnoteColors.night50 : OnoteColors.paper0)
                     : Colors.transparent),

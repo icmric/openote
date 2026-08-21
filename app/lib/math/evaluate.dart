@@ -121,11 +121,11 @@ EvalResult evaluateLinear(String input) {
   }
   try {
     final p = _Parser(src);
-    final v = p.parseExpression();
+    final expr = p.parseExpression();
     p.skipSpace();
     if (!p.atEnd) return EvalResult.err('unexpected "${p.rest}"');
     return EvalResult.ok(
-      v,
+      expr(const <String, double>{}),
       unit: !p.angleOut
           ? EvalUnit.none
           : mathAngleMode == AngleMode.degrees
@@ -137,6 +137,97 @@ EvalResult evaluateLinear(String input) {
   } catch (_) {
     return const EvalResult.err('could not evaluate');
   }
+}
+
+/// A compiled expression. Give it the variables it needs, get a number.
+///
+/// **Why the grammar builds one of these rather than a number.** A curve is
+/// several hundred samples, redrawn on every keystroke because the owner
+/// asked for exactly that: *"it would be cool to see the graph change as i
+/// type."* Parsing the source once per sample was measured at 33 times the
+/// cost of calling a closure — most of a frame for a single curve — so the
+/// parse happens once and the closure is what the painter calls.
+///
+/// It costs the calculator nothing: [evaluateLinear] builds the same closure
+/// and calls it once with no variables bound.
+typedef MathExpr = double Function(Map<String, double> vars);
+
+/// A function of one variable, ready to plot, or the reason there isn't one.
+class CompiledMath {
+  const CompiledMath.ok(this.at, {required this.variable})
+      : error = null,
+        isOk = true;
+  const CompiledMath.err(this.error)
+      : at = null,
+        variable = 'x',
+        isOk = false;
+
+  /// The value at a point. Returns NaN where the curve has no value there —
+  /// a gap the painter simply does not draw through, which is the honest
+  /// picture of `1/x` at zero and of `sqrt(x)` to the left of it.
+  final double Function(double)? at;
+
+  /// The name the curve is a function OF.
+  final String variable;
+
+  final String? error;
+  final bool isOk;
+}
+
+/// Compile `3x + 10` (or the right-hand side of `y = 3x + 10`) into something
+/// a painter can call several hundred times without noticing.
+///
+/// [variable] is bound on every call; every OTHER name still has to be
+/// something the calculator knows, so `3x + c` is refused with `unknown "c"`
+/// rather than silently drawing the curve for c = 0.
+CompiledMath compileFunction(String input, {String variable = 'x'}) {
+  final src = input.trim();
+  if (src.isEmpty) return const CompiledMath.err('empty');
+  if (src.contains('=')) {
+    return const CompiledMath.err('give me one side of the equals sign');
+  }
+  final MathExpr expr;
+  try {
+    final p = _Parser(src);
+    expr = p.parseExpression();
+    p.skipSpace();
+    if (!p.atEnd) return CompiledMath.err('unexpected "${p.rest}"');
+  } on _EvalError catch (e) {
+    return CompiledMath.err(e.message);
+  } catch (_) {
+    return const CompiledMath.err('could not read that');
+  }
+
+  final vars = <String, double>{variable: 0};
+  double at(double x) {
+    vars[variable] = x;
+    try {
+      return expr(vars);
+    } on _EvalError {
+      // A factorial of a half, a log of a negative: no value HERE, which is
+      // a gap in the curve rather than a failure of the whole thing.
+      return double.nan;
+    } catch (_) {
+      return double.nan;
+    }
+  }
+
+  // **Ask it a question before promising it works.** A name the calculator
+  // has never heard of only complains when it is reached, so an expression
+  // like `3z + 1` would compile happily and then draw nothing at all. Three
+  // probes, and the message the student gets is the one the calculator would
+  // have given them.
+  try {
+    for (final probe in const [0.0, 1.0, -1.0]) {
+      vars[variable] = probe;
+      expr(vars);
+    }
+  } on _EvalError catch (e) {
+    if (e.message.startsWith('unknown')) return CompiledMath.err(e.message);
+  } catch (_) {
+    // Anything else is a gap at those particular points, not a refusal.
+  }
+  return CompiledMath.ok(at, variable: variable);
 }
 
 class _EvalError implements Exception {
@@ -180,15 +271,17 @@ class _Parser {
     return false;
   }
 
-  double parseExpression() {
+  MathExpr parseExpression() {
     var left = _parseTerm();
     while (true) {
       skipSpace();
       if (_eat('+')) {
-        left += _parseTerm();
+        final l = left, r = _parseTerm();
+        left = (v) => l(v) + r(v);
         angleOut = false;
       } else if (_eat('−') || _eat('-')) {
-        left -= _parseTerm();
+        final l = left, r = _parseTerm();
+        left = (v) => l(v) - r(v);
         angleOut = false;
       } else {
         return left;
@@ -196,25 +289,50 @@ class _Parser {
     }
   }
 
-  double _parseTerm() {
+  MathExpr _parseTerm() {
     var left = _parseUnary();
     while (true) {
       skipSpace();
       if (_eat('*') || _eat('×') || _eat('·')) {
-        left *= _parseUnary();
+        final l = left, r = _parseUnary();
+        left = (v) => l(v) * r(v);
         angleOut = false;
       } else if (_eat('/') || _eat('÷')) {
-        final d = _parseUnary();
-        left /= d; // ±∞ / NaN are reported by [EvalResult.display]
+        final l = left, r = _parseUnary();
+        // ±∞ / NaN are reported by [EvalResult.display]
+        left = (v) => l(v) / r(v);
+        angleOut = false;
+      } else if (_eatWord('mod')) {
+        // **A remainder, written between its two numbers**, which is how a
+        // textbook writes it and what the palette's button inserts. Binds
+        // like a multiplication, so `10 + 17 mod 5` is 10 + (17 mod 5) = 12.
+        final l = left, r = _parseUnary();
+        left = (v) {
+          final a = l(v), b = r(v);
+          return a - b * (a / b).floorToDouble();
+        };
         angleOut = false;
       } else if (_startsImplicitProduct()) {
         // `2pi`, `3(x+1)`, `2sqrt(9)` — the way people actually write maths.
-        left *= _parseUnary();
+        final l = left, r = _parseUnary();
+        left = (v) => l(v) * r(v);
         angleOut = false;
       } else {
         return left;
       }
     }
+  }
+
+  /// An operator spelled as a WORD, taken only when the whole word is there:
+  /// `mod` in `17 mod 5`, never the `mod` at the front of a variable called
+  /// `mode`.
+  bool _eatWord(String word) {
+    skipSpace();
+    if (!s.startsWith(word, i)) return false;
+    final after = i + word.length;
+    if (after < s.length && _isLetter(s[after])) return false;
+    i = after;
+    return true;
   }
 
   /// True when the next token can only continue a product: a name, an opening
@@ -227,33 +345,37 @@ class _Parser {
     return c == '(' || _isLetter(c);
   }
 
-  double _parseUnary() {
+  MathExpr _parseUnary() {
     skipSpace();
-    if (_eat('-') || _eat('−')) return -_parseUnary();
+    if (_eat('-') || _eat('−')) {
+      final r = _parseUnary();
+      return (v) => -r(v);
+    }
     if (_eat('+')) return _parseUnary();
     return _parsePower();
   }
 
-  double _parsePower() {
+  MathExpr _parsePower() {
     final base = _parsePostfix();
     skipSpace();
     if (_eat('^')) {
       // Right-associative: 2^3^2 is 2^(3^2) = 512.
       final exp = _parseUnary();
       angleOut = false;
-      return _power(base, exp);
+      return (v) => _power(base(v), exp(v));
     }
     return base;
   }
 
-  double _parsePostfix() {
+  MathExpr _parsePostfix() {
     var v = _parseAtom();
     while (true) {
       skipSpace();
       if (i < s.length && s[i] == '!') {
         i++;
         angleOut = false;
-        v = _factorial(v);
+        final inner = v;
+        v = (e) => _factorial(inner(e));
       } else if (i < s.length && s[i] == '%') {
         // **A per cent, not a remainder.** `%` was an infix modulo, so a
         // student writing `25% of 80` got either an error or — worse, and
@@ -261,20 +383,22 @@ class _Parser {
         // palette; the remainder is not on it at all.
         i++;
         angleOut = false;
-        v = v / 100;
+        final inner = v;
+        v = (e) => inner(e) / 100;
       } else if (i < s.length && s[i] == '°') {
         // `30°` IS an angle in degrees, whatever the surrounding rule — the
         // student said so. Converted here, once, so everything downstream
         // works in radians as the maths library does.
         i++;
-        v = v * math.pi / 180;
+        final inner = v;
+        v = (e) => inner(e) * math.pi / 180;
       } else {
         return v;
       }
     }
   }
 
-  double _parseAtom() {
+  MathExpr _parseAtom() {
     skipSpace();
     if (atEnd) throw _EvalError('unexpected end');
 
@@ -288,11 +412,12 @@ class _Parser {
       final v = parseExpression();
       if (!_eat('|')) throw _EvalError('missing |');
       angleOut = false;
-      return v.abs();
+      return (e) => v(e).abs();
     }
     if (_eat('√')) {
       angleOut = false;
-      return math.sqrt(_parseUnary());
+      final v = _parseUnary();
+      return (e) => math.sqrt(v(e));
     }
 
     final c = s[i];
@@ -301,7 +426,7 @@ class _Parser {
     throw _EvalError('unexpected "$c"');
   }
 
-  double _parseNumber() {
+  MathExpr _parseNumber() {
     final start = i;
     while (i < s.length && (_isDigit(s[i]) || s[i] == '.')) {
       i++;
@@ -322,10 +447,10 @@ class _Parser {
     final v = double.tryParse(s.substring(start, i));
     if (v == null) throw _EvalError('bad number "${s.substring(start, i)}"');
     angleOut = false;
-    return v;
+    return (_) => v;
   }
 
-  double _parseNameOrCall() {
+  MathExpr _parseNameOrCall() {
     final start = i;
     while (i < s.length && (_isLetter(s[i]) || _isDigit(s[i]))) {
       i++;
@@ -336,19 +461,65 @@ class _Parser {
     final k = _constants[name];
     if (k != null) {
       angleOut = false;
-      return k;
+      return (_) => k;
+    }
+
+    skipSpace();
+
+    // **A function that needs more than one thing.** `gcd(12, 18)`,
+    // `mod(7, 3)`, `nCr(5, 2)`. Commas exist in the grammar only here: an
+    // argument list is the one place in school maths where a comma separates
+    // two numbers rather than grouping the digits of one.
+    final many = _callFunctions[name];
+    if (many != null) {
+      if (atEnd || s[i] != '(') {
+        throw _EvalError('$name needs brackets: $name(a, b)');
+      }
+      i++;
+      final parts = <MathExpr>[parseExpression()];
+      skipSpace();
+      while (!atEnd && s[i] == ',') {
+        i++;
+        parts.add(parseExpression());
+        skipSpace();
+      }
+      if (!_eat(')')) throw _EvalError('missing )');
+      if (parts.length < many.min) {
+        throw _EvalError('$name needs ${many.min} numbers');
+      }
+      angleOut = false;
+      final run = many.run;
+      return (v) => run([for (final p in parts) p(v)]);
+    }
+
+    // A log to an explicit base: `log2(8)`, `log10(100)`, `log5(125)`.
+    // Written as the name plus the base, which is what the subscript form
+    // projects to — and what a Casio prints as log₅(125).
+    final based = RegExp(r'^log([0-9]+)$').firstMatch(name);
+    if (based != null) {
+      final b = double.parse(based.group(1)!);
+      if (b <= 0 || b == 1) throw _EvalError('a log needs a base above 1');
+      final inner = _readOneArgument();
+      angleOut = false;
+      final lnb = math.log(b);
+      return (v) => math.log(inner(v)) / lnb;
     }
 
     // Function call: name(...) or name x (as in `sin x`).
-    skipSpace();
-    var fn = _functions[name];
-    if (fn == null) throw _EvalError('unknown "$name"');
-    final givesAngle = _givesAngle.contains(name);
-    if (_givesAngle.contains(name) && mathAngleMode == AngleMode.degrees) {
-      // Degrees out, because degrees go in: `sin⁻¹(0.5)` is 30.
-      final inner = fn;
-      fn = (x) => inner(x) * 180 / math.pi;
+    final fn = _functions[name];
+    if (fn == null) {
+      // **A name the table has never heard of.** At the calculator it is an
+      // error, exactly as it always was; while GRAPHING it is the variable —
+      // `x` in `y = 3x + 10` — and is only known when the curve is drawn.
+      // Deferring the complaint to that moment is what lets one grammar
+      // serve both, and the message is unchanged either way.
+      return (v) {
+        final bound = v[name];
+        if (bound == null) throw _EvalError('unknown "$name"');
+        return bound;
+      };
     }
+    final givesAngle = _givesAngle.contains(name);
 
     // **A BRACKETED argument belongs to the function alone.** `sin(2)^2` was
     // reading as `sin(2^2)` = sin 4 = -0.7568, because the argument was taken
@@ -364,15 +535,82 @@ class _Parser {
       final from = i;
       final inner = parseExpression();
       if (!_eat(')')) throw _EvalError('missing )');
-      final out = fn(_asAngle(name, inner, s.substring(from, i - 1)));
+      final src = s.substring(from, i - 1);
       angleOut = givesAngle;
-      return out;
+      return (v) => _outAngle(givesAngle, fn(_asAngle(name, inner(v), src)));
     }
-    // log with an explicit base: log2(8), log10(100).
     final from = i;
     final arg = _parseUnary();
-    final out = fn(_asAngle(name, arg, s.substring(from, i)));
+    final src = s.substring(from, i);
     angleOut = givesAngle;
+    return (v) => _outAngle(givesAngle, fn(_asAngle(name, arg(v), src)));
+  }
+
+  /// One argument, bracketed or not — the same rule the ordinary call path
+  /// uses, lifted out so the based-log family can share it.
+  MathExpr _readOneArgument() {
+    if (!atEnd && s[i] == '(') {
+      i++;
+      final v = parseExpression();
+      if (!_eat(')')) throw _EvalError('missing )');
+      return v;
+    }
+    return _parseUnary();
+  }
+
+  /// **The functions that need more than one number.**
+  ///
+  /// Deliberately short, and each one is on a school calculator: a Casio
+  /// fx-82 AU PLUS II or its fx-991 sibling has GCD, LCM, the remainder, and
+  /// nCr and nPr. Anything a single argument can express is NOT here —
+  /// `sin`, `log`, `sqrt` all take one thing and asking for a comma would be
+  /// an invented ceremony.
+  static final Map<String, ({int min, double Function(List<double>) run})>
+      _callFunctions = {
+    'gcd': (min: 2, run: (a) => a.reduce(_gcd)),
+    'lcm': (min: 2, run: (a) => a.reduce(_lcm)),
+    // The REMAINDER, and the sign follows the divisor the way it does in
+    // every language a student is likely to meet next: mod(-7, 3) is 2.
+    'mod': (min: 2, run: (a) => a[0] - a[1] * (a[0] / a[1]).floorToDouble()),
+    'max': (min: 2, run: (a) => a.reduce((x, y) => x > y ? x : y)),
+    'min': (min: 2, run: (a) => a.reduce((x, y) => x < y ? x : y)),
+    'ncr': (min: 2, run: (a) => _choose(a[0], a[1])),
+    'npr': (min: 2, run: (a) => _permute(a[0], a[1])),
+  };
+
+  static double _gcd(double a, double b) {
+    var x = a.abs().roundToDouble(), y = b.abs().roundToDouble();
+    while (y > 0.5) {
+      final t = x % y;
+      x = y;
+      y = t;
+    }
+    return x;
+  }
+
+  static double _lcm(double a, double b) {
+    final g = _gcd(a, b);
+    if (g == 0) return 0;
+    return (a.abs() * b.abs() / g).roundToDouble();
+  }
+
+  static double _choose(double n, double r) {
+    if (n < 0 || r < 0 || r > n) return double.nan;
+    final k = r.roundToDouble();
+    var out = 1.0;
+    for (var j = 0.0; j < k; j++) {
+      out = out * (n - j) / (j + 1);
+    }
+    return out.roundToDouble();
+  }
+
+  static double _permute(double n, double r) {
+    if (n < 0 || r < 0 || r > n) return double.nan;
+    final k = r.roundToDouble();
+    var out = 1.0;
+    for (var j = 0.0; j < k; j++) {
+      out *= n - j;
+    }
     return out;
   }
 
@@ -399,6 +637,17 @@ class _Parser {
   /// student telling us which they meant — which is exactly what was asked
   /// for. The inverses give an angle BACK in degrees, so `sin⁻¹(0.5)` is 30
   /// and `sin⁻¹(sin(30))` comes home.
+  /// **Degrees out, because degrees go in.** `sin⁻¹(0.5)` is 30, and
+  /// `sin⁻¹(sin(30))` comes home.
+  ///
+  /// Read when the answer is WORKED OUT rather than when the expression was
+  /// read, so a graph compiled once and redrawn after a mode switch is drawn
+  /// in the mode that is on now.
+  static double _outAngle(bool givesAngle, double v) =>
+      givesAngle && mathAngleMode == AngleMode.degrees
+          ? v * 180 / math.pi
+          : v;
+
   static double _asAngle(String fn, double value, String src) {
     if (!_takesAngle.contains(fn)) return value;
     if (mathAngleMode == AngleMode.radians) return value;
