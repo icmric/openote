@@ -69,6 +69,13 @@ class _MathBlockViewState extends State<MathBlockView> {
   void _commitLatex(String latex) {
     _pushUndoOnce();
     widget.block.content['latex'] = latex.trim();
+    // **A stored source that has gone stale is worse than none.** It is only
+    // ever the text somebody typed in the LaTeX view; the moment the equation
+    // is edited any other way it describes a DIFFERENT equation, and
+    // reopening that view then offered to rebuild the page from it. The
+    // source path writes itself back straight after this (see
+    // `EquationEditor._commitSource`), so a real source edit survives.
+    widget.block.content.remove('linearSource');
     widget.block.content['display'] = true;
     widget.block.updatedAt = nowMs();
     // **Every graph following this equation redraws now**, not on a timer:

@@ -352,15 +352,24 @@ class FileBlockView extends StatelessWidget {
     final hash = block.content['blob'] as String?;
     if (hash == null) return;
     final bytes = app.blob(hash);
-    if (bytes == null) return;
+    if (bytes == null) {
+      // The SAME words the Open button gives for the same missing file. One
+      // of the two used to explain it and the other silently did nothing.
+      _toast(context, 'That attachment is missing.');
+      return;
+    }
     final loc = await getSaveLocation(
         suggestedName: block.content['name'] as String? ?? 'file');
     if (loc == null) return;
-    await File(loc.path).writeAsBytes(bytes);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Saved to ${loc.path}')));
+    try {
+      await File(loc.path).writeAsBytes(bytes);
+    } catch (e) {
+      // A full stick, a protected folder: the write threw into an unhandled
+      // Future and the student was told nothing at all.
+      if (context.mounted) _toast(context, "That copy didn't save: $e");
+      return;
     }
+    if (context.mounted) _toast(context, 'Saved to ${loc.path}');
   }
 
   String _fmtSize(int b) => b < 1024

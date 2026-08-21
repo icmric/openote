@@ -25,6 +25,7 @@ class ActiveMathEditor {
     required this.latexAvailable,
     required this.toggleLatex,
     this.drawGraph,
+    this.rework,
   });
 
   /// Whoever registered this — the `State` object of the editor. Used only so
@@ -51,6 +52,16 @@ class ActiveMathEditor {
   /// `build` and deliberately does not notify: a value captured there would
   /// be one keystroke stale for ever. The row asks when the menu opens.
   final VoidCallback? drawGraph;
+
+  /// Work this equation's answers out again, in place.
+  ///
+  /// The page-wide pass that follows a degrees/radians switch deliberately
+  /// SKIPS the equation being written — rewriting its stored text from
+  /// outside would have the editor write the old tree back on the next
+  /// keystroke, and for one inside a sentence it reads as a foreign edit and
+  /// closes the equation. So the open one is asked to do it itself, which is
+  /// also what keeps the caret where it is.
+  final VoidCallback? rework;
 
   // There WAS a live `= 42` readout on the bar here, with a button to put the
   // answer in. The owner: *"rather than having it appear up the top though

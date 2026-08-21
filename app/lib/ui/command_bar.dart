@@ -26,6 +26,7 @@ import 'object_face.dart';
 import 'settings_dialog.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
+import 'onote_dialog.dart';
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
 /// View. OneNote's few-clicks accessibility in Openote's calm language — a
@@ -211,19 +212,23 @@ class _CommandBarState extends State<CommandBar> {
                                 const Icon(Icons.hub_outlined, size: 18),
                             onPressed: () =>
                                 _export(context, exportPageJsonCanvas),
-                            child: const Text('JSON Canvas (.canvas)'),
+                            child: const Text('For Obsidian Canvas (.canvas)'),
                           ),
                           MenuItemButton(
                             leadingIcon: const Icon(Icons.gesture, size: 18),
                             onPressed: () => _export(context, exportPageInkML),
-                            child: const Text('Ink → InkML (.inkml)'),
+                            child: const Text('Just the drawing (.inkml)'),
                           ),
                           const Divider(height: 6),
                           MenuItemButton(
                             leadingIcon:
                                 const Icon(Icons.folder_zip_outlined, size: 18),
-                            onPressed: () =>
-                                _export(context, materializeNotebook),
+                            onPressed: () => _exportWithProgress(
+                                context,
+                                'Saving the notebook…',
+                                (report) => materializeNotebook(app,
+                                    onProgress: (done, total) => report(
+                                        'Page $done of $total…'))),
                             // Say what lands on disk. "Materialize" is
                             // this codebase's own architecture vocabulary
                             // (`sync/materializer.dart`) and appears in no
@@ -309,12 +314,86 @@ class _CommandBarState extends State<CommandBar> {
         _ => Icons.near_me_outlined,
       };
 
+  /// Every item in the Export menu comes through here.
+  ///
+  /// **The failure has a face.** There was no `try`: a full disk, a read-only
+  /// USB stick, an offline OneDrive folder or a filename the OS refuses threw
+  /// into an unhandled Future and, with no global handler in the app, into a
+  /// console no student will ever read. The menu closed, nothing happened, and
+  /// they believed the work they were about to hand in was on the desktop.
+  ///
+  /// The messenger is taken BEFORE the await, because by the time the write
+  /// fails the menu route that owned the context is gone.
+  /// An export long enough to need a face, with a live count on it.
+  ///
+  /// The same shape as the PDF import's dialog: modal and undismissable while
+  /// it runs, because half a written folder tree is not a thing anybody wants
+  /// to be given quietly.
+  Future<void> _exportWithProgress(
+    BuildContext context,
+    String opening,
+    Future<String?> Function(void Function(String) report) fn,
+  ) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final progress = ValueNotifier<String>(opening);
+    var open = true;
+    unawaited(showOnoteDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        content: Row(children: [
+          const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.6)),
+          const SizedBox(width: 16),
+          Expanded(
+            child: ValueListenableBuilder<String>(
+              valueListenable: progress,
+              builder: (_, text, __) => Text(text),
+            ),
+          ),
+        ]),
+      ),
+    ).then((_) => open = false));
+    String? path;
+    Object? failed;
+    try {
+      path = await fn((text) => progress.value = text);
+    } catch (e) {
+      failed = e;
+    }
+    if (open && context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      open = false;
+    }
+    progress.dispose();
+    if (failed != null) {
+      messenger?.showSnackBar(SnackBar(
+        content: Text("That couldn't be saved: $failed"),
+        duration: const Duration(seconds: 6),
+      ));
+      return;
+    }
+    if (path != null) {
+      messenger?.showSnackBar(SnackBar(content: Text('Exported to $path')));
+    }
+  }
+
   Future<void> _export(
       BuildContext context, Future<String?> Function(AppState) fn) async {
-    final path = await fn(app);
-    if (path != null && context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Exported to $path')));
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final path = await fn(app);
+      if (path != null) {
+        messenger?.showSnackBar(
+            SnackBar(content: Text('Exported to $path')));
+      }
+    } catch (e) {
+      messenger?.showSnackBar(SnackBar(
+        content: Text("That couldn't be saved: $e"),
+        duration: const Duration(seconds: 6),
+      ));
     }
   }
 

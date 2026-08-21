@@ -326,3 +326,39 @@ final RegExp mdBulletRe = RegExp(r'^([ \t]*)[-*+][ \t]+(.*)$');
 final RegExp mdNumberedRe = RegExp(r'^([ \t]*)(\d{1,9})[.)][ \t]+(.*)$');
 final RegExp mdQuoteRe = RegExp(r'^>\s?(.*)$');
 final RegExp mdDividerRe = RegExp(r'^\s*([-*_])(\s*\1){2,}\s*$');
+
+/// **Every equation in a piece of Markdown**, as (where it starts, where it
+/// ends, and the LaTeX inside).
+///
+/// A standalone walk over [mdInlineRe], for the things that must read a
+/// paragraph's maths without a live editor open on it — re-working answers
+/// after the angle mode changes, for one. The live editor has its own copy of
+/// this walk over the buffer it is editing; this is the same grammar for text
+/// at rest.
+Iterable<({int start, int end, String latex})> mathRunsIn(String text) sync* {
+  for (final m in mdInlineRe.allMatches(text)) {
+    final c = classifyInline(m);
+    if (c.kind != MdInline.math &&
+        c.kind != MdInline.mathDisplay &&
+        c.kind != MdInline.mathPadded) {
+      continue;
+    }
+    yield (start: m.start, end: m.end, latex: c.inner.trim());
+  }
+}
+
+/// The same run with a new equation in it, dollars and all.
+String replaceMathRun(String text, ({int start, int end, String latex}) run,
+    String latex) {
+  final full = text.substring(run.start, run.end);
+  var d = 0;
+  while (d < full.length && full.codeUnitAt(d) == 0x24) {
+    d++;
+  }
+  final wrap = r'$' * (d == 0 ? 1 : d);
+  return text.replaceRange(run.start, run.end, 'wrapLATEXwrap'
+      .replaceFirst('wrap', wrap)
+      .replaceFirst('LATEX', latex)
+      .replaceFirst('wrap', wrap));
+}
+

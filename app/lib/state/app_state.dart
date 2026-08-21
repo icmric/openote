@@ -43,6 +43,7 @@ import '../api/mcp_server.dart';
 import '../update/app_update.dart';
 import '../sync/github_api.dart';
 import '../store/repository.dart';
+import '../math/math_editor.dart';
 import '../theme/tokens.dart';
 import 'page_protection.dart';
 import '../model/tags.dart';
@@ -2455,20 +2456,43 @@ class AppState extends ChangeNotifier
     await awaitBlobBackfill(nb);
     final src = notebookLogDir(nb);
     if (src == null) return;
+    final trouble = _mirrorTrouble.putIfAbsent(nb, () => <String, String>{});
     for (final t in targets) {
       try {
         await mirrorNotebook(src, t,
             containerPath: notebookPath(nb),
             snapshot: (dest) => _repo.snapshotContainer(nb, dest));
+        trouble.remove(t.path);
+        _mirrorOkAt[t.path] = nowMs();
       } catch (e) {
         // A mirror is a convenience; a failing one (USB stick unplugged,
-        // network share down) must never interfere with editing.
+        // network share down) must never interfere with editing. It must,
+        // however, be ADMITTED: this used to be a `debugPrint` and nothing
+        // else, and the notebook went on wearing a "Backed up" badge for a
+        // term of notes that were never copied anywhere.
         debugPrint('[openote/mirror] ${t.path} failed: $e');
+        trouble[t.path] = '$e';
       }
     }
     lastMirrorAt = nowMs();
+    // The badge is derived from this, and the status is cached.
+    _syncStatusCache.remove(nb);
     notifyListeners();
   }
+
+  /// What went wrong the last time each extra copy was made, by path.
+  ///
+  /// Empty for a target that worked, and for one that has not run yet —
+  /// "not tried" is not "failed", and a notebook must not lose its badge
+  /// between opening and the first run.
+  final Map<String, Map<String, String>> _mirrorTrouble = {};
+  final Map<String, int> _mirrorOkAt = {};
+
+  Map<String, String> mirrorTroubleFor(String nb) =>
+      _mirrorTrouble[nb] ?? const {};
+
+  /// When this target last succeeded, or 0.
+  int mirrorOkAt(String path) => _mirrorOkAt[path] ?? 0;
 
   int lastMirrorAt = 0;
 
@@ -2736,7 +2760,12 @@ class AppState extends ChangeNotifier
     final status = SyncStatus(
       folder: folder,
       devices: devices,
-      mirrors: mirrorsFor(nb).length,
+      // **Copies that WORKED**, not copies that were configured. A backup
+      // pointed at an unplugged USB stick used to count here, and the dot,
+      // the notebook list and the status bar all said "Backed up".
+      mirrors: mirrorsFor(nb)
+          .where((t) => !mirrorTroubleFor(nb).containsKey(t.path))
+          .length,
       // Per notebook, not [gitRemote] — this is asked about every notebook in
       // the list, and the open one's remote is not their answer.
       gitRemote: gitRemoteFor(nb),
@@ -3829,7 +3858,13 @@ class AppState extends ChangeNotifier
     }
     NoteTag.writeInto(b.content, tags);
     updateBlock(b);
-    docRevision++;
+    // **No `docRevision++`.** Every block widget is keyed by it, so bumping it
+    // threw the text box away and built a new one — with a fresh controller,
+    // an invalid selection, and the caret at the very END of the paragraph.
+    // A student who pressed Ctrl+1 mid-sentence to mark the line asked for a
+    // tag, not to be moved. The same fix, for the same reason, as the
+    // degrees/radians button above; a tag lives in `content['tags']`, not in
+    // the text, so a plain notify redraws the gutter marker.
     notifyListeners();
   }
 
@@ -4250,8 +4285,22 @@ class AppState extends ChangeNotifier
   AngleMode get angleMode => mathAngleMode;
 
   void setAngleMode(AngleMode v) {
+    if (v == mathAngleMode) return;
     mathAngleMode = v;
     _repo.setSetting('angleMode', v == AngleMode.radians ? 'rad' : 'deg');
+    // **Every answer on the page is worked out again.**
+    //
+    // It used to leave them alone, and the owner accepted that — but what it
+    // actually leaves behind is a number that is simply WRONG, in a grey
+    // panel that says the app worked it out, directly under a button that now
+    // says the opposite. `sin(30)= ` answers 0.5; press RAD and the panel
+    // still reads 0.5, which is the degrees answer.
+    //
+    // Pressing the button IS the command, so this is not the app changing
+    // something nobody asked for. Only answers whose value actually depends
+    // on the mode move, it takes one undo step, and answers on other pages
+    // are re-worked when those pages are opened and edited.
+    reworkAnswersForAngleMode();
     // **A plain notify, and deliberately NOT `docRevision++`.**
     //
     // `docRevision` means "the stored content was replaced wholesale" —
@@ -4270,6 +4319,70 @@ class AppState extends ChangeNotifier
     // equation survived only because it re-autofocuses on the way back,
     // which is luck rather than design.
     notifyListeners();
+  }
+
+  /// Work out every answer on this page again. Returns how many changed.
+  ///
+  /// Deliberately a whole-page pass at the moment of the press rather than a
+  /// check on every repaint: it is one command, it is undoable, and the
+  /// alternative is asking the calculator the same question of every answer
+  /// sixty times a second for ever.
+  int reworkAnswersForAngleMode() {
+    var changed = 0;
+    var undone = false;
+    void once() {
+      if (undone) return;
+      pushUndo();
+      undone = true;
+    }
+
+    for (final b in blocks) {
+      // **Never the block being edited.** Its editor holds the live tree and
+      // would write the old one back on the next keystroke; a text block's
+      // session treats a rewrite from outside as a foreign edit and closes
+      // the equation. The open equation refreshes ITSELF, through
+      // `ActiveMathEditor.refresh` — which is also what keeps the caret,
+      // the whole point of not bumping `docRevision` here.
+      if (b.id == editingBlockId) continue;
+      if (b.type == BlockType.math) {
+        final latex = b.content['latex'] as String? ?? '';
+        if (!latex.contains('boxed')) continue;
+        final e = MathEditor.open(latex);
+        if (e == null) continue;
+        if (!e.refreshAnswers()) continue;
+        once();
+        b.content['latex'] = e.latex;
+        b.content.remove('linearSource');
+        b.updatedAt = nowMs();
+        changed++;
+      } else if (b.type == BlockType.text) {
+        final text = b.content['text'] as String? ?? '';
+        if (!text.contains('boxed')) continue;
+        var out = text;
+        // Backwards, so an earlier run's offsets are still good after a
+        // later one has been rewritten.
+        for (final run in mathRunsIn(text).toList().reversed) {
+          if (!run.latex.contains('boxed')) continue;
+          final e = MathEditor.open(run.latex);
+          if (e == null || !e.refreshAnswers()) continue;
+          out = replaceMathRun(out, run, e.latex);
+          changed++;
+        }
+        if (out == text) continue;
+        once();
+        b.content['text'] = out;
+        b.updatedAt = nowMs();
+      }
+    }
+    if (changed > 0) {
+      markDirty();
+      // NO `docRevision++`: every block widget is keyed by it, so bumping it
+      // would destroy the equation being written and take the caret with it
+      // — the defect this release opened with. A notify is enough, because
+      // every block reads its content on every build.
+      notifyListeners();
+    }
+    return changed;
   }
 
   void setSpellCheck(bool v) {
@@ -6252,6 +6365,15 @@ class AppState extends ChangeNotifier
   /// Cheap by construction: [HistoryCatchUp] reads from a stored byte offset,
   /// so an ordinary autosave costs the one line it just wrote. Coalesced,
   /// because the save path and an open dialog can both ask at once.
+  /// Why the change list could not be read, or null when it could.
+  ///
+  /// Cleared on every successful fold, so a notebook that recovers stops
+  /// apologising.
+  final Map<String, String> _historyTrouble = {};
+
+  String? historyTroubleFor(String? nb) =>
+      nb == null ? null : _historyTrouble[nb];
+
   Future<NotebookHistory?> refreshHistory(String nb) async {
     if (!syncLogEnabled) return null;
     final store = _bareLog(nb);
@@ -6274,6 +6396,7 @@ class AppState extends ChangeNotifier
   Future<void> _catchUpHistory(String nb, OpLogStore store) async {
     final h = _histories.putIfAbsent(nb, () => _repo.loadHistory(nb));
     try {
+      _historyTrouble.remove(nb);
       await HistoryCatchUp.run(
         store: store,
         history: h,
@@ -6297,6 +6420,15 @@ class AppState extends ChangeNotifier
         _repo.setSetting(_historyOffsetKey(nb, dev), null);
       }
       _histories.remove(nb);
+      // **Remembered, so the dialog does not call this "nothing".** With the
+      // tables dropped, `pageAuthors()` returns an empty map and
+      // `recentDeletions()` an empty list, and the change dialog then told a
+      // student "Nothing recorded for this page yet" and offered no way to
+      // put back the page they had just deleted. That dialog's own opening
+      // comment says an empty list reading as "nothing was recorded" is "the
+      // one thing this must never say wrongly", and this was the path that
+      // made it say exactly that.
+      _historyTrouble[nb] = '$e';
     }
   }
 
@@ -6865,14 +6997,29 @@ class AppState extends ChangeNotifier
   int repairTitleBandOverlap() {
     var top = double.infinity;
     for (final b in blocks) {
+      // **Ink never triggers this.** A stroke's coordinates are page-absolute
+      // and its block's box is DERIVED from them (`_refitInkBounds`), so a
+      // pen mark anywhere near the top of the page was dragging every text
+      // box, picture and equation down with it — up to 92px, saved before
+      // anybody saw it, and out of reach of Ctrl+Z because opening a page
+      // clears the undo stack. Drawing at the top of a page is not a defect
+      // to heal; it is drawing.
+      if (b.type == BlockType.ink) continue;
       if (b.y < top) top = b.y;
     }
     if (top == double.infinity || top >= contentTop) return 0;
     final shift = contentTop - top;
+    var moved = 0;
     for (final b in blocks) {
+      if (b.type == BlockType.ink) {
+        // If ink IS moved it must be moved properly: the strokes are absolute,
+        // so shifting only the box walks the selection away from the drawing.
+        _translateInk(b, shift);
+      }
       b.y += shift;
+      moved++;
     }
-    return blocks.length;
+    return moved;
   }
 
   // ── Tree ops ───────────────────────────────────────────────────────────

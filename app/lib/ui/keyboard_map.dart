@@ -96,7 +96,7 @@ const List<KeySection> keyboardMap = [
     KeyBinding('Ctrl+0', 'Reset zoom and scroll'),
   ]),
   KeySection('Writing an equation', [
-    KeyBinding('Alt+=', 'Start one; press it again to finish'),
+    KeyBinding('Alt+=', 'Start one'),
     KeyBinding('Esc', 'Finish, and carry on with the sentence'),
     KeyBinding('Tab / Shift+Tab', 'The next / previous box left to fill'),
     KeyBinding('← →', 'Step through — INTO a fraction or a root, not over it'),

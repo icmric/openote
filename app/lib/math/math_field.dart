@@ -145,6 +145,15 @@ class MathFieldState extends State<MathField> {
     });
   }
 
+  /// Work the answers out again now, without waiting for the debounce.
+  ///
+  /// What a degrees/radians switch calls on the equation that is open. Focus
+  /// is untouched: nothing about this is a reason to stop writing.
+  void reworkNow() {
+    if (!_e.hasAnswers) return;
+    if (_e.refreshAnswers()) _changed();
+  }
+
   /// A palette press, routed from the bar. Focus comes back here so the next
   /// keystroke lands in the equation rather than nowhere.
   void insertItem(MathItem item) {

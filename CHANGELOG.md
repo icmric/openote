@@ -4,6 +4,111 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — graphs
+
+- **Write an equation, then draw it.** With an equation open, `⋯ ▸ Draw the
+  graph` puts a graph beside it. Move it wherever you like; it stays tied to
+  the equation, so changing `y = 3x+10` to `y = 2x+6` redraws the curve as you
+  type. Click either one and both light up in the same colour, so you can see
+  at a glance which graph belongs to which equation — and only while one of
+  them is picked out, never the rest of the time.
+- It works the same whether the equation is in a box of its own or in the
+  middle of a sentence.
+- Drag the graph to move around it, scroll to zoom, double-click to fit the
+  curve back in the window. It prints and exports as a real graph, not a
+  picture of one.
+- Curves are cut where they should be cut: `1/x` and `tan x` break at their
+  asymptotes instead of drawing a line straight through, `√x` simply stops
+  where it runs out of values, and one spike cannot flatten everything else.
+
+### Added — the maths that was missing
+
+- **Roots you can type.** `\rt` gives you a root with an empty index box,
+  `\cbrt` a cube root, and `\2rt`, `\3rt`, `\7rt`… fill the number in for
+  you. Emptying an index turns it back into an ordinary square root.
+- **Functions that take two numbers**, with the shape already filled in:
+  `\gcd` gives you `gcd(□,□)` with the cursor in the first box. Also `\lcm`,
+  `\max`, `\min`, `\nCr` and `\nPr` — everything a school calculator has.
+- **`mod` works.** Write `17 mod 5` the way a textbook does and you get 2.
+- **`log₂ 8`** works out, and so does any other base.
+
+### Changed — one row for what you are working on
+
+- **Nothing moves you any more.** Starting an equation used to switch the
+  whole top bar to a Maths tab you never asked for. There is now a row under
+  the toolbar that belongs to whatever you are working on: the page's own
+  controls when nothing is picked, the symbol palette while you write an
+  equation. The tabs above it never change, and nothing on the page shifts by
+  a pixel.
+- **Insert is tidier**: ten things in three groups instead of thirteen in a
+  row. Text box is gone (a click on the page already makes one), Flashcard is
+  gone (the button on Home reads the line you are on), and Apply a template
+  moved to the page's own menu, beside Save as template.
+- **Right-click on the page** now offers the same ten things as Insert, in
+  three short columns — about half the height it was. "Here" is gone from
+  every line, because right-clicking already means here.
+- **Shift+F10 or the Menu key** opens that menu from the keyboard, which
+  nothing did before.
+
+### Changed — answers
+
+- **Right-click an answer** for its choices: decimal or fraction, drawn rather
+  than named; how many figures (3, 4, 5, 6, 10 or as many as it needs); work
+  it out again; copy; remove.
+- **An angle answer wears a degree sign.** `sin⁻¹(0.5)` is `30°`.
+- **Answers are ten significant figures**, like the calculator on your desk.
+  `cos 45` was showing twelve, which is enough to leak the floating point.
+- **Switching between degrees and radians works the page out again**, so an
+  answer can never quietly disagree with the button above it.
+
+### Fixed
+
+- **Pressing DEG or RAD threw you out of the equation you were writing** — and
+  in a sentence, took the equation with it.
+- **Maths is one size everywhere.** An equation in a sentence was smaller than
+  the same equation in a box.
+- **An equation no longer jumps when you click into it.**
+- **Ctrl+Z in a paragraph took back the whole visit**, both sentences and all,
+  because one mistyped character in an equation was the same undo step as
+  everything you had written since clicking in. It takes back one burst of
+  typing now, exactly as it does in a maths box.
+- **Right-clicking inside an equation in a sentence** opened the paragraph's
+  cut/copy menu over the top of the answer's own.
+- **The LaTeX view could quietly throw work away.** Typing something by hand,
+  going back to the buttons, writing more, then reopening the LaTeX view
+  showed the old text — and pressing "Back to the buttons" rebuilt the
+  equation from it.
+- **"Back to the buttons" did nothing at all**, with no message, for anything
+  the buttons cannot draw. It says which bit now.
+- **Drawing near the top of a page dragged every box on it downwards** the
+  next time you opened that page — saved, synced, and out of reach of Ctrl+Z.
+- **Ctrl+1 to tag a line threw the cursor to the end of the paragraph.**
+- **Exports failed in silence.** A full disk or a read-only stick meant the
+  menu closed and nothing happened; you believed the file was there.
+- **A backup that had never once worked still said "Backed up."** The list
+  now says which copies could not be reached, and "Run now" tells you what
+  happened.
+- **A change history that could not be read said "Nothing recorded"** — the
+  one thing it must never say wrongly, including for a page you just deleted
+  and came back to restore.
+- **Importing a folder of Markdown froze the app** with nothing on screen.
+- **Saving a copy of a recording** showed no progress for its whole gigabyte,
+  and said nothing if it failed halfway; **saving a copy of an attachment**
+  that had not synced yet did nothing at all.
+- **Dropping something the app cannot take** (a folder) now says so.
+- **Exporting a PDF threw away what you had selected**, and printing a page
+  from the navigator left you sitting on that page.
+- **Connect GitHub moved you on to "paste your token"** even when no browser
+  had opened.
+- Wording: "Background colour…" opened a window headed "Text colour"; the
+  multiplication dot was called a dot product; a right-angle button inserted a
+  perpendicular sign; the tips line taught three keystrokes that do nothing;
+  "Materialize notebook to folder…"; "Version history…" opening "Recent
+  changes"; "Type here" in the box you are already typing in; a raw error
+  message on the very first screen; and the shortcut list promising Alt+=
+  finishes an equation, which it does not.
+
+
 ### Fixed — sin 30 is a half
 
 - **Sine, cosine and tangent were working in radians**, so `sin(30)` came

@@ -107,10 +107,15 @@ class ObjectRow extends StatelessWidget {
           math: m,
           onDrawGraph: m.drawGraph,
           angleMode: app.angleMode,
-          onToggleAngleMode: () => app.setAngleMode(
-              app.angleMode == AngleMode.degrees
-                  ? AngleMode.radians
-                  : AngleMode.degrees),
+          onToggleAngleMode: () {
+            app.setAngleMode(app.angleMode == AngleMode.degrees
+                ? AngleMode.radians
+                : AngleMode.degrees);
+            // The page-wide pass skips the equation being written, because
+            // rewriting its stored text from outside would be overwritten by
+            // the next keystroke. It does its own, and keeps the caret.
+            m.rework?.call();
+          },
           recentIds: app.recentMathIds,
         );
       case ObjectFace.page:
@@ -252,12 +257,20 @@ class PageFace extends StatelessWidget {
         visualDensity: VisualDensity.compact,
         onPressed: () => app.canvas.setZoom(app.canvas.scale / 1.2),
       ),
-      AnimatedBuilder(
-        animation: app.canvas,
-        builder: (context, _) => TextButton(
-          onPressed: app.canvas.reset,
-          child: Text('${(app.canvas.scale * 100).round()}%',
-              style: OnoteType.small),
+      // **A button, and it says so before you press it.** It was the only
+      // control on this row with no tooltip, sitting between a minus and a
+      // plus, reading as the number those two were changing — and pressing
+      // it resets the OFFSET as well as the scale, so somebody at the bottom
+      // of a long page was thrown back to the top with no warning.
+      Tooltip(
+        message: 'Back to 100% and the top of the page  (Ctrl+0)',
+        child: AnimatedBuilder(
+          animation: app.canvas,
+          builder: (context, _) => TextButton(
+            onPressed: app.canvas.reset,
+            child: Text('${(app.canvas.scale * 100).round()}%',
+                style: OnoteType.small),
+          ),
         ),
       ),
       IconButton(

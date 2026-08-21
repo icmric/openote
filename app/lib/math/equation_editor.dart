@@ -31,6 +31,7 @@ import 'linear_math.dart';
 import 'math_editor.dart';
 import 'math_field.dart';
 import 'math_inventory.dart';
+import 'math_parse.dart';
 import 'math_view.dart';
 
 /// Where the equation lives, which decides display vs text style, what Enter
@@ -153,8 +154,12 @@ class EquationEditorState extends State<EquationEditor> {
 
   // ── the public face, driven by the toolbar and the hosts ────────────────
 
-  /// A palette press, routed here from the Maths tab.
+  /// A palette press, routed here from the object row.
   void insertItem(MathItem item) => _fieldKey.currentState?.insertItem(item);
+
+  /// Work this equation's answers out again — what a degrees/radians switch
+  /// asks of the equation that is open.
+  void rework() => _fieldKey.currentState?.reworkNow();
 
   bool get isEmpty => _latexMode
       ? _source.text.trim().isEmpty
@@ -172,10 +177,29 @@ class EquationEditorState extends State<EquationEditor> {
       _openInlineSourcePanel();
       return;
     }
+    if (_latexMode) {
+      // **Say why, rather than doing nothing.** Writing something the buttons
+      // cannot draw is the whole POINT of this view — the symbol search's own
+      // empty state sends people here for exactly that — and "Back to the
+      // buttons" then quietly did nothing at all, twice, with the only way
+      // out greyed. The app knows precisely which bit it cannot draw.
+      final check = parseLatex(latex);
+      if (!check.supported || check.root == null) {
+        final bit = (check.unknown ?? '').trim();
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+          content: Text(bit.isEmpty
+              ? 'The buttons cannot draw this one, so it stays as typed text.'
+              : "The buttons cannot draw '$bit' yet, so this stays as typed "
+                  'text.'),
+          duration: const Duration(seconds: 4),
+        ));
+        return;
+      }
+    }
     setState(() {
       if (_latexMode) {
         final reopened = MathEditor.open(latex);
-        if (reopened == null) return; // stay in source: it would not survive
+        if (reopened == null) return; // checked above; belt and braces
         if (widget.editor != null) {
           widget.editor!.adopt(reopened);
         } else {
@@ -215,10 +239,18 @@ class EquationEditorState extends State<EquationEditor> {
     );
   }
 
+  /// **The typed source is written AFTER the equation, not before.**
+  ///
+  /// The host clears its stored source on any ordinary edit — see
+  /// `MathBlockView._commitLatex` — because a source that goes stale is worse
+  /// than none: reopening this view showed the equation as it had been when
+  /// the source was last typed, and pressing "Back to the buttons" then
+  /// rebuilt the equation from THAT, silently throwing away everything
+  /// written visually since. Committing in this order lets the clear happen
+  /// and then be overwritten by the source that caused it.
   void _commitSource(String v) {
+    widget.onChanged(v.trim().isEmpty ? '' : linearToLatex(v.trim()));
     widget.onLinearChanged?.call(v);
-    widget.onChanged(
-        v.trim().isEmpty ? '' : linearToLatex(v.trim()));
   }
 
   /// The measured width the equation actually needs, reported post-frame.
@@ -249,6 +281,7 @@ class EquationEditorState extends State<EquationEditor> {
       latexAvailable: _latexMode || _editor != null,
       toggleLatex: _toggleLatexMode,
       drawGraph: widget.onDrawGraph,
+      rework: rework,
     ));
 
     if (_latexMode) return _latexEditor(context);

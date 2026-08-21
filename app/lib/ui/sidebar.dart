@@ -1832,17 +1832,17 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       if (canIndent && node.level < 2)
         _nodeItem('indent', Icons.subdirectory_arrow_right, 'Make subpage'),
       if (canIndent && node.level > 0)
-        _nodeItem('outdent', Icons.arrow_back, 'Promote page'),
+        _nodeItem('outdent', Icons.arrow_back, 'Move back out'),
       if (isPage) ...[
         const PopupMenuDivider(),
         _nodeItem(
             'favourite',
             app.isFavourite(node.id) ? Icons.star : Icons.star_border,
-            app.isFavourite(node.id) ? 'Remove favourite' : 'Add to favourites'),
+            app.isFavourite(node.id) ? 'Remove from favourites' : 'Add to favourites'),
         _nodeItem('sharepdf', Icons.picture_as_pdf_outlined, 'Share as PDF…'),
         _nodeItem('print', Icons.print_outlined, 'Print…'),
         _nodeItem('copylink', Icons.link, 'Copy link to page'),
-        _nodeItem('history', Icons.history, 'Version history…'),
+        _nodeItem('history', Icons.history, 'Recent changes…'),
         _nodeItem('template', Icons.bookmark_add_outlined, 'Save as template…'),
         // Laying out a whole page is not INSERTING something into it, which
         // is why this left the Insert ribbon. It belongs beside saving one —
@@ -1896,15 +1896,22 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       if (context.mounted) clearExamDate(context, app, node.id);
     case 'favourite':
       app.toggleFavourite(node.id);
+    // **These five VISIT another page and come home.**
+    //
+    // Each of them needs the page open to work on it, and each used to leave
+    // the student sitting on it afterwards — with the page they had been
+    // writing on now behind them and its undo stack cleared, because
+    // `selectPage` clears it. They asked to print a page, not to go there.
     case 'print':
-      if (app.pageId != node.id) await app.selectPage(node.id);
-      await printCurrentPage(app);
+      await _onPage(app, node.id, () => printCurrentPage(app));
     case 'printsection':
       await printSection(app, node.id);
     case 'sharepdf':
       if (app.pageId != node.id) await app.selectPage(node.id);
       if (!context.mounted) return;
+      final cameFrom = app.pageId == node.id ? null : app.pageId;
       final saved = await exportPagePdfVector(app);
+      if (cameFrom != null) await app.selectPage(cameFrom);
       if (saved != null && context.mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Saved to $saved')));
@@ -1951,12 +1958,16 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
     case 'outdent':
       app.indentPage(node.id, -1);
     case 'history':
-      if (app.pageId != node.id) await app.selectPage(node.id);
-      if (context.mounted) await showVersionHistory(context, app);
+      await _onPage(app, node.id, () async {
+        if (context.mounted) await showVersionHistory(context, app);
+      });
     case 'template':
-      if (app.pageId != node.id) await app.selectPage(node.id);
-      if (context.mounted) await _promptSaveTemplate(context, app);
+      await _onPage(app, node.id, () async {
+        if (context.mounted) await _promptSaveTemplate(context, app);
+      });
     case 'applytemplate':
+      // NOT brought home: applying a template CHANGES this page, and leaving
+      // somebody somewhere else after changing it is worse than moving them.
       if (app.pageId != node.id) await app.selectPage(node.id);
       if (context.mounted) await _promptApplyTemplate(context, app);
     case 'delete':
@@ -2085,5 +2096,23 @@ Future<void> _promptApplyTemplate(BuildContext context, AppState app) async {
     ),
   );
   if (choice != null) app.applyTemplate(choice);
+}
+
+/// Do something that needs [pageId] open, then go back to where you were.
+///
+/// `selectPage` also clears the undo stack, so the cost of the detour is not
+/// only the view: a student who printed a neighbouring page lost the ability
+/// to undo on the one they were writing.
+Future<void> _onPage(AppState app, String pageId, Future<void> Function() body)
+    async {
+  final cameFrom = app.pageId;
+  if (cameFrom != pageId) await app.selectPage(pageId);
+  try {
+    await body();
+  } finally {
+    if (cameFrom != null && cameFrom != pageId && app.pageId == pageId) {
+      await app.selectPage(cameFrom);
+    }
+  }
 }
 

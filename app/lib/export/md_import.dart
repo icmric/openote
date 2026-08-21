@@ -24,7 +24,9 @@ import '../state/app_state.dart';
 /// Not yet handled (tracked): local image references (`![](img.png)` /
 /// `![[img.png]]`) are left as literal Markdown — they aren't pulled into the
 /// content-addressed blob store, so they won't render until image import lands.
-Future<int?> importMarkdownFolder(AppState app) async {
+/// [onProgress] is called with the running count, so a caller can show it.
+Future<int?> importMarkdownFolder(AppState app,
+    {void Function(int done)? onProgress}) async {
   if (app.notebookId == null) return null;
   final dir = await getDirectoryPath(confirmButtonText: 'Import this folder');
   if (dir == null) return null;
@@ -49,7 +51,13 @@ Future<int?> importMarkdownFolder(AppState app) async {
 
   // Depth-first, directories before files, each alphabetical — a stable,
   // human-expected order that also keeps folder pages above their contents.
-  void walk(Directory d, int level) {
+  // **`async`, and it yields.** This was a fully synchronous recursion doing
+  // a `listSync`, a `readAsStringSync` and a SQLite write per file with no
+  // `await` anywhere in it: on an Obsidian vault of a few hundred notes the
+  // window stopped painting and Windows greyed it to "Not responding", with
+  // nothing on screen to say anything was happening. Handing the frame back
+  // every few files costs nothing measurable and keeps the app alive.
+  Future<void> walk(Directory d, int level) async {
     final List<FileSystemEntity> entries;
     try {
       entries = d.listSync()..sort(_byTypeThenName);
@@ -73,7 +81,9 @@ Future<int?> importMarkdownFolder(AppState app) async {
         app.importPage(nbId, folderPage.id, const [], PageProps());
         firstPageId ??= folderPage.id;
         imported++;
-        walk(e, level + 1);
+        onProgress?.call(imported);
+        await _breathe(imported);
+        await walk(e, level + 1);
       } else if (e is File && _isMarkdown(e.path)) {
         String raw;
         try {
@@ -104,11 +114,13 @@ Future<int?> importMarkdownFolder(AppState app) async {
         app.importPage(nbId, page.id, blocks, PageProps());
         firstPageId ??= page.id;
         imported++;
+        onProgress?.call(imported);
+        await _breathe(imported);
       }
     }
   }
 
-  walk(root, 0);
+  await walk(root, 0);
 
   // Refresh the navigator and jump to the first imported page.
   app.reloadNodes(); // nbId is the open notebook here
@@ -176,3 +188,13 @@ String _stripLeadingH1(String body, String title) {
   }
   return body;
 }
+
+/// Hand the frame back every so often, so the window keeps painting.
+///
+/// Every eight pages: often enough that the count on screen moves and the
+/// window never goes grey, rare enough that the yield itself is not the cost.
+Future<void> _breathe(int done) async {
+  if (done % 8 != 0) return;
+  await Future<void>.delayed(Duration.zero);
+}
+

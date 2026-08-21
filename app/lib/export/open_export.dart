@@ -31,7 +31,12 @@ import 'md_common.dart';
 /// Export every page of the current notebook into [rootDir]/<notebook>/…, one
 /// folder per section and page. Returns the created root folder path, or null
 /// if the user cancelled the folder picker.
-Future<String?> materializeNotebook(AppState app) async {
+/// [onProgress] is called with (page number, total) as each page is written,
+/// so the caller can put something on screen. This walks every page in the
+/// notebook and writes a folder for each: seconds of work on a term of notes,
+/// and there used to be nothing at all to say so.
+Future<String?> materializeNotebook(AppState app,
+    {void Function(int done, int total)? onProgress}) async {
   if (app.notebookId == null) return null;
   await app.flushSave(); // include the open page's latest edits
 
@@ -49,7 +54,11 @@ Future<String?> materializeNotebook(AppState app) async {
   // hash → "hash.ext"; collected across ALL pages then written once (dedup).
   final sharedAssets = <String, String>{};
 
-  for (final node in app.nodes.where((n) => n.kind == NodeKind.page)) {
+  final pageNodes =
+      app.nodes.where((n) => n.kind == NodeKind.page).toList();
+  var pagesDone = 0;
+  for (final node in pageNodes) {
+    onProgress?.call(++pagesDone, pageNodes.length);
     // Page folder = sanitized titles of every ancestor + this page (+ an id
     // suffix to guarantee uniqueness), so the section/group/subpage hierarchy
     // is mirrored as nested folders under pages/.

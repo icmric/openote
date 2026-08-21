@@ -423,7 +423,10 @@ final List<MathItem> _common = [
   _symbol(id: 'pm', cat: MathCat.common, name: 'plus or minus', label: '±', tex: r'\pm', cls: MClass.op, typeIt: '+-'),
   _symbol(id: 'times', cat: MathCat.common, name: 'times', label: '×', tex: r'\times', cls: MClass.op, aliases: ['multiply', 'multiplied by'], typeIt: r'\times'),
   _symbol(id: 'div', cat: MathCat.common, name: 'divide', label: '÷', tex: r'\div', cls: MClass.op, aliases: ['divided by'], typeIt: r'\div'),
-  _symbol(id: 'cdot', cat: MathCat.common, name: 'dot product', label: '⋅', tex: r'\cdot', cls: MClass.op, aliases: ['times', 'multiply'], typeIt: r'\cdot'),
+  // A year-10 student inserting a multiplication dot was told they had
+  // inserted a vector operation they will not meet for years. The old
+  // name stays as a search word.
+  _symbol(id: 'cdot', cat: MathCat.common, name: 'times', label: '⋅', tex: r'\cdot', cls: MClass.op, aliases: ['multiply', 'dot product', 'times by'], typeIt: r'\cdot'),
   _symbol(id: 'neq', cat: MathCat.common, name: 'not equal', label: '≠', tex: r'\neq', cls: MClass.rel, aliases: ['does not equal'], typeIt: '!='),
   _symbol(id: 'approx', cat: MathCat.common, name: 'roughly equal', label: '≈', tex: r'\approx', cls: MClass.rel, aliases: ['about', 'approximately'], typeIt: '~='),
   _symbol(id: 'leq', cat: MathCat.common, name: 'less than or equal', label: '≤', tex: r'\leq', cls: MClass.rel, aliases: ['at most', 'no more than'], typeIt: '<='),
@@ -792,7 +795,11 @@ final List<MathItem> _extras = [
   _symbol(id: 'measuredangle', cat: MathCat.geometry, name: 'measured angle', label: '∡', tex: r'\measuredangle'),
   _symbol(id: 'square-shape', cat: MathCat.geometry, name: 'square', label: '□', tex: r'\square', aliases: ['quadrilateral']),
   _symbol(id: 'diamond', cat: MathCat.geometry, name: 'diamond', label: '⋄', tex: r'\diamond'),
-  _symbol(id: 'therefore-geo', cat: MathCat.geometry, name: 'right angle', label: '⦜', tex: r'\perp'),
+  // The chip drew ⦜ and inserted ⊥ — the same glyph as 'perpendicular
+  // to' two along, so the button's face did not match what it did and the
+  // mark it advertised could not be got at all. (Its id was a copy of
+  // 'therefore' too.)
+  _symbol(id: 'rightangle', cat: MathCat.geometry, name: 'right angle', label: '⌞', tex: r'\llcorner', aliases: ['square corner', '90 degrees']),
   // Physics and stats.
   _symbol(id: 'propto-sci', cat: MathCat.science, name: 'proportional to', label: '∝', tex: r'\propto', cls: MClass.rel),
   _symbol(id: 'ell', cat: MathCat.science, name: 'length', label: 'ℓ', tex: r'\ell'),

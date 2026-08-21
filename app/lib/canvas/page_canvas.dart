@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -1111,9 +1112,23 @@ class _PageCanvasState extends State<PageCanvas> {
         final n = await dropFilesOntoCanvas(
             app, [for (final f in details.files) f.path], at,
             dark: Theme.of(context).brightness == Brightness.dark);
-        if (n > 0 && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        if (!context.mounted) return;
+        // **A drop that lands nothing says so.** It used to be silent, which
+        // is indistinguishable from the app not having noticed the drop at
+        // all — and the commonest cause is a FOLDER, which nothing anywhere
+        // told the student was not accepted.
+        final messenger = ScaffoldMessenger.of(context);
+        if (n > 0) {
+          messenger.showSnackBar(SnackBar(
               content: Text('Added $n item${n == 1 ? '' : 's'}')));
+        } else {
+          final droppedFolder = details.files.any(
+              (f) => Directory(f.path).existsSync());
+          messenger.showSnackBar(SnackBar(
+            content: Text(droppedFolder
+                ? "Folders can't be dropped in yet — only files."
+                : "That couldn't be added."),
+          ));
         }
       },
       child: Stack(children: [

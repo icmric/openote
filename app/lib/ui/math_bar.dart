@@ -47,6 +47,7 @@ import '../math/evaluate.dart';
 import '../math/math_inventory.dart';
 import '../math/math_view.dart';
 import '../theme/tokens.dart';
+import 'shortcut_overlay.dart';
 
 /// The eight shapes that stay on the bar, in this order, forever.
 ///
@@ -805,6 +806,7 @@ class _MoreMenu extends StatelessWidget {
         onSelected: (v) {
           if (v == 'latex') onToggleLatex();
           if (v == 'graph') onDrawGraph?.call();
+          if (v == 'help') showShortcutOverlay(context);
         },
         itemBuilder: (_) => [
           // First, because it is the one that makes something new. It costs
@@ -822,11 +824,16 @@ class _MoreMenu extends StatelessWidget {
                 ? 'Back to the buttons'
                 : 'Write the LaTeX by hand'),
           ),
+          // **With the backslashes.** This line used to read "type sqrt, sum,
+          // theta", and typing `sqrt` and a space gives you the four letters:
+          // the build-up requires the leading `\`, deliberately, so that
+          // `alpha`, `in`, `div` and `deg` stay the ordinary words they are.
+          // The one place in the app that taught its own signature feature
+          // taught it wrong, greyed out, which reads as "this is broken".
           const PopupMenuItem<String>(
             value: 'help',
-            enabled: false,
-            child: Text('Tips: 1/2 makes a fraction · type sqrt, sum, theta · '
-                'Tab moves to the next box'),
+            child: Text(r'Tips: 1/2 is a fraction · \sqrt \sum \theta · '
+                '= then space works it out · Tab fills the next box'),
           ),
         ],
       );

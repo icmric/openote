@@ -637,11 +637,29 @@ class _SyncDialogState extends State<_SyncDialog> {
             leading: Icon(t.isBackup ? Icons.history : Icons.copy_all_outlined,
                 size: 18),
             title: Text(p.basename(t.path), style: const TextStyle(fontSize: 13)),
-            subtitle: Text(
-              '${t.isBackup ? 'Backup · keeps ${t.keepVersions}' : 'Mirror'} · ${t.path}',
-              style: const TextStyle(fontSize: 11),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${t.isBackup ? 'Backup · keeps ${t.keepVersions}' : 'Mirror'} · ${t.path}',
+                  style: const TextStyle(fontSize: 11),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                // **Whether it is actually working.** This row used to say
+                // only where the copy was meant to go; a target that had
+                // never once succeeded looked exactly like one that always
+                // did.
+                if (app.mirrorTroubleFor(nb)[t.path] case final why?)
+                  Text(
+                    "Couldn't reach this the last time it tried — $why",
+                    style: TextStyle(
+                        fontSize: 11, color: Theme.of(context).colorScheme.error),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
             ),
             trailing: IconButton(
               icon: const Icon(Icons.close, size: 16),
@@ -666,10 +684,27 @@ class _SyncDialogState extends State<_SyncDialog> {
           ),
           if (targets.isNotEmpty)
             TextButton(
-              onPressed: () async {
-                await app.runMirrors(nb, force: true);
-                if (mounted) setState(() {});
-              },
+              onPressed: _busy
+                  ? null
+                  : () async {
+                      // **It says what happened.** It used to give no
+                      // feedback of any kind, in either direction, so a
+                      // student could not tell a copy that worked from one
+                      // that silently failed.
+                      setState(() => _busy = true);
+                      await app.runMirrors(nb, force: true);
+                      if (!mounted) return;
+                      setState(() => _busy = false);
+                      final bad = app.mirrorTroubleFor(nb);
+                      final messenger = ScaffoldMessenger.maybeOf(context);
+                      messenger?.showSnackBar(SnackBar(
+                        content: Text(bad.isEmpty
+                            ? 'Copied to ${targets.length} '
+                                '${targets.length == 1 ? 'place' : 'places'}.'
+                            : "${bad.length} of ${targets.length} couldn't be "
+                                'reached — see the list above.'),
+                      ));
+                    },
               child: const Text('Run now', style: TextStyle(fontSize: 12)),
             ),
         ]),
@@ -1857,8 +1892,22 @@ class _GitHubPublishState extends State<_GitHubPublish> {
             const SizedBox(height: 8),
             FilledButton.icon(
               onPressed: () async {
-                await PlatformOpen.url(GitHubApi.tokenPage);
-                if (mounted) setState(() => _pasting = true);
+                // **Only move on if the browser actually opened.** The result
+                // was discarded, so a machine with no registered browser
+                // flipped straight to "paste your token here" — asking for
+                // something the student had never been shown how to get.
+                final opened = await PlatformOpen.url(GitHubApi.tokenPage);
+                if (!mounted) return;
+                if (!opened) {
+                  ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+                    content: Text(
+                        "Openote couldn't open your browser. Go to "
+                        '${GitHubApi.tokenPage} and make a token there.'),
+                    duration: const Duration(seconds: 10),
+                  ));
+                  return;
+                }
+                setState(() => _pasting = true);
               },
               icon: const Icon(Icons.open_in_new, size: 15),
               label: const Text('Connect GitHub', style: TextStyle(fontSize: 12)),

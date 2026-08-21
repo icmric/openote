@@ -214,6 +214,16 @@ class _LiveMarkdownSession extends OnoteEditSession {
       focusNode: _mathFocus,
       onChanged: _inlineMathChanged,
       onExit: closeInlineMath,
+      // **What you typed by hand comes back.** Writing `sum_(n=1)^oo 1/n^2`
+      // in the source panel, closing it and opening it again used to give
+      // you the machine's `\sum_{n=1}^{\infty}\frac{1}{n^2}` instead of
+      // your own characters. A block equation has kept them since v0.18; an
+      // equation in a sentence has nowhere in the buffer to put them, so the
+      // session holds them for as long as the equation is open — which is
+      // the same lifetime the block's copy effectively has, because any
+      // visual edit clears that one too.
+      linearSource: _inlineSource,
+      onLinearChanged: (v) => _inlineSource = v,
       // **The same menu entry a block equation has.** The link is anchored to
       // what the equation SAYS rather than to where it sits, because where it
       // sits is a character offset that every keystroke in the paragraph
@@ -279,6 +289,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
             ? 2
             : 1;
     controller.editingMathAt = start;
+    _inlineSource = null;
     _graphAnchor = ed.latex.trim();
     _mathSelfText = controller.text;
     // Park the host caret INSIDE the run - offset start+1 is "this equation"
@@ -294,6 +305,13 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// block for a link is not touching it. An equation is only ever open while
   /// its own paragraph is the one being edited, so this is that paragraph.
   String? get _hostBlockId => app.editingBlockId;
+
+  /// The raw text last typed in this equation's LaTeX panel, or null.
+  ///
+  /// Cleared by any edit made with the buttons, because a source that no
+  /// longer describes the equation is worse than none: reopening the panel
+  /// would offer to rebuild the equation from it.
+  String? _inlineSource;
 
   /// What any graph made from this equation is currently following.
   ///
@@ -347,6 +365,11 @@ class _LiveMarkdownSession extends OnoteEditSession {
     }
     _mathEnd = start + written.length;
     _mathSelfText = controller.text;
+    // An edit made with the buttons; the typed source no longer describes
+    // this equation. The source path re-sets it straight afterwards (see
+    // `EquationEditor._commitSource`, which commits in that order for exactly
+    // this reason).
+    _inlineSource = null;
     // **Any graph of this equation redraws now**, not on a timer: the owner
     // asked to see the graph change as they type, and a compiled curve costs
     // microseconds a sample. The anchor moves with it, so the next keystroke
@@ -796,6 +819,13 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // corrections are spliced into the standard adaptive menu instead of
       // replacing it — cut/copy/paste must keep working.
       contextMenuBuilder: (context, editable) {
+        // **One menu, not two.** `MathField` answers the right button on a
+        // raw `Listener`, which never enters the gesture arena — so the same
+        // press also opened the paragraph's cut/copy/paste toolbar over the
+        // top of the answer's own menu, offering actions that act on the
+        // SENTENCE. A block equation has no such second menu; this is the
+        // same rule, stated the same way as the caret is two lines up.
+        if (_mathFocus.hasFocus) return const SizedBox.shrink();
         final items = [...editable.contextMenuButtonItems];
         final extra = _spellMenuItems(editable);
         return AdaptiveTextSelectionToolbar.buttonItems(

@@ -657,7 +657,22 @@ Future<void> importOneNoteSectionWithFeedback(BuildContext context, AppState app
 /// Import a folder of Markdown (Obsidian-style) as a new section.
 Future<void> importMarkdownWithFeedback(
     ScaffoldMessengerState messenger, AppState app) async {
-  final count = await importMarkdownFolder(app);
+  // **It says what it is doing while it does it.** A vault of a few hundred
+  // notes is seconds of work, and there was nothing on screen for any of it.
+  final progress = ValueNotifier<String>('Reading the folder…');
+  int? count;
+  try {
+    count = await importMarkdownFolder(
+      app,
+      onProgress: (done) => progress.value = 'Imported $done '
+          'page${done == 1 ? '' : 's'}…',
+    );
+  } catch (e) {
+    progress.dispose();
+    _say(messenger, "That folder couldn't be imported: $e", seconds: 8);
+    return;
+  }
+  progress.dispose();
   if (count == null) return;
   _say(
       messenger,

@@ -172,7 +172,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 child: TextButton(
                   onPressed: () => PlatformOpen.url(
                       'https://github.com/icmric/openote/releases'),
-                  child: const Text("What's new (release notes)",
+                  child: const Text("What's new",
                       style: TextStyle(fontSize: 12)),
                 ),
               ),

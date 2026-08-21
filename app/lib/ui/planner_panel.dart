@@ -677,7 +677,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
     final chosen = await showOnoteDialog<TaggedLine>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('Give which line a deadline?',
+        title: const Text('Which line gets the due date?',
             style: TextStyle(fontSize: 15)),
         children: [
           for (final t in candidates)

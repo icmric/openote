@@ -77,7 +77,17 @@ class _PageHistoryDialogState extends State<_PageHistoryDialog> {
                 const SizedBox(height: 8),
               ],
               _heading('Who changed this page'),
-              if (authors.isEmpty)
+              // **"Could not be read" is not "nothing happened".** Both used
+              // to look identical here, so a failure to fold the log read as
+              // an empty history — including for the page the student had
+              // just deleted and came here to put back.
+              if (app.historyTroubleFor(app.notebookId) case final why?)
+                _quiet("Openote couldn't read this notebook's list of recent "
+                    'changes, so nothing is listed here yet. It rebuilds '
+                    'itself the next time you open this.'
+                    ''
+                    ' ($why)')
+              else if (authors.isEmpty)
                 _quiet('Nothing recorded for this page yet. It fills in as you '
                     'and anyone you share with make changes.')
               else

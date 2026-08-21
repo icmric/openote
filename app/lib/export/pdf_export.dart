@@ -22,6 +22,11 @@ Future<String?> exportPagePdf(AppState app) async {
   final page = app.nodes.firstWhere((n) => n.id == app.pageId);
 
   // Clean capture: no selection chrome, fitted to content.
+  //
+  // **Put the selection back afterwards.** The view was restored and the
+  // selection was not, so exporting a PDF quietly threw away whatever the
+  // student had picked out — they asked for a file, not to be deselected.
+  final wasSelected = app.selectedIds.toList();
   app.select(null);
   final c = app.canvas;
   final oldScale = c.scale;
@@ -40,6 +45,7 @@ Future<String?> exportPagePdf(AppState app) async {
     image = await boundary.toImage(pixelRatio: 2.0);
   } finally {
     c.jumpTo(oldScale, oldOffset); // always restore the user's view
+    if (wasSelected.isNotEmpty) app.selectMany(wasSelected);
   }
   final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
   final imgW = image.width, imgH = image.height;
