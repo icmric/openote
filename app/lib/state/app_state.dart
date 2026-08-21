@@ -22,6 +22,7 @@ import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/history.dart';
 import '../math/active_math.dart';
+import '../math/evaluate.dart';
 import '../math/linear_math.dart';
 import '../model/models.dart';
 import '../store/database.dart'
@@ -4239,6 +4240,24 @@ class AppState extends ChangeNotifier
   /// a half-built option here.
   bool spellCheckEnabled = true;
 
+  /// Degrees or radians, for every equation in the app.
+  ///
+  /// Degrees by default, which is what a school calculator does and what the
+  /// year-10 bar asks for; a university student flips it once and it stays
+  /// flipped. In DEGREES an angle carrying a π is still read as radians,
+  /// because nobody writes `sin(π/6)` meaning degrees — see [AngleMode].
+  AngleMode get angleMode => mathAngleMode;
+
+  void setAngleMode(AngleMode v) {
+    mathAngleMode = v;
+    _repo.setSetting('angleMode', v == AngleMode.radians ? 'rad' : 'deg');
+    // Every answer on the page was worked out under the old mode, so they
+    // are all now potentially wrong — the editors re-read on their next
+    // build, and the page redraws.
+    docRevision++;
+    notifyListeners();
+  }
+
   void setSpellCheck(bool v) {
     spellCheckEnabled = v;
     _repo.setSetting('spellCheck', v);
@@ -5458,6 +5477,8 @@ class AppState extends ChangeNotifier
     if (as is bool) autoSync = as;
     final sc = _repo.getSetting('spellCheck');
     if (sc is bool) spellCheckEnabled = sc;
+    final am = _repo.getSetting('angleMode');
+    mathAngleMode = am == 'rad' ? AngleMode.radians : AngleMode.degrees;
     onboardingSeen = _repo.getSetting('onboardingSeen') == true;
     // Personal dictionary: workspace-scoped and deliberately NOT synced — one
     // person's jargon shouldn't become everyone's on a shared notebook.

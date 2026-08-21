@@ -141,8 +141,6 @@ class _Parser {
       } else if (_eat('/') || _eat('÷')) {
         final d = _parseUnary();
         left /= d; // ±∞ / NaN are reported by [EvalResult.display]
-      } else if (_eat('%')) {
-        left = left % _parseUnary();
       } else if (_startsImplicitProduct()) {
         // `2pi`, `3(x+1)`, `2sqrt(9)` — the way people actually write maths.
         left *= _parseUnary();
@@ -187,6 +185,13 @@ class _Parser {
       if (i < s.length && s[i] == '!') {
         i++;
         v = _factorial(v);
+      } else if (i < s.length && s[i] == '%') {
+        // **A per cent, not a remainder.** `%` was an infix modulo, so a
+        // student writing `25% of 80` got either an error or — worse, and
+        // silently — `20 % 3 = 2`. Per cent is a year-7 operation on this
+        // palette; the remainder is not on it at all.
+        i++;
+        v = v / 100;
       } else if (i < s.length && s[i] == '°') {
         // `30°` IS an angle in degrees, whatever the surrounding rule — the
         // student said so. Converted here, once, so everything downstream
@@ -260,7 +265,7 @@ class _Parser {
     skipSpace();
     var fn = _functions[name];
     if (fn == null) throw _EvalError('unknown "$name"');
-    if (_givesAngle.contains(name)) {
+    if (_givesAngle.contains(name) && mathAngleMode == AngleMode.degrees) {
       // Degrees out, because degrees go in: `sin⁻¹(0.5)` is 30.
       final inner = fn;
       fn = (x) => inner(x) * 180 / math.pi;
@@ -313,11 +318,12 @@ class _Parser {
   /// and `sin⁻¹(sin(30))` comes home.
   static double _asAngle(String fn, double value, String src) {
     if (!_takesAngle.contains(fn)) return value;
+    if (mathAngleMode == AngleMode.radians) return value;
     if (src.contains('pi') ||
         src.contains('\u03c0') ||
         src.contains('°') ||
         src.contains('rad')) {
-      return value; // already radians
+      return value; // the angle itself said radians
     }
     return value * math.pi / 180;
   }
@@ -457,3 +463,25 @@ class _Parser {
   }
   return null;
 }
+
+/// Which way an angle is measured.
+enum AngleMode {
+  /// `sin(30)` is a half — what a school calculator does, and the default.
+  /// An angle carrying a π (or a degree sign, or `rad`) is still read as
+  /// radians, because nobody writes `sin(π/6)` meaning degrees.
+  degrees,
+
+  /// `sin(30)` is −0.988. What a university student, or anyone past the
+  /// unit circle, expects. A degree sign still forces degrees.
+  radians,
+}
+
+/// The mode in force, app-wide.
+///
+/// A global, deliberately, and it is the same call `OnoteEditors._active`
+/// makes for the editor engine: the evaluator is a pure function reached
+/// from a dozen places — the answer chip, the `= ` keystroke, the toggle,
+/// and soon the grapher — and threading one setting through every one of
+/// them would put a parameter in a dozen signatures to say a thing that is
+/// true of the whole app at once. [AppState.setAngleMode] owns it.
+AngleMode mathAngleMode = AngleMode.degrees;

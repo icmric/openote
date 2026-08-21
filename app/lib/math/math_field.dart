@@ -11,6 +11,8 @@
 /// maths keyboard for touch and the web build is Phase 3 of the plan.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -96,6 +98,7 @@ class MathFieldState extends State<MathField> {
 
   @override
   void dispose() {
+    _answerTimer?.cancel();
     _focus.removeListener(_focusFlipped);
     _own?.dispose();
     super.dispose();
@@ -114,6 +117,30 @@ class MathFieldState extends State<MathField> {
     if (now == _committed) return;
     _committed = now;
     widget.onChanged(now);
+    _scheduleAnswerRefresh();
+  }
+
+  /// **Answers follow the working, a beat behind.**
+  ///
+  /// The owner: *"Please make it update the value when i update the equation,
+  /// but debounce it so its not doing lots of unnesesary updates."* Changing
+  /// `2+3=5` to `2+4=5` makes the 5 wrong, and a wrong answer in a box that
+  /// says the app worked it out is the worst kind of wrong.
+  ///
+  /// [_answerGap] is the wait. Long enough that a burst of typing re-works
+  /// the sum once rather than once per keystroke — and long enough that the
+  /// answer does not flicker away and back while a student is halfway
+  /// through deleting a number.
+  static const Duration _answerGap = Duration(milliseconds: 400);
+  Timer? _answerTimer;
+
+  void _scheduleAnswerRefresh() {
+    if (!_e.hasAnswers) return; // nothing to re-work; no timer, no wakeup
+    _answerTimer?.cancel();
+    _answerTimer = Timer(_answerGap, () {
+      if (!mounted) return;
+      if (_e.refreshAnswers()) _changed();
+    });
   }
 
   /// A palette press, routed from the bar. Focus comes back here so the next

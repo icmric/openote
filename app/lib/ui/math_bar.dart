@@ -43,6 +43,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../math/evaluate.dart';
 import '../math/math_inventory.dart';
 import '../math/math_view.dart';
 import '../theme/tokens.dart';
@@ -262,6 +263,8 @@ class MathBar extends StatefulWidget {
     required this.latexMode,
     required this.onToggleLatex,
     this.latexAvailable = true,
+    this.angleMode = AngleMode.degrees,
+    this.onToggleAngleMode,
     this.recentIds = const [],
   });
 
@@ -269,6 +272,10 @@ class MathBar extends StatefulWidget {
   final bool latexMode;
   final VoidCallback onToggleLatex;
   final bool latexAvailable;
+
+  /// Degrees or radians, and the way to change it.
+  final AngleMode angleMode;
+  final VoidCallback? onToggleAngleMode;
 
   // The bar used to carry a live `= 42` readout with a button to put the
   // answer in. The owner: *"rather than having it appear up the top though
@@ -539,6 +546,11 @@ class _MathBarState extends State<MathBar> {
             style: OnoteType.small.copyWith(color: s.textSecondary),
           ),
         ),
+        _AngleSwitch(
+          mode: widget.angleMode,
+          onToggle: widget.onToggleAngleMode,
+          surfaces: s,
+        ),
         _MoreMenu(
           latexMode: widget.latexMode,
           latexAvailable: widget.latexAvailable,
@@ -570,6 +582,11 @@ class _MathBarState extends State<MathBar> {
         open: _open == '__search',
         surfaces: s,
         onTap: () => _toggle('__search'),
+      ),
+      _AngleSwitch(
+        mode: widget.angleMode,
+        onToggle: widget.onToggleAngleMode,
+        surfaces: s,
       ),
       _MoreMenu(
         latexMode: widget.latexMode,
@@ -692,6 +709,66 @@ class _Sep extends StatelessWidget {
           child: VerticalDivider(width: 1, color: surfaces.border),
         ),
       );
+}
+
+/// Degrees or radians, in one click.
+///
+/// The owner: *"Please also add a way to easily switch between degrees and
+/// radians."* It sits where the answer readout used to, which is the only
+/// spare width on a row measured at 1144.75 px against a 1150 px guard — and
+/// it is a better tenant, because it is a SETTING (rare, deliberate) rather
+/// than a readout (constant, and better placed at the caret).
+///
+/// The label says the mode you are IN, not the one you would switch to. A
+/// button labelled with its own opposite is a coin-flip every time.
+class _AngleSwitch extends StatelessWidget {
+  const _AngleSwitch({
+    required this.mode,
+    required this.onToggle,
+    required this.surfaces,
+  });
+
+  final AngleMode mode;
+  final VoidCallback? onToggle;
+  final OnoteSurfaces surfaces;
+
+  @override
+  Widget build(BuildContext context) {
+    final deg = mode == AngleMode.degrees;
+    return Padding(
+      padding: const EdgeInsets.only(right: 3),
+      child: Tooltip(
+        message: deg
+            ? 'Angles are in degrees — click for radians'
+            : 'Angles are in radians — click for degrees',
+        child: SizedBox(
+          height: OnoteSize.button,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(5),
+            onTap: onToggle,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(5),
+                border: Border.all(color: surfaces.border),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Center(
+                  child: Text(
+                    deg ? 'DEG' : 'RAD',
+                    style: OnoteType.small.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: surfaces.textPrimary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// The Advanced fold, and the things that belong beside it. One `⋯`, so the

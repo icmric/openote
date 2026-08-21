@@ -743,7 +743,7 @@ class MathEditor {
     final answer = r.display;
     // `undefined`, `∞` and the like are honest readings but not maths a
     // student can go on typing with.
-    if (answer.isEmpty || !RegExp(r'^-?[0-9.]+$').hasMatch(answer)) {
+    if (answer.isEmpty || !_isPlainNumber(answer)) {
       return false;
     }
     // **A fraction in, a fraction out.** The owner: *"if the equation is a
@@ -752,7 +752,7 @@ class MathEditor {
     // not "is the answer tidy" but "was the student thinking in fractions" —
     // and only then whether it lands on a tidy one.
     final wantsFraction = _looksLikeFractionWork(from, caretIndex - 1);
-    final rat = wantsFraction ? rationalOf(r.value) : null;
+    final rat = wantsFraction ? _tidyFraction(r) : null;
     caretRow.insert(caretIndex,
         MAnswer(content: rat == null ? _digits(answer) : _fractionRow(rat)));
     caretIndex++;
@@ -776,9 +776,39 @@ class MathEditor {
     return false;
   }
 
-  static MRow _digits(String text) => MRow([
-        for (final ch in text.split('')) MSym(ch, cls: classOf(ch)),
-      ]);
+  /// The answer, written the way it should be read.
+  ///
+  /// A plain run of digits for an ordinary number — and `6.02 × 10²³` for one
+  /// that needs an exponent, because `6.02000000000e+23` is programmer
+  /// notation and a student reads straight past it. Big answers were being
+  /// REFUSED outright before this (the digits-only test threw them away), so
+  /// `20!` and `2^100` produced no answer at all.
+  static MRow _digits(String text) {
+    final e = RegExp(r'^(-?[0-9.]+)e([+-]?)([0-9]+)$').firstMatch(text);
+    if (e == null) {
+      return MRow([for (final ch in text.split('')) MSym(ch, cls: classOf(ch))]);
+    }
+    var mantissa = e.group(1)!;
+    if (mantissa.contains('.')) {
+      mantissa = mantissa.replaceFirst(RegExp(r'0+$'), '');
+      if (mantissa.endsWith('.')) {
+        mantissa = mantissa.substring(0, mantissa.length - 1);
+      }
+    }
+    final neg = e.group(2) == '-';
+    final exp = e.group(3)!;
+    return MRow([
+      for (final ch in mantissa.split('')) MSym(ch, cls: classOf(ch)),
+      MSym(r'\times', cls: MClass.op),
+      MScript(
+        base: MRow([MSym('1'), MSym('0')]),
+        sup: MRow([
+          if (neg) MSym('-', cls: MClass.op),
+          for (final ch in exp.split('')) MSym(ch, cls: classOf(ch)),
+        ]),
+      ),
+    ]);
+  }
 
   static MRow _fractionRow(({int num, int den}) r) {
     final neg = r.num < 0;
@@ -812,12 +842,114 @@ class MathEditor {
       a.content.addAll(digits.drain());
       return true;
     }
-    final rat = rationalOf(value.value);
+    final rat = _tidyFraction(value);
     if (rat == null) return false; // a whole number, or nothing tidy
     final row = _fractionRow(rat);
     a.content.children.clear();
     a.content.addAll(row.drain());
     return true;
+  }
+
+  /// Re-work every answer in the equation, because the working changed.
+  ///
+  /// The owner: *"Please make it update the value when i update the equation,
+  /// but debounce it so its not doing lots of unnesesary updates."* The
+  /// debounce lives in the field (which knows about keystrokes); this is the
+  /// pass itself, and it is cheap — a projection and an evaluation per
+  /// answer, over a row that is a few dozen atoms at most.
+  ///
+  /// Left to right, because answers feed each other: in `2+3=[5]+1=[6]` the
+  /// second answer's working contains the first, so the first has to be
+  /// right before the second is asked.
+  ///
+  /// **An answer whose working no longer works out is REMOVED**, not left
+  /// standing. The box means "the app worked this out", so an answer the app
+  /// can no longer stand behind is a lie — and one that would be believed,
+  /// because it looks exactly like a true one. Typing `= ` brings it back.
+  ///
+  /// How it is WRITTEN is preserved: an answer the student switched to a
+  /// fraction stays a fraction if the new value has one.
+  /// Whether this equation holds an answer at all — checked before arming
+  /// the refresh timer, so an equation with no maths worked out in it never
+  /// schedules a wakeup.
+  bool get hasAnswers => root.children.any((n) => n is MAnswer);
+
+  bool refreshAnswers() {
+    var changed = false;
+    for (var i = 0; i < root.length; i++) {
+      final a = root.children[i];
+      if (a is! MAnswer) continue;
+      // The `=` immediately before it is what makes it an answer to
+      // something. Without one it is an orphan — a paste, or an edit that
+      // took the `=` away — and there is no working to re-read.
+      if (i == 0 || !_isEquals(root.children[i - 1])) continue;
+      final working = _workingBefore(i - 1);
+      if (working == null) continue;
+      final r = evaluateLinear(working);
+      if (!r.isOk || !_isPlainNumber(r.display)) {
+        root.removeAt(i);
+        if (caretIndex > i) caretIndex--;
+        i--;
+        changed = true;
+        continue;
+      }
+      final wasFraction = a.content.children.any((c) => c is MFrac);
+      final rat = wasFraction ? _tidyFraction(r) : null;
+      final next = rat == null ? _digits(r.display) : _fractionRow(rat);
+      if (rowToTex(next, kStoreCtx) == rowToTex(a.content, kStoreCtx)) {
+        continue; // already right — touch nothing
+      }
+      a.content.children.clear();
+      a.content.addAll(next.drain());
+      changed = true;
+    }
+    if (changed) clearSelection();
+    return changed;
+  }
+
+  static bool _isEquals(MNode n) => n is MSym && n.tex == '=';
+
+  static bool _isPlainNumber(String s) =>
+      s.isNotEmpty && RegExp(r'^-?[0-9.]+(e[+-]?[0-9]+)?$').hasMatch(s);
+
+  /// The linear form of the run that ENDS at [endExclusive] (the index of the
+  /// `=`), reaching back to the previous `=` or the start of the row. Null
+  /// when there is nothing there, or nothing a number could come of.
+  String? _workingBefore(int endExclusive) {
+    var from = 0;
+    for (var i = endExclusive - 1; i >= 0; i--) {
+      if (_isEquals(root.children[i])) {
+        from = i + 1;
+        break;
+      }
+    }
+    if (endExclusive - from <= 0) return null;
+    final slice = MRow();
+    for (var i = from; i < endExclusive; i++) {
+      slice.children.add(root.children[i]);
+    }
+    final lone = slice.children.length == 1 ? slice.children.first : null;
+    final onlyLetter = lone is MSym &&
+        lone.tex.length == 1 &&
+        RegExp('[A-Za-z]').hasMatch(lone.tex);
+    final linear = rowToLinear(slice).trim();
+    slice.children.clear();
+    return linear.isEmpty || onlyLetter ? null : linear;
+  }
+
+  /// The fraction for a value, but only when it is the SAME number.
+  ///
+  /// [rationalOf] accepts anything within 1e-9, which is right for asking
+  /// "is there an odd root here" and wrong for rewriting a student's answer:
+  /// a decimal they typed as `0.6666666667` became `2/3`, and clicking back
+  /// gave `0.666666666667` — a different number, and no way to get the first
+  /// one back. The promise is a change of FORM, never of value, so the
+  /// fraction has to read back as the very same decimal.
+  static ({int num, int den})? _tidyFraction(EvalResult value) {
+    final rat = rationalOf(value.value);
+    if (rat == null) return null;
+    final back = EvalResult.ok(rat.num / rat.den);
+    return back.display == value.display ? rat : null;
   }
 
   /// The answer at [index] in the ROOT row, if that child is one.
@@ -877,6 +1009,19 @@ class MathEditor {
       final head = run.substring(0, run.length - 1);
       if (head.isEmpty) continue;
       if (caretIndex < head.length) continue;
+      // **`20!=` is a factorial, not a not-equals.** The `!=` run consumed
+      // the `!` the student had just typed and left `20≠` — their factorial
+      // deleted, and no answer, on the one shape every factorial line has.
+      // After a number or a closing bracket, `!` is an operator that has
+      // already been applied to something; ≠ never follows one.
+      if (run == '!=' && caretIndex >= 2) {
+        final before = caretRow.children[caretIndex - 2];
+        if (before is MSym &&
+            (RegExp(r'^[0-9]$').hasMatch(before.tex) ||
+                before.tex == ')')) {
+          continue;
+        }
+      }
       var matches = true;
       for (var i = 0; i < head.length; i++) {
         final n = caretRow.children[caretIndex - head.length + i];

@@ -268,8 +268,17 @@ class _Parser {
       return;
     }
     if (c == '{') {
-      // A bare group: its contents join this row. Grouping only ever mattered
-      // to the string form, and the tree has real slots instead.
+      // A bare group: its contents join this row, because the tree has real
+      // slots and no group node.
+      //
+      // But WHERE it began is remembered, because one thing does still
+      // depend on the grouping: a script that follows takes the whole group
+      // as its base. `{16}^{2}` — which is exactly how this editor stores
+      // `16²` — was read as `1` then `6²`, so every power with more than
+      // one character in its base came back WRONG the first time the note
+      // was reopened: 16² became 36, 10⁸ became 0, and 1000×1.05³ became
+      // 125000. Silent, and in the student's saved work.
+      final startedAt = row.length;
       i++;
       final inner = parseRow(depth: depth + 1);
       if (!atEnd && s[i] == '}') {
@@ -278,6 +287,8 @@ class _Parser {
         _fail('unclosed {');
       }
       row.addAll(inner.drain());
+      _groupFrom = startedAt;
+      _groupEnd = row.length;
       return;
     }
     if (c == '^' || c == '_') {
@@ -446,6 +457,12 @@ class _Parser {
     return MMatrix(env: env, cells: rows);
   }
 
+  /// Where the most recent `{…}` group landed in the row it joined, so a
+  /// script that follows can take the whole of it as its base. Only trusted
+  /// while the group is still the LAST thing in that row.
+  int _groupFrom = -1;
+  int _groupEnd = -1;
+
   void _attachScript(MRow row,
       {required bool isSup, required MRow content, required int depth}) {
     MScript target;
@@ -460,7 +477,15 @@ class _Parser {
       }
     } else {
       final base = MRow();
-      if (row.children.isNotEmpty) base.add(row.removeAt(row.length - 1));
+      // A group that is still the last thing in the row IS the base, all of
+      // it — see the note on `{` in [_parseOne].
+      if (_groupEnd == row.length && _groupFrom >= 0 && _groupFrom < row.length) {
+        while (row.length > _groupFrom) {
+          base.insert(0, row.removeAt(row.length - 1));
+        }
+      } else if (row.children.isNotEmpty) {
+        base.add(row.removeAt(row.length - 1));
+      }
       target = MScript(base: base);
       row.add(target);
     }

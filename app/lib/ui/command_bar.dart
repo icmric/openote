@@ -20,6 +20,7 @@ import '../export/print_page.dart';
 import '../editor/list_editing.dart';
 import '../markdown/md_syntax.dart';
 import '../model/models.dart';
+import '../math/evaluate.dart';
 import 'math_bar.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
@@ -550,6 +551,11 @@ class _CommandBarState extends State<CommandBar> {
       latexMode: m.latexMode,
       latexAvailable: m.latexAvailable,
       onToggleLatex: m.toggleLatex,
+      angleMode: app.angleMode,
+      onToggleAngleMode: () => app.setAngleMode(
+          app.angleMode == AngleMode.degrees
+              ? AngleMode.radians
+              : AngleMode.degrees),
       recentIds: app.recentMathIds,
     );
   }
