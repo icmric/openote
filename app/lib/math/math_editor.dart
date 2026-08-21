@@ -45,7 +45,10 @@ class MathEditor {
     if (latex.trim().isEmpty) return MathEditor.empty();
     final r = parseLatex(latex);
     if (!r.supported || r.root == null) return null;
-    return MathEditor._(r.root!);
+    // While the working and its answers still agree, ask each answer how many
+    // figures it is showing. This is the one moment that question has an
+    // exact answer; a keystroke later the working has moved on.
+    return MathEditor._(r.root!)..recoverAnswerPrecision();
   }
 
   final MRow root;
@@ -752,13 +755,160 @@ class MathEditor {
     // not "is the answer tidy" but "was the student thinking in fractions" —
     // and only then whether it lands on a tidy one.
     final wantsFraction = _looksLikeFractionWork(from, caretIndex - 1);
-    final rat = wantsFraction ? _tidyFraction(r) : null;
-    caretRow.insert(caretIndex,
-        MAnswer(content: rat == null ? _digits(answer) : _fractionRow(rat)));
+    caretRow.insert(
+        caretIndex,
+        MAnswer(content: _writeAnswer(r, fraction: wantsFraction)));
     caretIndex++;
     _openText = null;
     clearSelection();
     return true;
+  }
+
+  /// **The one place an answer is written down.**
+  ///
+  /// Creation, the re-work after an edit, the fraction toggle and every choice
+  /// in the answer's own menu all come through here, because they had each
+  /// grown their own copy of "turn this value into nodes" and the copies had
+  /// already started to differ.
+  ///
+  /// [fraction] asks for the fraction form and is ignored when the value has
+  /// no tidy one. [sigFigs] is null for "as many figures as the number needs".
+  /// The unit rides on [r] — see [_unitNodes].
+  static MRow _writeAnswer(EvalResult r,
+      {required bool fraction, int? sigFigs}) {
+    if (fraction) {
+      final rat = _tidyFraction(r);
+      if (rat != null) return _fractionRow(rat);
+    }
+    final row =
+        _digits(sigFigs == null ? r.display : r.displayAt(sigFigs));
+    for (final n in _unitNodes(r.unit)) {
+      row.add(n);
+    }
+    return row;
+  }
+
+  /// The unit an answer wears, when it can only be one thing.
+  ///
+  /// **A degree sign in degrees, and nothing at all in radians.** That is not
+  /// an omission: a bare number IS radians, in every textbook and on every
+  /// calculator, and the presence or absence of the ring is exactly what says
+  /// which mode worked the answer out. It also composes — `sin` of an answer
+  /// written `30` with a ring on it is still a half, whichever mode the
+  /// student is in by then, because the ring travels with the number.
+  ///
+  /// The same symbol the palette's own degrees button writes, so there is one
+  /// degree sign in the app rather than two that must be kept in step.
+  static List<MNode> _unitNodes(EvalUnit unit) => switch (unit) {
+        EvalUnit.degrees =>
+          mathItemsById['degree']?.build() ?? const <MNode>[],
+        EvalUnit.radians || EvalUnit.none => const <MNode>[],
+      };
+
+  /// How many significant figures a written-out number is carrying.
+  ///
+  /// Leading zeros never count; trailing zeros after a decimal point always
+  /// do, which is the whole point — `0.500` is three figures and `0.5` is one.
+  /// For a whole number the trailing zeros are dropped, because `1230` at
+  /// three figures and 1230 exactly are written identically and the modest
+  /// reading is the safe one.
+  static int sigFigsOf(String text) {
+    var t = text.replaceAll('-', '').replaceAll('−', '');
+    final hasPoint = t.contains('.');
+    t = t.replaceAll('.', '');
+    var a = 0;
+    while (a < t.length - 1 && t[a] == '0') {
+      a++;
+    }
+    t = t.substring(a);
+    if (!hasPoint) {
+      var b = t.length;
+      while (b > 1 && t[b - 1] == '0') {
+        b--;
+      }
+      t = t.substring(0, b);
+    }
+    return t.isEmpty ? 1 : t.length;
+  }
+
+  /// The digits an answer is showing, or null when it is not a plain number
+  /// (a fraction, or a value written with a power of ten).
+  static String? _writtenDigits(MRow content) {
+    final b = StringBuffer();
+    for (final n in content.children) {
+      if (n is MSym && (RegExp(r'^[0-9.]$').hasMatch(n.tex) || n.tex == '-')) {
+        b.write(n.tex);
+        continue;
+      }
+      if (_isUnitNode(n)) continue;
+      return null;
+    }
+    final t = b.toString();
+    return t.isEmpty ? null : t;
+  }
+
+  /// A unit worn by an answer rather than part of its number. Both the shape
+  /// the palette builds and the one the parser rebuilds it as.
+  static bool _isUnitNode(MNode n) {
+    if (n is MSym) return n.tex == r'{}^{\circ}' || n.tex == r'\circ';
+    if (n is MScript) {
+      final sup = n.sup;
+      return n.base.children.isEmpty &&
+          sup != null &&
+          sup.children.length == 1 &&
+          sup.children.first is MSym &&
+          (sup.children.first as MSym).tex == r'\circ';
+    }
+    return false;
+  }
+
+  /// The precision an existing answer is written at.
+  ///
+  /// The node remembers within a session. For an answer that has no memory —
+  /// one just read off the page — [recoverAnswerPrecision] has already asked
+  /// the working, which is exact; this is only the last resort for an orphan
+  /// answer with no working to ask.
+  static int? _precisionOf(MAnswer a) {
+    if (a.sigFigs != null) return a.sigFigs;
+    final text = _writtenDigits(a.content);
+    if (text == null) return null;
+    final self = double.tryParse(text);
+    if (self == null) return null;
+    if (EvalResult.ok(self).display == text) return null; // nothing special
+    return sigFigsOf(text);
+  }
+
+  /// **Ask the working how many figures each answer is showing.**
+  ///
+  /// Run once, when an equation is read off the page, while the working and
+  /// the answer still agree. `0.707` is three figures of cos 45 and it is
+  /// also just a number — the digits cannot tell you which, and guessing
+  /// "just a number" threw the student's choice away on their next keystroke.
+  /// The working can tell you exactly: round it to one figure, then two, and
+  /// see which rounding the page is showing.
+  ///
+  /// Silent when the working no longer evaluates, when the answer is a
+  /// fraction, or when the digits are simply what the number needs — all of
+  /// which mean there is no choice to remember.
+  void recoverAnswerPrecision() {
+    for (var i = 0; i < root.length; i++) {
+      final a = root.children[i];
+      if (a is! MAnswer) continue;
+      final text = _writtenDigits(a.content);
+      if (text == null) continue;
+      if (i == 0 || !_isEquals(root.children[i - 1])) continue;
+      final w = _workingBefore(i - 1);
+      if (w == null) continue;
+      final r = evaluateLinear(w);
+      if (!r.isOk) continue;
+      if (r.display == text) continue; // the ordinary rendering
+      for (var f = 1; f <= 15; f++) {
+        if (r.displayAt(f) == text) {
+          a.sigFigs = f;
+          break;
+        }
+      }
+    }
   }
 
   /// Was the working written with fractions in it? Looks at what the student
@@ -826,28 +976,156 @@ class MathEditor {
   /// √2, a long division) has none either. The caller leaves the answer alone
   /// rather than offering a toggle that would do nothing, which is why
   /// [rationalOf] returns null for a whole number by design.
-  bool toggleAnswer(MAnswer a) {
-    final value = evaluateLinear(rowToLinear(a.content));
-    if (!value.isOk) return false;
+  bool toggleAnswer(MAnswer a) =>
+      setAnswerForm(a, fraction: !answerIsFraction(a));
+
+  /// Is this answer showing a fraction right now?
+  bool answerIsFraction(MAnswer a) =>
+      a.content.children.any((c) => c is MFrac);
+
+  /// Is there a fraction this answer could be shown as? False for a whole
+  /// number and for a decimal no tidy fraction says exactly.
+  bool answerHasFraction(MAnswer a) {
+    final v = _valueOf(a);
+    return v.isOk && _tidyFraction(v) != null;
+  }
+
+  /// Write this answer as a fraction, or as a decimal. Returns false when
+  /// there is nothing to change — no fraction to switch to, or already so.
+  bool setAnswerForm(MAnswer a, {required bool fraction}) {
+    if (fraction == answerIsFraction(a)) return false;
+    final v = _valueOf(a);
+    if (!v.isOk) return false;
+    if (fraction && _tidyFraction(v) == null) return false;
     // A click is a click: it ends any highlight, exactly as clicking
     // anywhere else in the equation does. Leaving one alive meant the next
     // keystroke ran `deleteSelection` and took the student's working with
     // it — the click LOOKED like it had only changed a fraction to a
     // decimal.
     clearSelection();
-    final showingFraction = a.content.children.any((c) => c is MFrac);
-    if (showingFraction) {
-      final digits = _digits(value.display);
-      a.content.children.clear();
-      a.content.addAll(digits.drain());
-      return true;
-    }
-    final rat = _tidyFraction(value);
-    if (rat == null) return false; // a whole number, or nothing tidy
-    final row = _fractionRow(rat);
-    a.content.children.clear();
-    a.content.addAll(row.drain());
+    _rewrite(a, v, fraction: fraction, sigFigs: fraction ? null : a.sigFigs);
     return true;
+  }
+
+  /// Show this answer to [figures] significant figures, or to as many as the
+  /// number needs when [figures] is null.
+  bool setAnswerSigFigs(MAnswer a, int? figures) {
+    final v = _valueOf(a);
+    if (!v.isOk) return false;
+    clearSelection();
+    a.sigFigs = figures;
+    _rewrite(a, v, fraction: false, sigFigs: figures);
+    return true;
+  }
+
+  /// Work this answer out again from the working in front of it — what to
+  /// press after switching between degrees and radians, or after any change
+  /// the app decided not to make on the student's behalf.
+  bool recalculateAnswer(MAnswer a) {
+    final v = _valueOf(a);
+    if (!v.isOk) return false;
+    final before = rowToTex(a.content, kStoreCtx);
+    _rewrite(a,
+        v, fraction: answerIsFraction(a), sigFigs: _precisionOf(a));
+    return rowToTex(a.content, kStoreCtx) != before;
+  }
+
+  /// Take the answer away, leaving the working exactly as it was.
+  bool removeAnswer(MAnswer a) {
+    final i = root.children.indexOf(a);
+    if (i < 0) return false;
+    clearSelection();
+    root.removeAt(i);
+    if (caretIndex > i && identical(caretRow, root)) caretIndex--;
+    return true;
+  }
+
+  void _rewrite(MAnswer a, EvalResult v,
+      {required bool fraction, int? sigFigs}) {
+    final next = _writeAnswer(v, fraction: fraction, sigFigs: sigFigs);
+    a.content.children.clear();
+    a.content.addAll(next.drain());
+  }
+
+  /// The precision this answer is currently showing, for a menu that has to
+  /// tick one of its own choices. Null means "as many figures as it needs".
+  int? answerSigFigs(MAnswer a) => _precisionOf(a);
+
+  /// This answer written as a decimal, and as a fraction — so a menu can SHOW
+  /// the two choices instead of naming them. Null when that form does not
+  /// exist, which is also the answer to "should this row be there at all".
+  String? answerFormTex(MAnswer a, {required bool fraction}) {
+    final v = _valueOf(a);
+    if (!v.isOk) return null;
+    if (fraction && _tidyFraction(v) == null) return null;
+    return rowToTex(
+        _writeAnswer(v,
+            fraction: fraction, sigFigs: fraction ? null : _precisionOf(a)),
+        kStoreCtx);
+  }
+
+  /// This answer written to [figures] significant figures, for the same
+  /// reason: the menu shows what you would get.
+  String? answerAtFiguresTex(MAnswer a, int? figures) {
+    final v = _valueOf(a);
+    if (!v.isOk) return null;
+    return rowToTex(
+        _writeAnswer(v, fraction: false, sigFigs: figures), kStoreCtx);
+  }
+
+  /// The digits themselves, for the clipboard. What you would paste into a
+  /// calculator, a spreadsheet or a message — not LaTeX.
+  String answerPlainText(MAnswer a) =>
+      _writtenDigits(a.content) ?? rowToLinear(a.content).trim();
+
+  /// **Would this answer be a different number in the other angle mode?**
+  ///
+  /// Asked rather than guessed: the working is evaluated both ways and the
+  /// two readings compared. No list of function names to keep in step, and it
+  /// is right for the awkward cases on its own — `sin(30°)` carries its own
+  /// unit and so does not depend on the mode, while `sin(30)` does.
+  bool answerDependsOnAngleMode(MAnswer a) {
+    final i = root.children.indexOf(a);
+    if (i <= 0 || !_isEquals(root.children[i - 1])) return false;
+    final w = _workingBefore(i - 1);
+    if (w == null) return false;
+    final saved = mathAngleMode;
+    try {
+      mathAngleMode = AngleMode.degrees;
+      final inDeg = evaluateLinear(w);
+      mathAngleMode = AngleMode.radians;
+      final inRad = evaluateLinear(w);
+      if (!inDeg.isOk || !inRad.isOk) return false;
+      return inDeg.display != inRad.display;
+    } finally {
+      mathAngleMode = saved;
+    }
+  }
+
+  /// **The exact value an answer stands for.**
+  ///
+  /// Re-worked from the working in front of it whenever there is one, and only
+  /// read back off the digits when there is not (an answer that arrived by
+  /// paste). Reading the digits is not good enough on its own: an answer shown
+  /// to three figures says `0.333`, and turning THAT into a fraction gives
+  /// 333/1000 rather than a third.
+  EvalResult _valueOf(MAnswer a) {
+    final i = root.children.indexOf(a);
+    if (i > 0 && _isEquals(root.children[i - 1])) {
+      final w = _workingBefore(i - 1);
+      if (w != null) {
+        final r = evaluateLinear(w);
+        if (r.isOk) return r;
+      }
+    }
+    // No working: read the number as written, without its unit — a degree
+    // sign means "in radians" to the evaluator, and an answer is not working.
+    final digits = _writtenDigits(a.content);
+    if (digits != null) {
+      final d = double.tryParse(digits);
+      if (d != null) return EvalResult.ok(d);
+    }
+    return evaluateLinear(rowToLinear(a.content));
   }
 
   /// Re-work every answer in the equation, because the working changed.
@@ -893,9 +1171,9 @@ class MathEditor {
         changed = true;
         continue;
       }
-      final wasFraction = a.content.children.any((c) => c is MFrac);
-      final rat = wasFraction ? _tidyFraction(r) : null;
-      final next = rat == null ? _digits(r.display) : _fractionRow(rat);
+      final next = _writeAnswer(r,
+          fraction: a.content.children.any((c) => c is MFrac),
+          sigFigs: _precisionOf(a));
       if (rowToTex(next, kStoreCtx) == rowToTex(a.content, kStoreCtx)) {
         continue; // already right — touch nothing
       }

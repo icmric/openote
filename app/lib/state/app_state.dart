@@ -4251,10 +4251,23 @@ class AppState extends ChangeNotifier
   void setAngleMode(AngleMode v) {
     mathAngleMode = v;
     _repo.setSetting('angleMode', v == AngleMode.radians ? 'rad' : 'deg');
-    // Every answer on the page was worked out under the old mode, so they
-    // are all now potentially wrong — the editors re-read on their next
-    // build, and the page redraws.
-    docRevision++;
+    // **A plain notify, and deliberately NOT `docRevision++`.**
+    //
+    // `docRevision` means "the stored content was replaced wholesale" —
+    // a page load, a sync pull, an undo. Every block on the canvas is keyed
+    // by it (`page_canvas.dart`), so bumping it destroys and rebuilds the
+    // whole page. Pressing DEG while writing an equation therefore disposed
+    // the equation editor mid-edit and took the caret with it: the owner,
+    // *"it kicks me out of the equation and i have to click on it again to
+    // start editing again"*. A notify redraws the page perfectly well, and
+    // the equation you are writing keeps the keyboard.
+    //
+    // Proved by `math_angle_focus_test.dart`: with the bump in place, an
+    // equation being written INSIDE A SENTENCE is torn out from under the
+    // student — the paragraph's editing session goes with the block, so the
+    // equation, the caret and the next keystroke are all lost. A block
+    // equation survived only because it re-autofocuses on the way back,
+    // which is luck rather than design.
     notifyListeners();
   }
 

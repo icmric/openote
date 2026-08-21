@@ -18,24 +18,57 @@ library;
 
 import 'dart:math' as math;
 
+/// What an answer *is*, when it can only be one thing.
+///
+/// The owner: *"give units when it could only be that unit, like with
+/// deg/rad"*. An inverse trig function hands back an ANGLE, and an angle with
+/// no unit on it is ambiguous the moment the mode is switched -- 30 and
+/// 0.5236 are the same answer written two ways, and nothing on the page says
+/// which. Everything else is [EvalUnit.none]: a ratio, a length, a count.
+/// `sin 30` is 0.5, and 0.5 of nothing in particular.
+enum EvalUnit { none, degrees, radians }
+
+/// The significant figures an answer carries when nobody has said otherwise.
+///
+/// Ten, which is what a Casio fx-82 shows. It used to be twelve, and twelve
+/// is enough to leak the floating point underneath: `cos 45` came back as
+/// `0.707106781187`, where the calculator on the desk beside it says
+/// `0.7071067812`.
+const int kDefaultSigFigs = 10;
+
 /// The result of evaluating an expression, or why it couldn't be.
 class EvalResult {
-  const EvalResult.ok(this.value)
+  const EvalResult.ok(this.value, {this.unit = EvalUnit.none})
       : error = null,
         isOk = true;
   const EvalResult.err(this.error)
       : value = 0,
+        unit = EvalUnit.none,
         isOk = false;
 
   final double value;
   final String? error;
   final bool isOk;
 
+  /// What the answer is, when it can only be one thing. See [EvalUnit].
+  final EvalUnit unit;
+
   /// A human-facing rendering: integers without a decimal point, everything
   /// else trimmed of trailing zeros. `0.1+0.2` should read `0.3`, not
   /// `0.30000000000000004` — binary floating point is not the student's
   /// problem.
-  String get display {
+  String get display => _write(kDefaultSigFigs, pad: false);
+
+  /// The answer at exactly [figures] significant figures, trailing zeros and
+  /// all -- `0.500`, not `0.5`.
+  ///
+  /// The zeros are not decoration. They are how a calculator says "three
+  /// figures", and they are how this app remembers the student's choice: the
+  /// digits ARE the setting, so a 3 s.f. answer survives being saved, closed
+  /// and reopened without a scrap of metadata riding alongside it.
+  String displayAt(int figures) => _write(figures, pad: true);
+
+  String _write(int figures, {required bool pad}) {
     if (!isOk) return error ?? 'error';
     if (value.isNaN) return 'undefined';
     // **Zero reads as zero.** `sin(180)` lands on 1.22e-16 and `cos(90)` on
@@ -46,14 +79,27 @@ class EvalResult {
     // number a notebook calculator is asked for.
     if (value != 0 && value.abs() < 1e-12) return '0';
     if (value.isInfinite) return value.isNegative ? '-∞' : '∞';
-    if (value == value.roundToDouble() && value.abs() < 1e15) {
-      return value.toStringAsFixed(0);
+    final f = figures.clamp(1, 15);
+    var s = value.toStringAsPrecision(f);
+    if (s.contains('e')) {
+      // Far too big or far too small to write out. The mantissa is trimmed
+      // either way -- `6.02000000000e+23` is noise, not precision.
+      final at = s.indexOf('e');
+      var m = s.substring(0, at);
+      if (m.contains('.') && !pad) {
+        m = m.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+      }
+      return m + s.substring(at);
     }
-    // 12 significant digits absorbs the usual binary-representation noise
-    // without inventing precision the inputs didn't have.
-    var s = value.toStringAsPrecision(12);
-    if (s.contains('.') && !s.contains('e')) {
-      s = s.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+    if (!pad) {
+      // A whole number reads as a whole number: `4`, never `4.000000000`.
+      final rounded = double.parse(s);
+      if (rounded == rounded.roundToDouble() && rounded.abs() < 1e15) {
+        return rounded.toStringAsFixed(0);
+      }
+      if (s.contains('.')) {
+        s = s.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+      }
     }
     return s;
   }
@@ -78,7 +124,14 @@ EvalResult evaluateLinear(String input) {
     final v = p.parseExpression();
     p.skipSpace();
     if (!p.atEnd) return EvalResult.err('unexpected "${p.rest}"');
-    return EvalResult.ok(v);
+    return EvalResult.ok(
+      v,
+      unit: !p.angleOut
+          ? EvalUnit.none
+          : mathAngleMode == AngleMode.degrees
+              ? EvalUnit.degrees
+              : EvalUnit.radians,
+    );
   } on _EvalError catch (e) {
     return EvalResult.err(e.message);
   } catch (_) {
@@ -99,6 +152,15 @@ class _Parser {
   _Parser(this.s);
   final String s;
   int i = 0;
+
+  /// True when the value just produced is an ANGLE -- an inverse trig result,
+  /// with nothing done to it since that would make it something else.
+  ///
+  /// Deliberately narrow. `asin(0.5)` is an angle; `asin(0.5)+1` is a number
+  /// with an angle somewhere in its past, and labelling that "degrees" would
+  /// be a guess. Every operation that combines two values clears it; a minus
+  /// sign and a bracket do not, because neither changes what the thing IS.
+  bool angleOut = false;
 
   bool get atEnd => i >= s.length;
   String get rest => s.substring(i);
@@ -124,8 +186,10 @@ class _Parser {
       skipSpace();
       if (_eat('+')) {
         left += _parseTerm();
+        angleOut = false;
       } else if (_eat('−') || _eat('-')) {
         left -= _parseTerm();
+        angleOut = false;
       } else {
         return left;
       }
@@ -138,12 +202,15 @@ class _Parser {
       skipSpace();
       if (_eat('*') || _eat('×') || _eat('·')) {
         left *= _parseUnary();
+        angleOut = false;
       } else if (_eat('/') || _eat('÷')) {
         final d = _parseUnary();
         left /= d; // ±∞ / NaN are reported by [EvalResult.display]
+        angleOut = false;
       } else if (_startsImplicitProduct()) {
         // `2pi`, `3(x+1)`, `2sqrt(9)` — the way people actually write maths.
         left *= _parseUnary();
+        angleOut = false;
       } else {
         return left;
       }
@@ -173,6 +240,7 @@ class _Parser {
     if (_eat('^')) {
       // Right-associative: 2^3^2 is 2^(3^2) = 512.
       final exp = _parseUnary();
+      angleOut = false;
       return _power(base, exp);
     }
     return base;
@@ -184,6 +252,7 @@ class _Parser {
       skipSpace();
       if (i < s.length && s[i] == '!') {
         i++;
+        angleOut = false;
         v = _factorial(v);
       } else if (i < s.length && s[i] == '%') {
         // **A per cent, not a remainder.** `%` was an infix modulo, so a
@@ -191,6 +260,7 @@ class _Parser {
         // silently — `20 % 3 = 2`. Per cent is a year-7 operation on this
         // palette; the remainder is not on it at all.
         i++;
+        angleOut = false;
         v = v / 100;
       } else if (i < s.length && s[i] == '°') {
         // `30°` IS an angle in degrees, whatever the surrounding rule — the
@@ -217,9 +287,13 @@ class _Parser {
     if (_eat('|')) {
       final v = parseExpression();
       if (!_eat('|')) throw _EvalError('missing |');
+      angleOut = false;
       return v.abs();
     }
-    if (_eat('√')) return math.sqrt(_parseUnary());
+    if (_eat('√')) {
+      angleOut = false;
+      return math.sqrt(_parseUnary());
+    }
 
     final c = s[i];
     if (_isDigit(c) || c == '.') return _parseNumber();
@@ -247,6 +321,7 @@ class _Parser {
     }
     final v = double.tryParse(s.substring(start, i));
     if (v == null) throw _EvalError('bad number "${s.substring(start, i)}"');
+    angleOut = false;
     return v;
   }
 
@@ -259,12 +334,16 @@ class _Parser {
 
     // Constant?
     final k = _constants[name];
-    if (k != null) return k;
+    if (k != null) {
+      angleOut = false;
+      return k;
+    }
 
     // Function call: name(...) or name x (as in `sin x`).
     skipSpace();
     var fn = _functions[name];
     if (fn == null) throw _EvalError('unknown "$name"');
+    final givesAngle = _givesAngle.contains(name);
     if (_givesAngle.contains(name) && mathAngleMode == AngleMode.degrees) {
       // Degrees out, because degrees go in: `sin⁻¹(0.5)` is 30.
       final inner = fn;
@@ -285,12 +364,16 @@ class _Parser {
       final from = i;
       final inner = parseExpression();
       if (!_eat(')')) throw _EvalError('missing )');
-      return fn(_asAngle(name, inner, s.substring(from, i - 1)));
+      final out = fn(_asAngle(name, inner, s.substring(from, i - 1)));
+      angleOut = givesAngle;
+      return out;
     }
     // log with an explicit base: log2(8), log10(100).
     final from = i;
     final arg = _parseUnary();
-    return fn(_asAngle(name, arg, s.substring(from, i)));
+    final out = fn(_asAngle(name, arg, s.substring(from, i)));
+    angleOut = givesAngle;
+    return out;
   }
 
   /// Trigonometry, and every function that takes an ANGLE.

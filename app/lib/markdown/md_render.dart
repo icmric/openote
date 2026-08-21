@@ -560,8 +560,11 @@ class _MarkdownViewState extends State<MarkdownView> {
             // graphite400 — 2.80:1 in the contrast audit, and to a student
             // indistinguishable from the app eating their equation and
             // leaving the backslashes behind.
+            // The same scale as everything else — a display equation is not
+            // a third size (it was 18 against the block's 22 and a
+            // sentence's 15).
             child: OnoteMath(dm.group(1)!,
-                textStyle: baseStyle.copyWith(fontSize: 18)),
+                textStyle: mathStyleIn(baseStyle)),
           ),
         ),
       );
@@ -710,7 +713,8 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
           // display style now, in a sentence exactly as in a box of its own,
           // so the double-dollar form differs only in being centred on a line
           // of its own (the whole-line branch above).
-          child: OnoteMath(c.inner, textStyle: base, compact: true),
+          child:
+              OnoteMath(c.inner, textStyle: mathStyleIn(base), compact: true),
         ));
       case MdInline.extLink:
         spans.add(WidgetSpan(

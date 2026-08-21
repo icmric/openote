@@ -426,6 +426,18 @@ class MAnswer extends MNode {
       // `2+3=<BS>oxed{5}` and reopened as `2+3=oxed5`. The same trap the
       // caret code carries a note about.
       '\\boxed{${rowToTex(content, c)}}';
+
+  /// How many significant figures the student asked for, or null for "as many
+  /// as the number needs".
+  ///
+  /// **Not serialised, and deliberately.** The digits themselves carry the
+  /// answer's precision the way a calculator's do — `0.500` IS three figures —
+  /// so a saved note needs no metadata riding alongside it. This field is the
+  /// belt to that braces: within one editing session it remembers the choice
+  /// exactly, so re-working `1/3` at 3 s.f. into `2/3` still gives `0.667`
+  /// rather than silently reverting because `0.333` happened to look like an
+  /// ordinary number.
+  int? sigFigs;
 }
 
 class MMatrix extends MNode {

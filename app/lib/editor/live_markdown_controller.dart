@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../markdown/md_render.dart' show indentPx, kBulletGutter, subSupStyle;
+import '../math/math_view.dart' show mathStyleIn;
 import '../markdown/md_syntax.dart';
 import 'inline_math_editor.dart';
 import '../theme/onote_theme.dart';
@@ -1254,6 +1255,11 @@ class LiveMarkdownController extends TextEditingController {
         // accounting, same baseline — the paragraph cannot tell the
         // difference, which is the whole invariant (v0.20 §B.2).
         final editingHere = from == editingMathAt && mathEditorBuilder != null;
+        // ONE scaled style, handed to both the drawing and the live editor.
+        // Maths is drawn at the same size wherever it sits (`mathStyleIn`),
+        // and the two must be given the identical style or the equation
+        // changes size the moment you click into it.
+        final mBase = mathStyleIn(cBase);
         out.add(_SourceSpan(
           source: full.substring(0, 1),
           // BASELINE: an equation mid-sentence sits on the sentence's
@@ -1264,10 +1270,10 @@ class LiveMarkdownController extends TextEditingController {
           alignment: PlaceholderAlignment.baseline,
           baseline: TextBaseline.alphabetic,
           child: editingHere
-              ? mathEditorBuilder!(c.inner, cBase)
+              ? mathEditorBuilder!(c.inner, mBase)
               : InlineMathAtom(
                   latex: c.inner,
-                  style: cBase,
+                  style: mBase,
                   onTap: tap == null
                       ? null
                       : (rect) => tap(from, to, c.inner, rect),

@@ -13,11 +13,13 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/gestures.dart' show kPrimaryButton;
+import 'package:flutter/gestures.dart'
+    show kPrimaryButton, kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/tokens.dart';
+import 'answer_menu.dart';
 import 'math_editor.dart';
 import 'math_hit.dart';
 import 'math_inventory.dart';
@@ -231,11 +233,18 @@ class MathFieldState extends State<MathField> {
   double _pendingDx = 0;
   bool _pendingShift = false;
   bool _pendingDouble = false;
+
+  /// The press was the RIGHT button, so the gesture is asking the thing under
+  /// it what it can do rather than moving the caret.
+  bool _pendingSecondary = false;
+  Offset _pendingGlobal = Offset.zero;
   DateTime _lastDown = DateTime.fromMillisecondsSinceEpoch(0);
   Offset _lastDownPos = Offset.zero;
 
   void _pointerDown(PointerDownEvent e) {
     _pointerIsDown = true;
+    _pendingSecondary = e.buttons & kSecondaryButton != 0;
+    _pendingGlobal = e.position;
     // The PREVIOUS gesture's table dies here, not on pointer-up: a quick
     // click's post-frame resolve lands after the up, so up-clearing left the
     // old geometry alive and the next drag's first frame consulted boundaries
@@ -274,6 +283,20 @@ class MathFieldState extends State<MathField> {
     }
     final hits = MathHitTable(_e.root, bounds);
     _hits = hits;
+    // **The right button asks, it does not move.** An answer has a handful of
+    // choices about how it is written, and a menu is where a student expects
+    // to find the choices something offers. Anywhere else in the equation the
+    // right button does nothing at all — deliberately, because moving the
+    // caret on a press that was going to open a menu is the worst of both.
+    if (_pendingSecondary) {
+      setState(() {
+        _probeTexes = null;
+        _probeKeys = null;
+      });
+      final a = _e.answerAt(hits.childStrictlyAt(_pendingDx));
+      if (a != null) _openAnswerMenu(a, _pendingGlobal);
+      return;
+    }
     // **A click ON an answer switches how it is written**, decimal to
     // fraction and back — the box around it is what advertises that the
     // click is there to be made. It takes priority over placing the caret
@@ -316,6 +339,20 @@ class MathFieldState extends State<MathField> {
     _changed();
   }
 
+  /// The answer's own menu, and the keyboard handed straight back afterwards
+  /// — a menu is a question, not a reason to stop writing.
+  Future<void> _openAnswerMenu(MAnswer a, Offset at) async {
+    final changed = await showAnswerMenu(
+      context,
+      at: at,
+      editor: _e,
+      answer: a,
+    );
+    if (!mounted) return;
+    _focus.requestFocus();
+    if (changed) _changed();
+  }
+
   void _pointerMove(PointerMoveEvent e) {
     if (e.buttons & kPrimaryButton == 0) return;
     // Past the slop this is a DRAG, not a click, so whatever answer the
@@ -340,6 +377,11 @@ class MathFieldState extends State<MathField> {
   void _endGesture(PointerEvent _) {
     _hits = null;
     _pointerIsDown = false;
+    if (_pendingSecondary) {
+      _pendingSecondary = false;
+      _armedAnswer = null;
+      return;
+    }
     final a = _armedAnswer;
     _armedAnswer = null;
     // A click that stayed put, on an answer: switch how it is written. It

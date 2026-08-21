@@ -18,6 +18,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../editor/inline_math_editor.dart';
@@ -278,9 +279,19 @@ class EquationEditorState extends State<EquationEditor> {
         if (!cons.maxWidth.isFinite) return field;
         return ConstrainedBox(
           constraints: BoxConstraints(maxWidth: cons.maxWidth),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: field,
+          // **The scroll view swallows the baseline** — and an equation in a
+          // sentence is positioned BY its baseline. A viewport reports none,
+          // so the placeholder fell back to "baseline = my full height",
+          // which seats the whole equation above the line. Measured: a lone
+          // `x` jumped 4.8px and a paragraph holding a summation grew 7px
+          // the instant you clicked into it, and the taller the maths the
+          // worse it got. [KeepBaseline] hands the field's own baseline back
+          // out through the viewport.
+          child: KeepBaseline(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: field,
+            ),
           ),
         );
       });
@@ -334,5 +345,55 @@ class EquationEditorState extends State<EquationEditor> {
         ],
       ],
     );
+  }
+}
+
+
+/// Reports the baseline of the box inside, through a wrapper that hides one.
+///
+/// A `SingleChildScrollView` is a viewport, and a viewport has no baseline to
+/// give — it does not know, or care, that the single thing it is scrolling is
+/// a line of maths that has to sit on a sentence. Flutter's fallback for a
+/// placeholder with no baseline is to treat the whole box as sitting on the
+/// line, which lifts the equation clear of the words by its own height.
+///
+/// So this walks down to the first descendant that DOES have a baseline and
+/// converts it into this box's coordinates. Deliberately a search rather than
+/// a fixed path: the chain between here and the equation is
+/// viewport → sliver adapter → Focus → MathField → Stack, and any of those may
+/// change without this needing to.
+class KeepBaseline extends SingleChildRenderObjectWidget {
+  const KeepBaseline({super.key, required Widget super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      RenderKeepBaseline();
+}
+
+class RenderKeepBaseline extends RenderProxyBox {
+  @override
+  double? computeDistanceToActualBaseline(TextBaseline baseline) {
+    final own = super.computeDistanceToActualBaseline(baseline);
+    if (own != null) return own;
+    final found = _firstBaseline(child, baseline);
+    if (found == null) return null;
+    final (box, offset) = found;
+    // Into OUR coordinates: the descendant may sit anywhere inside.
+    return box.localToGlobal(Offset(0, offset), ancestor: this).dy;
+  }
+
+  /// The first descendant that answers with a baseline, depth first.
+  static (RenderBox, double)? _firstBaseline(
+      RenderObject? node, TextBaseline baseline) {
+    if (node == null) return null;
+    if (node is RenderBox && node.hasSize && !node.debugNeedsLayout) {
+      final b = node.getDistanceToActualBaseline(baseline);
+      if (b != null) return (node, b);
+    }
+    (RenderBox, double)? hit;
+    node.visitChildren((c) {
+      hit ??= _firstBaseline(c, baseline);
+    });
+    return hit;
   }
 }

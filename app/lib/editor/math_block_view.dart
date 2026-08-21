@@ -130,7 +130,8 @@ class _MathBlockViewState extends State<MathBlockView> {
         child: EquationEditor(
           app: widget.app,
           placement: EquationPlacement.block,
-          textStyle: TextStyle(fontSize: 22, color: textColor),
+          textStyle:
+              TextStyle(fontSize: kMathBlockFontSize, color: textColor),
           latex: _latex,
           linearSource: widget.block.content['linearSource'] as String?,
           onLinearChanged: (v) =>
@@ -167,7 +168,8 @@ class _MathBlockViewState extends State<MathBlockView> {
         alignment: Alignment.centerLeft,
         child: OnoteMath(
           latex,
-          textStyle: TextStyle(fontSize: 22, color: textColor),
+          textStyle:
+              TextStyle(fontSize: kMathBlockFontSize, color: textColor),
         ),
       ),
     );

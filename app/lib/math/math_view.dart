@@ -6,6 +6,34 @@ import '../theme/tokens.dart';
 import 'latex_compat.dart';
 import 'math_parse.dart';
 
+/// The body text size the editor uses when a block does not override it.
+/// Named here so the maths scale below has something to be a scale OF.
+const double kEditorBodyFontSize = 15.0;
+
+/// The size an equation in a box of its own is drawn at.
+const double kMathBlockFontSize = 22.0;
+
+/// **One size for maths, wherever it sits.**
+///
+/// The owner: *"Would like all the sizing to be consistent between the
+/// inserted maths block and the inline maths."* They were not — an equation
+/// block drew at 22px and the same equation in a sentence drew at the
+/// paragraph's 15px, so a fraction was 44px tall in one place and 30px in the
+/// other, and the inline one read as *"constrained height wise to the text"*.
+/// Nothing was clipped and the line did grow (measured: a 15px paragraph
+/// holding a fraction is 46px against 39px plain); it was simply smaller.
+///
+/// A ratio rather than a fixed number, because a paragraph does not have to
+/// be 15px — a heading is 22, and an imported OneNote box carries whatever
+/// size Word gave it. Maths keeps its relationship to the words around it,
+/// and in ordinary body text that relationship lands exactly on the block's
+/// own 22px.
+const double kMathScale = kMathBlockFontSize / kEditorBodyFontSize;
+
+/// The style an equation is drawn in, given the text it sits among.
+TextStyle mathStyleIn(TextStyle text) =>
+    text.copyWith(fontSize: (text.fontSize ?? kEditorBodyFontSize) * kMathScale);
+
 /// The one place the app turns LaTeX into something on screen.
 ///
 /// Two jobs the bare `Math.tex` doesn't do:

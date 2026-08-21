@@ -139,11 +139,31 @@ void main() {
       // `rationalOf` accepts anything within 1e-9, which turned a decimal
       // typed as 0.6666666667 into 2/3 — and clicking back gave
       // 0.666666666667, a different number with no way back to the first.
+      //
+      // At ten significant figures those two ARE the same number, so the
+      // fraction is now offered and the promise is kept the other way round:
+      // there and back is exactly where you started. The stated invariant is
+      // the round trip, not the refusal.
       final e = typedAnswer('0.6666666667*1');
       final a = e.root.children.whereType<MAnswer>().first;
       final before = e.latex;
-      expect(e.toggleAnswer(a), isFalse,
-          reason: 'no fraction says exactly this number, so none is offered');
+      expect(e.toggleAnswer(a), isTrue);
+      expect(e.latex, isNot(before), reason: 'it did change form');
+      expect(e.toggleAnswer(a), isTrue);
+      expect(e.latex, before,
+          reason: 'and back to exactly the digits the student had');
+    });
+
+    test('...and a decimal no fraction can say is left alone', () {
+      // Pi to ten figures is not 103993/33102 to ten figures, so there is
+      // nothing honest to offer and nothing is offered.
+      final e = MathEditor.empty()..insertSource(r'\pi');
+      e.placeAtEnd();
+      e.insertChar('=');
+      e.insertChar(' ');
+      final a = e.root.children.whereType<MAnswer>().first;
+      final before = e.latex;
+      expect(e.toggleAnswer(a), isFalse);
       expect(e.latex, before);
     });
 
