@@ -255,4 +255,177 @@ void main() {
       const Offset(1, 1),
     ]);
   });
+
+  group('a window too far from zero for its own width', () {
+    // Zoom out to the far right, then zoom back in on a point out there, and
+    // the window ends up narrow AND enormous. Adding the gridline spacing to
+    // a coordinate that big does not change it: the loop that walks the
+    // gridlines never reaches the end and the app stops responding. This is
+    // the one class of defect a drawing can have that a person cannot get
+    // out of, so it is refused at the door.
+    test('is refused, so the last sensible window stays', () {
+      final lost = GraphView(x0: 1e12, x1: 1e12 + 0.01, y0: -1, y1: 1);
+      expect(lost.width, greaterThan(1e-9), reason: 'wide enough on its own');
+      expect(lost.isSane, isFalse);
+    });
+
+    test('a small window near zero is still fine', () {
+      expect(GraphView(x0: -1e-8, x1: 1e-8, y0: -1e-8, y1: 1e-8).isSane,
+          isTrue);
+    });
+
+    test('a big window far out is still fine', () {
+      expect(GraphView(x0: 1e10, x1: 1e10 + 100, y0: -50, y1: 50).isSane,
+          isTrue);
+    });
+
+    test('zooming in stops rather than losing the numbers', () {
+      var v = GraphView(x0: 1e9, x1: 1e9 + 20, y0: -10, y1: 10);
+      for (var i = 0; i < 400; i++) {
+        final next = v.zoomed(0.8, aboutX: 1e9 + 10, aboutY: 0);
+        if (!next.isSane) break;
+        v = next;
+      }
+      // Whatever it settled on, the gridlines can still be told apart.
+      final step = gridStep(v.width);
+      final walked = ticks(v.x0, v.x1, step).toList();
+      expect(walked.length, greaterThan(1));
+      expect(walked.toSet().length, walked.length,
+          reason: 'every gridline is at its own place');
+    });
+  });
+
+  group('ticks', () {
+    test('walks a plain span without drifting', () {
+      expect(ticks(0, 1, 0.2).toList(),
+          [0.0, 0.2, 0.4, 0.6000000000000001, 0.8, 1.0]);
+    });
+
+    test('always terminates, whatever it is handed', () {
+      for (final step in [0.0, -1.0, double.nan, double.infinity]) {
+        expect(ticks(0, 10, step).toList(), isEmpty, reason: 'step $step');
+      }
+      expect(ticks(double.nan, 1, 1).toList(), isEmpty);
+      // Far more lines than a screen could hold: none, rather than a freeze.
+      expect(ticks(0, 1e9, 1).toList(), isEmpty);
+    });
+
+    test('gives nothing when no tick falls inside', () {
+      expect(ticks(1.1, 1.9, 1).toList(), isEmpty);
+    });
+  });
+
+
+  group('a window the curve will not fit in', () {
+    // Fitting the height to `y = x^13` asks for a window ten million million
+    // tall, and every consumer refuses a window like that IN SILENCE: the
+    // block draws an empty box with no message, double-tap to reset fits the
+    // same one again, and the PDF leaves the graph off the page altogether.
+    Plot plot(String src, {bool fitY = true}) => plotFunction(
+        compileFunction(src), GraphView.initial,
+        samples: 400, fitY: fitY);
+
+    test('is refused, and the window that was asked for is kept', () {
+      for (final src in ['x^13', '100^x', 'e^(x^2)', '10^13', '10^14+x',
+        '6.02*10^23*x']) {
+        final p = plot(src);
+        expect(p.view.isSane, isTrue, reason: src);
+        expect(p.view.x0, GraphView.initial.x0, reason: src);
+      }
+    });
+
+    test('and an ordinary curve is still fitted', () {
+      final p = plot('x^2');
+      expect(p.view.y1, lessThan(120), reason: 'fitted, not the default');
+      expect(p.view.y1, greaterThan(90));
+    });
+  });
+
+  group('the left of the equals sign', () {
+    double at(String src, double x) {
+      final s = graphSourceFromLinear(src);
+      expect(s.isOk, isTrue, reason: '$src: ${s.error}');
+      return s.fn!.at!(x);
+    }
+
+    test('a name is only a label', () {
+      expect(at('y=4x', 3), 12);
+      expect(at('h=4x', 3), 12);
+      expect(at('f(x)=4x', 3), 12);
+      expect(at('y1=4x', 3), 12);
+    });
+
+    test('but a coefficient is not a label, it is y scaled', () {
+      // `2y = 4x` was drawn as `y = 4x`: twice the gradient, twice the
+      // intercept, confidently, with nothing on screen to say so. Rearranging
+      // a linear equation is the year-10 topic this feature is for.
+      expect(at('2y=4x', 3), 6);
+      expect(at('-y=x', 3), -3);
+      expect(at('y/2=x', 3), 6);
+      expect(at('3y=6x-9', 3), 3);
+      expect(at('2y+4=6x', 1), 1, reason: '2y = 6x - 4, so y = 3x - 2');
+    });
+
+    test('and what cannot be rearranged is refused in words', () {
+      for (final src in ['y^2=x', 'y*y=x', 'sin(y)=x', '2=x']) {
+        final s = graphSourceFromLinear(src);
+        expect(s.isOk, isFalse, reason: src);
+        expect(s.error, contains('rearrange'), reason: src);
+      }
+    });
+
+    test('a comparison is not an equation, and is no longer drawn', () {
+      for (final src in ['y<=3x', 'y!=3', 'y>x']) {
+        expect(graphSourceFromLinear(src).isOk, isFalse, reason: src);
+      }
+    });
+
+    test('x on both sides still says so', () {
+      final s = graphSourceFromLinear('2x+y=x');
+      expect(s.isOk, isFalse);
+      expect(s.error, contains('both sides'));
+    });
+  });
+
+  group('the window a graph opens at', () {
+    tearDown(() => mathAngleMode = AngleMode.degrees);
+
+    test('a degrees sine opens on a whole wave, not on 5% of one', () {
+      // Ten each way is twenty degrees. The single most likely thing a
+      // student graphs was drawn as a straight diagonal filling the block.
+      mathAngleMode = AngleMode.degrees;
+      final v = initialViewFor(r'y=\sin(x)');
+      expect(v.x0, -360);
+      expect(v.x1, 360);
+      final p = plotFunction(compileFunction('sin(x)'), v,
+          samples: 400, fitY: true);
+      var turns = 0;
+      final pts = p.pieces.first;
+      for (var i = 1; i < pts.length - 1; i++) {
+        final a = pts[i].dy - pts[i - 1].dy;
+        final b = pts[i + 1].dy - pts[i].dy;
+        if (a != 0 && b != 0 && a.sign != b.sign) turns++;
+      }
+      expect(turns, greaterThanOrEqualTo(3), reason: 'it is a wave');
+    });
+
+    test('in radians it is ten each way, as it always was', () {
+      mathAngleMode = AngleMode.radians;
+      expect(initialViewFor(r'y=\sin(x)'), GraphView.initial);
+    });
+
+    test('and an angle that says radians keeps the small window', () {
+      mathAngleMode = AngleMode.degrees;
+      expect(initialViewFor(r'y=\sin(\pi x)'), GraphView.initial);
+      expect(initialViewFor('y=sin(x rad)'), GraphView.initial);
+    });
+
+    test('anything that is not trigonometry is untouched', () {
+      mathAngleMode = AngleMode.degrees;
+      for (final src in ['y=3x+10', 'y=x^2', r'y=\frac{1}{x}', 'y=cosh(x)']) {
+        expect(initialViewFor(src), GraphView.initial, reason: src);
+      }
+    });
+  });
+
 }

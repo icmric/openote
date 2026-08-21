@@ -20,6 +20,11 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - Curves are cut where they should be cut: `1/x` and `tan x` break at their
   asymptotes instead of drawing a line straight through, `√x` simply stops
   where it runs out of values, and one spike cannot flatten everything else.
+- **`y = sin x` opens on a whole wave.** Ten each way is twenty degrees, which
+  drew the most likely graph in the app as a straight diagonal line.
+- **`2y = 6x + 4` is rearranged for you** rather than drawn as `y = 6x + 4`,
+  which is a line with twice the gradient and no warning. Anything that
+  cannot be rearranged says so instead of drawing something else.
 
 ### Added — the maths that was missing
 
@@ -63,6 +68,41 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- **An equation in the middle of a sentence could not be edited at all** in
+  the built app. It worked while being developed and broke in the version
+  people download, which is the worst way for anything to break.
+- **`sin⁻¹(0.5) = 30°`, then `+10 =`, answered 10.52 instead of 40.** Carrying
+  an answer into the next line is the ordinary next thing to do, and a degree
+  sign was being read as "convert this" a second time. Pressing the degrees
+  button and working something out gave no answer at all.
+- **Typing in one equation could steal another one's graph** when the two
+  briefly read the same, and nothing brought it back.
+- **Copying an equation together with its graph** gave you a copy that
+  followed the ORIGINAL: changing the new numbers moved nothing, and changing
+  the old ones quietly rewrote the new graph as well. Cutting an equation and
+  pasting it back unlinked its graph for good.
+- **A graph of something very large, like `y = x¹³`, drew an empty box** —
+  no curve, no message, and the graph was left off the printed page.
+- **The mouse wheel over a graph scrolled the page out from under it** while
+  it zoomed; a sideways flick on a trackpad zoomed it in.
+- **Scrolling around a page counted as editing it** if there was a graph on
+  it: a timestamp, a save and a backup for a change nobody made.
+- **Pressing DEG or RAD threw away the number of figures you had chosen**, and
+  left every other equation in the same sentence showing the old mode's
+  answer.
+- **An answer written `30°` or `1.27×10³⁰` lost its chosen number of figures**
+  the next time you typed anything.
+- **Asking for an angle as a fraction dropped the degree sign**, which made it
+  a different number.
+- **An equation ending in a space could not be reopened** — it came back as
+  raw LaTeX, and typing a backslash into the LaTeX box broke it outright.
+- **A root written inside another root's index came back as a different
+  equation**, silently.
+- **Tab could trap you in an empty box**, with no way out but the mouse.
+- **Right-clicking the page and choosing Picture put it in the paragraph you
+  were writing**, several inches from where you clicked. The menu also got
+  back the "Table from a file (CSV, Excel)" it had lost.
+- **Alt-drag now moves a graph**, like every other box.
 - **Pressing DEG or RAD threw you out of the equation you were writing** — and
   in a sentence, took the equation with it.
 - **Maths is one size everywhere.** An equation in a sentence was smaller than

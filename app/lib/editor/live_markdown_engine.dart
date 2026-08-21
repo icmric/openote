@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../markdown/md_render.dart';
+import '../markdown/md_syntax.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../math/equation_editor.dart';
+import '../math/evaluate.dart';
 import '../math/math_editor.dart';
 import '../math/math_field.dart';
 import 'inline_math_editor.dart';
@@ -50,6 +52,12 @@ class LiveMarkdownEngine extends OnoteTextEditor {
           if (nb == null || !src.startsWith('sha256:')) return null;
           return app.blob(src);
         },
+        // **A graph and its equation light up together**, in a sentence just
+        // as in a box of its own. On the READ path because clicking a graph
+        // clears the selection, so the paragraph an equation lives in is
+        // never the one being edited at the moment its graph is picked out —
+        // which made "it works both ways" true only for maths blocks.
+        mathLinkTint: (latex) => app.inlineGraphTint(block.id, latex),
         // Tag markers (TEXT-5) hang in the line's gutter.
         tagsByLine: NoteTag.byLine(block.content),
         onToggleTag: (line, checked) =>
@@ -229,6 +237,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // sits is a character offset that every keystroke in the paragraph
       // moves. `_graphAnchor` is what the graph will follow from here.
       onDrawGraph: _drawGraph,
+      onReworkSiblings: _reworkSiblingMath,
       // A summation's stacked limits are far wider than the same maths reads
       // inline; without this the equation hits the paragraph's edge and
       // starts scrolling inside its span. The deficit seam is the one
@@ -333,6 +342,68 @@ class _LiveMarkdownSession extends OnoteEditSession {
     _graphAnchor = latex;
   }
 
+  /// **Work out every OTHER equation in this paragraph again.**
+  ///
+  /// The page-wide pass a DEG/RAD press starts skips the block being edited,
+  /// because rewriting a live one from outside reads as a foreign edit and
+  /// closes the equation. For a maths BLOCK that is exactly right: the one
+  /// open equation refreshes itself. For a sentence, "the block being edited"
+  /// is the whole paragraph, so every other answered equation in it was left
+  /// showing the old mode's number — in a grey panel that says the app worked
+  /// it out, under a button that now says the opposite.
+  ///
+  /// Only the session that owns the buffer can rewrite it safely, so it does:
+  /// backwards, skipping the open run, and carrying the open equation's own
+  /// offsets along by however much the text in front of it changed length.
+  void _reworkSiblingMath(AngleMode writtenIn) {
+    final start = _mathStart;
+    final text = controller.text;
+    var out = text;
+    var shift = 0;
+    for (final run in mathRunsIn(text).toList().reversed) {
+      if (run.start == start) continue; // it does its own
+      if (!run.latex.contains('boxed')) continue;
+      // Read in the mode the digits were WRITTEN in, so the figures the
+      // student chose for each one are recognised; refreshed in the mode
+      // that is on now.
+      final saved = mathAngleMode;
+      mathAngleMode = writtenIn;
+      final MathEditor? e;
+      try {
+        e = MathEditor.open(run.latex);
+      } finally {
+        mathAngleMode = saved;
+      }
+      if (e == null || !e.refreshAnswers()) continue;
+      out = replaceMathRun(out, run, e.latex);
+      if (start != null && run.start < start) {
+        shift += e.latex.length - run.latex.length;
+      }
+    }
+    if (out == text) return;
+    final sel = controller.selection;
+    _mathSelfEditing = true;
+    try {
+      controller.value = controller.value.copyWith(
+        text: out,
+        selection: sel.isValid
+            ? TextSelection.collapsed(offset: sel.baseOffset + shift)
+            : sel,
+        composing: TextRange.empty,
+      );
+    } finally {
+      _mathSelfEditing = false;
+    }
+    if (start != null) {
+      _mathStart = start + shift;
+      _mathEnd += shift;
+      controller.editingMathAt = _mathStart;
+    }
+    _mathSelfText = controller.text;
+    controller.refreshSpans();
+    onChanged(controller.text);
+  }
+
   /// Every keystroke inside the equation, written straight through to the
   /// sentence. The re-derived end is what keeps a growing equation from
   /// overwriting the word after it.
@@ -377,8 +448,25 @@ class _LiveMarkdownSession extends OnoteEditSession {
     final was = _graphAnchor;
     final host = _hostBlockId;
     if (was != null && host != null && was != tidy) {
-      app.pushInlineEquationToGraphs(host, was, tidy);
-      _graphAnchor = tidy;
+      // **Not if another equation in this sentence reads the same thing.**
+      //
+      // This is how typing in one equation used to steal a different one's
+      // graph. Write `y=x`, draw it, start a second equation and type `=x`
+      // into it: for one keystroke both read `y=x`, and the next keystroke
+      // moved the FIRST equation's graph on to the second, link and all,
+      // with nothing for Ctrl+Z to bring back.
+      //
+      // The buffer has already been written, so this equation reads [tidy]
+      // and anything still reading [was] is somebody else. The anchor stays
+      // put as well, so this equation's own graph picks the thread back up
+      // as soon as the two stop reading alike.
+      final mine = mathRunsIn(controller.text)
+          .where((r) => r.latex.trim() == was)
+          .length;
+      if (mine == 0) {
+        app.pushInlineEquationToGraphs(host, was, tidy);
+        _graphAnchor = tidy;
+      }
     }
     onChanged(controller.text);
     _scheduleSpellCheck();
@@ -394,6 +482,10 @@ class _LiveMarkdownSession extends OnoteEditSession {
     final latex = (_mathEditor?.latex ?? '').trim();
     _mathStart = null;
     _mathEditor = null;
+    // **The link's tint goes out with the equation.** The owner's rule is
+    // that it shows only while one end of the link is chosen; leaving the
+    // anchor set left an equation lit up in a paragraph nobody was in.
+    _graphAnchor = null;
     controller.editingMathAt = null;
     final pad = _mathPadded;
     _mathPadded = false;

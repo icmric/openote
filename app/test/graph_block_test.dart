@@ -15,6 +15,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/graph_block_view.dart';
 import 'package:openote/math/graph_plot.dart';
+import 'package:flutter/gestures.dart';
+import 'package:openote/canvas/page_canvas.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -319,18 +321,131 @@ void main() {
       app.cancelPendingSave();
     });
 
-    testWidgets('a fitted graph writes back the window it chose',
+    testWidgets('a fitted graph does not WRITE the window it chose',
         (tester) async {
+      // Looking at a graph is not editing it. The fit reads the samples and
+      // the number of samples follows the canvas zoom, so storing the fitted
+      // window turned scrolling around a page into an edit: a bumped
+      // timestamp, a save, and a git commit for a change nobody made. The
+      // window it drew in is remembered in the widget instead, which is all
+      // the next drag needs.
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final g = app.insertGraph(latex: 'y=x^{2}');
+      app.cancelPendingSave();
+      final stamp = g.updatedAt;
       expect(g.content['view'], isNull);
+
       await pump(tester, g);
       await tester.pump(const Duration(milliseconds: 20));
-      expect(g.content['view'], isNotNull,
-          reason: 'so the next pan starts from where the curve actually is');
+
+      expect(g.content['view'], isNull, reason: 'nothing was written');
+      expect(g.updatedAt, stamp, reason: 'and nothing was timestamped');
       expect(g.content['fitY'], isNot(false),
           reason: 'fitting it is not the student saying where to look');
       app.cancelPendingSave();
     });
   });
+
+  group('copying an equation and its graph', () {
+    // The copy has to follow the COPY. It used to follow the original, so
+    // "now do the same one with different numbers" — select both, Ctrl+C,
+    // Ctrl+V, change the numbers — moved nothing at all, and changing the
+    // first worked example silently rewrote the second graph as well.
+    test('the copy follows the copy, not the original', () {
+      if (!haveSqlite) return;
+      final eq = equation('y=3x+10');
+      final g = app.insertGraph(latex: 'y=3x+10', from: eq.id);
+      app.selectMany([eq.id, g.id]);
+      app.copySelectedBlocks();
+      app.pasteBlocks(at: const Offset(400, 400));
+
+      final graphs = app.blocks.where((b) => b.type == BlockType.graph);
+      expect(graphs.length, 2);
+      final copy = graphs.firstWhere((b) => b.id != g.id);
+      final copiedEq = app.blocks.firstWhere(
+          (b) => b.type == BlockType.math && b.id != eq.id);
+      expect(copy.content['from'], copiedEq.id);
+      expect(app.graphsFollowing(eq.id).length, 1,
+          reason: 'the original still has exactly its own');
+
+      copiedEq.content['latex'] = 'y=2x+6';
+      app.pushEquationToGraphs(copiedEq.id, 'y=2x+6');
+      expect(copy.content['latex'], 'y=2x+6');
+      expect(g.content['latex'], 'y=3x+10',
+          reason: 'and the first worked example is left alone');
+      app.cancelPendingSave();
+    });
+
+    test('cutting an equation and pasting it back keeps its graph', () {
+      if (!haveSqlite) return;
+      final eq = equation('y=3x+10');
+      final g = app.insertGraph(latex: 'y=3x+10', from: eq.id);
+      app.selectMany([eq.id]);
+      app.cutSelectedBlocks();
+      app.pasteBlocks(at: const Offset(40, 40));
+
+      final back = app.blocks.firstWhere((b) => b.type == BlockType.math);
+      expect(back.id, isNot(eq.id), reason: 'a paste is a new block');
+      expect(g.content['from'], back.id,
+          reason: 'the graph was pointing at an id that no longer exists');
+      app.pushEquationToGraphs(back.id, 'y=99');
+      expect(g.content['latex'], 'y=99');
+      app.cancelPendingSave();
+    });
+
+    test('a graph copied on its own still follows the same equation', () {
+      // Two windows onto one equation is a thing people want — one zoomed
+      // in, one zoomed out — so this one is deliberately left alone.
+      if (!haveSqlite) return;
+      final eq = equation('y=3x+10');
+      final g = app.insertGraph(latex: 'y=3x+10', from: eq.id);
+      app.selectMany([g.id]);
+      app.copySelectedBlocks();
+      app.pasteBlocks(at: const Offset(400, 400));
+      expect(app.graphsFollowing(eq.id).length, 2);
+      app.cancelPendingSave();
+    });
+  });
+
+
+  group('the wheel over a graph', () {
+    // A wheel notch is delivered to every listener under the pointer, and the
+    // page canvas has one of its own. One notch used to zoom the graph AND
+    // scroll the page out from under it, so the thing being zoomed slid away
+    // while it zoomed.
+    testWidgets('zooms the graph and leaves the page where it is',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final g = app.insertGraph(latex: 'y=x^2', at: const Offset(120, 120));
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ListenableBuilder(
+            listenable: app,
+            builder: (_, __) => PageCanvas(state: app),
+          ),
+        ),
+      ));
+      await tester.pump();
+
+      final where = tester.getCenter(find.byType(GraphBlockView).first);
+      final wasOffset = app.canvas.offset;
+      final pointer = TestPointer(1, PointerDeviceKind.mouse);
+      pointer.hover(where);
+      await tester.sendEventToBinding(
+          pointer.scroll(const Offset(0, 120)));
+      await tester.pump();
+
+      expect(GraphView.fromJson(g.content['view']).width,
+          greaterThan(GraphView.initial.width),
+          reason: 'the graph zoomed out');
+      expect(app.canvas.offset, wasOffset,
+          reason: 'and the page did not move an inch');
+      app.cancelPendingSave();
+    });
+  });
+
 }

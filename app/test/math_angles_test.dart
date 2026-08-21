@@ -7,8 +7,9 @@
 // answered −0.988, because 30 was taken as radians. A year-10 student writing
 // `sin(30)` means thirty degrees, and every school calculator agrees.
 //
-// The rule is one sentence: **degrees, unless the angle contains π** (or a
-// degree sign, which converts itself, or the word `rad`). Nobody writes
+// The rule is one sentence: **degrees, unless the angle contains π** (or the
+// word `rad`; a degree SIGN says degrees, and in degrees mode there is
+// nothing for it to convert — see the group on the ring). Nobody writes
 // `sin(π/6)` meaning degrees, so a π in the angle is the student saying which
 // they meant — which is what was asked for.
 import 'package:flutter/material.dart';
@@ -18,6 +19,7 @@ import 'package:openote/math/evaluate.dart';
 import 'package:openote/math/latex_compat.dart';
 import 'package:openote/math/math_editor.dart';
 import 'package:openote/math/math_linear_projection.dart';
+import 'package:openote/math/math_tree.dart';
 import 'package:openote/math/math_view.dart';
 
 String answerOf(String latex) {
@@ -59,11 +61,69 @@ void main() {
     });
 
     test('and a degree sign forces degrees even beside a π', () {
-      // The sign converts itself on the spot, so nothing converts twice.
-      expect(evaluateLinear('30°').value, closeTo(0.5235987, 1e-6));
       expect(answerOf(r'\sin(30^{\circ})'), '0.5');
       expect(answerOf(r'\sin(45^{\circ})'),
           evaluateLinear('sin(45)').display);
+    });
+  });
+
+  group('the ring on an angle means DEGREES, not "convert me"', () {
+    // The app writes its own angle answers with a ring: `sin⁻¹(0.5) = 30°`.
+    // Carrying that answer into the next line is the ordinary next thing a
+    // student does, and it used to come back 10.52359878 — the ring was read
+    // as "turn this into radians" even when radians were not the unit in
+    // use, so thirty degrees became half a radian and then had ten added to
+    // it. A Casio fx-82 in DEG answers 40.
+    test('an angle answer carried into the next line adds up', () {
+      mathAngleMode = AngleMode.degrees;
+      expect(evaluateLinear('30°').display, '30');
+      expect(evaluateLinear('30°+10').display, '40');
+      expect(evaluateLinear('90°-30°').display, '60');
+    });
+
+    test('and in radians it converts, once, exactly as a Casio does', () {
+      mathAngleMode = AngleMode.radians;
+      expect(evaluateLinear('30°').value, closeTo(0.5235987, 1e-6));
+      expect(evaluateLinear('30°+10').value, closeTo(10.5235987, 1e-6));
+    });
+
+    test('sin of a ringed angle is the same number in either mode', () {
+      // Everything inside the brackets wears the ring, so the mode has
+      // nothing left to decide.
+      for (final m in AngleMode.values) {
+        mathAngleMode = m;
+        expect(evaluateLinear('sin (30°)').display, '0.5', reason: '\$m');
+        expect(evaluateLinear('cos (60°)').display, '0.5', reason: '\$m');
+      }
+    });
+
+    test('but a bare number beside it belongs to the mode, as it should', () {
+      // `30°+10`: the ten is ten DEGREES in degrees mode and ten RADIANS in
+      // radians mode, because that is what a bare number means in each. Both
+      // answers below are right; they are not the same number, and nothing
+      // here should try to make them one.
+      mathAngleMode = AngleMode.degrees;
+      expect(evaluateLinear('sin (30°+10)').value, closeTo(0.6427876, 1e-6),
+          reason: 'sin 40°');
+      mathAngleMode = AngleMode.radians;
+      expect(evaluateLinear('sin (30°+10)').value, closeTo(-0.8906718, 1e-6),
+          reason: 'sin of 10.5236 radians');
+    });
+
+    test('the whole round trip: an answer, then more working on it', () {
+      mathAngleMode = AngleMode.degrees;
+      final e = MathEditor.open(r'\sin ^{-1}0.5=\boxed{30{}^{\circ}}')!;
+      e.placeAtEnd();
+      e.insertChar('+');
+      e.insertChar('1');
+      e.insertChar('0');
+      e.insertChar('=');
+      e.insertChar(' ');
+      expect(e.latex, endsWith(r'+10=\boxed{40}'),
+          reason: 'the standing answer must survive as well');
+      expect(e.root.children.whereType<MAnswer>().length, 2,
+          reason: 'the first answer used to be DELETED, because the working '
+              'that contained it no longer read as maths');
     });
   });
 

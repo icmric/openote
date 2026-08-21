@@ -294,7 +294,16 @@ class MSqrt extends MNode {
 
   @override
   String texOf(MathTexCtx c) {
-    final deg = degree == null ? '' : '[${rowToTex(degree!, c)}]';
+    // A `]` typed into the index would otherwise close the bracket early,
+    // and the equation would come back from storage as a different one.
+    // Braces are invisible to the renderer and stop it (probed: the reader
+    // counts them, and flutter_math_fork draws `\sqrt[{n]}]{x}` fine).
+    final inner = degree == null ? '' : rowToTex(degree!, c);
+    final deg = degree == null
+        ? ''
+        : inner.contains(']')
+            ? '[{$inner}]'
+            : '[$inner]';
     return '\\sqrt$deg{${rowToTex(radicand, c)}}';
   }
 }

@@ -977,9 +977,13 @@ double _invisibleFontSize(double wPt, double hPt, int chars) {
 /// three of them for a whole release — a graph would simply have been absent
 /// from every PDF and every printout, with nothing to say so.
 pw.Widget? _graphWidget(Block b, double h) {
-  final source = graphSourceFromLatex(b.content['latex'] as String? ?? '');
+  final latex = b.content['latex'] as String? ?? '';
+  final source = graphSourceFromLatex(latex);
   if (!source.isOk) return null;
-  final view = GraphView.fromJson(b.content['view']);
+  // The same window the screen opens at, for a graph nobody has moved.
+  final view = b.content['view'] == null
+      ? initialViewFor(latex)
+      : GraphView.fromJson(b.content['view']);
   final wpt = b.w / _pxPerPoint;
   final hpt = h / _pxPerPoint;
   // Print resolution, not screen: a curve is cheap and the page is not
@@ -1006,14 +1010,18 @@ pw.Widget? _graphWidget(Block b, double h) {
         canvas
           ..setStrokeColor(PdfColors.grey400)
           ..setLineWidth(0.3);
-        final stepX = gridStep(v.width);
-        final stepY = gridStep(v.height);
-        for (var x = (v.x0 / stepX).ceil() * stepX; x <= v.x1; x += stepX) {
+        // The same spacing, and the same walk, as the screen. Asking for a
+        // flat eight lines printed a different graph from the one on the
+        // page; adding the step up as it went could, far enough from zero,
+        // fail to advance at all and never finish printing.
+        final stepX = gridStep(v.width, target: math.max(3, b.w ~/ 90));
+        final stepY = gridStep(v.height, target: math.max(3, h ~/ 60));
+        for (final x in ticks(v.x0, v.x1, stepX)) {
           canvas
             ..moveTo(px(x), 0)
             ..lineTo(px(x), size.y);
         }
-        for (var y = (v.y0 / stepY).ceil() * stepY; y <= v.y1; y += stepY) {
+        for (final y in ticks(v.y0, v.y1, stepY)) {
           canvas
             ..moveTo(0, py(y))
             ..lineTo(size.x, py(y));

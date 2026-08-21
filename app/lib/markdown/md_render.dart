@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../core/platform_open.dart';
 import '../model/tags.dart';
+import '../editor/inline_math_editor.dart';
 import '../math/math_view.dart';
 import '../theme/onote_theme.dart';
 import 'md_syntax.dart';
@@ -79,6 +80,7 @@ class MarkdownView extends StatefulWidget {
     this.imageResolver,
     this.tagsByLine = const {},
     this.onToggleTag,
+    this.mathLinkTint,
   });
 
   final String text;
@@ -102,6 +104,15 @@ class MarkdownView extends StatefulWidget {
   /// notebook's content-addressed blob store. Null → image lines render as
   /// their literal Markdown.
   final Uint8List? Function(String src)? imageResolver;
+
+  /// **This equation has a graph, and one of the two is being looked at.**
+  ///
+  /// The same hook the live editor sets, on the READ path. Without it a
+  /// paragraph that is not being edited could never light up — and clicking a
+  /// graph deselects everything, so not being edited is exactly the state a
+  /// paragraph is in when its graph is clicked. The link is supposed to work
+  /// both ways.
+  final Color? Function(String latex)? mathLinkTint;
 
   @override
   State<MarkdownView> createState() => _MarkdownViewState();
@@ -352,7 +363,7 @@ class _MarkdownViewState extends State<MarkdownView> {
       return Padding(
         padding: EdgeInsets.only(top: index == 0 ? 0 : 6, bottom: 2),
         child: Text.rich(
-          TextSpan(children: inlineSpans(h.group(2)!, baseStyle, dark, onWikiLink)),
+          TextSpan(children: inlineSpans(h.group(2)!, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
           style: baseStyle.copyWith(
             fontSize: sizes[level - 1],
             fontWeight: FontWeight.w600,
@@ -405,7 +416,7 @@ class _MarkdownViewState extends State<MarkdownView> {
             Expanded(
               child: Text.rich(
                 TextSpan(
-                  children: inlineSpans(cb.group(3)!, baseStyle, dark, onWikiLink),
+                  children: inlineSpans(cb.group(3)!, baseStyle, dark, onWikiLink, widget.mathLinkTint),
                   style: checked
                       ? baseStyle.copyWith(
                           decoration: TextDecoration.lineThrough,
@@ -453,7 +464,7 @@ class _MarkdownViewState extends State<MarkdownView> {
                     style: baseStyle.copyWith(color: OnoteColors.graphite500))),
             Expanded(
                 child: Text.rich(
-                    TextSpan(children: inlineSpans(body, baseStyle, dark, onWikiLink)),
+                    TextSpan(children: inlineSpans(body, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
                     style: baseStyle)),
           ],
         ),
@@ -538,7 +549,7 @@ class _MarkdownViewState extends State<MarkdownView> {
         decoration: const BoxDecoration(
             border: Border(left: BorderSide(color: OnoteColors.ink300, width: 3))),
         child: Text.rich(
-          TextSpan(children: inlineSpans(quote.group(1)!, baseStyle, dark, onWikiLink)),
+          TextSpan(children: inlineSpans(quote.group(1)!, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
           style: baseStyle.copyWith(color: OnoteColors.graphite500),
         ),
       );
@@ -585,7 +596,7 @@ class _MarkdownViewState extends State<MarkdownView> {
         child: Text.rich(
           TextSpan(
               children: inlineSpans(
-                  plainIndent.group(2)!, baseStyle, dark, onWikiLink)),
+                  plainIndent.group(2)!, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
           style: baseStyle,
         ),
       );
@@ -593,7 +604,7 @@ class _MarkdownViewState extends State<MarkdownView> {
 
     // Paragraph (empty lines keep their height)
     return Text.rich(
-      TextSpan(children: inlineSpans(line.isEmpty ? ' ' : line, baseStyle, dark, onWikiLink)),
+      TextSpan(children: inlineSpans(line.isEmpty ? ' ' : line, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
       style: baseStyle,
     );
   }
@@ -643,7 +654,8 @@ TextStyle subSupStyle(TextStyle base, {required bool sup, required bool dark}) {
 /// ++underline++, inline math $…$ (TEXT-1a), [[Page|id]] wiki-links (EMBED-1)
 /// and external `[label](https://…)` links (TEXT-1).
 List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
-    [void Function(String label, String? id)? onWikiLink]) {
+    [void Function(String label, String? id)? onWikiLink,
+    Color? Function(String latex)? mathLinkTint]) {
   final spans = <InlineSpan>[];
   final pattern = mdInlineRe;
   var last = 0;
@@ -713,8 +725,11 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
           // display style now, in a sentence exactly as in a box of its own,
           // so the double-dollar form differs only in being centred on a line
           // of its own (the whole-line branch above).
-          child:
-              OnoteMath(c.inner, textStyle: mathStyleIn(base), compact: true),
+          child: InlineMathAtom(
+            latex: c.inner,
+            style: mathStyleIn(base),
+            linkTint: mathLinkTint?.call(c.inner),
+          ),
         ));
       case MdInline.extLink:
         spans.add(WidgetSpan(

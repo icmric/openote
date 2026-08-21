@@ -446,11 +446,20 @@ class MathEditor {
     ];
     if (holes.isEmpty) return backwards ? false : _tabOut();
     final here = rows.indexWhere((r) => identical(r, caretRow));
+    // **The only empty box left is the one you are standing in.**
+    //
+    // Wrapping round then lands the caret back where it already was, and the
+    // key is swallowed on the way — so Tab did nothing at all, twice, in a
+    // half-filled root or gcd. "A structure you cannot leave by the key that
+    // got you into it is a trap" is this method's own rule; leaving is what
+    // the last box means.
+    final elsewhere = holes.where((i) => i != here);
+    if (elsewhere.isEmpty) return backwards ? false : _tabOut();
     int target;
     if (backwards) {
-      target = holes.lastWhere((i) => i < here, orElse: () => holes.last);
+      target = elsewhere.where((i) => i < here).lastOrNull ?? elsewhere.last;
     } else {
-      target = holes.firstWhere((i) => i > here, orElse: () => holes.first);
+      target = elsewhere.where((i) => i > here).firstOrNull ?? elsewhere.first;
     }
     caretRow = rows[target];
     caretIndex = 0;
@@ -816,12 +825,13 @@ class MathEditor {
   /// The unit rides on [r] — see [_unitNodes].
   static MRow _writeAnswer(EvalResult r,
       {required bool fraction, int? sigFigs}) {
-    if (fraction) {
-      final rat = _tidyFraction(r);
-      if (rat != null) return _fractionRow(rat);
-    }
-    final row =
-        _digits(sigFigs == null ? r.display : r.displayAt(sigFigs));
+    final rat = fraction ? _tidyFraction(r) : null;
+    // The unit rides on whichever form is written. It used to ride on the
+    // decimal alone, so asking for 22.5° as a fraction handed back 45/2 — a
+    // number in RADIANS, and nothing on the page to say the ring had gone.
+    final row = rat != null
+        ? _fractionRow(rat)
+        : _digits(sigFigs == null ? r.display : r.displayAt(sigFigs));
     for (final n in _unitNodes(r.unit)) {
       row.add(n);
     }
@@ -934,16 +944,26 @@ class MathEditor {
     for (var i = 0; i < root.length; i++) {
       final a = root.children[i];
       if (a is! MAnswer) continue;
-      final text = _writtenDigits(a.content);
-      if (text == null) continue;
       if (i == 0 || !_isEquals(root.children[i - 1])) continue;
       final w = _workingBefore(i - 1);
       if (w == null) continue;
       final r = evaluateLinear(w);
       if (!r.isOk) continue;
-      if (r.display == text) continue; // the ordinary rendering
+      // Compare what is ON THE PAGE with what this answer would be written
+      // as at each precision. Comparing the written form rather than a run
+      // of digits is what makes it work for `30°` and for
+      // `1.268×10³⁰` as well as for `0.7071`: a scientific answer has no
+      // digit run at all, so the figures the student chose for one used to be
+      // thrown away on the very next keystroke.
+      final have = rowToTex(a.content, kStoreCtx);
+      // The ordinary rendering — there is no choice to remember.
+      if (rowToTex(_writeAnswer(r, fraction: false), kStoreCtx) == have) {
+        continue;
+      }
       for (var f = 1; f <= 15; f++) {
-        if (r.displayAt(f) == text) {
+        final at =
+            rowToTex(_writeAnswer(r, fraction: false, sigFigs: f), kStoreCtx);
+        if (at == have) {
           a.sigFigs = f;
           break;
         }
@@ -1151,6 +1171,7 @@ class MathEditor {
   /// 333/1000 rather than a third.
   EvalResult _valueOf(MAnswer a) {
     final i = root.children.indexOf(a);
+    if (i < 0) return const EvalResult.err('not in this equation');
     if (i > 0 && _isEquals(root.children[i - 1])) {
       final w = _workingBefore(i - 1);
       if (w != null) {
@@ -1158,12 +1179,19 @@ class MathEditor {
         if (r.isOk) return r;
       }
     }
-    // No working: read the number as written, without its unit — a degree
-    // sign means "in radians" to the evaluator, and an answer is not working.
+    // No working: read the number as written, WITHOUT its unit, and hand the
+    // unit back separately. A number and a label for what it is are two
+    // things, and running the label back through the evaluator is what used
+    // to turn an answer of `30°` into 0.524 with one click of the menu.
     final digits = _writtenDigits(a.content);
     if (digits != null) {
       final d = double.tryParse(digits);
-      if (d != null) return EvalResult.ok(d);
+      if (d != null) {
+        return EvalResult.ok(d,
+            unit: a.content.children.any(_isUnitNode)
+                ? EvalUnit.degrees
+                : EvalUnit.none);
+      }
     }
     return evaluateLinear(rowToLinear(a.content));
   }
@@ -1206,7 +1234,12 @@ class MathEditor {
       final r = evaluateLinear(working);
       if (!r.isOk || !_isPlainNumber(r.display)) {
         root.removeAt(i);
-        if (caretIndex > i) caretIndex--;
+        // `i` counts along ROOT and `caretIndex` counts along `caretRow`, so
+        // shifting one by the other moved the caret sideways whenever it was
+        // inside a fraction or a root. `removeAnswer` has always had this
+        // guard; this path — which the 400ms recheck runs, not just DEG/RAD —
+        // did not.
+        if (identical(caretRow, root) && caretIndex > i) caretIndex--;
         i--;
         changed = true;
         continue;

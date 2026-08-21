@@ -14,6 +14,7 @@ import 'package:openote/math/evaluate.dart';
 import 'package:openote/math/math_editor.dart';
 import 'package:openote/math/math_inventory.dart';
 import 'package:openote/math/math_linear_projection.dart';
+import 'package:openote/math/math_parse.dart';
 import 'package:openote/math/math_tree.dart';
 import 'package:openote/math/math_view.dart';
 
@@ -238,4 +239,35 @@ void main() {
       }
     });
   });
+
+  group('the number of boxes is the number the function takes', () {
+    // A comma typed inside the first box of `gcd( , )` used to grow a THIRD
+    // box on reopen — one the template never promised, that nothing can
+    // remove, and that either changes the answer (gcd, lcm, max and min
+    // reduce over all of them) or is quietly ignored (nCr, nPr).
+    test('an extra comma does not grow a box', () {
+      final r = parseLatex(r'\mathrm{gcd}\left( 1,2,3\right) ');
+      expect(r.supported, isTrue, reason: 'it still reads as something');
+      expect(r.root!.children.whereType<MCall>(), isEmpty,
+          reason: 'as the plain symbols it looks like, not as a call');
+    });
+
+    test('one argument short is not a call either', () {
+      final r = parseLatex(r'\mathrm{gcd}\left( 12\right) ');
+      expect(r.supported, isTrue);
+      expect(r.root!.children.whereType<MCall>(), isEmpty);
+    });
+
+    test('and the right number still reads as the call it is', () {
+      for (final entry in kCallFunctions.entries) {
+        final args = List.filled(entry.value, '1').join(',');
+        final r = parseLatex(
+            r'\mathrm{' + entry.key + r'}\left( ' + args + r'\right) ');
+        final call = r.root!.children.whereType<MCall>().singleOrNull;
+        expect(call, isNotNull, reason: entry.key);
+        expect(call!.args.length, entry.value, reason: entry.key);
+      }
+    });
+  });
+
 }

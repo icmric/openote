@@ -14,6 +14,7 @@ library;
 
 import 'package:flutter/foundation.dart';
 
+import 'evaluate.dart';
 import 'math_inventory.dart';
 
 @immutable
@@ -61,7 +62,9 @@ class ActiveMathEditor {
   /// keystroke, and for one inside a sentence it reads as a foreign edit and
   /// closes the equation. So the open one is asked to do it itself, which is
   /// also what keeps the caret where it is.
-  final VoidCallback? rework;
+  /// [writtenIn] is the mode the page's answers were worked out in, which is
+  /// what reads back how many figures each one was showing.
+  final void Function(AngleMode writtenIn)? rework;
 
   // There WAS a live `= 42` readout on the bar here, with a button to put the
   // answer in. The owner: *"rather than having it appear up the top though

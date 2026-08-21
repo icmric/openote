@@ -15,6 +15,7 @@ import 'package:openote/math/evaluate.dart';
 import 'package:openote/math/math_editor.dart';
 import 'package:openote/math/math_inventory.dart';
 import 'package:openote/math/math_linear_projection.dart';
+import 'package:openote/math/math_parse.dart';
 import 'package:openote/math/math_tree.dart';
 
 /// One backslash, so the expectations read as what a student types.
@@ -176,4 +177,105 @@ void main() {
       }
     });
   });
+
+  group('reading a root back off the page', () {
+    // A space is the last thing a student types before looking at the answer,
+    // and a space is written `\ `. Storing the equation trims it to a lone
+    // backslash — which is not a command, and used to throw a RangeError
+    // straight out of MathEditor.open. Not "opens in the LaTeX view": throws,
+    // from four unguarded call sites, one of them every keystroke.
+    test('an equation that ended in a space still opens', () {
+      final bs = String.fromCharCode(92);
+      for (final src in [r'\sqrt[3]{8}', r'\mathrm{gcd}\left( 12,18\right) ',
+        '2+3', r'\frac{1}{2}']) {
+        final r = parseLatex(src.trimRight() + bs);
+        expect(r.supported, isTrue, reason: src);
+        expect(rowToTex(r.root!, const MathTexCtx()),
+            rowToTex(parseLatex(src).root!, const MathTexCtx()),
+            reason: 'and the trailing space changed nothing at all');
+      }
+    });
+
+    test('a lone backslash on its own is an empty equation, not a crash', () {
+      final r = parseLatex(String.fromCharCode(92));
+      expect(r.supported, isTrue);
+      expect(r.root!.isEmpty, isTrue);
+    });
+
+    test('a root written inside a root index survives being stored', () {
+      // `]` used to be looked for with indexOf, which finds the FIRST one —
+      // the inner root's — so the equation came back as a different one,
+      // with `supported: true` and no warning at all.
+      const src = r'\sqrt[\sqrt[3]{2}]{}';
+      final r = parseLatex(src);
+      expect(r.supported, isTrue);
+      final again = rowToTex(r.root!, const MathTexCtx());
+      expect(again, r'\sqrt[{\sqrt[3]{2}}]{}');
+      expect(rowToTex(parseLatex(again).root!, const MathTexCtx()), again,
+          reason: 'and it is stable from there on');
+    });
+
+    test('a bracket typed into an index is braced, not left to close it', () {
+      final r = parseLatex(r'\sqrt[{n]}]{x}');
+      expect(r.supported, isTrue);
+      expect(rowToTex(r.root!, const MathTexCtx()), r'\sqrt[{n]}]{x}',
+          reason: 'the x is under the sign, and the ] is in the index');
+    });
+
+    test('an index the reader cannot read refuses the whole equation', () {
+      // Rather than dropping the part it disliked and carrying on, which is
+      // how an equation quietly becomes a different equation.
+      final r = parseLatex(r'\sqrt[\unknowable{2}]{x}');
+      expect(r.supported, isFalse);
+      expect(r.unknown, isNotNull);
+    });
+
+    test('an ordinary root is untouched by any of it', () {
+      for (final src in [r'\sqrt{2}', r'\sqrt[3]{8}', r'\sqrt[\frac{1}{2}]{x}',
+        r'\sqrt[n]{x^{2}}']) {
+        final r = parseLatex(src);
+        expect(r.supported, isTrue, reason: src);
+        expect(rowToTex(r.root!, const MathTexCtx()), src, reason: src);
+      }
+    });
+  });
+
+
+  group('Tab leaves when there is nowhere left to go', () {
+    // "A structure you cannot leave by the key that got you into it is a
+    // trap" is the rule Tab is written to. When the only empty box left was
+    // the one the caret was standing in, Tab wrapped round to it, moved
+    // nothing, and swallowed the key: the student was left pressing Tab at a
+    // half-filled root with no way out but the mouse.
+    test('a root with only its index left empty', () {
+      final e = MathEditor.empty()..insertSource(r'\sqrt[]{8}');
+      e.tab(); // into the index, the only hole there is
+      expect(e.caretRow.name, 'degree');
+      expect(e.tab(), isTrue, reason: 'the key is used');
+      expect(identical(e.caretRow, e.root), isTrue,
+          reason: 'and it came OUT, rather than landing where it started');
+    });
+
+    test('with two holes it still goes to the other one', () {
+      final e = MathEditor.empty()..insertSource(r'\sqrt[]{}');
+      e.tab();
+      final first = e.caretRow;
+      e.tab();
+      expect(identical(e.caretRow, first), isFalse);
+      e.tab();
+      expect(identical(e.caretRow, first), isTrue, reason: 'and round again');
+    });
+
+    test('a call with one box filled leaves by the second', () {
+      final e = MathEditor.empty()
+        ..insertItem(mathItemsById['fn-gcd']!);
+      e.insertChar('9');
+      expect(e.tab(), isTrue);
+      e.insertChar('6');
+      expect(e.tab(), isTrue);
+      expect(identical(e.caretRow, e.root), isTrue,
+          reason: 'both boxes filled, so Tab means "done here"');
+    });
+  });
+
 }

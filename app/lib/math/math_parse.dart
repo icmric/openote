@@ -104,11 +104,24 @@ const _delims = {
 };
 
 MathParseResult parseLatex(String source) {
-  final p = _Parser(_strip(source));
+  final p = _Parser(_dropDanglingSpace(_strip(source)));
   final row = p.parseRow(depth: 0);
   if (p.unknown != null) return MathParseResult.unsupported(p.unknown);
   if (!p.atEnd) return MathParseResult.unsupported(p.rest);
   return MathParseResult.ok(row);
+}
+
+/// A space at the end of an equation is written `\ `, and storing the
+/// equation trims it to a backslash on its own — which is not a command, and
+/// would send an ordinary `\sqrt[3]{8} ` off to the LaTeX view on reload.
+/// The space was the last thing typed and means nothing at the end, so it
+/// goes.
+String _dropDanglingSpace(String s) {
+  var t = s;
+  while (t.endsWith(r'\') && !t.endsWith(r'\\')) {
+    t = t.substring(0, t.length - 1).trimRight();
+  }
+  return t;
 }
 
 /// `$x$` and `$$x$$` still arrive from Markdown-shaped imports, and a stray
@@ -161,6 +174,32 @@ class _Parser {
 
   void _fail(String what) => unknown ??= what;
 
+  /// The `]` that closes a root's index, counting the brackets and braces
+  /// passed on the way so a root written inside another root's index does
+  /// not end it early.
+  int _closingBracket(int from) {
+    var braces = 0;
+    var brackets = 0;
+    for (var k = from; k < s.length; k++) {
+      final c = s[k];
+      if (c == r'\') {
+        k++; // `\]` and its like are one token, not a bracket
+        continue;
+      }
+      if (c == '{') {
+        braces++;
+      } else if (c == '}') {
+        if (braces > 0) braces--;
+      } else if (c == '[') {
+        brackets++;
+      } else if (c == ']') {
+        if (braces == 0 && brackets == 0) return k;
+        if (brackets > 0) brackets--;
+      }
+    }
+    return -1;
+  }
+
   /// Parses until a token that belongs to the caller (`}`, `&`, `\\`,
   /// `\right`, `\end`) or the end of the input.
   MRow parseRow({required int depth, bool stopAtComma = false}) {
@@ -190,7 +229,15 @@ class _Parser {
     while (j < s.length && _isAlpha(s.codeUnitAt(j))) {
       j++;
     }
-    if (j == i + 1) return s.substring(i, i + 2);
+    // A lone backslash at the very end: hand back the one character rather
+    // than reading off the end of the string. Trimming an equation that ends
+    // in a space leaves exactly this, and it used to throw all the way out of
+    // MathEditor.open — past the promise this file makes, which is that
+    // anything it cannot read comes back as `unsupported` and opens in the
+    // LaTeX view with the source intact.
+    if (j == i + 1) {
+      return i + 2 <= s.length ? s.substring(i, i + 2) : s.substring(i);
+    }
     return s.substring(i, j);
   }
 
@@ -344,12 +391,27 @@ class _Parser {
           // `]` is an ordinary character to [parseRow] — it would run straight
           // past the degree and off the end of the equation — so the degree is
           // cut out by hand and parsed on its own.
-          final close = s.indexOf(']', i);
+          // Counting the brackets on the way matters: a root inside a
+          // root's index carries a `]` of its own, and stopping at the first
+          // one rebuilt somebody's equation as a different one, silently.
+          final close = _closingBracket(i);
           if (close < 0) {
             _fail('unclosed [');
             return;
           }
-          deg = _Parser(s.substring(i, close)).parseRow(depth: depth + 1);
+          final sub = _Parser(s.substring(i, close));
+          deg = sub.parseRow(depth: depth + 1);
+          // Whatever the index could not read, this equation cannot read
+          // either. Saying so opens the block in the LaTeX view with every
+          // character intact, instead of quietly dropping the awkward part.
+          if (sub.unknown != null) {
+            _fail(sub.unknown!);
+            return;
+          }
+          if (!sub.atEnd) {
+            _fail(sub.rest);
+            return;
+          }
           i = close + 1;
         }
         row.add(MSqrt(radicand: _argument(depth), degree: deg));
@@ -463,6 +525,19 @@ class _Parser {
       i = save;
       return null;
     }
+    // **As many boxes as the function takes, and no more.**
+    //
+    // A comma typed inside the first box of a `gcd(  ,  )` grew a third box
+    // on reopen — one the template never promised, that nothing can remove,
+    // and that either changes the answer (gcd, lcm, max and min reduce over
+    // all of them) or is silently ignored (nCr, nPr). [kCallFunctions] is the
+    // one place the palette, the reader and the calculator agree on how many
+    // there are, so a shape that disagrees with it is not this call at all:
+    // it rewinds and reads as the plain symbols it looks like.
+    if (args.length != (kCallFunctions[name] ?? -1)) {
+      i = save;
+      return null;
+    }
     return MCall(name: name, args: args);
   }
 
@@ -531,7 +606,15 @@ class _Parser {
       final base = MRow();
       // A group that is still the last thing in the row IS the base, all of
       // it — see the note on `{` in [_parseOne].
-      if (_groupEnd == row.length && _groupFrom >= 0 && _groupFrom < row.length) {
+      //
+      // `<=` and not `<`, because an EMPTY group is a base too: `{}^{\circ}`
+      // is how a degree sign is written, and reading it as a superscript on
+      // the digit before it split the number in half — `30.00°` came back as
+      // `30.0` followed by `0°`, which no longer reads as a number, so the
+      // figures the student chose were lost on the next keystroke.
+      if (_groupEnd == row.length &&
+          _groupFrom >= 0 &&
+          _groupFrom <= row.length) {
         while (row.length > _groupFrom) {
           base.insert(0, row.removeAt(row.length - 1));
         }
@@ -543,6 +626,25 @@ class _Parser {
     }
     final slot = isSup ? target.ensureSup() : target.ensureSub();
     slot.addAll(content.drain());
+    _foldDegree(row, target);
+  }
+
+  /// `{}^{\circ}` is the degree sign, and the palette writes it as ONE atom.
+  /// Read back as an empty-based superscript it became a second spelling of
+  /// the same symbol, and the two had to be kept in step everywhere they were
+  /// recognised — which they were not: the figures a student chose for an
+  /// angle answer were remembered in one spelling and lost in the other. One
+  /// degree sign, as [mathItemsById] intends.
+  void _foldDegree(MRow row, MScript s) {
+    if (s.sub != null || s.base.children.isNotEmpty) return;
+    final sup = s.sup;
+    if (sup == null || sup.children.length != 1) return;
+    final only = sup.children.first;
+    if (only is! MSym || only.tex != r'\circ') return;
+    final at = row.children.indexOf(s);
+    if (at < 0) return;
+    row.removeAt(at);
+    row.insert(at, MSym(r'{}^{\circ}'));
   }
 }
 

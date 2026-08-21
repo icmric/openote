@@ -387,11 +387,23 @@ class _Parser {
         v = (e) => inner(e) / 100;
       } else if (i < s.length && s[i] == '°') {
         // `30°` IS an angle in degrees, whatever the surrounding rule — the
-        // student said so. Converted here, once, so everything downstream
-        // works in radians as the maths library does.
+        // student said so, and so does the ring this app writes on an angle
+        // answer.
+        //
+        // **In degrees mode there is nothing to convert.** That is the whole
+        // of it, and getting it wrong was expensive: the ring used to mean
+        // "turn this into radians" unconditionally, so the app's own answer
+        // `sin⁻¹(0.5) = 30°`, carried into the next line as `+10=`, came
+        // back 10.52359878 instead of 40. A Casio in DEG gives 40; in RAD it
+        // gives 10.5235…, and so does this now.
+        //
+        // Read at CALL time, like [_outAngle], so a graph compiled once and
+        // redrawn after a mode switch is drawn in the mode that is on now.
         i++;
         final inner = v;
-        v = (e) => inner(e) * math.pi / 180;
+        v = (e) => mathAngleMode == AngleMode.degrees
+            ? inner(e)
+            : inner(e) * math.pi / 180;
       } else {
         return v;
       }
@@ -631,8 +643,10 @@ class _Parser {
   /// writing `sin(30)` means thirty degrees, and every school calculator
   /// agrees; the maths library underneath means radians, and nothing said so.
   ///
-  /// The rule is one sentence: **degrees, unless the angle contains π (or a
-  /// degree sign, which has already converted itself, or the word `rad`).**
+  /// The rule is one sentence: **degrees, unless the angle contains π or the
+  /// word `rad`.** A degree sign is not on that list: in degrees mode `30°`
+  /// is thirty degrees and this is what converts it, and in radians mode the
+  /// ring has already done its own converting.
   /// Nobody writes `sin(π/6)` meaning degrees, so the π in the angle is the
   /// student telling us which they meant — which is exactly what was asked
   /// for. The inverses give an angle BACK in degrees, so `sin⁻¹(0.5)` is 30
@@ -653,7 +667,6 @@ class _Parser {
     if (mathAngleMode == AngleMode.radians) return value;
     if (src.contains('pi') ||
         src.contains('\u03c0') ||
-        src.contains('°') ||
         src.contains('rad')) {
       return value; // the angle itself said radians
     }

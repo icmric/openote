@@ -264,6 +264,12 @@ String _delimToLinear(MDelim d) {
 /// evaluator's own grammar decides.
 String _symToLinear(MSym s) {
   final t = s.tex;
+  // The degree sign is the one symbol in the inventory that does not begin
+  // with a backslash: the palette writes the ring as the single atom
+  // `{}^{\circ}`. Without this line the button inserted something the
+  // evaluator had never heard of — 30, the degrees button, `=`, and no
+  // answer at all.
+  if (t == r'{}^{\circ}') return '°';
   if (!t.startsWith('\\')) return t;
   const map = <String, String>{
     // Operators the evaluator spells differently.

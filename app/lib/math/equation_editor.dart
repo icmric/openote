@@ -27,6 +27,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import 'active_math.dart';
+import 'evaluate.dart';
 import 'linear_math.dart';
 import 'math_editor.dart';
 import 'math_field.dart';
@@ -54,6 +55,7 @@ class EquationEditor extends StatefulWidget {
     this.autofocus = true,
     this.focusNode,
     this.onDrawGraph,
+    this.onReworkSiblings,
   });
 
   /// Only for `setActiveMath` / `noteMathUse` — the toolbar's Maths tab has to
@@ -105,6 +107,12 @@ class EquationEditor extends StatefulWidget {
   /// is the rule this whole file exists to keep — and it is what makes the
   /// menu entry appear identically in both.
   final VoidCallback? onDrawGraph;
+
+  /// Work out every OTHER equation in the same paragraph again.
+  ///
+  /// Null for an equation in a box of its own — it has no siblings, and the
+  /// page-wide pass reaches every other block already.
+  final void Function(AngleMode writtenIn)? onReworkSiblings;
 
   @override
   State<EquationEditor> createState() => EquationEditorState();
@@ -159,7 +167,16 @@ class EquationEditorState extends State<EquationEditor> {
 
   /// Work this equation's answers out again — what a degrees/radians switch
   /// asks of the equation that is open.
-  void rework() => _fieldKey.currentState?.reworkNow();
+  void rework(AngleMode writtenIn) {
+    _fieldKey.currentState?.reworkNow();
+    // And whatever ELSE is in the same sentence. For an equation in a box of
+    // its own this is null and the page-wide pass has already done the
+    // neighbours; for one in a paragraph the page-wide pass skipped the whole
+    // paragraph, because rewriting a live one from outside reads as a foreign
+    // edit and closes the equation. Only the session that owns the buffer can
+    // do it safely, so it is asked to.
+    widget.onReworkSiblings?.call(writtenIn);
+  }
 
   bool get isEmpty => _latexMode
       ? _source.text.trim().isEmpty
@@ -430,7 +447,16 @@ class RenderKeepBaseline extends RenderProxyBox {
   static (RenderBox, double)? _firstBaseline(
       RenderObject? node, TextBaseline baseline) {
     if (node == null) return null;
-    if (node is RenderBox && node.hasSize && !node.debugNeedsLayout) {
+    // `hasSize` and NOT `debugNeedsLayout`. That getter assigns its result
+    // inside an `assert`, so with asserts stripped it throws a
+    // LateInitializationError — in RELEASE and PROFILE only, which is every
+    // build a student ever runs and no build a test ever runs. The throw
+    // happened inside the paragraph's layout, where `RenderObject.layout`
+    // logs rather than rethrows, so every open inline equation broke its
+    // paragraph's layout, silently, once per frame. `hasSize` is the check
+    // that was actually wanted; a box that is sized but dirty trips
+    // Flutter's own assert in debug, which is the honest place for it.
+    if (node is RenderBox && node.hasSize) {
       final b = node.getDistanceToActualBaseline(baseline);
       if (b != null) return (node, b);
     }

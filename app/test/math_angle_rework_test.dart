@@ -11,9 +11,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/canvas/page_canvas.dart';
+import 'package:openote/editor/inline_math_editor.dart';
 import 'package:openote/markdown/md_syntax.dart';
 import 'package:openote/math/evaluate.dart';
+import 'package:openote/math/math_editor.dart';
 import 'package:openote/math/math_field.dart';
+import 'package:openote/math/math_tree.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -223,4 +226,152 @@ void main() {
       expect(replaceMathRun(text, run, 'y'), r'$$y$$');
     });
   });
+
+  group('and the figures the student chose survive it', () {
+    // The pass that keeps the page honest used to throw away the one thing
+    // on the page the student had chosen by hand. It recognises "three
+    // figures" by asking the working what the answer comes to and seeing
+    // which rounding matches the digits — and it was asking in the NEW mode
+    // about digits written in the old one, so nothing ever matched.
+    test('three figures stays three figures, there and back', () {
+      if (!haveSqlite) return;
+      final ed = MathEditor.open(r'\cos (45)=\boxed{0.7071067812}')!;
+      expect(
+          ed.setAnswerSigFigs(
+              ed.root.children.whereType<MAnswer>().first, 3),
+          isTrue);
+      final b = mathBlock(ed.latex);
+      expect(b.content['latex'], contains(r'\boxed{0.707}'));
+
+      app.setAngleMode(AngleMode.radians);
+      expect(b.content['latex'], contains(r'\boxed{0.525}'),
+          reason: 'cos 45 RADIANS to three figures — the number changes, '
+              'the number of figures does not');
+
+      app.setAngleMode(AngleMode.degrees);
+      expect(b.content['latex'], contains(r'\boxed{0.707}'),
+          reason: 'and back to where it started, still three figures');
+      app.cancelPendingSave();
+    });
+
+    test('an answer left at its own precision is not given one', () {
+      if (!haveSqlite) return;
+      final b = mathBlock(r'\cos (45)=\boxed{0.7071067812}');
+      app.setAngleMode(AngleMode.radians);
+      expect(b.content['latex'], contains(r'\boxed{0.5253219888}'),
+          reason: 'ten figures, as a school calculator shows it');
+      app.cancelPendingSave();
+    });
+  });
+
+
+  group('an equation in a sentence, with company', () {
+    // The page-wide pass skips the block being edited, and for a sentence
+    // "the block" is the whole paragraph. Every OTHER answered equation in it
+    // was left showing the old mode's number, in a grey panel that says the
+    // app worked it out, under a button that now says the opposite — which is
+    // the exact failure this feature exists to prevent.
+    testWidgets('every equation in the paragraph follows the button',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      tester.view.physicalSize = const Size(2600, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final b = Block(
+          id: 'p1',
+          type: BlockType.text,
+          x: 20,
+          y: 20,
+          w: 600,
+          content: {
+            'text': r'first $\sin (30)=\boxed{0.5}$ then $\cos (60)=\boxed{0.5}$ end',
+            'autoWidth': false,
+          });
+      app.blocks.add(b);
+      app.editingBlockId = 'p1';
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ListenableBuilder(
+            listenable: app,
+            builder: (_, __) => Column(children: [
+              CommandBar(app: app),
+              ObjectRow(app: app),
+              Expanded(child: PageCanvas(state: app)),
+            ]),
+          ),
+        ),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      // Into the SECOND equation, so the first is a sibling of the open one.
+      await tester.tap(find.byType(InlineMathAtom).last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      await tester.tap(find.text('DEG'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+
+      expect(app.angleMode, AngleMode.radians);
+      final text = b.content['text'] as String;
+      expect(text, contains(r'\sin (30)=\boxed{-0.9880316241}'),
+          reason: 'the OTHER equation in the same sentence, which nothing '
+              'used to reach');
+      expect(text, contains(r'\cos (60)=\boxed{-0.9524129804}'),
+          reason: 'and the open one, which does its own');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and a sibling keeps the figures it was showing',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      tester.view.physicalSize = const Size(2600, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final b = Block(
+          id: 'p2',
+          type: BlockType.text,
+          x: 20,
+          y: 20,
+          w: 600,
+          content: {
+            'text': r'first $\cos (45)=\boxed{0.707}$ then $2+3=\boxed{5}$ end',
+            'autoWidth': false,
+          });
+      app.blocks.add(b);
+      app.editingBlockId = 'p2';
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ListenableBuilder(
+            listenable: app,
+            builder: (_, __) => Column(children: [
+              CommandBar(app: app),
+              ObjectRow(app: app),
+              Expanded(child: PageCanvas(state: app)),
+            ]),
+          ),
+        ),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(find.byType(InlineMathAtom).last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      await tester.tap(find.text('DEG'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+
+      expect(b.content['text'], contains(r'\boxed{0.525}'),
+          reason: 'cos 45 in RADIANS, still to three figures — the pass that '
+              'rewrites it has to READ it in the mode it was written in');
+      app.cancelPendingSave();
+    });
+  });
+
 }

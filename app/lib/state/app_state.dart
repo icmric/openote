@@ -4286,6 +4286,7 @@ class AppState extends ChangeNotifier
 
   void setAngleMode(AngleMode v) {
     if (v == mathAngleMode) return;
+    final was = mathAngleMode;
     mathAngleMode = v;
     _repo.setSetting('angleMode', v == AngleMode.radians ? 'rad' : 'deg');
     // **Every answer on the page is worked out again.**
@@ -4300,7 +4301,16 @@ class AppState extends ChangeNotifier
     // something nobody asked for. Only answers whose value actually depends
     // on the mode move, it takes one undo step, and answers on other pages
     // are re-worked when those pages are opened and edited.
-    reworkAnswersForAngleMode();
+    reworkAnswersForAngleMode(writtenIn: was);
+    // **And the equation being written, which that pass deliberately skips.**
+    //
+    // Its editor holds the live tree and would write the old one back on the
+    // next keystroke; a paragraph treats a rewrite from outside as a foreign
+    // edit and closes the equation. So the open one is asked to do its own —
+    // and, for one inside a sentence, its neighbours in the same paragraph,
+    // which nothing else can reach. Here rather than in the row that has the
+    // button, so every route to this method behaves the same.
+    activeMath?.rework?.call(was);
     // **A plain notify, and deliberately NOT `docRevision++`.**
     //
     // `docRevision` means "the stored content was replaced wholesale" —
@@ -4327,7 +4337,14 @@ class AppState extends ChangeNotifier
   /// check on every repaint: it is one command, it is undoable, and the
   /// alternative is asking the calculator the same question of every answer
   /// sixty times a second for ever.
-  int reworkAnswersForAngleMode() {
+  ///
+  /// [writtenIn] is the mode the answers ON THE PAGE were worked out in.
+  /// It is needed to READ them: an answer showing three figures is recognised
+  /// by asking the working what it comes to and seeing which rounding matches,
+  /// and asking in the new mode gets a different number, so nothing matches
+  /// and the student's choice of figures is thrown away by the very pass that
+  /// exists to keep the page honest.
+  int reworkAnswersForAngleMode({AngleMode? writtenIn}) {
     var changed = 0;
     var undone = false;
     void once() {
@@ -4347,7 +4364,7 @@ class AppState extends ChangeNotifier
       if (b.type == BlockType.math) {
         final latex = b.content['latex'] as String? ?? '';
         if (!latex.contains('boxed')) continue;
-        final e = MathEditor.open(latex);
+        final e = _openWritten(latex, writtenIn);
         if (e == null) continue;
         if (!e.refreshAnswers()) continue;
         once();
@@ -4363,7 +4380,7 @@ class AppState extends ChangeNotifier
         // later one has been rewritten.
         for (final run in mathRunsIn(text).toList().reversed) {
           if (!run.latex.contains('boxed')) continue;
-          final e = MathEditor.open(run.latex);
+          final e = _openWritten(run.latex, writtenIn);
           if (e == null || !e.refreshAnswers()) continue;
           out = replaceMathRun(out, run, e.latex);
           changed++;
@@ -4383,6 +4400,23 @@ class AppState extends ChangeNotifier
       notifyListeners();
     }
     return changed;
+  }
+
+  /// Read an equation as it stood in [writtenIn], then hand it back.
+  ///
+  /// `MathEditor.open` works out how many figures each answer is showing by
+  /// evaluating the working, so it has to evaluate it in the mode the digits
+  /// were written in. Swapped and restored on the spot, with nothing awaited
+  /// in between.
+  MathEditor? _openWritten(String latex, AngleMode? writtenIn) {
+    if (writtenIn == null) return MathEditor.open(latex);
+    final now = mathAngleMode;
+    mathAngleMode = writtenIn;
+    try {
+      return MathEditor.open(latex);
+    } finally {
+      mathAngleMode = now;
+    }
   }
 
   void setSpellCheck(bool v) {
@@ -5502,6 +5536,7 @@ class AppState extends ChangeNotifier
     // destroyed its type on the spot (the exact loss Block.rawType exists
     // to prevent). The format is the copy, the way it is the API.
     final newIds = <String>[];
+    final oldToNew = <String, String>{};
     for (final src in list) {
       final fresh = Block.fromJson({
         ...jsonDecode(jsonEncode(src.toJson())) as Map<String, dynamic>,
@@ -5521,9 +5556,37 @@ class AppState extends ChangeNotifier
       clampBlockToPage(fresh);
       blocks.add(fresh);
       newIds.add(fresh.id);
+      oldToNew[src.id] = fresh.id;
     }
+    _relinkGraphs(oldToNew);
     selectMany(newIds);
     markDirty();
+  }
+
+  /// Keeps a graph pointing at the equation it was drawn from when that
+  /// equation is copied or cut.
+  ///
+  /// Two cases that want opposite answers. COPY an equation together with its
+  /// graph and the copy must follow the COPY — otherwise changing the new
+  /// numbers moves nothing, and changing the old ones quietly rewrites the new
+  /// graph as well. CUT an equation and paste it back and its graph, still
+  /// sitting on the page, is pointing at an id that no longer exists, so the
+  /// paste adopts it. Copying a graph on its OWN is left alone on purpose:
+  /// two windows onto one equation is a thing people do want.
+  void _relinkGraphs(Map<String, String> oldToNew) {
+    if (oldToNew.isEmpty) return;
+    final live = {for (final b in blocks) b.id};
+    final pasted = oldToNew.values.toSet();
+    for (final b in blocks) {
+      if (b.type != BlockType.graph) continue;
+      final from = b.content['from'];
+      if (from is! String) continue;
+      final now = oldToNew[from];
+      if (now == null) continue;
+      if (pasted.contains(b.id) || !live.contains(from)) {
+        b.content['from'] = now;
+      }
+    }
   }
 
   // ── Z-order (context menu) ─────────────────────────────────────────────
@@ -7723,8 +7786,21 @@ class AppState extends ChangeNotifier
   /// currently following, [now] is what it should follow from here.
   bool pushInlineEquationToGraphs(String blockId, String was, String now) {
     if (was.trim() == now.trim()) return false;
+    // **Two graphs following the same words in the same sentence cannot both
+    // be this equation's.**
+    //
+    // A link into a sentence is anchored to the equation's TEXT, because a
+    // paragraph's offsets shift on every keystroke; the price is that two
+    // equations reading the same thing are the same thing as far as the link
+    // can tell. Moving both would rewrite a graph the student never touched,
+    // so neither moves. The other half of this — an equation that has
+    // TRANSIENTLY grown into another one's text — is caught in the engine,
+    // which is the only place that can see the sentence as it stands this
+    // keystroke.
+    final following = graphsFollowingInline(blockId, was).toList();
+    if (following.length > 1) return false;
     var changed = false;
-    for (final g in graphsFollowingInline(blockId, was).toList()) {
+    for (final g in following) {
       g.content['latex'] = now.trim();
       g.content['fromLatex'] = now.trim();
       g.updatedAt = nowMs();

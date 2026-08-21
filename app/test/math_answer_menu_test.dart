@@ -196,4 +196,49 @@ void main() {
     // The proof is behavioural: the next keystroke lands in the equation.
     expect(find.byType(OnoteMath), findsWidgets);
   });
+
+  group('a menu verb on an answer that is no longer there', () {
+    // The tree can move under an open menu: the 400ms recheck removes an
+    // answer whose working stopped working out. Three of the four verbs
+    // already declined in that state; the fourth rewrote a node that was not
+    // in the equation any more and reported success, so the host redrew for
+    // an edit that never happened.
+    MathEditor withAnswer() {
+      final e = MathEditor.empty()..insertSource('2+3');
+      e.placeAtEnd();
+      e.insertChar('=');
+      e.insertChar(' ');
+      return e;
+    }
+
+    test('setting the figures declines', () {
+      final e = withAnswer();
+      final a = e.root.children.whereType<MAnswer>().first;
+      e.removeAnswer(a);
+      expect(e.setAnswerSigFigs(a, 3), isFalse);
+    });
+
+    test('and so do the other three', () {
+      final e = withAnswer();
+      final a = e.root.children.whereType<MAnswer>().first;
+      e.removeAnswer(a);
+      expect(e.setAnswerForm(a, fraction: true), isFalse);
+      expect(e.recalculateAnswer(a), isFalse);
+      expect(e.removeAnswer(a), isFalse);
+    });
+  });
+
+  group('an answer with no working in front of it', () {
+    test('its degree sign is a label, not an instruction', () {
+      // `30°` handed straight to the evaluator comes back 0.5235987756 — the
+      // ring read as "turn this into radians". An answer pasted on its own
+      // was worth 0.524 the moment its menu was touched.
+      mathAngleMode = AngleMode.degrees;
+      final e = MathEditor.open(r'\boxed{30{}^{\circ}}')!;
+      final a = e.root.children.whereType<MAnswer>().first;
+      expect(e.setAnswerSigFigs(a, 3), isTrue);
+      expect(e.latex, r'\boxed{30.0{}^{\circ}}');
+    });
+  });
+
 }

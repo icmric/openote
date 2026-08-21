@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/math/evaluate.dart';
 import 'package:openote/math/math_editor.dart';
+import 'package:openote/math/math_linear_projection.dart';
 import 'package:openote/math/math_tree.dart';
 
 MathEditor worked(String latex) {
@@ -189,4 +190,81 @@ void main() {
       expect(e.root.children.whereType<MAnswer>(), isEmpty);
     });
   });
+
+  group('the choice of figures survives being read back off the page', () {
+    // The number of figures IS the stored setting — there is no metadata
+    // riding alongside it. Reading it back means asking the working what the
+    // answer comes to and seeing which rounding the page is showing, and that
+    // used to work only for a plain run of digits: an angle wearing a ring
+    // and a number written as a power of ten both lost the student's choice
+    // on the very next keystroke.
+    MAnswer only(MathEditor e) => e.root.children.whereType<MAnswer>().first;
+
+    String atFigures(String src, int f) {
+      final e = MathEditor.open(src)!;
+      expect(e.setAnswerSigFigs(only(e), f), isTrue);
+      return e.latex;
+    }
+
+    void survives(String src, int f, String shows) {
+      final stored = atFigures(src, f);
+      expect(stored, contains(shows), reason: 'written as $shows');
+      final again = MathEditor.open(stored)!;
+      expect(only(again).sigFigs, f, reason: 'the choice is read back');
+      expect(again.refreshAnswers(), isFalse,
+          reason: 'and the next keystroke leaves it alone');
+      expect(again.latex, stored);
+    }
+
+    test('a plain decimal', () {
+      mathAngleMode = AngleMode.degrees;
+      survives(r'\cos (45)=\boxed{0.7071067812}', 4, r'\boxed{0.7071}');
+    });
+
+    test('an angle wearing its degree sign', () {
+      mathAngleMode = AngleMode.degrees;
+      survives(r'\sin ^{-1}(0.5)=\boxed{30{}^{\circ}}', 4,
+          r'\boxed{30.00{}^{\circ}}');
+    });
+
+    test('a number written as a power of ten', () {
+      survives(r'2^{100}=\boxed{1.267650600\times {10}^{30}}', 3,
+          r'\boxed{1.27\times {10}^{30}}');
+    });
+  });
+
+  group('a degree sign is one atom, however it arrives', () {
+    // The palette writes the ring as `{}^{\circ}` — a single symbol. Read
+    // back off the page it used to become a superscript on the digit before
+    // it, so `30.00°` came home as `30.0` followed by `0°`: not a number any
+    // more, and every rule that reads an answer's digits gave up on it.
+    test('reading it back leaves the number whole', () {
+      final e = MathEditor.open(r'x=\boxed{30.00{}^{\circ}}')!;
+      final a = e.root.children.whereType<MAnswer>().first;
+      expect(a.content.children.length, 6,
+          reason: '3 0 . 0 0 and the ring');
+      expect(rowToTex(a.content, kStoreCtx), r'30.00{}^{\circ}');
+    });
+
+    test('and the palette symbol works out, which it never did', () {
+      // 30, the degrees button, `=`: the evaluator had never heard of the
+      // symbol the button inserts, so there was no answer at all.
+      mathAngleMode = AngleMode.degrees;
+      final e = MathEditor.empty()..insertSource(r'\sin(30{}^{\circ})');
+      expect(rowToLinear(e.root), 'sin (30°)');
+      expect(evaluateLinear(rowToLinear(e.root)).display, '0.5');
+    });
+
+    test('a fraction answer keeps the ring too', () {
+      // `22.5°` as a fraction handed back `45/2` — a number in RADIANS, four
+      // times the answer, with nothing on the page to say the ring had gone.
+      mathAngleMode = AngleMode.degrees;
+      final e = MathEditor.open(
+          r'\sin ^{-1}(0.3826834324)=\boxed{22.5{}^{\circ}}')!;
+      final a = e.root.children.whereType<MAnswer>().first;
+      expect(e.setAnswerForm(a, fraction: true), isTrue);
+      expect(e.latex, endsWith(r'=\boxed{\frac{45}{2}{}^{\circ}}'));
+    });
+  });
+
 }

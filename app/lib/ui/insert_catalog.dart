@@ -144,6 +144,16 @@ Offset insertAnchor(AppState app, InsertItem item) {
 List<InsertItem> get kInsertItems =>
     [for (final g in kInsertGroups) ...g.items];
 
+/// The same, with each item's own second choices after it.
+///
+/// The ribbon shows an extra behind a small arrow; the right-click menu shows
+/// it as an indented line. Either way it is the same command, and both
+/// surfaces read it from here — which is the whole point of this file, and
+/// was quietly untrue for as long as "Table ▸ From a file" existed on one
+/// and not the other.
+List<InsertItem> get kInsertItemsAndExtras =>
+    [for (final i in kInsertItems) ...[i, ...i.extras]];
+
 /// The catalog.
 ///
 /// Three groups, because three is the number of genuinely different things a

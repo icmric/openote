@@ -108,13 +108,12 @@ class ObjectRow extends StatelessWidget {
           onDrawGraph: m.drawGraph,
           angleMode: app.angleMode,
           onToggleAngleMode: () {
+            // The open equation and its neighbours are worked out by
+            // `setAngleMode` itself — every route to it behaves the same,
+            // and only it knows which mode the page was written in.
             app.setAngleMode(app.angleMode == AngleMode.degrees
                 ? AngleMode.radians
                 : AngleMode.degrees);
-            // The page-wide pass skips the equation being written, because
-            // rewriting its stored text from outside would be overwritten by
-            // the next keystroke. It does its own, and keeps the caret.
-            m.rework?.call();
           },
           recentIds: app.recentMathIds,
         );

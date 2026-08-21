@@ -282,9 +282,12 @@ void main() {
       // height, without having to find the popup's Material among the app's.
       final h = tester.getRect(find.text('Page background')).bottom -
           tester.getRect(find.text('Paste')).top;
-      expect(h, lessThan(300),
+      expect(h, lessThan(340),
           reason: 'measured ${h.toStringAsFixed(0)}px; eleven stacked rows '
-              'was about 430, and the owner asked for not-a-huge-drop-down');
+              'was about 430, and the owner asked for not-a-huge-drop-down. '
+              'Three of those rows are second choices set in under the '
+              'command they belong to — the ribbon hides them behind a small '
+              'arrow, and a menu has no room for one');
       app.cancelPendingSave();
     });
 
@@ -305,4 +308,29 @@ void main() {
       app.cancelPendingSave();
     });
   });
+
+  group('the menu and the ribbon offer the same things', () {
+    test('every second choice is reachable from the menu too', () {
+      // "Table ▸ From a file (CSV, Excel)" was on the ribbon and not in the
+      // menu — the one thing the old menu had that the ribbon did not became
+      // the one thing the ribbon had that the menu did not, which is exactly
+      // the drift a shared catalog exists to end.
+      final flat = kInsertItemsAndExtras.map((i) => i.id).toSet();
+      for (final item in kInsertItems) {
+        for (final extra in item.extras) {
+          expect(flat, contains(extra.id), reason: '${item.id} ▸ ${extra.id}');
+        }
+      }
+      expect(flat, contains('table-file'));
+    });
+
+    test('and every one of them can be run', () {
+      for (final i in kInsertItemsAndExtras) {
+        expect(i.label.trim(), isNotEmpty, reason: i.id);
+        expect(i.label.toLowerCase(), isNot(contains('here')),
+            reason: '${i.id}: a right click already means here');
+      }
+    });
+  });
+
 }

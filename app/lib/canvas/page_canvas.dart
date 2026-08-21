@@ -780,20 +780,29 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // ── Wheel / trackpad ────────────────────────────────────────────────────
 
+  /// Pan or zoom the page.
+  ///
+  /// **Through the resolver.** A wheel notch is delivered to every listener
+  /// under the pointer, innermost first, and something inside the page may
+  /// want it instead — a graph zooms its own window. Registering here means
+  /// the page only moves when nothing inner claimed the notch first.
   void _onScroll(PointerSignalEvent e) {
     if (e is! PointerScrollEvent) return;
-    final ctrl = HardwareKeyboard.instance.isControlPressed ||
-        HardwareKeyboard.instance.isMetaPressed;
-    final shift = HardwareKeyboard.instance.isShiftPressed;
-    if (ctrl) {
-      controller.zoomAt(e.localPosition, e.scrollDelta.dy > 0 ? 1 / 1.1 : 1.1);
-    } else if (shift) {
-      // Shift+wheel → horizontal scroll (a mouse's vertical wheel drives X).
-      controller.panBy(Offset(-e.scrollDelta.dy - e.scrollDelta.dx, 0));
-    } else {
-      controller.panBy(-e.scrollDelta);
-    }
-    setState(() {});
+    GestureBinding.instance.pointerSignalResolver.register(e, (_) {
+      final ctrl = HardwareKeyboard.instance.isControlPressed ||
+          HardwareKeyboard.instance.isMetaPressed;
+      final shift = HardwareKeyboard.instance.isShiftPressed;
+      if (ctrl) {
+        controller.zoomAt(
+            e.localPosition, e.scrollDelta.dy > 0 ? 1 / 1.1 : 1.1);
+      } else if (shift) {
+        // Shift+wheel → horizontal scroll (a mouse's vertical wheel drives X).
+        controller.panBy(Offset(-e.scrollDelta.dy - e.scrollDelta.dx, 0));
+      } else {
+        controller.panBy(-e.scrollDelta);
+      }
+      setState(() {});
+    });
   }
 
   // ── Build ───────────────────────────────────────────────────────────────

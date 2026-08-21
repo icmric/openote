@@ -40,6 +40,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../math/graph_plot.dart';
 import '../model/models.dart';
@@ -61,7 +62,12 @@ class _GraphBlockViewState extends State<GraphBlockView> {
 
   String get _latex => b.content['latex'] as String? ?? '';
 
-  GraphView get _view => GraphView.fromJson(b.content['view']);
+  /// The window. Until somebody has moved it, one chosen for what is being
+  /// drawn — see [initialViewFor], and the sine that arrived as a straight
+  /// line.
+  GraphView get _view => b.content['view'] == null
+      ? initialViewFor(_latex)
+      : GraphView.fromJson(b.content['view']);
 
   /// True until the student moves the window themselves. Fitting the height
   /// to the curve is right for a graph that has just been made and wrong the
@@ -82,10 +88,24 @@ class _GraphBlockViewState extends State<GraphBlockView> {
     return _source!;
   }
 
-  void _setView(GraphView v, {bool byHand = true}) {
+  /// The window the curve was last actually DRAWN in.
+  ///
+  /// A fitted graph is drawn in a window the fit chose, which is not the one
+  /// stored on the block, and a drag has to start from what is on screen or
+  /// the first movement jumps. Held here rather than written back: the fit
+  /// reads the samples, the number of samples follows the canvas zoom, so
+  /// storing it turned scrolling around a page into an EDIT — a bumped
+  /// timestamp, a save, and a git commit for a change nobody made.
+  GraphView? _drawn;
+
+  /// What is on screen: the fitted window if there is one, else the stored.
+  GraphView get _live => _drawn ?? _view;
+
+  void _setView(GraphView v) {
     if (!v.isSane) return;
     b.content['view'] = v.toJson();
-    if (byHand) b.content['fitY'] = false;
+    b.content['fitY'] = false;
+    _drawn = null;
     b.updatedAt = nowMs();
     widget.app.markDirty();
     setState(() {});
@@ -96,6 +116,7 @@ class _GraphBlockViewState extends State<GraphBlockView> {
   void _reset() {
     b.content.remove('view');
     b.content['fitY'] = true;
+    _drawn = null;
     b.updatedAt = nowMs();
     widget.app.markDirty();
     setState(() {});
@@ -112,21 +133,37 @@ class _GraphBlockViewState extends State<GraphBlockView> {
 
   void _pan(DragUpdateDetails d) {
     if (_lastSize.isEmpty) return;
-    final v = _view;
+    final v = _live;
     _setView(v.panned(
       -d.delta.dx * v.width / _lastSize.width,
       d.delta.dy * v.height / _lastSize.height,
     ));
   }
 
+  /// Zoom the window under the pointer.
+  ///
+  /// **Through the resolver**, because a wheel notch is delivered to EVERY
+  /// listener under the pointer and the page canvas has one of its own: one
+  /// notch used to zoom the graph and scroll the page out from under it at
+  /// the same time. Registering makes it the innermost claim, and the
+  /// innermost registrant is the one that runs. The claim on pointer DOWN
+  /// beside this (which is what stops a drag panning the page) never covered
+  /// signals — a wheel notch has no pointer to claim.
   void _wheel(PointerSignalEvent e) {
     if (e is! PointerScrollEvent || _lastSize.isEmpty) return;
-    final v = _view;
-    final local = e.localPosition;
-    final aboutX = v.x0 + (local.dx / _lastSize.width) * v.width;
-    final aboutY = v.y1 - (local.dy / _lastSize.height) * v.height;
-    _setView(v.zoomed(e.scrollDelta.dy > 0 ? 1.15 : 1 / 1.15,
-        aboutX: aboutX, aboutY: aboutY));
+    // **Sideways is not a zoom.** A trackpad's horizontal swipe, a tilt
+    // wheel and Shift+wheel all arrive here with dy of zero, and the
+    // up-or-down test had no middle: five sideways flicks magnified the
+    // graph four times over and turned its auto-fit off for good.
+    if (e.scrollDelta.dy == 0) return;
+    GestureBinding.instance.pointerSignalResolver.register(e, (_) {
+      final v = _live;
+      final local = e.localPosition;
+      final aboutX = v.x0 + (local.dx / _lastSize.width) * v.width;
+      final aboutY = v.y1 - (local.dy / _lastSize.height) * v.height;
+      _setView(v.zoomed(e.scrollDelta.dy > 0 ? 1.15 : 1 / 1.15,
+          aboutX: aboutX, aboutY: aboutY));
+    });
   }
 
   @override
@@ -144,10 +181,20 @@ class _GraphBlockViewState extends State<GraphBlockView> {
     return Listener(
       onPointerSignal: _wheel,
       onPointerDown: (e) => widget.app.claimedPointers.add(e.pointer),
-      child: GestureDetector(
+      child: RawGestureDetector(
         behavior: HitTestBehavior.opaque,
-        onPanUpdate: _pan,
-        onDoubleTap: _reset,
+        gestures: {
+          _AltAwarePan:
+              GestureRecognizerFactoryWithHandlers<_AltAwarePan>(
+            _AltAwarePan.new,
+            (r) => r.onUpdate = _pan,
+          ),
+          DoubleTapGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<DoubleTapGestureRecognizer>(
+            DoubleTapGestureRecognizer.new,
+            (r) => r.onDoubleTap = _reset,
+          ),
+        },
         child: LayoutBuilder(builder: (context, cons) {
           _lastSize = Size(cons.maxWidth, cons.maxHeight.isFinite
               ? cons.maxHeight
@@ -185,13 +232,9 @@ class _GraphBlockViewState extends State<GraphBlockView> {
     final plot = source.verticalAt != null
         ? Plot(pieces: const [], view: _view)
         : plotFunction(source.fn!, _view, samples: px, fitY: _fitY);
-    // A fitted window is written back so the next gesture pans from where the
-    // curve actually is, not from where it was asked to be.
-    if (_fitY && plot.view != _view) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _setView(plot.view, byHand: false);
-      });
-    }
+    // Remembered, so the next drag starts from where the curve actually is
+    // rather than from where it was asked to be. Not stored — see [_drawn].
+    _drawn = _fitY && plot.view.isSane ? plot.view : null;
     return RepaintBoundary(
       child: CustomPaint(
         size: Size.infinite,
@@ -231,6 +274,23 @@ class _GraphBlockViewState extends State<GraphBlockView> {
 ///
 /// Everything is drawn in DEVICE coordinates from maths coordinates through
 /// one mapping, so there is exactly one place a sign or a flip can be wrong.
+/// A pan that stands aside while Alt is held.
+///
+/// **Alt-drag moves the BLOCK** — the escape hatch every block whose body
+/// belongs to something else has, and the one `BlockView._bodyDragStart`
+/// spells out for a graph by name. The graph's own pan used to win the
+/// gesture arena outright, so that promise was unreachable and the title bar
+/// was the only way to move a graph on the page. Declining the pointer, as
+/// opposed to accepting it and doing nothing, is what lets the block's
+/// recogniser have it.
+class _AltAwarePan extends PanGestureRecognizer {
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    if (HardwareKeyboard.instance.isAltPressed) return;
+    super.addAllowedPointer(event);
+  }
+}
+
 class GraphPainter extends CustomPainter {
   const GraphPainter({
     required this.plot,
@@ -266,10 +326,10 @@ class GraphPainter extends CustomPainter {
     // ── gridlines and their numbers ──────────────────────────────────────
     final stepX = gridStep(v.width, target: math.max(3, size.width ~/ 90));
     final stepY = gridStep(v.height, target: math.max(3, size.height ~/ 60));
-    for (var x = (v.x0 / stepX).ceil() * stepX; x <= v.x1; x += stepX) {
+    for (final x in ticks(v.x0, v.x1, stepX)) {
       canvas.drawLine(Offset(sx(x), 0), Offset(sx(x), size.height), gridPaint);
     }
-    for (var y = (v.y0 / stepY).ceil() * stepY; y <= v.y1; y += stepY) {
+    for (final y in ticks(v.y0, v.y1, stepY)) {
       canvas.drawLine(Offset(0, sy(y)), Offset(size.width, sy(y)), gridPaint);
     }
 
@@ -293,12 +353,12 @@ class GraphPainter extends CustomPainter {
       tp.paint(canvas, at.translate(rightAlign ? -tp.width : 0, 0));
     }
 
-    for (var x = (v.x0 / stepX).ceil() * stepX; x <= v.x1; x += stepX) {
+    for (final x in ticks(v.x0, v.x1, stepX)) {
       if (x.abs() < stepX / 1000) continue; // the origin is labelled once
       text(gridLabel(x, stepX),
           Offset(sx(x) + 2, (xAxisY + 2).clamp(0, size.height - 12)));
     }
-    for (var y = (v.y0 / stepY).ceil() * stepY; y <= v.y1; y += stepY) {
+    for (final y in ticks(v.y0, v.y1, stepY)) {
       if (y.abs() < stepY / 1000) continue;
       text(gridLabel(y, stepY),
           Offset((yAxisX - 3).clamp(12, size.width), sy(y) + 1),

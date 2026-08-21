@@ -60,7 +60,20 @@ class GraphView {
       width > 1e-9 &&
       height > 1e-9 &&
       width < 1e12 &&
-      height < 1e12;
+      height < 1e12 &&
+      _resolvable(x0, x1) &&
+      _resolvable(y0, y1);
+
+  /// Can one gridline be told from the next?
+  ///
+  /// A window may be tiny, and it may be a long way from zero, but not both
+  /// at once: past about a million million times its own width, adding a
+  /// gridline's spacing to a coordinate does not change it, every number on
+  /// the axis reads the same, and the loop that walks them never arrives.
+  /// Refusing the zoom is the whole fix — the last window that made sense
+  /// stays on screen.
+  static bool _resolvable(double a, double b) =>
+      math.max(a.abs(), b.abs()) < (b - a).abs() * 1e12;
 
   GraphView panned(double dx, double dy) =>
       GraphView(x0: x0 + dx, x1: x1 + dx, y0: y0 + dy, y1: y1 + dy);
@@ -265,7 +278,39 @@ GraphView _fitY(GraphView view, List<double> ys) {
     lo -= pad;
     hi += pad;
   }
-  return GraphView(x0: view.x0, x1: view.x1, y0: lo, y1: hi);
+  final fitted = GraphView(x0: view.x0, x1: view.x1, y0: lo, y1: hi);
+  // **A fit the window cannot hold is not a window.** `y = x^13` over ten
+  // each way runs to ten million million, and `10^{14}+x` is twenty units
+  // tall a hundred million million from zero — both fail [GraphView.isSane],
+  // and every consumer refuses an insane view in silence: the block draws an
+  // empty box with no message, double-tap to reset fits the same one again,
+  // and the PDF leaves the graph off the page altogether. The window that was
+  // ASKED for is sane (checked in [plotFunction]) and at least shows the axes.
+  return fitted.isSane ? fitted : view;
+}
+
+/// **The window a graph opens at**, when nobody has moved it yet.
+///
+/// Ten each way holds a line and a parabola, and it is the wrong window for a
+/// sine: in degrees — which is the mode the app starts in — a wave is 360
+/// wide, so the ordinary window shows five per cent of one and draws it as a
+/// straight diagonal filling the block. The single most likely thing a
+/// student graphs, drawn as the one shape it is not.
+///
+/// Only the x span moves. A fresh graph fits its own y.
+GraphView initialViewFor(String source) {
+  final t = source.toLowerCase();
+  if (!RegExp(r'(sin|cos|tan|sec|csc|cot)\b').hasMatch(t)) {
+    return GraphView.initial;
+  }
+  // The evaluator's own rule for "the angle said radians", so a window and
+  // the curve in it can never disagree about which one is being drawn.
+  if (t.contains('pi') || t.contains('π') || t.contains('°') ||
+      t.contains('rad')) {
+    return GraphView.initial;
+  }
+  if (mathAngleMode != AngleMode.degrees) return GraphView.initial;
+  return const GraphView(x0: -360, x1: 360, y0: -10, y1: 10);
 }
 
 /// **The spacing of the gridlines**, chosen so the numbers on them are ones a
@@ -275,6 +320,12 @@ GraphView _fitY(GraphView view, List<double> ys) {
 double gridStep(double span, {int target = 8}) {
   if (!span.isFinite || span <= 0) return 1;
   final rough = span / target;
+  // Below about 4e-324 the division underflows to zero, log(0) is -infinity
+  // and `.floor()` throws; a decimal above it, `pow(10, -324)` IS zero and
+  // this returns a spacing of 0, which is not a spacing. No caller can reach
+  // either today — both check [GraphView.isSane] first — but this is a
+  // public function and its only guard should not live in two other files.
+  if (rough <= 0 || !rough.isFinite) return 1;
   final mag = math.pow(10, (math.log(rough) / math.ln10).floor()).toDouble();
   final norm = rough / mag;
   final nice = norm < 1.5
@@ -285,6 +336,27 @@ double gridStep(double span, {int target = 8}) {
               ? 5.0
               : 10.0;
   return nice * mag;
+}
+
+/// **Where the gridlines fall** across [lo]..[hi], walked by index rather
+/// than by adding [step] up as it goes.
+///
+/// Two reasons. Adding drifts — a run of ticks becomes 0.2, 0.4, 0.6000001 —
+/// and, worse, adding a small step to a large coordinate can fail to move it
+/// at all, which turns a paint loop into a hang. Multiplying an index cannot
+/// do either. The count is capped as well: nothing on screen needs four
+/// thousand lines, so a window that asks for more gets none.
+Iterable<double> ticks(double lo, double hi, double step) sync* {
+  if (!step.isFinite || step <= 0 || !lo.isFinite || !hi.isFinite) return;
+  final first = (lo / step).ceilToDouble();
+  final last = (hi / step).floorToDouble();
+  if (!first.isFinite || !last.isFinite || last < first) return;
+  final span = last - first;
+  if (span > 4096) return;
+  final count = span.toInt();
+  for (var i = 0; i <= count; i++) {
+    yield (first + i) * step;
+  }
 }
 
 /// A gridline's label, short enough to sit under a tick.
@@ -380,17 +452,60 @@ GraphSource graphSourceFromLinear(String linear) {
     return const GraphSource.failed(
         'a vertical line needs a number on the right');
   }
-  // Anything else on the left is a name for the curve — `y`, `f(x)`, `h`.
-  // What it is called changes nothing about what is drawn.
-  if (left.contains('x')) {
-    // …unless x is on BOTH sides, which is an equation to solve rather than
-    // a curve to draw.
-    if (!RegExp(r'^[A-Za-z]+\s*\(\s*x\s*\)$').hasMatch(left)) {
-      return const GraphSource.failed(
-          'x is on both sides — that is an equation to solve, not a curve');
-    }
-  }
+  // A NAME on the left — `y`, `f(x)`, `h` — is what the curve is called, and
+  // what it is called changes nothing about what is drawn.
+  //
+  // Only a name, though. `2y` is not a name, it is y doubled, and drawing
+  // the right-hand side unchanged gave a line with twice the gradient and
+  // twice the intercept, confidently, with nothing on screen to say so.
+  final isName = RegExp(r'^[A-Za-z][A-Za-z0-9]*$').hasMatch(left) ||
+      RegExp(r'^[A-Za-z][A-Za-z0-9]*\s*\(\s*x\s*\)$').hasMatch(left);
+  if (!isName) return _solvedForLeft(left, right);
   final f = compileFunction(right);
   return f.isOk ? GraphSource.curve(f) : GraphSource.failed(f.error);
+}
+
+/// **`2y = 6x + 4`, and the rest of rearranging a linear equation.**
+///
+/// Rearranging is the year-10 topic this whole feature is for, so an equation
+/// that has not been rearranged yet is SOLVED rather than refused — but only
+/// when the left really is linear in one name, and that is measured here
+/// rather than assumed from how it looks: the gradient and the intercept come
+/// from two points, and two more have to agree with them.
+///
+/// Everything else is refused in words. `y <= 3x` and `y != 3` land here too
+/// (their left reads `y<` and `y!`), and they used to be drawn as though the
+/// comparison had never been written at all.
+GraphSource _solvedForLeft(String left, String right) {
+  if (left.contains('x')) {
+    return const GraphSource.failed(
+        'x is on both sides — that is an equation to solve, not a curve');
+  }
+  const cannot =
+      GraphSource.failed('rearrange it to start with y = before graphing it');
+  // One name, one letter, and not a constant the calculator already knows.
+  final letters =
+      RegExp(r'[A-Za-z]+').allMatches(left).map((m) => m[0]!).toSet();
+  if (letters.length != 1 || letters.first.length != 1) return cannot;
+  final name = letters.first;
+  if (name == 'e') return cannot;
+  final lhs = compileFunction(left, variable: name);
+  if (!lhs.isOk || lhs.at == null) return GraphSource.failed(lhs.error);
+  final rhs = compileFunction(right);
+  if (!rhs.isOk || rhs.at == null) return GraphSource.failed(rhs.error);
+  final l = lhs.at!;
+  final b = l(0);
+  final a = l(1) - b;
+  final scale = a.abs() + b.abs() + 1;
+  if (a == 0 ||
+      !a.isFinite ||
+      !b.isFinite ||
+      (l(2) - (2 * a + b)).abs() > 1e-9 * scale ||
+      (l(-1) - (b - a)).abs() > 1e-9 * scale) {
+    return cannot;
+  }
+  final r = rhs.at!;
+  return GraphSource.curve(
+      CompiledMath.ok((x) => (r(x) - b) / a, variable: 'x'));
 }
 

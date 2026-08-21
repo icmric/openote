@@ -1251,22 +1251,37 @@ class _InsertButton extends StatelessWidget {
         : '${item.label} — ${item.tooltip}';
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final main = Tooltip(
+  /// The button itself.
+  ///
+  /// [menu] is the split button's own drop-down, and pressing the main half
+  /// closes it first: a file picker opening BEHIND a menu that is still
+  /// sitting on top of it reads as the button having done nothing. The
+  /// hand-built PDF button this replaced closed it by hand; the generic one
+  /// dropped the call, for every split item at once.
+  Widget _main(BuildContext context, [MenuController? menu]) {
+    void press() {
+      if (menu != null && menu.isOpen) menu.close();
+      _run(context, item);
+    }
+
+    return Tooltip(
       message: _tip,
       child: item.showLabel
           ? CommandButton(
               icon: item.icon,
               label: item.label,
-              onPressed: () => _run(context, item),
+              onPressed: press,
             )
           : IconButton(
               icon: Icon(item.icon, size: OnoteIcon.sm),
               visualDensity: VisualDensity.compact,
-              onPressed: () => _run(context, item),
+              onPressed: press,
             ),
     );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // Two pixels, not four. The run measured 970px against the 965 a 1280
     // window leaves once the navigator is open, and five pixels is the
     // difference between "Page window" being on screen and being a scroll
@@ -1276,7 +1291,7 @@ class _InsertButton extends StatelessWidget {
     if (item.extras.isEmpty) {
       return Padding(
         padding: gap,
-        child: main,
+        child: _main(context),
       );
     }
     return Padding(
@@ -1285,7 +1300,7 @@ class _InsertButton extends StatelessWidget {
         builder: (context, controller, _) => Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            main,
+            _main(context, controller),
             InkWell(
               borderRadius: BorderRadius.circular(6),
               onTap: () =>

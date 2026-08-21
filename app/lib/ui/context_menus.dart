@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../model/models.dart';
@@ -169,8 +171,15 @@ Future<void> showCanvasMenu(BuildContext context, AppState app,
     app.pasteBlocks(at: pagePt);
     return;
   }
-  for (final item in kInsertItems) {
+  for (final item in kInsertItemsAndExtras) {
     if (item.id == action) {
+      // **Here means here.** Every one of these commands puts what it makes
+      // at the caret when a paragraph has one — which is right for the
+      // ribbon, and wrong for a right click several inches away: a picture
+      // chosen from this menu was spliced into the sentence you happened to
+      // be writing. Choosing something from a menu that opened AT a point is
+      // choosing that point, so the caret is let go of first.
+      app.select(null);
       if (context.mounted) await item.run(context, app, pagePt);
       return;
     }
@@ -232,7 +241,12 @@ class _InsertGrid extends PopupMenuEntry<String> {
   const _InsertGrid();
 
   @override
-  double get height => 26.0 + 4 * 30.0;
+  double get height {
+    final tallest = kInsertGroups
+        .map((g) => g.items.fold(0, (n, i) => n + 1 + i.extras.length))
+        .reduce(math.max);
+    return 26.0 + tallest * 30.0;
+  }
 
   @override
   bool represents(String? value) => false;
@@ -266,8 +280,16 @@ class _InsertGridState extends State<_InsertGrid> {
                           fontWeight: FontWeight.w600,
                         )),
                   ),
-                  for (final item in group.items)
+                  for (final item in group.items) ...[
                     _Tile(item: item, surfaces: s),
+                    // A second choice, indented under the thing it belongs
+                    // to: the ribbon hides these behind a small arrow, and a
+                    // menu has no room for one. "Table ▸ From a file" was on
+                    // the ribbon and not here, which is exactly the drift the
+                    // shared catalog exists to end.
+                    for (final extra in item.extras)
+                      _Tile(item: extra, surfaces: s, indented: true),
+                  ],
                 ],
               ),
             ),
@@ -278,9 +300,13 @@ class _InsertGridState extends State<_InsertGrid> {
 }
 
 class _Tile extends StatelessWidget {
-  const _Tile({required this.item, required this.surfaces});
+  const _Tile(
+      {required this.item, required this.surfaces, this.indented = false});
   final InsertItem item;
   final OnoteSurfaces surfaces;
+
+  /// A second choice, set in under the command it belongs to.
+  final bool indented;
 
   @override
   Widget build(BuildContext context) => InkWell(
@@ -289,7 +315,7 @@ class _Tile extends StatelessWidget {
         child: SizedBox(
           height: 30,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            padding: EdgeInsets.only(left: indented ? 20 : 6, right: 6),
             child: Row(children: [
               Icon(item.icon, size: 16),
               const SizedBox(width: 8),
@@ -297,7 +323,9 @@ class _Tile extends StatelessWidget {
                 child: Text(item.menuLabel,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13)),
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: indented ? surfaces.textSecondary : null)),
               ),
             ]),
           ),
