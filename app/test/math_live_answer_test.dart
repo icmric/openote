@@ -279,7 +279,9 @@ void main() {
       ));
       await tester.pumpAndSettle();
       final w = tester.getSize(find.byType(MathBar)).width;
-      expect(w, lessThan(1200),
+      // See math_toolbar_test.dart for where the headroom went: Graph moved
+      // out of the fold and onto the row.
+      expect(w, lessThan(1240),
           reason: 'measured $w px; the row has to fit the smallest window '
               'the app opens, which is 1280');
     });

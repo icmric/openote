@@ -561,6 +561,35 @@ class _LiveMarkdownSession extends OnoteEditSession {
     return false;
   }
 
+  /// **A click past an equation that ENDS its line steps into it.**
+  ///
+  /// The owner: *"clicking on the end of a text box doesnt at the moment
+  /// automatically put me into the maths editor."* Clicking in the blank space
+  /// to the right of a trailing equation, or below the last line, put the
+  /// caret at `run.end` and stopped there — while ArrowLeft from that exact
+  /// offset had always stepped inside. Same caret, same run, two answers.
+  ///
+  /// **The "it ends the line" test is the load-bearing part.** In
+  /// `$y=3x$ and more` the seam after the equation is an ordinary caret
+  /// position that has to stay one, or the words after an equation become
+  /// untypable. Only when there is nothing after it but the end of the line
+  /// is the click unambiguous — there is nowhere else it could have meant.
+  ///
+  /// Escape is still one key away, and lands the caret back at `run.end` with
+  /// the editor closed, so a student who wants to keep writing can.
+  bool _enterMathOnTapAtLineEnd() {
+    if (_mathStart != null) return false; // one is already open
+    final sel = controller.selection;
+    if (!sel.isValid || !sel.isCollapsed) return false;
+    final at = sel.baseOffset;
+    final run = controller.mathRunNear(at);
+    if (run == null || at != run.end) return false;
+    final t = controller.text;
+    if (run.end != t.length && t.codeUnitAt(run.end) != 0x0A) return false;
+    enterInlineMath(run.start, run.end, run.inner, atStart: false);
+    return true;
+  }
+
   /// An equation the visual tree cannot hold, edited as source in a small
   /// anchored panel - the only surviving overlay (v0.20 A.5).
   void _openSourcePanel(int start, int end, String latex) {
@@ -830,6 +859,9 @@ class _LiveMarkdownSession extends OnoteEditSession {
         final at = offsetAtGlobal(want);
         if (at != null) {
           controller.selection = TextSelection.collapsed(offset: at);
+          // The first click into a block that was not being edited comes
+          // through here rather than through the field's own onTap.
+          _enterMathOnTapAtLineEnd();
         }
       }
       if (!_focus.hasFocus) _focus.requestFocus();
@@ -867,6 +899,10 @@ class _LiveMarkdownSession extends OnoteEditSession {
       builder: (context, _) => TextField(
       controller: controller,
       focusNode: _focus,
+      // Fires ONCE, after the caret has been placed, and never for a tap
+      // that landed on the equation itself (that one is the atom's own
+      // gesture, which wins the arena). See [_enterMathOnTapAtLineEnd].
+      onTap: _enterMathOnTapAtLineEnd,
       showCursor: !_mathFocus.hasFocus,
       maxLines: null,
       style: s.baseStyle,

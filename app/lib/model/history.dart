@@ -220,8 +220,12 @@ class NotebookHistory {
   final Map<String, BlockAuthor> _pendingDeletes = {};
   bool _deletionsChanged = false;
 
+  /// `\u0000` as an ESCAPE, never as a literal NUL byte: written
+  /// literally it makes ripgrep call this file binary and skip it, so the
+  /// whole of it goes missing from every code search in the repo. Dart
+  /// reads the two forms identically. See `source_hygiene_test.dart`.
   static String keyFor(String pageId, String blockId) =>
-      '$pageId $blockId';
+      '$pageId\u0000$blockId';
 
   /// Attribution for every block that currently exists, keyed by [keyFor].
   Map<String, BlockAuthor> get authors => Map.unmodifiable(_authors);

@@ -61,26 +61,47 @@ void main() {
   }
 
   group('the catalog itself', () {
-    test('is ten things in three groups', () {
+    test('is thirteen things, grouped for the menu', () {
       expect(kInsertGroups.map((g) => g.title).toList(),
           ['Write', 'Bring in', 'Link up']);
-      expect(kInsertItems.length, 10);
-      expect(kInsertItems.map((i) => i.id).toList(), [
-        'equation', 'table', 'code', 'board',
-        'image', 'pdf', 'video', 'file',
-        'pagelink', 'portal',
+      expect(kInsertItems.length, 13);
+    });
+
+    test('the ribbon is one row, in the order it has always been', () {
+      // The owner, after a release that split it into three groups and took
+      // the words off four of them: "i dont love the new menu stuff though, i
+      // think we go back to what we had before."
+      expect(kInsertRibbon.map((i) => i.id).toList(), [
+        'text', 'equation', 'code', 'table', 'board', 'image', 'pdf',
+        'file', 'video', 'flashcard', 'pagelink', 'portal', 'template',
       ]);
     });
 
-    test('and no longer offers what something else already does better', () {
-      final ids = kInsertItems.map((i) => i.id).toSet();
-      expect(ids.contains('text'), isFalse,
-          reason: 'a left click on the canvas already makes a text box, and '
-              'the Draw tab has the deliberate version');
-      expect(ids.contains('flashcard'), isFalse,
-          reason: "Home's card button reads the line you are on");
-      expect(ids.contains('template'), isFalse,
-          reason: 'laying out a whole page is not adding something to it');
+    test('and the order names every item exactly once', () {
+      // The row and the catalog are two lists. This is what stops them
+      // drifting apart: a forgotten item shows up here rather than silently
+      // on the end of the row.
+      expect(kRibbonOrder.toSet().length, kRibbonOrder.length,
+          reason: 'no duplicates');
+      expect(kRibbonOrder.toSet(), kInsertItems.map((i) => i.id).toSet());
+      expect(kInsertRibbon.length, kInsertItems.length);
+    });
+
+    test('every button carries its word', () {
+      for (final i in kInsertRibbon) {
+        expect(i.showLabel, isTrue, reason: i.id);
+      }
+    });
+
+    test('three of them are on the ribbon only, and say why', () {
+      // Each is a command the right-click GESTURE already performs, or one
+      // that is not about a point on the page at all.
+      final menu = kMenuGroups.expand((g) => g.items).map((i) => i.id).toSet();
+      for (final id in ['text', 'flashcard', 'template']) {
+        expect(kInsertItems.map((i) => i.id), contains(id), reason: id);
+        expect(menu.contains(id), isFalse, reason: id);
+      }
+      expect(menu.length, 10);
     });
 
     test('every label is a noun a fifteen-year-old uses', () {
@@ -176,7 +197,7 @@ void main() {
       await tester.tap(find.text('Insert'));
       await tester.pumpAndSettle();
 
-      for (final i in kInsertItems) {
+      for (final i in kInsertRibbon) {
         if (i.showLabel) {
           expect(find.text(i.label), findsOneWidget, reason: i.id);
         } else {
@@ -191,9 +212,10 @@ void main() {
               reason: i.id);
         }
       }
-      expect(find.text('Text box'), findsNothing);
-      expect(find.text('Flashcard'), findsNothing);
-      expect(find.text('Template'), findsNothing);
+      // And the three the ribbon has that the right-click menu does not.
+      expect(find.text('Text box'), findsOneWidget);
+      expect(find.text('Flashcard'), findsOneWidget);
+      expect(find.text('Template'), findsOneWidget);
       app.cancelPendingSave();
     });
 
@@ -211,19 +233,27 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Insert'));
       await tester.pumpAndSettle();
-      // The run has to clear a 1280 window with the navigator open (~965
-      // usable). Measured end to end: the left edge of the first control to
-      // the right edge of the last.
+      // **It does not fit, and that is the shape that was asked for back.**
+      //
+      // Thirteen labelled buttons run past the ~965px a 1280 window leaves
+      // once the navigator is open, so the last few are a scroll away - which
+      // is why `_ToolbarScroll` exists and why this row sits in a viewport
+      // that takes a mouse drag and a wheel. Pinned as a NUMBER rather than
+      // left implicit: if the row ever grows past a second screenful,
+      // somebody has to change this line and think about it.
       final first = tester.getRect(find.ancestor(
-          of: find.text(kInsertItems.first.label),
+          of: find.text(kInsertRibbon.first.label),
           matching: find.byType(CommandButton)));
       final last = tester.getRect(find.ancestor(
-          of: find.text(kInsertItems.last.label),
+          of: find.text(kInsertRibbon.last.label),
           matching: find.byType(CommandButton)));
       final total = last.right - first.left;
-      expect(total, lessThan(965),
-          reason: 'measured ${total.toStringAsFixed(0)}px; the old flat row '
-              'of thirteen measured 1217 against a 965 window');
+      expect(total, lessThan(1760),
+          reason: 'measured ${total.toStringAsFixed(0)}px against the ~965 a '
+              '1280 window leaves, so about five of the thirteen are a '
+              'horizontal scroll away');
+      expect(find.byType(Scrollable), findsWidgets,
+          reason: 'so what runs off the edge can still be reached');
       app.cancelPendingSave();
     });
   });
@@ -254,8 +284,10 @@ void main() {
     testWidgets('says the same ten things the ribbon does', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await open(tester);
-      for (final i in kInsertItems) {
-        expect(find.text(i.menuLabel), findsOneWidget, reason: i.id);
+      for (final g in kMenuGroups) {
+        for (final i in g.items) {
+          expect(find.text(i.menuLabel), findsOneWidget, reason: i.id);
+        }
       }
       expect(find.text('Paste'), findsOneWidget);
       expect(find.text('Page background'), findsOneWidget);
@@ -315,8 +347,8 @@ void main() {
       // menu — the one thing the old menu had that the ribbon did not became
       // the one thing the ribbon had that the menu did not, which is exactly
       // the drift a shared catalog exists to end.
-      final flat = kInsertItemsAndExtras.map((i) => i.id).toSet();
-      for (final item in kInsertItems) {
+      final flat = kMenuItemsAndExtras.map((i) => i.id).toSet();
+      for (final item in kMenuGroups.expand((g) => g.items)) {
         for (final extra in item.extras) {
           expect(flat, contains(extra.id), reason: '${item.id} ▸ ${extra.id}');
         }
@@ -325,7 +357,7 @@ void main() {
     });
 
     test('and every one of them can be run', () {
-      for (final i in kInsertItemsAndExtras) {
+      for (final i in kMenuItemsAndExtras) {
         expect(i.label.trim(), isNotEmpty, reason: i.id);
         expect(i.label.toLowerCase(), isNot(contains('here')),
             reason: '${i.id}: a right click already means here');

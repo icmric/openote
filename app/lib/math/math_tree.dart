@@ -165,7 +165,7 @@ class MText extends MNode {
     // pressing the button was pixel-identical to not pressing it.
     if (text.isEmpty) {
       if (!c.decorate) return '';
-      return identical(c.activeText, this) ? c.activeSlotTex : c.idleSlotTex;
+      return identical(c.activeText, this) ? c.caretSlotTex : c.idleSlotTex;
     }
     return '\\text{${_escapeText(text)}}';
   }
@@ -685,6 +685,20 @@ class MathTexCtx {
   String get activeSlotTex =>
       '\\fcolorbox{$tint}{$tint}{\$\\textcolor{$accent}{\\square}\$}';
 
+  /// **The box the caret is IN.**
+  ///
+  /// The owner, on starting an equation: *"when there is an empty equation and
+  /// im in the edit mode for it, the cursor is off to the side of the box so
+  /// it isnt intuitive or clear that its actually in edit mode for it."* It
+  /// was measured beside the box and not in it: two adjacent atoms, a 37px
+  /// chip with a 1.3px hairline sitting to its left.
+  ///
+  /// The `\phantom{\square}` holds the box at exactly the width it has at
+  /// rest, so a slot does not change size the moment you step into it and
+  /// shove the sentence along.
+  String get caretSlotTex => '\\fcolorbox{$tint}{$tint}'
+      '{\$\\textcolor{$accent}{\\rule{0.06em}{1.5ex}}\\phantom{\\square}\$}';
+
   /// Opens the highlight. The content between this and [selectionClose] is
   /// re-entered as maths, so anything at all can sit inside it — WITH the
   /// style it had outside, or a selected fraction changes size (see
@@ -705,10 +719,16 @@ String rowToTex(MRow r, MathTexCtx c) {
     if (!c.decorate) {
       return c.showEmptySlots && r.owner != null ? c.idleSlotTex : '';
     }
-    // The root of an equation isn't a "box to fill" — an empty one should show
-    // a caret, not a placeholder square the student has to delete.
-    if (r.owner == null) return caretHere ? c.caretTex : '';
-    return caretHere ? c.activeSlotTex : c.idleSlotTex;
+    // **An empty equation you are inside looks like a box with the caret in
+    // it** — the same chip a half-filled fraction already taught. The root
+    // used to opt out and draw the bare caret alone, which in a box of its
+    // own is a 1.3px hairline in a large empty rectangle and says nothing
+    // about being in edit mode at all.
+    //
+    // Empty and NOT being edited still draws nothing at the root: an equation
+    // nobody is in has no box to fill.
+    if (r.owner == null) return caretHere ? c.caretSlotTex : '';
+    return caretHere ? c.caretSlotTex : c.idleSlotTex;
   }
 
   final selHere = c.decorate &&

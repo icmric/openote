@@ -171,7 +171,7 @@ Future<void> showCanvasMenu(BuildContext context, AppState app,
     app.pasteBlocks(at: pagePt);
     return;
   }
-  for (final item in kInsertItemsAndExtras) {
+  for (final item in kMenuItemsAndExtras) {
     if (item.id == action) {
       // **Here means here.** Every one of these commands puts what it makes
       // at the caret when a paragraph has one — which is right for the
@@ -242,7 +242,7 @@ class _InsertGrid extends PopupMenuEntry<String> {
 
   @override
   double get height {
-    final tallest = kInsertGroups
+    final tallest = kMenuGroups
         .map((g) => g.items.fold(0, (n, i) => n + 1 + i.extras.length))
         .reduce(math.max);
     return 26.0 + tallest * 30.0;
@@ -264,7 +264,7 @@ class _InsertGridState extends State<_InsertGrid> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final group in kInsertGroups)
+          for (final group in kMenuGroups)
             SizedBox(
               width: 134,
               child: Column(

@@ -4,6 +4,48 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — how much have I written?
+
+- **A word count on the page's own row.** Every essay has a limit on it, and
+  the only way to find out used to be exporting the page and pasting it
+  somewhere else. One click gives characters, characters without spaces, and
+  reading time.
+- It counts what you WROTE, the way a marker would: `**bold**` is one word, a
+  link is the words you can see and not its address, an equation is one word
+  wherever it sits, and the dash in front of a bullet is not a word at all.
+
+### Changed — after using it
+
+- **Insert is one row of thirteen again**, each with its word, in the order it
+  has always been. Text box, Flashcard and Template are back. The right-click
+  menu keeps its three short columns — that shape suits a menu — and the two
+  still read from one list, so neither can quietly gain something the other
+  has not got.
+- **Graph is a button on the equation's row**, not a line inside the `...`
+  fold. A command that makes something is not an advanced setting.
+- **Clicking at the end of a line that ends in an equation now puts you in
+  it.** The arrow keys always did; the click did not, so clicking the obvious
+  place did nothing at all. Words after the equation still take a caret, as
+  they must.
+- **An empty equation you are inside looks like one.** The caret was drawn
+  BESIDE the empty box rather than in it, so starting an equation looked
+  almost exactly like not starting one. It is one box with the caret inside,
+  the same as a half-filled fraction.
+- **Hovering over a box no longer fills its background.** It hid the gridline
+  and the box beside it just as you were lining them up, and it was a shape
+  the page would never print.
+- **Del deletes the page or section you clicked on** in the list down the
+  side, and so does Backspace. It was right-click ▸ Delete or nothing. There
+  is no "are you sure" — deleting a page keeps it for thirty days and the
+  menu never asked either — but it now says what went and where to find it.
+  Getting there made the whole list keyboard-navigable.
+- **One Del deletes one thing.** With a box selected on the page and a section
+  clicked in the list, pressing Del destroyed both.
+- **Choosing a cloud folder to sync with shows that it is working.** For a
+  large notebook this takes seconds, and a greyed-out button with nothing
+  moving is indistinguishable from a frozen app. The button does not change
+  size doing it.
+
 ### Added — graphs
 
 - **Write an equation, then draw it.** With an equation open, `⋯ ▸ Draw the

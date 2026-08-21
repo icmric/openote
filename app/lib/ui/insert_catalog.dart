@@ -13,21 +13,26 @@
 /// file is the single list they now both render, so "the menu matches Insert"
 /// is true by construction rather than by anyone remembering.
 ///
-/// **What is NOT here, and why.**
-///  * *Text box* — a plain left click on the canvas already makes one, and
-///    the Draw tab's `T` is the deliberate version. A third route to the same
-///    block is most of what "messy" was.
-///  * *Flashcard* — Home's own card button reads the line you are on, which
-///    is strictly better than dropping an empty `?[Question](Answer)`
-///    somewhere else on the page.
-///  * *Apply a template* — laying out a whole page is not adding something to
-///    it. It lives beside `Save as template…` in the page's own menu, which
-///    is where its own "no templates yet" message already sends people.
+/// **The ribbon is one row of thirteen; the menu shows ten of them.**
+///
+/// The ribbon went to three groups with four wordless icons for one release,
+/// and came back: *"i dont love the new menu stuff though, i think we go back
+/// to what we had before."* So [kRibbonOrder] is the row, in the order it has
+/// always been, every button carrying its word. The groups did not go away —
+/// they are what the right-click menu shows as three short columns, which is
+/// a shape a menu can carry and a row cannot.
+///
+/// Three entries are on the ribbon and NOT in the menu, each because the
+/// right-click gesture already does the thing, or because the command is not
+/// about a point on the page at all — see [InsertItem.onMenu], which is where
+/// the reason is written beside the item that has it.
+///
+/// **What is on neither.**
 ///  * *Graph* — a graph is a graph OF something, and a blank one would be a
 ///    box with nothing to edit: a graph has no editor of its own, it follows
-///    an equation. The route is the equation's own `⋯` menu, "Draw the
-///    graph", which is the same one press whether the equation is in a box or
-///    in a sentence.
+///    an equation. The route is the `Graph` button on the equation's own row,
+///    which is the same one press whether the equation is in a box or in a
+///    sentence.
 ///
 /// ### Where the thing lands
 ///
@@ -56,6 +61,7 @@ import '../store/media_store.dart';
 import 'insert_portal_dialog.dart';
 import 'media_link_dialog.dart';
 import 'onote_dialog.dart';
+import 'sidebar.dart';
 
 /// Put one thing on the page. [at] is the top-left the block should take.
 typedef InsertRun = Future<void> Function(
@@ -72,6 +78,7 @@ class InsertItem {
     this.tooltip,
     this.opensPicker = false,
     this.showLabel = true,
+    this.onMenu = true,
     this.extras = const [],
   });
 
@@ -106,7 +113,26 @@ class InsertItem {
   ///
   /// A menu always prints the word: there is no width to save there, and a
   /// column of bare icons is unreadable.
+  ///
+  /// **Every entry carries its word again**, by the owner's call after using
+  /// the wordless row: *"i dont love the new menu stuff though, i think we go
+  /// back to what we had before."* The cost is real and is stated here rather
+  /// than argued away — thirteen labelled buttons is about 1360px against the
+  /// 965px a 1280 window leaves once the navigator is open, so the last few
+  /// are a scroll away.
   final bool showLabel;
+
+  /// **Is this on the right-click menu as well as the ribbon?**
+  ///
+  /// Three are not, and each has the same reason: the gesture that opens the
+  /// menu already does the thing. A right click on the page is a click on the
+  /// page, which makes a text box; a flashcard is made from the line you are
+  /// on, which a right click on empty canvas is not; and applying a template
+  /// lays out a whole PAGE, which is not "put this here".
+  ///
+  /// A field rather than a second list, so the difference is one word beside
+  /// the item that has it, and the test can read it.
+  final bool onMenu;
 
   /// The extra choices behind a split button's arrow. A plain menu ignores
   /// these and offers the main action only, which is the right default in
@@ -144,6 +170,50 @@ Offset insertAnchor(AppState app, InsertItem item) {
 List<InsertItem> get kInsertItems =>
     [for (final g in kInsertGroups) ...g.items];
 
+/// **The ribbon: one row, in the order it has always been in.**
+///
+/// The groups below are for the right-click MENU, which shows them as three
+/// short columns. The ribbon is a row and has no columns to put a heading on,
+/// so it reads them out flat — in the order a student learned, which is not
+/// the order the columns happen to fall in.
+///
+/// A test asserts this names every item in the catalog exactly once, so the
+/// two cannot drift apart.
+const List<String> kRibbonOrder = [
+  'text',
+  'equation',
+  'code',
+  'table',
+  'board',
+  'image',
+  'pdf',
+  'file',
+  'video',
+  'flashcard',
+  'pagelink',
+  'portal',
+  'template',
+];
+
+/// The ribbon's items, in [kRibbonOrder]. Anything the order forgets goes on
+/// the end rather than disappearing.
+List<InsertItem> get kInsertRibbon {
+  final byId = {for (final i in kInsertItems) i.id: i};
+  return [
+    for (final id in kRibbonOrder)
+      if (byId.remove(id) case final item?) item,
+    ...byId.values,
+  ];
+}
+
+/// The items the right-click menu offers — see [InsertItem.onMenu].
+List<InsertGroup> get kMenuGroups => [
+      for (final g in kInsertGroups)
+        InsertGroup(
+            title: g.title,
+            items: [for (final i in g.items) if (i.onMenu) i]),
+    ];
+
 /// The same, with each item's own second choices after it.
 ///
 /// The ribbon shows an extra behind a small arrow; the right-click menu shows
@@ -154,6 +224,13 @@ List<InsertItem> get kInsertItems =>
 List<InsertItem> get kInsertItemsAndExtras =>
     [for (final i in kInsertItems) ...[i, ...i.extras]];
 
+/// The same again for the right-click menu: what it shows, and what its rows
+/// can therefore ask to run.
+List<InsertItem> get kMenuItemsAndExtras => [
+      for (final g in kMenuGroups)
+        for (final i in g.items) ...[i, ...i.extras]
+    ];
+
 /// The catalog.
 ///
 /// Three groups, because three is the number of genuinely different things a
@@ -161,6 +238,25 @@ List<InsertItem> get kInsertItemsAndExtras =>
 /// elsewhere, and pointing at something that already exists.
 final List<InsertGroup> kInsertGroups = [
   InsertGroup(title: 'Write', items: [
+    InsertItem(
+      id: 'text',
+      icon: Icons.text_fields,
+      label: 'Text box',
+      // Not on the right-click menu: a click on the page already makes one,
+      // and a menu row that repeats the gesture you used to open it is
+      // clutter. On the ribbon because that is where it has always been.
+      onMenu: false,
+      size: const Size(320, 60),
+      run: (context, app, at) async {
+        final b = app.addBlock(Block(
+            type: BlockType.text,
+            x: at.dx,
+            y: at.dy,
+            w: 320,
+            content: {'text': ''}));
+        app.select(b.id, edit: true);
+      },
+    ),
     InsertItem(
       id: 'equation',
       icon: Icons.functions,
@@ -204,7 +300,6 @@ final List<InsertGroup> kInsertGroups = [
       id: 'code',
       icon: Icons.code,
       label: 'Code',
-      showLabel: false,
       size: const Size(400, 80),
       run: (context, app, at) async {
         final b = app.addBlock(Block(
@@ -240,7 +335,6 @@ final List<InsertGroup> kInsertGroups = [
       icon: Icons.image_outlined,
       // "Picture", not "Image": one is a word a student uses.
       label: 'Picture',
-      showLabel: false,
       opensPicker: true,
       size: const Size(320, 240),
       run: insertPickedImage,
@@ -249,7 +343,6 @@ final List<InsertGroup> kInsertGroups = [
       id: 'pdf',
       icon: Icons.picture_as_pdf_outlined,
       label: 'PDF slides',
-      showLabel: false,
       opensPicker: true,
       size: Size.zero, // it lays itself out down the page
       extras: [
@@ -289,7 +382,6 @@ final List<InsertGroup> kInsertGroups = [
       icon: Icons.play_circle_outline,
       label: 'Video',
       tooltip: 'A lecture recording, or any web link',
-      showLabel: false,
       opensPicker: true,
       size: const Size(340, 56),
       run: insertVideoOrLink,
@@ -298,13 +390,22 @@ final List<InsertGroup> kInsertGroups = [
       id: 'file',
       icon: Icons.attach_file,
       label: 'File',
-      showLabel: false,
       opensPicker: true,
       size: const Size(280, 48),
       run: insertPickedFile,
     ),
   ]),
   InsertGroup(title: 'Link up', items: [
+    InsertItem(
+      id: 'flashcard',
+      icon: Icons.style_outlined,
+      label: 'Flashcard',
+      // Not on the right-click menu: the button on Home reads the LINE you
+      // are on, and a right click on empty canvas is not on a line.
+      onMenu: false,
+      size: const Size(300, 120),
+      run: (context, app, at) async => app.insertFlashcard(at: at),
+    ),
     InsertItem(
       id: 'pagelink',
       icon: Icons.link,
@@ -320,6 +421,18 @@ final List<InsertGroup> kInsertGroups = [
       opensPicker: true,
       size: const Size(380, 260),
       run: (context, app, at) => showInsertPortalDialog(context, app, at),
+    ),
+    InsertItem(
+      id: 'template',
+      icon: Icons.dashboard_customize_outlined,
+      label: 'Template',
+      opensPicker: true,
+      // Not on the right-click menu: this lays out a whole PAGE, which is not
+      // "put this thing here". It is on the page's own menu as well, beside
+      // Save as template, which is where it belongs by meaning.
+      onMenu: false,
+      size: Size.zero,
+      run: (context, app, at) => promptApplyTemplate(context, app),
     ),
   ]),
 ];

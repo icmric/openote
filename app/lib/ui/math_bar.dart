@@ -551,6 +551,7 @@ class _MathBarState extends State<MathBar> {
             style: OnoteType.small.copyWith(color: s.textSecondary),
           ),
         ),
+        _GraphButton(onDrawGraph: widget.onDrawGraph, surfaces: s),
         _AngleSwitch(
           mode: widget.angleMode,
           onToggle: widget.onToggleAngleMode,
@@ -560,7 +561,6 @@ class _MathBarState extends State<MathBar> {
           latexMode: widget.latexMode,
           latexAvailable: widget.latexAvailable,
           onToggleLatex: widget.onToggleLatex,
-          onDrawGraph: widget.onDrawGraph,
           surfaces: s,
         ),
       ]);
@@ -589,6 +589,7 @@ class _MathBarState extends State<MathBar> {
         surfaces: s,
         onTap: () => _toggle('__search'),
       ),
+      _GraphButton(onDrawGraph: widget.onDrawGraph, surfaces: s),
       _AngleSwitch(
         mode: widget.angleMode,
         onToggle: widget.onToggleAngleMode,
@@ -598,7 +599,6 @@ class _MathBarState extends State<MathBar> {
         latexMode: widget.latexMode,
         latexAvailable: widget.latexAvailable,
         onToggleLatex: widget.onToggleLatex,
-        onDrawGraph: widget.onDrawGraph,
         surfaces: s,
       ),
     ]);
@@ -728,6 +728,64 @@ class _Sep extends StatelessWidget {
 ///
 /// The label says the mode you are IN, not the one you would switch to. A
 /// button labelled with its own opposite is a coin-flip every time.
+/// **Draw this equation as a graph, beside it.**
+///
+/// On the row rather than behind the `...` fold. It was in the fold because
+/// it cost the row no width there, and the owner, on using it: *"i dont love
+/// the location of the 'graph this' button, isnt super intuitive. Could we
+/// maybe break this out into its own button?"* A command that MAKES something
+/// is not an advanced setting, and nobody opens a fold to find out what is in
+/// it.
+///
+/// Always enabled. `drawGraph` is a closure rather than a flag precisely
+/// because `setActiveMath` is called from the editor's own build and does not
+/// notify — any emptiness captured here would be one keystroke stale — so the
+/// question "is there anything to graph" is asked when the button is pressed,
+/// and answered there.
+class _GraphButton extends StatelessWidget {
+  const _GraphButton({required this.onDrawGraph, required this.surfaces});
+
+  final VoidCallback? onDrawGraph;
+  final OnoteSurfaces surfaces;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(right: 3),
+        child: Tooltip(
+          message: 'Draw this equation as a graph beside it',
+          child: SizedBox(
+            height: OnoteSize.button,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(5),
+              onTap: onDrawGraph,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(color: surfaces.border),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.show_chart,
+                          size: OnoteIcon.sm, color: surfaces.textPrimary),
+                      const SizedBox(width: 4),
+                      Text('Graph',
+                          style: OnoteType.small.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: surfaces.textPrimary,
+                          )),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+}
+
 class _AngleSwitch extends StatelessWidget {
   const _AngleSwitch({
     required this.mode,
@@ -786,17 +844,12 @@ class _MoreMenu extends StatelessWidget {
     required this.latexAvailable,
     required this.onToggleLatex,
     required this.surfaces,
-    this.onDrawGraph,
   });
 
   final bool latexMode;
   final bool latexAvailable;
   final VoidCallback onToggleLatex;
   final OnoteSurfaces surfaces;
-
-  /// Null when this equation has no graph in it — an equation in a sentence,
-  /// which has no id for a graph to follow.
-  final VoidCallback? onDrawGraph;
 
   @override
   Widget build(BuildContext context) => PopupMenuButton<String>(
@@ -805,18 +858,9 @@ class _MoreMenu extends StatelessWidget {
         icon: Icon(Icons.more_horiz, size: OnoteIcon.sm, color: surfaces.textPrimary),
         onSelected: (v) {
           if (v == 'latex') onToggleLatex();
-          if (v == 'graph') onDrawGraph?.call();
           if (v == 'help') showShortcutOverlay(context);
         },
         itemBuilder: (_) => [
-          // First, because it is the one that makes something new. It costs
-          // the row no width at all, which is why it lives here rather than
-          // as an eleventh button.
-          if (onDrawGraph != null)
-            const PopupMenuItem<String>(
-              value: 'graph',
-              child: Text('Draw the graph'),
-            ),
           PopupMenuItem<String>(
             value: 'latex',
             enabled: latexAvailable,

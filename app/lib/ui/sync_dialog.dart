@@ -140,6 +140,20 @@ class _SyncDialogState extends State<_SyncDialog> {
   bool _busy = false;
   String? _error;
 
+  /// Which button the current [_busy] belongs to, so a spinner turns on the
+  /// one that was pressed and on no other.
+  ///
+  /// `_busy` on its own cannot answer that — three separate actions in this
+  /// dialog raise it — so a spinner keyed to it would turn on "Choose a
+  /// folder…" while the *working file* was being moved out of the cloud
+  /// folder, pointing at something nobody pressed.
+  ///
+  /// A detected folder's path names its "Use" button. The picker uses
+  /// [_chooserButton] instead of the path it came back with, so that choosing
+  /// a folder that happens to also be a detected one cannot light up two.
+  String? _busyButton;
+  static const String _chooserButton = 'the folder picker';
+
   /// Show the folder chooser even when already synced — "move this somewhere
   /// else" is a real thing to want.
   bool _changing = false;
@@ -148,9 +162,12 @@ class _SyncDialogState extends State<_SyncDialog> {
   /// point is that the dialog is short enough to read.
   _Pane? _open;
 
-  Future<void> _moveTo(String dir, {String? subfolder}) async {
+  /// Move the notebook into [dir], with the spinner on [button] — the control
+  /// that started it, defaulting to the folder tile that names this folder.
+  Future<void> _moveTo(String dir, {String? subfolder, String? button}) async {
     setState(() {
       _busy = true;
+      _busyButton = button ?? dir;
       _error = null;
     });
     try {
@@ -163,7 +180,6 @@ class _SyncDialogState extends State<_SyncDialog> {
       final path = await app.moveNotebookToFolder(nb, target);
       if (!mounted) return;
       setState(() {
-        _busy = false;
         _changing = false;
         _folders = detectCloudFolders();
       });
@@ -173,18 +189,29 @@ class _SyncDialogState extends State<_SyncDialog> {
             'device and add it from the same folder.'),
       ));
     } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      // **The spinner cannot outlive the work**, on any way out of here —
+      // including the `return` above, and including a throw from the snack bar
+      // rather than from the move. A spinner still turning next to the red
+      // failure line says the app is still trying when it has already given
+      // up, which is a worse lie than the silence this replaced.
       if (mounted) {
         setState(() {
           _busy = false;
-          _error = '$e';
+          _busyButton = null;
         });
       }
     }
   }
 
   Future<void> _chooseFolder() async {
+    // No spinner while the OS picker is up: nothing is happening yet, and the
+    // native dialog is the feedback. It starts when the move does.
     final dir = await getDirectoryPath(confirmButtonText: 'Sync here');
-    if (dir != null) await _moveTo(dir, subfolder: 'Openote');
+    if (dir != null) {
+      await _moveTo(dir, subfolder: 'Openote', button: _chooserButton);
+    }
   }
 
   Future<void> _addMirror({required bool backup}) async {
@@ -271,7 +298,8 @@ class _SyncDialogState extends State<_SyncDialog> {
                   OutlinedButton.icon(
                     onPressed: _busy ? null : _chooseFolder,
                     icon: const Icon(Icons.folder_open, size: 18),
-                    label: const Text('Choose a folder…'),
+                    label: _spinning(_busyButton == _chooserButton,
+                        const Text('Choose a folder…')),
                   ),
                   if (_changing) ...[
                     const SizedBox(width: 8),
@@ -712,6 +740,33 @@ class _SyncDialogState extends State<_SyncDialog> {
     );
   }
 
+  /// [label], with a spinner turning in the middle of it while [working].
+  ///
+  /// Reported: "poor feedback given when selecting a cloud folder to sync
+  /// with… as the process can sometimes take some time for larger notebooks a
+  /// spinner icon where the select button was would be great". Greying the
+  /// button was all it did, and a greyed button with nothing moving is not
+  /// distinguishable from an app that has frozen.
+  ///
+  /// **The label keeps its place in the layout** — it still measures, it just
+  /// does not paint — so the button is exactly the size it was at rest.
+  /// Swapping the text out for the 13px spinner would shrink the button under
+  /// the pointer and shuffle the row beside it, and a dialog rearranging
+  /// itself while you wait reads as a second thing going wrong.
+  static Widget _spinning(bool working, Widget label) => working
+      ? Stack(
+          alignment: Alignment.center,
+          children: [
+            Opacity(opacity: 0, child: label),
+            // 13 at stroke 2, the size every other spinner in this file uses.
+            const SizedBox(
+                width: 13,
+                height: 13,
+                child: CircularProgressIndicator(strokeWidth: 2)),
+          ],
+        )
+      : label;
+
   Widget _folderTile(CloudFolder f) {
     final caveat = cloudCaveat(f.kind);
     return ListTile(
@@ -727,7 +782,8 @@ class _SyncDialogState extends State<_SyncDialog> {
       ),
       trailing: TextButton(
         onPressed: _busy ? null : () => _moveTo(f.path, subfolder: 'Openote'),
-        child: const Text('Use', style: TextStyle(fontSize: 12)),
+        child: _spinning(_busyButton == f.path,
+            const Text('Use', style: TextStyle(fontSize: 12))),
       ),
     );
   }

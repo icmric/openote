@@ -95,6 +95,13 @@ Live editing
 
 Page info/tools
     Word counter, char count, estimated reading time.
+    → v0.24: a word count sits at the end of the page's own row; one click
+      gives characters, characters without spaces, and reading time at 200
+      words a minute. It counts the page as it READS — `**bold**` is one
+      word, a link is its label, an equation is one word wherever it sits,
+      and bullets and heading hashes are not words — through the same
+      classifier both renderers use, so a syntax added to the app is counted
+      correctly in the same commit.  DONE
     Citation tool similar to google docs
         select media type, provide link and it attempts to autofill as much info as possible. 
         Store list of all citations, button to insert in text citation and button to include all references (maybe this is live updated?) 
@@ -107,6 +114,9 @@ Page info/tools
     Embed website inside page?
         Online only (i.e. basically use an iframe?) or allow it to donwload an offline copy too?
     Version history and user/computer tagging in metadata with creations, edits, and deletions
+    → v0.22 delivered this: `Version history…` on a page shows per-block
+      authors, edits and deletions, naming each device by its label and
+      saying "another computer" when it cannot.  DONE
     Creating flowcharts
         users: students creating IT flowcharts, students creating logic flowcharts, companies creating chain of command, problem resolution, etc
         Basic text in components as early version. In future be able to click to expand each box to see more information (sorta like how the pdf thumbnail thing works), or potentially attach flows and actions to buttons allowing code or things to be executed by clicking on them
@@ -143,8 +153,14 @@ Consistency/UX
       fixed the editor-key leaks (arrows jumped boxes, Enter was eaten —
       canvas traversal now stands down whenever an editor holds focus)
       and added TYPE-THROUGH: a letter on a selected text/code box starts
-      writing at its end. The blocks-sharing-a-box model is the remaining
-      design question.
+      writing at its end.
+    → v0.23 was the big one here: an 86-agent sweep against the five
+      principles found 37 confirmed defects and fixed every one, and
+      principle 4 became MECHANICAL rather than a promise — the equation
+      face takes an editor and primitives only, so a maths box and one in a
+      sentence cannot be told apart by anything downstream. A later
+      adversarial round found and fixed 22 more.
+    The blocks-sharing-a-box model is the remaining design question.
     Simple unobtrusive animations consistently would be nice. A little bounce when a popup appears, the PDF viewer looking like it opens from the thumbnail, animation switching between menus, stuff like that
     → All three shipped: one shared dialog transition (quick fade +
       slight bounce), toolbar tab switches fade/slide in the same motion
@@ -155,8 +171,25 @@ Consistency/UX
       check. Style DEFAULTS still live only per-feature — they join the
       page when the styles system grows defaults at all.
     Pressing 'Del' when clicking on a page or group doesnt delete it - only way to delete is right click and press delete
+    → v0.24: Del and Backspace both work on the row you clicked — page,
+      section or group — and the sidebar became keyboard-navigable getting
+      there. No confirmation, because it is a soft delete with thirty days
+      of retention and the menu does not ask either, but a snackbar names
+      what went and where to get it back. A locked node is refused and told
+      why. It also closed a hazard nobody had reported: the shell's own
+      Delete handler runs BEFORE focus dispatch, so with a block selected
+      one Del used to destroy the block and the section.  DONE
     Hovering over a box makes its background solid, this makes aligning with other objects more difficult and is different to how it will be rendered
+    → v0.24: hover no longer fills. The border already said "this one",
+      which is what hover is for.  DONE
     Poor feedback given when selecting a cloud folder to sync with. Options to grey out however as the process can soemtimes take some time for larger notebooks a spinner icon where the select button was (or somewhere intuitive) would be great
+    → v0.24: a spinner takes the place of the button's label while the move
+      runs, and the button does not change size doing it — the label still
+      measures, only its painting is swapped. Keyed to the button you
+      PRESSED, because three different actions in that dialog raise the same
+      busy flag and a spinner on the wrong one is worse than none.  DONE
+      Still silent: "Move the working file out of <folder>", which
+      checkpoints a WAL, copies and compares hashes with nothing on screen.
 
 Code editor
     Remaining: HTML tag auto-closing, and string/comment awareness in the
@@ -190,10 +223,13 @@ General text editing
       list and exits an empty one, Tab/Shift+Tab nest, Backspace unwraps an
       item, ordered lists renumber themselves, and the list buttons stopped
       crashing at offset 0, destroying checkboxes and eating indentation.
-    Remaining in this area, deliberately deferred: a hanging indent for
-    WRAPPED list lines (needs a custom RenderParagraph), live preview for
-    tables/fences/$$math$$/links, recursive inline nesting (**==x==**), rich
-    paste that keeps structure from Word or a web page, and replacing the
-    private {{#hex text}} colour syntax with portable HTML.
-    Still seems like there is a lot of movement with dotpoints? Did work at some stage so maybe some recent breaking change (or works on one machine and not others)
+    → v0.22 finished two of these: WRAPPED list lines now hang under their
+      own text (a custom paragraph, `_hangWrappedListLines`, pinned by
+      `app/test/hanging_indent_test.dart`), which is also the answer to the
+      "lot of movement with dotpoints" note that sat beside it; and
+      `$$math$$` has live preview.
+    Remaining in this area, deliberately deferred: live preview for tables,
+    fences and links, recursive inline nesting (**==x==**), rich paste that
+    keeps structure from Word or a web page, and replacing the private
+    {{#hex text}} colour syntax with portable HTML.
     Ontenote page links arent imported correctly. Start with onenote:https://ONEDRIVELINK, would be nice if we could attempt to convert this link to a page link within openote - Given page name (which may not be unique), section ID, and page ID. If a matching page cannot be found (as it could be linking to a notebook that hasnt been imported, a deleted page, etc) please allow it to continue linking to onenote (which the onenote: prefix automatically allows AFAIK)

@@ -615,7 +615,14 @@ class _BlockViewState extends State<BlockView> {
             // stored: this must not dirty the page or survive the click.
             color: app.graphLinkHighlight(b)?.withValues(alpha: 0.14) ??
                 onoteColorFromHex(b.content['bg'] as String?) ??
-                (editing || selected || _hover
+                // **Hover does not fill.** The owner: *"Hovering over a box
+                // makes its background solid, this makes aligning with other
+                // objects more difficult and is different to how it will be
+                // rendered."* Both halves are true — a solid ground hides the
+                // gridline and the box beside it just as you are lining them
+                // up, and it is a shape the page will never print. The border
+                // below already says "this one", which is what hover is for.
+                (editing || selected
                     ? (dark ? OnoteColors.night50 : OnoteColors.paper0)
                     : Colors.transparent),
             borderRadius: BorderRadius.circular(12),

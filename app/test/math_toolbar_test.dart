@@ -253,6 +253,7 @@ void main() {
       required ValueChanged<MathItem> onInsert,
       bool latexMode = false,
       VoidCallback? onToggle,
+      VoidCallback? onDrawGraph,
       List<String> recents = const ['theta', 'pi'],
     }) async {
       widen(tester);
@@ -264,6 +265,7 @@ void main() {
               latexMode: latexMode,
               recentIds: recents,
               onToggleLatex: onToggle ?? () {},
+              onDrawGraph: onDrawGraph,
               onInsert: onInsert,
             ),
           ),
@@ -279,7 +281,15 @@ void main() {
       // Below this the row scrolls (drag or wheel, added with the doors) —
       // but the first cut was 1725-2230 px with NO scroll at all, and half of
       // "chaotic" was controls the student could not reach.
-      expect(w, lessThan(1150),
+      //
+      // 1150 → 1240 when Graph came out of the `...` fold and onto the row,
+      // at the owner's request: *"i dont love the location of the 'graph
+      // this' button, isnt super intuitive. Could we maybe break this out
+      // into its own button?"* It costs 72 px of what was 135 px of
+      // headroom. The row still fits a 1280 window; there is simply less
+      // room than there was, and the next thing that wants a place on it has
+      // to take something else off.
+      expect(w, lessThan(1240),
           reason: 'measured ' + w.toString() + ' px; the row has to fit the '
               'smallest window the app opens, which is 1280');
     });
@@ -467,6 +477,39 @@ void main() {
       await tester.tap(find.text('Write the LaTeX by hand'));
       await tester.pumpAndSettle();
       expect(toggled, 1);
+    });
+
+    testWidgets('Graph is a button on the row, not an item in the fold',
+        (tester) async {
+      // The owner, having used it: "i dont love the location of the 'graph
+      // this' button, isnt super intuitive. Could we maybe break this out
+      // into its own button?" It was in the fold because it cost the row no
+      // width there — which is a reason to hide a SETTING, not a command
+      // that makes something.
+      var drawn = 0;
+      await pumpBar(tester, onInsert: (_) {}, onDrawGraph: () => drawn++);
+      expect(find.text('Graph'), findsOneWidget);
+      await tester.tap(find.text('Graph'));
+      await tester.pumpAndSettle();
+      expect(drawn, 1);
+
+      await tester.tap(find.byTooltip('More'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Draw the graph'), findsNothing,
+          reason: 'and it is not in both places');
+    });
+
+    testWidgets('and it is on the LaTeX face too, or the two disagree',
+        (tester) async {
+      // Parity is the whole point of the object row: the same equation, the
+      // same controls, whichever view of it you are looking at.
+      var drawn = 0;
+      await pumpBar(tester,
+          onInsert: (_) {}, latexMode: true, onDrawGraph: () => drawn++);
+      expect(find.text('Graph'), findsOneWidget);
+      await tester.tap(find.text('Graph'));
+      await tester.pumpAndSettle();
+      expect(drawn, 1);
     });
 
     testWidgets('and in LaTeX mode the row says so in plain words',

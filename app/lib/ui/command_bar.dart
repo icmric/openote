@@ -573,16 +573,17 @@ class _CommandBarState extends State<CommandBar> {
   /// Three groups separated by the bar's own hairline. No printed captions:
   /// only this tab would need them, and a command row that is taller on one
   /// tab than the others moves the layout under your pointer as you switch.
-  Widget _insertRow(BuildContext context) {
-    final children = <Widget>[];
-    for (var g = 0; g < kInsertGroups.length; g++) {
-      if (g > 0) children.add(const _Div());
-      for (final item in kInsertGroups[g].items) {
-        children.add(_InsertButton(app: app, item: item));
-      }
-    }
-    return Row(children: children);
-  }
+  /// **One row, thirteen buttons, each with its word** — the shape this row
+  /// has always had, restored at the owner's request after a release that
+  /// split it into three groups and took the words off four of them.
+  ///
+  /// The grouping did not go away: it is what the right-click menu shows as
+  /// three short columns, which is a shape a menu can carry and a row cannot.
+  /// [kRibbonOrder] is the row's own order, and a test pins it against the
+  /// catalog so the two cannot drift.
+  Widget _insertRow(BuildContext context) => Row(children: [
+        for (final item in kInsertRibbon) _InsertButton(app: app, item: item),
+      ]);
   Widget _drawRow(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     Widget toolButton(Tool t, IconData icon, String tip) => IconButton(

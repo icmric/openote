@@ -574,8 +574,20 @@ class _GroupHeaderState extends State<_GroupHeader> {
   final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
+  /// This row's place in the keyboard, handed to its `InkWell` so there is one
+  /// focus node rather than two — see [_nodeDeleteKey].
+  late final FocusNode _rowFocus = FocusNode(
+      debugLabel: 'nav-group',
+      onKeyEvent: (n, e) => _nodeDeleteKey(context, app, group, n, e));
+
   AppState get app => widget.app;
   TreeNode get group => widget.group;
+
+  @override
+  void dispose() {
+    _rowFocus.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -594,6 +606,10 @@ class _GroupHeaderState extends State<_GroupHeader> {
             fontStyle: target ? FontStyle.italic : FontStyle.normal,
             color: target ? scheme.primary : null);
         return InkWell(
+          focusNode: _rowFocus,
+          onFocusChange: (has) {
+            if (has) _keyboardEnteredRow(app);
+          },
           // No onDoubleTap — it deferred every click (see _DoubleTapGate).
           onTap: _renaming
               ? null
@@ -602,6 +618,9 @@ class _GroupHeaderState extends State<_GroupHeader> {
                     setState(() => _renaming = true);
                     return;
                   }
+                  // The click is what aims the keyboard at this row; an InkWell
+                  // does not take focus on tap of its own accord.
+                  _rowFocus.requestFocus();
                   app.toggleGroupCollapsed(group.id);
                 },
           onTapDown: (d) => _downPos = d.globalPosition,
@@ -1135,9 +1154,21 @@ class _SectionHeaderState extends State<_SectionHeader> {
   final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
+  /// This row's place in the keyboard, handed to its `InkWell` so there is one
+  /// focus node rather than two — see [_nodeDeleteKey].
+  late final FocusNode _rowFocus = FocusNode(
+      debugLabel: 'nav-section',
+      onKeyEvent: (n, e) => _nodeDeleteKey(context, app, section, n, e));
+
   AppState get app => widget.app;
   TreeNode get section => widget.section;
   bool get dark => widget.dark;
+
+  @override
+  void dispose() {
+    _rowFocus.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1178,6 +1209,10 @@ class _SectionHeaderState extends State<_SectionHeader> {
                 ? OnoteColors.moon100
                 : OnoteColors.graphite700);
     return InkWell(
+      focusNode: _rowFocus,
+      onFocusChange: (has) {
+        if (has) _keyboardEnteredRow(app);
+      },
       // No onDoubleTap — it deferred every click (see _DoubleTapGate).
       onTap: _renaming
           ? null
@@ -1186,6 +1221,9 @@ class _SectionHeaderState extends State<_SectionHeader> {
                 setState(() => _renaming = true);
                 return;
               }
+              // The click is what aims the keyboard at this row; an InkWell
+              // does not take focus on tap of its own accord.
+              _rowFocus.requestFocus();
               app.activateSection(section.id);
             },
       onTapDown: (d) => _downPos = d.globalPosition,
@@ -1560,8 +1598,20 @@ class _PageTileState extends State<_PageTile> {
   final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
+  /// This row's place in the keyboard, handed to its `InkWell` so there is one
+  /// focus node rather than two — see [_nodeDeleteKey].
+  late final FocusNode _rowFocus = FocusNode(
+      debugLabel: 'nav-page',
+      onKeyEvent: (n, e) => _nodeDeleteKey(context, app, page, n, e));
+
   AppState get app => widget.app;
   TreeNode get page => widget.page;
+
+  @override
+  void dispose() {
+    _rowFocus.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1649,6 +1699,10 @@ class _PageTileState extends State<_PageTile> {
       color:
           selected ? scheme.primary.withValues(alpha: .10) : Colors.transparent,
       child: InkWell(
+        focusNode: _rowFocus,
+        onFocusChange: (has) {
+          if (has) _keyboardEnteredRow(app);
+        },
         // No onDoubleTap — it deferred every click (see _DoubleTapGate).
         onTap: _renaming
             ? null
@@ -1657,6 +1711,9 @@ class _PageTileState extends State<_PageTile> {
                   setState(() => _renaming = true);
                   return;
                 }
+                // The click is what aims the keyboard at this row; an InkWell
+                // does not take focus on tap of its own accord.
+                _rowFocus.requestFocus();
                 app.selectPage(page.id);
               },
         onTapDown: (d) => _downPos = d.globalPosition,
@@ -1768,6 +1825,118 @@ PopupMenuItem<String> _nodeItem(String v, IconData icon, String label,
       Text(label, style: TextStyle(fontSize: 13, color: color)),
     ]),
   );
+}
+
+// ── Delete from the keyboard ──────────────────────────────────────────────
+//
+// Eric: "Pressing 'Del' when clicking on a page or group doesnt delete it -
+// only way to delete is right click and press delete." Kept beside
+// [showNodeMenu] on purpose: these are two routes to one soft delete, and
+// they drift apart the moment they stop being read together.
+
+/// The keyboard's answer to right-click ▸ Delete, for the row that holds focus.
+///
+/// **Why focus, and not a `selectedNodeId` on [AppState].** The navigator had
+/// no notion of "the row you are on": a page row highlights off `app.pageId`
+/// and section and group rows carried no selection state at all. A field on
+/// [AppState] would be a second source of truth to invalidate on every delete,
+/// notebook switch and tree reload — and it still would not say whether the
+/// KEYBOARD is aimed here rather than at the canvas. Flutter's focus answers
+/// both questions, every row is already an `InkWell` carrying a focus node, and
+/// hanging the handler off that node is the shape [_InlineRename] already uses.
+///
+/// **No confirmation**, because right-click ▸ Delete does not confirm either
+/// and two routes to the same recoverable action must not disagree about how
+/// dangerous it is — `AppState.deleteNode` soft-deletes into the 30-day recycle
+/// bin. The snackbar is the acknowledgement instead: a whole page leaving the
+/// tree on one keystroke with nothing said is the failure to avoid.
+KeyEventResult _nodeDeleteKey(BuildContext context, AppState app, TreeNode node,
+    FocusNode row, KeyEvent e) {
+  if (e is! KeyDownEvent) return KeyEventResult.ignored;
+  // Both keys, because the key people reach for depends on the keyboard in
+  // front of them: Del on Windows and Linux, Backspace on a Mac laptop, which
+  // has no Del at all. A `KeyRepeatEvent` is not a `KeyDownEvent`, so holding
+  // the key down does not walk the list deleting everything under it.
+  if (e.logicalKey != LogicalKeyboardKey.delete &&
+      e.logicalKey != LogicalKeyboardKey.backspace) {
+    return KeyEventResult.ignored;
+  }
+  if (_textFieldHasKeyboard()) return KeyEventResult.ignored;
+  // A passcode is a standing "not by accident" mark on this node. The menu
+  // still offers Delete on a locked one — that is aimed, you opened a menu and
+  // chose the red row — but a bare Del is precisely the slip a passcode exists
+  // to catch, on a row that may have been clicked only to look at it. Both
+  // halves matter: [AppState.protectionFor] is a passcode ON this node, and
+  // [AppState.isLocked] catches a page sitting inside a section that is still
+  // locked.
+  if (app.protectionFor(node.id) != null || app.isLocked(node.id)) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('“${node.title}” is locked. Remove its passcode before '
+            'deleting it.')));
+    return KeyEventResult.handled;
+  }
+  _deleteNodeFromKey(context, app, node, row);
+  return KeyEventResult.handled;
+}
+
+Future<void> _deleteNodeFromKey(BuildContext context, AppState app,
+    TreeNode node, FocusNode row) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final title = node.title;
+  // Hand the keyboard on BEFORE this row is destroyed, and before the await:
+  // once the tile leaves the tree its focus node is detached and focus falls
+  // back to the root scope, leaving the navigator keyboard-dead until the next
+  // mouse click. Downwards, because that is where a file explorer leaves you
+  // and it puts the row that slid up into this one's place under the keyboard.
+  row.nextFocus();
+  await app.deleteNode(node.id);
+  // Ask the TREE whether it went, rather than assuming the keypress did
+  // something. `deleteNode` returns without doing anything on a read-only
+  // notebook (see [AppState.notebookIsReadOnly]), and "Deleted X" while X is
+  // still sitting in the list is worse than saying nothing at all.
+  if (app.node(node.id) != null) return;
+  messenger.showSnackBar(SnackBar(
+      content: Text('Deleted “$title” — restore it from the recycle bin.')));
+}
+
+/// Is a TEXT FIELD holding the keyboard?
+///
+/// The gate that keeps Del and Backspace out of the inline rename. A row sits
+/// ABOVE its own rename field in the focus chain and Flutter walks that chain
+/// upwards from the focused node — so a row's handler runs BEFORE the text
+/// editing shortcuts, which live at the `WidgetsApp` root above the whole
+/// navigator. Without this, backspacing a typo out of a page's new name deleted
+/// the page.
+///
+/// The same rule the shell stands its own bare keys down on
+/// (`AppShell._editableFocused`), minus that one's `MathField` arm: no equation
+/// field is ever built inside the navigator.
+bool _textFieldHasKeyboard() {
+  final ctx = FocusManager.instance.primaryFocus?.context;
+  if (ctx == null) return false;
+  if (ctx.widget is EditableText) return true;
+  var found = false;
+  ctx.visitAncestorElements((el) {
+    if (el.widget is EditableText) {
+      found = true;
+      return false;
+    }
+    return true;
+  });
+  return found;
+}
+
+/// The keyboard has just landed on a navigator row.
+///
+/// Clearing the page's block selection is what stops ONE Del deleting TWO
+/// things. The shell's global Delete handler (`app_shell.dart`) runs before
+/// focus dispatch and cannot see that the navigator now owns the key, so with a
+/// block still selected — click a block, click the header of the section you
+/// are already in, press Del — the block AND the section both went. Clicking a
+/// PAGE row never showed it, because `selectPage` clears the selection on the
+/// way past; a section or group row does not go near it.
+void _keyboardEnteredRow(AppState app) {
+  if (app.selectedIds.isNotEmpty) app.select(null);
 }
 
 /// Pop-out node menu (§7a.1): a compact menu anchored at the pointer, focused
@@ -1969,7 +2138,7 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       // NOT brought home: applying a template CHANGES this page, and leaving
       // somebody somewhere else after changing it is worse than moving them.
       if (app.pageId != node.id) await app.selectPage(node.id);
-      if (context.mounted) await _promptApplyTemplate(context, app);
+      if (context.mounted) await promptApplyTemplate(context, app);
     case 'delete':
       await app.deleteNode(node.id);
   }
@@ -2075,9 +2244,11 @@ String _examMenuLabel(
 
 /// Lay a saved template over this page.
 ///
-/// Moved off the Insert ribbon: applying a page layout is not adding a block
-/// to a page, and this menu is where the app already talks about templates.
-Future<void> _promptApplyTemplate(BuildContext context, AppState app) async {
+/// Offered here AND on the Insert ribbon. This menu is where the app already
+/// talks about templates, and where its own "no templates yet" message sends
+/// people; the ribbon is where a student who has used the app for a term
+/// looks. One command, two entrances, which is why this is public.
+Future<void> promptApplyTemplate(BuildContext context, AppState app) async {
   final names = app.templateNames();
   if (names.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(

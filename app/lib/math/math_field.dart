@@ -680,16 +680,19 @@ class MathFieldState extends State<MathField> {
                             (kSelectionBoxEm / 2)),
                 child: OnoteMath(
                   // **An empty INLINE equation shows the tint chip, not
-                  // nothing.** The root row deliberately renders as a bare
-                  // caret when empty (a block has its own chrome saying
-                  // "equation"), but mid-sentence a lone hairline is
-                  // invisible — the student would have no idea where their
-                  // equation is. The chip is the same affordance a
-                  // half-filled fraction already taught them (v0.20 C.1).
-                  widget.compact && _e.isEmpty
-                      ? (_focus.hasFocus
-                          ? '${ctx.caretTex}${ctx.activeSlotTex}'
-                          : ctx.activeSlotTex)
+                  // nothing.** An empty equation nobody is in renders as
+                  // nothing at all, and mid-sentence that leaves the student
+                  // with no idea where their equation went. The chip is the
+                  // same affordance a half-filled fraction already taught
+                  // them (v0.20 C.1).
+                  //
+                  // Only the UNFOCUSED case is special now. Being in one is
+                  // the tree's own job: an empty row with the caret in it
+                  // draws the caret INSIDE the box (`caretSlotTex`), which
+                  // this used to fake by writing a caret and a box next to
+                  // each other — and it looked exactly like that.
+                  widget.compact && _e.isEmpty && !_focus.hasFocus
+                      ? ctx.activeSlotTex
                       : _e.renderTex(ctx),
                   textStyle: widget.textStyle,
                   compact: widget.compact,
