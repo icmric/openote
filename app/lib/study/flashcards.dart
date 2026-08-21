@@ -15,8 +15,9 @@
 /// line of notes suggests that tagging it produces a card, and the tag chords
 /// are invisible until you know them.
 ///
-/// So there is now a second door: Insert ▸ Flashcard puts a real card on the
-/// page, which you fill in and flip where it sits. Both doors lead to the same
+/// So there is now a second door: the Home row's card button, which turns
+/// the line you are on into a card — or, with no line to turn, puts a fresh
+/// one on the page for you to fill in and flip where it sits. Both doors lead to the same
 /// deck — [cardsFromBlock] emits from either, so scheduling, the study panel,
 /// the deck counts and the exam plan needed no changes at all. What is still
 /// out of scope is a flashcard *app*: no shared decks, no card templates, no

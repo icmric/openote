@@ -234,7 +234,7 @@ class _OpenoteAppState extends State<OpenoteApp> {
           debugShowCheckedModeBanner: false,
           theme: onoteTheme(Brightness.light),
           darkTheme: onoteTheme(Brightness.dark),
-          themeMode: widget.app.themeMode, // View tab: Auto / Light / Dark
+          themeMode: widget.app.themeMode, // Settings: Auto / Light / Dark
           home: AppShell(app: widget.app),
         );
       },

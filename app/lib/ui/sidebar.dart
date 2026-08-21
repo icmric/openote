@@ -1844,6 +1844,11 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         _nodeItem('copylink', Icons.link, 'Copy link to page'),
         _nodeItem('history', Icons.history, 'Version history…'),
         _nodeItem('template', Icons.bookmark_add_outlined, 'Save as template…'),
+        // Laying out a whole page is not INSERTING something into it, which
+        // is why this left the Insert ribbon. It belongs beside saving one —
+        // and beside where "No templates yet" already sends people.
+        _nodeItem('applytemplate', Icons.dashboard_customize_outlined,
+            'Apply a template…'),
       ],
       const PopupMenuDivider(),
       // Available on every kind, because the ask was "a page ... a section, or
@@ -1951,6 +1956,9 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
     case 'template':
       if (app.pageId != node.id) await app.selectPage(node.id);
       if (context.mounted) await _promptSaveTemplate(context, app);
+    case 'applytemplate':
+      if (app.pageId != node.id) await app.selectPage(node.id);
+      if (context.mounted) await _promptApplyTemplate(context, app);
     case 'delete':
       await app.deleteNode(node.id);
   }
@@ -2053,3 +2061,29 @@ String _examMenuLabel(
       : '${formatExamDate(exam, now)}, ${examTimeLabel(context, minute)}';
   return 'Exam $when · ${formatCountdown(daysBetween(now, exam))}…';
 }
+
+/// Lay a saved template over this page.
+///
+/// Moved off the Insert ribbon: applying a page layout is not adding a block
+/// to a page, and this menu is where the app already talks about templates.
+Future<void> _promptApplyTemplate(BuildContext context, AppState app) async {
+  final names = app.templateNames();
+  if (names.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('No templates yet — "Save as template…" first.')));
+    return;
+  }
+  final choice = await showOnoteDialog<String>(
+    context: context,
+    builder: (ctx) => SimpleDialog(
+      title: const Text('Apply template'),
+      children: [
+        for (final n in names)
+          SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, n), child: Text(n)),
+      ],
+    ),
+  );
+  if (choice != null) app.applyTemplate(choice);
+}
+

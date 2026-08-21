@@ -10,7 +10,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:openote/ui/command_bar.dart' show MediaLinkDialog;
+import 'package:openote/ui/media_link_dialog.dart' show MediaLinkDialog;
 
 void main() {
   testWidgets('THE DIALOG BUILDS — no Spacer-in-OverflowBar layout error',

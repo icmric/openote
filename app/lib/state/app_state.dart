@@ -4500,7 +4500,7 @@ class AppState extends ChangeNotifier
   ///
   /// A disposed controller reads fine ([marksAtCaret] only looks at `value`),
   /// so nothing complained; the WRITERS are where it bites. Insert ▸ Image and
-  /// Insert ▸ Flashcard gate on `activeEditor != null` alone, so either one,
+  /// the card button gate on `activeEditor != null` alone, so either one,
   /// pressed after switching notebooks and before clicking into a new box,
   /// called `notifyListeners` on a dead controller: "A TextEditingController
   /// was used after being disposed".
@@ -7476,6 +7476,36 @@ class AppState extends ChangeNotifier
   /// [at] is the block's top-left in page coordinates. [seed] is text the
   /// student had selected when they pressed Alt+= — the words come WITH them
   /// rather than being left behind.
+  /// A card on the page, in a box of its own, opened ready to be written.
+  ///
+  /// The fallback for the Home row's card button when there is no line to
+  /// turn into a card. It used to live on the Insert ribbon as its own
+  /// entry, which meant two buttons with the same icon on two different tabs
+  /// doing two different things; the ribbon's copy is gone and this is where
+  /// its one unique behaviour went.
+  ///
+  /// `BlockType.flashcard` is still read and rendered — pages already have
+  /// them — it is simply no longer the thing this makes.
+  Block insertFlashcard({Offset? at}) {
+    const line = '?[Question](Answer)';
+    final where = at ??
+        canvas.screenToPage(
+            Offset(canvas.viewport.width / 2, canvas.viewport.height / 2));
+    final pos = smartTextPosition(where);
+    final b = addBlock(Block(
+      type: BlockType.text,
+      x: pos.dx,
+      y: pos.dy,
+      w: 460,
+      // A card is 420 wide and the auto-width measurement reads the RAW
+      // markdown, which is far narrower than the card it stands for — the box
+      // would size itself to the text and clip the card.
+      content: {'text': '$line\n', 'autoWidth': false},
+    ));
+    select(b.id, edit: true);
+    return b;
+  }
+
   Block insertEquation({required Offset at, String seed = ''}) {
     final b = addBlock(Block(
       type: BlockType.math,

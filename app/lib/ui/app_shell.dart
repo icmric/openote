@@ -15,6 +15,8 @@ import '../theme/onote_theme.dart';
 import 'alert_popup.dart';
 import 'import_progress.dart';
 import 'command_bar.dart';
+import 'context_menus.dart';
+import 'object_row.dart';
 import 'onboarding.dart';
 import 'open_notice_dialog.dart';
 import 'planner_panel.dart';
@@ -59,12 +61,13 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_onKey);
-    // One listener, four regions: the moment focus leaves the region F6 put
+    // One listener, every region: the moment focus leaves the region F6 put
     // it in, the ring is a lie and goes away.
     for (final n in [
       _canvasFocus,
       _sidebarRegion,
       _toolbarRegion,
+      _objectRegion,
       _panelRegion,
       _alertRegion
     ]) {
@@ -117,6 +120,7 @@ class _AppShellState extends State<AppShell> {
       _canvasFocus,
       _sidebarRegion,
       _toolbarRegion,
+      _objectRegion,
       _panelRegion,
       _alertRegion
     ]) {
@@ -360,6 +364,31 @@ class _AppShellState extends State<AppShell> {
         !ctrl &&
         !HardwareKeyboard.instance.isAltPressed) {
       return _cycleRegion(shift ? -1 : 1);
+    }
+
+    // **Shift+F10 / the Menu key — the same menu the right button opens.**
+    //
+    // It was reachable from `kSecondaryMouseButton` and from nowhere else, so
+    // half of what a student can add to a page had no keyboard route at all.
+    // Anchored at the middle of the page area, which is also where the block
+    // lands, so what you get is what the anchor said.
+    if ((k == LogicalKeyboardKey.f10 && shift) ||
+        k == LogicalKeyboardKey.contextMenu) {
+      if (_routeOnTop) return false;
+      final box = _canvasFocus.context?.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) return false;
+      final b = app.selectedIds.length == 1
+          ? app.blocks.where((x) => x.id == app.selectedBlockId).firstOrNull
+          : null;
+      if (b != null) {
+        final at = box.localToGlobal(app.canvas.pageToScreen(Offset(b.x, b.y)));
+        showBlockMenu(context, app, b, at);
+      } else {
+        final centre = box.size.center(Offset.zero);
+        showCanvasMenu(context, app, box.localToGlobal(centre),
+            app.canvas.screenToPage(centre));
+      }
+      return true;
     }
 
     // Alt+= — start a maths equation, OneNote's own chord. Here with the
@@ -705,6 +734,11 @@ class _AppShellState extends State<AppShell> {
       FocusNode(debugLabel: 'region-sidebar', skipTraversal: true);
   final FocusNode _toolbarRegion =
       FocusNode(debugLabel: 'region-toolbar', skipTraversal: true);
+  /// The object row. **Unconditional** — unlike the panel it is always
+  /// built, so it is always a stop, and from the page one Shift+F6 lands on
+  /// the maths palette.
+  final FocusNode _objectRegion =
+      FocusNode(debugLabel: 'region-object', skipTraversal: true);
   final FocusNode _panelRegion =
       FocusNode(debugLabel: 'region-panel', skipTraversal: true);
 
@@ -725,6 +759,7 @@ class _AppShellState extends State<AppShell> {
   List<_Region> _regions() => [
         _Region.sidebar,
         _Region.toolbar,
+        _Region.object,
         _Region.page,
         // Asked of the focus tree rather than re-derived from the build's
         // conditions: a panel that is open but not currently BUILT (outline
@@ -738,6 +773,7 @@ class _AppShellState extends State<AppShell> {
   FocusNode _regionNode(_Region r) => switch (r) {
         _Region.sidebar => _sidebarRegion,
         _Region.toolbar => _toolbarRegion,
+        _Region.object => _objectRegion,
         _Region.page => _canvasFocus,
         _Region.panel => _panelRegion,
         _Region.alerts => _alertRegion,
@@ -1171,6 +1207,16 @@ class _AppShellState extends State<AppShell> {
                 child: Column(
                   children: [
                     _regionWrap(_Region.toolbar, CommandBar(app: app)),
+                    // **The object row**, permanent and always 36 px.
+                    //
+                    // Permanent because a band that appeared with the
+                    // equation would push the page down and putting the page
+                    // back is a pan the canvas controller discards on a short
+                    // or zoomed-out page — so the page would jump exactly
+                    // where a student most often starts an equation. See
+                    // `object_row.dart`; the chrome is 112 px in every state
+                    // of the app and the canvas box never moves.
+                    _regionWrap(_Region.object, ObjectRow(app: app)),
                     if (app.findOpen) _FindBar(app: app),
                     // The breadcrumb is CONTEXT, not a second navigator
                     // (§7d). With the navigator expanded it repeats what is
@@ -2006,7 +2052,7 @@ class _LockedPage extends StatelessWidget {
 
 /// The window's big areas, in the order F6 walks them — which is the order
 /// they are read on screen: left, top, middle, right.
-enum _Region { sidebar, toolbar, page, panel, alerts }
+enum _Region { sidebar, toolbar, object, page, panel, alerts }
 
 /// An action that exists only while the canvas node itself is focused —
 /// the moment focus moves into any editor (or anywhere else), it reports

@@ -22,6 +22,7 @@ import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/ui/command_bar.dart';
 import 'package:openote/ui/math_bar.dart';
+import 'package:openote/ui/object_row.dart';
 
 import 'support/sqlite.dart';
 
@@ -70,13 +71,19 @@ void main() {
   /// it fails the test as a leaked timer.
   void settle() => app.cancelPendingSave();
 
+  /// The chrome as the app builds it: the bar, then the object row under it.
+  /// Both, because the whole design is that the second one changes without
+  /// the first one moving.
   Future<void> pump(WidgetTester tester) async {
     widen(tester);
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: ListenableBuilder(
           listenable: app,
-          builder: (_, __) => CommandBar(app: app),
+          builder: (_, __) => Column(children: [
+            CommandBar(app: app),
+            ObjectRow(app: app),
+          ]),
         ),
       ),
     ));
@@ -100,51 +107,79 @@ void main() {
         toggleLatex: onToggle ?? () {},
       ));
 
-  testWidgets('there is no Maths tab until an equation is being written',
-      (tester) async {
+  testWidgets('there is no Maths tab, and there never is', (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await pump(tester);
     expect(find.text('Maths'), findsNothing);
-    for (final t in ['Home', 'Insert', 'Draw', 'View']) {
-      expect(find.text(t), findsOneWidget, reason: '$t should still be there');
+    for (final t in ['Home', 'Insert', 'Draw']) {
+      expect(find.text(t), findsOneWidget, reason: '$t should be there');
     }
+    expect(find.text('View'), findsNothing,
+        reason: "the page's own controls are on the object row, and the four "
+            'preferences View also held were already in Settings');
   });
 
-  testWidgets('inserting an equation brings the tab up, already selected',
+  testWidgets('the palette arrives WITHOUT the student being moved',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await pump(tester);
+    // The student is on Insert, deliberately.
+    await tester.tap(find.text('Insert'));
+    await tester.pumpAndSettle();
+    expect(find.text('Equation'), findsOneWidget, reason: 'the Insert row');
+
     app.insertEquation(at: const Offset(20, 20));
     registerEditor();
     await tester.pumpAndSettle();
-    expect(find.text('Maths'), findsOneWidget);
-    // Selected without a second click — the student pressed Alt+= because they
-    // want to write maths; making them find the tab is a step for nothing.
-    expect(find.byType(MathBar), findsOneWidget);
+
+    expect(find.byType(MathBar), findsOneWidget,
+        reason: 'the palette is there the moment the equation is');
+    expect(find.text('Equation'), findsWidgets,
+        reason: 'and Insert is STILL what the command row is showing \u2014 the '
+            'owner: "its best to not force any navigation"');
     settle();
   });
 
-  testWidgets('and it goes away again the moment the equation is finished',
+  testWidgets('a badge says what the row is about, and cannot be pressed',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await pump(tester);
+    expect(find.text('Equation'), findsNothing);
+    app.insertEquation(at: const Offset(20, 20));
+    registerEditor();
+    await tester.pumpAndSettle();
+
+    final badge = find.ancestor(
+        of: find.byTooltip('Esc when you are done'),
+        matching: find.byType(ExcludeFocus));
+    expect(badge, findsOneWidget, reason: 'the badge is up');
+    expect(
+        find.descendant(of: badge, matching: find.byType(InkWell)),
+        findsNothing,
+        reason: 'nothing to press means nothing to be moved onto');
+    settle();
+  });
+
+  testWidgets('and the row goes back to the page when the equation is done',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await pump(tester);
     final b = app.insertEquation(at: const Offset(20, 20));
     registerEditor();
     await tester.pumpAndSettle();
-    expect(find.text('Maths'), findsOneWidget);
+    expect(find.byType(MathBar), findsOneWidget);
 
     app.select(b.id, edit: false);
     app.clearActiveMath('test');
     await tester.pumpAndSettle();
-    expect(find.text('Maths'), findsNothing,
+    expect(find.byType(MathBar), findsNothing,
         reason: 'buttons that act on nothing are worse than no buttons');
-    // …and the toolbar falls back to a real tab rather than a blank row.
-    expect(find.byType(MathBar), findsNothing);
-    expect(find.text('Home'), findsOneWidget);
+    expect(find.byType(PageFace), findsOneWidget,
+        reason: 'the row is the page\'s again, not blank');
     settle();
   });
 
-  testWidgets('the tab drives whichever equation is open', (tester) async {
+  testWidgets('the row drives whichever equation is open', (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final inserted = <MathItem>[];
     var toggled = 0;
@@ -165,26 +200,20 @@ void main() {
     settle();
   });
 
-  testWidgets('a student can still leave the tab while writing an equation',
-      (tester) async {
+  testWidgets('the chrome is the same height in every state', (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await pump(tester);
+    final resting = tester.getSize(find.byType(Column).first).height;
+
     app.insertEquation(at: const Offset(20, 20));
     registerEditor();
     await tester.pumpAndSettle();
-    expect(find.byType(MathBar), findsOneWidget);
+    final writing = tester.getSize(find.byType(Column).first).height;
 
-    // Without this the tab would drag itself back on the very next rebuild and
-    // the Insert tab would be unreachable for as long as an equation was open.
-    await tester.tap(find.text('Insert'));
-    await tester.pumpAndSettle();
-    expect(find.byType(MathBar), findsNothing);
-    expect(find.text('Maths'), findsOneWidget,
-        reason: 'left, not gone — the equation is still open');
-
-    await tester.tap(find.text('Maths'));
-    await tester.pumpAndSettle();
-    expect(find.byType(MathBar), findsOneWidget);
+    expect(writing, resting,
+        reason: 'the canvas box must not move when an equation opens \u2014 that '
+            'is what makes "do not move the user" a property of the layout '
+            'rather than a promise somebody has to keep');
     settle();
   });
 

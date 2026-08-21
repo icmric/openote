@@ -43,8 +43,12 @@ const List<KeySection> keyboardMap = [
         'The same, but as an equation on a line of its own'),
     KeyBinding(
         'F6 / Shift+F6',
-        'Jump between the sidebar, the toolbar, the page, the open panel and '
-        'a reminder that has popped up'),
+        'Jump between the sidebar, the toolbar, the row of controls for what '
+        'you are writing, the page, the open panel and a reminder that has '
+        'popped up'),
+    KeyBinding('Shift+F10  /  Menu key',
+        'The menu of things you can add, where you are \u2014 or, with a box '
+        'selected, that box\'s own menu'),
     KeyBinding(
         'Esc',
         'One step back per press: close find, stop editing, clear selection, '

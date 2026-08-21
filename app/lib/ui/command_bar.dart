@@ -1,44 +1,31 @@
 
 import 'dart:async';
-import 'dart:io';
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../canvas/media_drop.dart';
-import '../core/platform_open.dart';
-import '../editor/board_block_view.dart';
 import '../export/markdown_export.dart';
 import '../export/open_export.dart';
 import '../export/pdf_export.dart';
 import '../export/pdf_vector_export.dart';
-import '../export/pdf_import.dart';
 import '../export/print_page.dart';
 import '../editor/list_editing.dart';
 import '../markdown/md_syntax.dart';
-import '../model/models.dart';
-import '../math/evaluate.dart';
-import 'math_bar.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
-import '../editor/video_block_view.dart' show formatBytes;
 import '../state/app_state.dart';
-import '../store/media_store.dart';
 import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'color_picker.dart';
 import 'command_button.dart';
 import 'font_picker.dart';
-import 'insert_portal_dialog.dart';
-import 'mcp_dialog.dart';
+import 'insert_catalog.dart';
+import 'object_face.dart';
 import 'settings_dialog.dart';
-import 'shortcut_overlay.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
-import 'onote_dialog.dart';
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
 /// View. OneNote's few-clicks accessibility in Openote's calm language — a
@@ -55,49 +42,18 @@ class _CommandBarState extends State<CommandBar> {
   /// The tab the user last chose among the permanent ones.
   int _tab = 0;
 
-  /// The user navigated off the Maths tab while an equation was still open.
-  /// Without this, tapping Home mid-equation would be undone on the very next
-  /// rebuild — the tab would drag itself back and the student could never
-  /// leave it.
-  bool _leftMaths = false;
-
-  static const _tabs = ['Home', 'Insert', 'Draw', 'View'];
-
-  /// The contextual tab's index — one past the permanent ones.
-  static const int _mathsTab = 4;
+  /// **Three, forever.** Home is write and format, Insert is add, Draw is
+  /// ink; nothing is ever appended, and nothing but a tap on one of them ever
+  /// changes which is showing.
+  ///
+  /// There used to be a fourth, View, and a fifth that appeared while an
+  /// equation was open and dragged the student onto it. The equation's
+  /// palette is on the object row now, where it arrives without moving
+  /// anybody; View's page controls are on the same row, and the four
+  /// preferences it also held were already in Settings.
+  static const _tabs = ['Home', 'Insert', 'Draw'];
 
   AppState get app => widget.app;
-
-  /// Is an equation being written right now?
-  ///
-  /// Derived, not stored, and deliberately NOT read from `app.activeMath`
-  /// alone: that handle is registered from the equation editor's own `build`,
-  /// and there is no guarantee the editor builds before this bar does. Asking
-  /// the model what is being edited is true the instant `select(edit: true)`
-  /// notifies, which is the frame the tab has to appear in.
-  bool get _mathsOpen {
-    final id = app.editingBlockId;
-    if (id != null) {
-      for (final b in app.blocks) {
-        // `return` on a match, not on a miss. Written the other way round it
-        // answered "no" for every INLINE equation and never reached the line
-        // below — the block being edited there is the paragraph, which is a
-        // text block — so the whole Maths tab was dead code for an equation in
-        // a sentence, which is the case it was most needed for.
-        if (b.id == id && b.type == BlockType.math) return true;
-      }
-    }
-    // An equation inside a sentence: the block being edited is TEXT, so only
-    // the open editor itself can say.
-    return app.activeMath != null;
-  }
-
-  /// The tab actually showing. Pure derivation — no `setState` from `build`,
-  /// and therefore no frame where the wrong tab is painted first.
-  int get _effectiveTab {
-    if (_mathsOpen) return _leftMaths ? _tab : _mathsTab;
-    return _tab == _mathsTab ? 0 : _tab;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -124,12 +80,14 @@ class _CommandBarState extends State<CommandBar> {
                 // fast (Fitts's law) and always land.
                 for (var i = 0; i < _tabs.length; i++)
                   _tabButton(scheme, i, _tabs[i]),
-                // The contextual tab. It exists only while an equation is
-                // being written, which is why it is drawn here rather than
-                // living in `_tabs` — and it is TINTED, so its arrival reads
-                // as "these buttons are about the thing you are doing" the way
-                // OneNote's do.
-                if (_mathsOpen) _tabButton(scheme, _mathsTab, 'Maths'),
+                // **A badge, not a tab.** It says what the row below is
+                // about and it cannot be pressed, so there is nothing here to
+                // be moved onto and nothing to be moved back from. It sits
+                // where the old Maths tab sat, deliberately: same place,
+                // opposite kind.
+                if (objectFaceOf(app) == ObjectFace.equation)
+                  const _SubjectBadge(
+                      icon: Icons.functions, label: 'Equation'),
                 const Spacer(),
                 // The trailing cluster scrolls rather than overflowing.
                 //
@@ -323,14 +281,12 @@ class _CommandBarState extends State<CommandBar> {
               child: ScrollConfiguration(
                 behavior: const _ToolbarScroll(),
                 child: SingleChildScrollView(
-                key: ValueKey(_effectiveTab),
+                key: ValueKey(_tab),
                 scrollDirection: Axis.horizontal,
-                child: switch (_effectiveTab) {
-                  0 => _homeRow(context),
+                child: switch (_tab) {
                   1 => _insertRow(context),
                   2 => _drawRow(context),
-                  _mathsTab => _mathsRow(context),
-                  _ => _viewRow(context),
+                  _ => _homeRow(context),
                 },
               ),
               ),
@@ -499,18 +455,12 @@ class _CommandBarState extends State<CommandBar> {
   // ── INSERT ────────────────────────────────────────────────────────────
 
   Widget _tabButton(ColorScheme scheme, int i, String label) {
-    final on = _effectiveTab == i;
+    final on = _tab == i;
     return InkWell(
       borderRadius: BorderRadius.circular(6),
-      onTap: () => setState(() {
-        if (i == _mathsTab) {
-          _leftMaths = false;
-        } else {
-          _tab = i;
-          // Only counts as leaving if there was something to leave.
-          _leftMaths = _mathsOpen;
-        }
-      }),
+      // **The one thing that writes `_tab`.** Nothing else in the app may,
+      // which is the whole of the answer to "don't force any navigation".
+      onTap: () => setState(() => _tab = i),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         alignment: Alignment.center,
@@ -527,72 +477,29 @@ class _CommandBarState extends State<CommandBar> {
           style: TextStyle(
             fontSize: 13,
             fontWeight: on ? FontWeight.w600 : FontWeight.w400,
-            color: on
-                ? scheme.primary
-                : (i == _mathsTab ? scheme.primary.withValues(alpha: 0.75) : null),
+            color: on ? scheme.primary : null,
           ),
         ),
       ),
     );
   }
 
-  /// The Maths tab's contents, driven through `AppState.activeMath` — see
-  /// `math/active_math.dart` for why that handle is a record of closures and
-  /// not a reference to the editor.
-  Widget _mathsRow(BuildContext context) {
-    final m = app.activeMath;
-    if (m == null) {
-      // One frame at most: the tab is derived from `editingBlockId`, which is
-      // true before the equation editor has built and registered itself.
-      return const SizedBox(height: 34);
-    }
-    return MathBar(
-      onInsert: m.insert,
-      latexMode: m.latexMode,
-      latexAvailable: m.latexAvailable,
-      onToggleLatex: m.toggleLatex,
-      angleMode: app.angleMode,
-      onToggleAngleMode: () => app.setAngleMode(
-          app.angleMode == AngleMode.degrees
-              ? AngleMode.radians
-              : AngleMode.degrees),
-      recentIds: app.recentMathIds,
-    );
-  }
-
+  /// **Insert renders the catalog** — the same list the canvas's right-click
+  /// menu renders, so the two cannot say different things.
+  ///
+  /// Three groups separated by the bar's own hairline. No printed captions:
+  /// only this tab would need them, and a command row that is taller on one
+  /// tab than the others moves the layout under your pointer as you switch.
   Widget _insertRow(BuildContext context) {
-    Widget ins(IconData icon, String label, VoidCallback fn) => Padding(
-          padding: const EdgeInsets.only(right: 4),
-          child: CommandButton(icon: icon, label: label, onPressed: fn),
-        );
-    return Row(children: [
-      ins(Icons.text_fields, 'Text box', _insertText),
-      ins(Icons.functions, 'Equation', _insertMath),
-      ins(Icons.code, 'Code', _insertCode),
-      ins(Icons.table_chart_outlined, 'Table', _insertTable),
-      ins(Icons.view_kanban_outlined, 'Board', _insertBoard),
-      ins(Icons.image_outlined, 'Image', () => _insertImage(context)),
-      // The lecture-slide flow. Default is a printout down THIS page — one
-      // continuous thing you scroll and write on, next to the notes already
-      // there — with page-per-slide behind the arrow for a big unit you want
-      // in the navigator.
-      _PdfImportButton(app: app),
-      ins(Icons.attach_file, 'File', () => _insertFile(context)),
-      ins(Icons.play_circle_outline, 'Video or link…',
-          () => _insertMediaLink(context)),
-      ins(Icons.style_outlined, 'Flashcard', _insertFlashcard),
-      ins(Icons.link, 'Page link', () => _insertPageLink(context)),
-      // A link navigates; a window SHOWS — a live, read-only view of part of
-      // another page, kept current as that page changes (EMBED-2).
-      ins(Icons.picture_in_picture_alt_outlined, 'Page window',
-          () => showInsertPortalDialog(context, app, _center())),
-      ins(Icons.dashboard_customize_outlined, 'Template',
-          () => _applyTemplate(context)),
-    ]);
+    final children = <Widget>[];
+    for (var g = 0; g < kInsertGroups.length; g++) {
+      if (g > 0) children.add(const _Div());
+      for (final item in kInsertGroups[g].items) {
+        children.add(_InsertButton(app: app, item: item));
+      }
+    }
+    return Row(children: children);
   }
-
-  // ── DRAW ──────────────────────────────────────────────────────────────
-
   Widget _drawRow(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     Widget toolButton(Tool t, IconData icon, String tip) => IconButton(
@@ -755,524 +662,6 @@ class _CommandBarState extends State<CommandBar> {
     ]);
   }
 
-  // ── VIEW ──────────────────────────────────────────────────────────────
-
-  Widget _viewRow(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    Widget bg(String v, IconData icon, String tip) => IconButton(
-          icon: Icon(icon, size: 18),
-          tooltip: 'Background: $tip',
-          isSelected: app.pageProps.background == v,
-          visualDensity: VisualDensity.compact,
-          color: app.pageProps.background == v ? scheme.primary : null,
-          onPressed: () => app.setBackground(v),
-        );
-    final paged = app.pageProps.isPaged;
-    return Row(children: [
-      bg('blank', Icons.crop_din, 'blank'),
-      bg('grid', Icons.grid_4x4, 'grid'),
-      bg('dotted', Icons.apps, 'dotted'),
-      bg('ruled', Icons.notes, 'ruled'),
-      const _Div(),
-      // Canvas or paper. Per page, not per notebook: one notebook holds the
-      // lecture you scribble on and the essay you hand in, and making you
-      // choose once for both is why people keep two apps.
-      IconButton(
-        icon: Icon(paged ? Icons.description : Icons.dashboard_customize,
-            size: 18),
-        tooltip: paged
-            ? 'Page mode: ${app.pageProps.paper.name}'
-                '${app.pageProps.landscape ? ' landscape' : ''} '
-                '— click for canvas'
-            : 'Canvas mode: boundless — click for pages',
-        isSelected: paged,
-        visualDensity: VisualDensity.compact,
-        color: paged ? scheme.primary : null,
-        onPressed: () => app.setPageLayout(paged ? 'canvas' : 'paged'),
-      ),
-      if (paged)
-        PopupMenuButton<String>(
-          tooltip: 'Paper size',
-          icon: const Icon(Icons.aspect_ratio, size: 18),
-          onSelected: (v) => v == '_rotate'
-              ? app.setPageLayout('paged',
-                  landscape: !app.pageProps.landscape)
-              : app.setPageLayout('paged', paper: v),
-          itemBuilder: (_) => [
-            for (final p in PaperSize.all)
-              CheckedPopupMenuItem(
-                value: p.name,
-                checked: app.pageProps.paperSize == p.name,
-                child: Text(p.name),
-              ),
-            const PopupMenuDivider(),
-            CheckedPopupMenuItem(
-              value: '_rotate',
-              checked: app.pageProps.landscape,
-              child: const Text('Landscape'),
-            ),
-          ],
-        ),
-      const _Div(),
-      IconButton(
-        icon: Icon(app.snapToGrid ? Icons.grid_goldenratio : Icons.grid_off,
-            size: 18),
-        tooltip: app.snapToGrid
-            ? 'Snap to grid: ON (grid shows while dragging)'
-            : 'Snap to grid: OFF — free placement',
-        isSelected: app.snapToGrid,
-        visualDensity: VisualDensity.compact,
-        color: app.snapToGrid ? scheme.primary : null,
-        onPressed: app.toggleSnap,
-      ),
-      const _Div(),
-      IconButton(
-        icon: const Icon(Icons.remove, size: 18),
-        tooltip: 'Zoom out  (Ctrl+-)',
-        visualDensity: VisualDensity.compact,
-        onPressed: () => app.canvas.setZoom(app.canvas.scale / 1.2),
-      ),
-      AnimatedBuilder(
-        animation: app.canvas,
-        builder: (context, _) => TextButton(
-          onPressed: app.canvas.reset,
-          child: Text('${(app.canvas.scale * 100).round()}%',
-              style: const TextStyle(fontSize: 12)),
-        ),
-      ),
-      IconButton(
-        icon: const Icon(Icons.add, size: 18),
-        tooltip: 'Zoom in  (Ctrl+=)',
-        visualDensity: VisualDensity.compact,
-        onPressed: () => app.canvas.setZoom(app.canvas.scale * 1.2),
-      ),
-      IconButton(
-        icon: const Icon(Icons.fit_screen_outlined, size: 18),
-        tooltip: 'Zoom to fit content',
-        visualDensity: VisualDensity.compact,
-        onPressed: () => app.canvas.fitTo(app.contentBounds().inflate(24)),
-      ),
-      const _Div(),
-      IconButton(
-        icon: const Icon(Icons.keyboard_outlined, size: 18),
-        tooltip: 'Keyboard shortcuts  (Ctrl+/)',
-        visualDensity: VisualDensity.compact,
-        onPressed: () => showShortcutOverlay(context),
-      ),
-      // AI access (spec 14): the switch and the paste-ready client config.
-      IconButton(
-        icon: Icon(Icons.smart_toy_outlined,
-            size: 18, color: app.mcpEnabled ? scheme.primary : null),
-        tooltip: app.mcpEnabled ? 'AI access is ON' : 'AI access…',
-        visualDensity: VisualDensity.compact,
-        onPressed: () => showMcpDialog(context, app),
-      ),
-      const _Div(),
-      SegmentedButton<ThemeMode>(
-        showSelectedIcon: false,
-        style: const ButtonStyle(
-            visualDensity: VisualDensity.compact,
-            textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 11))),
-        segments: const [
-          ButtonSegment(value: ThemeMode.system, label: Text('Auto')),
-          ButtonSegment(value: ThemeMode.light, label: Text('Light')),
-          ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
-        ],
-        selected: {app.themeMode},
-        onSelectionChanged: (s) => app.setThemeMode(s.first),
-      ),
-      const _Div(),
-      // Spell check (TEXT-11). English-only in this release; the toggle exists
-      // because a wordlist checker WILL flag jargon and proper nouns, and the
-      // answer to that has to be one click away.
-      Tooltip(
-        message: 'Underline misspelled words while editing (English)',
-        child: IconButton(
-          icon: const Icon(Icons.spellcheck, size: 18),
-          isSelected: app.spellCheckEnabled,
-          visualDensity: VisualDensity.compact,
-          color: app.spellCheckEnabled ? scheme.primary : null,
-          onPressed: () => app.setSpellCheck(!app.spellCheckEnabled),
-        ),
-      ),
-    ]);
-  }
-
-  // ── Insert actions ────────────────────────────────────────────────────
-
-  Offset _center() => app.canvas.screenToPage(
-      Offset(app.canvas.viewport.width / 2, app.canvas.viewport.height / 2));
-
-  void _insertText() {
-    final pos = app.smartTextPosition(_center());
-    final b = app.addBlock(Block(
-        type: BlockType.text,
-        x: pos.dx,
-        y: pos.dy,
-        w: 320,
-        content: {'text': ''}));
-    app.select(b.id, edit: true);
-  }
-
-  void _insertMath() {
-    final c = _center();
-    app.insertEquation(at: Offset(c.dx - 180, c.dy - 30));
-  }
-
-  void _insertCode() {
-    final c = _center();
-    final b = app.addBlock(Block(
-        type: BlockType.code,
-        x: c.dx - 200,
-        y: c.dy - 40,
-        w: 400,
-        content: {'language': 'text', 'source': ''}));
-    app.select(b.id, edit: true);
-  }
-
-  void _insertTable() {
-    final c = _center();
-    final b = app.addBlock(Block(
-        type: BlockType.table,
-        x: c.dx - 180,
-        y: c.dy - 40,
-        w: 360,
-        content: {
-          'cells': [
-            ['Header', 'Header'],
-            ['', ''],
-          ]
-        }));
-    app.select(b.id, edit: true);
-  }
-
-  void _insertBoard() {
-    final c = _center();
-    final b = app.addBlock(Block(
-        type: BlockType.board,
-        x: c.dx - 350,
-        y: c.dy - 100,
-        w: 700,
-        content: BoardBlockView.starterContent()));
-    app.select(b.id);
-  }
-
-  Future<void> _insertImage(BuildContext context) async {
-    const typeGroup = XTypeGroup(
-        label: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp']);
-    final XFile? file;
-    try {
-      file = await openFile(acceptedTypeGroups: [typeGroup]);
-    } catch (e) {
-      // The picker itself failing (a platform-channel or GTK problem) used to
-      // be an unhandled async error in a console nobody runs the app from —
-      // on screen, a button that simply does nothing. Reported from Linux as
-      // exactly that; whatever the cause turns out to be, it must have a face.
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Couldn't open the file picker: $e")));
-      }
-      return;
-    }
-    if (file == null) return;
-    final Uint8List bytes = await file.readAsBytes();
-    final ext = file.name.split('.').last.toLowerCase();
-    final mime = switch (ext) {
-      'jpg' || 'jpeg' => 'image/jpeg',
-      'gif' => 'image/gif',
-      'webp' => 'image/webp',
-      _ => 'image/png',
-    };
-    // Caret first. If a text box has focus the picture belongs IN it, in the
-    // flow of the writing — the same thing paste and drag-and-drop already do.
-    // This route used to skip that check entirely and always drop a standalone
-    // block at the page centre, which is why "multiple types of media in a
-    // single box" looked impossible to anyone who reached for the menu.
-    if (insertImageAtCaret(app, bytes, mime) != null) return;
-
-    // `tryAddBlob`: a full disk or read-only folder throws out of `writeBlob`
-    // synchronously, and from this async handler that used to vanish into the
-    // console — a menu item that silently did nothing. The failure is on the
-    // status bar; a block referencing unstored bytes must not be made.
-    final hash = app.tryAddBlob(bytes, mime);
-    if (hash == null) return;
-    final c = _center();
-    final b = app.addBlock(Block(
-        type: BlockType.image,
-        x: c.dx - 160,
-        y: c.dy - 120,
-        w: 320,
-        content: {'blob': 'sha256:$hash', 'mime': mime}));
-    app.select(b.id);
-  }
-
-  /// MEDIA-7: embed a lecture recording (or any link) as a card in the page.
-  ///
-  /// A link, not a copy. A lecture video is hundreds of megabytes, and blobs
-  /// live in the container AND — once a notebook is shared — in
-  /// `.onotebook/blobs/`; putting one in would undo the storage work of v0.10
-  /// in a single drag. A URL is a few dozen bytes and is machine-independent,
-  /// so it syncs to another device and still resolves there.
-  Future<void> _insertMediaLink(BuildContext context) async {
-    final result = await showOnoteDialog<_MediaChoice>(
-      context: context,
-      builder: (_) => const MediaLinkDialog(),
-    );
-    if (result == null) return;
-    if (result.pickFile) {
-      if (context.mounted) await _insertLocalVideo(context);
-      return;
-    }
-    final c = _center();
-    final b = app.addBlock(Block(
-      type: BlockType.file,
-      x: c.dx - 170,
-      y: c.dy - 28,
-      w: 340,
-      content: {
-        'url': result.url!,
-        'name': result.name!,
-        // A hint for the icon, never load-bearing: an older build ignores it,
-        // and a card whose `kind` is wrong is still a working link.
-        'kind': _looksLikeVideo(result.url!) ? 'video' : 'link',
-      },
-    ));
-    app.select(b.id);
-  }
-
-  /// Copy a video or recording from this computer INTO the notebook, and put
-  /// a player for it on the page.
-  ///
-  /// "i do really want the ability to put in my own custom videos, even if it
-  /// will chew through storage." It genuinely will: the file is copied whole
-  /// and kept, so a term of lectures is however many gigabytes those lectures
-  /// are. That is the deal the dialog states before the picker opens, and the
-  /// reason the copy shows its progress rather than looking like a freeze.
-  Future<void> _insertLocalVideo(BuildContext context) async {
-    final XFile? picked;
-    try {
-      picked = await openFile(acceptedTypeGroups: [
-        const XTypeGroup(
-            label: 'Video and audio',
-            extensions: [...kVideoExtensions, ...kAudioExtensions]),
-      ]);
-    } catch (e) {
-      // Same face-the-failure rule as _insertImage.
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Couldn't open the file picker: $e")));
-      }
-      return;
-    }
-    if (picked == null) return;
-    // Rebound non-null: `picked` was assigned inside a try, which costs its
-    // promotion inside the closures below.
-    final chosen = picked;
-    final source = File(chosen.path);
-    final size = await source.length();
-    if (!context.mounted) return;
-    final progress = ValueNotifier<double>(0);
-    var cancelled = false;
-    var dialogOpen = true;
-    unawaited(showOnoteDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => _MediaCopyDialog(
-        name: chosen.name,
-        bytes: size,
-        progress: progress,
-        onCancel: () {
-          cancelled = true;
-          Navigator.of(ctx).pop();
-        },
-      ),
-    ).then((_) => dialogOpen = false));
-
-    try {
-      final stored = await MediaStore.add(
-        app.currentNotebook,
-        source,
-        onProgress: (f) => progress.value = f,
-        isCancelled: () => cancelled,
-      );
-      if (dialogOpen && context.mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
-        dialogOpen = false;
-      }
-      final c = _center();
-      final b = app.addBlock(Block(
-        type: BlockType.file,
-        x: c.dx - 210,
-        y: c.dy - 60,
-        w: 420,
-        h: 240,
-        content: {
-          'kind': 'video',
-          'media': stored,
-          'name': chosen.name,
-          'mime': mimeForMediaExtension(chosen.path) ??
-              'application/octet-stream',
-          'size': size,
-        },
-      ));
-      app.select(b.id);
-    } on MediaCopyCancelled {
-      // Nothing to report: the user asked for this, and MediaStore already
-      // removed the partial file.
-    } catch (e) {
-      if (dialogOpen && context.mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
-      }
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("That video couldn't be copied in: $e")));
-      }
-    } finally {
-      progress.dispose();
-    }
-  }
-
-  static bool _looksLikeVideo(String url) {
-    final u = url.toLowerCase();
-    return u.contains('youtube.com') ||
-        u.contains('youtu.be') ||
-        u.contains('vimeo.com') ||
-        u.contains('echo360') ||
-        u.contains('panopto') ||
-        RegExp(r'\.(mp4|mov|mkv|webm|m4v)(\?|$)').hasMatch(u);
-  }
-
-  Future<void> _insertFile(BuildContext context) async {
-    final XFile? file;
-    try {
-      file = await openFile();
-    } catch (e) {
-      // Same face-the-failure rule as _insertImage.
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Couldn't open the file picker: $e")));
-      }
-      return;
-    }
-    if (file == null) return;
-    final Uint8List bytes = await file.readAsBytes();
-    // Same reason as _insertImage: a throwing write must not read as a menu
-    // item that did nothing.
-    final hash = app.tryAddBlob(bytes, 'application/octet-stream');
-    if (hash == null) return;
-    final c = _center();
-    final b = app.addBlock(Block(
-        type: BlockType.file,
-        x: c.dx - 140,
-        y: c.dy - 24,
-        w: 280,
-        content: {
-          'blob': 'sha256:$hash',
-          'name': file.name,
-          'mime': 'application/octet-stream',
-          'size': bytes.length,
-        }));
-    app.select(b.id);
-  }
-
-  Future<void> _applyTemplate(BuildContext context) async {
-    final names = app.templateNames();
-    if (names.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text(
-              'No templates yet — right-click a page and "Save as template…"')));
-      return;
-    }
-    final choice = await showOnoteDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('Apply template'),
-        children: [
-          for (final n in names)
-            SimpleDialogOption(
-                onPressed: () => Navigator.pop(ctx, n), child: Text(n)),
-        ],
-      ),
-    );
-    if (choice != null) app.applyTemplate(choice);
-  }
-
-  /// A card on the page, opened ready to be written.
-  ///
-  /// The second door to the study loop, and the one people find. Tagging a
-  /// line still makes a card and always will, but "Currently not intuitive how
-  /// to use them" was the verdict on a feature whose only entrance was a
-  /// keyboard chord over a tag nobody knew produced anything.
-  /// A card, always in flow with writing — into the box you are editing, or
-  /// into a new box of its own.
-  ///
-  /// It used to drop a standalone `BlockType.flashcard` when no box was open,
-  /// which made the good form conditional on having clicked into something
-  /// first: "i have to have an active text box to insert one which i dont
-  /// want". Now there is one answer, and if there is nowhere to put a card the
-  /// somewhere is created. A card that arrives inside a text box is also a
-  /// card you can immediately write around, which is the whole point of it
-  /// being in flow.
-  ///
-  /// `BlockType.flashcard` is still read and rendered — pages already have
-  /// them — it is simply no longer the thing this makes.
-  void _insertFlashcard() {
-    const line = '?[Question](Answer)';
-    final ae = app.activeEditor;
-    if (ae != null && ae.block.type == BlockType.text) {
-      app.insertTextAtActiveCursor('\n$line\n');
-      app.select(ae.block.id);
-      return;
-    }
-    final pos = app.smartTextPosition(_center());
-    final b = app.addBlock(Block(
-      type: BlockType.text,
-      x: pos.dx,
-      y: pos.dy,
-      w: 460,
-      // A card is 420 wide and the auto-width measurement reads the RAW
-      // markdown, which is far narrower than the card it stands for — the box
-      // would size itself to the text and clip the card.
-      content: {'text': '$line\n', 'autoWidth': false},
-    ));
-    app.select(b.id, edit: true);
-  }
-
-  Future<void> _insertPageLink(BuildContext context) async {
-    final pages = app.pages.where((p) => p.id != app.pageId).toList();
-    if (pages.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No other pages to link to yet.')));
-      return;
-    }
-    final choice = await showOnoteDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('Link to page'),
-        children: [
-          for (final p in pages)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, p.id),
-              child: Row(children: [
-                const Icon(Icons.description_outlined, size: 16),
-                const SizedBox(width: 8),
-                Flexible(child: Text(p.title, overflow: TextOverflow.ellipsis)),
-              ]),
-            ),
-        ],
-      ),
-    );
-    if (choice != null) {
-      // If a text box is being edited, insert inline at the caret; otherwise
-      // drop a new link block.
-      if (app.activeEditor != null && app.canFormatText) {
-        final title = app.node(choice)?.title ?? 'page';
-        app.insertTextAtActiveCursor('[[$title|$choice]]');
-      } else {
-        app.insertPageLink(choice);
-      }
-    }
-  }
 }
 
 /// `H2` / `H3` on the Home row.
@@ -1533,32 +922,40 @@ class _MakeCardButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final enabled = app.canFormatText;
+    // **Never disabled.** With a caret on a line it turns THAT line into a
+    // card, which is the good form; with no caret it makes a new card in a
+    // box of its own. That second behaviour used to be a separate Insert
+    // ribbon entry with the same icon, on a different tab, doing a different
+    // thing — one button, two ways of arriving at it.
+    final onLine = app.canFormatText;
     return MenuAnchor(
       builder: (context, controller, _) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Tooltip(
-            message: 'Make this line a flashcard',
+            message: onLine
+                ? 'Make this line a flashcard'
+                : 'New flashcard',
             child: InkWell(
               borderRadius: BorderRadius.circular(6),
-              onTap:
-                  enabled ? () => _say(context, app.makeCardAtCaret()) : null,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-                child: Icon(Icons.style_outlined,
-                    size: 18, color: enabled ? null : context.surfaces.textSecondary),
+              onTap: () {
+                if (onLine) {
+                  _say(context, app.makeCardAtCaret());
+                } else {
+                  app.insertFlashcard();
+                }
+              },
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                child: Icon(Icons.style_outlined, size: 18),
               ),
             ),
           ),
           InkWell(
             borderRadius: BorderRadius.circular(6),
-            onTap: enabled
-                ? () =>
-                    controller.isOpen ? controller.close() : controller.open()
-                : null,
-            child: Icon(Icons.arrow_drop_down,
-                size: 16, color: enabled ? null : context.surfaces.textSecondary),
+            onTap: () =>
+                controller.isOpen ? controller.close() : controller.open(),
+            child: const Icon(Icons.arrow_drop_down, size: 16),
           ),
         ],
       ),
@@ -1747,348 +1144,94 @@ class _PlannerButton extends StatelessWidget {
   }
 }
 
-/// Insert ▸ PDF, as a split button.
+/// One entry on the Insert ribbon, and its arrow when it has one.
 ///
-/// The main action is the one a student wants nine times in ten: the slides
-/// laid down THIS page, below what is already on it, the way OneNote's "PDF
-/// printout" works. The arrow keeps the page-per-slide import, which is the
-/// better shape for a whole unit you want as separate pages in the navigator.
-class _PdfImportButton extends StatelessWidget {
-  const _PdfImportButton({required this.app});
+/// Generic, because the catalog is: the PDF import used to be a hand-built
+/// split button and everything else a plain one, so an item that grew a
+/// second choice needed a new widget. Now it needs a list entry.
+class _InsertButton extends StatelessWidget {
+  const _InsertButton({required this.app, required this.item});
+
   final AppState app;
+  final InsertItem item;
+
+  Future<void> _run(BuildContext context, InsertItem which) =>
+      which.run(context, app, insertAnchor(app, which));
+
+  /// What a hover says. A labelled command adds only what the label does not
+  /// already carry; a wordless one leads with its name, so nothing on the row
+  /// is nameless.
+  String get _tip {
+    if (item.showLabel) return item.tooltip ?? '';
+    return item.tooltip == null
+        ? item.label
+        : '${item.label} — ${item.tooltip}';
+  }
 
   @override
   Widget build(BuildContext context) {
-    return MenuAnchor(
-      builder: (context, controller, _) => Padding(
-        padding: const EdgeInsets.only(right: 4),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          CommandButton(
-            icon: Icons.picture_as_pdf_outlined,
-            label: 'PDF slides',
-            onPressed: () {
-              // Close the menu if it is open: otherwise the file picker opens
-              // behind a menu that is still sitting on top of it.
-              controller.close();
-              _importPdfWithProgress(context, app,
-                  placement: PdfPlacement.currentPage);
-            },
-          ),
-          Tooltip(
-            message: 'Where the slides go',
-            child: InkWell(
+    final main = Tooltip(
+      message: _tip,
+      child: item.showLabel
+          ? CommandButton(
+              icon: item.icon,
+              label: item.label,
+              onPressed: () => _run(context, item),
+            )
+          : IconButton(
+              icon: Icon(item.icon, size: OnoteIcon.sm),
+              visualDensity: VisualDensity.compact,
+              onPressed: () => _run(context, item),
+            ),
+    );
+    // Two pixels, not four. The run measured 970px against the 965 a 1280
+    // window leaves once the navigator is open, and five pixels is the
+    // difference between "Page window" being on screen and being a scroll
+    // away — which, for the least familiar entry on the row, is the
+    // difference between existing and not.
+    const gap = EdgeInsets.only(right: 2);
+    if (item.extras.isEmpty) {
+      return Padding(
+        padding: gap,
+        child: main,
+      );
+    }
+    return Padding(
+      padding: gap,
+      child: MenuAnchor(
+        builder: (context, controller, _) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            main,
+            InkWell(
               borderRadius: BorderRadius.circular(6),
               onTap: () =>
                   controller.isOpen ? controller.close() : controller.open(),
-              // A bare 16px icon leaves most of the toolbar row's height as
-              // dead space around it; sized to the row so the arrow is
-              // actually hittable.
+              // A bare 16px icon leaves most of the row's height as dead
+              // space around it; sized to the row so the arrow is hittable.
               child: const SizedBox(
                 width: 22,
                 height: 34,
                 child: Icon(Icons.arrow_drop_down, size: 16),
               ),
             ),
-          ),
-        ]),
-      ),
-      menuChildren: [
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.vertical_align_bottom, size: 16),
-          onPressed: () => _importPdfWithProgress(context, app,
-              placement: PdfPlacement.currentPage),
-          child: const Text('Printout on this page'),
-        ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.auto_stories_outlined, size: 16),
-          onPressed: () => _importPdfWithProgress(context, app,
-              placement: PdfPlacement.pagePerSlide),
-          child: const Text('One page per slide'),
-        ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.branding_watermark_outlined, size: 16),
-          onPressed: () =>
-              _importPdfWithProgress(context, app, placement: PdfPlacement.card),
-          child: const Text('As a card — open in a popup'),
-        ),
-      ],
-    );
-  }
-}
-
-/// Import a PDF, with progress.
-///
-/// A lecture deck is 40–120 pages and each one is a pdfium render plus a PNG
-/// encode, so this is seconds, not milliseconds — a modal with a live count is
-/// the difference between "working" and "frozen".
-Future<void> _importPdfWithProgress(BuildContext context, AppState app,
-    {PdfPlacement placement = PdfPlacement.currentPage}) async {
-  final progress = ValueNotifier<String>('Opening PDF…');
-  var dialogOpen = false;
-  if (context.mounted) {
-    dialogOpen = true;
-    showOnoteDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        content: Row(children: [
-          const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2.6)),
-          const SizedBox(width: 16),
-          Expanded(
-            child: ValueListenableBuilder<String>(
-              valueListenable: progress,
-              builder: (_, text, __) => Text(text),
-            ),
-          ),
-        ]),
-      ),
-    );
-  }
-  try {
-    final result = await importPdfAsPages(
-      app,
-      placement: placement,
-      onProgress: (done, total) =>
-          progress.value = 'Importing page $done of $total…',
-    );
-    if (dialogOpen && context.mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
-      dialogOpen = false;
-    }
-    if (result == null) return; // cancelled at the file picker
-    if (!context.mounted) return;
-    if (result.pages == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("That PDF couldn't be read.")));
-      return;
-    }
-    // Only navigate for the page-per-slide import — a printout landed on the
-    // page you are already looking at, and jumping would be disorienting.
-    if (result.sectionId != null && result.firstPageId != null) {
-      await app.selectPage(result.firstPageId!);
-    }
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      duration: const Duration(seconds: 6),
-      content: Text('Imported ${result.pages} '
-          '${result.pages == 1 ? 'slide' : 'slides'}'
-          '${result.sectionId == null ? ' onto this page' : ''} — pick the pen '
-          'and write on them. The slide text is searchable.'),
-    ));
-  } catch (e) {
-    if (dialogOpen && context.mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
-    }
-    if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('PDF import failed: $e')));
-    }
-  } finally {
-    progress.dispose();
-  }
-}
-
-/// What the media dialog came back with: a link to embed, or "let me pick a
-/// file instead".
-class _MediaChoice {
-  const _MediaChoice.link(this.url, this.name) : pickFile = false;
-  const _MediaChoice.file()
-      : url = null,
-        name = null,
-        pickFile = true;
-  final String? url;
-  final String? name;
-  final bool pickFile;
-}
-
-/// Ask for a URL and a label for a media-link card, or send the user to the
-/// file picker to copy a recording in.
-///
-/// Both routes in one dialog because they answer the same question — "put this
-/// lecture in my notes" — and the difference between them is a decision about
-/// storage the user should be making with both options in front of them, not
-/// a choice between two menu entries whose distinction is invisible.
-///
-/// A URL is validated with the same allow-list that will later be asked to
-/// open it (`PlatformOpen.isOpenableUrl`), so a link that cannot be opened is
-/// refused at the point of typing rather than becoming a dead card in the page.
-///
-/// Public, so a widget test can pump it directly: this dialog shipped broken
-/// (see the actions note below) and nothing could have caught that, because a
-/// private dialog three calls deep behind a file picker is a widget no test
-/// ever built.
-class MediaLinkDialog extends StatefulWidget {
-  const MediaLinkDialog({super.key});
-
-  @override
-  State<MediaLinkDialog> createState() => _MediaLinkDialogState();
-}
-
-class _MediaLinkDialogState extends State<MediaLinkDialog> {
-  final _url = TextEditingController();
-  final _name = TextEditingController();
-  String? _error;
-
-  @override
-  void dispose() {
-    _url.dispose();
-    _name.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final raw = _url.text.trim();
-    // A bare "youtube.com/..." is what people paste out of a browser bar.
-    final candidate =
-        raw.contains('://') || raw.isEmpty ? raw : 'https://$raw';
-    if (!PlatformOpen.isOpenableUrl(candidate)) {
-      setState(() => _error = 'That needs to be an http or https link.');
-      return;
-    }
-    final label = _name.text.trim();
-    Navigator.of(context).pop(_MediaChoice.link(
-      candidate,
-      label.isEmpty ? (Uri.tryParse(candidate)?.host ?? candidate) : label,
-    ));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Embed a video or link'),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'A link gets a card that opens in your browser — right for a '
-              'lecture on Panopto or YouTube, which is a web page rather than '
-              'a file anything here can play.',
-              style: TextStyle(fontSize: 12.5, height: 1.4),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _url,
-              autofocus: true,
-              decoration: InputDecoration(
-                labelText: 'Link',
-                hintText: 'https://…',
-                errorText: _error,
-              ),
-              onChanged: (_) {
-                if (_error != null) setState(() => _error = null);
-              },
-              onSubmitted: (_) => _submit(),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _name,
-              decoration: const InputDecoration(
-                labelText: 'Label (optional)',
-                hintText: 'Lecture 7 — Truth Tables',
-              ),
-              onSubmitted: (_) => _submit(),
-            ),
           ],
         ),
+        menuChildren: [
+          for (final extra in item.extras)
+            MenuItemButton(
+              leadingIcon: Icon(extra.icon, size: 16),
+              onPressed: () => _run(context, extra),
+              child: Text(extra.label),
+            ),
+        ],
       ),
-      // The file button sits LEFT of Cancel because it is the other half of
-      // the question rather than a way out of it — pushed apart by the
-      // alignment, NOT by a Spacer. AlertDialog lays its actions out in an
-      // OverflowBar, which is not a Flex, and a Spacer is an Expanded: its
-      // ParentData contract is only satisfiable inside a Flex, so the Spacer
-      // broke the dialog's build — on a release build that renders as the
-      // whole dialog replaced by a grey error box, reported on Linux as "the
-      // popup was taking up the whole screen and was just grey".
-      actionsAlignment: MainAxisAlignment.spaceBetween,
-      actions: [
-        TextButton.icon(
-          icon: const Icon(Icons.video_file_outlined, size: 17),
-          label: const Text('Use a file on this computer…'),
-          onPressed: () =>
-              Navigator.of(context).pop(const _MediaChoice.file()),
-        ),
-        Row(mainAxisSize: MainAxisSize.min, children: [
-          TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel')),
-          const SizedBox(width: 8),
-          FilledButton(onPressed: _submit, child: const Text('Add link')),
-        ]),
-      ],
     );
   }
 }
 
-/// The progress of copying a video into the notebook.
-///
-/// Modal and un-dismissable except by Cancel, because the copy is writing into
-/// the notebook's own directory and walking away mid-write is what leaves a
-/// half file behind. Cancel is real: it stops the stream, and MediaStore
-/// removes what it had written.
-class _MediaCopyDialog extends StatelessWidget {
-  const _MediaCopyDialog({
-    required this.name,
-    required this.bytes,
-    required this.progress,
-    required this.onCancel,
-  });
 
-  final String name;
-  final int bytes;
-  final ValueListenable<double> progress;
-  final VoidCallback onCancel;
 
-  @override
-  Widget build(BuildContext context) => CallbackShortcuts(
-        // Escape IS Cancel here. `barrierDismissible: false` is deliberate —
-        // a stray click on the scrim must not abandon a half-written file —
-        // but it also switches off the framework's Escape handling
-        // wholesale, which left the one real way out of this dialog
-        // mouse-only (phase-3 audit).
-        bindings: {const SingleActivator(LogicalKeyboardKey.escape): onCancel},
-        child: Focus(
-          autofocus: true,
-          child: _body(context),
-        ),
-      );
-
-  Widget _body(BuildContext context) => AlertDialog(
-        title: const Text('Copying into the notebook'),
-        content: SizedBox(
-          width: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(name,
-                  overflow: TextOverflow.ellipsis, style: OnoteType.uiStrong),
-              const SizedBox(height: OnoteSpace.x3),
-              ValueListenableBuilder<double>(
-                valueListenable: progress,
-                builder: (_, v, __) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    LinearProgressIndicator(value: v == 0 ? null : v),
-                    const SizedBox(height: OnoteSpace.x2),
-                    Text('${(v * 100).round()}% of ${formatBytes(bytes)}',
-                        style: OnoteType.small),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: onCancel, child: const Text('Cancel')),
-        ],
-      );
-}
 
 /// Lets the toolbar row be dragged and wheel-scrolled when it is wider than
 /// the window. Flutter's default behaviour excludes mouse and trackpad from
@@ -2104,3 +1247,55 @@ class _ToolbarScroll extends MaterialScrollBehavior {
         PointerDeviceKind.stylus,
       };
 }
+
+/// **What the object row is about**, shown where the contextual tab used to
+/// be — and deliberately not a tab.
+///
+/// A pill, because the token file reserves the full radius for badges and no
+/// other control in the bar is that shape. No `InkWell`, no `onTap`, no
+/// underline ever: it cannot be pressed, so it cannot be misread as a fifth
+/// tab, and the ambiguity is removed by removing the behaviour rather than by
+/// styling around it.
+class _SubjectBadge extends StatelessWidget {
+  const _SubjectBadge({required this.icon, required this.label});
+
+  final IconData icon;
+
+  /// Always a NOUN — the thing itself. Never a verb, never "mode", never
+  /// "tools".
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return ExcludeFocus(
+      child: Padding(
+        padding: const EdgeInsets.only(left: 6),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+              width: 1, height: 18, color: context.surfaces.border),
+          const SizedBox(width: 6),
+          Tooltip(
+            message: 'Esc when you are done',
+            child: Container(
+              height: 22,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(OnoteRadius.full),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(icon, size: 14, color: accent),
+                const SizedBox(width: 4),
+                Text(label,
+                    style: OnoteType.caption.copyWith(
+                        fontWeight: FontWeight.w600, color: accent)),
+              ]),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+

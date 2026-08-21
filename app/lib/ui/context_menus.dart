@@ -1,13 +1,10 @@
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
-import '../editor/board_block_view.dart';
-import '../export/csv_import.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
 import 'color_picker.dart';
-import 'insert_portal_dialog.dart';
+import 'insert_catalog.dart';
 import 'pdf_viewer_dialog.dart';
 
 /// Right-click menus (style guide: most actions within ≤2 clicks).
@@ -122,99 +119,187 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
   }
 }
 
+/// The canvas's own menu: paste, the ten things you can add, and the page's
+/// background.
+///
+/// The owner: *"when right clicking on the canvas, it comes up with a bunch
+/// of options saying 'insert x here', the insert here bit is already implied
+/// so that doesnt need to be put in, also again the text box option is
+/// redundant since they can just left click. … this should more closley match
+/// the insert menu we already have, although that is quite busy and i dont
+/// want it to be a huge drop down."*
+///
+/// All three are answered by one change: it renders [kInsertGroups], the same
+/// list the Insert ribbon renders, as **three columns**. The word "here" is
+/// gone from every label because a right click already means here; there is
+/// no text box because a left click already makes one; and the columns make
+/// the menu SHORTER than the eleven-row stack it replaces, not longer —
+/// eleven rows was about 430px tall, this is about 200.
+///
+/// The four `Background: …` rows become one submenu with a tick on the
+/// current one, which the old rows never showed.
 Future<void> showCanvasMenu(BuildContext context, AppState app,
     Offset globalPos, Offset pagePt) async {
   final action = await showMenu<String>(
     context: context,
     position: RelativeRect.fromLTRB(
         globalPos.dx, globalPos.dy, globalPos.dx, globalPos.dy),
+    // Wide enough for three columns; without it the menu sizes to the Paste
+    // row and the grid overflows off the edge, where it can be neither seen
+    // nor pressed.
+    constraints: const BoxConstraints(minWidth: 428, maxWidth: 460),
     items: [
-      _item('text', Icons.text_fields, 'New text box here'),
-      _item('math', Icons.functions, 'New equation here'),
-      _item('table', Icons.table_chart_outlined, 'New table here'),
-      _item('portal', Icons.picture_in_picture_alt_outlined,
-          'Page window here…'),
-      _item('csv', Icons.grid_on_outlined, 'Table from a file here… (CSV, Excel)'),
-      _item('board', Icons.view_kanban_outlined, 'Task board here'),
+      // First, because it is what people right-click for. Greyed rather than
+      // hidden: a menu whose rows move about is a menu you cannot learn.
       _item('paste', Icons.paste_outlined, 'Paste',
           enabled: app.canPasteBlocks, shortcut: 'Ctrl+V'),
-      const PopupMenuDivider(),
-      _item('bg-blank', Icons.crop_din, 'Background: blank'),
-      _item('bg-grid', Icons.grid_4x4, 'Background: grid'),
-      _item('bg-dotted', Icons.apps, 'Background: dotted'),
-      _item('bg-ruled', Icons.notes, 'Background: ruled'),
+      const PopupMenuDivider(height: 9),
+      const _InsertGrid(),
+      const PopupMenuDivider(height: 9),
+      _bgSubmenu(context, app),
     ],
   );
-  switch (action) {
-    case 'text':
-      final pos = app.smartTextPosition(pagePt);
-      final b = app.addBlock(Block(
-          type: BlockType.text, x: pos.dx, y: pos.dy, w: 320, content: {'text': ''}));
-      app.select(b.id, edit: true);
-    case 'math':
-      app.insertEquation(at: pagePt);
-    case 'table':
-      final b = app.addBlock(Block(
-          type: BlockType.table,
-          x: pagePt.dx,
-          y: pagePt.dy,
-          w: 360,
-          content: {
-            'cells': [
-              ['Header', 'Header'],
-              ['', ''],
-            ]
-          }));
-      app.select(b.id, edit: true);
-    case 'portal':
-      if (context.mounted) {
-        await showInsertPortalDialog(context, app, pagePt);
-      }
-    case 'csv':
-      // Same face-the-failure rule as the Insert ribbon's pickers: a picker
-      // that cannot open must say so, not be a menu item that does nothing.
-      final XFile? file;
-      try {
-        file = await openFile(acceptedTypeGroups: const [
-          XTypeGroup(label: 'Tables', extensions: ['csv', 'tsv', 'xlsx'])
-        ]);
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text("Couldn't open the file picker: $e")));
-        }
-        return;
-      }
-      if (file == null) return;
-      final bytes = await file.readAsBytes();
-      final r = insertTableFromFile(app, file.name, bytes, pagePt);
-      if (context.mounted) {
-        if (!r.placed) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('That file has no rows in it.')));
-        } else if (r.note != null) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(r.note!)));
-        }
-      }
-    case 'board':
-      final board = app.addBlock(Block(
-        type: BlockType.board,
-        x: pagePt.dx,
-        y: pagePt.dy,
-        w: 700,
-        content: BoardBlockView.starterContent(),
-      ));
-      app.select(board.id);
-    case 'paste':
-      app.pasteBlocks(at: pagePt);
-    case 'bg-blank':
-      app.setBackground('blank');
-    case 'bg-grid':
-      app.setBackground('grid');
-    case 'bg-dotted':
-      app.setBackground('dotted');
-    case 'bg-ruled':
-      app.setBackground('ruled');
+  if (action == null) return;
+  if (action.startsWith('bg-')) {
+    app.setBackground(action.substring(3));
+    return;
   }
+  if (action == 'paste') {
+    app.pasteBlocks(at: pagePt);
+    return;
+  }
+  for (final item in kInsertItems) {
+    if (item.id == action) {
+      if (context.mounted) await item.run(context, app, pagePt);
+      return;
+    }
+  }
+}
+
+/// The page's own backgrounds, with a tick on the one that is on.
+PopupMenuEntry<String> _bgSubmenu(BuildContext context, AppState app) {
+  const kinds = [
+    ('blank', Icons.crop_din, 'Blank'),
+    ('grid', Icons.grid_4x4, 'Grid'),
+    ('dotted', Icons.apps, 'Dotted'),
+    ('ruled', Icons.notes, 'Ruled'),
+  ];
+  return PopupMenuItem<String>(
+    height: 36,
+    padding: EdgeInsets.zero,
+    child: PopupMenuButton<String>(
+      tooltip: '',
+      position: PopupMenuPosition.under,
+      onSelected: (v) {
+        Navigator.of(context).pop('bg-$v');
+      },
+      itemBuilder: (_) => [
+        for (final (id, icon, label) in kinds)
+          CheckedPopupMenuItem<String>(
+            value: id,
+            checked: app.pageProps.background == id,
+            child: Row(children: [
+              Icon(icon, size: 16),
+              const SizedBox(width: 10),
+              Text(label, style: const TextStyle(fontSize: 13)),
+            ]),
+          ),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(children: [
+          const Icon(Icons.wallpaper_outlined, size: 16),
+          const SizedBox(width: 10),
+          const Expanded(
+              child: Text('Page background',
+                  style: TextStyle(fontSize: 13))),
+          Icon(Icons.chevron_right,
+              size: 16, color: context.surfaces.textSecondary),
+        ]),
+      ),
+    ),
+  );
+}
+
+/// The catalog, as three columns of tiles.
+///
+/// A `PopupMenuEntry` rather than a run of `PopupMenuItem`s, because ten rows
+/// in a column is the tall drop-down the owner does not want and three
+/// columns of four is a third of the height. `represents` is false: no single
+/// value stands for this row, and each tile pops with its own.
+class _InsertGrid extends PopupMenuEntry<String> {
+  const _InsertGrid();
+
+  @override
+  double get height => 26.0 + 4 * 30.0;
+
+  @override
+  bool represents(String? value) => false;
+
+  @override
+  State<_InsertGrid> createState() => _InsertGridState();
+}
+
+class _InsertGridState extends State<_InsertGrid> {
+  @override
+  Widget build(BuildContext context) {
+    final s = context.surfaces;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final group in kInsertGroups)
+            SizedBox(
+              width: 134,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(6, 4, 0, 4),
+                    child: Text(group.title.toUpperCase(),
+                        style: OnoteType.caption.copyWith(
+                          color: s.textSecondary,
+                          letterSpacing: 0.6,
+                          fontWeight: FontWeight.w600,
+                        )),
+                  ),
+                  for (final item in group.items)
+                    _Tile(item: item, surfaces: s),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Tile extends StatelessWidget {
+  const _Tile({required this.item, required this.surfaces});
+  final InsertItem item;
+  final OnoteSurfaces surfaces;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+        borderRadius: BorderRadius.circular(OnoteRadius.sm),
+        onTap: () => Navigator.of(context).pop(item.id),
+        child: SizedBox(
+          height: 30,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Row(children: [
+              Icon(item.icon, size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(item.menuLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13)),
+              ),
+            ]),
+          ),
+        ),
+      );
 }
