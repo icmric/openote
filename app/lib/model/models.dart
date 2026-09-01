@@ -287,6 +287,9 @@ enum BlockType {
   // contract that made `board` and `flashcard` safe: an older build shows
   // "Unsupported block: graph" and round-trips it untouched.
   graph,
+  // An equation with a value plugged into it, and the result — the graph's
+  // sibling for a single point rather than a curve. Same `rawType` safety.
+  substitute,
   unknown
 }
 

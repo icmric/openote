@@ -55,6 +55,7 @@ class EquationEditor extends StatefulWidget {
     this.autofocus = true,
     this.focusNode,
     this.onDrawGraph,
+    this.onEvaluateAtValue,
     this.onReworkSiblings,
   });
 
@@ -107,6 +108,10 @@ class EquationEditor extends StatefulWidget {
   /// is the rule this whole file exists to keep — and it is what makes the
   /// menu entry appear identically in both.
   final VoidCallback? onDrawGraph;
+
+  /// Plug a value into this equation, beside it — same placement-blindness
+  /// rule as [onDrawGraph], supplied by the host for the same reason.
+  final VoidCallback? onEvaluateAtValue;
 
   /// Work out every OTHER equation in the same paragraph again.
   ///
@@ -298,6 +303,7 @@ class EquationEditorState extends State<EquationEditor> {
       latexAvailable: _latexMode || _editor != null,
       toggleLatex: _toggleLatexMode,
       drawGraph: widget.onDrawGraph,
+      evaluateAtValue: widget.onEvaluateAtValue,
       rework: rework,
     ));
 

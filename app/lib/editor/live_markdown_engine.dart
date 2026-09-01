@@ -237,6 +237,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // sits is a character offset that every keystroke in the paragraph
       // moves. `_graphAnchor` is what the graph will follow from here.
       onDrawGraph: _drawGraph,
+      onEvaluateAtValue: _evaluateAtValue,
       onReworkSiblings: _reworkSiblingMath,
       // A summation's stacked limits are far wider than the same maths reads
       // inline; without this the equation hits the paragraph's edge and
@@ -322,11 +323,14 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// would offer to rebuild the equation from it.
   String? _inlineSource;
 
-  /// What any graph made from this equation is currently following.
+  /// What any graph or substitute block made from this equation is
+  /// currently following.
   ///
   /// Set when the equation is opened and moved forward on every keystroke, so
-  /// the graph is always chasing the text it last saw rather than the text it
-  /// was born with.
+  /// a following block is always chasing the text it last saw rather than
+  /// the text it was born with. Shared by graphs and substitute blocks alike
+  /// — both anchor to the same equation text, so one field tracks it for
+  /// both.
   String? _graphAnchor;
 
   /// A graph of the equation being written, beside the paragraph.
@@ -339,6 +343,19 @@ class _LiveMarkdownSession extends OnoteEditSession {
     final host = _hostBlockId;
     if (host == null) return;
     app.insertGraph(latex: latex, from: host, fromLatex: latex);
+    _graphAnchor = latex;
+  }
+
+  /// A value plugged into the equation being written, beside the paragraph.
+  void _evaluateAtValue() {
+    final ed = _mathEditor;
+    if (ed == null) return;
+    final latex = ed.latex.trim();
+    if (latex.isEmpty) return;
+    app.pushUndo();
+    final host = _hostBlockId;
+    if (host == null) return;
+    app.insertSubstitute(latex: latex, from: host, fromLatex: latex);
     _graphAnchor = latex;
   }
 
@@ -465,6 +482,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
           .length;
       if (mine == 0) {
         app.pushInlineEquationToGraphs(host, was, tidy);
+        app.pushInlineEquationToSubstitutes(host, was, tidy);
         _graphAnchor = tidy;
       }
     }

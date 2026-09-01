@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:path/path.dart' as p;
 
+import '../math/graph_plot.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../store/media_store.dart';
@@ -137,6 +138,23 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
         // does, and it is why this one is here.
         final latex = b.content['latex'] as String? ?? '';
         if (latex.isNotEmpty) buf.writeln('Graph of \$$latex\$\n');
+      case BlockType.substitute:
+        // Same reasoning as a graph: Markdown has no live input box, so this
+        // carries the equation and the value last typed into it, which is
+        // the thing a reader can actually do something with.
+        final latex = b.content['latex'] as String? ?? '';
+        final value = (b.content['value'] as String? ?? '').trim();
+        if (latex.isNotEmpty) {
+          if (value.isEmpty) {
+            buf.writeln('Evaluate \$$latex\$\n');
+          } else {
+            final source = graphSourceFromLatex(latex);
+            final outcome = substituteInto(source, value);
+            buf.writeln(
+                'Evaluate \$$latex\$ at ${outcome.variable} = $value: '
+                '${outcome.result.display}\n');
+          }
+        }
       case BlockType.board:
         // A board's Markdown projection: one heading per column, cards as a
         // list. Round enough that a reader (or a re-import) keeps the

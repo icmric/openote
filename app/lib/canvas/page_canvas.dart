@@ -65,6 +65,12 @@ class _PageCanvasState extends State<PageCanvas> {
   double? _pinchBaseDist;
   double _pzLastScale = 1.0;
 
+  /// The pointer of a trackpad pan/pinch a block has claimed for itself
+  /// (a graph, panning its own window) — null once nothing has. Latched
+  /// for the gesture's whole lifetime; see the comment on
+  /// `onPointerPanZoomStart` for why this is not re-checked per update.
+  int? _panZoomClaimedBy;
+
   // Lasso-select (INK-7): the freeform loop being drawn, in page space.
   List<Offset>? _lasso;
 
@@ -1175,14 +1181,44 @@ class _PageCanvasState extends State<PageCanvas> {
       onPointerSignal: _onScroll,
       // Hover is how a pen announces its approach; see _stylusProximity.
       onPointerHover: _stylusProximity,
-      onPointerPanZoomStart: (e) => _pzLastScale = 1.0,
+      // **Trackpad pan/pinch, claim-checked exactly like a mouse drag.**
+      //
+      // Reported: scrolling and zooming inside a graph moved the PAGE
+      // underneath it too. Wheel notches already went "through the
+      // resolver" (see [_onScroll]) and a mouse drag already goes through
+      // `claimedPointers` (see `_selectDown`) — but a trackpad's two-finger
+      // pan and pinch arrive as a THIRD event family entirely
+      // (`PointerPanZoomStartEvent`/`UpdateEvent`), which is dispatched to
+      // every `Listener` along the hit-test chain like an ordinary pointer
+      // event, not funnelled through a single shared resolver the way a
+      // discrete wheel notch is. This handler had never checked
+      // `claimedPointers` at all, so a graph could claim the pointer on
+      // its OWN `onPointerPanZoomStart` — it does, now — and this would
+      // still pan the page underneath it on every update regardless.
+      //
+      // The claim is latched for the whole gesture, not re-checked per
+      // update: `claimedPointers` is emptied by `_selectDown` reacting to
+      // the SAME pointer going down elsewhere (a lasso, ink, a block
+      // drag), which a trackpad pan never triggers, so checking it fresh
+      // on every `onPointerPanZoomUpdate` would silently start panning the
+      // page mid-gesture the instant something unrelated cleared the set.
+      onPointerPanZoomStart: (e) {
+        _pzLastScale = 1.0;
+        _panZoomClaimedBy = app.claimedPointers.contains(e.pointer)
+            ? e.pointer
+            : null;
+      },
       onPointerPanZoomUpdate: (e) {
+        if (_panZoomClaimedBy == e.pointer) return;
         if (e.scale != 1.0) {
           controller.zoomAt(e.localPosition, e.scale / _pzLastScale);
           _pzLastScale = e.scale;
         }
         if (e.panDelta != Offset.zero) controller.panBy(e.panDelta);
         setState(() {});
+      },
+      onPointerPanZoomEnd: (e) {
+        if (_panZoomClaimedBy == e.pointer) _panZoomClaimedBy = null;
       },
       child: MouseRegion(
         cursor: switch (app.tool) {

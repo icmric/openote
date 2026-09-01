@@ -7,6 +7,7 @@ import '../editor/code_block_view.dart';
 import '../editor/file_block_view.dart';
 import '../editor/flashcard_block_view.dart';
 import '../editor/graph_block_view.dart';
+import '../editor/substitute_block_view.dart';
 import '../editor/image_block_view.dart';
 import '../editor/math_block_view.dart';
 import '../editor/table_block_view.dart';
@@ -273,7 +274,8 @@ class _BlockViewState extends State<BlockView> {
         : (!_editableType &&
                 b.type != BlockType.embed &&
                 b.type != BlockType.board &&
-                b.type != BlockType.graph) ||
+                b.type != BlockType.graph &&
+                b.type != BlockType.substitute) ||
             HardwareKeyboard.instance.isAltPressed;
     if (_bodyDragMoves) _dragStart(d);
   }
@@ -399,6 +401,8 @@ class _BlockViewState extends State<BlockView> {
       BlockType.embed => 'Window to another page',
       BlockType.board => 'Task board',
       BlockType.graph => 'Graph of ${b.content['latex'] ?? 'an equation'}',
+      BlockType.substitute =>
+        'Evaluate ${b.content['latex'] ?? 'an equation'}',
       _ => '${b.type.name} block',
     };
     return t.trim().isEmpty ? '${b.type.name} block' : t;
@@ -545,6 +549,7 @@ class _BlockViewState extends State<BlockView> {
       BlockType.embed => PortalBlockView(block: b, app: app),
       BlockType.board => BoardBlockView(block: b, app: app),
       BlockType.graph => GraphBlockView(block: b, app: app),
+      BlockType.substitute => SubstituteBlockView(block: b, app: app),
       _ => Padding(
           padding: const EdgeInsets.all(8),
           child: Text('Unsupported block: ${b.type.name}',

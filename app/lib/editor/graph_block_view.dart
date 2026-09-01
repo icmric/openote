@@ -133,11 +133,18 @@ class _GraphBlockViewState extends State<GraphBlockView> {
 
   void _pan(DragUpdateDetails d) {
     if (_lastSize.isEmpty) return;
-    final v = _live;
-    _setView(v.panned(
-      -d.delta.dx * v.width / _lastSize.width,
-      d.delta.dy * v.height / _lastSize.height,
-    ));
+    _setView(_panned(_live, d.delta));
+  }
+
+  GraphView _panned(GraphView v, Offset screenDelta) => v.panned(
+        -screenDelta.dx * v.width / _lastSize.width,
+        screenDelta.dy * v.height / _lastSize.height,
+      );
+
+  GraphView _zoomedAbout(GraphView v, double factor, Offset localPosition) {
+    final aboutX = v.x0 + (localPosition.dx / _lastSize.width) * v.width;
+    final aboutY = v.y1 - (localPosition.dy / _lastSize.height) * v.height;
+    return v.zoomed(factor, aboutX: aboutX, aboutY: aboutY);
   }
 
   /// Zoom the window under the pointer.
@@ -157,13 +164,52 @@ class _GraphBlockViewState extends State<GraphBlockView> {
     // graph four times over and turned its auto-fit off for good.
     if (e.scrollDelta.dy == 0) return;
     GestureBinding.instance.pointerSignalResolver.register(e, (_) {
-      final v = _live;
-      final local = e.localPosition;
-      final aboutX = v.x0 + (local.dx / _lastSize.width) * v.width;
-      final aboutY = v.y1 - (local.dy / _lastSize.height) * v.height;
-      _setView(v.zoomed(e.scrollDelta.dy > 0 ? 1.15 : 1 / 1.15,
-          aboutX: aboutX, aboutY: aboutY));
+      _setView(_zoomedAbout(
+          _live, e.scrollDelta.dy > 0 ? 1.15 : 1 / 1.15, e.localPosition));
     });
+  }
+
+  /// Cumulative scale since the LAST update, for a trackpad pinch — see
+  /// [_panZoomUpdate].
+  double _pzLastScale = 1.0;
+
+  /// **A trackpad's two-finger pan and pinch, isolated from the page the
+  /// same way the wheel and a mouse drag already are.**
+  ///
+  /// Reported: scrolling and zooming inside a graph moved the page
+  /// underneath it too. A wheel notch goes through the shared
+  /// [GestureBinding.pointerSignalResolver] (see [_wheel]) and a mouse
+  /// drag is kept out by [_GraphBlockViewState]'s own pointer-down claim —
+  /// but `PointerPanZoomStartEvent`/`UpdateEvent` are a THIRD event family,
+  /// dispatched to every `Listener` along the hit-test chain like an
+  /// ordinary pointer event rather than funnelled through one shared
+  /// resolver. Neither existing mechanism touched it at all: the graph
+  /// never claimed the pointer for it, and `page_canvas.dart`'s own handler
+  /// never checked whether anything inner had. Both sides are fixed
+  /// together — this claims the pointer on start, and `PageCanvas` now
+  /// declines to move for a pointer that is already claimed.
+  void _panZoomStart(PointerPanZoomStartEvent e) {
+    widget.app.claimedPointers.add(e.pointer);
+    _pzLastScale = 1.0;
+  }
+
+  void _panZoomUpdate(PointerPanZoomUpdateEvent e) {
+    if (_lastSize.isEmpty) return;
+    var v = _live;
+    if (e.panDelta != Offset.zero) v = _panned(v, e.panDelta);
+    if (e.scale != 1.0) {
+      // Inverted relative to `CanvasController.zoomAt`'s convention: a
+      // GraphView's factor multiplies its SPAN, so spreading fingers apart
+      // (scale rising) must SHRINK the window to read as zooming in, the
+      // opposite of a magnification level rising.
+      v = _zoomedAbout(v, _pzLastScale / e.scale, e.localPosition);
+      _pzLastScale = e.scale;
+    }
+    _setView(v);
+  }
+
+  void _panZoomEnd(PointerPanZoomEndEvent e) {
+    widget.app.claimedPointers.remove(e.pointer);
   }
 
   @override
@@ -187,42 +233,82 @@ class _GraphBlockViewState extends State<GraphBlockView> {
     return Listener(
       onPointerSignal: _wheel,
       onPointerDown: (e) => widget.app.claimedPointers.add(e.pointer),
-      child: RawGestureDetector(
-        behavior: HitTestBehavior.opaque,
-        gestures: {
-          _AltAwarePan:
-              GestureRecognizerFactoryWithHandlers<_AltAwarePan>(
-            _AltAwarePan.new,
-            (r) => r.onUpdate = _pan,
-          ),
-          DoubleTapGestureRecognizer:
-              GestureRecognizerFactoryWithHandlers<DoubleTapGestureRecognizer>(
-            DoubleTapGestureRecognizer.new,
-            (r) => r.onDoubleTap = _reset,
-          ),
-        },
-        child: LayoutBuilder(builder: (context, cons) {
-          _lastSize = Size(cons.maxWidth, cons.maxHeight.isFinite
-              ? cons.maxHeight
-              : (b.h ?? 240));
-          return Container(
-            decoration: BoxDecoration(
-              color: s.raised,
-              borderRadius: BorderRadius.circular(OnoteRadius.md),
-              border: Border.all(
-                color: linkOn ? widget.app.graphLinkHighlight(b)! : s.border,
-                width: linkOn ? 2 : 1,
-              ),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: source.isOk
-                ? _canvas(context, source)
-                : _problem(context, source.error ?? 'nothing to graph yet'),
-          );
+      onPointerPanZoomStart: _panZoomStart,
+      onPointerPanZoomUpdate: _panZoomUpdate,
+      onPointerPanZoomEnd: _panZoomEnd,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovering = true),
+        onExit: (_) => setState(() {
+          _hovering = false;
+          _hoverLocal = null;
         }),
+        onHover: (e) => setState(() => _hoverLocal = e.localPosition),
+        child: RawGestureDetector(
+          behavior: HitTestBehavior.opaque,
+          gestures: {
+            _AltAwarePan:
+                GestureRecognizerFactoryWithHandlers<_AltAwarePan>(
+              _AltAwarePan.new,
+              (r) => r.onUpdate = _pan,
+            ),
+            DoubleTapGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<DoubleTapGestureRecognizer>(
+              DoubleTapGestureRecognizer.new,
+              (r) => r.onDoubleTap = _reset,
+            ),
+          },
+          child: LayoutBuilder(builder: (context, cons) {
+            _lastSize = Size(cons.maxWidth, cons.maxHeight.isFinite
+                ? cons.maxHeight
+                : (b.h ?? 240));
+            return Container(
+              decoration: BoxDecoration(
+                color: s.raised,
+                borderRadius: BorderRadius.circular(OnoteRadius.md),
+                border: Border.all(
+                  color: linkOn ? widget.app.graphLinkHighlight(b)! : s.border,
+                  width: linkOn ? 2 : 1,
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: source.isOk
+                        ? _canvas(context, source)
+                        : _problem(
+                            context, source.error ?? 'nothing to graph yet'),
+                  ),
+                  // **The way back, once there is somewhere to come back
+                  // from.** Reported: "If it has bene moved/changed there
+                  // should be some way for me to reset it back to the
+                  // default too." Double-tap already does this — it always
+                  // has — but nothing on screen ever said so, which is not
+                  // a way to reset a graph, it's a way to have one. Shown
+                  // only once `_fitY` is false: a graph nobody has touched
+                  // has nothing to reset, and a button that always does
+                  // nothing is worse than no button.
+                  if (_hovering && !_fitY)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: _ResetButton(onPressed: _reset),
+                    ),
+                ],
+              ),
+            );
+          }),
+        ),
       ),
     );
   }
+
+  bool _hovering = false;
+
+  /// Raw pointer position, in this widget's own local coordinates — the
+  /// same space [_lastSize] measures. Cleared on exit; see [_canvas] for
+  /// what it turns into.
+  Offset? _hoverLocal;
 
   Widget _canvas(BuildContext context, GraphSource source) {
     final s = context.surfaces;
@@ -239,17 +325,38 @@ class _GraphBlockViewState extends State<GraphBlockView> {
     // Remembered, so the next drag starts from where the curve actually is
     // rather than from where it was asked to be. Not stored — see [_drawn].
     _drawn = _fitY && plot.view.isSane ? plot.view : null;
+
+    // **Hover, against the window actually ON SCREEN.** Reported: "id like
+    // to be able to hover over a point on the line and have it provide me
+    // the values for that point." `plot.view`, not `_view`: a fitted graph
+    // draws in a window the fit chose, and matching the hit-test to a
+    // window that is not what is drawn would put the dot wherever the
+    // cursor is over a DIFFERENT curve's worth of geometry.
+    final hover = _hoverLocal == null
+        ? null
+        : hoverPointNear(_hoverLocal!,
+            source: source, view: plot.view, size: _lastSize);
+
     return RepaintBoundary(
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: GraphPainter(
-          plot: plot,
-          verticalAt: source.verticalAt,
-          curve: scheme.primary,
-          axis: s.textSecondary,
-          grid: s.border,
-          label: s.textSecondary,
-        ),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: GraphPainter(
+                plot: plot,
+                verticalAt: source.verticalAt,
+                hover: hover,
+                curve: scheme.primary,
+                axis: s.textSecondary,
+                grid: s.border,
+                label: s.textSecondary,
+                hoverDot: scheme.primary,
+              ),
+            ),
+          ),
+          if (hover != null) _HoverLabel(hover: hover, size: _lastSize),
+        ],
       ),
     );
   }
@@ -268,6 +375,86 @@ class _GraphBlockViewState extends State<GraphBlockView> {
                 textAlign: TextAlign.center,
                 style: OnoteType.small.copyWith(color: s.textSecondary)),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// **The numbers beside the dot.** A widget, not painted text inside
+/// [GraphPainter] — ordinary `Text` layout is one line instead of a
+/// hand-measured box, and it is what lets the values come from [gridLabel]
+/// unchanged rather than a second formatting path.
+///
+/// Sits on whichever side of the dot has room, judged by which half of the
+/// graph the dot is in — there is no text measurement to consult before the
+/// label itself is built, so this is a rule of thumb rather than a
+/// guarantee, but a label a few pixels from an edge is a cosmetic slip; one
+/// that could clip off it entirely is not.
+class _HoverLabel extends StatelessWidget {
+  const _HoverLabel({required this.hover, required this.size});
+
+  final HoverPoint hover;
+  final Size size;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.surfaces;
+    final onRight = hover.screen.dx < size.width / 2;
+    final onBottom = hover.screen.dy < size.height / 2;
+    final text = hover.y.isNaN
+        ? 'x = ${hover.xLabel}'
+        : 'x = ${hover.xLabel}, y = ${hover.yLabel}';
+    return Positioned(
+      left: onRight ? hover.screen.dx + 8 : null,
+      right: onRight ? null : size.width - hover.screen.dx + 8,
+      top: onBottom ? hover.screen.dy + 8 : null,
+      bottom: onBottom ? null : size.height - hover.screen.dy + 8,
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: s.raised.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: s.border),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+            child: Text(text,
+                style: OnoteType.small.copyWith(
+                    color: s.textSecondary,
+                    fontFeatures: const [FontFeature.tabularFigures()])),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A small, quiet way back to the default window — see the comment where
+/// this is placed for the report it answers. Deliberately not a full
+/// `IconButton`'s 48px tap target: at that size, in a graph's own corner,
+/// it would eat the one place a student might want to pan or zoom FROM.
+class _ResetButton extends StatelessWidget {
+  const _ResetButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.surfaces;
+    return Tooltip(
+      message: 'Reset the view',
+      child: Material(
+        color: s.raised.withValues(alpha: 0.85),
+        shape: const CircleBorder(),
+        elevation: 1,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Icon(Icons.restart_alt, size: 16, color: s.textSecondary),
+          ),
         ),
       ),
     );
@@ -303,6 +490,8 @@ class GraphPainter extends CustomPainter {
     required this.grid,
     required this.label,
     this.verticalAt,
+    this.hover,
+    this.hoverDot,
   });
 
   final Plot plot;
@@ -311,6 +500,13 @@ class GraphPainter extends CustomPainter {
   final Color axis;
   final Color grid;
   final Color label;
+
+  /// Where the cursor has found itself close to the curve, if anywhere —
+  /// see `_GraphBlockViewState._canvas`. Drawn as a small dot; the numbers
+  /// beside it are [_HoverLabel]'s job, a plain widget rather than painted
+  /// text, so they get ordinary layout instead of a hand-measured box.
+  final HoverPoint? hover;
+  final Color? hoverDot;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -392,6 +588,19 @@ class GraphPainter extends CustomPainter {
       }
       canvas.drawPath(path, line);
     }
+
+    final h = hover;
+    if (h != null && hoverDot != null) {
+      canvas.drawCircle(
+          h.screen, 3.5, Paint()..color = hoverDot!..style = PaintingStyle.fill);
+      canvas.drawCircle(
+          h.screen,
+          3.5,
+          Paint()
+            ..color = axis
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1);
+    }
     canvas.restore();
   }
 
@@ -401,5 +610,6 @@ class GraphPainter extends CustomPainter {
       old.verticalAt != verticalAt ||
       old.curve != curve ||
       old.axis != axis ||
-      old.grid != grid;
+      old.grid != grid ||
+      old.hover?.screen != hover?.screen;
 }

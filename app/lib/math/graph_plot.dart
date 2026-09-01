@@ -27,7 +27,7 @@
 library;
 
 import 'dart:math' as math;
-import 'dart:ui' show Offset;
+import 'dart:ui' show Offset, Size;
 
 import 'evaluate.dart';
 import 'math_linear_projection.dart';
@@ -507,5 +507,133 @@ GraphSource _solvedForLeft(String left, String right) {
   final r = rhs.at!;
   return GraphSource.curve(
       CompiledMath.ok((x) => (r(x) - b) / a, variable: 'x'));
+}
+
+/// **What hovering finds on the curve**, in maths units, in the device
+/// pixels a dot gets drawn at, and already formatted for display.
+///
+/// [xLabel]/[yLabel] are computed here, once, from the SAME gridline
+/// spacing [hoverPointNear] snapped [x] to — not re-derived by whatever
+/// widget shows them, which is what guarantees the number on screen and the
+/// number the dot sits at never quietly disagree by a digit. [y] and
+/// [yLabel] are `double.nan`/`''` for a vertical line (`x = 3`), which has
+/// no single y to report; check [y] before reading either.
+class HoverPoint {
+  const HoverPoint({
+    required this.x,
+    required this.y,
+    required this.screen,
+    required this.xLabel,
+    required this.yLabel,
+  });
+  final double x;
+  final double y;
+  final Offset screen;
+  final String xLabel;
+  final String yLabel;
+}
+
+/// **The point on [source]'s curve nearest [screenPos]**, or null when
+/// nothing is close enough to mean anything — hovering empty space inside
+/// the axes must not paint a dot that belongs to no actual value.
+///
+/// Reported: "id like to be able to hover over a point on the line and have
+/// it provide me the values for that point ... the values it shows should be
+/// sensible (i.e. not showing crazy random decimals of x when it doesnt make
+/// sense)." Two decisions follow from that:
+///
+///  * **x is snapped before y is ever computed**, to a tenth of the axis's
+///    own gridline spacing ([gridStep]) — one more digit of precision than
+///    the numbers already on screen, not whatever a pixel happens to divide
+///    into. y is then read from the compiled function AT that snapped x, so
+///    the two never disagree the way rounding each independently could.
+///  * **Closeness is measured on screen, in both x AND y** — not "is the
+///    cursor somewhere above this x". A curve does not cover every y at
+///    every x it passes through, and `1/x` covers every y BUT the one under
+///    a cursor sitting just off the asymptote. Requiring the snapped point's
+///    own screen position to land within [maxDistance] of the cursor is what
+///    keeps the dot on curves the cursor is actually near, on both counts.
+HoverPoint? hoverPointNear(
+  Offset screenPos, {
+  required GraphSource source,
+  required GraphView view,
+  required Size size,
+  double maxDistance = 16,
+}) {
+  if (!view.isSane || size.isEmpty || size.width <= 0) return null;
+  double sx(double x) => (x - view.x0) / view.width * size.width;
+  double sy(double y) => size.height - (y - view.y0) / view.height * size.height;
+
+  final stepX = gridStep(view.width, target: math.max(3, size.width ~/ 90));
+
+  if (source.verticalAt != null) {
+    final x = source.verticalAt!;
+    final screen = Offset(sx(x), screenPos.dy);
+    if ((screen.dx - screenPos.dx).abs() > maxDistance) return null;
+    return HoverPoint(
+        x: x, y: double.nan, screen: screen, xLabel: gridLabel(x, stepX), yLabel: '');
+  }
+
+  final f = source.fn;
+  if (f == null || !f.isOk || f.at == null) return null;
+
+  final snap = stepX / 10;
+  if (!snap.isFinite || snap <= 0) return null;
+  final rawX = view.x0 + (screenPos.dx / size.width) * view.width;
+  final x = (rawX / snap).round() * snap;
+  final y = f.at!(x);
+  if (!y.isFinite || y < view.y0 || y > view.y1) return null;
+  final screen = Offset(sx(x), sy(y));
+  if ((screen - screenPos).distance > maxDistance) return null;
+
+  final stepY = gridStep(view.height, target: math.max(3, size.height ~/ 60));
+  return HoverPoint(
+    x: x,
+    y: y,
+    screen: screen,
+    xLabel: gridLabel(x, snap),
+    yLabel: gridLabel(y, stepY / 10),
+  );
+}
+
+/// **What "evaluate at a value" makes of an equation and a typed number.**
+///
+/// The substitute block's whole job, pulled out pure and testable: [source]
+/// is what [graphSourceFromLatex] read the equation as — reused wholesale,
+/// so a substitute block agrees with its sibling graph about what counts as
+/// one equation, right down to the same error messages. [valueText] is
+/// whatever the student typed for the variable, itself run through
+/// [evaluateLinear] rather than [double.parse] so `2+3` or `pi` work as the
+/// input, the same as any other number in this app.
+class SubstituteResult {
+  const SubstituteResult({required this.variable, required this.result});
+
+  /// The name the result was worked out FOR — `x` unless the equation named
+  /// its own, e.g. `f(x)` still reads `x`, but `y = 3T + 1` reads `T`.
+  final String variable;
+  final EvalResult result;
+}
+
+/// Read [source]'s curve at [valueText], or say why there is nothing to read.
+SubstituteResult substituteInto(GraphSource source, String valueText) {
+  final variable = source.fn?.variable ?? 'x';
+  if (!source.isOk) {
+    return SubstituteResult(
+        variable: variable, result: EvalResult.err(source.error!));
+  }
+  if (source.verticalAt != null) {
+    return SubstituteResult(
+        variable: variable,
+        result:
+            const EvalResult.err('a vertical line has no value to work out'));
+  }
+  final v = evaluateLinear(valueText);
+  if (!v.isOk) return SubstituteResult(variable: variable, result: v);
+  final f = source.fn;
+  if (f == null || f.at == null) {
+    return SubstituteResult(
+        variable: variable, result: const EvalResult.err('nothing to evaluate'));
+  }
+  return SubstituteResult(variable: variable, result: EvalResult.ok(f.at!(v.value)));
 }
 

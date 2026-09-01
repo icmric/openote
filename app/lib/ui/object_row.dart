@@ -107,6 +107,7 @@ class ObjectRow extends StatelessWidget {
         return EquationFace(
           math: m,
           onDrawGraph: m.drawGraph,
+          onEvaluateAtValue: m.evaluateAtValue,
           angleMode: app.angleMode,
           onToggleAngleMode: () {
             // The open equation and its neighbours are worked out by
@@ -144,6 +145,7 @@ class EquationFace extends StatelessWidget {
     required this.angleMode,
     required this.onToggleAngleMode,
     this.onDrawGraph,
+    this.onEvaluateAtValue,
     this.recentIds = const [],
   });
 
@@ -151,6 +153,9 @@ class EquationFace extends StatelessWidget {
 
   /// Draw this equation, or null when it cannot be drawn from here.
   final VoidCallback? onDrawGraph;
+
+  /// Plug a value into this equation, or null when it cannot be from here.
+  final VoidCallback? onEvaluateAtValue;
   final AngleMode angleMode;
   final VoidCallback onToggleAngleMode;
   final List<String> recentIds;
@@ -159,6 +164,7 @@ class EquationFace extends StatelessWidget {
   Widget build(BuildContext context) => MathBar(
         onInsert: math.insert,
         onDrawGraph: onDrawGraph,
+        onEvaluateAtValue: onEvaluateAtValue,
         latexMode: math.latexMode,
         latexAvailable: math.latexAvailable,
         onToggleLatex: math.toggleLatex,

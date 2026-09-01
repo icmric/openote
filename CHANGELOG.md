@@ -4,6 +4,35 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — plug a value into an equation and see the result (2026-09-01)
+
+- **`⋯ ▸ Evaluate at a value…`** puts a small block beside the equation: the
+  equation, a box for whatever the variable is, and the answer, updated as
+  you type. It works the same whether the equation is in a box of its own
+  or in the middle of a sentence — the same rule Draw the graph already
+  follows — and the value you type can be an expression too (`2+3`, `pi`),
+  not just a bare number. It is a graph's sibling for one point rather than
+  a curve: its own copy of the equation, tied to the original the same way,
+  so editing `y = 3x+10` into `y = 2x+6` updates the answer as you type.
+
+### Fixed — a graph that had opinions of its own (2026-09-01)
+
+- **The window now refits itself when the equation changes**, not just when
+  the graph is first drawn. Rewriting `y = 3x+10` as `y = \sin x` used to
+  leave the old window in place, often showing nothing recognisable at all.
+  Panning or zooming by hand still holds — the refit only happens on an
+  actual edit.
+- **Scrolling or pinching inside a graph no longer also scrolls or zooms the
+  page underneath it.** Trackpad pan and pinch are a separate stream of
+  events from an ordinary mouse wheel, and the page was never told to leave
+  them alone.
+- **A small reset button appears in a graph's corner once it has been moved**,
+  and goes away again once the window is back to its default — a visible way
+  back that does not require knowing double-click is the shortcut.
+- **Hovering the curve shows the point's value.** The number shown is
+  snapped to the same spacing as the gridlines, one digit finer, so it never
+  shows a value with no meaningful precision behind it.
+
 ### Fixed — five from real use, each root-caused rather than patched over (2026-09-01)
 
 - **A graph's border only ever lit up in one of the two directions the link

@@ -4,7 +4,7 @@
 // picture rather than an error — the worst kind of defect a graph can have,
 // because nothing on screen says anything went wrong.
 import 'dart:math' as math;
-import 'dart:ui' show Offset;
+import 'dart:ui' show Offset, Size;
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -428,4 +428,152 @@ void main() {
     });
   });
 
+  group('hovering finds a point on the curve, or nothing', () {
+    // Owner: "id like to be able to hover over a point on the line and have
+    // it provide me the values for that point ... the values it shows
+    // should be sensible (i.e. not showing crazy random decimals of x when
+    // it doesnt make sense)."
+    const view = GraphView(x0: -10, x1: 10, y0: -10, y1: 10);
+    const size = Size(200, 200);
+    // sx(x) = (x - -10) / 20 * 200 = (x + 10) * 10; sy(y) mirrors it.
+    double sx(double x) => (x + 10) * 10;
+    double sy(double y) => 200 - (y + 10) * 10;
+
+    test('directly on the curve, x and y both come back', () {
+      final src = graphSourceFromLinear('y=x'); // through the origin
+      final hit = hoverPointNear(Offset(sx(0), sy(0)),
+          source: src, view: view, size: size);
+      expect(hit, isNotNull);
+      expect(hit!.x, closeTo(0, 1e-9));
+      expect(hit.y, closeTo(0, 1e-9));
+    });
+
+    test('within the pixel threshold still counts', () {
+      final src = graphSourceFromLinear('y=x');
+      final hit = hoverPointNear(Offset(sx(0) + 6, sy(0) + 6),
+          source: src, view: view, size: size, maxDistance: 16);
+      expect(hit, isNotNull, reason: 'inside the 16px radius asked for');
+    });
+
+    test('far from the curve vertically finds nothing', () {
+      // y=x passes through the origin; up near the top of the window at
+      // x=0 the curve is 10 units away, nowhere near the cursor.
+      final src = graphSourceFromLinear('y=x');
+      final hit = hoverPointNear(Offset(sx(0), sy(9)),
+          source: src, view: view, size: size);
+      expect(hit, isNull,
+          reason: 'close in x is not the same as close to the curve');
+    });
+
+    test('the values are snapped, not raw pixel arithmetic', () {
+      // A pixel at x=137 maps to a maths x with a long tail of decimals;
+      // the returned x must be a clean multiple of the snap step instead.
+      final src = graphSourceFromLinear('y=x');
+      final hit = hoverPointNear(const Offset(137, 63),
+          source: src, view: view, size: size, maxDistance: 200);
+      expect(hit, isNotNull);
+      final snap = gridStep(view.width, target: math.max(3, size.width ~/ 90)) / 10;
+      final ratio = hit!.x / snap;
+      expect(ratio, closeTo(ratio.round(), 1e-9),
+          reason: 'x = ${hit.x} is not a clean multiple of $snap');
+    });
+
+    test('a vertical line reports x and no y', () {
+      final src = graphSourceFromLinear('x=3');
+      final near = hoverPointNear(Offset(sx(3), 100),
+          source: src, view: view, size: size);
+      expect(near, isNotNull);
+      expect(near!.x, 3);
+      expect(near.y.isNaN, isTrue,
+          reason: 'every y is on a vertical line — none of them is THE y');
+
+      final far = hoverPointNear(Offset(sx(8), 100),
+          source: src, view: view, size: size);
+      expect(far, isNull);
+    });
+
+    test('a point outside the visible window is not offered', () {
+      // 1/x near zero is real and finite at the sampled x, but miles
+      // outside a -10..10 window — nothing a dot should ever land on.
+      final src = graphSourceFromLinear('1/x');
+      final hit = hoverPointNear(Offset(sx(0.01), sy(0)),
+          source: src, view: view, size: size);
+      expect(hit, isNull);
+    });
+
+    test('a domain gap (sqrt of a negative) is not offered either', () {
+      final src = graphSourceFromLinear('sqrt(x)');
+      final hit = hoverPointNear(Offset(sx(-5), sy(0)),
+          source: src, view: view, size: size);
+      expect(hit, isNull);
+    });
+
+    test('an insane view is refused outright', () {
+      final src = graphSourceFromLinear('y=x');
+      final hit = hoverPointNear(const Offset(50, 50),
+          source: src,
+          view: const GraphView(x0: 0, x1: 0, y0: 0, y1: 0),
+          size: size);
+      expect(hit, isNull);
+    });
+
+    test('a graph that failed to compile offers nothing to hover', () {
+      final src = graphSourceFromLinear('this is not maths');
+      expect(src.isOk, isFalse);
+      final hit = hoverPointNear(const Offset(50, 50),
+          source: src, view: view, size: size);
+      expect(hit, isNull);
+    });
+  });
+
+  group('substituting a value into an equation', () {
+    test('a straight line, at an ordinary point', () {
+      final r = substituteInto(graphSourceFromLinear('y=3x+10'), '2');
+      expect(r.variable, 'x');
+      expect(r.result.isOk, isTrue);
+      expect(r.result.value, 16);
+    });
+
+    test('the typed value is itself an expression, not just a literal', () {
+      // The owner asked for "sub in a value for x ... this doesnt have to
+      // be linked to the graph though" — but it should still feel like the
+      // rest of the app, where `2+3` and `pi` are numbers too.
+      final r = substituteInto(graphSourceFromLinear('y=x^2'), '2+3');
+      expect(r.result.isOk, isTrue);
+      expect(r.result.value, 25);
+    });
+
+    test('a rearranged equation is still substituted into for x', () {
+      // `2y=6x+4` is rearranged to `y=3x+2` before it is ever compiled
+      // (graphSourceFromLinear's own job) — the variable substituted into
+      // is x either way, which is what this checks.
+      final r = substituteInto(graphSourceFromLinear('2y=6x+4'), '1');
+      expect(r.variable, 'x');
+      expect(r.result.value, closeTo(5, 1e-9));
+    });
+
+    test('a vertical line has nothing to substitute into', () {
+      final r = substituteInto(graphSourceFromLinear('x=3'), '1');
+      expect(r.result.isOk, isFalse);
+    });
+
+    test('an equation the calculator cannot read propagates its own error',
+        () {
+      final source = graphSourceFromLinear('this is not maths');
+      final r = substituteInto(source, '1');
+      expect(r.result.isOk, isFalse);
+      expect(r.result.error, source.error);
+    });
+
+    test('nonsense typed as the value is an error, not a crash', () {
+      final r = substituteInto(graphSourceFromLinear('y=x'), 'banana');
+      expect(r.result.isOk, isFalse);
+    });
+
+    test('a value outside the domain reads undefined, not a crash', () {
+      final r = substituteInto(graphSourceFromLinear('y=sqrt(x)'), '-1');
+      expect(r.result.isOk, isTrue);
+      expect(r.result.display, 'undefined');
+    });
+  });
 }

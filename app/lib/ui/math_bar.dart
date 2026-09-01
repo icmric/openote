@@ -266,6 +266,7 @@ class MathBar extends StatefulWidget {
     this.latexAvailable = true,
     this.angleMode = AngleMode.degrees,
     this.onDrawGraph,
+    this.onEvaluateAtValue,
     this.onToggleAngleMode,
     this.recentIds = const [],
   });
@@ -280,6 +281,9 @@ class MathBar extends StatefulWidget {
 
   /// Draw this equation as a graph, or null when it cannot be.
   final VoidCallback? onDrawGraph;
+
+  /// Plug a value into this equation, or null when it cannot be from here.
+  final VoidCallback? onEvaluateAtValue;
   final VoidCallback? onToggleAngleMode;
 
   // The bar used to carry a live `= 42` readout with a button to put the
@@ -561,6 +565,7 @@ class _MathBarState extends State<MathBar> {
           latexMode: widget.latexMode,
           latexAvailable: widget.latexAvailable,
           onToggleLatex: widget.onToggleLatex,
+          onEvaluateAtValue: widget.onEvaluateAtValue,
           surfaces: s,
         ),
       ]);
@@ -599,6 +604,7 @@ class _MathBarState extends State<MathBar> {
         latexMode: widget.latexMode,
         latexAvailable: widget.latexAvailable,
         onToggleLatex: widget.onToggleLatex,
+        onEvaluateAtValue: widget.onEvaluateAtValue,
         surfaces: s,
       ),
     ]);
@@ -843,12 +849,14 @@ class _MoreMenu extends StatelessWidget {
     required this.latexMode,
     required this.latexAvailable,
     required this.onToggleLatex,
+    this.onEvaluateAtValue,
     required this.surfaces,
   });
 
   final bool latexMode;
   final bool latexAvailable;
   final VoidCallback onToggleLatex;
+  final VoidCallback? onEvaluateAtValue;
   final OnoteSurfaces surfaces;
 
   @override
@@ -858,6 +866,7 @@ class _MoreMenu extends StatelessWidget {
         icon: Icon(Icons.more_horiz, size: OnoteIcon.sm, color: surfaces.textPrimary),
         onSelected: (v) {
           if (v == 'latex') onToggleLatex();
+          if (v == 'evaluate') onEvaluateAtValue?.call();
           if (v == 'help') showShortcutOverlay(context);
         },
         itemBuilder: (_) => [
@@ -867,6 +876,11 @@ class _MoreMenu extends StatelessWidget {
             child: Text(latexMode
                 ? 'Back to the buttons'
                 : 'Write the LaTeX by hand'),
+          ),
+          PopupMenuItem<String>(
+            value: 'evaluate',
+            enabled: onEvaluateAtValue != null,
+            child: const Text('Evaluate at a value…'),
           ),
           // **With the backslashes.** This line used to read "type sqrt, sum,
           // theta", and typing `sqrt` and a space gives you the four letters:

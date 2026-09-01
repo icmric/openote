@@ -7,6 +7,7 @@ import '../editor/code_block_view.dart';
 import '../editor/file_block_view.dart';
 import '../editor/flashcard_block_view.dart';
 import '../editor/graph_block_view.dart';
+import '../editor/substitute_block_view.dart';
 import '../editor/image_block_view.dart';
 import '../editor/math_block_view.dart';
 import '../editor/onote_text_editor.dart';
@@ -345,6 +346,8 @@ class PortalContent extends StatelessWidget {
                 width: b.w, child: FlashcardBlockView(block: b, app: app)));
       case BlockType.graph:
         return GraphBlockView(block: b, app: app);
+      case BlockType.substitute:
+        return SubstituteBlockView(block: b, app: app);
       case BlockType.board:
         // A picture of a board: dragging cards through a window would be a
         // write to the source page.

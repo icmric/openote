@@ -334,6 +334,7 @@ pw.Widget? _blockWidget(AppState app, Block b, double sheetTop,
     BlockType.table => _tableWidget(b),
     BlockType.embed => _embedWidget(app, b, h),
     BlockType.graph => _graphWidget(b, h),
+    BlockType.substitute => _substituteWidget(b),
     _ => null,
   };
   if (child == null) return null;
@@ -1058,6 +1059,22 @@ pw.Widget? _graphWidget(Block b, double h) {
       },
     ),
   );
+}
+
+/// A substitute block, as plain text: the equation, and — once a value has
+/// been typed in — what it works out to. The same "cheap and honest" choice
+/// a graph's axes get, rather than trying to typeset the equation for a
+/// single line that names its own variable anyway.
+pw.Widget? _substituteWidget(Block b) {
+  final latex = b.content['latex'] as String? ?? '';
+  if (latex.isEmpty) return null;
+  final value = (b.content['value'] as String? ?? '').trim();
+  var line = latex;
+  if (value.isNotEmpty) {
+    final outcome = substituteInto(graphSourceFromLatex(latex), value);
+    line = '$latex   (${outcome.variable} = $value → ${outcome.result.display})';
+  }
+  return pw.Text(line, style: const pw.TextStyle(fontSize: 10));
 }
 
 pw.Widget? _inkWidget(Block b, double h) {

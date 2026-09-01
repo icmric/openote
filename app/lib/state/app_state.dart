@@ -5563,8 +5563,8 @@ class AppState extends ChangeNotifier
     markDirty();
   }
 
-  /// Keeps a graph pointing at the equation it was drawn from when that
-  /// equation is copied or cut.
+  /// Keeps a graph or substitute block pointing at the equation it was made
+  /// from when that equation is copied or cut.
   ///
   /// Two cases that want opposite answers. COPY an equation together with its
   /// graph and the copy must follow the COPY — otherwise changing the new
@@ -5572,13 +5572,17 @@ class AppState extends ChangeNotifier
   /// graph as well. CUT an equation and paste it back and its graph, still
   /// sitting on the page, is pointing at an id that no longer exists, so the
   /// paste adopts it. Copying a graph on its OWN is left alone on purpose:
-  /// two windows onto one equation is a thing people do want.
+  /// two windows onto one equation is a thing people do want. A substitute
+  /// block follows the exact same rule — it is the graph's sibling for one
+  /// point rather than a curve.
   void _relinkGraphs(Map<String, String> oldToNew) {
     if (oldToNew.isEmpty) return;
     final live = {for (final b in blocks) b.id};
     final pasted = oldToNew.values.toSet();
     for (final b in blocks) {
-      if (b.type != BlockType.graph) continue;
+      if (b.type != BlockType.graph && b.type != BlockType.substitute) {
+        continue;
+      }
       final from = b.content['from'];
       if (from is! String) continue;
       final now = oldToNew[from];
@@ -7804,10 +7808,28 @@ class AppState extends ChangeNotifier
       g.content['latex'] = now.trim();
       g.content['fromLatex'] = now.trim();
       g.updatedAt = nowMs();
+      _refitGraph(g);
       changed = true;
     }
     if (changed) notifyListeners();
     return changed;
+  }
+
+  /// **Auto-fit whenever the equation actually changes**, not just when the
+  /// graph is first drawn. Reported: "the scale in the graph doesnt auto
+  /// update to better fit the graph when it changes" — `fitY` goes false
+  /// (see [GraphBlockView._setView]) the moment a student pans or zooms by
+  /// hand, which is correct for *looking around a stable curve*, but it also
+  /// meant the window they chose for `y=3x+10` stayed put, unrefitted, once
+  /// they rewrote it as `y=x^2` or `y=\sin x` — often showing nothing
+  /// recognisable at all. The equation changing is exactly the moment a
+  /// fixed window stops being a choice and starts being stale, so this is
+  /// the same reset `GraphBlockView._reset` makes on a double-tap, run
+  /// automatically the instant a followed equation is edited. A student who
+  /// re-pans afterwards keeps that window until the NEXT edit, same as ever.
+  void _refitGraph(Block g) {
+    g.content.remove('view');
+    g.content['fitY'] = true;
   }
 
   /// The link colour for one equation inside a sentence, or null.
@@ -7838,6 +7860,7 @@ class AppState extends ChangeNotifier
       if (g.content['latex'] == latex) continue;
       g.content['latex'] = latex;
       g.updatedAt = nowMs();
+      _refitGraph(g);
       changed = true;
     }
     if (changed) notifyListeners();
@@ -7877,6 +7900,91 @@ class AppState extends ChangeNotifier
           : null;
     }
     return null;
+  }
+
+  // ── Substitutions ────────────────────────────────────────────
+
+  /// **Plug a number into this equation.**
+  ///
+  /// The graph's sibling for a single point rather than a curve: a small
+  /// block beside the equation, carrying its own copy of the latex and a
+  /// note of where it came from — the same shape [insertGraph] uses, so
+  /// "draw the graph" and "evaluate at a value" behave identically to a
+  /// student, and a substitute block keeps itself in step with its equation
+  /// the same way a graph does.
+  Block insertSubstitute(
+      {required String latex, String? from, String? fromLatex, Offset? at}) {
+    final near = from == null
+        ? null
+        : blocks.where((b) => b.id == from).firstOrNull;
+    final where = at ??
+        (near == null
+            ? canvas.screenToPage(Offset(
+                canvas.viewport.width / 2, canvas.viewport.height / 2))
+            : Offset(near.x + near.w + 24, near.y));
+    final b = addBlock(Block(
+      type: BlockType.substitute,
+      x: where.dx,
+      y: where.dy,
+      w: 260,
+      content: {
+        'latex': latex.trim(),
+        if (from != null) 'from': from,
+        if (fromLatex != null) 'fromLatex': fromLatex.trim(),
+        'value': '',
+      },
+    ));
+    select(b.id);
+    return b;
+  }
+
+  /// Every substitute block on this page that follows the maths BLOCK
+  /// [equationId]. See [graphsFollowing] — same rule, other block type.
+  Iterable<Block> substitutesFollowing(String equationId) => blocks.where((b) =>
+      b.type == BlockType.substitute &&
+      b.content['from'] == equationId &&
+      b.content['fromLatex'] == null);
+
+  /// Every substitute block that follows one particular equation inside a
+  /// sentence. See [graphsFollowingInline] — same rule, other block type.
+  Iterable<Block> substitutesFollowingInline(String blockId, String latex) {
+    final want = latex.trim();
+    return blocks.where((b) =>
+        b.type == BlockType.substitute &&
+        b.content['from'] == blockId &&
+        b.content['fromLatex'] == want);
+  }
+
+  /// **Keep the substitute blocks in step with an equation inside a
+  /// sentence.** See [pushInlineEquationToGraphs] — same rule, other block
+  /// type: no window to refit, just the latex the value gets plugged into.
+  bool pushInlineEquationToSubstitutes(String blockId, String was, String now) {
+    if (was.trim() == now.trim()) return false;
+    final following = substitutesFollowingInline(blockId, was).toList();
+    if (following.length > 1) return false;
+    var changed = false;
+    for (final s in following) {
+      s.content['latex'] = now.trim();
+      s.content['fromLatex'] = now.trim();
+      s.updatedAt = nowMs();
+      changed = true;
+    }
+    if (changed) notifyListeners();
+    return changed;
+  }
+
+  /// **Keep the substitute blocks in step with the equation they follow.**
+  /// See [pushEquationToGraphs] — same rule, other block type.
+  bool pushEquationToSubstitutes(String equationId, String latex) {
+    var changed = false;
+    for (final s in substitutesFollowing(equationId)) {
+      if (s.content['latex'] == latex) continue;
+      s.content['latex'] = latex;
+      s.updatedAt = nowMs();
+      changed = true;
+    }
+    if (changed) notifyListeners();
+    return changed;
   }
 
   Block insertEquation({required Offset at, String seed = ''}) {

@@ -176,6 +176,7 @@ List<String> _sourceOf(Block b) {
     case BlockType.embed:
     case BlockType.board:
     case BlockType.graph:
+    case BlockType.substitute:
     case BlockType.unknown:
       return const [];
   }

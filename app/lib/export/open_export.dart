@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:path/path.dart' as p;
 
+import '../math/graph_plot.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import 'md_common.dart';
@@ -244,6 +245,20 @@ _Markdown _pageMarkdown(String title, List<Block> blocks, String assetPrefix) {
         if (gtex.isNotEmpty) {
           buf.writeln('Graph of:\n\n\$\$\n$gtex\n\$\$\n');
         }
+      case BlockType.substitute:
+        // Same reasoning as a graph: what travels is the equation, plus
+        // whatever value was last plugged into it.
+        final stex = b.content['latex'] as String? ?? '';
+        final sval = (b.content['value'] as String? ?? '').trim();
+        if (stex.isNotEmpty) {
+          if (sval.isEmpty) {
+            buf.writeln('Evaluate:\n\n\$\$\n$stex\n\$\$\n');
+          } else {
+            final outcome = substituteInto(graphSourceFromLatex(stex), sval);
+            buf.writeln('Evaluate:\n\n\$\$\n$stex\n\$\$\n\nat '
+                '${outcome.variable} = $sval: ${outcome.result.display}\n');
+          }
+        }
       case BlockType.code:
         final lang = b.content['language'] as String? ?? '';
         buf.writeln('```$lang\n${b.content['source'] ?? ''}\n```\n');
@@ -299,6 +314,25 @@ Map<String, dynamic> _jsonCanvas(List<Block> blocks, String assetPrefix) {
           'id': b.id,
           'type': 'text',
           'text': 'Graph of \$${b.content['latex'] ?? ''}\$',
+          'x': x, 'y': y, 'width': w, 'height': h,
+        });
+      case BlockType.substitute:
+        // Same reasoning as a graph: a substitute block travels as the text
+        // of its equation and, when there is one, the value plugged into it.
+        final slatex = b.content['latex'] as String? ?? '';
+        final sval = (b.content['value'] as String? ?? '').trim();
+        String stext;
+        if (sval.isEmpty) {
+          stext = 'Evaluate \$$slatex\$';
+        } else {
+          final outcome = substituteInto(graphSourceFromLatex(slatex), sval);
+          stext = 'Evaluate \$$slatex\$ at ${outcome.variable} = $sval: '
+              '${outcome.result.display}';
+        }
+        nodes.add({
+          'id': b.id,
+          'type': 'text',
+          'text': stext,
           'x': x, 'y': y, 'width': w, 'height': h,
         });
       case BlockType.math:

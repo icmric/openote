@@ -26,6 +26,7 @@ class ActiveMathEditor {
     required this.latexAvailable,
     required this.toggleLatex,
     this.drawGraph,
+    this.evaluateAtValue,
     this.rework,
   });
 
@@ -53,6 +54,12 @@ class ActiveMathEditor {
   /// `build` and deliberately does not notify: a value captured there would
   /// be one keystroke stale for ever. The row asks when the menu opens.
   final VoidCallback? drawGraph;
+
+  /// Plug a value into the equation being written, beside it — the graph's
+  /// sibling for one point instead of a curve. Same rule as [drawGraph]: a
+  /// closure, null when there is nothing yet to evaluate, asked when the
+  /// menu opens rather than cached.
+  final VoidCallback? evaluateAtValue;
 
   /// Work this equation's answers out again, in place.
   ///

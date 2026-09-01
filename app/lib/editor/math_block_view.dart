@@ -84,6 +84,7 @@ class _MathBlockViewState extends State<MathBlockView> {
     // Notify only when something actually moved — a keystroke that changes
     // no graph must not rebuild the page.
     widget.app.pushEquationToGraphs(widget.block.id, latex.trim());
+    widget.app.pushEquationToSubstitutes(widget.block.id, latex.trim());
     widget.app.markDirty();
   }
 
@@ -135,6 +136,14 @@ class _MathBlockViewState extends State<MathBlockView> {
     widget.app.insertGraph(latex: latex, from: widget.block.id);
   }
 
+  /// A value plugged into this equation, beside it, following it from now on.
+  void _evaluateAtValue() {
+    final latex = _latex.trim();
+    if (latex.isEmpty) return;
+    widget.app.pushUndo();
+    widget.app.insertSubstitute(latex: latex, from: widget.block.id);
+  }
+
   void _leaveEquation() {
     widget.app.select(widget.block.id, edit: false);
   }
@@ -160,6 +169,7 @@ class _MathBlockViewState extends State<MathBlockView> {
           onChanged: _commitLatex,
           onExit: (_) => _leaveEquation(),
           onDrawGraph: _drawGraph,
+          onEvaluateAtValue: _evaluateAtValue,
           onWidthWanted: _growToWidth,
         ),
       );
