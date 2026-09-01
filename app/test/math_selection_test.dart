@@ -236,5 +236,29 @@ void main() {
       expect(editor.latex, '');
       expect(clipboard['text'], r'$x+y$');
     });
+
+    // Reported: "navigating with ctrl and arrow keys should jump over entire
+    // numbers, operators, or sections. At the moment it does nothing." It
+    // reached nowhere near its own arrow handling — "everything else with
+    // Ctrl belongs to the app" swallowed the whole chord first, at the
+    // WIDGET's key handler, above where any test of `MathEditor` alone could
+    // have caught it. This is that handler, actually pressing the keys.
+    testWidgets('Ctrl+Right actually reaches the field, and jumps the number',
+        (tester) async {
+      editor = typed('12+x');
+      editor.placeAtStart();
+      await pump(tester);
+      await chord(tester, LogicalKeyboardKey.arrowRight);
+      expect(editor.caretIndex, 2,
+          reason: 'past both digits of 12 — previously nothing moved at all');
+    });
+
+    testWidgets('Ctrl+Shift+Right highlights the same run', (tester) async {
+      editor = typed('12+x');
+      editor.placeAtStart();
+      await pump(tester);
+      await chord(tester, LogicalKeyboardKey.arrowRight, shift: true);
+      expect(editor.selectionLatex, '12');
+    });
   });
 }

@@ -212,6 +212,16 @@ class MScript extends MNode {
   MRow? sub;
   MRow? sup;
 
+  /// What Backspace should hand back, once, instead of stepping inside this
+  /// structure from its right edge — the structure-level counterpart to
+  /// [MSym.typed]. Null for every script the student BUILT by hand (`^`,
+  /// the palette); set only where autocorrect assembled the whole thing in
+  /// one keystroke, so undoing it is a single, reversible step rather than
+  /// character-by-character surgery on a box the student never asked to
+  /// open. See `MathEditor._buildInverseTrig` for the one place that sets
+  /// it today, and `backspace()` for where it is read.
+  List<MNode>? autocorrectedFrom;
+
   MRow _own(MRow r, String n) {
     r.owner = this;
     r.name = n;

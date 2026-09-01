@@ -170,12 +170,18 @@ class _GraphBlockViewState extends State<GraphBlockView> {
   Widget build(BuildContext context) {
     final s = context.surfaces;
     final source = _sourceFor;
-    final selected = widget.app.selectedIds.contains(b.id);
     // **The link, shown only while one end of it is chosen.** The owner:
     // *"should ONLY EVER be visible when one is clicked AND there is a linked
-    // graph, i dont want the highlighting to be always there."* Derived here
-    // rather than stored: a tint written into `content['bg']` would be
-    // permanent, would dirty the page and would sync.
+    // graph, i dont want the highlighting to be always there ... This should
+    // work both ways."* `graphLinkHighlight` already encodes "one end of the
+    // link is selected" — it says so for THIS graph when the graph itself is
+    // selected, and it says so just as much when the EQUATION is. Re-checking
+    // "is the graph itself selected" here, as this used to, threw the second
+    // half away: clicking the equation could never light up its graph's
+    // border, only the reverse. Plain selection (no link, or a link neither
+    // end of which is chosen) already gets its own indicator from the
+    // enclosing `BlockView`'s border, so this one has nothing left to decide
+    // beyond the link itself.
     final linkOn = widget.app.graphLinkHighlight(b) != null;
 
     return Listener(
@@ -204,10 +210,8 @@ class _GraphBlockViewState extends State<GraphBlockView> {
               color: s.raised,
               borderRadius: BorderRadius.circular(OnoteRadius.md),
               border: Border.all(
-                color: linkOn && selected
-                    ? widget.app.graphLinkHighlight(b)!
-                    : s.border,
-                width: linkOn && selected ? 2 : 1,
+                color: linkOn ? widget.app.graphLinkHighlight(b)! : s.border,
+                width: linkOn ? 2 : 1,
               ),
             ),
             clipBehavior: Clip.antiAlias,

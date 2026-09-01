@@ -124,6 +124,34 @@ void main() {
       expect(e.latex, endsWith('y'));
     });
 
+    test(
+        '( against existing content is just a character — no auto-closed '
+        'pair stranding what follows', () {
+      // Reported: "if my cursor is right up against the left of some thing
+      // in the equation and i press ( … it should not auto complete the
+      // closing bracket." The grower always inserted an EMPTY pair and
+      // pushed whatever came after the caret out past its `)`, wrapping
+      // nothing — a stray `()` in front of the very thing the student was
+      // about to type into.
+      final e = type('x+1');
+      e.placeAtStart();
+      e.insertChar('(');
+      expect(e.latex, r'(x+1',
+          reason: 'one character, not \\left(\\right) around nothing, with '
+              'x+1 stranded after it');
+    });
+
+    test('( still opens a real grower at the true end of the row', () {
+      // The end of a slot is the one place nothing can be stranded — this
+      // is what keeps `(x+1)`, above, and `\sin(x`, below, working exactly
+      // as they always have.
+      final e = type('x+1');
+      e.placeAtEnd();
+      e.insertChar('(');
+      expect(e.caretRow.owner, isA<MDelim>(),
+          reason: 'a real grower, caret inside its body');
+    });
+
     test('a big operator keeps its limits above and below', () {
       // **The equation the owner photographed.** `{\int }_{5}^{2}` and
       // `\int _{5}^{2}` are not the same equation: braces make the base an
@@ -224,6 +252,73 @@ void main() {
       expect(e.latex, 'x+1', reason: 'the sign goes, what was under it stays');
     });
 
+    test(
+        'backspacing off the front of a plain exponent unwraps it, at the '
+        'boundary it was already on', () {
+      // Reported: "cursor is at the start of the exponent box and i press
+      // backspace, it should delete the box. If there is stuff in it still
+      // it should move that all down into regular text (wherever the
+      // cursor would land)." Falling through to the ordinary "step to the
+      // previous slot" rule just walked the caret into the base and left
+      // the exponent untouched — which looked exactly like nothing had
+      // happened.
+      final e = type('x^2');
+      e.caretIndex = 0; // front of "2", inside the exponent
+      expect(e.backspace(), isTrue);
+      expect(e.latex, 'x2',
+          reason: 'the box goes; both the base and what was raised stay, '
+              'in order');
+      expect(e.caretIndex, 1,
+          reason: 'right where the boundary already was, after the x — '
+              'not swept to the front of everything');
+      // The caret is back in an ordinary row now, not a script slot: a
+      // second Backspace takes the x itself, plainly.
+      expect(e.backspace(), isTrue);
+      expect(e.latex, '2');
+    });
+
+    test('an empty exponent goes on the first Backspace, keeping the base',
+        () {
+      final e = type('x^'); // opens the exponent; nothing typed into it yet
+      expect(e.backspace(), isTrue);
+      expect(e.latex, 'x', reason: 'there was nothing in the box to lose');
+    });
+
+    test(
+        'x_i^2: the front of the exponent still visits the subscript '
+        'first', () {
+      // Unchanged on purpose — a subscript and superscript are still
+      // siblings to step between, which the owner did not ask to change.
+      final e = type('x_i^2');
+      e.caretIndex = 0; // front of "2"
+      expect(e.backspace(), isTrue);
+      expect(e.caretRow.name, 'sub', reason: 'stepped to the subscript');
+      expect(e.latex, r'x_{i}^{2}',
+          reason: 'navigation only — nothing deleted yet');
+    });
+
+    test(
+        "a fixed base with only one limit is not unwrapped from that "
+        "limit's front", () {
+      // `\lim` has a subscript and no superscript, so without excluding a
+      // fixed base the new exponent/subscript rule above would see exactly
+      // the shape it looks for and drain `\lim` itself into the row as a
+      // plain, editable run of letters — the same class of summation
+      // corruption `fixedBase` exists to prevent (see MScript.fixedBase).
+      final e = MathEditor.empty()..insertItem(mathItemsById['lim']!);
+      e.insertChar('n');
+      e.caretIndex = 0; // front of the limit, its only slot
+      expect(e.backspace(), isTrue);
+      // Exact, not `contains(r'\lim')`: draining a fixed base as a plain
+      // symbol renders as `\lim n`, which still contains the substring
+      // "\lim" and reads almost the same at a glance — but the `_{}`
+      // structure and the sign's protection are both gone for good, and
+      // only an exact match catches that.
+      expect(e.latex, r'\lim _{n}',
+          reason: 'the sign and its subscript structure must both survive '
+              'backspacing off the front of its only limit');
+    });
+
     test('backspacing a symbol gives back the command that produced it', () {
       final e = type(bs + 'alpha ');
       expect(e.backspace(), isTrue);
@@ -313,12 +408,23 @@ void main() {
       final e = sum();
       e.insertChar('n');
       e.caretIndex = 0;
-      // Two presses used to take the ∑ itself; a third scrambled the rest.
+      final original = e.latex; // r'\sum _{n}^{}'
+      // `contains(r'\sum')` alone does not catch the regression this found:
+      // draining the fixed base into the row as a plain symbol renders
+      // `\sum n`, which still CONTAINS the substring "\sum" and reads
+      // almost the same at a glance — the `_{}` structure and the sign's
+      // own protection are both gone.
+      //
+      // Nothing here may change so much as a character. The first press
+      // only steps the caret to just before the whole sign — there is
+      // nothing between the sign and the front of the equation for it to
+      // land on, so a second and third press have nowhere left to go and
+      // do nothing at all. Two presses used to take the ∑ itself; a third
+      // scrambled the rest.
       for (var i = 0; i < 3; i++) {
         e.backspace();
-        if (e.latex.isEmpty) break;
-        expect(e.latex, contains(r'\sum'),
-            reason: 'press ${i + 1} lost the summation sign: ${e.latex}');
+        expect(e.latex, original,
+            reason: 'press ${i + 1} changed the sign: ${e.latex}');
       }
     });
 
@@ -439,6 +545,94 @@ void main() {
     });
   });
 
+  group('Ctrl+arrow jumps a whole run', () {
+    // Reported: "navigating with ctrl and arrow keys should jump over
+    // entire numbers, operators, or sections. At the moment it does
+    // nothing." (The "does nothing" half was the equation swallowing the
+    // chord before it ever reached its own key handling — math_field_test
+    // covers that wiring; these are the run-finding rules themselves.)
+
+    test('a whole number in one jump, from either side', () {
+      final e = type('12+x');
+      e.placeAtStart();
+      expect(e.moveWord(1), isTrue);
+      expect(e.caretIndex, 2, reason: 'past both digits of 12, not just one');
+      e.placeAtEnd();
+      expect(e.moveWord(-1), isTrue);
+      expect(e.caretIndex, 3, reason: 'x is one letter, one jump');
+      expect(e.moveWord(-1), isTrue);
+      expect(e.caretIndex, 2, reason: 'the + is one operator, one jump');
+      expect(e.moveWord(-1), isTrue);
+      expect(e.caretIndex, 0, reason: 'and 12 the same jump back');
+    });
+
+    test('a run of operator characters moves together', () {
+      // Built directly rather than typed: `+-` autocorrects to ± the moment
+      // the `-` lands (it is the plus-or-minus symbol's own shortcut), which
+      // would test that rule instead of this one. Two adjacent operators
+      // that stay two operators is the shape this is actually after.
+      final e = MathEditor.empty();
+      e.caretRow.insert(0, MSym('*', cls: MClass.op));
+      e.caretRow.insert(1, MSym('/', cls: MClass.op));
+      e.caretRow.insert(2, MSym('1', cls: MClass.digit));
+      e.placeAtStart();
+      expect(e.moveWord(1), isTrue);
+      expect(e.caretIndex, 2, reason: 'both operator characters in one jump');
+    });
+
+    test('a whole structure is one jump, never entered', () {
+      // The plain right arrow enters a fraction; Ctrl+Right is the
+      // opposite — "get me past this altogether".
+      final e = MathEditor.empty()
+        ..insertChar('x')
+        ..insertItem(mathItemsById['frac']!);
+      e.placeAtStart();
+      expect(e.moveWord(1), isTrue); // past the x
+      expect(e.moveWord(1), isTrue); // past the WHOLE fraction
+      expect(e.caretRow.owner, isNull,
+          reason: 'still in the root row — the fraction was never entered');
+      expect(e.caretIndex, 2);
+    });
+
+    test('at the row edge, one Ctrl+arrow is exactly one plain arrow', () {
+      // There is no run left inside an empty numerator to jump across, so
+      // this is what lets Ctrl+Right escape the fraction at all rather
+      // than being trapped in whatever row it started in.
+      final e = MathEditor.empty()..insertItem(mathItemsById['frac']!);
+      expect(e.caretRow.name, 'num');
+      expect(e.moveWord(1), isTrue);
+      expect(e.caretRow.name, 'den',
+          reason: 'one ordinary Tab-like step, not a jump over more');
+    });
+
+    test('nowhere left to jump reports "leave", same as a plain arrow', () {
+      final e = type('x');
+      e.placeAtEnd();
+      expect(e.moveWord(1), isFalse);
+      e.placeAtStart();
+      expect(e.moveWord(-1), isFalse);
+    });
+
+    test('Ctrl+Shift highlights the same run', () {
+      final e = type('12+x');
+      e.placeAtStart();
+      expect(e.extendByWord(1), isTrue);
+      expect(e.selectionLatex, '12');
+      expect(e.extendByWord(1), isTrue);
+      expect(e.selectionLatex, '12+');
+    });
+
+    test('the highlight never leaves the row it started in', () {
+      // The same invariant `extendBy` already keeps for a plain Shift+
+      // arrow — a highlight that could span rows would mean nothing to
+      // copy, cut or replace as one thing.
+      final e = MathEditor.empty()..insertItem(mathItemsById['frac']!);
+      expect(e.extendByWord(1), isFalse,
+          reason: 'an empty numerator has no run in it to highlight, and '
+              'highlighting must not fall back to leaving the row');
+    });
+  });
+
   group('what the block stores', () {
     test('an empty editor stores nothing at all', () {
       expect(MathEditor.empty().latex, '');
@@ -526,6 +720,59 @@ void main() {
 
     test(r'stored $…$ delimiters are not a reason to refuse', () {
       expect(MathEditor.open(r'$\frac{n}{2}$'), isNotNull);
+    });
+  });
+
+  group('sin-1 becomes the inverse function, calculator-shorthand style', () {
+    // Owner's ask: "already just typing sin converts it into the sin
+    // object … would be great to be able to do sin-1 and have it turn
+    // into sin^-1 (arcsin). undoing there should initially turn it int
+    // sin-1 (where sin is still interpreted as the operator, so it would
+    // be identical to sin(-1)), then pressing it again undoes the sin
+    // conversion, so it would take sin as just raw letters."
+
+    for (final f in ['sin', 'cos', 'tan']) {
+      test('$f-1 converts the moment the 1 lands', () {
+        expect(type('$f-1').latex, '\\$f ^{-1}');
+      });
+    }
+
+    test('the letters before the dash have to spell a real function', () {
+      // Not "xyz-1": nothing in `invertible` answers to "xyz", so this is
+      // just four characters and a digit, exactly as typed.
+      expect(type('xyz-1').latex, 'xyz-1');
+    });
+
+    test('sin-2 is not a shorthand anybody uses — stays a subtraction', () {
+      expect(type('sin-2').latex, isNot(contains('^')));
+    });
+
+    test('one Backspace undoes the SHORTHAND only: sin(-1), not raw letters',
+        () {
+      final e = type('sin-1');
+      expect(e.backspace(), isTrue);
+      expect(e.latex, r'\sin -1',
+          reason: 'identical to typing sin(-1) by hand: \\sin is still the '
+              'protected function, -1 is plain text after it');
+    });
+
+    test('a SECOND Backspace then undoes \\sin itself, down to raw letters',
+        () {
+      final e = type('sin-1');
+      e.backspace(); // stage 1: sin-1 → \sin, -1
+      expect(e.backspace(), isTrue); // stage 2: \sin → s, i, n
+      expect(e.latex, 'sin-1',
+          reason: 'back to exactly what was typed, letter for letter — the '
+              'ordinary MSym.typed round-trip every other autocorrected '
+              'symbol already gets');
+    });
+
+    test('a third Backspace is ordinary again: one letter at a time', () {
+      final e = type('sin-1');
+      e.backspace();
+      e.backspace();
+      expect(e.backspace(), isTrue);
+      expect(e.latex, 'si-1');
     });
   });
 

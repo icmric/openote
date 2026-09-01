@@ -160,6 +160,67 @@ class MathEditor {
     return true;
   }
 
+  /// Where Ctrl+←/→ would land: past the whole run of digits, of letters, or
+  /// of operator/relation characters beside the caret — or, for one entire
+  /// structure, past it in a single hop, the same way [extendBy] already
+  /// treats one as a single character. Null exactly at the row's own edge,
+  /// where there is no run left inside THIS row to jump — [moveWord] and
+  /// [extendByWord] each decide separately what null means for them.
+  int? _wordBoundary(int dx) {
+    assert(dx == 1 || dx == -1);
+    if (dx > 0 ? caretIndex >= caretRow.length : caretIndex <= 0) return null;
+    final first = caretRow.children[dx > 0 ? caretIndex : caretIndex - 1];
+    if (first is! MSym) return caretIndex + dx;
+    final cls = first.cls;
+    var i = caretIndex;
+    while (dx > 0 ? i < caretRow.length : i > 0) {
+      final n = caretRow.children[dx > 0 ? i : i - 1];
+      if (n is! MSym || n.cls != cls) break;
+      i += dx;
+    }
+    return i;
+  }
+
+  /// Ctrl+←/→. Reported: "navigating with ctrl and arrow keys should jump
+  /// over entire numbers, operators, or sections. At the moment it does
+  /// nothing" — the equation swallowed the chord without ever reaching its
+  /// own arrow handling. A whole run moves in one jump now: `12+x` from the
+  /// front is one press to clear `12`, one more for `+`, one more for `x`.
+  /// A structure is never entered — Ctrl+→ means "get me past this
+  /// altogether", the opposite of what the plain arrow does at the same
+  /// spot ("the right arrow steps INTO a structure, not over it").
+  ///
+  /// At the row's own edge there is no run left to jump, so this steps out
+  /// exactly like a single plain arrow press would — which is what lets
+  /// Ctrl+→ cross into, or out of, a structure at all, rather than being
+  /// trapped inside whatever row it started in.
+  bool moveWord(int dx) {
+    final to = _wordBoundary(dx);
+    _openText = null;
+    clearSelection();
+    if (to == null) return dx > 0 ? moveRight() : moveLeft();
+    caretIndex = to;
+    return true;
+  }
+
+  /// Ctrl+Shift+←/→. The same run [moveWord] jumps, highlighted instead of
+  /// moved over — paired with it exactly as plain Shift is paired with a
+  /// plain arrow. Like [extendBy], a highlight never crosses out of the row
+  /// it started in: null at the row's edge means nothing left to add, not
+  /// "fall back to one character", which would silently change what the
+  /// highlight means partway through building it.
+  bool extendByWord(int dx) {
+    final to = _wordBoundary(dx);
+    if (to == null) return false;
+    _openText = null;
+    if (_anchorRow == null || !identical(_anchorRow, caretRow)) {
+      _anchorRow = caretRow;
+      _anchorIndex = caretIndex;
+    }
+    caretIndex = to;
+    return true;
+  }
+
   /// Ctrl+A — everything in the row the caret is in, which for an equation
   /// with no structures is the whole equation.
   bool selectAll() {
@@ -613,6 +674,21 @@ class MathEditor {
         // built the template says so, and the `(` that asked for it has
         // already been served.
         if (_buildFunctionName()) return true;
+        // **Not auto-closed when it would land against existing content.**
+        // Reported: "if my cursor is right up against the left of some
+        // thing in the equation and i press ( … it should not auto complete
+        // the closing bracket." Auto-closing always inserted an EMPTY grower
+        // and pushed whatever followed the caret out past its closing `)` —
+        // never wrapping it, just stranding it on the far side of a pair
+        // the student did not ask for. Right at the end of the row (or a
+        // slot on its own), there IS nothing to strand, so the ordinary
+        // case below still applies — this is what makes `\sin(` keep
+        // opening its argument's grower exactly as it always has.
+        if (caretIndex < caretRow.length) {
+          caretRow.insert(caretIndex, MSym('(', cls: MClass.open));
+          caretIndex++;
+          return true;
+        }
         final d = MDelim(left: '(', right: ')');
         caretRow.insert(caretIndex, d);
         caretIndex++;
@@ -630,6 +706,11 @@ class MathEditor {
     // `<=`, `->`, `!=` … complete the moment their last character lands. A
     // space between them is a real atom now, so it separates them by itself.
     if (_buildOperatorRun(ch)) return true;
+
+    // `sin-1` → sin⁻¹, the shorthand a calculator keypad and a textbook
+    // both use — completed the moment the `1` lands, the same role `(`
+    // plays for `_buildFunctionName`.
+    if (ch == '1' && _buildInverseTrig()) return true;
 
     // An operator ends a control word: `pi+1` should have π before the +.
     final cls = classOf(ch);
@@ -1356,6 +1437,69 @@ class MathEditor {
     return item.build().first is MCall;
   }
 
+  /// `sin-1` → sin⁻¹, the shorthand a calculator keypad and a school
+  /// textbook both use for the inverse function — no `^` ever visited.
+  ///
+  /// The same shape as [_buildFunctionName]: a bare word converts only
+  /// once an unambiguous character arrives to say what was meant. There
+  /// the `(` says "this is a call"; here the `1` completing `-1` says
+  /// "this exponent, specifically" — `sin-2` or a lone `sin-` stay letters
+  /// and a dash, because nothing else reliably means "inverse".
+  ///
+  /// **The undo is staged, on purpose, matching the owner's exact ask:**
+  /// one Backspace right after this gives back `\sin` — the protected
+  /// symbol, not raw letters — followed by a plain `-1`, which reads
+  /// identically to typing `sin(-1)`. Only a SECOND Backspace, now landing
+  /// on `\sin` itself, hands back the three raw letters, through the
+  /// ordinary [MSym.typed] mechanism every other autocorrected symbol
+  /// already uses. [MScript.autocorrectedFrom] is that same idea one level
+  /// up: what a STRUCTURE gives back, once, instead of being stepped into
+  /// — see where `backspace()` reads it.
+  bool _buildInverseTrig() {
+    const invertible = ['sin', 'cos', 'tan'];
+    if (caretIndex < 1) return false;
+    final dash = caretRow.children[caretIndex - 1];
+    if (dash is! MSym || dash.tex != '-' || dash.cls != MClass.op) {
+      return false;
+    }
+    var k = caretIndex - 1;
+    final buf = StringBuffer();
+    while (k > 0) {
+      final n = caretRow.children[k - 1];
+      if (n is! MSym || n.cls != MClass.letter || n.tex.length != 1) break;
+      buf.write(n.tex);
+      k--;
+    }
+    final word = String.fromCharCodes(buf.toString().codeUnits.reversed);
+    if (!invertible.contains(word)) return false;
+    final item = mathItemsById['fn-arc$word'];
+    if (item == null) return false; // every name in `invertible` has one
+    final built = item.build();
+    if (built.length != 1 || built.single is! MScript) return false;
+    final script = built.single as MScript;
+
+    for (var i = caretIndex; i > k; i--) {
+      caretRow.removeAt(i - 1);
+    }
+    caretIndex = k;
+
+    // The palette's own base symbol has no memory of the letters that
+    // would have spelled it — tag a fresh one exactly as
+    // `_buildControlWord` does, since this student DID spell it.
+    final fn = script.base.children.single as MSym;
+    script.base.removeAt(0);
+    script.base.insert(0, MSym(fn.tex, cls: fn.cls, typed: word));
+    script.autocorrectedFrom = [
+      MSym(fn.tex, cls: fn.cls, typed: word),
+      MSym('-', cls: MClass.op),
+      MSym('1', cls: MClass.digit),
+    ];
+
+    caretRow.insert(caretIndex, script);
+    caretIndex++;
+    return true;
+  }
+
   bool _buildOperatorRun(String ch) {
     for (final (run, item) in mathOperatorRuns) {
       if (!run.endsWith(ch)) continue;
@@ -1583,6 +1727,26 @@ class MathEditor {
         caretIndex--;
         return true;
       }
+      // Autocorrect assembled this WHOLE structure from flat characters in
+      // one keystroke (`_buildInverseTrig`) — give it back the same way,
+      // one Backspace undoing what one keystroke did, rather than stepping
+      // inside to delete it character by character.
+      //
+      // The caret lands right after the FIRST item given back — for
+      // `sin-1`, right after `\sin` — not at the far end past everything.
+      // That is what makes the owner's staged undo land where they asked:
+      // "pressing it again undoes the sin conversion" means the VERY NEXT
+      // Backspace, which only reaches `\sin` if the caret is already
+      // sitting beside it rather than three characters further along.
+      if (n is MScript && n.autocorrectedFrom != null) {
+        final given = n.autocorrectedFrom!;
+        final at = caretIndex - 1;
+        caretRow.removeAt(at);
+        caretRow.insertAll(at, given);
+        caretIndex = given.isEmpty ? at : at + 1;
+        _openText = null;
+        return true;
+      }
       final last = n.slots.last;
       caretRow = last;
       caretIndex = last.length;
@@ -1593,6 +1757,48 @@ class MathEditor {
     // At the start of a slot.
     final owner = caretRow.owner;
     if (owner == null) return false;
+
+    // **The front of an exponent or subscript, with no sibling script to
+    // navigate to first.** Reported: "cursor is at the start of the
+    // exponent box and i press backspace, it should delete the box. If
+    // there is stuff in it still it should move that all down into
+    // regular text (wherever the cursor would land)." Falling through to
+    // the ordinary "step to the previous slot" rule below just walked the
+    // caret into the END of the base and stopped — the exponent's own
+    // content was never touched, so nothing looked like it had happened.
+    //
+    // The base is not a sibling the exponent merely sits next to; with no
+    // subscript to visit first, there is nothing between the base and this
+    // box, so its front IS the structure's front. Unwrapping here is the
+    // same move [_unwrap] already makes from the true front of a
+    // structure — base and script content both kept, in order — except
+    // the caret lands at the BOUNDARY it was already sitting on (after the
+    // base's own characters) rather than before everything, because that
+    // is where backspacing a box that still has the base in front of it
+    // would leave you.
+    //
+    // Excluded for a fixed base (`\sum`, `\int`, …): that base is the
+    // operator sign itself, never something the student typed, and
+    // draining it into the row as a plain character is the exact class of
+    // summation corruption `fixedBase` exists to prevent (see its doc).
+    // A subscript+superscript pair (`x_i^2`) is left alone too — the
+    // front of "2" still steps to the end of "i" first, ordinary and
+    // reversible navigation the owner did not ask to change.
+    if (owner is MScript && !owner.fixedBase) {
+      final atSup =
+          identical(caretRow, owner.sup) && owner.sub == null;
+      final atSub =
+          identical(caretRow, owner.sub) && owner.sup == null;
+      if (atSup || atSub) {
+        final parent = owner.parent;
+        final at = parent?.children.indexOf(owner) ?? -1;
+        if (parent != null && at >= 0) {
+          _unwrap(owner, at, parent, caretAfter: owner.base.length);
+          return true;
+        }
+      }
+    }
+
     final slots = owner.slots;
     final k = slots.indexWhere((r) => identical(r, caretRow));
     if (k > 0) {
@@ -1623,6 +1829,25 @@ class MathEditor {
       caretRow = parent;
       caretIndex = at;
       _openText = null;
+    } else if (owner is MScript && owner.fixedBase) {
+      // **Found while adding the exponent/subscript rule above, not caused
+      // by it.** `\lim`'s only slot is its subscript, so backspacing off
+      // the FRONT of a filled one reaches here exactly like an ordinary
+      // structure's front does — and `_unwrap` drains `contentSlots`,
+      // which (unlike `slots`/`isBlank`) does not exclude a fixed base. It
+      // put the operator sign itself into the row as a plain, editable
+      // symbol: `\lim_{n}` silently became `\lim n`. The existing
+      // "backspacing out of the lower limit cannot delete the sign" test
+      // never caught this — it only checks the SUBSTRING "\sum" is still
+      // there, which a flattened `\sum n` still contains.
+      //
+      // There is nothing to unwrap TO: the base is the sign, not something
+      // the student wrote, so the only safe move is the one the caret
+      // already makes leaving an ordinary structure from outside it — step
+      // to just before the whole sign, contents and all, untouched.
+      caretRow = parent;
+      caretIndex = at;
+      _openText = null;
     } else {
       _unwrap(owner, at, parent);
     }
@@ -1632,7 +1857,12 @@ class MathEditor {
   /// Take a structure's wrapper away and leave its contents in its place, in
   /// order. Used when the student deletes off the FRONT of a structure that
   /// still holds work: the frame goes, every character they typed stays.
-  void _unwrap(MNode n, int at, MRow row) {
+  /// [caretAfter] is how many of the drained items the caret lands past —
+  /// `0` for a Backspace off the true front of the structure, where the
+  /// caret was already before everything it is about to keep; the exponent
+  /// and subscript case below passes the base's length instead, because the
+  /// caret was sitting on the boundary right after it, not before it.
+  void _unwrap(MNode n, int at, MRow row, {int caretAfter = 0}) {
     if (at < 0) return;
     // contentSlots, not slots: an n-ary's operator sign lives in a row the
     // caret cannot reach, and unwrapping must not throw it away.
@@ -1640,7 +1870,7 @@ class MathEditor {
     row.removeAt(at);
     row.insertAll(at, contents);
     caretRow = row;
-    caretIndex = at;
+    caretIndex = at + caretAfter;
     _openText = null;
   }
 

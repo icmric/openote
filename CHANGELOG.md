@@ -4,6 +4,44 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — five from real use, each root-caused rather than patched over (2026-09-01)
+
+- **A graph's border only ever lit up in one of the two directions the link
+  is supposed to work.** Clicking the equation correctly tinted it, but the
+  graph's own border re-checked "is the GRAPH itself selected" on top of
+  the already-correct answer `graphLinkHighlight` gave it — so clicking the
+  equation could never light up its graph, only the reverse. One redundant
+  condition, removed.
+- **Backspace at the front of a plain exponent or subscript did nothing
+  visible.** It silently stepped the caret into the base and stopped,
+  leaving the box exactly as it was. It now takes the whole `^{}` away and
+  hands the exponent's own characters back as ordinary text, landing the
+  caret exactly on the boundary it was already sitting on. Chasing this
+  down turned up a second, older bug in the same neighbourhood: backspacing
+  off the front of `\lim`'s only limit (or `\sum`'s lower one) quietly
+  turned the sign itself into a plain, editable symbol — `\sum_{n}^{}`
+  became `\sum n` — which the existing test for exactly that never caught,
+  because `\sum n` still *contains* the substring `\sum`. Both are fixed
+  together.
+- **`sin-1` now becomes sin⁻¹**, the calculator-keypad shorthand, the moment
+  the `1` lands — the same idea as `sin(` going upright without a backslash,
+  one unambiguous character earlier. The undo is staged on purpose: one
+  Backspace gives back `\sin` followed by a plain `-1` (identical to typing
+  `sin(-1)` by hand), and only a second Backspace, now landing on `\sin`
+  itself, hands back the three raw letters.
+- **Typing `(` right before existing content auto-inserted an empty pair
+  and stranded whatever followed it on the far side of the `)` — never
+  wrapping it, just sitting in front of it unasked.** A `(` typed anywhere
+  but the true end of a row is now one character, exactly as typed; typing
+  it at the end still opens a real, auto-sized grower, so `\sin(` and
+  `(x+1)` work exactly as they always have.
+- **Ctrl+←/→ inside an equation did nothing at all.** A blanket "everything
+  else with Ctrl belongs to the app" rule was swallowing the chord before
+  it ever reached the equation's own arrow handling. It now jumps a whole
+  run — every digit of a number, every letter of a name, a run of operator
+  characters, or one entire structure (a fraction, a root, a grower) in a
+  single hop, never entered. Ctrl+Shift+←/→ highlights the same run.
+
 ### Added — how much have I written?
 
 - **A word count on the page's own row.** Every essay has a limit on it, and

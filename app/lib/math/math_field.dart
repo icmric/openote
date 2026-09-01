@@ -449,6 +449,34 @@ class MathFieldState extends State<MathField> {
       _paste();
       return KeyEventResult.handled;
     }
+    // Ctrl+←/→ jumps a whole run — a number, a word, a run of operators, or
+    // one entire structure — instead of one character at a time, which is
+    // what the blanket "everything else with Ctrl belongs to the app" rule
+    // below used to do to it: reported, it "does nothing" at all. Ctrl+Shift
+    // highlights the same run, the same pairing Shift alone already has with
+    // a plain arrow.
+    if (ctrl && k == LogicalKeyboardKey.arrowLeft) {
+      if (shift) {
+        if (_e.extendByWord(-1)) _changed();
+      } else if (_e.moveWord(-1)) {
+        _changed();
+      } else {
+        // Nowhere left to jump to, even a whole row out — same "hand focus
+        // back" every other left-moving key does at this edge.
+        widget.onExit?.call(MathExit.left);
+      }
+      return KeyEventResult.handled;
+    }
+    if (ctrl && k == LogicalKeyboardKey.arrowRight) {
+      if (shift) {
+        if (_e.extendByWord(1)) _changed();
+      } else if (_e.moveWord(1)) {
+        _changed();
+      } else {
+        widget.onExit?.call(MathExit.right);
+      }
+      return KeyEventResult.handled;
+    }
     // Everything else with Ctrl belongs to the app, not to the equation.
     if (ctrl) return KeyEventResult.ignored;
 

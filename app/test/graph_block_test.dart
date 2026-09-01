@@ -344,6 +344,68 @@ void main() {
           reason: 'fitting it is not the student saying where to look');
       app.cancelPendingSave();
     });
+
+    // `AppState.graphLinkHighlight` already returns the link colour "when the
+    // EQUATION is selected, which is the other way round" (see the state-level
+    // group above) — that function was never wrong. This widget was: it
+    // additionally required the GRAPH itself to be selected before it would
+    // paint what `graphLinkHighlight` told it, so the border only ever lit up
+    // in one of the two directions the owner asked for.
+    Border borderOf(WidgetTester tester) => (tester
+            .widget<Container>(find
+                .descendant(
+                    of: find.byType(GraphBlockView), matching: find.byType(Container))
+                .first)
+            .decoration as BoxDecoration)
+        .border as Border;
+
+    testWidgets('the border lights up when the GRAPH is selected',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final eq = equation('y=3x+10');
+      final g = app.insertGraph(
+          latex: 'y=3x+10', from: eq.id, at: const Offset(500, 40));
+      await pump(tester, g);
+
+      app.select(g.id);
+      await tester.pump();
+      expect(borderOf(tester).top.width, 2,
+          reason: 'the direction this always worked in');
+      expect(borderOf(tester).top.color, kGraphLinkColour);
+      app.cancelPendingSave();
+    });
+
+    testWidgets(
+        "the border lights up when the EQUATION is selected — the other way round",
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final eq = equation('y=3x+10');
+      final g = app.insertGraph(
+          latex: 'y=3x+10', from: eq.id, at: const Offset(500, 40));
+      await pump(tester, g);
+
+      app.select(eq.id);
+      await tester.pump();
+      expect(borderOf(tester).top.width, 2,
+          reason: 'this is the direction the AND-with-local-selection bug '
+              'broke: the graph never heard that its own equation was chosen');
+      expect(borderOf(tester).top.color, kGraphLinkColour);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and plain, no-link border otherwise', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final eq = equation('y=3x+10');
+      final g = app.insertGraph(
+          latex: 'y=3x+10', from: eq.id, at: const Offset(500, 40));
+      await pump(tester, g);
+
+      app.select(null);
+      await tester.pump();
+      expect(borderOf(tester).top.width, 1);
+      expect(borderOf(tester).top.color, isNot(kGraphLinkColour));
+      app.cancelPendingSave();
+    });
   });
 
   group('copying an equation and its graph', () {
