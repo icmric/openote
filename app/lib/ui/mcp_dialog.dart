@@ -100,14 +100,18 @@ class _McpDialogState extends State<_McpDialog> {
                 style: TextStyle(fontSize: 12.5, height: 1.4),
               ),
               const SizedBox(height: 10),
-              Row(children: [
-                Switch(
-                  value: app.mcpEnabled,
-                  onChanged: (v) => app.setMcpEnabled(v),
-                ),
-                const SizedBox(width: 6),
-                Text(app.mcpEnabled ? 'On' : 'Off'),
-              ]),
+              SegmentedButton<bool>(
+                showSelectedIcon: false,
+                style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 11))),
+                segments: const [
+                  ButtonSegment(value: false, label: Text('Off')),
+                  ButtonSegment(value: true, label: Text('On')),
+                ],
+                selected: {app.mcpEnabled},
+                onSelectionChanged: (s) => app.setMcpEnabled(s.first),
+              ),
               if (app.mcpError != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),

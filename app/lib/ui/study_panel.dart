@@ -406,7 +406,7 @@ class _StudyPanelState extends State<StudyPanel> {
         icon: Icons.event_outlined,
         title: next.section.title,
         trailing: formatCountdown(next.plan.daysLeft),
-        detail: 'Tap to study this section',
+        detail: 'Study this section',
         onTap: () {
           app.activateSection(next.section.id);
           setState(() {

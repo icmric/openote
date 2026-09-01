@@ -20,6 +20,7 @@ import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'color_picker.dart';
 import 'command_button.dart';
+import 'compacting_toolbar.dart';
 import 'font_picker.dart';
 import 'insert_catalog.dart';
 import 'object_face.dart';
@@ -90,163 +91,223 @@ class _CommandBarState extends State<CommandBar> {
                   const _SubjectBadge(
                       icon: Icons.functions, label: 'Equation'),
                 const Spacer(),
-                // The trailing cluster scrolls rather than overflowing.
+                // The trailing cluster COMPACTS rather than scrolling.
                 //
-                // A `Row` that overflows is CLIPPED, and clipped pixels do not
-                // hit-test — so on a narrow window (laptop + navigator open)
-                // the rightmost buttons stopped responding with no visible
-                // reason. `Flexible` lets the cluster shrink before the tabs
-                // do, and `reverse: true` keeps the right-hand end — the end
-                // that would otherwise be cut off — in view.
-                Flexible(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    reverse: true,
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                // Reported: "it doesnt handle resizing well (menus should
+                // either compact as required or become sliding, again i
+                // belive the former is cleaner)." A `Row` that overflows is
+                // CLIPPED, and clipped pixels do not hit-test — so on a
+                // narrow window (laptop + navigator open) the rightmost
+                // buttons used to stop responding, and the horizontal-scroll
+                // fix that followed traded that for "responds, but you can't
+                // see it without scrolling first." `CompactingToolbar` folds
+                // whatever does not fit into one "More" menu instead —
+                // `alignment: end` keeps it flush against the window edge,
+                // the one thing the scrolling version got right.
+                Expanded(
+                  child: CompactingToolbar(
+                    alignment: MainAxisAlignment.end,
+                    fillAvailable: true,
+                    controls: [
                       // Update-through-app: the "little update button" of
                       // PLANNING.md. Exists only when launch found a newer
                       // release, and leads with the version so the tooltip
                       // answers "to what?" before the click.
                       if (app.updateAvailable != null)
-                        IconButton(
-                          icon: Icon(Icons.system_update_alt,
-                              size: 18, color: scheme.primary),
-                          tooltip:
-                              'Update to ${app.updateAvailable!.version}…',
-                          visualDensity: VisualDensity.compact,
+                        ToolbarControl(
+                          width: 40,
+                          icon: Icons.system_update_alt,
+                          label: 'Update to ${app.updateAvailable!.version}…',
                           onPressed: () => showUpdateDialog(context, app),
+                          inline: IconButton(
+                            icon: Icon(Icons.system_update_alt,
+                                size: 18, color: scheme.primary),
+                            tooltip:
+                                'Update to ${app.updateAvailable!.version}…',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => showUpdateDialog(context, app),
+                          ),
                         ),
                       // Current-tool escape hatch: visible whenever not in Select.
                       if (app.tool != Tool.select)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 4),
-                          child: ActionChip(
-                            avatar: Icon(_toolIcon(app.tool), size: 16),
-                            label: const Text('Done',
-                                style: TextStyle(fontSize: 11)),
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () => app.setTool(Tool.select),
+                        ToolbarControl(
+                          width: 98,
+                          icon: _toolIcon(app.tool),
+                          label: 'Done',
+                          onPressed: () => app.setTool(Tool.select),
+                          inline: Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: ActionChip(
+                              avatar: Icon(_toolIcon(app.tool), size: 16),
+                              label: const Text('Done',
+                                  style: TextStyle(fontSize: 11)),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => app.setTool(Tool.select),
+                            ),
                           ),
                         ),
                       // Study: the due count is the whole nudge, so it's on the
                       // badge rather than hidden behind the panel.
-                      _StudyButton(app: app),
+                      ToolbarControl(
+                        width: 40,
+                        icon: Icons.school_outlined,
+                        label: 'Study',
+                        selected: app.showStudyPanel,
+                        onPressed: app.toggleStudyPanel,
+                        inline: _StudyButton(app: app),
+                      ),
                       // The planner sits beside Study rather than in a menu:
                       // it is the other half of the same daily question, and
                       // the whole complaint it answers was that dates were
                       // reachable only from places you had to already be in.
-                      _PlannerButton(app: app),
-                      IconButton(
-                        icon: const Icon(Icons.label_outline, size: 18),
-                        tooltip: 'Find tags',
-                        isSelected: app.showTagsPanel,
-                        visualDensity: VisualDensity.compact,
+                      ToolbarControl(
+                        width: 40,
+                        icon: Icons.event_note_outlined,
+                        label: 'Planner',
+                        selected: app.showPlannerPanel,
+                        onPressed: app.togglePlannerPanel,
+                        inline: _PlannerButton(app: app),
+                      ),
+                      ToolbarControl(
+                        width: 40,
+                        icon: Icons.label_outline,
+                        label: 'Find tags',
+                        selected: app.showTagsPanel,
                         onPressed: app.toggleTagsPanel,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.toc, size: 18),
-                        tooltip: 'Page outline',
-                        isSelected: app.showTocPanel,
-                        visualDensity: VisualDensity.compact,
-                        onPressed: app.toggleTocPanel,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.account_tree_outlined, size: 18),
-                        tooltip: 'Links & backlinks',
-                        isSelected: app.showLinksPanel,
-                        visualDensity: VisualDensity.compact,
-                        onPressed: app.toggleLinksPanel,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.search, size: 18),
-                        tooltip: 'Find on page  (Ctrl+F)',
-                        isSelected: app.findOpen,
-                        visualDensity: VisualDensity.compact,
-                        onPressed: app.toggleFind,
-                      ),
-                      MenuAnchor(
-                        builder: (context, controller, _) => IconButton(
-                          icon: const Icon(Icons.ios_share_outlined, size: 18),
-                          tooltip: 'Export page…',
+                        inline: IconButton(
+                          icon: const Icon(Icons.label_outline, size: 18),
+                          tooltip: 'Find tags',
+                          isSelected: app.showTagsPanel,
                           visualDensity: VisualDensity.compact,
-                          onPressed: () => controller.isOpen
-                              ? controller.close()
-                              : controller.open(),
+                          onPressed: app.toggleTagsPanel,
                         ),
-                        menuChildren: [
-                          MenuItemButton(
-                            leadingIcon: const Icon(Icons.description_outlined,
-                                size: 18),
+                      ),
+                      ToolbarControl(
+                        width: 40,
+                        icon: Icons.toc,
+                        label: 'Page outline',
+                        selected: app.showTocPanel,
+                        onPressed: app.toggleTocPanel,
+                        inline: IconButton(
+                          icon: const Icon(Icons.toc, size: 18),
+                          tooltip: 'Page outline',
+                          isSelected: app.showTocPanel,
+                          visualDensity: VisualDensity.compact,
+                          onPressed: app.toggleTocPanel,
+                        ),
+                      ),
+                      ToolbarControl(
+                        width: 40,
+                        icon: Icons.account_tree_outlined,
+                        label: 'Links & backlinks',
+                        selected: app.showLinksPanel,
+                        onPressed: app.toggleLinksPanel,
+                        inline: IconButton(
+                          icon: const Icon(Icons.account_tree_outlined, size: 18),
+                          tooltip: 'Links & backlinks',
+                          isSelected: app.showLinksPanel,
+                          visualDensity: VisualDensity.compact,
+                          onPressed: app.toggleLinksPanel,
+                        ),
+                      ),
+                      ToolbarControl(
+                        width: 40,
+                        icon: Icons.search,
+                        label: 'Find on page',
+                        selected: app.findOpen,
+                        onPressed: app.toggleFind,
+                        inline: IconButton(
+                          icon: const Icon(Icons.search, size: 18),
+                          tooltip: 'Find on page  (Ctrl+F)',
+                          isSelected: app.findOpen,
+                          visualDensity: VisualDensity.compact,
+                          onPressed: app.toggleFind,
+                        ),
+                      ),
+                      ToolbarControl(
+                        width: 40,
+                        icon: Icons.ios_share_outlined,
+                        label: 'Export',
+                        inline: MenuAnchor(
+                          builder: (context, controller, _) => IconButton(
+                            icon: const Icon(Icons.ios_share_outlined, size: 18),
+                            tooltip: 'Export page…',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => controller.isOpen
+                                ? controller.close()
+                                : controller.open(),
+                          ),
+                          menuChildren: _exportMenuItems(context),
+                        ),
+                        submenu: [
+                          ToolbarSubmenuItem(
+                            icon: Icons.description_outlined,
+                            label: 'Markdown (.md)',
                             onPressed: () =>
                                 _export(context, exportPageMarkdown),
-                            child: const Text('Markdown (.md)'),
                           ),
                           // Vector by default: the shared/printed artefact
                           // should be searchable, selectable and small. The
                           // raster capture stays available for the rare page
                           // whose look matters more than its text.
-                          MenuItemButton(
-                            leadingIcon: const Icon(
-                                Icons.picture_as_pdf_outlined,
-                                size: 18),
+                          ToolbarSubmenuItem(
+                            icon: Icons.picture_as_pdf_outlined,
+                            label: 'PDF (.pdf)',
                             onPressed: () =>
                                 _export(context, exportPagePdfVector),
-                            child: const Text('PDF (.pdf)'),
                           ),
-                          MenuItemButton(
-                            leadingIcon:
-                                const Icon(Icons.print_outlined, size: 18),
-                            shortcut: const SingleActivator(
-                                LogicalKeyboardKey.keyP, control: true),
+                          ToolbarSubmenuItem(
+                            icon: Icons.print_outlined,
+                            label: 'Print…',
                             onPressed: () => printCurrentPage(app),
-                            child: const Text('Print…'),
                           ),
-                          MenuItemButton(
-                            leadingIcon:
-                                const Icon(Icons.image_outlined, size: 18),
+                          ToolbarSubmenuItem(
+                            icon: Icons.image_outlined,
+                            label: 'PDF — picture of the page',
                             onPressed: () => _export(context, exportPagePdf),
-                            child: const Text('PDF — picture of the page'),
                           ),
-                          MenuItemButton(
-                            leadingIcon:
-                                const Icon(Icons.hub_outlined, size: 18),
+                          ToolbarSubmenuItem(
+                            icon: Icons.hub_outlined,
+                            label: 'For Obsidian Canvas (.canvas)',
                             onPressed: () =>
                                 _export(context, exportPageJsonCanvas),
-                            child: const Text('For Obsidian Canvas (.canvas)'),
                           ),
-                          MenuItemButton(
-                            leadingIcon: const Icon(Icons.gesture, size: 18),
+                          ToolbarSubmenuItem(
+                            icon: Icons.gesture,
+                            label: 'Just the drawing (.inkml)',
                             onPressed: () => _export(context, exportPageInkML),
-                            child: const Text('Just the drawing (.inkml)'),
                           ),
-                          const Divider(height: 6),
-                          MenuItemButton(
-                            leadingIcon:
-                                const Icon(Icons.folder_zip_outlined, size: 18),
+                          // Say what lands on disk. "Materialize" is this
+                          // codebase's own architecture vocabulary
+                          // (`sync/materializer.dart`) and appears in no
+                          // other user-visible string in the app.
+                          ToolbarSubmenuItem(
+                            icon: Icons.folder_zip_outlined,
+                            label: 'Save the whole notebook as folders and files…',
                             onPressed: () => _exportWithProgress(
                                 context,
                                 'Saving the notebook…',
                                 (report) => materializeNotebook(app,
                                     onProgress: (done, total) => report(
                                         'Page $done of $total…'))),
-                            // Say what lands on disk. "Materialize" is
-                            // this codebase's own architecture vocabulary
-                            // (`sync/materializer.dart`) and appears in no
-                            // other user-visible string in the app.
-                            child: const Text(
-                                'Save the whole notebook as folders and files…'),
                           ),
                         ],
                       ),
                       // The one place to LOOK for a setting (PLANNING
                       // "Consistency/UX": centralised settings page).
-                      IconButton(
-                        icon: const Icon(Icons.settings_outlined, size: 18),
-                        tooltip: 'Settings…',
-                        visualDensity: VisualDensity.compact,
+                      ToolbarControl(
+                        width: 40,
+                        icon: Icons.settings_outlined,
+                        label: 'Settings',
                         onPressed: () => showSettingsDialog(context, app),
+                        inline: IconButton(
+                          icon: const Icon(Icons.settings_outlined, size: 18),
+                          tooltip: 'Settings…',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => showSettingsDialog(context, app),
+                        ),
                       ),
-                    ]),
+                    ],
                   ),
                 ),
               ],
@@ -379,6 +440,61 @@ class _CommandBarState extends State<CommandBar> {
       messenger?.showSnackBar(SnackBar(content: Text('Exported to $path')));
     }
   }
+
+  /// The Export menu's own items — pulled out so the inline `MenuAnchor`
+  /// (shown while there's room) and the folded `ToolbarSubmenuItem` list
+  /// (shown once Export itself has to fold into the command bar's own
+  /// "More" menu) can share one definition rather than drifting apart.
+  List<Widget> _exportMenuItems(BuildContext context) => [
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.description_outlined, size: 18),
+          onPressed: () => _export(context, exportPageMarkdown),
+          child: const Text('Markdown (.md)'),
+        ),
+        // Vector by default: the shared/printed artefact should be
+        // searchable, selectable and small. The raster capture stays
+        // available for the rare page whose look matters more than its text.
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+          onPressed: () => _export(context, exportPagePdfVector),
+          child: const Text('PDF (.pdf)'),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.print_outlined, size: 18),
+          shortcut: const SingleActivator(LogicalKeyboardKey.keyP, control: true),
+          onPressed: () => printCurrentPage(app),
+          child: const Text('Print…'),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.image_outlined, size: 18),
+          onPressed: () => _export(context, exportPagePdf),
+          child: const Text('PDF — picture of the page'),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.hub_outlined, size: 18),
+          onPressed: () => _export(context, exportPageJsonCanvas),
+          child: const Text('For Obsidian Canvas (.canvas)'),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.gesture, size: 18),
+          onPressed: () => _export(context, exportPageInkML),
+          child: const Text('Just the drawing (.inkml)'),
+        ),
+        const Divider(height: 6),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.folder_zip_outlined, size: 18),
+          onPressed: () => _exportWithProgress(
+              context,
+              'Saving the notebook…',
+              (report) => materializeNotebook(app,
+                  onProgress: (done, total) =>
+                      report('Page $done of $total…'))),
+          // Say what lands on disk. "Materialize" is this codebase's own
+          // architecture vocabulary (`sync/materializer.dart`) and appears
+          // in no other user-visible string in the app.
+          child: const Text('Save the whole notebook as folders and files…'),
+        ),
+      ];
 
   Future<void> _export(
       BuildContext context, Future<String?> Function(AppState) fn) async {
@@ -726,21 +842,15 @@ class _CommandBarState extends State<CommandBar> {
       const _Div(),
       // Pen proximity → pen tool. On by default because it is what a pen
       // means; the toggle exists for people who use the pen as a pointer.
-      Tooltip(
-        message: 'Bringing the pen near the page switches to inking.\n'
+      IconButton(
+        icon: const Icon(Icons.draw_outlined, size: 18),
+        tooltip: 'Bringing the pen near the page switches to inking.\n'
             'Pick another tool while the pen hovers and it sticks until the\n'
             'pen leaves and comes back. The pen\'s tail (or its barrel\n'
             'button, held while drawing) erases.',
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.draw_outlined,
-              size: 16, color: context.surfaces.textSecondary),
-          const SizedBox(width: 2),
-          Switch(
-            value: app.penProximitySwitch,
-            onChanged: app.setPenProximitySwitch,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-        ]),
+        visualDensity: VisualDensity.compact,
+        isSelected: app.penProximitySwitch,
+        onPressed: () => app.setPenProximitySwitch(!app.penProximitySwitch),
       ),
       const SizedBox(width: 4),
     ]);

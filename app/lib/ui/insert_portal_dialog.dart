@@ -112,8 +112,7 @@ class _InsertPortalDialogState extends State<_InsertPortalDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Insert a page window',
-            style: Theme.of(context).textTheme.titleMedium),
+        Text('Page window', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 4),
         const Text(
             'A live, read-only view of another page — it keeps up as that '

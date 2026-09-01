@@ -71,6 +71,23 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         ]),
       );
 
+  /// An on/off preference, shown the same way as the Theme row above it — a
+  /// highlighted segment, not a switch. One visual language for "this is
+  /// currently set to X" throughout the dialog, not two.
+  Widget _toggle(bool value, ValueChanged<bool> onChanged) =>
+      SegmentedButton<bool>(
+        showSelectedIcon: false,
+        style: const ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 11))),
+        segments: const [
+          ButtonSegment(value: false, label: Text('Off')),
+          ButtonSegment(value: true, label: Text('On')),
+        ],
+        selected: {value},
+        onSelectionChanged: (s) => onChanged(s.first),
+      );
+
   Widget _door(IconData icon, String label, String hint, VoidCallback open) =>
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
@@ -122,18 +139,9 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 ),
               ),
               _section('Writing and drawing'),
-              _row(
-                'Spell check',
-                Switch(
-                    value: app.spellCheckEnabled,
-                    onChanged: app.setSpellCheck),
-              ),
-              _row(
-                'Pen near the page switches to inking',
-                Switch(
-                    value: app.penProximitySwitch,
-                    onChanged: app.setPenProximitySwitch),
-              ),
+              _row('Spell check', _toggle(app.spellCheckEnabled, app.setSpellCheck)),
+              _row('Pen near the page switches to inking',
+                  _toggle(app.penProximitySwitch, app.setPenProximitySwitch)),
               _section('Connections'),
               _door(Icons.sync, 'Sync',
                   'Back up and share this notebook — GitHub or a folder.',

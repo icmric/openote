@@ -90,7 +90,7 @@ String syncChipTooltip(SyncStatus s) {
         : 'Open this notebook on another device to sync it.');
   } else {
     b.write('Only on this computer.\n'
-        'Click to put it in a folder your cloud already syncs.');
+        'Put it in a folder your cloud already syncs.');
   }
   if (s.mirrors > 0) {
     b.write('\n${s.mirrors} backup destination${s.mirrors == 1 ? '' : 's'}.');

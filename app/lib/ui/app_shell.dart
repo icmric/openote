@@ -1744,7 +1744,7 @@ class _StatusBar extends StatelessWidget {
         children: [
           Tooltip(
             message: failed
-                ? '${problem.message}\n\nClick to see more.'
+                ? '${problem.message}\n\nMore detail.'
                 : saved
                     ? 'This page is saved to your local .onote file.'
                     : 'Saving…',

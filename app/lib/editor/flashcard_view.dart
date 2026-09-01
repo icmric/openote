@@ -161,7 +161,7 @@ class _FlipCardState extends State<FlipCard>
                         const Icon(Icons.autorenew,
                             size: 12, color: OnoteColors.graphite400),
                         const SizedBox(width: OnoteSpace.x2),
-                        Text(back ? 'Tap to go back' : 'Tap to reveal',
+                        Text(back ? 'Go back' : 'Reveal',
                             style: OnoteType.caption
                                 .copyWith(color: OnoteColors.graphite400)),
                       ],

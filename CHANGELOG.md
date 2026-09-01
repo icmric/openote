@@ -4,6 +4,28 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed — a consistency pass over the chrome (2026-09-01)
+
+- **The command bar's trailing icons (Study, Planner, tags, outline, links,
+  find, export, settings) now compact instead of scrolling.** A narrow
+  window used to hide whichever of them didn't fit off the edge of a
+  horizontal scrollbar, reachable only by scrolling first and invisible
+  otherwise. They now fold into one "More" menu the moment they stop
+  fitting — the same controls, doing the same thing, just reachable one tap
+  further in — and unfold again the moment there's room. Built as a
+  reusable `CompactingToolbar` component rather than a one-off fix.
+- **Every on/off setting now shows its state as a highlighted segment, not
+  a toggle switch** — Spell check and "pen near the page switches to
+  inking" in Settings, AI access in the AI access dialog, and the Draw
+  row's own pen-proximity control, which now matches every other tool
+  button on that row (Bold, Italic, the drawing tools) instead of being the
+  one `Switch` among them.
+- **"Click to…", "Tap to…" and "Insert" trimmed from labels and tooltips**
+  where the surrounding UI already says as much: a flashcard's "Tap to
+  reveal" is now "Reveal", a tappable status dot's tooltip no longer opens
+  with "Click to", and the page-window dialog is titled "Page window", not
+  "Insert a page window".
+
 ### Added — plug a value into an equation and see the result (2026-09-01)
 
 - **`⋯ ▸ Evaluate at a value…`** puts a small block beside the equation: the
