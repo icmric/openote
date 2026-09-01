@@ -1,6 +1,6 @@
 # Openote File Format Specification (`.onote`)
 
-> **Document status:** Draft v0.2 (format version `1`) · Last updated 2026-07-27
+> **Document status:** Draft v0.2 (format version `1`) · Last updated 2026-08-16
 > **Licence:** **CC0-1.0** ([`LICENSE`](LICENSE)) — ratified in [ADR-0005](../adr/ADR-0005-licensing.md). Implement it freely; no attribution required.
 > **Audience:** Openote implementers and third-party tool authors. This document is publishable as the standalone public specification of the format.
 > **Related:** [Architecture §5](../04-architecture-overview.md) · [Data Model Spec](11-data-model-spec.md) · [ADR-0003 (container)](../adr/ADR-0003-storage-container.md) · **[ADR-0006 (sync layout)](../adr/ADR-0006-sync-transport-and-text-model.md)**
@@ -287,9 +287,9 @@ Two consequences matter to third-party implementers:
 1. **The openness guarantee moves to the log.** The op log and its documented materialisation become the artifact you read to recover a notebook without Openote. This container stops being a compatibility surface at all, because it can always be regenerated. That is a *stronger* openness position than v0.1's, not a weaker one — the open representation stops being a copy kept alongside an opaque one, and becomes the thing itself.
 2. **Sync granularity is per notebook**, with the manifest deliberately shaped so a section subset can be described later without a format migration (decided 2026-07-27).
 
-Until that lands, `.onote` as specified above is the format, and notebooks written today remain readable: the migration path is "rebuild the cache from a log seeded by the existing container", which loses nothing.
+The demotion landed 2026-08-16 (§8 above) — but per notebook, and only once a person opts in from the Sync dialog. `.onote` as specified above remains the format for any notebook that has not: it opens the same in every release, and nothing about reading one has changed.
 
-**One caveat for anyone reading a `.onotebook` today.** Until the demotion lands, the container is authoritative and `blobs/` is a shadow copy — so it is written **only for notebooks that are shared** (in a sync folder, or mirrored). A local-only notebook has a complete `ops/` and an absent or sparse `blobs/`: the `blob.put` ops name every image, the bytes live in the container's `blobs` table, and Openote copies them out the moment the notebook starts syncing. Concretely: *a `.onotebook` you were given by another device is complete; a `.onotebook` sitting beside its `.onote` on the machine that made it may not be, and the `.onote` beside it is why that is not data loss.* This is a property of shadow mode, not of the format — after the demotion, `blobs/` is the only home and is always complete.
+**One caveat for anyone reading a `.onotebook` today.** For a notebook that has **not yet been demoted** — the default, until someone opts in — the container is still authoritative and `blobs/` is a shadow copy, written **only for notebooks that are shared** (in a sync folder, or mirrored). A local-only, not-yet-demoted notebook has a complete `ops/` and an absent or sparse `blobs/`: the `blob.put` ops name every image, the bytes live in the container's `blobs` table, and Openote copies them out the moment the notebook starts syncing. Concretely: *a `.onotebook` you were given by another device is complete; a `.onotebook` sitting beside its `.onote` on the machine that made it may not be, and the `.onote` beside it is why that is not data loss.* This is a property of shadow mode, not of the format — **once a notebook is demoted, `blobs/` is the only home and is always complete**, which is also what the Sync dialog's "Stop keeping pictures twice…" control is checking for before it deletes anything.
 
 ## 12. Compatibility promise and changelog
 
