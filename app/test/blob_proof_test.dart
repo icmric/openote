@@ -193,6 +193,52 @@ void main() {
           reason: 'repaired means byte-identical, not merely present');
     });
 
+    // ── A SECOND NEGATIVE CONTROL: no file at all, not merely a corrupt one ──
+    //
+    // Reported in the field: a notebook's Advanced diagnostics named one
+    // blob "missing" — checked, but with the container never asked — after
+    // the notebook had already been open (and its own on-open backfill
+    // already run) for a while. An antivirus quarantine, a cloud client
+    // evicting a file it thinks it can re-fetch, a person tidying the folder
+    // by hand: any of them deletes a file from `blobs/` well after the
+    // notebook's own backfill already finished, and nothing re-ran it for
+    // just that one hash — `missingBlobs()` used to trust that backfill had
+    // already tried and skip straight to reporting a hole a fresh copy
+    // would have closed for free.
+    test('a blob missing from blobs/ but present in the container is '
+        'repaired, not just reported', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, app, nb) = await fixture('onote_blob_missingfile_');
+
+      final good = picture(4, size: 400);
+      final hash = app.importBlob(nb, good, 'image/png');
+      repo.putContainerBlobForTest(nb, good, 'image/png');
+      await app.settleBackgroundWork();
+
+      final f = logOf(repo, nb).blobFile(hash);
+      expect(f.existsSync(), isTrue);
+      f.deleteSync();
+
+      final proof = await app.proveBlobBytes(nb);
+      expect(proof.missing, isEmpty,
+          reason: 'the container could still supply it — a hole a fresh '
+              'copy closes for free must not be reported as one, and must '
+              'not wait for the notebook to be closed and reopened');
+      expect(proof.repaired, {hash},
+          reason: 'the SAME repair a corrupted file gets, for a file that '
+              'is simply not there at all');
+      expect(proof.damaged, isEmpty);
+      expect(proof.ok, isTrue);
+      expect(f.existsSync(), isTrue);
+      expect(f.readAsBytesSync(), good,
+          reason: 'repaired means the file exists again with the right '
+              'bytes, not just a clean report');
+      expect(app.saveError, isNull,
+          reason: 'a fully repaired notebook must not still show a save '
+              'problem — the whole point of self-healing is that the user '
+              'never sees this one');
+    });
+
     test('wrong bytes that cannot be repaired are reported, not left looking ok',
         () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
@@ -271,8 +317,12 @@ void main() {
         expect(problem.short.toLowerCase(), isNot(contains(jargon.toLowerCase())));
       }
       expect(problem!.message, contains('picture'));
-      expect(problem.message, contains('still fine on this computer'),
-          reason: 'it must say what has NOT gone wrong, or it reads as lost work');
+      expect(problem.message, contains('could not find good bytes'),
+          reason: 'it must say plainly that THIS computer does not have '
+              'good bytes either — a hash reaches here only once the '
+              'container has already been tried and failed, so telling the '
+              'reader the picture is "still fine on this computer" would be '
+              'false reassurance over an actually lost picture');
       expect(problem.message, contains('disk is not full'),
           reason: 'and what the reader can actually do');
       expect('$problem', problem.message,

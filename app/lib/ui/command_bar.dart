@@ -343,23 +343,34 @@ class _CommandBarState extends State<CommandBar> {
                 alignment: Alignment.centerLeft,
                 children: [...previous, if (current != null) current],
               ),
+              // Insert COMPACTS (`CompactingToolbar` needs the real, bounded
+              // window width to decide what folds, which a `Scrollable`
+              // never offers its child — that axis is unbounded on
+              // purpose, it's what lets content wider than the viewport
+              // scroll). Home and Draw still scroll: both mix dividers,
+              // split buttons and a live text field with no single "this
+              // control folds into a menu item" shape the way Insert's
+              // uniform ribbon of commands does — see the doc comment on
+              // `CompactingToolbar` itself for why Insert was the tractable
+              // one to convert first.
+              //
               // A horizontal `Scrollable` reads `scrollDelta.dx`, which a
               // mouse wheel does not produce, and there was no scrollbar
               // anywhere in the subtree — so a row wider than the window was
               // simply unreachable. Measured on Insert too (1217 px against
-              // 965), so this is every tab's fix, not the Maths tab's.
-              child: ScrollConfiguration(
-                behavior: const _ToolbarScroll(),
-                child: SingleChildScrollView(
-                key: ValueKey(_tab),
-                scrollDirection: Axis.horizontal,
-                child: switch (_tab) {
-                  1 => _insertRow(context),
-                  2 => _drawRow(context),
-                  _ => _homeRow(context),
-                },
-              ),
-              ),
+              // 965) before it compacted instead.
+              child: _tab == 1
+                  ? KeyedSubtree(
+                      key: const ValueKey(1), child: _insertRow(context))
+                  : ScrollConfiguration(
+                      behavior: const _ToolbarScroll(),
+                      child: SingleChildScrollView(
+                        key: ValueKey(_tab),
+                        scrollDirection: Axis.horizontal,
+                        child:
+                            _tab == 2 ? _drawRow(context) : _homeRow(context),
+                      ),
+                    ),
             ),
           ),
         ],
@@ -697,9 +708,53 @@ class _CommandBarState extends State<CommandBar> {
   /// three short columns, which is a shape a menu can carry and a row cannot.
   /// [kRibbonOrder] is the row's own order, and a test pins it against the
   /// catalog so the two cannot drift.
-  Widget _insertRow(BuildContext context) => Row(children: [
-        for (final item in kInsertRibbon) _InsertButton(app: app, item: item),
-      ]);
+  /// The width one [InsertItem] needs inline — measured, not guessed, the
+  /// same rule `CompactingToolbar`'s own doc comment sets out: a
+  /// `CommandButton` costs 40px plus 12px per character of its label (its
+  /// fixed padding and icon against `OnoteType.small`'s own metrics — see
+  /// `compacting_toolbar_test.dart`'s width-guard test for how these
+  /// constants get caught if a theme change ever moves them), a label-less
+  /// entry is the same 40px every compact `IconButton` in this app
+  /// measures, +22 for the split button's own dropdown arrow when the item
+  /// has [InsertItem.extras], +2 for `_InsertButton`'s own trailing gap.
+  static double _insertItemWidth(InsertItem item) {
+    final base = item.showLabel ? 40 + item.label.length * 12 : 40;
+    return base + (item.extras.isEmpty ? 0 : 22) + 2;
+  }
+
+  Widget _insertRow(BuildContext context) => CompactingToolbar(
+        controls: [
+          for (final item in kInsertRibbon)
+            ToolbarControl(
+              width: _insertItemWidth(item),
+              icon: item.icon,
+              label: item.label,
+              inline: _InsertButton(app: app, item: item),
+              onPressed: () =>
+                  item.run(context, app, insertAnchor(app, item)),
+              submenu: item.extras.isEmpty
+                  ? null
+                  : [
+                      // The split button's own MAIN half, first — folding
+                      // must not cost the item the one action it already
+                      // had before it grew a dropdown arrow.
+                      ToolbarSubmenuItem(
+                        icon: item.icon,
+                        label: item.label,
+                        onPressed: () =>
+                            item.run(context, app, insertAnchor(app, item)),
+                      ),
+                      for (final extra in item.extras)
+                        ToolbarSubmenuItem(
+                          icon: extra.icon,
+                          label: extra.label,
+                          onPressed: () => extra.run(
+                              context, app, insertAnchor(app, extra)),
+                        ),
+                    ],
+            ),
+        ],
+      );
   Widget _drawRow(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     Widget toolButton(Tool t, IconData icon, String tip) => IconButton(

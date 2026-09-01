@@ -1557,24 +1557,38 @@ class AppState extends ChangeNotifier
   void _noteBlobProof(String nb, BlobProof proof) {
     if (proof.repaired.isNotEmpty) {
       // Worth a line even though nothing is wrong any more: Openote's own
-      // writes are temp+rename and cannot tear, so a wrong-bytes file means
-      // something ELSE damaged the folder — a cloud client, a bad disk, a
-      // restore from a broken backup — and that tends to recur.
+      // writes are temp+rename and cannot tear, so a wrong-bytes or missing
+      // file means something ELSE touched the folder — a cloud client, a
+      // bad disk, an antivirus quarantine, a restore from a broken backup,
+      // a person tidying it by hand — and that tends to recur.
       debugPrint('[openote/sync] ${proof.repaired.length} blob file(s) in $nb '
-          'held bytes that were not what their name said, and were rewritten '
-          'from the notebook file');
+          'were missing or held bytes that were not what their name said, '
+          'and were rewritten from the notebook file');
     }
     if (proof.ok) {
       _blobHole.remove(nb);
     } else {
+      // **Not "still fine on this computer."** That reassurance used to be
+      // unconditional, but by the time either set here is non-empty, the
+      // container has ALREADY been asked for good bytes and could not
+      // supply them either — `missing` is only reported once `backfillBlobs`
+      // has tried the container and failed (see [SyncRecorder.proveBlobs]'s
+      // own doc comment), and `damaged` means the container's own copy was
+      // tried as a repair source and was no better. Either way this
+      // computer's own copy of the picture is the one that's gone; a
+      // reassurance that named the wrong copy was worse than none, because
+      // it told someone with a genuinely lost picture not to worry about it.
       _blobHole[nb] = SaveProblem(
-        short: 'Some pictures did not get copied',
+        short: 'Some pictures may be missing',
         message: 'Openote keeps a second copy of every picture and drawing '
             "inside this notebook's own folder, so your other devices and your "
             'backups can show them too.\n\n'
-            'For ${proof.holes} of them that second copy is missing or '
-            'damaged. The pictures are still fine on this computer — but on '
-            'another device, or in a backup, they would come up blank.\n\n'
+            'For ${proof.holes} of them, Openote could not find good bytes '
+            "anywhere on this computer — not in that second copy, and not in "
+            "the notebook's own working file either. Until they turn up "
+            '(from another device, a backup, or by adding the picture '
+            'again), it will show blank wherever it is used, on this '
+            'computer as well as any other.\n\n'
             'Check that the disk is not full and that the folder is not set to '
             'read-only, then close the notebook and open it again. Openote '
             'tries again every time you open it.',

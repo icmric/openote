@@ -4,8 +4,32 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — a picture Openote couldn't find could be self-healed, and wasn't (2026-09-01)
+
+- **A blob file missing from `blobs/` — but still sitting safely in the
+  notebook's own container — is now recovered automatically, the same way
+  a corrupted one already was.** The proof step re-hashes every picture and
+  drawing and repairs a wrong-bytes file from the container, but a file
+  that was simply ABSENT skipped that same chance and went straight to
+  "missing" — correct only in the instant right after the notebook's own
+  backfill had just run, and permanently stale for a file deleted (an
+  antivirus quarantine, a cloud client eviction, a folder tidied by hand)
+  any time after. It now gets the identical repair a corrupted file
+  already got.
+- **"The pictures are still fine on this computer" was wrong for exactly
+  the case it was said about.** By the time a hash reaches that report,
+  the notebook's own container has already been asked for good bytes and
+  could not supply them either — so the picture is not fine on this
+  computer, it is the one place its bytes are actually gone. The message
+  now says so.
+
 ### Changed — a consistency pass over the chrome (2026-09-01)
 
+- **Insert's ribbon compacts instead of scrolling once its thirteen
+  buttons run past the window** — the same fold the trailing cluster
+  below already got. Home and Draw still scroll: both mix dividers, split
+  buttons and a live text field with no single "this control folds into a
+  menu item" shape the way Insert's uniform row of commands does.
 - **The command bar's trailing icons (Study, Planner, tags, outline, links,
   find, export, settings) now compact instead of scrolling.** A narrow
   window used to hide whichever of them didn't fit off the edge of a

@@ -46,13 +46,17 @@ class BlobProof {
   /// them either.
   final Set<String> missing;
 
-  /// Found holding the wrong bytes and rewritten correctly from the container.
-  /// Not a failure: this is the repair working, and it is worth logging because
-  /// it means something outside Openote damaged the folder.
+  /// Missing or holding the wrong bytes, and rewritten correctly from the
+  /// container. Not a failure: this is the repair working, and it is worth
+  /// logging because it means something outside Openote damaged or removed
+  /// a file the folder should still have held.
   final Set<String> repaired;
 
-  /// Found holding the wrong bytes and NOT repairable. The worst outcome, and
-  /// the one a count of files reports as success.
+  /// Present, but holding the wrong bytes, and NOT repairable — the
+  /// container could not supply good bytes either. The worst outcome, and
+  /// the one a count of files reports as success. An ABSENT file the
+  /// container also could not supply is [missing] instead, not this — see
+  /// its own doc comment for why that distinction still earns a name.
   final Set<String> damaged;
 
   /// True when a rebuild from this log could reconstruct every picture, drawing
@@ -458,8 +462,20 @@ class SyncRecorder {
   /// [read] supplies replacement bytes for a file that fails — the container's
   /// `blobs` table while it is still authoritative. A file whose bytes are
   /// wrong is **deleted and rewritten** from it (the only way, since
-  /// `writeBlob` refuses to overwrite), and if that cannot be done the hash is
-  /// reported [BlobProof.damaged] rather than being left to look fine.
+  /// `writeBlob` refuses to overwrite), and a file that is simply ABSENT is
+  /// written fresh from it the same way — [BlobProof.missing] used to skip
+  /// this and trust that `backfillBlobs` had already tried, but that is only
+  /// true the moment a fresh open's backfill has just finished; a file
+  /// deleted from `blobs/` an hour into a session (an antivirus quarantine, a
+  /// cloud client evicting what it thinks it can re-fetch, a person tidying
+  /// the folder by hand) sat there un-repaired until the notebook was closed
+  /// and reopened, and every caller of [BlobProof] in between read `missing`
+  /// as gospel that this computer's own copy was gone too — see
+  /// `AppState._noteBlobProof`, which used to tell a user *"the pictures are
+  /// still fine on this computer"* on the strength of a check that had never
+  /// actually looked. Either failure — wrong bytes or none at all — is only
+  /// reported [BlobProof.damaged] or [BlobProof.missing] once this has tried
+  /// the container and it could not help either.
   ///
   /// **The hashing runs off this isolate, and that is not the usual pacing
   /// argument.** `backfillBlobs` yields a real millisecond per blob because its
@@ -481,12 +497,22 @@ class SyncRecorder {
       final hash = ref.replaceFirst('sha256:', '');
       if (store.hasBlob(hash)) {
         present.add(hash);
-      } else {
-        // No bytes at all. Repair is `backfillBlobs`' job and it has already
-        // run; still absent here means the container could not supply them
-        // either, which is the one outcome Step 7 must never proceed through.
-        missing.add(hash);
+        continue;
       }
+      // No bytes at all — but not necessarily nowhere: try the container
+      // before reporting a hole a fresh copy would have closed for free,
+      // the same chance a merely-CORRUPTED file gets below.
+      final fresh = read?.call(hash);
+      if (fresh != null && sha256Hex(fresh) == hash) {
+        try {
+          store.writeBlob(hash, fresh);
+          repaired.add(hash);
+          continue;
+        } catch (_) {
+          // A read-only folder, a full disk — fall through to missing.
+        }
+      }
+      missing.add(hash);
     }
     var checked = 0;
     for (var i = 0; i < present.length; i += _proveBatch) {

@@ -18,7 +18,6 @@ import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/ui/command_bar.dart';
-import 'package:openote/ui/command_button.dart';
 import 'package:openote/ui/context_menus.dart';
 import 'package:openote/ui/insert_catalog.dart';
 
@@ -219,7 +218,7 @@ void main() {
       app.cancelPendingSave();
     });
 
-    testWidgets('and fits the smallest window the app opens', (tester) async {
+    testWidgets('fits the smallest window the app opens, wide open', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       widen(tester);
       await tester.pumpWidget(MaterialApp(
@@ -233,27 +232,55 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Insert'));
       await tester.pumpAndSettle();
+      for (final item in kInsertRibbon) {
+        expect(find.text(item.label), findsOneWidget, reason: item.id);
+      }
+      expect(find.byTooltip('More'), findsNothing,
+          reason: 'wide open, all thirteen fit inline — nothing to fold');
+      app.cancelPendingSave();
+    });
+
+    testWidgets(
+        'compacts instead of scrolling once the ribbon runs past a '
+        '1280px window', (tester) async {
       // **It does not fit, and that is the shape that was asked for back.**
       //
       // Thirteen labelled buttons run past the ~965px a 1280 window leaves
-      // once the navigator is open, so the last few are a scroll away - which
-      // is why `_ToolbarScroll` exists and why this row sits in a viewport
-      // that takes a mouse drag and a wheel. Pinned as a NUMBER rather than
-      // left implicit: if the row ever grows past a second screenful,
-      // somebody has to change this line and think about it.
-      final first = tester.getRect(find.ancestor(
-          of: find.text(kInsertRibbon.first.label),
-          matching: find.byType(CommandButton)));
-      final last = tester.getRect(find.ancestor(
-          of: find.text(kInsertRibbon.last.label),
-          matching: find.byType(CommandButton)));
-      final total = last.right - first.left;
-      expect(total, lessThan(1760),
-          reason: 'measured ${total.toStringAsFixed(0)}px against the ~965 a '
-              '1280 window leaves, so about five of the thirteen are a '
-              'horizontal scroll away');
-      expect(find.byType(Scrollable), findsWidgets,
-          reason: 'so what runs off the edge can still be reached');
+      // once the navigator is open. Reported later: "it doesnt handle
+      // resizing well (menus should either compact as required or become
+      // sliding, again i belive the former is cleaner)" — so the ones that
+      // do not fit fold into one "More" menu instead of sliding out of
+      // reach behind `_ToolbarScroll`'s old horizontal viewport.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      widen(tester, const Size(1280, 900));
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ListenableBuilder(
+            listenable: app,
+            builder: (_, __) => CommandBar(app: app),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Insert'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Scrollable), findsNothing,
+          reason: 'the old rescue is gone — nothing here scrolls any more');
+      expect(find.byTooltip('More'), findsOneWidget,
+          reason: 'thirteen labelled buttons do not fit a 1280px window; '
+              'something has to fold, or a wider regression than this test '
+              'caught it');
+
+      // Whatever folded is REACHABLE, not simply gone.
+      await tester.tap(find.byTooltip('More'));
+      await tester.pumpAndSettle();
+      final visible = kInsertRibbon
+          .where((i) => find.text(i.label).evaluate().isNotEmpty)
+          .length;
+      expect(visible, kInsertRibbon.length,
+          reason: 'every item is on screen SOMEWHERE — inline or in the '
+              'fold — once the menu is open');
       app.cancelPendingSave();
     });
   });
