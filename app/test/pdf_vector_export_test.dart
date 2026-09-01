@@ -687,5 +687,95 @@ void main() {
               'after that depends on which fonts this machine has');
     });
   });
+
+  group('graphs and substitute blocks reach the page', () {
+    // Neither type had ever been printed here before today: a missing case
+    // in this exact switch is how `board` disappeared from a whole release
+    // of PDFs with nothing on the page to say so — see the doc comment on
+    // `_graphWidget`. These are the tests that would have caught a graph or
+    // a substitute block silently falling through the same `_ => null` arm.
+    test('a graph makes the PDF bigger than the same page without it',
+        () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.blocks = [
+        Block(
+            type: BlockType.graph,
+            x: 60,
+            y: 200,
+            w: 300,
+            h: 220,
+            content: {'latex': 'y=x^2'}),
+      ];
+      final withGraph = await buildPagePdf(app, pageId, title: 'G');
+      app.blocks = [];
+      final without = await buildPagePdf(app, pageId, title: 'G');
+      expect(withGraph.length, greaterThan(without.length + 100),
+          reason: 'the curve is real path operators on the page, not an '
+              'empty box');
+    });
+
+    test('a substitute block prints its equation and worked-out result',
+        () async {
+      // The PDF's own bytes cannot be searched for the words — see
+      // `debugFlowKinds`'s doc comment just above: text goes in as hex
+      // indices into an embedded subset font. `substituteLine` is the one
+      // place the printed line is actually built, so it is checked directly.
+      expect(substituteLine('y=3x+10', '2'), 'y=3x+10   (x = 2 → 16)');
+      expect(substituteLine('y=3x+10', ''), 'y=3x+10',
+          reason: 'nothing typed yet prints the equation alone');
+      expect(substituteLine('x=3', '1'), contains('a vertical line'),
+          reason: 'the same calculator error a graph of x=3 would give');
+
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.blocks = [
+        Block(
+            type: BlockType.substitute,
+            x: 60,
+            y: 200,
+            w: 260,
+            content: {'latex': 'y=3x+10', 'value': '2'}),
+      ];
+      final bytes = await buildPagePdf(app, pageId, title: 'S');
+      app.blocks = [];
+      final without = await buildPagePdf(app, pageId, title: 'S');
+      expect(bytes.length, greaterThan(without.length + 50),
+          reason: 'the equation and its result are real text on the page, '
+              'not a skipped, empty block');
+    });
+
+    test('a substitute block with nothing typed yet still prints, plainly',
+        () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.blocks = [
+        Block(
+            type: BlockType.substitute,
+            x: 60,
+            y: 200,
+            w: 260,
+            content: {'latex': 'y=3x+10', 'value': ''}),
+      ];
+      final bytes = await buildPagePdf(app, pageId, title: 'S');
+      expect(bytes.length, greaterThan(400));
+    });
+
+    test('a substitute block with no equation at all is skipped, not a crash',
+        () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app: app, pageId: pageId) = await newApp();
+      app.blocks = [
+        Block(
+            type: BlockType.substitute,
+            x: 60,
+            y: 200,
+            w: 260,
+            content: {'latex': '', 'value': ''}),
+      ];
+      final bytes = await buildPagePdf(app, pageId, title: 'S');
+      expect(bytes.length, greaterThan(400));
+    });
+  });
 }
 

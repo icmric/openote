@@ -693,6 +693,70 @@ void main() {
     });
 
     testWidgets(
+        'a pinch that also reports a stray pan does not drag the view off '
+        'centre', (tester) async {
+      // Reported: "it seems to zoom a bit but also moves me heaps too" —
+      // a real trackpad's pinch is not clean, two-finger-centroid data; the
+      // OS reports a noisy pan alongside the scale change even when the
+      // student's fingers are doing nothing but spreading apart. Applying
+      // that pan literally, the same way an intentional two-finger PAN
+      // uses it, turned a small pinch into a large, unwanted slide.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final g = app.insertGraph(latex: 'y=x^2', at: const Offset(120, 120));
+      final where = await pumpGraphOnCanvas(tester, g);
+
+      final pointer = TestPointer(1, PointerDeviceKind.trackpad);
+      await tester.sendEventToBinding(pointer.panZoomStart(where));
+      await tester.sendEventToBinding(pointer.panZoomUpdate(where,
+          pan: const Offset(80, 0), scale: 1.5));
+      await tester.sendEventToBinding(pointer.panZoomEnd());
+      await tester.pump();
+
+      final view = GraphView.fromJson(g.content['view']);
+      expect(view.width, lessThan(GraphView.initial.width),
+          reason: 'it did zoom');
+      expect(view.midX, closeTo(GraphView.initial.midX, 1e-6),
+          reason: 'zooming about the CENTRE of the widget must not also '
+              'drag the window sideways');
+      app.cancelPendingSave();
+    });
+
+    testWidgets(
+        'a multi-frame pinch with per-frame jitter still lands on centre',
+        (tester) async {
+      // The same bug, over a gesture shaped like a real one: several
+      // frames, each nudging the reported pan a little (this is what made
+      // a touchscreen pinch read as "jagged" — a competing drag update
+      // fighting the zoom on every single frame, not just the first).
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final g = app.insertGraph(latex: 'y=x^2', at: const Offset(120, 120));
+      final where = await pumpGraphOnCanvas(tester, g);
+
+      final pointer = TestPointer(1, PointerDeviceKind.trackpad);
+      await tester.sendEventToBinding(pointer.panZoomStart(where));
+      for (final step in [
+        (pan: const Offset(10, -4), scale: 1.1),
+        (pan: const Offset(18, -9), scale: 1.25),
+        (pan: const Offset(31, -15), scale: 1.4),
+        (pan: const Offset(47, -19), scale: 1.6),
+      ]) {
+        await tester.sendEventToBinding(
+            pointer.panZoomUpdate(where, pan: step.pan, scale: step.scale));
+      }
+      await tester.sendEventToBinding(pointer.panZoomEnd());
+      await tester.pump();
+
+      final view = GraphView.fromJson(g.content['view']);
+      expect(view.width, lessThan(GraphView.initial.width),
+          reason: 'it did zoom, across the whole gesture');
+      // x0/x1 start at -10/10 regardless of the curve's own shape — fitting
+      // only ever touches y — so the window's x-centre staying at 0 is a
+      // fact about THIS bug, not about where y=x^2 happens to fit.
+      expect(view.midX, closeTo(GraphView.initial.midX, 1e-6));
+      app.cancelPendingSave();
+    });
+
+    testWidgets(
         'the claim releases at the end of the gesture: a later pinch '
         'elsewhere zooms the PAGE', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');

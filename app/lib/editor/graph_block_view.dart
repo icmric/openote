@@ -196,14 +196,33 @@ class _GraphBlockViewState extends State<GraphBlockView> {
   void _panZoomUpdate(PointerPanZoomUpdateEvent e) {
     if (_lastSize.isEmpty) return;
     var v = _live;
-    if (e.panDelta != Offset.zero) v = _panned(v, e.panDelta);
-    if (e.scale != 1.0) {
+    // **Zooming and panning are mutually exclusive within a single frame.**
+    //
+    // Reported: pinching a trackpad "zooms a bit but also moves me heaps
+    // too" — working fine with a mouse, and "with touch it seems to work
+    // alright ... although its pretty jagged". A trackpad's own gesture
+    // recognition is not clean two-finger-centroid data: the pan it reports
+    // alongside a pinch is largely an artifact of the pinch itself, not the
+    // student asking to pan, and running it through the same conversion an
+    // intentional two-finger PAN uses reads as a much bigger, unwanted
+    // slide — the jaggedness on touch is this same stray pan, smaller but
+    // still there every frame.
+    //
+    // Which this frame actually is gets told apart by comparing the
+    // cumulative scale to what it was LAST frame, not to 1.0: an unchanged
+    // scale is an ordinary pan (exactly what already worked), a changed one
+    // is a pinch, and its own residual pan is discarded rather than
+    // trusted — zooming about the pointer already keeps the point under the
+    // fingers fixed, which is all a pinch is asking for.
+    if (e.scale != _pzLastScale) {
       // Inverted relative to `CanvasController.zoomAt`'s convention: a
       // GraphView's factor multiplies its SPAN, so spreading fingers apart
       // (scale rising) must SHRINK the window to read as zooming in, the
       // opposite of a magnification level rising.
       v = _zoomedAbout(v, _pzLastScale / e.scale, e.localPosition);
       _pzLastScale = e.scale;
+    } else if (e.panDelta != Offset.zero) {
+      v = _panned(v, e.panDelta);
     }
     _setView(v);
   }
@@ -480,6 +499,23 @@ class _AltAwarePan extends PanGestureRecognizer {
     if (HardwareKeyboard.instance.isAltPressed) return;
     super.addAllowedPointer(event);
   }
+
+  /// **Never a trackpad's own pan/zoom.**
+  ///
+  /// `PanGestureRecognizer` (via `DragGestureRecognizer`) accepts a
+  /// `PointerPanZoomStartEvent` by default, exactly like an ordinary
+  /// pointer-down — so this recognizer was quietly running a SECOND,
+  /// competing pan from the very same physical gesture [_panZoomUpdate]
+  /// already answers, on top of whatever that method decided. Reported:
+  /// pinching "zooms a bit but also moves me heaps too", and on a
+  /// touchscreen "it seems to work alright ... although its pretty
+  /// jagged" — both are this recognizer's own drag update fighting the
+  /// zoom-about-the-pointer [_panZoomUpdate] had already applied, every
+  /// single frame. The trackpad/touch stream is claimed and answered
+  /// entirely by this widget's `Listener.onPointerPanZoom*` callbacks;
+  /// this recognizer has no business seeing it at all.
+  @override
+  bool isPointerPanZoomAllowed(PointerPanZoomStartEvent event) => false;
 }
 
 class GraphPainter extends CustomPainter {

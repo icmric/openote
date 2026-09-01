@@ -357,4 +357,54 @@ void main() {
     expect(b.content['text'], 'area is ',
         reason: 'the dispose path swept the abandoned pair');
   });
+
+  group('Draw the graph / Evaluate at a value, from an inline equation', () {
+    // Both reach the toolbar through `ActiveMathEditor` exactly the way a
+    // BLOCK equation's do (see math_toolbar_test.dart's own end-to-end
+    // pair) — but an inline equation follows by TEXT (`fromLatex`), not by
+    // id, and its host is the paragraph rather than the equation itself.
+    // Nothing above ever drove either closure for a REAL inline session, so
+    // these are the first thing that would have caught either wiring being
+    // wrong for this half of the app.
+    testWidgets('Draw the graph inserts a graph that follows the sentence',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app, b) = await openEditing(tester, r'we know $y=3x+10$ here');
+
+      await tester.tap(find.byType(InlineMathAtom));
+      await settle(tester);
+      expect(app.activeMath?.drawGraph, isNotNull);
+
+      app.activeMath!.drawGraph!();
+      await settle(tester);
+
+      final graphs = app.blocks.where((x) => x.type == BlockType.graph);
+      expect(graphs.length, 1);
+      expect(graphs.single.content['from'], b.id);
+      expect(graphs.single.content['fromLatex'], 'y=3x+10');
+      expect(graphs.single.content['latex'], 'y=3x+10');
+      app.cancelPendingSave();
+    });
+
+    testWidgets(
+        'Evaluate at a value inserts a substitute block that follows the '
+        'sentence', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app, b) = await openEditing(tester, r'we know $y=3x+10$ here');
+
+      await tester.tap(find.byType(InlineMathAtom));
+      await settle(tester);
+      expect(app.activeMath?.evaluateAtValue, isNotNull);
+
+      app.activeMath!.evaluateAtValue!();
+      await settle(tester);
+
+      final subs = app.blocks.where((x) => x.type == BlockType.substitute);
+      expect(subs.length, 1);
+      expect(subs.single.content['from'], b.id);
+      expect(subs.single.content['fromLatex'], 'y=3x+10');
+      expect(subs.single.content['latex'], 'y=3x+10');
+      app.cancelPendingSave();
+    });
+  });
 }

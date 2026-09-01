@@ -1061,6 +1061,18 @@ pw.Widget? _graphWidget(Block b, double h) {
   );
 }
 
+/// The line a substitute block prints, pulled out pure: PDF text goes in as
+/// hex indices into an embedded subset font (see `debugFlowKinds`'s doc
+/// comment), so no test in this file can search the finished bytes for a
+/// word — this is the one place that string is actually built, and the one
+/// a test can check directly.
+@visibleForTesting
+String substituteLine(String latex, String value) {
+  if (value.isEmpty) return latex;
+  final outcome = substituteInto(graphSourceFromLatex(latex), value);
+  return '$latex   (${outcome.variable} = $value → ${outcome.result.display})';
+}
+
 /// A substitute block, as plain text: the equation, and — once a value has
 /// been typed in — what it works out to. The same "cheap and honest" choice
 /// a graph's axes get, rather than trying to typeset the equation for a
@@ -1069,12 +1081,8 @@ pw.Widget? _substituteWidget(Block b) {
   final latex = b.content['latex'] as String? ?? '';
   if (latex.isEmpty) return null;
   final value = (b.content['value'] as String? ?? '').trim();
-  var line = latex;
-  if (value.isNotEmpty) {
-    final outcome = substituteInto(graphSourceFromLatex(latex), value);
-    line = '$latex   (${outcome.variable} = $value → ${outcome.result.display})';
-  }
-  return pw.Text(line, style: const pw.TextStyle(fontSize: 10));
+  return pw.Text(substituteLine(latex, value),
+      style: const pw.TextStyle(fontSize: 10));
 }
 
 pw.Widget? _inkWidget(Block b, double h) {

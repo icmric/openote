@@ -32,6 +32,13 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **Hovering the curve shows the point's value.** The number shown is
   snapped to the same spacing as the gridlines, one digit finer, so it never
   shows a value with no meaningful precision behind it.
+- **A trackpad pinch zoomed a little and slid the window a lot.** Two
+  separate bugs, both in the same gesture: the graph's own pan/zoom
+  handling was applying a pinch's noisy, incidental pan literally, on top
+  of the zoom; and a leftover pan-gesture recognizer meant for Alt+drag was
+  quietly running a SECOND, competing pan from the same physical gesture,
+  which is also what made a touchscreen pinch feel jagged. Pinching now
+  only zooms, about wherever the fingers are.
 
 ### Fixed — five from real use, each root-caused rather than patched over (2026-09-01)
 

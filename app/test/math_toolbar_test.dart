@@ -18,6 +18,7 @@ import 'package:openote/editor/math_block_view.dart';
 import 'package:openote/math/active_math.dart';
 import 'package:openote/math/math_inventory.dart';
 import 'package:openote/math/math_view.dart';
+import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/ui/command_bar.dart';
@@ -243,6 +244,81 @@ void main() {
     settle();
   });
 
+  group('what the toolbar actually reaches, not just a stub', () {
+    // Every test above stands in for the editor with a hand-rolled
+    // `ActiveMathEditor` (see `registerEditor`), which is right for testing
+    // the BAR — but it means `drawGraph`/`evaluateAtValue` were never once
+    // exercised as the real closures a real block hands the toolbar. These
+    // two open an actual `MathBlockView`, pull the closures IT registered,
+    // and check a real block lands on the page — the whole seam, end to end.
+    testWidgets("Draw the graph makes a real graph block", (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final block = app.insertEquation(at: const Offset(20, 20));
+      block.content['latex'] = 'y=3x+10';
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SizedBox(width: 500, child: MathBlockView(block: block, app: app)),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      expect(app.activeMath?.drawGraph, isNotNull);
+
+      app.activeMath!.drawGraph!();
+      await tester.pumpAndSettle();
+
+      final graphs = app.blocks.where((b) => b.type == BlockType.graph);
+      expect(graphs.length, 1);
+      expect(graphs.single.content['from'], block.id);
+      expect(graphs.single.content['latex'], 'y=3x+10');
+      settle();
+    });
+
+    testWidgets("Evaluate at a value makes a real substitute block",
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final block = app.insertEquation(at: const Offset(20, 20));
+      block.content['latex'] = 'y=3x+10';
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SizedBox(width: 500, child: MathBlockView(block: block, app: app)),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      expect(app.activeMath?.evaluateAtValue, isNotNull);
+
+      app.activeMath!.evaluateAtValue!();
+      await tester.pumpAndSettle();
+
+      final subs = app.blocks.where((b) => b.type == BlockType.substitute);
+      expect(subs.length, 1);
+      expect(subs.single.content['from'], block.id);
+      expect(subs.single.content['latex'], 'y=3x+10');
+      settle();
+    });
+
+    testWidgets('an empty equation offers neither, silently', (tester) async {
+      // Reachable but harmless: an equation with nothing in it must not
+      // scatter an empty graph or substitute block across the page just
+      // because a menu happened to be enabled.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final block = app.insertEquation(at: const Offset(20, 20));
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SizedBox(width: 500, child: MathBlockView(block: block, app: app)),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      app.activeMath?.drawGraph?.call();
+      app.activeMath?.evaluateAtValue?.call();
+      await tester.pumpAndSettle();
+
+      expect(app.blocks.where((b) => b.type == BlockType.graph), isEmpty);
+      expect(app.blocks.where((b) => b.type == BlockType.substitute), isEmpty);
+      settle();
+    });
+  });
+
   group('what the bar itself offers', () {
     // Round two of this bar measured 1725-2230 px against a 1280 px default
     // window, with no scrollbar and a dead mouse wheel, so the search box and
@@ -254,6 +330,7 @@ void main() {
       bool latexMode = false,
       VoidCallback? onToggle,
       VoidCallback? onDrawGraph,
+      VoidCallback? onEvaluateAtValue,
       List<String> recents = const ['theta', 'pi'],
     }) async {
       widen(tester);
@@ -266,6 +343,7 @@ void main() {
               recentIds: recents,
               onToggleLatex: onToggle ?? () {},
               onDrawGraph: onDrawGraph,
+              onEvaluateAtValue: onEvaluateAtValue,
               onInsert: onInsert,
             ),
           ),
@@ -517,6 +595,55 @@ void main() {
       await pumpBar(tester, onInsert: (_) {}, latexMode: true);
       expect(find.textContaining('Writing the LaTeX by hand'), findsOneWidget);
       expect(find.byType(MathChip), findsNothing);
+    });
+
+    group('evaluating at a value', () {
+      // Unlike Graph, this lives in the fold rather than on the row itself —
+      // a deliberate, smaller-footprint choice for a second command sharing
+      // the same equation, not an oversight; these pin that placement down
+      // the same way the Graph tests above pin ITS placement.
+      testWidgets('is one item behind the more menu, not a row button',
+          (tester) async {
+        var evaluated = 0;
+        await pumpBar(tester,
+            onInsert: (_) {}, onEvaluateAtValue: () => evaluated++);
+        expect(find.textContaining('Evaluate'), findsNothing,
+            reason: 'nothing on the row itself until the menu is opened');
+
+        await tester.tap(find.byTooltip('More'));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('Evaluate at a value'), findsOneWidget);
+        await tester.tap(find.textContaining('Evaluate at a value'));
+        await tester.pumpAndSettle();
+        expect(evaluated, 1);
+      });
+
+      testWidgets('is greyed out when there is nothing to evaluate',
+          (tester) async {
+        // Same rule the LaTeX toggle already follows for `latexAvailable`:
+        // a menu item that does nothing when pressed is worse than none.
+        await pumpBar(tester, onInsert: (_) {}, onEvaluateAtValue: null);
+        await tester.tap(find.byTooltip('More'));
+        await tester.pumpAndSettle();
+        final item = tester.widget<PopupMenuItem<String>>(
+            find.ancestor(
+                of: find.textContaining('Evaluate at a value'),
+                matching: find.byType(PopupMenuItem<String>)));
+        expect(item.enabled, isFalse);
+      });
+
+      testWidgets('is on the LaTeX face too, the same as Graph', (tester) async {
+        var evaluated = 0;
+        await pumpBar(tester,
+            onInsert: (_) {},
+            latexMode: true,
+            onEvaluateAtValue: () => evaluated++);
+        await tester.tap(find.byTooltip('More'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.textContaining('Evaluate at a value'));
+        await tester.pumpAndSettle();
+        expect(evaluated, 1);
+      });
     });
   });
 }

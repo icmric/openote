@@ -150,6 +150,7 @@ void main() {
         BlockType.file,
         BlockType.ink,
         BlockType.graph,
+        BlockType.substitute,
         BlockType.board,
       ]) {
         final b = Block(id: 'b', type: type, x: 0, y: 0, w: 300, content: {

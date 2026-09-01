@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 
 import '../math/graph_plot.dart';
@@ -215,6 +216,16 @@ class _Markdown {
   final Map<String, String> assets; // hash -> relative asset path
 }
 
+/// [_pageMarkdown]'s text alone, for tests — this open-format projection is
+/// built separately from `markdown_export.dart`'s `pageMarkdownOf` (the file
+/// exporter's own, differently-worded one), so covering one does not cover
+/// the other; a block silently falling through this switch is exactly how
+/// `board` once went missing from a whole release of exports.
+@visibleForTesting
+String openPageMarkdownOf(String title, List<Block> blocks,
+        {String assetPrefix = 'assets'}) =>
+    _pageMarkdown(title, blocks, assetPrefix).text;
+
 /// Build the page's Markdown projection. [assetPrefix] is the POSIX-relative
 /// path from the page folder to the shared `assets/` dir; image links use it.
 /// The returned `assets` map (hash → "hash.ext") is collected by the caller and
@@ -289,6 +300,12 @@ _Markdown _pageMarkdown(String title, List<Block> blocks, String assetPrefix) {
   }
   return _Markdown(buf.toString(), assets);
 }
+
+/// [_jsonCanvas], for tests.
+@visibleForTesting
+Map<String, dynamic> openJsonCanvasOf(List<Block> blocks,
+        {String assetPrefix = 'assets'}) =>
+    _jsonCanvas(blocks, assetPrefix);
 
 /// Map blocks to a JSON Canvas document (https://jsoncanvas.org/spec/1.0/).
 /// [assetPrefix] is the POSIX-relative path from the output file to `assets/`.
