@@ -130,6 +130,39 @@ void main() {
     });
 
     testWidgets(
+        'opening an equation by clicking it never flashes a caret at the '
+        'plain default before it resolves', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The click resolves a frame after the equation mounts (the hit table
+      // is measured offstage), and the editor's own plain default in the
+      // meantime is the END — so the very first rendered frame used to show
+      // a caret there, one frame before it jumped to where the click
+      // actually was: "it moves the cursor to the end then to the correct
+      // position."
+      final b = mathBlock('12345');
+      await mount(tester, b);
+
+      final mathRect = tester.getRect(find.byType(OnoteMath));
+      await tester.tapAt(Offset(mathRect.left + 3, mathRect.center.dy));
+      // Exactly ONE pump: the field's first build, with the click not yet
+      // resolved — the frame that used to show the wrong-end caret.
+      await tester.pump();
+
+      final firstFrame =
+          tester.widget<OnoteMath>(find.byType(OnoteMath).first);
+      expect(firstFrame.tex, isNot(contains(r'\rule')),
+          reason: 'no caret at all is better than one flashed at a place '
+              'nobody clicked and nobody meant');
+
+      await resolve(tester);
+      final resolved =
+          tester.widget<OnoteMath>(find.byType(OnoteMath).first);
+      expect(resolved.tex, contains(r'\rule'),
+          reason: 'the caret must still land, once the click resolves');
+      await settle(tester);
+    });
+
+    testWidgets(
         'clicking a closed equation in the MIDDLE opens it with the caret '
         'in the middle, not snapped to either end', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');

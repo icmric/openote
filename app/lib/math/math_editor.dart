@@ -94,11 +94,20 @@ class MathEditor {
   String get latex => rowToTex(root, kStoreCtx);
 
   /// The same tree with the caret and the empty boxes drawn in.
-  String renderTex(MathTexCtx style) => rowToTex(
+  ///
+  /// [showCaret] false draws the tree with no caret at all — for the ONE
+  /// frame between a click opening this equation and that click's own
+  /// position resolving (`MathField._armInitialTap`): `caretIndex` is not
+  /// yet the position the student clicked, only wherever the editor's own
+  /// plain default happens to be, and showing a caret there for a frame
+  /// just to snap it away again is a flash to a place nobody clicked and
+  /// nobody meant, reported as "it moves the cursor to the end then to the
+  /// correct position."
+  String renderTex(MathTexCtx style, {bool showCaret = true}) => rowToTex(
         root,
         MathTexCtx(
-          caretRow: caretRow,
-          caretIndex: caretIndex,
+          caretRow: showCaret ? caretRow : null,
+          caretIndex: showCaret ? caretIndex : -1,
           decorate: true,
           activeText: _openText,
           selectionRow: selectionRow,

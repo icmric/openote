@@ -255,6 +255,22 @@ class MathFieldState extends State<MathField> {
   List<GlobalKey>? _probeKeys;
   MathHitTable? _hits;
 
+  /// True from the moment a click OPENS this equation until that click's
+  /// position resolves one frame later. `_e.caretIndex` is not yet where the
+  /// click landed for that one frame — only the editor's plain default — and
+  /// [MathField.build] uses this to leave the caret out of the render
+  /// entirely rather than flash it in a place nobody clicked.
+  bool _awaitingInitialTap = false;
+
+  /// The one place every resolve path clears the probe state, so none of
+  /// them can clear `_probeTexes`/`_probeKeys` without also ending whatever
+  /// [_awaitingInitialTap] wait they might be the answer to.
+  void _clearProbes() {
+    _probeTexes = null;
+    _probeKeys = null;
+    _awaitingInitialTap = false;
+  }
+
   /// An answer the press landed on, waiting for the release to switch it.
   MAnswer? _armedAnswer;
 
@@ -282,6 +298,7 @@ class MathFieldState extends State<MathField> {
   /// to convert the click's global position against.
   void _armInitialTap(Offset global) {
     if (_e.root.isEmpty) return; // nothing to hit; focus is the whole job
+    _awaitingInitialTap = true;
     _probeTexes = MathHitTable.prefixTexes(_e.root);
     _probeKeys = [for (final _ in _probeTexes!) GlobalKey()];
     WidgetsBinding.instance
@@ -292,10 +309,7 @@ class MathFieldState extends State<MathField> {
     if (!mounted || _probeTexes == null) return;
     final box = context.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) {
-      setState(() {
-        _probeTexes = null;
-        _probeKeys = null;
-      });
+      setState(_clearProbes);
       return;
     }
     _pendingDx = box.globalToLocal(global).dx;
@@ -337,10 +351,7 @@ class MathFieldState extends State<MathField> {
     for (final k in _probeKeys!) {
       final b = k.currentContext?.findRenderObject() as RenderBox?;
       if (b == null || !b.hasSize) {
-        setState(() {
-          _probeTexes = null;
-          _probeKeys = null;
-        });
+        setState(_clearProbes);
         return;
       }
       bounds.add(b.size.width);
@@ -353,10 +364,7 @@ class MathFieldState extends State<MathField> {
     // right button does nothing at all — deliberately, because moving the
     // caret on a press that was going to open a menu is the worst of both.
     if (_pendingSecondary) {
-      setState(() {
-        _probeTexes = null;
-        _probeKeys = null;
-      });
+      setState(_clearProbes);
       final a = _e.answerAt(hits.childStrictlyAt(_pendingDx));
       if (a != null) _openAnswerMenu(a, _pendingGlobal);
       return;
@@ -377,10 +385,7 @@ class MathFieldState extends State<MathField> {
     final onAnswer =
         _pendingShift || _pendingDouble ? null : _e.answerAt(hits.childStrictlyAt(_pendingDx));
     if (onAnswer != null && _e.canToggleAnswer(onAnswer)) {
-      setState(() {
-        _probeTexes = null;
-        _probeKeys = null;
-      });
+      setState(_clearProbes);
       if (_pointerIsDown) {
         _armedAnswer = onAnswer;
       } else if (_e.toggleAnswer(onAnswer)) {
@@ -396,10 +401,7 @@ class MathFieldState extends State<MathField> {
     } else {
       _e.placeAt(hits.boundaryAt(_pendingDx));
     }
-    setState(() {
-      _probeTexes = null;
-      _probeKeys = null;
-    });
+    setState(_clearProbes);
     _changed();
   }
 
@@ -773,7 +775,7 @@ class MathFieldState extends State<MathField> {
                   // each other — and it looked exactly like that.
                   widget.compact && _e.isEmpty && !_focus.hasFocus
                       ? ctx.activeSlotTex
-                      : _e.renderTex(ctx),
+                      : _e.renderTex(ctx, showCaret: !_awaitingInitialTap),
                   textStyle: widget.textStyle,
                   compact: widget.compact,
                 ),
