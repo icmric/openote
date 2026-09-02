@@ -762,6 +762,34 @@ class _LiveMarkdownSession extends OnoteEditSession {
       return KeyEventResult.ignored;
     }
     final k = event.logicalKey;
+    // **The OneNote-style pending caret** (owner: click the canvas, and
+    // arrow keys should navigate the page). A block a click just opened
+    // with nothing typed into it yet has no content for a caret to move
+    // through, so a plain arrow key moves which block the page is looking
+    // at instead — the exact thing arrow keys already do for a SELECTED,
+    // not-editing block (`AppShell._spatial`), reused here via
+    // `app.navigateSpatial` since this block happens to hold focus instead.
+    // The first real keystroke clears `pendingEmptyBlockId` (see
+    // `TextBlockView`'s `onChanged`), so this never fires again once the
+    // student has actually started writing.
+    if (!hw.isShiftPressed && app.pendingEmptyBlockId == app.editingBlockId) {
+      final nav = app.navigateSpatial;
+      if (nav != null) {
+        final dx = switch (k) {
+          LogicalKeyboardKey.arrowLeft => -1,
+          LogicalKeyboardKey.arrowRight => 1,
+          _ => 0,
+        };
+        final dy = switch (k) {
+          LogicalKeyboardKey.arrowUp => -1,
+          LogicalKeyboardKey.arrowDown => 1,
+          _ => 0,
+        };
+        if ((dx != 0 || dy != 0) && nav(dx, dy)) {
+          return KeyEventResult.handled;
+        }
+      }
+    }
     // The caret crossing an equation steps INSIDE it, one step, from either
     // side (v0.20 B.4). Only a plain arrow: Shift+arrow selects OVER the
     // equation as a unit, which is its own correct behaviour (E.4).

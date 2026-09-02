@@ -687,6 +687,11 @@ class _PageCanvasState extends State<PageCanvas> {
       w: 320,
       content: {'text': ''},
     ));
+    // OneNote-style pending caret (owner): no chrome, and arrow keys
+    // navigate the page, until the first keystroke. Set BEFORE select()
+    // notifies, so BlockView's very first build already sees it — set any
+    // later and the chrome would flash on for exactly one frame.
+    app.pendingEmptyBlockId = b.id;
     app.select(b.id, edit: true);
     if (app.tool == Tool.text) app.setTool(Tool.select);
   }

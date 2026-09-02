@@ -111,6 +111,12 @@ class _BlockViewState extends State<BlockView> {
   bool get primary => app.selectedBlockId == b.id;
   bool get editing => app.editingBlockId == b.id;
 
+  /// A click just opened this box with nothing in it and nothing typed
+  /// since — OneNote-style: the caret is live but the box itself stays
+  /// invisible (no border, no move bar, no resize handles) until the first
+  /// keystroke. See [AppState.pendingEmptyBlockId].
+  bool get _pendingEmpty => editing && app.pendingEmptyBlockId == b.id;
+
   bool get _editableType =>
       b.type == BlockType.text ||
       b.type == BlockType.code ||
@@ -135,6 +141,14 @@ class _BlockViewState extends State<BlockView> {
           b.type == BlockType.code ||
           b.type == BlockType.math) {
         app.pendingCaretGlobal = _pressGlobal;
+      }
+      // OneNote-style pending caret (owner): clicking into an EXISTING but
+      // still-empty text box gets the same no-chrome, arrow-keys-navigate
+      // treatment as one the click just created — set before select()
+      // notifies, so the very first build already sees it.
+      if (b.type == BlockType.text &&
+          (b.content['text'] as String? ?? '').trim().isEmpty) {
+        app.pendingEmptyBlockId = b.id;
       }
       app.select(b.id, edit: true); // tap-to-edit (F-4)
     } else {
@@ -576,7 +590,12 @@ class _BlockViewState extends State<BlockView> {
 
     // Chrome is only live for its OWN block, so two abutting blocks can never
     // both offer a bar at once even though the reserved strips overlap.
-    final showChrome = !inkToolActive && !_locked && (_hover || selected || editing);
+    // Suppressed entirely while _pendingEmpty — the box does not exist yet,
+    // as far as the eye can tell, until the first character lands in it.
+    final showChrome = !inkToolActive &&
+        !_locked &&
+        !_pendingEmpty &&
+        (_hover || selected || editing);
 
     const devices = {
       // Trackpad two-finger scrolls arrive as PointerPanZoom events, which
@@ -613,39 +632,45 @@ class _BlockViewState extends State<BlockView> {
           width: displayW,
           height: b.h,
           constraints: const BoxConstraints(minHeight: 36),
-          decoration: BoxDecoration(
-            // A chosen fill beats the hover/selection surface: the border
-            // still carries those states, and a translucent tint the user
-            // picked must not flicker opaque every time the mouse crosses it.
-            // **The other end of a graph's link.** A tint, not a border,
-            // because the border already carries selection — and only while
-            // one end of the link is chosen, which is what
-            // `graphLinkHighlight` answers. Derived on every build, never
-            // stored: this must not dirty the page or survive the click.
-            color: app.graphLinkHighlight(b)?.withValues(alpha: 0.14) ??
-                onoteColorFromHex(b.content['bg'] as String?) ??
-                // **Hover does not fill.** The owner: *"Hovering over a box
-                // makes its background solid, this makes aligning with other
-                // objects more difficult and is different to how it will be
-                // rendered."* Both halves are true — a solid ground hides the
-                // gridline and the box beside it just as you are lining them
-                // up, and it is a shape the page will never print. The border
-                // below already says "this one", which is what hover is for.
-                (editing || selected
-                    ? (dark ? OnoteColors.night50 : OnoteColors.paper0)
-                    : Colors.transparent),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              width: primary && !editing ? 2 : 1,
-              color: editing
-                  ? primaryColor.withValues(alpha: .55)
-                  : selected
-                      ? primaryColor
-                      : _hover
-                          ? (dark ? OnoteColors.night300 : OnoteColors.paper300)
-                          : Colors.transparent,
-            ),
-          ),
+          decoration: !_pendingEmpty
+              ? BoxDecoration(
+                  // A chosen fill beats the hover/selection surface: the border
+                  // still carries those states, and a translucent tint the user
+                  // picked must not flicker opaque every time the mouse crosses it.
+                  // **The other end of a graph's link.** A tint, not a border,
+                  // because the border already carries selection — and only while
+                  // one end of the link is chosen, which is what
+                  // `graphLinkHighlight` answers. Derived on every build, never
+                  // stored: this must not dirty the page or survive the click.
+                  color: app.graphLinkHighlight(b)?.withValues(alpha: 0.14) ??
+                      onoteColorFromHex(b.content['bg'] as String?) ??
+                      // **Hover does not fill.** The owner: *"Hovering over a box
+                      // makes its background solid, this makes aligning with other
+                      // objects more difficult and is different to how it will be
+                      // rendered."* Both halves are true — a solid ground hides the
+                      // gridline and the box beside it just as you are lining them
+                      // up, and it is a shape the page will never print. The border
+                      // below already says "this one", which is what hover is for.
+                      (editing || selected
+                          ? (dark ? OnoteColors.night50 : OnoteColors.paper0)
+                          : Colors.transparent),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    width: primary && !editing ? 2 : 1,
+                    color: editing
+                        ? primaryColor.withValues(alpha: .55)
+                        : selected
+                            ? primaryColor
+                            : _hover
+                                ? (dark
+                                    ? OnoteColors.night300
+                                    : OnoteColors.paper300)
+                                : Colors.transparent,
+                  ),
+                )
+              // OneNote-style: no visible box at all until the first
+              // keystroke — not even the faint hover/selection tint.
+              : const BoxDecoration(),
           child: labelled,
         ),
       ),
@@ -737,7 +762,7 @@ class _BlockViewState extends State<BlockView> {
               // box, each handle's full visual extent is grabbable instead of
               // the 4px sliver that was all the old negative offsets left
               // inside the box.
-              if (primary && !_locked) ...[
+              if (primary && !_locked && !_pendingEmpty) ...[
                 Positioned(
                   right: 0,
                   top: _kBarH,

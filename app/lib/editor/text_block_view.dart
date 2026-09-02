@@ -201,8 +201,19 @@ class _TextBlockViewState extends State<TextBlockView> {
   bool get editing => widget.app.editingBlockId == widget.block.id;
 
   /// F-3 fix: exit cleanup runs on the STATE transition (editing → not).
+  ///
+  /// [AppState.pendingEmptyBlockId] is set at the CLICK that opens a block
+  /// (`BlockView._tap`/`PageCanvas._createTextAt`), not here: this widget's
+  /// own `build` runs AFTER `BlockView`'s in the same frame, so setting it
+  /// on an entry transition here would always be one frame too late for the
+  /// chrome decision that already needed it. This only ever clears it, on
+  /// the way out — belt and braces alongside the `onChanged` clear, for an
+  /// exit that was never typed into at all (Escape, click away).
   void _handleExitTransition() {
     if (_wasEditing && !editing) {
+      if (widget.app.pendingEmptyBlockId == widget.block.id) {
+        widget.app.pendingEmptyBlockId = null;
+      }
       _undoPushed = false;
       _lastUndoAt = 0;
       widget.app.clearActiveEditor(widget.block.id);
@@ -250,6 +261,12 @@ class _TextBlockViewState extends State<TextBlockView> {
         block: widget.block,
         app: widget.app,
         onChanged: (v) {
+          // The first real edit ends the OneNote-style pending caret: chrome
+          // and arrow-key page navigation are for BEFORE typing starts, not
+          // for a box that has since been typed into and emptied again.
+          if (widget.app.pendingEmptyBlockId == widget.block.id) {
+            widget.app.pendingEmptyBlockId = null;
+          }
           _pushUndoOnce();
           // Tags record a line index, so a keystroke that adds or removes a
           // line moves every marker below it onto the wrong sentence — and
