@@ -486,6 +486,225 @@
   "navMenuDelete": "Delete",
   "@navMenuDelete": {"description": "Context-menu item."},
 
+  "commonOn": "On",
+  "@commonOn": {"description": "One half of an on/off pair, shown as a highlighted segment rather than a switch."},
+  "commonOff": "Off",
+  "@commonOff": {"description": "The other half of that pair."},
+  "commonClose": "Close",
+  "@commonClose": {"description": "Button that dismisses a dialog."},
+  "commonDone": "Done",
+  "@commonDone": {"description": "Button that finishes with a dialog."},
+  "commonDelete": "Delete",
+  "@commonDelete": {"description": "Button or menu item that removes something (to the recycle bin, not for good)."},
+  "commonOpenEllipsis": "Open…",
+  "@commonOpenEllipsis": {"description": "Button on a settings row that opens a dialog of its own."},
+
+  "settingsTitle": "Settings",
+  "@settingsTitle": {"description": "Title of the settings dialog."},
+  "settingsAppearance": "Appearance",
+  "@settingsAppearance": {"description": "Section heading."},
+  "settingsTheme": "Theme",
+  "@settingsTheme": {"description": "Row label: light, dark, or follow the computer."},
+  "settingsThemeSystem": "System",
+  "@settingsThemeSystem": {"description": "Theme choice: follow whatever the computer is set to."},
+  "settingsThemeLight": "Light",
+  "@settingsThemeLight": {"description": "Theme choice: dark text on a pale page."},
+  "settingsThemeDark": "Dark",
+  "@settingsThemeDark": {"description": "Theme choice: pale text on a dark page."},
+  "settingsWriting": "Writing and drawing",
+  "@settingsWriting": {"description": "Section heading."},
+  "settingsSpellCheck": "Spell check",
+  "@settingsSpellCheck": {"description": "Row label."},
+  "settingsPenProximity": "Pen near the page switches to inking",
+  "@settingsPenProximity": {"description": "Row label: bringing a stylus close to the screen picks the pen tool."},
+  "settingsConnections": "Connections",
+  "@settingsConnections": {"description": "Section heading."},
+  "settingsSync": "Sync",
+  "@settingsSync": {"description": "Row label for the backup-and-share settings."},
+  "settingsSyncHint": "Back up and share this notebook — GitHub or a folder.",
+  "@settingsSyncHint": {"description": "Supporting line under settingsSync. GitHub is a product name."},
+  "settingsAi": "AI access",
+  "@settingsAi": {"description": "Row label."},
+  "settingsAiOn": "On — AI helpers on this computer can use your notes.",
+  "@settingsAiOn": {"description": "Supporting line when AI access is enabled."},
+  "settingsAiOff": "Off — connect Claude or other AI helpers.",
+  "@settingsAiOff": {"description": "Supporting line when it is not. Claude is a product name."},
+  "settingsHelp": "Help",
+  "@settingsHelp": {"description": "Section heading."},
+  "settingsWelcomeTour": "Welcome tour",
+  "@settingsWelcomeTour": {"description": "Row label: reopens the three-step welcome flow."},
+  "settingsWelcomeTourHint": "The three-minute version: the canvas, maths and ink, and where your notes live.",
+  "@settingsWelcomeTourHint": {"description": "Supporting line naming the flow's three steps."},
+  "settingsShortcuts": "Keyboard shortcuts",
+  "@settingsShortcuts": {"description": "Row label."},
+  "settingsShortcutsHint": "Everything has a key — the full list.  (Ctrl+/)",
+  "@settingsShortcutsHint": {"description": "Supporting line. Keep the shortcut in brackets as typed."},
+  "settingsAbout": "About",
+  "@settingsAbout": {"description": "Section heading."},
+  "settingsVersion": "Openote {version}",
+  "@settingsVersion": {
+    "description": "Row label naming the installed version. Openote is the product name.",
+    "placeholders": {"version": {"type": "String", "example": "0.8.0"}}
+  },
+  "settingsCheckUpdates": "Check for updates",
+  "@settingsCheckUpdates": {"description": "Button."},
+  "settingsUpToDate": "You're up to date ({version} is the newest version).",
+  "@settingsUpToDate": {
+    "description": "Shown after checking, when nothing newer exists.",
+    "placeholders": {"version": {"type": "String", "example": "0.8.0"}}
+  },
+  "settingsWhatsNew": "What's new",
+  "@settingsWhatsNew": {"description": "Link opening the release notes in a browser."},
+
+  "nbTitle": "Notebooks",
+  "@nbTitle": {"description": "Title of the notebook manager."},
+  "nbOpenCount": "{count} open",
+  "@nbOpenCount": {
+    "description": "Subtitle counting how many notebooks are in the workspace.",
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "nbInBin": "In the recycle bin · deleted after {days} days",
+  "@nbInBin": {
+    "description": "Heading over deleted notebooks.",
+    "placeholders": {"days": {"type": "int"}}
+  },
+  "nbImportInto": "Import into a new notebook",
+  "@nbImportInto": {"description": "Heading over the list of things that can be imported."},
+  "nbNew": "New",
+  "@nbNew": {"description": "Button that creates an empty notebook."},
+  "nbNewTitle": "New notebook",
+  "@nbNewTitle": {"description": "Title of the dialog that names it."},
+  "nbCreate": "Create",
+  "@nbCreate": {"description": "Confirm button in that dialog."},
+  "nbNameHint": "Notebook name",
+  "@nbNameHint": {"description": "Placeholder in that dialog."},
+  "nbImport": "Import",
+  "@nbImport": {"description": "Button opening the import choices."},
+  "nbRepair": "Repair",
+  "@nbRepair": {"description": "Button that checks every page and fixes what it can."},
+  "nbGetStarted": "Get started",
+  "@nbGetStarted": {"description": "Button that opens the welcome flow."},
+  "nbImportOnepkg": "OneNote notebook (.onepkg)",
+  "@nbImportOnepkg": {"description": "Import choice. OneNote is a product name and .onepkg a file extension."},
+  "nbImportOne": "OneNote section (.one)",
+  "@nbImportOne": {"description": "Import choice. Not translated."},
+  "nbImportMarkdown": "Markdown folder",
+  "@nbImportMarkdown": {"description": "Import choice: a folder of .md files. Markdown is a format name."},
+  "nbImportGit": "From a git address",
+  "@nbImportGit": {"description": "Import choice: clone a notebook from a git repository."},
+  "nbDuplicates": "Possible duplicates · same title and same page count",
+  "@nbDuplicates": {"description": "Heading over notebooks that look like copies of each other."},
+  "nbDuplicatesHint": "Keep the largest — an import interrupted part way through is the smaller one. Deleted copies go to the recycle bin.",
+  "@nbDuplicatesHint": {"description": "Advice under that heading, said explicitly because \"delete the duplicates\" is a frightening sentence unless the safest choice is named."},
+  "nbOpenThis": "Open this notebook",
+  "@nbOpenThis": {"description": "Menu item."},
+  "nbRename": "Rename",
+  "@nbRename": {"description": "Menu item."},
+  "nbDuplicate": "Duplicate",
+  "@nbDuplicate": {"description": "Menu item: make a copy."},
+  "nbMoveToBin": "Move to recycle bin",
+  "@nbMoveToBin": {"description": "Menu item."},
+  "nbConfirmBin": "Move to the recycle bin? You can restore it from here.",
+  "@nbConfirmBin": {"description": "Confirmation question before deleting a notebook."},
+  "nbOnePkgFileType": "OneNote notebook package",
+  "@nbOnePkgFileType": {"description": "File-type name shown in the operating system's own file picker beside .onepkg."},
+  "nbImportBusy": "An import is already running — one at a time.",
+  "@nbImportBusy": {"description": "Message when a second import is started while one is running."},
+  "nbImportStarted": "Importing in the background — keep working, the card in the corner will say when it's done.",
+  "@nbImportStarted": {"description": "Message when an import starts."},
+  "nbImportedNamed": "Imported {name}",
+  "@nbImportedNamed": {
+    "description": "Confirmation after importing one file.",
+    "placeholders": {"name": {"type": "String", "example": "Biology.one"}}
+  },
+  "nbReadingFolder": "Reading the folder…",
+  "@nbReadingFolder": {"description": "Progress message while a folder of Markdown is being scanned."},
+  "nbImportedProgress": "Imported {done}",
+  "@nbImportedProgress": {
+    "description": "Progress message naming the file just read.",
+    "placeholders": {"done": {"type": "String"}}
+  },
+  "nbNoMarkdown": "No Markdown files found in that folder.",
+  "@nbNoMarkdown": {"description": "Message when a Markdown import found nothing to read."},
+  "nbImportedPages": "{count, plural, =1{Imported 1 page} other{Imported {count} pages}}",
+  "@nbImportedPages": {
+    "description": "Confirmation after importing a folder.",
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "nbNeedsNativeCore": "OneNote import needs the Rust core — build onote_core.dll and put it beside the app.",
+  "@nbNeedsNativeCore": {"description": "Error for a build without the native library. 'the Rust core' and the file name are Openote's own components."},
+  "nbCheckingPages": "Checking pages…",
+  "@nbCheckingPages": {"description": "Progress message while Repair runs."},
+  "nbCheckingPageProgress": "Checking page {done} of {total}…",
+  "@nbCheckingPageProgress": {
+    "description": "Progress message during Repair.",
+    "placeholders": {"done": {"type": "int"}, "total": {"type": "int"}}
+  },
+  "nbNothingToRepair": "Nothing to repair — every page is already up to date.",
+  "@nbNothingToRepair": {"description": "Result when Repair found nothing wrong."},
+  "nbRepairedBoxes": "{blocks, plural, =1{1 box} other{{blocks} boxes}}",
+  "@nbRepairedBoxes": {
+    "description": "How much Repair fixed. A 'box' is one block of content on a page. Substituted into nbRepaired.",
+    "placeholders": {"blocks": {"type": "int"}}
+  },
+  "nbRepairedPages": "{pages, plural, =1{1 page} other{{pages} pages}}",
+  "@nbRepairedPages": {
+    "description": "How many pages Repair touched. Substituted into nbRepaired.",
+    "placeholders": {"pages": {"type": "int"}}
+  },
+  "nbRepaired": "Repaired {boxes} across {pages}.",
+  "@nbRepaired": {
+    "description": "Result when Repair fixed something — e.g. 'Repaired 3 boxes across 2 pages.' {boxes} is nbRepairedBoxes and {pages} is nbRepairedPages, each already in its right plural form.",
+    "placeholders": {
+      "boxes": {"type": "String", "example": "3 boxes"},
+      "pages": {"type": "String", "example": "2 pages"}
+    }
+  },
+  "nbRepairFailed": "Repair failed: {reason}",
+  "@nbRepairFailed": {
+    "description": "Shown when Repair itself could not run.",
+    "placeholders": {"reason": {"type": "String"}}
+  },
+
+  "nbDuplicateGroup": "{copies} copies of \"{title}\" · {pages} pages each · {size} would come back",
+  "@nbDuplicateGroup": {
+    "description": "One row in the duplicate-notebooks list. {size} is already-formatted disk space, e.g. '4.2 MB'.",
+    "placeholders": {
+      "copies": {"type": "int"},
+      "title": {"type": "String"},
+      "pages": {"type": "int"},
+      "size": {"type": "String", "example": "4.2 MB"}
+    }
+  },
+
+  "nbCoreMissing": "OneNote import needs the Rust core — build onote_core.dll (see rust/onote_core/INTEGRATION.md).",
+  "@nbCoreMissing": {"description": "Error for a build without the native library. The file name and the path are literal and must not be translated."},
+  "nbReadFileFailed": "Couldn't read that file: {reason}",
+  "@nbReadFileFailed": {
+    "description": "Error when a chosen file could not be opened at all.",
+    "placeholders": {"reason": {"type": "String"}}
+  },
+  "nbReadFolderFailed": "That folder couldn't be imported: {reason}",
+  "@nbReadFolderFailed": {
+    "description": "Error when a folder of Markdown could not be read.",
+    "placeholders": {"reason": {"type": "String"}}
+  },
+  "nbOneFileEmpty": "Couldn't read any content from that .one file.",
+  "@nbOneFileEmpty": {"description": "Shown when a OneNote section file parsed but held nothing. '.one' is a file extension."},
+  "nbImportedFromOneNote": "Imported {what} from OneNote.{strokeNote}",
+  "@nbImportedFromOneNote": {
+    "description": "Result of importing a OneNote section. {what} is a phrase like '12 pages, 4 pictures' and {strokeNote} an optional sentence about undecodable handwriting — both are still assembled in English elsewhere in the code and are on the list to convert.",
+    "placeholders": {
+      "what": {"type": "String", "example": "12 pages, 4 pictures"},
+      "strokeNote": {"type": "String"}
+    }
+  },
+  "nbImportedPagesProgress": "{count, plural, =1{Imported 1 page…} other{Imported {count} pages…}}",
+  "@nbImportedPagesProgress": {
+    "description": "Progress while a Markdown folder is read.",
+    "placeholders": {"count": {"type": "int"}}
+  },
+
   "onboardingStep1Title": "The page is a canvas",
   "@onboardingStep1Title": {"description": "Welcome flow, step 1 of 3. Heading over an animation of clicking on an empty page and typing."},
   "onboardingStep1Body": "Click anywhere and start typing — a box appears where you clicked, and only once you type. Move one by the bar along its top, and drag pictures in from anywhere.",

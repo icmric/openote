@@ -1203,6 +1203,462 @@ abstract class L {
   /// **'Delete'**
   String get navMenuDelete;
 
+  /// One half of an on/off pair, shown as a highlighted segment rather than a switch.
+  ///
+  /// In en, this message translates to:
+  /// **'On'**
+  String get commonOn;
+
+  /// The other half of that pair.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get commonOff;
+
+  /// Button that dismisses a dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get commonClose;
+
+  /// Button that finishes with a dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get commonDone;
+
+  /// Button or menu item that removes something (to the recycle bin, not for good).
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get commonDelete;
+
+  /// Button on a settings row that opens a dialog of its own.
+  ///
+  /// In en, this message translates to:
+  /// **'Open…'**
+  String get commonOpenEllipsis;
+
+  /// Title of the settings dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get settingsTitle;
+
+  /// Section heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Appearance'**
+  String get settingsAppearance;
+
+  /// Row label: light, dark, or follow the computer.
+  ///
+  /// In en, this message translates to:
+  /// **'Theme'**
+  String get settingsTheme;
+
+  /// Theme choice: follow whatever the computer is set to.
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get settingsThemeSystem;
+
+  /// Theme choice: dark text on a pale page.
+  ///
+  /// In en, this message translates to:
+  /// **'Light'**
+  String get settingsThemeLight;
+
+  /// Theme choice: pale text on a dark page.
+  ///
+  /// In en, this message translates to:
+  /// **'Dark'**
+  String get settingsThemeDark;
+
+  /// Section heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Writing and drawing'**
+  String get settingsWriting;
+
+  /// Row label.
+  ///
+  /// In en, this message translates to:
+  /// **'Spell check'**
+  String get settingsSpellCheck;
+
+  /// Row label: bringing a stylus close to the screen picks the pen tool.
+  ///
+  /// In en, this message translates to:
+  /// **'Pen near the page switches to inking'**
+  String get settingsPenProximity;
+
+  /// Section heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Connections'**
+  String get settingsConnections;
+
+  /// Row label for the backup-and-share settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync'**
+  String get settingsSync;
+
+  /// Supporting line under settingsSync. GitHub is a product name.
+  ///
+  /// In en, this message translates to:
+  /// **'Back up and share this notebook — GitHub or a folder.'**
+  String get settingsSyncHint;
+
+  /// Row label.
+  ///
+  /// In en, this message translates to:
+  /// **'AI access'**
+  String get settingsAi;
+
+  /// Supporting line when AI access is enabled.
+  ///
+  /// In en, this message translates to:
+  /// **'On — AI helpers on this computer can use your notes.'**
+  String get settingsAiOn;
+
+  /// Supporting line when it is not. Claude is a product name.
+  ///
+  /// In en, this message translates to:
+  /// **'Off — connect Claude or other AI helpers.'**
+  String get settingsAiOff;
+
+  /// Section heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Help'**
+  String get settingsHelp;
+
+  /// Row label: reopens the three-step welcome flow.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome tour'**
+  String get settingsWelcomeTour;
+
+  /// Supporting line naming the flow's three steps.
+  ///
+  /// In en, this message translates to:
+  /// **'The three-minute version: the canvas, maths and ink, and where your notes live.'**
+  String get settingsWelcomeTourHint;
+
+  /// Row label.
+  ///
+  /// In en, this message translates to:
+  /// **'Keyboard shortcuts'**
+  String get settingsShortcuts;
+
+  /// Supporting line. Keep the shortcut in brackets as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Everything has a key — the full list.  (Ctrl+/)'**
+  String get settingsShortcutsHint;
+
+  /// Section heading.
+  ///
+  /// In en, this message translates to:
+  /// **'About'**
+  String get settingsAbout;
+
+  /// Row label naming the installed version. Openote is the product name.
+  ///
+  /// In en, this message translates to:
+  /// **'Openote {version}'**
+  String settingsVersion(String version);
+
+  /// Button.
+  ///
+  /// In en, this message translates to:
+  /// **'Check for updates'**
+  String get settingsCheckUpdates;
+
+  /// Shown after checking, when nothing newer exists.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re up to date ({version} is the newest version).'**
+  String settingsUpToDate(String version);
+
+  /// Link opening the release notes in a browser.
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s new'**
+  String get settingsWhatsNew;
+
+  /// Title of the notebook manager.
+  ///
+  /// In en, this message translates to:
+  /// **'Notebooks'**
+  String get nbTitle;
+
+  /// Subtitle counting how many notebooks are in the workspace.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} open'**
+  String nbOpenCount(int count);
+
+  /// Heading over deleted notebooks.
+  ///
+  /// In en, this message translates to:
+  /// **'In the recycle bin · deleted after {days} days'**
+  String nbInBin(int days);
+
+  /// Heading over the list of things that can be imported.
+  ///
+  /// In en, this message translates to:
+  /// **'Import into a new notebook'**
+  String get nbImportInto;
+
+  /// Button that creates an empty notebook.
+  ///
+  /// In en, this message translates to:
+  /// **'New'**
+  String get nbNew;
+
+  /// Title of the dialog that names it.
+  ///
+  /// In en, this message translates to:
+  /// **'New notebook'**
+  String get nbNewTitle;
+
+  /// Confirm button in that dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Create'**
+  String get nbCreate;
+
+  /// Placeholder in that dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Notebook name'**
+  String get nbNameHint;
+
+  /// Button opening the import choices.
+  ///
+  /// In en, this message translates to:
+  /// **'Import'**
+  String get nbImport;
+
+  /// Button that checks every page and fixes what it can.
+  ///
+  /// In en, this message translates to:
+  /// **'Repair'**
+  String get nbRepair;
+
+  /// Button that opens the welcome flow.
+  ///
+  /// In en, this message translates to:
+  /// **'Get started'**
+  String get nbGetStarted;
+
+  /// Import choice. OneNote is a product name and .onepkg a file extension.
+  ///
+  /// In en, this message translates to:
+  /// **'OneNote notebook (.onepkg)'**
+  String get nbImportOnepkg;
+
+  /// Import choice. Not translated.
+  ///
+  /// In en, this message translates to:
+  /// **'OneNote section (.one)'**
+  String get nbImportOne;
+
+  /// Import choice: a folder of .md files. Markdown is a format name.
+  ///
+  /// In en, this message translates to:
+  /// **'Markdown folder'**
+  String get nbImportMarkdown;
+
+  /// Import choice: clone a notebook from a git repository.
+  ///
+  /// In en, this message translates to:
+  /// **'From a git address'**
+  String get nbImportGit;
+
+  /// Heading over notebooks that look like copies of each other.
+  ///
+  /// In en, this message translates to:
+  /// **'Possible duplicates · same title and same page count'**
+  String get nbDuplicates;
+
+  /// Advice under that heading, said explicitly because "delete the duplicates" is a frightening sentence unless the safest choice is named.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the largest — an import interrupted part way through is the smaller one. Deleted copies go to the recycle bin.'**
+  String get nbDuplicatesHint;
+
+  /// Menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Open this notebook'**
+  String get nbOpenThis;
+
+  /// Menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get nbRename;
+
+  /// Menu item: make a copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Duplicate'**
+  String get nbDuplicate;
+
+  /// Menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Move to recycle bin'**
+  String get nbMoveToBin;
+
+  /// Confirmation question before deleting a notebook.
+  ///
+  /// In en, this message translates to:
+  /// **'Move to the recycle bin? You can restore it from here.'**
+  String get nbConfirmBin;
+
+  /// File-type name shown in the operating system's own file picker beside .onepkg.
+  ///
+  /// In en, this message translates to:
+  /// **'OneNote notebook package'**
+  String get nbOnePkgFileType;
+
+  /// Message when a second import is started while one is running.
+  ///
+  /// In en, this message translates to:
+  /// **'An import is already running — one at a time.'**
+  String get nbImportBusy;
+
+  /// Message when an import starts.
+  ///
+  /// In en, this message translates to:
+  /// **'Importing in the background — keep working, the card in the corner will say when it\'s done.'**
+  String get nbImportStarted;
+
+  /// Confirmation after importing one file.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported {name}'**
+  String nbImportedNamed(String name);
+
+  /// Progress message while a folder of Markdown is being scanned.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading the folder…'**
+  String get nbReadingFolder;
+
+  /// Progress message naming the file just read.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported {done}'**
+  String nbImportedProgress(String done);
+
+  /// Message when a Markdown import found nothing to read.
+  ///
+  /// In en, this message translates to:
+  /// **'No Markdown files found in that folder.'**
+  String get nbNoMarkdown;
+
+  /// Confirmation after importing a folder.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Imported 1 page} other{Imported {count} pages}}'**
+  String nbImportedPages(int count);
+
+  /// Error for a build without the native library. 'the Rust core' and the file name are Openote's own components.
+  ///
+  /// In en, this message translates to:
+  /// **'OneNote import needs the Rust core — build onote_core.dll and put it beside the app.'**
+  String get nbNeedsNativeCore;
+
+  /// Progress message while Repair runs.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking pages…'**
+  String get nbCheckingPages;
+
+  /// Progress message during Repair.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking page {done} of {total}…'**
+  String nbCheckingPageProgress(int done, int total);
+
+  /// Result when Repair found nothing wrong.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing to repair — every page is already up to date.'**
+  String get nbNothingToRepair;
+
+  /// How much Repair fixed. A 'box' is one block of content on a page. Substituted into nbRepaired.
+  ///
+  /// In en, this message translates to:
+  /// **'{blocks, plural, =1{1 box} other{{blocks} boxes}}'**
+  String nbRepairedBoxes(int blocks);
+
+  /// How many pages Repair touched. Substituted into nbRepaired.
+  ///
+  /// In en, this message translates to:
+  /// **'{pages, plural, =1{1 page} other{{pages} pages}}'**
+  String nbRepairedPages(int pages);
+
+  /// Result when Repair fixed something — e.g. 'Repaired 3 boxes across 2 pages.' {boxes} is nbRepairedBoxes and {pages} is nbRepairedPages, each already in its right plural form.
+  ///
+  /// In en, this message translates to:
+  /// **'Repaired {boxes} across {pages}.'**
+  String nbRepaired(String boxes, String pages);
+
+  /// Shown when Repair itself could not run.
+  ///
+  /// In en, this message translates to:
+  /// **'Repair failed: {reason}'**
+  String nbRepairFailed(String reason);
+
+  /// One row in the duplicate-notebooks list. {size} is already-formatted disk space, e.g. '4.2 MB'.
+  ///
+  /// In en, this message translates to:
+  /// **'{copies} copies of \"{title}\" · {pages} pages each · {size} would come back'**
+  String nbDuplicateGroup(int copies, String title, int pages, String size);
+
+  /// Error for a build without the native library. The file name and the path are literal and must not be translated.
+  ///
+  /// In en, this message translates to:
+  /// **'OneNote import needs the Rust core — build onote_core.dll (see rust/onote_core/INTEGRATION.md).'**
+  String get nbCoreMissing;
+
+  /// Error when a chosen file could not be opened at all.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t read that file: {reason}'**
+  String nbReadFileFailed(String reason);
+
+  /// Error when a folder of Markdown could not be read.
+  ///
+  /// In en, this message translates to:
+  /// **'That folder couldn\'t be imported: {reason}'**
+  String nbReadFolderFailed(String reason);
+
+  /// Shown when a OneNote section file parsed but held nothing. '.one' is a file extension.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t read any content from that .one file.'**
+  String get nbOneFileEmpty;
+
+  /// Result of importing a OneNote section. {what} is a phrase like '12 pages, 4 pictures' and {strokeNote} an optional sentence about undecodable handwriting — both are still assembled in English elsewhere in the code and are on the list to convert.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported {what} from OneNote.{strokeNote}'**
+  String nbImportedFromOneNote(String what, String strokeNote);
+
+  /// Progress while a Markdown folder is read.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Imported 1 page…} other{Imported {count} pages…}}'**
+  String nbImportedPagesProgress(int count);
+
   /// Welcome flow, step 1 of 3. Heading over an animation of clicking on an empty page and typing.
   ///
   /// In en, this message translates to:

@@ -659,6 +659,304 @@ class LEn extends L {
   String get navMenuDelete => 'Delete';
 
   @override
+  String get commonOn => 'On';
+
+  @override
+  String get commonOff => 'Off';
+
+  @override
+  String get commonClose => 'Close';
+
+  @override
+  String get commonDone => 'Done';
+
+  @override
+  String get commonDelete => 'Delete';
+
+  @override
+  String get commonOpenEllipsis => 'Open…';
+
+  @override
+  String get settingsTitle => 'Settings';
+
+  @override
+  String get settingsAppearance => 'Appearance';
+
+  @override
+  String get settingsTheme => 'Theme';
+
+  @override
+  String get settingsThemeSystem => 'System';
+
+  @override
+  String get settingsThemeLight => 'Light';
+
+  @override
+  String get settingsThemeDark => 'Dark';
+
+  @override
+  String get settingsWriting => 'Writing and drawing';
+
+  @override
+  String get settingsSpellCheck => 'Spell check';
+
+  @override
+  String get settingsPenProximity => 'Pen near the page switches to inking';
+
+  @override
+  String get settingsConnections => 'Connections';
+
+  @override
+  String get settingsSync => 'Sync';
+
+  @override
+  String get settingsSyncHint =>
+      'Back up and share this notebook — GitHub or a folder.';
+
+  @override
+  String get settingsAi => 'AI access';
+
+  @override
+  String get settingsAiOn =>
+      'On — AI helpers on this computer can use your notes.';
+
+  @override
+  String get settingsAiOff => 'Off — connect Claude or other AI helpers.';
+
+  @override
+  String get settingsHelp => 'Help';
+
+  @override
+  String get settingsWelcomeTour => 'Welcome tour';
+
+  @override
+  String get settingsWelcomeTourHint =>
+      'The three-minute version: the canvas, maths and ink, and where your notes live.';
+
+  @override
+  String get settingsShortcuts => 'Keyboard shortcuts';
+
+  @override
+  String get settingsShortcutsHint =>
+      'Everything has a key — the full list.  (Ctrl+/)';
+
+  @override
+  String get settingsAbout => 'About';
+
+  @override
+  String settingsVersion(String version) {
+    return 'Openote $version';
+  }
+
+  @override
+  String get settingsCheckUpdates => 'Check for updates';
+
+  @override
+  String settingsUpToDate(String version) {
+    return 'You\'re up to date ($version is the newest version).';
+  }
+
+  @override
+  String get settingsWhatsNew => 'What\'s new';
+
+  @override
+  String get nbTitle => 'Notebooks';
+
+  @override
+  String nbOpenCount(int count) {
+    return '$count open';
+  }
+
+  @override
+  String nbInBin(int days) {
+    return 'In the recycle bin · deleted after $days days';
+  }
+
+  @override
+  String get nbImportInto => 'Import into a new notebook';
+
+  @override
+  String get nbNew => 'New';
+
+  @override
+  String get nbNewTitle => 'New notebook';
+
+  @override
+  String get nbCreate => 'Create';
+
+  @override
+  String get nbNameHint => 'Notebook name';
+
+  @override
+  String get nbImport => 'Import';
+
+  @override
+  String get nbRepair => 'Repair';
+
+  @override
+  String get nbGetStarted => 'Get started';
+
+  @override
+  String get nbImportOnepkg => 'OneNote notebook (.onepkg)';
+
+  @override
+  String get nbImportOne => 'OneNote section (.one)';
+
+  @override
+  String get nbImportMarkdown => 'Markdown folder';
+
+  @override
+  String get nbImportGit => 'From a git address';
+
+  @override
+  String get nbDuplicates =>
+      'Possible duplicates · same title and same page count';
+
+  @override
+  String get nbDuplicatesHint =>
+      'Keep the largest — an import interrupted part way through is the smaller one. Deleted copies go to the recycle bin.';
+
+  @override
+  String get nbOpenThis => 'Open this notebook';
+
+  @override
+  String get nbRename => 'Rename';
+
+  @override
+  String get nbDuplicate => 'Duplicate';
+
+  @override
+  String get nbMoveToBin => 'Move to recycle bin';
+
+  @override
+  String get nbConfirmBin =>
+      'Move to the recycle bin? You can restore it from here.';
+
+  @override
+  String get nbOnePkgFileType => 'OneNote notebook package';
+
+  @override
+  String get nbImportBusy => 'An import is already running — one at a time.';
+
+  @override
+  String get nbImportStarted =>
+      'Importing in the background — keep working, the card in the corner will say when it\'s done.';
+
+  @override
+  String nbImportedNamed(String name) {
+    return 'Imported $name';
+  }
+
+  @override
+  String get nbReadingFolder => 'Reading the folder…';
+
+  @override
+  String nbImportedProgress(String done) {
+    return 'Imported $done';
+  }
+
+  @override
+  String get nbNoMarkdown => 'No Markdown files found in that folder.';
+
+  @override
+  String nbImportedPages(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Imported $count pages',
+      one: 'Imported 1 page',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get nbNeedsNativeCore =>
+      'OneNote import needs the Rust core — build onote_core.dll and put it beside the app.';
+
+  @override
+  String get nbCheckingPages => 'Checking pages…';
+
+  @override
+  String nbCheckingPageProgress(int done, int total) {
+    return 'Checking page $done of $total…';
+  }
+
+  @override
+  String get nbNothingToRepair =>
+      'Nothing to repair — every page is already up to date.';
+
+  @override
+  String nbRepairedBoxes(int blocks) {
+    String _temp0 = intl.Intl.pluralLogic(
+      blocks,
+      locale: localeName,
+      other: '$blocks boxes',
+      one: '1 box',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String nbRepairedPages(int pages) {
+    String _temp0 = intl.Intl.pluralLogic(
+      pages,
+      locale: localeName,
+      other: '$pages pages',
+      one: '1 page',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String nbRepaired(String boxes, String pages) {
+    return 'Repaired $boxes across $pages.';
+  }
+
+  @override
+  String nbRepairFailed(String reason) {
+    return 'Repair failed: $reason';
+  }
+
+  @override
+  String nbDuplicateGroup(int copies, String title, int pages, String size) {
+    return '$copies copies of \"$title\" · $pages pages each · $size would come back';
+  }
+
+  @override
+  String get nbCoreMissing =>
+      'OneNote import needs the Rust core — build onote_core.dll (see rust/onote_core/INTEGRATION.md).';
+
+  @override
+  String nbReadFileFailed(String reason) {
+    return 'Couldn\'t read that file: $reason';
+  }
+
+  @override
+  String nbReadFolderFailed(String reason) {
+    return 'That folder couldn\'t be imported: $reason';
+  }
+
+  @override
+  String get nbOneFileEmpty =>
+      'Couldn\'t read any content from that .one file.';
+
+  @override
+  String nbImportedFromOneNote(String what, String strokeNote) {
+    return 'Imported $what from OneNote.$strokeNote';
+  }
+
+  @override
+  String nbImportedPagesProgress(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Imported $count pages…',
+      one: 'Imported 1 page…',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get onboardingStep1Title => 'The page is a canvas';
 
   @override

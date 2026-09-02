@@ -37,6 +37,8 @@ const _converted = [
   'lib/ui/object_row.dart',
   'lib/ui/command_bar.dart',
   'lib/ui/sidebar.dart',
+  'lib/ui/settings_dialog.dart',
+  'lib/ui/notebook_manager.dart',
 ];
 
 void main() {
