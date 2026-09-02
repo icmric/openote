@@ -1,7 +1,6 @@
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +20,7 @@ import '../theme/onote_theme.dart';
 import 'color_picker.dart';
 import 'command_button.dart';
 import 'compacting_toolbar.dart';
+import 'memo.dart';
 import 'font_picker.dart';
 import 'insert_catalog.dart';
 import 'object_face.dart';
@@ -40,7 +40,7 @@ class CommandBar extends StatefulWidget {
   State<CommandBar> createState() => _CommandBarState();
 }
 
-class _CommandBarState extends State<CommandBar> {
+class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
   /// The tab the user last chose among the permanent ones.
   int _tab = 0;
 
@@ -57,8 +57,63 @@ class _CommandBarState extends State<CommandBar> {
 
   AppState get app => widget.app;
 
+  /// Everything this bar RENDERS, so a keystroke that changes none of it does
+  /// not rebuild fifty controls. See `memo.dart` — including the measurements
+  /// that made this worth doing, and the guard test that keeps the list
+  /// honest.
+  ///
+  /// Deliberately absent: the five child widgets below that carry live
+  /// numbers — the tag and card buttons, the font-size field, and the study
+  /// and planner badges. Each of those listens to [AppState] for itself, so
+  /// its own contents stay live inside a bar that did not rebuild. That is
+  /// better than hoisting their derived counts up here, where they would be
+  /// values this widget never renders and nobody could check against the
+  /// code that does.
   @override
-  Widget build(BuildContext context) {
+  List<Object?> memoInputs() => [
+        // The widget's own configuration, because `didUpdateWidget` cannot
+        // help here — see `memo.dart`.
+        app,
+        _tab,
+        app.tool,
+        // The version, not the object: a new `UpdateInfo` for the same release
+        // must not count as a change.
+        app.updateAvailable?.version,
+        app.canFormatText,
+        app.canUndo,
+        app.canRedo,
+        app.lastColor,
+        app.penColor,
+        app.penSize,
+        app.penProximitySwitch,
+        app.touchDrawing,
+        app.eraserMode,
+        app.hasInkSelection,
+        app.findOpen,
+        app.showStudyPanel,
+        app.showTocPanel,
+        app.showTagsPanel,
+        app.showPlannerPanel,
+        app.showLinksPanel,
+        // A `Set` compares by identity, and a fresh one comes back every call
+        // — so as a key it would never match and the memo would never hit.
+        // Folded to a bitmask, which does compare by value.
+        _mask(app.marksAtCaret(), MdInline.values),
+        // Not an `app.` read, so the guard test cannot see it: the badge in
+        // the tab row appears only while an equation is open.
+        objectFaceOf(app),
+      ];
+
+  static int _mask<T>(Set<T> on, List<T> all) {
+    var m = 0;
+    for (var i = 0; i < all.length; i++) {
+      if (on.contains(all[i])) m |= 1 << i;
+    }
+    return m;
+  }
+
+  @override
+  Widget buildMemo(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       decoration: BoxDecoration(
@@ -969,8 +1024,17 @@ class _FontSizeField extends StatelessWidget {
     48
   ];
 
+  // **Listens for itself**, because the bar around it does not rebuild for a
+  // keystroke that changes nothing it shows (`memo.dart`) — and with a key,
+  // so it only rebuilds when the size shown in the field actually changes.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MemoBuilder(
+        listenable: app,
+        inputs: () => [app, enabled, app.activeBlockFontSize],
+        builder: _build,
+      );
+
+  Widget _build(BuildContext context) {
     // Stored px → pt for display; null means "the theme default".
     final px = app.activeBlockFontSize;
     final pt = px == null ? null : px * 72.0 / 120.0;
@@ -1033,8 +1097,18 @@ class _TagButton extends StatelessWidget {
   const _TagButton({required this.app});
   final AppState app;
 
+  // **Listens for itself**, because the bar around it does not rebuild for a
+  // keystroke that changes nothing it shows (`memo.dart`) — and with a key,
+  // so it only rebuilds when the tags on the caret's line change.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MemoBuilder(
+        listenable: app,
+        inputs: () => [app, app.canFormatText,
+              _CommandBarState._mask(app.tagsAtCaret(), TagKind.values)],
+        builder: _build,
+      );
+
+  Widget _build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final active = app.tagsAtCaret();
     final enabled = app.canFormatText;
@@ -1169,8 +1243,17 @@ class _MakeCardButton extends StatelessWidget {
         SnackBar(content: Text(msg), duration: const Duration(seconds: 3)));
   }
 
+  // **Listens for itself**, because the bar around it does not rebuild for a
+  // keystroke that changes nothing it shows (`memo.dart`) — and with a key,
+  // so it only rebuilds when there is, or is not, a line to turn into a card.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MemoBuilder(
+        listenable: app,
+        inputs: () => [app, app.canFormatText],
+        builder: _build,
+      );
+
+  Widget _build(BuildContext context) {
     // **Never disabled.** With a caret on a line it turns THAT line into a
     // card, which is the good form; with no caret it makes a new card in a
     // box of its own. That second behaviour used to be a separate Insert
@@ -1260,8 +1343,24 @@ class _StudyButton extends StatelessWidget {
   /// enough to still mean something when it appears.
   static const _urgentDays = 7;
 
+  // **Listens for itself**, because the bar around it does not rebuild for a
+  // keystroke that changes nothing it shows (`memo.dart`) — and with a key,
+  // so it only rebuilds when the badge's own numbers move.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MemoBuilder(
+        listenable: app,
+        inputs: () => [app,
+              app.showStudyPanel,
+              app.activeSectionId,
+              // The counts themselves: a card falling due, or a line tagged
+              // into being one, must light the badge without waiting for
+              // something else to change.
+              app.study.deckCounts(sectionId: app.activeSectionId),
+              app.study.examDate(app.activeSectionId)],
+        builder: _build,
+      );
+
+  Widget _build(BuildContext context) {
     final (due, total) = app.study.deckCounts(sectionId: app.activeSectionId);
     // Read from the date map and the counts already in hand — deliberately not
     // through `examPlanFor`, which would walk the deck a second time on a
@@ -1318,6 +1417,31 @@ class _StudyButton extends StatelessWidget {
   }
 }
 
+/// What the planner badge counts: everything due today plus everything
+/// overdue, and whether any of it is overdue.
+///
+/// Pulled out of `_PlannerButton._build` so the memo key and the render can be
+/// derived by the SAME code. A key that recomputes a total by hand is a key
+/// that drifts from what is on screen the first time either side is edited.
+(int, bool) _agendaSplit(AppState app) {
+  var count = 0;
+  var overdue = false;
+  for (final s in app.planner.sections(now: DateTime.now())) {
+    if (s.bucket == AgendaBucket.overdue) {
+      overdue = true;
+      count += s.items.length;
+    } else if (s.bucket == AgendaBucket.today) {
+      count += s.items.length;
+    }
+  }
+  return (count, overdue);
+}
+
+int _agendaCount(AppState app) {
+  final (count, overdue) = _agendaSplit(app);
+  return overdue ? -count : count;
+}
+
 /// Opens the planner, and says what is on today without opening it.
 ///
 /// The badge counts **today's and overdue** rows, not everything dated. A
@@ -1328,20 +1452,22 @@ class _PlannerButton extends StatelessWidget {
   const _PlannerButton({required this.app});
   final AppState app;
 
+  // **Listens for itself**, because the bar around it does not rebuild for a
+  // keystroke that changes nothing it shows (`memo.dart`) — and with a key,
+  // so it only rebuilds when the agenda behind it changes.
   @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final sections = app.planner.sections(now: now);
-    var count = 0;
-    var overdue = false;
-    for (final s in sections) {
-      if (s.bucket == AgendaBucket.overdue) {
-        overdue = true;
-        count += s.items.length;
-      } else if (s.bucket == AgendaBucket.today) {
-        count += s.items.length;
-      }
-    }
+  Widget build(BuildContext context) => MemoBuilder(
+        listenable: app,
+        inputs: () => [app,
+              app.showPlannerPanel,
+              app.planner.pendingAlerts.length,
+              // What the badge counts, derived exactly as `_build` derives it.
+              _agendaCount(app)],
+        builder: _build,
+      );
+
+  Widget _build(BuildContext context) {
+    final (count, overdue) = _agendaSplit(app);
     final alerts = app.planner.pendingAlerts.length;
     return Tooltip(
       message: alerts > 0

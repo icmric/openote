@@ -51,18 +51,52 @@ import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
 import 'math_bar.dart';
+import 'memo.dart';
 import 'object_face.dart';
 
 /// The row's height, everywhere. `OnoteSize.button` plus two above and below.
 const double kObjectRowHeight = 36;
 
-class ObjectRow extends StatelessWidget {
+class ObjectRow extends StatefulWidget {
   const ObjectRow({super.key, required this.app});
 
   final AppState app;
 
   @override
-  Widget build(BuildContext context) {
+  State<ObjectRow> createState() => _ObjectRowState();
+}
+
+class _ObjectRowState extends State<ObjectRow> with MemoBuild<ObjectRow> {
+  AppState get app => widget.app;
+
+  /// Everything this row RENDERS. `AppState.markDirty()` fires on every
+  /// keystroke and the shell rebuilds from the top, but none of the values
+  /// below can change because a character was typed — so the row is built
+  /// once and reused until one of them actually moves. See `memo.dart` for
+  /// the measurements and the guard test.
+  ///
+  /// Two things here are live and are deliberately NOT on this list, because
+  /// each already listens on its own account: the zoom percentage, which sits
+  /// under an `AnimatedBuilder` on `app.canvas`, and the word count, which is
+  /// the one thing in this row that really does change with every keystroke.
+  @override
+  List<Object?> memoInputs() => [
+        app,
+        objectFaceOf(app),
+        app.activeMath,
+        app.angleMode,
+        // A `List` compares by identity; the ids themselves are what the
+        // recents strip renders.
+        app.recentMathIds.join(','),
+        app.snapToGrid,
+        app.pageProps.background,
+        app.pageProps.layout,
+        app.pageProps.paperSize,
+        app.pageProps.landscape,
+      ];
+
+  @override
+  Widget buildMemo(BuildContext context) {
     final s = context.surfaces;
     final face = objectFaceOf(app);
     return Container(
@@ -324,8 +358,18 @@ class _WordCountState extends State<_WordCount> {
   /// changed; the rest are string comparisons. Measured after: 0.2 ms.
   final _cache = PageStatsCache();
 
+  // **Listens for itself.** The row around it is built once and reused until
+  // something it shows actually changes (`memo.dart`) — and the word count is
+  // the one thing in that row which changes with every character. So it
+  // subscribes on its own account rather than being carried along by a
+  // rebuild of everything else.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: widget.app,
+        builder: (context, _) => _build(context),
+      );
+
+  Widget _build(BuildContext context) {
     final app = widget.app;
     final s = context.surfaces;
     final stats = _cache.of(app.blocks);

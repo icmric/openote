@@ -1149,6 +1149,13 @@ class _AppShellState extends State<AppShell> {
   Widget? _navCache;
   List<Object?>? _navKey;
 
+  /// The navigator, built once and reused until something it shows changes.
+  ///
+  /// This is where the technique the command bar and the object row now use
+  /// started — see `memo.dart`, which generalises it and carries the
+  /// measurements. It stays hand-rolled here because the memo belongs to this
+  /// ONE child: the shell's own build has to run on every notification, since
+  /// that is what puts the page on screen.
   Widget _navigator() {
     final key = <Object?>[
       app.nodesRevision,
