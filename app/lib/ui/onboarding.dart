@@ -221,10 +221,18 @@ class _OnboardingState extends State<_Onboarding>
       title: _band(s, still),
       content: SizedBox(
         width: 520,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-              OnoteSpace.x8, OnoteSpace.x6, OnoteSpace.x8, 0),
-          child: Column(
+        // The last step is much taller than the first two — it carries the
+        // starting points — and without this the dialog jumped by 240px on a
+        // press of Next, which reads as a different dialog rather than the
+        // next page of one. Same 180ms as every other transition in the app.
+        child: AnimatedSize(
+          duration: OnoteMotion.standard,
+          curve: OnoteMotion.curve,
+          alignment: Alignment.topCenter,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+                OnoteSpace.x8, OnoteSpace.x6, OnoteSpace.x8, 0),
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -243,7 +251,8 @@ class _OnboardingState extends State<_Onboarding>
                     style: OnoteType.small.copyWith(color: OnoteColors.danger)),
                 if (_errorDetail != null) _details(s, l),
               ],
-            ],
+              ],
+            ),
           ),
         ),
       ),

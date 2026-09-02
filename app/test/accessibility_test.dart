@@ -26,7 +26,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
-import 'package:openote/theme/onote_theme.dart';
 import 'package:openote/math/math_view.dart';
 import 'package:openote/ui/app_shell.dart';
 
