@@ -23,6 +23,7 @@ import 'package:openote/store/repository.dart';
 import 'package:openote/ui/onboarding.dart';
 import 'package:openote/ui/settings_dialog.dart';
 
+import 'support/app.dart';
 import 'support/sqlite.dart';
 
 void main() {
@@ -59,21 +60,22 @@ void main() {
     tester.view.physicalSize = window;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: Builder(
-          builder: (context) => TextButton(
-            onPressed: () => open(context, app),
-            child: const Text('open'),
-          ),
+    await tester.pumpWidget(testApp(Scaffold(
+      body: Builder(
+        builder: (context) => TextButton(
+          onPressed: () => open(context, app),
+          child: const Text('open'),
         ),
       ),
-    ));
+    )));
     await tester.tap(find.text('open'));
     // Drains the debounced workspace write (400ms) as well as the dialog's
-    // own entrance, so nothing is left pending.
+    // own entrance, so nothing is left pending — once on the way in, and
+    // again after settling, since a dialog can arm that write during its own
+    // first frames.
     await tester.pump(const Duration(milliseconds: 450));
     await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 450));
   }
 
   testWidgets('the flow steps forward, back, and ends on the page',

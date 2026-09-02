@@ -1,3 +1,4 @@
+import 'l10n/l10n.dart';
 import 'dart:io' show exit;
 import 'dart:ui' show AppExitResponse;
 
@@ -143,6 +144,8 @@ class _OpenoteBootState extends State<OpenoteBoot> {
     if (app != null) return OpenoteApp(app: app);
     return MaterialApp(
       title: 'Openote',
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       debugShowCheckedModeBanner: false,
       theme: onoteTheme(Brightness.light),
       darkTheme: onoteTheme(Brightness.dark),
@@ -174,6 +177,8 @@ class _StartupError extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Openote',
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       theme: onoteTheme(Brightness.light),
       home: Scaffold(
         body: Center(
@@ -231,6 +236,8 @@ class _OpenoteAppState extends State<OpenoteApp> {
         _builtMode = widget.app.themeMode;
         return _built = MaterialApp(
           title: 'Openote',
+          localizationsDelegates: kOnoteLocalizations,
+          supportedLocales: kOnoteLocales,
           debugShowCheckedModeBanner: false,
           theme: onoteTheme(Brightness.light),
           darkTheme: onoteTheme(Brightness.dark),

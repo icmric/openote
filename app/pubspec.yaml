@@ -11,6 +11,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Translation (see docs/planning/v0.24-road-to-1.0.md §Languages). The
+  # generated `AppLocalizations` is CHECKED IN under lib/l10n rather than
+  # produced into a synthetic package at build time, so it is reviewable in a
+  # diff and cannot go missing in a build that skipped codegen.
+  flutter_localizations:
+    sdk: flutter
+  intl: any
   # Storage — the .onote container (File Format Spec 10)
   sqlite3: ^2.4.0
   sqlite3_flutter_libs: ^0.5.24 # bundles SQLite (incl. FTS5) on all desktop/mobile targets
@@ -68,6 +75,9 @@ flutter_launcher_icons:
 
 flutter:
   uses-material-design: true
+  # `flutter gen-l10n` reads l10n.yaml; `generate: true` is what makes
+  # `flutter run`/`build` re-run it when an .arb changes.
+  generate: true
   assets:
     - assets/icon/openote_icon.png
     # Spell-check wordlist (TEXT-11). Loaded lazily on a background isolate the

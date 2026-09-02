@@ -1121,7 +1121,7 @@ class _StorageSectionState extends State<_StorageSection> {
   /// all of that is in the Advanced fold, which is where the jargon rule
   /// (PLANNING, year-10 bar) puts it.
   Future<void> _confirmUpgrade() async {
-    final ok = await showDialog<bool>(
+    final ok = await showOnoteDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Update how this notebook is stored?'),
@@ -1176,7 +1176,7 @@ class _StorageSectionState extends State<_StorageSection> {
   }
 
   Future<void> _confirmUndoUpgrade() async {
-    final ok = await showDialog<bool>(
+    final ok = await showOnoteDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Go back to the old way?'),
@@ -1289,7 +1289,7 @@ class _StorageSectionState extends State<_StorageSection> {
   }
 
   Future<void> _confirmTidyPictures() async {
-    final ok = await showDialog<bool>(
+    final ok = await showOnoteDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Stop keeping pictures twice?'),

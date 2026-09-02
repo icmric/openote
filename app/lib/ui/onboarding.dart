@@ -32,6 +32,7 @@ import 'package:path/path.dart' as p;
 
 import '../export/import_job.dart';
 import '../export/onenote_import.dart' show OneNoteUnavailable;
+import '../l10n/l10n.dart';
 import '../math/math_view.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
@@ -106,7 +107,12 @@ class _OnboardingState extends State<_Onboarding>
 
   bool _oneNoteHelp = false;
   bool _importing = false;
-  String? _error;
+
+  /// Held as a FUNCTION of the translations rather than as finished text: the
+  /// failures below happen outside `build`, where there is no guarantee the
+  /// context is still good for a lookup — and a message resolved when it was
+  /// set would keep the old language after a locale change.
+  String Function(L)? _error;
 
   /// The exception itself, shown only if the student asks for it.
   String? _errorDetail;
@@ -167,7 +173,7 @@ class _OnboardingState extends State<_Onboarding>
       // behind "Details (advanced)", and this path had no such fold.
       if (mounted) {
         setState(() {
-          _error = "Openote couldn't open that notebook.";
+          _error = (l) => l.onboardingOpenFailed;
           _errorDetail = '$e';
         });
       }
@@ -178,19 +184,20 @@ class _OnboardingState extends State<_Onboarding>
   /// open: the whole point of importing first is doing the rest of this while
   /// it works.
   Future<void> _startImport() async {
-    final file = await openFile(acceptedTypeGroups: const [
-      XTypeGroup(label: 'OneNote notebook package', extensions: ['onepkg'])
+    // The OS's own file picker shows this label beside the extension, so it
+    // is as user-facing as anything drawn in the dialog.
+    final label = L.of(context).onboardingOnePkgFileType;
+    final file = await openFile(acceptedTypeGroups: [
+      XTypeGroup(label: label, extensions: const ['onepkg'])
     ]);
     if (file == null || !mounted) return;
     try {
       final job = ImportJob.start(app, p.basename(file.name), file.path);
       if (job != null) setState(() => _importing = true);
     } on OneNoteUnavailable {
-      setState(() => _error =
-          'OneNote import needs the native core, which this build does not '
-          'include.');
+      setState(() => _error = (l) => l.onboardingNoNativeCore);
     } catch (e) {
-      setState(() => _error = "Couldn't read that file: $e");
+      setState(() => _error = (l) => l.onboardingReadFailed('$e'));
     }
   }
 
@@ -199,6 +206,7 @@ class _OnboardingState extends State<_Onboarding>
   @override
   Widget build(BuildContext context) {
     final s = context.surfaces;
+    final l = L.of(context);
     // Held still rather than looping when the machine asks for less motion
     // (PLAT-5). The sequence still reads: the final frame is the finished box.
     final still = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
@@ -220,20 +228,20 @@ class _OnboardingState extends State<_Onboarding>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(_title(), style: OnoteType.title.copyWith(color: s.textPrimary)),
+              Text(_title(l), style: OnoteType.title.copyWith(color: s.textPrimary)),
               const SizedBox(height: OnoteSpace.x3),
-              Text(_body(),
+              Text(_body(l),
                   style: OnoteType.ui
                       .copyWith(color: s.textSecondary, height: 1.5)),
               if (_step == 2) ...[
                 const SizedBox(height: OnoteSpace.x6),
-                ..._startingPoints(s),
+                ..._startingPoints(s, l),
               ],
               if (_error != null) ...[
                 const SizedBox(height: OnoteSpace.x5),
-                Text(_error!,
+                Text(_error!(l),
                     style: OnoteType.small.copyWith(color: OnoteColors.danger)),
-                if (_errorDetail != null) _details(s),
+                if (_errorDetail != null) _details(s, l),
               ],
             ],
           ),
@@ -241,7 +249,7 @@ class _OnboardingState extends State<_Onboarding>
       ),
       actionsPadding: const EdgeInsets.fromLTRB(
           OnoteSpace.x8, OnoteSpace.x5, OnoteSpace.x5, OnoteSpace.x5),
-      actions: [_footer(s)],
+      actions: [_footer(s, l)],
     );
   }
 
@@ -298,27 +306,21 @@ class _OnboardingState extends State<_Onboarding>
         ],
       );
 
-  String _title() => switch (_step) {
-        0 => 'The page is a canvas',
-        1 => 'Maths and drawing, in with the words',
-        _ => 'Your notes are a file you own',
+  String _title(L l) => switch (_step) {
+        0 => l.onboardingStep1Title,
+        1 => l.onboardingStep2Title,
+        _ => l.onboardingStep3Title,
       };
 
-  String _body() => switch (_step) {
-        0 => 'Click anywhere and start typing — a box appears where you '
-            'clicked, and only once you type. Move one by the bar along its '
-            'top, and drag pictures in from anywhere.',
-        1 => 'Type 1/2 or press Alt+= and it builds up as real notation as '
-            'you write, in a box of its own or mid-sentence. The Draw tab '
-            'takes a pen, a finger or the mouse.',
-        _ => 'One open, readable file per notebook — no account, no lock-in. '
-            'Put it in a folder your cloud already keeps in step and every '
-            'device stays together.',
+  String _body(L l) => switch (_step) {
+        0 => l.onboardingStep1Body,
+        1 => l.onboardingStep2Body,
+        _ => l.onboardingStep3Body,
       };
 
   /// The three real starting points, unchanged in substance from the first
   /// version of this dialog: found notebooks, OneNote, or just write.
-  List<Widget> _startingPoints(OnoteSurfaces s) => [
+  List<Widget> _startingPoints(OnoteSurfaces s, L l) => [
         // Found notebooks first: on a second machine this is the answer,
         // and offering it beats asking for a path.
         if (_found.isNotEmpty)
@@ -327,18 +329,17 @@ class _OnboardingState extends State<_Onboarding>
               s,
               title: n.name,
               body: p.dirname(n.path),
-              action: 'Open',
+              action: l.commonOpen,
               primary: true,
               onTap: () => _open(n.path),
             ),
         _row(
           s,
-          title: 'Sync with another device',
+          title: l.onboardingSyncTitle,
           body: _found.isEmpty
-              ? 'Drive, OneDrive, iCloud, Dropbox, Syncthing, a NAS — or a '
-                  'GitHub repository.'
-              : 'Not one of the above? Choose the folder yourself.',
-          action: 'Set up…',
+              ? l.onboardingSyncBodyFirst
+              : l.onboardingSyncBodyAlso,
+          action: l.onboardingSyncAction,
           onTap: () async {
             Navigator.of(context).pop();
             await showSyncDialog(context, app);
@@ -350,19 +351,20 @@ class _OnboardingState extends State<_Onboarding>
         // around — instead of the app freezing for a minute the moment they
         // arrive.
         if (_importing)
-          _importRow(s)
+          _importRow(s, l)
         else
           _row(
             s,
-            title: 'Bring notes over from OneNote',
-            body: 'Pages, formatting, images, ink and tags from a .onepkg. '
-                'Runs in the background — keep going while it works.',
-            action: 'Choose file…',
+            title: l.onboardingOneNoteTitle,
+            body: l.onboardingOneNoteBody,
+            action: l.onboardingOneNoteAction,
             onTap: _startImport,
-            secondary: _oneNoteHelp ? 'Hide steps' : 'How do I export?',
+            secondary: _oneNoteHelp
+                ? l.onboardingOneNoteHideSteps
+                : l.onboardingOneNoteHowTo,
             onSecondary: () => setState(() => _oneNoteHelp = !_oneNoteHelp),
           ),
-        if (_oneNoteHelp) _oneNoteSteps(s),
+        if (_oneNoteHelp) _oneNoteSteps(s, l),
       ];
 
   /// One starting point. Deliberately no leading icon: three of these stacked,
@@ -431,7 +433,7 @@ class _OnboardingState extends State<_Onboarding>
   /// The in-dialog echo of the floating progress card, so starting the import
   /// visibly *did something* right here — and so the dialog can say the one
   /// sentence that explains the new shape: you don't have to wait.
-  Widget _importRow(OnoteSurfaces s) => ListenableBuilder(
+  Widget _importRow(OnoteSurfaces s, L l) => ListenableBuilder(
         listenable: ImportJob.current ?? Listenable.merge(const []),
         builder: (context, _) {
           final job = ImportJob.current;
@@ -466,16 +468,14 @@ class _OnboardingState extends State<_Onboarding>
                     children: [
                       Text(
                           job.state == ImportJobState.done
-                              ? 'Your notebook is ready'
-                              : 'Importing ${job.fileName}',
+                              ? l.onboardingImportDone
+                              : l.onboardingImportingFile(job.fileName),
                           style: OnoteType.uiStrong
                               .copyWith(color: s.textPrimary)),
                       Text(
                           job.isFinished
                               ? job.message
-                              : 'Keep going — this runs in the background, '
-                                  'and the card in the corner will say when '
-                                  "it's done.",
+                              : l.onboardingImportRunning,
                           style: OnoteType.caption
                               .copyWith(color: s.textSecondary)),
                     ]),
@@ -486,7 +486,7 @@ class _OnboardingState extends State<_Onboarding>
                     Navigator.of(context).pop();
                     job.open();
                   },
-                  child: const Text('Open'),
+                  child: Text(l.commonOpen),
                 ),
             ]),
           );
@@ -496,7 +496,7 @@ class _OnboardingState extends State<_Onboarding>
   /// Exporting from OneNote is the step people get stuck on, and it is not
   /// discoverable — the desktop app hides it, and the web and store versions
   /// cannot do it at all. Saying so plainly beats letting someone hunt.
-  Widget _oneNoteSteps(OnoteSurfaces s) => Container(
+  Widget _oneNoteSteps(OnoteSurfaces s, L l) => Container(
         margin: const EdgeInsets.only(bottom: OnoteSpace.x3),
         padding: const EdgeInsets.all(OnoteSpace.x5),
         decoration: BoxDecoration(
@@ -506,26 +506,17 @@ class _OnboardingState extends State<_Onboarding>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Exporting from OneNote',
+            Text(l.onboardingExportTitle,
                 style: OnoteType.uiStrong.copyWith(color: s.textPrimary)),
             const SizedBox(height: OnoteSpace.x3),
             Text(
-              '1. Open OneNote for Windows (the desktop app — the Store and '
-              'web versions cannot export).\n'
-              '2. Let the notebook finish syncing, so everything is on this '
-              'machine.\n'
-              '3. File ▸ Export ▸ Notebook ▸ OneNote Package (*.onepkg), then '
-              'Export.\n'
-              '4. Come back here and choose that file.',
+              l.onboardingExportSteps,
               style: OnoteType.small
                   .copyWith(color: s.textPrimary, height: 1.55),
             ),
             const SizedBox(height: OnoteSpace.x4),
             Text(
-              'On a Mac, or with only the Store version: export one section at '
-              'a time as .one, or ask a Windows machine to make the .onepkg. '
-              'Openote never signs into your Microsoft account — it only reads '
-              'the file you hand it.',
+              l.onboardingExportMacNote,
               style: OnoteType.caption
                   .copyWith(color: s.textSecondary, height: 1.45),
             ),
@@ -533,14 +524,14 @@ class _OnboardingState extends State<_Onboarding>
         ),
       );
 
-  Widget _details(OnoteSurfaces s) => Theme(
+  Widget _details(OnoteSurfaces s, L l) => Theme(
         // The divider lines an ExpansionTile draws by default cut the dialog
         // in half for one folded line of text.
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           tilePadding: EdgeInsets.zero,
           childrenPadding: EdgeInsets.zero,
-          title: Text('Details (advanced)',
+          title: Text(l.commonDetailsAdvanced,
               style: OnoteType.caption.copyWith(color: s.textSecondary)),
           children: [
             Align(
@@ -555,7 +546,7 @@ class _OnboardingState extends State<_Onboarding>
   /// Dots, Back, and one forward button that becomes "Start writing" on the
   /// last step — so the flow always ends by putting you on the page rather
   /// than leaving you to find the close button.
-  Widget _footer(OnoteSurfaces s) => Row(children: [
+  Widget _footer(OnoteSurfaces s, L l) => Row(children: [
         for (var i = 0; i < _steps; i++)
           Padding(
             padding: const EdgeInsets.only(right: OnoteSpace.x2),
@@ -575,17 +566,18 @@ class _OnboardingState extends State<_Onboarding>
         const Spacer(),
         if (_step > 0)
           TextButton(
-              onPressed: () => _goTo(_step - 1), child: const Text('Back'))
+              onPressed: () => _goTo(_step - 1), child: Text(l.commonBack))
         else
           TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Skip')),
+              child: Text(l.commonSkip)),
         const SizedBox(width: OnoteSpace.x2),
         FilledButton(
           onPressed: _step == _steps - 1
               ? () => Navigator.of(context).pop()
               : () => _goTo(_step + 1),
-          child: Text(_step == _steps - 1 ? 'Start writing' : 'Next'),
+          child: Text(
+              _step == _steps - 1 ? l.onboardingStartWriting : l.commonNext),
         ),
       ]);
 }

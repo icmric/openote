@@ -1,0 +1,17 @@
+# Translation setup — see docs/planning/v0.24-road-to-1.0.md §Languages.
+#
+# `output-dir` puts the generated `L` class in lib/l10n/gen, IN THE
+# REPOSITORY, rather than somewhere under .dart_tool. That is deliberate: the
+# generated file is then reviewable in a diff, greppable like any other code,
+# and present in a checkout that has not run codegen — which is the difference
+# between a contributor's first build working and it failing on a missing
+# import. Regenerate with `flutter gen-l10n` after editing any .arb.
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-dir: lib/l10n/gen
+output-localization-file: app_localizations.dart
+output-class: L
+nullable-getter: false
+# Every string must exist in the template; a missing TRANSLATION falls back to
+# English, which is the right behaviour for a part-translated app.
+untranslated-messages-file: l10n-untranslated.txt

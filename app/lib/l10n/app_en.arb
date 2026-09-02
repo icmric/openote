@@ -1,0 +1,85 @@
+{
+  "@@locale": "en",
+
+  "@@x-notes": "The English template, and the source of truth for every other language. Rules for anyone adding a string: name it <surface><Thing> so a grep for the surface finds all of it; give every message an @-entry saying WHERE it appears and what any placeholder holds, because a translator sees the string and nothing else; and never build a sentence by concatenating fragments — word order is not the same everywhere. Illustrations in this app are painted, not written, so there is deliberately nothing in them to translate.",
+
+  "commonBack": "Back",
+  "@commonBack": {"description": "Button: return to the previous step of a multi-step flow."},
+  "commonSkip": "Skip",
+  "@commonSkip": {"description": "Button: leave a flow without completing it."},
+  "commonNext": "Next",
+  "@commonNext": {"description": "Button: advance to the next step of a multi-step flow."},
+  "commonOpen": "Open",
+  "@commonOpen": {"description": "Button: open the notebook named beside it."},
+  "commonCancel": "Cancel",
+  "@commonCancel": {"description": "Button: dismiss a dialog without acting."},
+  "commonDetailsAdvanced": "Details (advanced)",
+  "@commonDetailsAdvanced": {"description": "Fold-out label hiding a raw technical error message from someone who does not want it."},
+
+  "onboardingStep1Title": "The page is a canvas",
+  "@onboardingStep1Title": {"description": "Welcome flow, step 1 of 3. Heading over an animation of clicking on an empty page and typing."},
+  "onboardingStep1Body": "Click anywhere and start typing — a box appears where you clicked, and only once you type. Move one by the bar along its top, and drag pictures in from anywhere.",
+  "@onboardingStep1Body": {"description": "Welcome flow, step 1 of 3. The core interaction: the page is free-form, not a document that flows top to bottom."},
+
+  "onboardingStep2Title": "Maths and drawing, in with the words",
+  "@onboardingStep2Title": {"description": "Welcome flow, step 2 of 3. Heading over a rendered equation and a pen stroke."},
+  "onboardingStep2Body": "Type 1/2 or press Alt+= and it builds up as real notation as you write, in a box of its own or mid-sentence. The Draw tab takes a pen, a finger or the mouse.",
+  "@onboardingStep2Body": {"description": "Welcome flow, step 2 of 3. 'Alt+=' is a keyboard shortcut and must stay as typed. '1/2' is literally what the user types to get a fraction."},
+
+  "onboardingStep3Title": "Your notes are a file you own",
+  "@onboardingStep3Title": {"description": "Welcome flow, step 3 of 3. Heading over a diagram of one file, a synced folder, and two computers."},
+  "onboardingStep3Body": "One open, readable file per notebook — no account, no lock-in. Put it in a folder your cloud already keeps in step and every device stays together.",
+  "@onboardingStep3Body": {"description": "Welcome flow, step 3 of 3. 'no lock-in' means the notes are not trapped in a proprietary service."},
+
+  "onboardingStartWriting": "Start writing",
+  "@onboardingStartWriting": {"description": "Button ending the welcome flow and putting the user on the page."},
+
+  "onboardingSyncTitle": "Sync with another device",
+  "@onboardingSyncTitle": {"description": "Welcome flow: one of three ways to get notes in."},
+  "onboardingSyncBodyFirst": "Drive, OneDrive, iCloud, Dropbox, Syncthing, a NAS — or a GitHub repository.",
+  "@onboardingSyncBodyFirst": {"description": "Shown when no existing notebook was found nearby. All names are products and stay untranslated; 'NAS' is a network drive at home."},
+  "onboardingSyncBodyAlso": "Not one of the above? Choose the folder yourself.",
+  "@onboardingSyncBodyAlso": {"description": "Shown when Openote DID find notebooks and has already listed them above."},
+  "onboardingSyncAction": "Set up…",
+  "@onboardingSyncAction": {"description": "Button opening the sync setup dialog."},
+
+  "onboardingOneNoteTitle": "Bring notes over from OneNote",
+  "@onboardingOneNoteTitle": {"description": "Welcome flow: importing an existing Microsoft OneNote notebook. 'OneNote' is a product name."},
+  "onboardingOneNoteBody": "Pages, formatting, images, ink and tags from a .onepkg. Runs in the background — keep going while it works.",
+  "@onboardingOneNoteBody": {"description": "'.onepkg' is a file extension and must not be translated. 'ink' means handwriting."},
+  "onboardingOneNoteAction": "Choose file…",
+  "@onboardingOneNoteAction": {"description": "Button opening the file picker for a .onepkg."},
+  "onboardingOnePkgFileType": "OneNote notebook package",
+  "@onboardingOnePkgFileType": {"description": "The file-type name shown in the operating system's own file picker, next to the .onepkg extension it filters on."},
+  "onboardingOneNoteHowTo": "How do I export?",
+  "@onboardingOneNoteHowTo": {"description": "Link folding out the OneNote export instructions."},
+  "onboardingOneNoteHideSteps": "Hide steps",
+  "@onboardingOneNoteHideSteps": {"description": "Link folding the OneNote export instructions away again."},
+
+  "onboardingExportTitle": "Exporting from OneNote",
+  "@onboardingExportTitle": {"description": "Heading over the numbered instructions for getting a .onepkg out of OneNote."},
+  "onboardingExportSteps": "1. Open OneNote for Windows (the desktop app — the Store and web versions cannot export).\n2. Let the notebook finish syncing, so everything is on this machine.\n3. File ▸ Export ▸ Notebook ▸ OneNote Package (*.onepkg), then Export.\n4. Come back here and choose that file.",
+  "@onboardingExportSteps": {"description": "Four numbered steps. 'File ▸ Export ▸ Notebook ▸ OneNote Package' is a menu path INSIDE OneNote — translate it to match OneNote's own wording in this language, or leave it in English if unsure. Keep the newlines and the numbering."},
+  "onboardingExportMacNote": "On a Mac, or with only the Store version: export one section at a time as .one, or ask a Windows machine to make the .onepkg. Openote never signs into your Microsoft account — it only reads the file you hand it.",
+  "@onboardingExportMacNote": {"description": "'.one' and '.onepkg' are file extensions and must not be translated."},
+
+  "onboardingImportingFile": "Importing {fileName}",
+  "@onboardingImportingFile": {
+    "description": "Progress row while a OneNote package is being read.",
+    "placeholders": {"fileName": {"type": "String", "example": "School 2026.onepkg"}}
+  },
+  "onboardingImportRunning": "Keep going — this runs in the background, and the card in the corner will say when it's done.",
+  "@onboardingImportRunning": {"description": "Reassurance under the progress spinner: the user does not have to wait."},
+  "onboardingImportDone": "Your notebook is ready",
+  "@onboardingImportDone": {"description": "Shown when the OneNote import has finished successfully."},
+
+  "onboardingOpenFailed": "Openote couldn't open that notebook.",
+  "@onboardingOpenFailed": {"description": "Error shown when opening a notebook Openote found on this computer failed. The reason itself is behind commonDetailsAdvanced."},
+  "onboardingNoNativeCore": "OneNote import needs the native core, which this build does not include.",
+  "@onboardingNoNativeCore": {"description": "Error: this build was compiled without the Rust library that reads .onepkg files. 'the native core' is a component of Openote."},
+  "onboardingReadFailed": "Couldn't read that file: {reason}",
+  "@onboardingReadFailed": {
+    "description": "Error shown when the chosen .onepkg could not be read at all.",
+    "placeholders": {"reason": {"type": "String", "example": "PathNotFoundException"}}
+  }
+}
