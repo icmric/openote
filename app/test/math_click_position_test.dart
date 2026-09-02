@@ -130,6 +130,29 @@ void main() {
     });
 
     testWidgets(
+        'clicking a closed equation in the MIDDLE opens it with the caret '
+        'in the middle, not snapped to either end', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // Nine digits: a click dead centre must land somewhere around index
+      // 4-5, not at 0 or 9 — the boundary-only assertions above would also
+      // pass for a implementation that silently always opened at one fixed
+      // end, so this is the one that actually tells the two apart.
+      final b = mathBlock('123456789');
+      await mount(tester, b);
+
+      final mathRect = tester.getRect(find.byType(OnoteMath));
+      await tester.tapAt(Offset(mathRect.center.dx, mathRect.center.dy));
+      await resolve(tester);
+
+      expect(app.editingBlockId, 'b1');
+      final field = tester.widget<MathField>(find.byType(MathField));
+      expect(field.editor.caretIndex, inInclusiveRange(2, 7),
+          reason: 'a click dead centre of nine digits must land somewhere '
+              'in the middle of them, not snapped to either end');
+      await settle(tester);
+    });
+
+    testWidgets(
         'a second click, once the equation is already open, moves the '
         'caret there too', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
@@ -205,6 +228,29 @@ void main() {
           reason: 'a click at the far left of the equation belongs at the '
               'start of it — for years it landed at a fixed spot no matter '
               'where it landed');
+      await settle(tester);
+    });
+
+    testWidgets(
+        'clicking a closed equation in the MIDDLE opens it with the caret '
+        'in the middle, not snapped to either end', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // Nine digits: a click dead centre must land somewhere around index
+      // 4-5, not at 0 or 9 — the boundary-only assertion above would also
+      // pass for an implementation that silently always opened at one fixed
+      // end, so this is the one that actually tells the two apart.
+      final b = para(r'we know $123456789$ here');
+      app.editingBlockId = 'b1';
+      await mount(tester, b);
+
+      final atomRect = tester.getRect(find.byType(InlineMathAtom));
+      await tester.tapAt(Offset(atomRect.center.dx, atomRect.center.dy));
+      await resolve(tester);
+
+      final field = tester.widget<MathField>(find.byType(MathField));
+      expect(field.editor.caretIndex, inInclusiveRange(2, 7),
+          reason: 'a click dead centre of nine digits must land somewhere '
+              'in the middle of them, not snapped to either end');
       await settle(tester);
     });
 
