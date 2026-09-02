@@ -1659,6 +1659,12 @@ abstract class L {
   /// **'{count, plural, =1{Imported 1 page…} other{Imported {count} pages…}}'**
   String nbImportedPagesProgress(int count);
 
+  /// What a screen reader says for a rendered equation. {latex} is the equation's own LaTeX source — not translated, because it is what the student typed. Only the word before it is yours.
+  ///
+  /// In en, this message translates to:
+  /// **'Equation: {latex}'**
+  String mathSemanticLabel(String latex);
+
   /// Welcome flow, step 1 of 3. Heading over an animation of clicking on an empty page and typing.
   ///
   /// In en, this message translates to:

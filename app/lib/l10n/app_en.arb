@@ -705,6 +705,12 @@
     "placeholders": {"count": {"type": "int"}}
   },
 
+  "mathSemanticLabel": "Equation: {latex}",
+  "@mathSemanticLabel": {
+    "description": "What a screen reader says for a rendered equation. {latex} is the equation's own LaTeX source — not translated, because it is what the student typed. Only the word before it is yours.",
+    "placeholders": {"latex": {"type": "String", "example": "E=\\frac{1}{2}mv^{2}"}}
+  },
+
   "onboardingStep1Title": "The page is a canvas",
   "@onboardingStep1Title": {"description": "Welcome flow, step 1 of 3. Heading over an animation of clicking on an empty page and typing."},
   "onboardingStep1Body": "Click anywhere and start typing — a box appears where you clicked, and only once you type. Move one by the bar along its top, and drag pictures in from anywhere.",

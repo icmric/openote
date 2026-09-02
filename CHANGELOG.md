@@ -4,6 +4,21 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — a screen reader can hear an equation (2026-09-02)
+
+- **Equations announce themselves.** Maths is drawn as glyph boxes, which say
+  nothing at all, so an equation was silence in the middle of a page whose
+  prose reads perfectly well. It now carries what you typed. That is not
+  spoken maths — "x squared over two" is a separate, planned job — but it
+  beats a blank.
+- The rest of the app came out of the same check better than expected, and
+  the review has been corrected: every icon-only button in Openote already
+  carries a tooltip, and a tooltip is what a screen reader reads out, so the
+  toolbars and the navigator name themselves. The words on a page reach a
+  screen reader too. What is still missing is a way to jump straight to the
+  navigator, the toolbar or the page instead of walking through everything.
+
+
 ### Changed — typing no longer rebuilds the toolbars (2026-09-02)
 
 - **The command bar and the object row are no longer rebuilt for a keystroke

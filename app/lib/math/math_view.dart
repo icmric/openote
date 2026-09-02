@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 
+import '../l10n/l10n.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import 'latex_compat.dart';
@@ -84,7 +85,15 @@ class OnoteMath extends StatelessWidget {
       surfaces.textSecondary.withValues(alpha: dark ? 0.26 : 0.13),
       surfaces.chrome,
     ));
-    return Math.tex(
+    // **A screen reader gets the source.** `Math.tex` paints glyph boxes and
+    // says nothing, so an equation was a silent hole in a page whose prose
+    // reads perfectly well (v0.24 §5). The LaTeX is not spoken maths — that
+    // is designed in v0.21 and not built — but it is what the student typed,
+    // and it is unambiguously better than silence.
+    return Semantics(
+      label: L.of(context).mathSemanticLabel(tex),
+      excludeSemantics: true,
+      child: Math.tex(
         renderableLatex(tex, answerFill: fill),
         textStyle: textStyle,
         // Display style, wherever it sits. A fraction is the same size in a
@@ -97,7 +106,8 @@ class OnoteMath extends StatelessWidget {
           note: mathDisplayProblem(e),
           compact: compact,
         ),
-      );
+      ),
+    );
   }
 }
 

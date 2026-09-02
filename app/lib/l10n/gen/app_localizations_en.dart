@@ -957,6 +957,11 @@ class LEn extends L {
   }
 
   @override
+  String mathSemanticLabel(String latex) {
+    return 'Equation: $latex';
+  }
+
+  @override
   String get onboardingStep1Title => 'The page is a canvas';
 
   @override
