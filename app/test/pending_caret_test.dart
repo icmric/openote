@@ -5,15 +5,26 @@
 // it does currently, except for that id like the arrow keys to allow me to
 // navigate around the page."
 //
+// The first cut redirected arrow keys to the canvas's own block-to-BLOCK
+// navigation (jumping selection to whichever existing block sits in that
+// direction) — wrong, per the owner: "the box doesn't appear but arrow key
+// navigation just switched between the existing boxes, doesnt move the
+// cursor around the page." With no box drawn yet, the only thing on screen
+// IS the blinking text caret, and "navigate around the page" means THAT
+// slides around — the block's own position moves, the same way Ctrl+arrow
+// already nudges a selected block, just without needing Ctrl since there is
+// no text caret yet for a plain arrow to belong to instead.
+//
 // Three claims, each reproduced through the REAL shell (AppShell), because
 // the whole point is arrow keys sent to a real focused text field that must
 // NOT move a caret through content that doesn't exist:
 //
-//  (a) a click-created, still-empty block shows no chrome at all — no move
-//      bar, no border, no resize handles — until the first keystroke;
-//  (b) while it is pending, plain arrow keys navigate between blocks exactly
-//      like the canvas's own block-to-block navigation, and the abandoned
-//      empty block is swept, same rule as clicking away without typing;
+//  (a) a click-created, still-empty block shows no chrome AND no hint text
+//      — no move bar, no border, no resize handles, nothing describing
+//      marks for a box the student cannot see — until the first keystroke;
+//  (b) while it is pending, plain arrow keys slide the box's OWN position
+//      around the page, exactly like Ctrl+arrow already does for a
+//      selected block — never jumping editing away to a different one;
 //  (c) the moment typing starts, arrow keys go back to moving the text caret
 //      — this is a ONE-TIME window before the first character, not a
 //      standing property of "the block happens to be empty right now".
@@ -135,6 +146,10 @@ void main() {
         reason: 'the caret is live — typing must work right away');
     expect(find.byIcon(Icons.drag_indicator), findsNothing,
         reason: 'no move bar — the box has not shown itself yet');
+    expect(find.text('heading (#), list (-), task (- [ ]), bold (**)'),
+        findsNothing,
+        reason: 'no hint text either — nothing describes marks for a box '
+            'the student cannot even see');
 
     // Typing ends the pending state and the box appears, exactly as today.
     await type(tester, 'a', 1);
@@ -148,9 +163,11 @@ void main() {
   });
 
   testWidgets(
-      'arrow keys navigate the page while the caret is still pending',
-      (tester) async {
+      'arrow keys slide the pending box around the page, never jumping '
+      'editing to a different block', (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // A neighbour is seeded to prove the arrow keys leave IT alone —
+    // the previous (wrong) design jumped editing straight to it.
     final other = Block(
         id: 'other',
         type: BlockType.text,
@@ -160,21 +177,25 @@ void main() {
         content: {'text': 'existing', 'autoWidth': false});
     await pumpShell(tester, preseeded: [other]);
 
-    final pending = clickToCreate(200, 200); // above `other`
+    final pending = clickToCreate(200, 200);
     await settle(tester);
     expect(app.editingBlockId, pending.id);
+    final startX = pending.x, startY = pending.y;
 
     await key(tester, LogicalKeyboardKey.arrowDown);
+    await key(tester, LogicalKeyboardKey.arrowRight);
 
-    expect(app.selectedBlockId, 'other',
-        reason: 'the arrow key navigated to the block below it — exactly '
-            'what the same key already does for a selected, not-editing '
-            'block (AppShell._spatial)');
-    expect(app.editingBlockId, isNull,
-        reason: 'navigating away leaves nothing being edited any more');
-    expect(app.blocks.any((x) => x.id == pending.id), isFalse,
-        reason: 'the abandoned, still-empty pending block is swept — same '
-            'rule as clicking away without typing (F-3)');
+    expect(app.editingBlockId, pending.id,
+        reason: 'still editing the SAME block — the arrow keys must never '
+            'jump editing to a different one, even one right there');
+    expect(app.pendingEmptyBlockId, pending.id,
+        reason: 'still pending — sliding it around is not typing into it');
+    expect(pending.x, greaterThan(startX),
+        reason: 'ArrowRight moved the box itself to the right');
+    expect(pending.y, greaterThan(startY),
+        reason: 'ArrowDown moved the box itself further down the page');
+    expect(app.blocks.any((x) => x.id == 'other'), isTrue,
+        reason: 'the neighbour was never touched');
     app.cancelPendingSave();
   });
 

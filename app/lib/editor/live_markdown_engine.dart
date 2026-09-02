@@ -765,27 +765,27 @@ class _LiveMarkdownSession extends OnoteEditSession {
     // **The OneNote-style pending caret** (owner: click the canvas, and
     // arrow keys should navigate the page). A block a click just opened
     // with nothing typed into it yet has no content for a caret to move
-    // through, so a plain arrow key moves which block the page is looking
-    // at instead — the exact thing arrow keys already do for a SELECTED,
-    // not-editing block (`AppShell._spatial`), reused here via
-    // `app.navigateSpatial` since this block happens to hold focus instead.
-    // The first real keystroke clears `pendingEmptyBlockId` (see
-    // `TextBlockView`'s `onChanged`), so this never fires again once the
-    // student has actually started writing.
+    // through, so a plain arrow key SLIDES THE BOX ITSELF around the page
+    // instead — the exact thing Ctrl+arrow already does for a selected
+    // block (`AppShell._nudge`), reused here via `app.navigateNudge`
+    // without needing Ctrl, since there is no text caret for a plain arrow
+    // to belong to yet. The first real keystroke clears
+    // `pendingEmptyBlockId` (see `TextBlockView`'s `onChanged`), so this
+    // never fires again once the student has actually started writing.
     if (!hw.isShiftPressed && app.pendingEmptyBlockId == app.editingBlockId) {
-      final nav = app.navigateSpatial;
-      if (nav != null) {
+      final nudge = app.navigateNudge;
+      if (nudge != null) {
         final dx = switch (k) {
-          LogicalKeyboardKey.arrowLeft => -1,
-          LogicalKeyboardKey.arrowRight => 1,
-          _ => 0,
+          LogicalKeyboardKey.arrowLeft => -1.0,
+          LogicalKeyboardKey.arrowRight => 1.0,
+          _ => 0.0,
         };
         final dy = switch (k) {
-          LogicalKeyboardKey.arrowUp => -1,
-          LogicalKeyboardKey.arrowDown => 1,
-          _ => 0,
+          LogicalKeyboardKey.arrowUp => -1.0,
+          LogicalKeyboardKey.arrowDown => 1.0,
+          _ => 0.0,
         };
-        if ((dx != 0 || dy != 0) && nav(dx, dy)) {
+        if ((dx != 0 || dy != 0) && nudge(dx, dy, fine: false)) {
           return KeyEventResult.handled;
         }
       }

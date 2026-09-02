@@ -317,7 +317,13 @@ class _TextBlockViewState extends State<TextBlockView> {
       // pairs used to read syntax-first ("# heading"), which is the exact
       // inversion of the form they asked for everywhere else — `symbol
       // (\symbol)`, not `symbol — type \symbol`.
-      hintText: 'heading (#), list (-), task (- [ ]), bold (**)',
+      //
+      // Suppressed entirely while pending (OneNote-style, no box shown
+      // yet): a hint describing marks the student cannot even see a BOX
+      // to type them into is worse than nothing at all.
+      hintText: widget.app.pendingEmptyBlockId == widget.block.id
+          ? null
+          : 'heading (#), list (-), task (- [ ]), bold (**)',
     );
 
     if (editing) {

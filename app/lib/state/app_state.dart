@@ -3813,17 +3813,20 @@ class AppState extends ChangeNotifier
   /// The block a click just created — or opened — with nothing in it and
   /// nothing typed since: OneNote-style, a caret is live and ready to type,
   /// but the box's own chrome (border, move bar, resize handles) stays
-  /// hidden until the first keystroke, and arrow keys navigate the PAGE
-  /// instead of moving a caret through content that doesn't exist yet.
-  /// Set by `TextBlockView` on the editing-entry transition when the block
-  /// starts empty; cleared on the first edit, or when editing ends.
+  /// hidden until the first keystroke, and arrow keys slide the box itself
+  /// around the page instead of moving a caret through content that
+  /// doesn't exist yet. Set at the CLICK that opens the block
+  /// (`BlockView._tap` / `PageCanvas._createTextAt`), before `select()`
+  /// notifies, so the very first build already sees it; cleared on the
+  /// first edit, or when editing ends.
   String? pendingEmptyBlockId;
 
-  /// Arrow-key navigation between blocks — the canvas's own spatial
-  /// block-to-block movement, reused so a [pendingEmptyBlockId] block's
-  /// arrow keys behave exactly like navigating the page. Wired once by
-  /// AppShell; returns false when there is nowhere to go.
-  bool Function(int dx, int dy)? navigateSpatial;
+  /// Move the selected block(s) by a step in one direction — the canvas's
+  /// own Ctrl+arrow nudge, reused so a [pendingEmptyBlockId] block's PLAIN
+  /// arrow keys slide it around the page (there is no content yet for
+  /// Ctrl to distinguish "move" from). Wired once by AppShell; returns
+  /// false when there is nothing selected to move.
+  bool Function(double dx, double dy, {required bool fine})? navigateNudge;
 
   /// Bumped when block content changes from OUTSIDE its own editor widgets
   /// (undo/redo, page load) so views rebuild from model state.

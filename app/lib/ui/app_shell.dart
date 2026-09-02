@@ -62,8 +62,8 @@ class _AppShellState extends State<AppShell> {
     super.initState();
     HardwareKeyboard.instance.addHandler(_onKey);
     // The OneNote-style pending caret's arrow keys (live_markdown_engine.dart)
-    // reuse this same block-to-block navigation rather than reimplementing it.
-    app.navigateSpatial = _spatial;
+    // reuse this same block-nudge rather than reimplementing it.
+    app.navigateNudge = _nudge;
     // One listener, every region: the moment focus leaves the region F6 put
     // it in, the ring is a lie and goes away.
     for (final n in [
@@ -118,7 +118,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onKey);
-    app.navigateSpatial = null;
+    app.navigateNudge = null;
     app.removeListener(_openNoticeChanged);
     for (final n in [
       _canvasFocus,
