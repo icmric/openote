@@ -8,6 +8,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/ui/compacting_toolbar.dart';
 
 void main() {
@@ -34,6 +35,8 @@ void main() {
 
   Future<void> pump(WidgetTester tester, double width, List<ToolbarControl> cs) async {
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,
@@ -161,6 +164,8 @@ void main() {
     Future<void> pumpFilled(
         WidgetTester tester, double width, List<ToolbarControl> cs) async {
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,
@@ -207,6 +212,8 @@ void main() {
     // compact IconButton's own rendered size, this fails loudly rather than
     // the fold point silently drifting off by a few pixels forever after.
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: IconButton(
           key: const Key('probe'),

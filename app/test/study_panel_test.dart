@@ -14,6 +14,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/model/tags.dart';
 import 'package:openote/state/app_state.dart';
@@ -73,6 +74,8 @@ void main() {
   /// [height] is deliberately settable — the overview grew a whole section
   /// below the fold, and "does it still fit on a laptop?" is the question.
   Widget host(AppState app, {double height = 720}) => MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: SizedBox(
             height: height,

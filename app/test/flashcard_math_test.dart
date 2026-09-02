@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/flashcard_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/math_view.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/model/tags.dart';
@@ -30,6 +31,8 @@ void main() {
     Future<void> show(WidgetTester t,
         {required String front, required String back}) async {
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Center(
             child: SizedBox(
@@ -124,6 +127,8 @@ void main() {
     }
 
     Widget host(AppState app) => MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           home: Scaffold(
             body: SizedBox(
               height: 720,

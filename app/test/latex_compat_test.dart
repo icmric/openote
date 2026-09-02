@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/latex_compat.dart';
 import 'package:openote/math/math_view.dart';
 
@@ -13,6 +14,8 @@ import 'package:openote/math/math_view.dart';
 Future<bool> _draws(WidgetTester t, String tex) async {
   var ok = true;
   await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
     home: Scaffold(
       // Unbounded width: a wide equation must not be counted as a failure.
       body: SingleChildScrollView(
@@ -182,6 +185,8 @@ void main() {
       // case this fallback exists for.
       const tex = r'\sideset{_a^b}{_c^d}\sum';
       await t.pumpWidget(const MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: OnoteMath(tex, textStyle: TextStyle(fontSize: 18)),
         ),
@@ -202,6 +207,8 @@ void main() {
     testWidgets('OnoteMath applies the rewrite, not just Math.tex', (t) async {
       // The wiring, not the function: a rewriter nothing calls fixes nothing.
       await t.pumpWidget(const MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -217,6 +224,8 @@ void main() {
 
     testWidgets('a drawable equation shows no notice at all', (t) async {
       await t.pumpWidget(const MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: OnoteMath(r'\begin{cases} a \\ b \end{cases}',
               textStyle: TextStyle(fontSize: 18)),

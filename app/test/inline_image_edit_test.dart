@@ -21,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/live_markdown_controller.dart';
 import 'package:openote/editor/flashcard_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/markdown/md_render.dart';
 import 'package:openote/theme/tokens.dart';
 
@@ -57,6 +58,8 @@ void main() {
         : null;
     addTearDown(controller.dispose);
     await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,
@@ -249,6 +252,8 @@ void main() {
     testWidgets('and it reads the same when you are not editing', (t) async {
       // Both renderers, or the box visibly changes on entering edit mode.
       await t.pumpWidget(const MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: MarkdownView(
             text: 'Notes above\n?[What is 7x8?](56)\nNotes below',
@@ -312,6 +317,8 @@ void main() {
     Future<double> heightOf(WidgetTester t, Widget w) async {
       final key = GlobalKey();
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,
@@ -453,6 +460,8 @@ void main() {
       await dragHandle(t, -40);
       final resized = controller.text;
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: MarkdownView(
             text: resized,

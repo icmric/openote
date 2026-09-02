@@ -26,6 +26,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/model/tags.dart';
 import 'package:openote/export/import_job.dart';
@@ -143,6 +144,8 @@ void main() {
     addTearDown(tester.view.reset);
     final key = GlobalKey();
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       theme: onoteTheme(b),
       darkTheme: onoteTheme(Brightness.dark),
       themeMode: b == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
@@ -190,6 +193,8 @@ void main() {
     addTearDown(t.view.reset);
     final key = GlobalKey();
     await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       theme: onoteTheme(Brightness.light),
       debugShowCheckedModeBanner: false,
       home: RepaintBoundary(key: key, child: AppShell(app: app)),
@@ -225,6 +230,8 @@ void main() {
     addTearDown(t.view.reset);
     final key = GlobalKey();
     await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       theme: onoteTheme(Brightness.light),
       debugShowCheckedModeBanner: false,
       home: RepaintBoundary(key: key, child: AppShell(app: app)),

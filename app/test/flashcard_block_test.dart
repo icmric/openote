@@ -18,6 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/canvas/block_view.dart';
 import 'package:openote/editor/flashcard_block_view.dart';
 import 'package:openote/editor/live_markdown_controller.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/model/tags.dart';
 import 'package:openote/state/app_state.dart';
@@ -236,6 +237,8 @@ prose in between
     Future<void> show(WidgetTester t, Block b) async {
       app.blocks = [b];
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: SizedBox(
               width: 340,
@@ -349,6 +352,8 @@ prose in between
       final b = card();
       app.blocks = [b];
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Stack(
               children: [BlockView(block: b, app: app, controller: app.canvas)]),

@@ -32,7 +32,12 @@ import 'support/app.dart';
 
 /// Files whose user-facing words have been moved into the .arb. Add a file
 /// here the moment you convert it — that is what arms (c) for it.
-const _converted = ['lib/ui/onboarding.dart'];
+const _converted = [
+  'lib/ui/onboarding.dart',
+  'lib/ui/object_row.dart',
+  'lib/ui/command_bar.dart',
+  'lib/ui/sidebar.dart',
+];
 
 void main() {
   test('the template gives every message a description for the translator',
@@ -75,11 +80,13 @@ void main() {
   });
 
   test('the converted surfaces hold no hardcoded user-facing strings', () {
-    // Only the shapes that actually reach the screen. A comment, a debug
-    // string or a semantic key is not what this is looking for.
+    // Only the shapes that actually reach the screen, and only when they
+    // carry an actual word: a comment, a debug string, a semantic key or the
+    // empty string a `PopupMenuButton` takes to suppress its own tooltip is
+    // not what this is looking for.
     final patterns = <RegExp>[
-      RegExp(r'''\bText\(\s*['"]'''),
-      RegExp(r'''\b(?:label|title|hintText|tooltip|helperText|semanticLabel)\s*:\s*['"]'''),
+      RegExp(r'''\bText\(\s*(?:'[^']|"[^"])'''),
+      RegExp(r'''\b(?:label|title|hintText|tooltip|helperText|semanticLabel)\s*:\s*(?:'[^']|"[^"])'''),
     ];
     final offenders = <String>[];
     for (final path in _converted) {

@@ -28,6 +28,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/canvas/block_view.dart';
 import 'package:openote/editor/live_markdown_controller.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -66,6 +67,8 @@ Future<LiveMarkdownController> _pumpField(WidgetTester t, String text,
   final c = LiveMarkdownController(text: text, dark: false);
   if (caret != null) c.selection = TextSelection.collapsed(offset: caret);
   await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
     theme: onoteTheme(Brightness.light),
     home: Scaffold(
       body: SizedBox(
@@ -329,6 +332,8 @@ void main() {
         (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         theme: onoteTheme(Brightness.light),
         home: Scaffold(
           body: ListenableBuilder(

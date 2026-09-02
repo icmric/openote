@@ -16,6 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/inline_math_editor.dart';
 import 'package:openote/editor/text_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/equation_editor.dart';
 import 'package:openote/math/math_field.dart';
 import 'package:openote/model/models.dart';
@@ -56,6 +57,8 @@ void main() {
       );
 
   Widget host(AppState app, Block b) => MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,
@@ -364,7 +367,11 @@ void main() {
     // dispose runs the same one exit path, so the pair must go and nothing
     // may touch a disposed controller.
     app.cancelPendingSave();
-    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+    await tester.pumpWidget(const MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
+      home: SizedBox(),
+    ));
     await tester.pump(const Duration(milliseconds: 50));
     app.cancelPendingSave();
     expect(b.content['text'], 'area is ',

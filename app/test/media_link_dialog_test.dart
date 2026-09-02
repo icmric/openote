@@ -10,12 +10,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
+
 import 'package:openote/ui/media_link_dialog.dart' show MediaLinkDialog;
 
 void main() {
   testWidgets('THE DIALOG BUILDS — no Spacer-in-OverflowBar layout error',
       (t) async {
     await t.pumpWidget(const MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(body: MediaLinkDialog()),
     ));
     await t.pump();
@@ -33,6 +37,8 @@ void main() {
   testWidgets('an empty link is refused with a reason, not submitted',
       (t) async {
     await t.pumpWidget(const MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(body: MediaLinkDialog()),
     ));
     await t.pump();

@@ -22,6 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/canvas/block_view.dart';
 import 'package:openote/canvas/media_drop.dart';
 import 'package:openote/editor/text_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/model/tags.dart';
 import 'package:openote/state/app_state.dart';
@@ -258,6 +259,8 @@ void main() {
     testWidgets('the picture lands in the box, not over it', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
@@ -338,6 +341,8 @@ void main() {
     // mode has to actually swap the read-only Markdown for a live TextField,
     // or the caret and selection tests would be testing nothing.
     Future<void> pump(WidgetTester t) => t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           home: Scaffold(
             body: ListenableBuilder(
               listenable: app,

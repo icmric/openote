@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/canvas/block_view.dart';
 import 'package:openote/editor/inline_math_editor.dart';
 import 'package:openote/editor/text_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/equation_editor.dart';
 import 'package:openote/math/math_editor.dart';
 import 'package:openote/math/math_tree.dart';
@@ -67,6 +68,8 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: ListenableBuilder(
           listenable: app,
@@ -163,6 +166,8 @@ void main() {
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,

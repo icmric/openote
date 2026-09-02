@@ -14,6 +14,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -157,6 +158,8 @@ void main() {
       widen(tester);
       late BuildContext ctx;
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(body: Builder(builder: (c) {
           ctx = c;
           return const SizedBox();
@@ -185,6 +188,8 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       widen(tester);
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
@@ -222,6 +227,8 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       widen(tester);
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
@@ -254,6 +261,8 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       widen(tester, const Size(1280, 900));
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
@@ -289,6 +298,8 @@ void main() {
     Future<void> open(WidgetTester tester) async {
       widen(tester);
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Builder(
             builder: (ctx) => Center(

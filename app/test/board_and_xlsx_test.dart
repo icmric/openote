@@ -21,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/editor/board_block_view.dart';
 import 'package:openote/export/csv_import.dart';
 import 'package:openote/export/xlsx_import.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -146,6 +147,8 @@ void main() {
         content: BoardBlockView.starterContent()));
 
     Widget host(Block b) => MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           home: Scaffold(
             body: ListenableBuilder(
               listenable: app,

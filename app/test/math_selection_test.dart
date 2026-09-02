@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/math_editor.dart';
 import 'package:openote/math/math_field.dart';
 import 'package:openote/math/math_inventory.dart';
@@ -125,6 +126,8 @@ void main() {
       expect(drawn, contains(r'\fcolorbox'));
       // …and it still draws.
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: OnoteMath(drawn,
               textStyle: const TextStyle(fontSize: 20, color: Colors.black)),
@@ -140,6 +143,8 @@ void main() {
       e.placeAtEnd();
       e.extendBy(-1);
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: OnoteMath(e.renderTex(const MathTexCtx()),
               textStyle: const TextStyle(fontSize: 20, color: Colors.black)),
@@ -170,6 +175,8 @@ void main() {
 
     Future<void> pump(WidgetTester tester) async {
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: MathField(
             editor: editor,

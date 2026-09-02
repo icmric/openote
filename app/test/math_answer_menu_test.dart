@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/answer_menu.dart';
 import 'package:openote/math/evaluate.dart';
 import 'package:openote/math/math_editor.dart';
@@ -35,6 +36,8 @@ void main() {
     addTearDown(tester.view.reset);
     commits = 0;
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,

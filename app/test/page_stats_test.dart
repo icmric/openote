@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/model/page_stats.dart';
 import 'package:openote/state/app_state.dart';
@@ -219,6 +220,8 @@ void main() {
         ..clear()
         ..add(text(body));
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
             body: Align(
                 alignment: Alignment.topLeft, child: PageFace(app: app))),

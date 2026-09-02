@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/math_editor.dart';
 import 'package:openote/math/math_field.dart';
 import 'package:openote/math/math_view.dart';
@@ -20,6 +21,8 @@ void main() {
 
   Future<void> pump(WidgetTester tester) async {
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,
@@ -167,6 +170,8 @@ void main() {
     // loudly, instead of quietly reintroducing the selection jump.
     const fs = 20.0;
     await tester.pumpWidget(const MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

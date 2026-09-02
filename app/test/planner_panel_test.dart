@@ -17,6 +17,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/model/tags.dart';
 import 'package:openote/state/app_state.dart';
@@ -74,6 +75,8 @@ void main() {
 
   /// The panel as `AppShell` mounts it: a fixed-width column in a real window.
   Widget host(AppState app, {double height = 720}) => MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: SizedBox(
             height: height,
@@ -231,6 +234,8 @@ void main() {
   // and look, which is the failure the planner exists to fix.
   group('the deadline shows in the note too', () {
     Widget note(Map<int, List<NoteTag>> tags) => MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           home: Scaffold(
             body: MarkdownView(
               text: 'Finish tutorial 4',

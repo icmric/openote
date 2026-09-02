@@ -47,6 +47,7 @@ import 'package:flutter/material.dart';
 import '../math/active_math.dart';
 import '../math/evaluate.dart';
 import '../model/page_stats.dart';
+import '../l10n/l10n.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
@@ -222,9 +223,10 @@ class PageFace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final l = L.of(context);
     Widget bg(String v, IconData icon, String tip) => IconButton(
           icon: Icon(icon, size: OnoteIcon.md),
-          tooltip: 'Background: $tip',
+          tooltip: l.objectRowBackground(tip),
           isSelected: app.pageProps.background == v,
           visualDensity: VisualDensity.compact,
           color: app.pageProps.background == v ? scheme.primary : null,
@@ -233,10 +235,10 @@ class PageFace extends StatelessWidget {
     final paged = app.pageProps.isPaged;
     return Row(mainAxisSize: MainAxisSize.min, children: [
       const SizedBox(width: 2),
-      bg('blank', Icons.crop_din, 'blank'),
-      bg('grid', Icons.grid_4x4, 'grid'),
-      bg('dotted', Icons.apps, 'dotted'),
-      bg('ruled', Icons.notes, 'ruled'),
+      bg('blank', Icons.crop_din, l.objectRowBackgroundBlank),
+      bg('grid', Icons.grid_4x4, l.objectRowBackgroundGrid),
+      bg('dotted', Icons.apps, l.objectRowBackgroundDotted),
+      bg('ruled', Icons.notes, l.objectRowBackgroundRuled),
       const _Sep(),
       // Canvas or paper. Per page, not per notebook: one notebook holds the
       // lecture you scribble on and the essay you hand in, and making you
@@ -245,10 +247,9 @@ class PageFace extends StatelessWidget {
         icon: Icon(paged ? Icons.description : Icons.dashboard_customize,
             size: OnoteIcon.md),
         tooltip: paged
-            ? 'Page mode: ${app.pageProps.paper.name}'
-                '${app.pageProps.landscape ? ' landscape' : ''} '
-                '— click for canvas'
-            : 'Canvas mode: boundless — click for pages',
+            ? l.objectRowPageMode(app.pageProps.paper.name,
+                app.pageProps.landscape ? l.objectRowLandscapeSuffix : '')
+            : l.objectRowCanvasMode,
         isSelected: paged,
         visualDensity: VisualDensity.compact,
         color: paged ? scheme.primary : null,
@@ -257,7 +258,7 @@ class PageFace extends StatelessWidget {
       // At the END of its group, so its arrival displaces nothing.
       if (paged)
         PopupMenuButton<String>(
-          tooltip: 'Paper size',
+          tooltip: l.objectRowPaperSize,
           icon: const Icon(Icons.aspect_ratio, size: OnoteIcon.md),
           onSelected: (v) => v == '_rotate'
               ? app.setPageLayout('paged',
@@ -274,7 +275,7 @@ class PageFace extends StatelessWidget {
             CheckedPopupMenuItem(
               value: '_rotate',
               checked: app.pageProps.landscape,
-              child: const Text('Landscape'),
+              child: Text(l.objectRowLandscape),
             ),
           ],
         ),
@@ -282,9 +283,7 @@ class PageFace extends StatelessWidget {
       IconButton(
         icon: Icon(app.snapToGrid ? Icons.grid_goldenratio : Icons.grid_off,
             size: OnoteIcon.md),
-        tooltip: app.snapToGrid
-            ? 'Snap to grid: ON (grid shows while dragging)'
-            : 'Snap to grid: OFF — free placement',
+        tooltip: app.snapToGrid ? l.objectRowSnapOn : l.objectRowSnapOff,
         isSelected: app.snapToGrid,
         visualDensity: VisualDensity.compact,
         color: app.snapToGrid ? scheme.primary : null,
@@ -293,7 +292,7 @@ class PageFace extends StatelessWidget {
       const _Sep(),
       IconButton(
         icon: const Icon(Icons.remove, size: OnoteIcon.md),
-        tooltip: 'Zoom out  (Ctrl+-)',
+        tooltip: l.objectRowZoomOut,
         visualDensity: VisualDensity.compact,
         onPressed: () => app.canvas.setZoom(app.canvas.scale / 1.2),
       ),
@@ -303,25 +302,25 @@ class PageFace extends StatelessWidget {
       // it resets the OFFSET as well as the scale, so somebody at the bottom
       // of a long page was thrown back to the top with no warning.
       Tooltip(
-        message: 'Back to 100% and the top of the page  (Ctrl+0)',
+        message: l.objectRowZoomReset,
         child: AnimatedBuilder(
           animation: app.canvas,
           builder: (context, _) => TextButton(
             onPressed: app.canvas.reset,
-            child: Text('${(app.canvas.scale * 100).round()}%',
+            child: Text(l.objectRowZoomPercent((app.canvas.scale * 100).round()),
                 style: OnoteType.small),
           ),
         ),
       ),
       IconButton(
         icon: const Icon(Icons.add, size: OnoteIcon.md),
-        tooltip: 'Zoom in  (Ctrl+=)',
+        tooltip: l.objectRowZoomIn,
         visualDensity: VisualDensity.compact,
         onPressed: () => app.canvas.setZoom(app.canvas.scale * 1.2),
       ),
       IconButton(
         icon: const Icon(Icons.fit_screen_outlined, size: OnoteIcon.md),
-        tooltip: 'Zoom to fit content',
+        tooltip: l.objectRowZoomFit,
         visualDensity: VisualDensity.compact,
         onPressed: () => app.canvas.fitTo(app.contentBounds().inflate(24)),
       ),
@@ -372,9 +371,10 @@ class _WordCountState extends State<_WordCount> {
   Widget _build(BuildContext context) {
     final app = widget.app;
     final s = context.surfaces;
+    final l = L.of(context);
     final stats = _cache.of(app.blocks);
     return Tooltip(
-      message: 'Words on this page — click for characters and reading time',
+      message: l.objectRowWordCount,
       child: PopupMenuButton<void>(
         position: PopupMenuPosition.under,
         tooltip: '',
@@ -386,17 +386,17 @@ class _WordCountState extends State<_WordCount> {
           PopupMenuItem<void>(
             enabled: false,
             height: 34,
-            child: _row('Words', _n(stats.words)),
+            child: _row(l.objectRowWords, _n(stats.words)),
           ),
           PopupMenuItem<void>(
             enabled: false,
             height: 34,
-            child: _row('Characters', _n(stats.characters)),
+            child: _row(l.objectRowCharacters, _n(stats.characters)),
           ),
           PopupMenuItem<void>(
             enabled: false,
             height: 34,
-            child: _row('Without spaces', _n(stats.charactersNoSpaces)),
+            child: _row(l.objectRowCharactersNoSpaces, _n(stats.charactersNoSpaces)),
           ),
           const PopupMenuDivider(),
           PopupMenuItem<void>(
@@ -405,18 +405,20 @@ class _WordCountState extends State<_WordCount> {
             // Rounded UP and never zero: "0 min" reads as a failure, and
             // anything written at all takes a moment to read.
             child: _row(
-                'Reading time',
+                l.objectRowReadingTime,
                 stats.words == 0
                     ? '—'
-                    : '${stats.readingMinutes} min'),
+                    : l.objectRowMinutes(stats.readingMinutes)),
           ),
         ],
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           child: Text(
-            // Singular when it is one, because "1 words" is the sort of thing
-            // that makes a student trust nothing else the app tells them.
-            '${_n(stats.words)} ${stats.words == 1 ? 'word' : 'words'}',
+            // Through a plural message, not an `== 1` in Dart: "1 words" is
+            // the sort of thing that makes a student trust nothing else the
+            // app tells them, and every language draws that line somewhere
+            // different — several have a form for two, and for a few.
+            l.objectRowWordTally(stats.words, _n(stats.words)),
             style: OnoteType.small.copyWith(color: s.textSecondary),
           ),
         ),

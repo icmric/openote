@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/live_markdown_controller.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/math_editor.dart';
 import 'package:openote/markdown/md_syntax.dart';
 import 'package:openote/math/math_field.dart';
@@ -37,6 +38,8 @@ void main() {
 
     Future<void> pump(WidgetTester tester) async {
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: MathField(
             editor: editor,

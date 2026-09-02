@@ -22,6 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/file_block_view.dart';
 import 'package:openote/editor/video_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/media/video_engine.dart';
 import 'package:openote/media/video_playback.dart';
 import 'package:openote/model/models.dart';
@@ -338,6 +339,8 @@ void main() {
       final stored = (await t.runAsync(
           () => MediaStore.add(ref, source('l.mp4', 4096))))!;
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: SizedBox(
               width: 420,

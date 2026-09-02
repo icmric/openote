@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/math_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/active_math.dart';
 import 'package:openote/math/math_inventory.dart';
 import 'package:openote/math/math_view.dart';
@@ -78,6 +79,8 @@ void main() {
   Future<void> pump(WidgetTester tester) async {
     widen(tester);
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: ListenableBuilder(
           listenable: app,
@@ -225,6 +228,8 @@ void main() {
     // registers, and it acts on a dead editor if the editor never unregisters.
     final block = app.insertEquation(at: const Offset(20, 20));
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: SizedBox(
           width: 500,
@@ -237,7 +242,10 @@ void main() {
         reason: 'an open equation must reach the toolbar');
 
     // Tear the editor down the way leaving the page does.
-    await tester.pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
+    await tester.pumpWidget(const MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
+      home: Scaffold(body: SizedBox())));
     await tester.pumpAndSettle();
     expect(app.activeMath, isNull,
         reason: 'the tab would otherwise drive an editor that is gone');
@@ -256,6 +264,8 @@ void main() {
       final block = app.insertEquation(at: const Offset(20, 20));
       block.content['latex'] = 'y=3x+10';
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: SizedBox(width: 500, child: MathBlockView(block: block, app: app)),
         ),
@@ -279,6 +289,8 @@ void main() {
       final block = app.insertEquation(at: const Offset(20, 20));
       block.content['latex'] = 'y=3x+10';
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: SizedBox(width: 500, child: MathBlockView(block: block, app: app)),
         ),
@@ -303,6 +315,8 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final block = app.insertEquation(at: const Offset(20, 20));
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: SizedBox(width: 500, child: MathBlockView(block: block, app: app)),
         ),
@@ -335,6 +349,8 @@ void main() {
     }) async {
       widen(tester);
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,

@@ -13,6 +13,7 @@ import 'dart:io';
 
 import 'package:openote/core/platform_open.dart';
 import 'package:openote/editor/file_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/model/models.dart';
@@ -97,6 +98,8 @@ void main() {
     });
 
     Future<void> show(WidgetTester t, Block b) => t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           home: Scaffold(body: FileBlockView(block: b, app: app)),
         ));
 

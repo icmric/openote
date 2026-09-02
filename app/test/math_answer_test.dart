@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/evaluate.dart';
 import 'package:openote/math/math_editor.dart';
 import 'package:openote/math/math_linear_projection.dart';
@@ -293,6 +294,8 @@ void main() {
       (tester) async {
     final e = answered('1/2');
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,
@@ -331,6 +334,8 @@ void main() {
     final e = answered('1/2');
     final was = e.latex;
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,

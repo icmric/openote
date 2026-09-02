@@ -22,6 +22,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/history.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -574,6 +575,8 @@ void main() {
         reason: 'the fixture really did produce something to show');
 
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Builder(
           builder: (context) => TextButton(

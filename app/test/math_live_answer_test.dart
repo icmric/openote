@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/evaluate.dart';
 import 'package:openote/math/math_editor.dart';
 import 'package:openote/math/math_field.dart';
@@ -133,6 +134,8 @@ void main() {
       final e = answered('2+3');
       var commits = 0;
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,
@@ -177,6 +180,8 @@ void main() {
       // would also fail the test binding, which is a useful second check.
       final e = typed('2+3');
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,
@@ -232,6 +237,8 @@ void main() {
       var toggled = 0;
       Future<void> pump(AngleMode mode) async {
         await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           home: Scaffold(
             body: Align(
               alignment: Alignment.topLeft,
@@ -265,6 +272,8 @@ void main() {
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,

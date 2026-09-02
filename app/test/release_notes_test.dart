@@ -20,6 +20,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/ui/update_dialog.dart';
 import 'package:openote/update/app_update.dart';
 
@@ -76,6 +77,8 @@ bool hasBoldRun(WidgetTester tester) {
 }
 
 Widget host(Widget child) => MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(body: Center(child: SizedBox(width: 440, child: child))),
     );
 

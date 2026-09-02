@@ -10,6 +10,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/evaluate.dart';
 import 'package:openote/math/math_editor.dart';
 import 'package:openote/math/math_inventory.dart';
@@ -225,6 +226,8 @@ void main() {
       ];
       for (final tex in cases) {
         await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           home: Scaffold(
             body: Align(
               alignment: Alignment.topLeft,

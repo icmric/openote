@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/math_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/math_editor.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -59,6 +60,8 @@ void main() {
   /// without waiting on the save debounce (which `pumpAndSettle` would).
   Future<void> settle(WidgetTester tester, Block b) async {
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,

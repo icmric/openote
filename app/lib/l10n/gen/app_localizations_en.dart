@@ -27,6 +27,638 @@ class LEn extends L {
   String get commonDetailsAdvanced => 'Details (advanced)';
 
   @override
+  String objectRowBackground(String kind) {
+    return 'Background: $kind';
+  }
+
+  @override
+  String get objectRowBackgroundBlank => 'blank';
+
+  @override
+  String get objectRowBackgroundGrid => 'grid';
+
+  @override
+  String get objectRowBackgroundDotted => 'dotted';
+
+  @override
+  String get objectRowBackgroundRuled => 'ruled';
+
+  @override
+  String objectRowPageMode(String paper, String landscape) {
+    return 'Page mode: $paper$landscape — click for canvas';
+  }
+
+  @override
+  String get objectRowLandscapeSuffix => ' landscape';
+
+  @override
+  String get objectRowCanvasMode => 'Canvas mode: boundless — click for pages';
+
+  @override
+  String get objectRowPaperSize => 'Paper size';
+
+  @override
+  String get objectRowLandscape => 'Landscape';
+
+  @override
+  String get objectRowSnapOn => 'Snap to grid: ON (grid shows while dragging)';
+
+  @override
+  String get objectRowSnapOff => 'Snap to grid: OFF — free placement';
+
+  @override
+  String get objectRowZoomOut => 'Zoom out  (Ctrl+-)';
+
+  @override
+  String get objectRowZoomIn => 'Zoom in  (Ctrl+=)';
+
+  @override
+  String get objectRowZoomReset =>
+      'Back to 100% and the top of the page  (Ctrl+0)';
+
+  @override
+  String get objectRowZoomFit => 'Zoom to fit content';
+
+  @override
+  String get objectRowWordCount =>
+      'Words on this page — click for characters and reading time';
+
+  @override
+  String get objectRowWords => 'Words';
+
+  @override
+  String get objectRowCharacters => 'Characters';
+
+  @override
+  String get objectRowCharactersNoSpaces => 'Without spaces';
+
+  @override
+  String get objectRowReadingTime => 'Reading time';
+
+  @override
+  String objectRowMinutes(int n) {
+    return '$n min';
+  }
+
+  @override
+  String objectRowWordTally(int count, String formatted) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$formatted words',
+      one: '1 word',
+      zero: 'no words',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String objectRowZoomPercent(int percent) {
+    return '$percent%';
+  }
+
+  @override
+  String get barTabHome => 'Home';
+
+  @override
+  String get barTabInsert => 'Insert';
+
+  @override
+  String get barTabDraw => 'Draw';
+
+  @override
+  String get barEquationBadge => 'Equation';
+
+  @override
+  String barUpdateTo(String version) {
+    return 'Update to $version…';
+  }
+
+  @override
+  String get barDone => 'Done';
+
+  @override
+  String get barStudy => 'Study';
+
+  @override
+  String get barPlanner => 'Planner';
+
+  @override
+  String get barFindTags => 'Find tags';
+
+  @override
+  String get barPageOutline => 'Page outline';
+
+  @override
+  String get barLinks => 'Links & backlinks';
+
+  @override
+  String get barFindOnPage => 'Find on page';
+
+  @override
+  String get barFindOnPageTip => 'Find on page  (Ctrl+F)';
+
+  @override
+  String get barExport => 'Export';
+
+  @override
+  String get barExportTip => 'Export page…';
+
+  @override
+  String get barExportMarkdown => 'Markdown (.md)';
+
+  @override
+  String get barExportPdf => 'PDF (.pdf)';
+
+  @override
+  String get barExportPrint => 'Print…';
+
+  @override
+  String get barExportPdfPicture => 'PDF — picture of the page';
+
+  @override
+  String get barExportCanvas => 'For Obsidian Canvas (.canvas)';
+
+  @override
+  String get barExportInk => 'Just the drawing (.inkml)';
+
+  @override
+  String get barExportNotebook =>
+      'Save the whole notebook as folders and files…';
+
+  @override
+  String get barExportNotebookBusy => 'Saving the notebook…';
+
+  @override
+  String barExportPageProgress(int done, int total) {
+    return 'Page $done of $total…';
+  }
+
+  @override
+  String barExportedTo(String path) {
+    return 'Exported to $path';
+  }
+
+  @override
+  String get barSettings => 'Settings';
+
+  @override
+  String get barSettingsTip => 'Settings…';
+
+  @override
+  String get barUndo => 'Undo  (Ctrl+Z)';
+
+  @override
+  String get barRedo => 'Redo  (Ctrl+Y)';
+
+  @override
+  String get barBold => 'Bold  (Ctrl+B)';
+
+  @override
+  String get barItalic => 'Italic  (Ctrl+I)';
+
+  @override
+  String get barUnderline => 'Underline  (Ctrl+U)';
+
+  @override
+  String get barStrikethrough => 'Strikethrough';
+
+  @override
+  String get barInlineCode => 'Inline code';
+
+  @override
+  String get barHighlight => 'Highlight';
+
+  @override
+  String get barHeading1 => 'Heading 1';
+
+  @override
+  String get barBulletList => 'Bullet list';
+
+  @override
+  String get barNumberedList => 'Numbered list';
+
+  @override
+  String get barCheckbox => 'Checkbox';
+
+  @override
+  String get barQuote => 'Quote';
+
+  @override
+  String get barTextColour => 'Apply text colour';
+
+  @override
+  String get barTextFont => 'Text font…';
+
+  @override
+  String get barClickIntoTextBox => 'Click into a text box to format';
+
+  @override
+  String get barToolSelect => 'Select / move  (V)';
+
+  @override
+  String get barToolText => 'Text  (T)';
+
+  @override
+  String get barToolPen => 'Pen  (P)';
+
+  @override
+  String get barToolHighlighter => 'Highlighter  (H)';
+
+  @override
+  String get barToolEraser => 'Eraser  (E)';
+
+  @override
+  String get barToolLasso => 'Lasso-select ink';
+
+  @override
+  String get barEraserSplit => 'Splits strokes where you rub';
+
+  @override
+  String get barEraserWhole => 'Removes any stroke you touch';
+
+  @override
+  String get barLassoHint =>
+      'Draw a loop around ink to select it — then drag or delete';
+
+  @override
+  String get barPickPenHint => 'Pick the pen or highlighter to draw';
+
+  @override
+  String get barTouchDrawing =>
+      'Draw with your finger.\nAuto: a finger draws until you use the pen, then touch pans so your palm can\'t mark the page.\nTwo fingers always pan and zoom.';
+
+  @override
+  String get barPenProximity =>
+      'Bringing the pen near the page switches to inking.\nPick another tool while the pen hovers and it sticks until the\npen leaves and comes back. The pen\'s tail (or its barrel\nbutton, held while drawing) erases.';
+
+  @override
+  String get barTextSize => 'Text size (points)';
+
+  @override
+  String get barTextSizeDisabled => 'Click into a text box to change its size';
+
+  @override
+  String get barFontSizeDefault => 'Default';
+
+  @override
+  String barFontSizePt(String size) {
+    return '$size pt';
+  }
+
+  @override
+  String get barTagLine => 'Tag this line (To Do, Important, Question…)';
+
+  @override
+  String barTagged(String tags) {
+    return 'Tagged: $tags';
+  }
+
+  @override
+  String get barDueDateSet => 'Due date…';
+
+  @override
+  String get barDueDateChange => 'Change due date…';
+
+  @override
+  String get barDueDateClear => 'Clear the due date';
+
+  @override
+  String get barDueDatePickerTitle => 'Due date';
+
+  @override
+  String get barDueDatePickerConfirm => 'Set';
+
+  @override
+  String get barMakeCardFromLine => 'Make this line a flashcard';
+
+  @override
+  String get barNewCard => 'New flashcard';
+
+  @override
+  String get barQuestionCard => 'Question card';
+
+  @override
+  String get barDefinitionCard => 'Definition card';
+
+  @override
+  String get barBlankOut => 'Blank out selection';
+
+  @override
+  String get barBlankOutNeedsSelection =>
+      'Select the words to blank out first.';
+
+  @override
+  String get barOpenStudyPanel => 'Open study panel';
+
+  @override
+  String get barStudyEmpty =>
+      'Study — tag a line Question or Definition to make a card';
+
+  @override
+  String barStudyDue(int due, int total, String countdown) {
+    String _temp0 = intl.Intl.pluralLogic(
+      total,
+      locale: localeName,
+      other: '$total cards',
+      one: '1 card',
+    );
+    return '$due of $_temp0 due in this section$countdown';
+  }
+
+  @override
+  String barStudyExamCountdown(String when) {
+    return ' · exam $when';
+  }
+
+  @override
+  String get barPlannerEmpty => 'Planner — every date you have, in one place';
+
+  @override
+  String barPlannerToday(int count) {
+    return 'Planner — $count today';
+  }
+
+  @override
+  String barPlannerOverdue(int count) {
+    return 'Planner — $count today or overdue';
+  }
+
+  @override
+  String barRemindersWaiting(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count reminders',
+      one: '1 reminder',
+    );
+    return '$_temp0 waiting';
+  }
+
+  @override
+  String get barEscWhenDone => 'Esc when you are done';
+
+  @override
+  String barSaveFailed(String reason) {
+    return 'That couldn\'t be saved: $reason';
+  }
+
+  @override
+  String barBadgeCount(int count) {
+    return '$count';
+  }
+
+  @override
+  String get navSearchHint => 'Search or jump to…';
+
+  @override
+  String navNoMatches(String query) {
+    return 'No matches for “$query”';
+  }
+
+  @override
+  String get navInPageContent => 'In page content';
+
+  @override
+  String get navUntitled => 'Untitled';
+
+  @override
+  String get navNoSections => 'No sections yet.\nCreate one to get started.';
+
+  @override
+  String get navNewSection => 'New section';
+
+  @override
+  String navNewPageIn(String section) {
+    return 'New page in $section';
+  }
+
+  @override
+  String get navNoPages => 'No pages yet';
+
+  @override
+  String get navSection => 'Section';
+
+  @override
+  String get navNewSectionGroup => 'New section group';
+
+  @override
+  String get navRecycleBin => 'Recycle bin';
+
+  @override
+  String get navHome => 'Home';
+
+  @override
+  String get navHomeTip => 'Home — favourites & recents';
+
+  @override
+  String get navHomeEmpty =>
+      'Nothing here yet.\n\nRight-click a page and choose Favourite to pin it; pages you visit show up under Recent.';
+
+  @override
+  String get navComingUp => 'COMING UP';
+
+  @override
+  String navAllCount(int total) {
+    return 'All $total';
+  }
+
+  @override
+  String get navOpen => 'Open';
+
+  @override
+  String get navExpand => 'Expand the navigator  (Ctrl+\\)';
+
+  @override
+  String get navCollapse => 'Collapse the navigator  (Ctrl+\\)';
+
+  @override
+  String get navNotebooksTip => 'Notebooks — switch, rename, duplicate, import';
+
+  @override
+  String get navDeletesSoon => 'Deletes soon';
+
+  @override
+  String navDeletesInDays(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: 'Deletes in $days days',
+      one: 'Deletes in 1 day',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get navBinEmpty => 'Nothing deleted.';
+
+  @override
+  String navBinRetention(int days) {
+    return 'Items here are permanently deleted after $days days.';
+  }
+
+  @override
+  String get navBinNotebooks => 'Notebooks';
+
+  @override
+  String get navBinItems => 'Items';
+
+  @override
+  String get navRestore => 'Restore';
+
+  @override
+  String get navDeletePermanently => 'Delete permanently';
+
+  @override
+  String get navClose => 'Close';
+
+  @override
+  String get navDeleteForeverTitle => 'Delete permanently?';
+
+  @override
+  String navDeleteForeverBody(String title, String caveat) {
+    return '“$title” and all its pages will be removed for good. This can\'t be undone.$caveat';
+  }
+
+  @override
+  String get navDeleteForever => 'Delete forever';
+
+  @override
+  String navLockedCannotDelete(String title) {
+    return '“$title” is locked. Remove its passcode before deleting it.';
+  }
+
+  @override
+  String navDeletedRestorable(String title) {
+    return 'Deleted “$title” — restore it from the recycle bin.';
+  }
+
+  @override
+  String navLockedNotEncrypted(String title) {
+    return '“$title” is locked. It is hidden inside Openote, not encrypted in the file.';
+  }
+
+  @override
+  String navPasscodeRemoved(String title) {
+    return 'Passcode removed from “$title”.';
+  }
+
+  @override
+  String navSavedTo(String path) {
+    return 'Saved to $path';
+  }
+
+  @override
+  String get navLinkCopied => 'Link copied — paste it into any page';
+
+  @override
+  String get navMoveSectionTo => 'Move section to…';
+
+  @override
+  String get navNoGroupTopLevel => '(No group — top level)';
+
+  @override
+  String get navSaveTemplateTitle => 'Save as template';
+
+  @override
+  String get navSave => 'Save';
+
+  @override
+  String get navTemplateNameHint => 'Template name';
+
+  @override
+  String navTemplateSaved(String name) {
+    return 'Template \"$name\" saved';
+  }
+
+  @override
+  String get navNoTemplates =>
+      'No templates yet — \"Save as template…\" first.';
+
+  @override
+  String get navApplyTemplate => 'Apply template';
+
+  @override
+  String get navColour => 'Colour';
+
+  @override
+  String get navColourDefault => 'Default';
+
+  @override
+  String navExamCountdown(String when, String countdown) {
+    return 'Exam $when · $countdown…';
+  }
+
+  @override
+  String get navMenuMoveUp => 'Move up';
+
+  @override
+  String get navMenuMoveDown => 'Move down';
+
+  @override
+  String get navMenuNewPage => 'New page';
+
+  @override
+  String get navMenuMoveToGroup => 'Move to group…';
+
+  @override
+  String get navMenuSortAZ => 'Sort pages A→Z';
+
+  @override
+  String get navMenuSortEdited => 'Sort pages by last edited';
+
+  @override
+  String get navMenuExportSectionPdf => 'Export section as PDF…';
+
+  @override
+  String get navMenuPrintSection => 'Print section…';
+
+  @override
+  String get navMenuRemoveExam => 'Remove exam date';
+
+  @override
+  String get navMenuSetExam => 'Set exam date…';
+
+  @override
+  String get navMenuMakeSubpage => 'Make subpage';
+
+  @override
+  String get navMenuMoveBackOut => 'Move back out';
+
+  @override
+  String get navMenuRemoveFavourite => 'Remove from favourites';
+
+  @override
+  String get navMenuAddFavourite => 'Add to favourites';
+
+  @override
+  String get navMenuSharePdf => 'Share as PDF…';
+
+  @override
+  String get navMenuPrint => 'Print…';
+
+  @override
+  String get navMenuCopyLink => 'Copy link to page';
+
+  @override
+  String get navMenuRecentChanges => 'Recent changes…';
+
+  @override
+  String get navMenuSaveTemplate => 'Save as template…';
+
+  @override
+  String get navMenuApplyTemplate => 'Apply a template…';
+
+  @override
+  String get navMenuRemovePasscode => 'Remove passcode…';
+
+  @override
+  String get navMenuLock => 'Lock with a passcode…';
+
+  @override
+  String get navMenuDelete => 'Delete';
+
+  @override
   String get onboardingStep1Title => 'The page is a canvas';
 
   @override

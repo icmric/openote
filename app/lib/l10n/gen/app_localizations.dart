@@ -129,6 +129,1080 @@ abstract class L {
   /// **'Details (advanced)'**
   String get commonDetailsAdvanced;
 
+  /// Tooltip on the four page-background buttons in the object row. {kind} is one of objectRowBackgroundBlank/Grid/Dotted/Ruled.
+  ///
+  /// In en, this message translates to:
+  /// **'Background: {kind}'**
+  String objectRowBackground(String kind);
+
+  /// A page with no printed background at all. Lower case: it is substituted into objectRowBackground.
+  ///
+  /// In en, this message translates to:
+  /// **'blank'**
+  String get objectRowBackgroundBlank;
+
+  /// A page printed with squared paper. Lower case: substituted into objectRowBackground.
+  ///
+  /// In en, this message translates to:
+  /// **'grid'**
+  String get objectRowBackgroundGrid;
+
+  /// A page printed with a grid of dots. Lower case: substituted into objectRowBackground.
+  ///
+  /// In en, this message translates to:
+  /// **'dotted'**
+  String get objectRowBackgroundDotted;
+
+  /// A page printed with horizontal lines to write on. Lower case: substituted into objectRowBackground.
+  ///
+  /// In en, this message translates to:
+  /// **'ruled'**
+  String get objectRowBackgroundRuled;
+
+  /// Tooltip when the page is set to a fixed paper size. {paper} is a paper name like A4 or Letter; {landscape} is either empty or objectRowLandscapeSuffix.
+  ///
+  /// In en, this message translates to:
+  /// **'Page mode: {paper}{landscape} — click for canvas'**
+  String objectRowPageMode(String paper, String landscape);
+
+  /// Appended to the paper name when the page is rotated. Keep the leading space — it follows the paper name inside objectRowPageMode.
+  ///
+  /// In en, this message translates to:
+  /// **' landscape'**
+  String get objectRowLandscapeSuffix;
+
+  /// Tooltip when the page has no fixed size and simply extends in every direction.
+  ///
+  /// In en, this message translates to:
+  /// **'Canvas mode: boundless — click for pages'**
+  String get objectRowCanvasMode;
+
+  /// Tooltip on the menu that picks A4, Letter and so on.
+  ///
+  /// In en, this message translates to:
+  /// **'Paper size'**
+  String get objectRowPaperSize;
+
+  /// Menu item: rotate the page so it is wider than it is tall.
+  ///
+  /// In en, this message translates to:
+  /// **'Landscape'**
+  String get objectRowLandscape;
+
+  /// Tooltip when dragged boxes line up to an invisible grid.
+  ///
+  /// In en, this message translates to:
+  /// **'Snap to grid: ON (grid shows while dragging)'**
+  String get objectRowSnapOn;
+
+  /// Tooltip when boxes can be dropped anywhere.
+  ///
+  /// In en, this message translates to:
+  /// **'Snap to grid: OFF — free placement'**
+  String get objectRowSnapOff;
+
+  /// Tooltip. Keep the shortcut in brackets as typed; the two spaces before it separate it from the words.
+  ///
+  /// In en, this message translates to:
+  /// **'Zoom out  (Ctrl+-)'**
+  String get objectRowZoomOut;
+
+  /// Tooltip. Keep the shortcut in brackets as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Zoom in  (Ctrl+=)'**
+  String get objectRowZoomIn;
+
+  /// Tooltip on the zoom percentage, which is itself a button.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to 100% and the top of the page  (Ctrl+0)'**
+  String get objectRowZoomReset;
+
+  /// Tooltip: choose the zoom that puts everything written on the page on screen at once.
+  ///
+  /// In en, this message translates to:
+  /// **'Zoom to fit content'**
+  String get objectRowZoomFit;
+
+  /// Tooltip on the word count.
+  ///
+  /// In en, this message translates to:
+  /// **'Words on this page — click for characters and reading time'**
+  String get objectRowWordCount;
+
+  /// Row label in the word-count menu.
+  ///
+  /// In en, this message translates to:
+  /// **'Words'**
+  String get objectRowWords;
+
+  /// Row label in the word-count menu: every character including spaces.
+  ///
+  /// In en, this message translates to:
+  /// **'Characters'**
+  String get objectRowCharacters;
+
+  /// Row label in the word-count menu: characters not counting spaces.
+  ///
+  /// In en, this message translates to:
+  /// **'Without spaces'**
+  String get objectRowCharactersNoSpaces;
+
+  /// Row label in the word-count menu: roughly how long the page takes to read.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading time'**
+  String get objectRowReadingTime;
+
+  /// A duration in minutes, abbreviated. Shown beside objectRowReadingTime.
+  ///
+  /// In en, this message translates to:
+  /// **'{n} min'**
+  String objectRowMinutes(int n);
+
+  /// The word count shown in the object row itself. {formatted} is the same number already grouped for this language (1,234 in English) — use it rather than {count} wherever the number is printed; {count} is only there to choose the plural form.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{no words} =1{1 word} other{{formatted} words}}'**
+  String objectRowWordTally(int count, String formatted);
+
+  /// The zoom level, shown on a button between the zoom-out and zoom-in controls. Some languages put a space before the percent sign, or the sign first.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}%'**
+  String objectRowZoomPercent(int percent);
+
+  /// Toolbar tab: writing and formatting.
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get barTabHome;
+
+  /// Toolbar tab: adding things to the page.
+  ///
+  /// In en, this message translates to:
+  /// **'Insert'**
+  String get barTabInsert;
+
+  /// Toolbar tab: pens, highlighters and erasers.
+  ///
+  /// In en, this message translates to:
+  /// **'Draw'**
+  String get barTabDraw;
+
+  /// A label, not a button: it appears in the tab row while an equation is being written, to say what the row below is about.
+  ///
+  /// In en, this message translates to:
+  /// **'Equation'**
+  String get barEquationBadge;
+
+  /// Button and tooltip shown only when a newer release of Openote exists.
+  ///
+  /// In en, this message translates to:
+  /// **'Update to {version}…'**
+  String barUpdateTo(String version);
+
+  /// Button that puts the pen or eraser down and goes back to selecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get barDone;
+
+  /// Opens the flashcard revision panel.
+  ///
+  /// In en, this message translates to:
+  /// **'Study'**
+  String get barStudy;
+
+  /// Opens the panel listing every date in the notebook.
+  ///
+  /// In en, this message translates to:
+  /// **'Planner'**
+  String get barPlanner;
+
+  /// Opens the panel that lists lines marked To Do, Important and so on.
+  ///
+  /// In en, this message translates to:
+  /// **'Find tags'**
+  String get barFindTags;
+
+  /// Opens the panel listing the headings on this page.
+  ///
+  /// In en, this message translates to:
+  /// **'Page outline'**
+  String get barPageOutline;
+
+  /// Opens the panel showing what this page links to and what links to it.
+  ///
+  /// In en, this message translates to:
+  /// **'Links & backlinks'**
+  String get barLinks;
+
+  /// Opens the search bar for the open page.
+  ///
+  /// In en, this message translates to:
+  /// **'Find on page'**
+  String get barFindOnPage;
+
+  /// Tooltip. Keep the shortcut in brackets as typed; the two spaces separate it from the words.
+  ///
+  /// In en, this message translates to:
+  /// **'Find on page  (Ctrl+F)'**
+  String get barFindOnPageTip;
+
+  /// Opens the menu of ways to save a copy elsewhere.
+  ///
+  /// In en, this message translates to:
+  /// **'Export'**
+  String get barExport;
+
+  /// Tooltip on the export menu.
+  ///
+  /// In en, this message translates to:
+  /// **'Export page…'**
+  String get barExportTip;
+
+  /// Menu item. Markdown is a format name and .md a file extension; neither is translated.
+  ///
+  /// In en, this message translates to:
+  /// **'Markdown (.md)'**
+  String get barExportMarkdown;
+
+  /// Menu item. Not translated.
+  ///
+  /// In en, this message translates to:
+  /// **'PDF (.pdf)'**
+  String get barExportPdf;
+
+  /// Menu item: send the page to a printer.
+  ///
+  /// In en, this message translates to:
+  /// **'Print…'**
+  String get barExportPrint;
+
+  /// Menu item: a PDF that is an image of the page rather than selectable text.
+  ///
+  /// In en, this message translates to:
+  /// **'PDF — picture of the page'**
+  String get barExportPdfPicture;
+
+  /// Menu item. Obsidian is another notes app and .canvas its file extension; neither is translated.
+  ///
+  /// In en, this message translates to:
+  /// **'For Obsidian Canvas (.canvas)'**
+  String get barExportCanvas;
+
+  /// Menu item: only the handwriting, as an InkML file. The extension is not translated.
+  ///
+  /// In en, this message translates to:
+  /// **'Just the drawing (.inkml)'**
+  String get barExportInk;
+
+  /// Menu item: write the entire notebook out as ordinary folders and files on disk.
+  ///
+  /// In en, this message translates to:
+  /// **'Save the whole notebook as folders and files…'**
+  String get barExportNotebook;
+
+  /// Progress message while that runs.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving the notebook…'**
+  String get barExportNotebookBusy;
+
+  /// Progress message during a notebook export.
+  ///
+  /// In en, this message translates to:
+  /// **'Page {done} of {total}…'**
+  String barExportPageProgress(int done, int total);
+
+  /// Confirmation after an export, naming where the file landed.
+  ///
+  /// In en, this message translates to:
+  /// **'Exported to {path}'**
+  String barExportedTo(String path);
+
+  /// Opens the settings dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get barSettings;
+
+  /// Tooltip on the settings button.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings…'**
+  String get barSettingsTip;
+
+  /// Tooltip. Keep the shortcut in brackets as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Undo  (Ctrl+Z)'**
+  String get barUndo;
+
+  /// Tooltip. Keep the shortcut in brackets as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Redo  (Ctrl+Y)'**
+  String get barRedo;
+
+  /// Tooltip on the bold button. Keep the shortcut as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Bold  (Ctrl+B)'**
+  String get barBold;
+
+  /// Tooltip. Keep the shortcut as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Italic  (Ctrl+I)'**
+  String get barItalic;
+
+  /// Tooltip. Keep the shortcut as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Underline  (Ctrl+U)'**
+  String get barUnderline;
+
+  /// Tooltip: a line drawn through the words.
+  ///
+  /// In en, this message translates to:
+  /// **'Strikethrough'**
+  String get barStrikethrough;
+
+  /// Tooltip: format the selected words as computer code, in a monospaced face.
+  ///
+  /// In en, this message translates to:
+  /// **'Inline code'**
+  String get barInlineCode;
+
+  /// Tooltip: mark the words as if with a highlighter pen.
+  ///
+  /// In en, this message translates to:
+  /// **'Highlight'**
+  String get barHighlight;
+
+  /// Tooltip: make this line a top-level heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Heading 1'**
+  String get barHeading1;
+
+  /// Tooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Bullet list'**
+  String get barBulletList;
+
+  /// Tooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Numbered list'**
+  String get barNumberedList;
+
+  /// Tooltip: a list where each line can be ticked off.
+  ///
+  /// In en, this message translates to:
+  /// **'Checkbox'**
+  String get barCheckbox;
+
+  /// Tooltip: set the line off as a quotation.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote'**
+  String get barQuote;
+
+  /// Tooltip on the button that colours the selected words.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply text colour'**
+  String get barTextColour;
+
+  /// Tooltip on the button that opens the font picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Text font…'**
+  String get barTextFont;
+
+  /// Shown in place of the formatting controls when nothing is being written, to say why they are greyed out.
+  ///
+  /// In en, this message translates to:
+  /// **'Click into a text box to format'**
+  String get barClickIntoTextBox;
+
+  /// Tooltip. The letter in brackets is the key that picks this tool — keep it as typed unless the shortcut itself differs in this language.
+  ///
+  /// In en, this message translates to:
+  /// **'Select / move  (V)'**
+  String get barToolSelect;
+
+  /// Tooltip. Keep the key in brackets as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Text  (T)'**
+  String get barToolText;
+
+  /// Tooltip. Keep the key in brackets as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Pen  (P)'**
+  String get barToolPen;
+
+  /// Tooltip. Keep the key in brackets as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Highlighter  (H)'**
+  String get barToolHighlighter;
+
+  /// Tooltip. Keep the key in brackets as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Eraser  (E)'**
+  String get barToolEraser;
+
+  /// Tooltip: draw a loop around handwriting to select it.
+  ///
+  /// In en, this message translates to:
+  /// **'Lasso-select ink'**
+  String get barToolLasso;
+
+  /// Tooltip: the eraser takes out only the part of a pen stroke it touches.
+  ///
+  /// In en, this message translates to:
+  /// **'Splits strokes where you rub'**
+  String get barEraserSplit;
+
+  /// Tooltip: the eraser removes a whole pen stroke at once.
+  ///
+  /// In en, this message translates to:
+  /// **'Removes any stroke you touch'**
+  String get barEraserWhole;
+
+  /// Hint shown in the Draw row while the lasso tool is picked.
+  ///
+  /// In en, this message translates to:
+  /// **'Draw a loop around ink to select it — then drag or delete'**
+  String get barLassoHint;
+
+  /// Hint shown in the Draw row when no drawing tool is picked.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick the pen or highlighter to draw'**
+  String get barPickPenHint;
+
+  /// Tooltip on the finger-drawing setting. 'pans' means moves the page around. Keep the line breaks.
+  ///
+  /// In en, this message translates to:
+  /// **'Draw with your finger.\nAuto: a finger draws until you use the pen, then touch pans so your palm can\'t mark the page.\nTwo fingers always pan and zoom.'**
+  String get barTouchDrawing;
+
+  /// Tooltip on the pen-proximity setting. 'tail' is the blunt end of a stylus; 'barrel button' the button on its side. Keep the line breaks.
+  ///
+  /// In en, this message translates to:
+  /// **'Bringing the pen near the page switches to inking.\nPick another tool while the pen hovers and it sticks until the\npen leaves and comes back. The pen\'s tail (or its barrel\nbutton, held while drawing) erases.'**
+  String get barPenProximity;
+
+  /// Tooltip on the font-size field. Points are the printer's unit type is measured in.
+  ///
+  /// In en, this message translates to:
+  /// **'Text size (points)'**
+  String get barTextSize;
+
+  /// Tooltip on the font-size field when nothing is being written.
+  ///
+  /// In en, this message translates to:
+  /// **'Click into a text box to change its size'**
+  String get barTextSizeDisabled;
+
+  /// Menu item: go back to whatever size the page normally uses.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get barFontSizeDefault;
+
+  /// A font size in points, e.g. '11 pt'.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} pt'**
+  String barFontSizePt(String size);
+
+  /// Tooltip on the tag button when the line carries no tag yet. The three words in brackets are examples of tags.
+  ///
+  /// In en, this message translates to:
+  /// **'Tag this line (To Do, Important, Question…)'**
+  String get barTagLine;
+
+  /// Tooltip on the tag button when the line is already tagged. {tags} is a comma-separated list of tag names.
+  ///
+  /// In en, this message translates to:
+  /// **'Tagged: {tags}'**
+  String barTagged(String tags);
+
+  /// Menu item: give this line a deadline.
+  ///
+  /// In en, this message translates to:
+  /// **'Due date…'**
+  String get barDueDateSet;
+
+  /// Menu item: alter the deadline this line already has.
+  ///
+  /// In en, this message translates to:
+  /// **'Change due date…'**
+  String get barDueDateChange;
+
+  /// Menu item: remove the deadline.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear the due date'**
+  String get barDueDateClear;
+
+  /// Heading of the calendar that picks a deadline.
+  ///
+  /// In en, this message translates to:
+  /// **'Due date'**
+  String get barDueDatePickerTitle;
+
+  /// Button that confirms the picked deadline.
+  ///
+  /// In en, this message translates to:
+  /// **'Set'**
+  String get barDueDatePickerConfirm;
+
+  /// Tooltip: turn the line the caret is on into a revision card.
+  ///
+  /// In en, this message translates to:
+  /// **'Make this line a flashcard'**
+  String get barMakeCardFromLine;
+
+  /// Tooltip: add a revision card in a box of its own.
+  ///
+  /// In en, this message translates to:
+  /// **'New flashcard'**
+  String get barNewCard;
+
+  /// Menu item: a card whose front is a question.
+  ///
+  /// In en, this message translates to:
+  /// **'Question card'**
+  String get barQuestionCard;
+
+  /// Menu item: a card whose front is a term to define.
+  ///
+  /// In en, this message translates to:
+  /// **'Definition card'**
+  String get barDefinitionCard;
+
+  /// Menu item: hide the selected words so they have to be recalled.
+  ///
+  /// In en, this message translates to:
+  /// **'Blank out selection'**
+  String get barBlankOut;
+
+  /// Message when that is pressed with nothing selected.
+  ///
+  /// In en, this message translates to:
+  /// **'Select the words to blank out first.'**
+  String get barBlankOutNeedsSelection;
+
+  /// Menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Open study panel'**
+  String get barOpenStudyPanel;
+
+  /// Tooltip on the study badge when the section has no cards. 'Question' and 'Definition' are the names of two tags and should match barQuestionCard/barDefinitionCard.
+  ///
+  /// In en, this message translates to:
+  /// **'Study — tag a line Question or Definition to make a card'**
+  String get barStudyEmpty;
+
+  /// Tooltip on the study badge. {countdown} is either empty or barStudyExamCountdown.
+  ///
+  /// In en, this message translates to:
+  /// **'{due} of {total, plural, =1{1 card} other{{total} cards}} due in this section{countdown}'**
+  String barStudyDue(int due, int total, String countdown);
+
+  /// Appended to barStudyDue when the section has an exam date. Keep the leading space and the separator.
+  ///
+  /// In en, this message translates to:
+  /// **' · exam {when}'**
+  String barStudyExamCountdown(String when);
+
+  /// Tooltip on the planner badge when nothing is due.
+  ///
+  /// In en, this message translates to:
+  /// **'Planner — every date you have, in one place'**
+  String get barPlannerEmpty;
+
+  /// Tooltip on the planner badge.
+  ///
+  /// In en, this message translates to:
+  /// **'Planner — {count} today'**
+  String barPlannerToday(int count);
+
+  /// Tooltip on the planner badge when some of the count is already late.
+  ///
+  /// In en, this message translates to:
+  /// **'Planner — {count} today or overdue'**
+  String barPlannerOverdue(int count);
+
+  /// Tooltip on the planner badge when reminders have fired and not been dealt with.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 reminder} other{{count} reminders}} waiting'**
+  String barRemindersWaiting(int count);
+
+  /// Tooltip on the badge shown while an equation is open. 'Esc' is the Escape key.
+  ///
+  /// In en, this message translates to:
+  /// **'Esc when you are done'**
+  String get barEscWhenDone;
+
+  /// Message after an export or print that did not work. {reason} is the underlying error, in English, from the operating system.
+  ///
+  /// In en, this message translates to:
+  /// **'That couldn\'t be saved: {reason}'**
+  String barSaveFailed(String reason);
+
+  /// A small number printed on a toolbar badge — cards due, or reminders waiting. Its own message so the digits are grouped and shaped for this language rather than printed as raw ASCII.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}'**
+  String barBadgeCount(int count);
+
+  /// Placeholder in the navigator's search box.
+  ///
+  /// In en, this message translates to:
+  /// **'Search or jump to…'**
+  String get navSearchHint;
+
+  /// Shown when a search found nothing. The quotation marks are curly ones — use whatever this language uses.
+  ///
+  /// In en, this message translates to:
+  /// **'No matches for “{query}”'**
+  String navNoMatches(String query);
+
+  /// Heading over search results found in the words ON pages, as opposed to in page titles.
+  ///
+  /// In en, this message translates to:
+  /// **'In page content'**
+  String get navInPageContent;
+
+  /// Stands in for the name of a page that has none yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Untitled'**
+  String get navUntitled;
+
+  /// Shown when a notebook has no sections. A section is a divider in a notebook, holding pages. Keep the line break.
+  ///
+  /// In en, this message translates to:
+  /// **'No sections yet.\nCreate one to get started.'**
+  String get navNoSections;
+
+  /// Button that adds a section.
+  ///
+  /// In en, this message translates to:
+  /// **'New section'**
+  String get navNewSection;
+
+  /// Tooltip on the + beside a section.
+  ///
+  /// In en, this message translates to:
+  /// **'New page in {section}'**
+  String navNewPageIn(String section);
+
+  /// Shown when a section holds no pages.
+  ///
+  /// In en, this message translates to:
+  /// **'No pages yet'**
+  String get navNoPages;
+
+  /// Column heading over the list of sections.
+  ///
+  /// In en, this message translates to:
+  /// **'Section'**
+  String get navSection;
+
+  /// Tooltip. A section group is a folder holding several sections.
+  ///
+  /// In en, this message translates to:
+  /// **'New section group'**
+  String get navNewSectionGroup;
+
+  /// Where deleted pages and notebooks wait before being removed for good.
+  ///
+  /// In en, this message translates to:
+  /// **'Recycle bin'**
+  String get navRecycleBin;
+
+  /// The navigator's first pane: favourites, recent pages and what is coming up.
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get navHome;
+
+  /// Tooltip on the Home button.
+  ///
+  /// In en, this message translates to:
+  /// **'Home — favourites & recents'**
+  String get navHomeTip;
+
+  /// Shown on the Home pane before anything has been favourited or visited. 'Favourite' and 'Recent' name things elsewhere in this file — keep them consistent. Keep the blank line.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing here yet.\n\nRight-click a page and choose Favourite to pin it; pages you visit show up under Recent.'**
+  String get navHomeEmpty;
+
+  /// Heading over the next few dated things. Capitals are a style choice: match whatever reads as a small heading in this language.
+  ///
+  /// In en, this message translates to:
+  /// **'COMING UP'**
+  String get navComingUp;
+
+  /// Link opening the full planner when more is dated than fits.
+  ///
+  /// In en, this message translates to:
+  /// **'All {total}'**
+  String navAllCount(int total);
+
+  /// Link opening the planner when everything dated already fits.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get navOpen;
+
+  /// Tooltip. Keep the shortcut in brackets as typed — the character is a backslash.
+  ///
+  /// In en, this message translates to:
+  /// **'Expand the navigator  (Ctrl+\\)'**
+  String get navExpand;
+
+  /// Tooltip. Keep the shortcut in brackets as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Collapse the navigator  (Ctrl+\\)'**
+  String get navCollapse;
+
+  /// Tooltip on the notebook button.
+  ///
+  /// In en, this message translates to:
+  /// **'Notebooks — switch, rename, duplicate, import'**
+  String get navNotebooksTip;
+
+  /// Shown on a recycle-bin row whose 30 days are up.
+  ///
+  /// In en, this message translates to:
+  /// **'Deletes soon'**
+  String get navDeletesSoon;
+
+  /// How long a deleted thing has left in the recycle bin.
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{Deletes in 1 day} other{Deletes in {days} days}}'**
+  String navDeletesInDays(int days);
+
+  /// Shown when the recycle bin holds nothing.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing deleted.'**
+  String get navBinEmpty;
+
+  /// Explains the recycle bin's 30-day rule.
+  ///
+  /// In en, this message translates to:
+  /// **'Items here are permanently deleted after {days} days.'**
+  String navBinRetention(int days);
+
+  /// Heading in the recycle bin over deleted notebooks.
+  ///
+  /// In en, this message translates to:
+  /// **'Notebooks'**
+  String get navBinNotebooks;
+
+  /// Heading in the recycle bin over deleted pages and sections.
+  ///
+  /// In en, this message translates to:
+  /// **'Items'**
+  String get navBinItems;
+
+  /// Button that puts a deleted thing back.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore'**
+  String get navRestore;
+
+  /// Tooltip on the button that removes something for good.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete permanently'**
+  String get navDeletePermanently;
+
+  /// Button that closes the recycle bin.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get navClose;
+
+  /// Title of the dialog confirming a permanent deletion.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete permanently?'**
+  String get navDeleteForeverTitle;
+
+  /// Body of that dialog. {caveat} is either empty or an extra paragraph, already beginning with two line breaks.
+  ///
+  /// In en, this message translates to:
+  /// **'“{title}” and all its pages will be removed for good. This can\'t be undone.{caveat}'**
+  String navDeleteForeverBody(String title, String caveat);
+
+  /// The button that does it.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete forever'**
+  String get navDeleteForever;
+
+  /// Message when someone tries to delete a page they have locked.
+  ///
+  /// In en, this message translates to:
+  /// **'“{title}” is locked. Remove its passcode before deleting it.'**
+  String navLockedCannotDelete(String title);
+
+  /// Confirmation after deleting a page.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted “{title}” — restore it from the recycle bin.'**
+  String navDeletedRestorable(String title);
+
+  /// Said plainly after locking a page, so nobody mistakes a passcode for encryption.
+  ///
+  /// In en, this message translates to:
+  /// **'“{title}” is locked. It is hidden inside Openote, not encrypted in the file.'**
+  String navLockedNotEncrypted(String title);
+
+  /// Confirmation after unlocking a page.
+  ///
+  /// In en, this message translates to:
+  /// **'Passcode removed from “{title}”.'**
+  String navPasscodeRemoved(String title);
+
+  /// Confirmation naming where an exported file landed.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved to {path}'**
+  String navSavedTo(String path);
+
+  /// Confirmation after copying a link to a page.
+  ///
+  /// In en, this message translates to:
+  /// **'Link copied — paste it into any page'**
+  String get navLinkCopied;
+
+  /// Title of the dialog picking which group a section goes into.
+  ///
+  /// In en, this message translates to:
+  /// **'Move section to…'**
+  String get navMoveSectionTo;
+
+  /// The choice in that dialog meaning 'not inside any group'.
+  ///
+  /// In en, this message translates to:
+  /// **'(No group — top level)'**
+  String get navNoGroupTopLevel;
+
+  /// Title of the dialog that saves this page's layout for reuse.
+  ///
+  /// In en, this message translates to:
+  /// **'Save as template'**
+  String get navSaveTemplateTitle;
+
+  /// Confirm button in that dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get navSave;
+
+  /// Placeholder in that dialog's text box.
+  ///
+  /// In en, this message translates to:
+  /// **'Template name'**
+  String get navTemplateNameHint;
+
+  /// Confirmation after saving a template.
+  ///
+  /// In en, this message translates to:
+  /// **'Template \"{name}\" saved'**
+  String navTemplateSaved(String name);
+
+  /// Shown when there is nothing to apply. The quoted phrase must match navSaveTemplateTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No templates yet — \"Save as template…\" first.'**
+  String get navNoTemplates;
+
+  /// Title of the dialog that lays a saved template over this page.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply template'**
+  String get navApplyTemplate;
+
+  /// Label beside the row of colours a section can be given.
+  ///
+  /// In en, this message translates to:
+  /// **'Colour'**
+  String get navColour;
+
+  /// Tooltip on the swatch meaning 'no colour of its own'.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get navColourDefault;
+
+  /// Shown on a section that has an exam date.
+  ///
+  /// In en, this message translates to:
+  /// **'Exam {when} · {countdown}…'**
+  String navExamCountdown(String when, String countdown);
+
+  /// Context-menu item: move this page or section one place earlier.
+  ///
+  /// In en, this message translates to:
+  /// **'Move up'**
+  String get navMenuMoveUp;
+
+  /// Context-menu item: move it one place later.
+  ///
+  /// In en, this message translates to:
+  /// **'Move down'**
+  String get navMenuMoveDown;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'New page'**
+  String get navMenuNewPage;
+
+  /// Context-menu item: put this section inside a group.
+  ///
+  /// In en, this message translates to:
+  /// **'Move to group…'**
+  String get navMenuMoveToGroup;
+
+  /// Context-menu item: order the pages by title. Use this language's own alphabet in the arrow, e.g. А→Я.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort pages A→Z'**
+  String get navMenuSortAZ;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort pages by last edited'**
+  String get navMenuSortEdited;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Export section as PDF…'**
+  String get navMenuExportSectionPdf;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Print section…'**
+  String get navMenuPrintSection;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove exam date'**
+  String get navMenuRemoveExam;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Set exam date…'**
+  String get navMenuSetExam;
+
+  /// Context-menu item: nest this page under the one above it.
+  ///
+  /// In en, this message translates to:
+  /// **'Make subpage'**
+  String get navMenuMakeSubpage;
+
+  /// Context-menu item: undo that nesting.
+  ///
+  /// In en, this message translates to:
+  /// **'Move back out'**
+  String get navMenuMoveBackOut;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from favourites'**
+  String get navMenuRemoveFavourite;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to favourites'**
+  String get navMenuAddFavourite;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Share as PDF…'**
+  String get navMenuSharePdf;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Print…'**
+  String get navMenuPrint;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy link to page'**
+  String get navMenuCopyLink;
+
+  /// Context-menu item: the page's own history.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent changes…'**
+  String get navMenuRecentChanges;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Save as template…'**
+  String get navMenuSaveTemplate;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply a template…'**
+  String get navMenuApplyTemplate;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove passcode…'**
+  String get navMenuRemovePasscode;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock with a passcode…'**
+  String get navMenuLock;
+
+  /// Context-menu item.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get navMenuDelete;
+
   /// Welcome flow, step 1 of 3. Heading over an animation of clicking on an empty page and typing.
   ///
   /// In en, this message translates to:
