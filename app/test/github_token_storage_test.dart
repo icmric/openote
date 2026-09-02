@@ -205,4 +205,46 @@ void main() {
       expect(SecretStore.debugPlatformRead(key), isNull);
     });
   });
+
+  group('the real Linux secret store', () {
+    // The Linux half carried the same honesty note as the macOS one — "not
+    // verified by running it" — and it is the half most likely to meet the
+    // case it promises to handle, because `secret-tool` (libsecret-tools) is
+    // NOT installed by default on a minimal desktop. Both branches are
+    // asserted; which one runs depends on the machine, and each says which.
+    test('round-trips where libsecret is installed, and refuses where it is not',
+        () async {
+      if (!Platform.isLinux) return markTestSkipped('Linux only');
+      const key = 'selftest';
+      addTearDown(() => SecretStore.debugPlatformDelete(key));
+
+      final haveTool = Process.runSync('sh', ['-c', 'command -v secret-tool'])
+              .exitCode ==
+          0;
+      if (!haveTool) {
+        // The promise this file's doc comment makes: no plaintext fallback of
+        // any kind, no exception, and a plain `false` so `connectGitHub` can
+        // say what is missing (it names the libsecret-tools package).
+        expect(await SecretStore.debugPlatformWrite(key, 'v'), isFalse,
+            reason: 'without secret-tool there is nowhere safe to put a '
+                'token, and saying so is the whole design — a fallback to a '
+                'file is the exposure this class exists to end');
+        expect(SecretStore.debugPlatformRead(key), isNull);
+        expect(SecretStore.debugPlatformDelete(key), isTrue,
+            reason: 'no tool means no stored secret to worry about');
+        return;
+      }
+
+      // With libsecret present, the same round trip the Windows test makes —
+      // including a value with non-ASCII in it, since the secret crosses a
+      // pipe rather than argv.
+      expect(await SecretStore.debugPlatformWrite(key, 'first ✓ utf8'), isTrue);
+      expect(SecretStore.debugPlatformRead(key), 'first ✓ utf8');
+      expect(await SecretStore.debugPlatformWrite(key, 'second'), isTrue,
+          reason: 'secret-tool store replaces a value with the same attributes');
+      expect(SecretStore.debugPlatformRead(key), 'second');
+      expect(SecretStore.debugPlatformDelete(key), isTrue);
+      expect(SecretStore.debugPlatformRead(key), isNull);
+    });
+  });
 }
