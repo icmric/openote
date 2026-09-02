@@ -40,6 +40,7 @@ class MathField extends StatefulWidget {
     this.autofocus = true,
     this.compact = false,
     this.focusNode,
+    this.initialTapGlobal,
   });
 
   final MathEditor editor;
@@ -62,6 +63,15 @@ class MathField extends StatefulWidget {
 
   final FocusNode? focusNode;
 
+  /// Where the click that is opening this equation landed, in global
+  /// coordinates — so the caret lands there too instead of at a fixed end,
+  /// which is what every "open for edit" call site did before this (the
+  /// owner: "clicking into an equation just puts me at the start every
+  /// time"). Consulted exactly once, the moment this field first mounts for
+  /// a given [editor] — a later rebuild with the same equation still open
+  /// must never re-snap the caret back to the click that opened it.
+  final Offset? initialTapGlobal;
+
   @override
   State<MathField> createState() => MathFieldState();
 }
@@ -79,6 +89,8 @@ class MathFieldState extends State<MathField> {
     // The empty-state chip (below) draws differently focused vs not, and a
     // focus flip is the one change that arrives without a keystroke.
     _focus.addListener(_focusFlipped);
+    final at = widget.initialTapGlobal;
+    if (at != null) _armInitialTap(at);
   }
 
   void _focusFlipped() {
@@ -95,7 +107,16 @@ class MathFieldState extends State<MathField> {
     // survives. The new equation's first edit was then compared against the
     // old one's LaTeX and, when the two matched (the same worked line twice
     // in a sentence), suppressed: the screen changed and the note did not.
-    if (!identical(old.editor, widget.editor)) _committed = _e.latex;
+    if (!identical(old.editor, widget.editor)) {
+      _committed = _e.latex;
+      // The SAME State surviving into a DIFFERENT equation is also how a
+      // click that closes one inline equation and immediately opens another
+      // arrives here: `initState` never reruns, so without this the second
+      // equation's own click position would be silently dropped and it
+      // would open at the caret's plain default instead.
+      final at = widget.initialTapGlobal;
+      if (at != null) _armInitialTap(at);
+    }
   }
 
   @override
@@ -253,6 +274,37 @@ class MathFieldState extends State<MathField> {
   DateTime _lastDown = DateTime.fromMillisecondsSinceEpoch(0);
   Offset _lastDownPos = Offset.zero;
 
+  /// A click that OPENED this equation, not a live pointer — the widget that
+  /// mounted this field already consumed the click, so there is no
+  /// [PointerDownEvent] to read a local position from. This measures the
+  /// same offstage probes a real click does and feeds [_resolveGesture]
+  /// exactly the same synthesised inputs, once the field itself has a size
+  /// to convert the click's global position against.
+  void _armInitialTap(Offset global) {
+    if (_e.root.isEmpty) return; // nothing to hit; focus is the whole job
+    _probeTexes = MathHitTable.prefixTexes(_e.root);
+    _probeKeys = [for (final _ in _probeTexes!) GlobalKey()];
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _resolveInitialTap(global));
+  }
+
+  void _resolveInitialTap(Offset global) {
+    if (!mounted || _probeTexes == null) return;
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) {
+      setState(() {
+        _probeTexes = null;
+        _probeKeys = null;
+      });
+      return;
+    }
+    _pendingDx = box.globalToLocal(global).dx;
+    _pendingShift = false;
+    _pendingDouble = false;
+    _pendingSecondary = false;
+    _resolveGesture();
+  }
+
   void _pointerDown(PointerDownEvent e) {
     _pointerIsDown = true;
     _pendingSecondary = e.buttons & kSecondaryButton != 0;
@@ -324,7 +376,7 @@ class MathFieldState extends State<MathField> {
     // back, so the second click appeared to do nothing at all.
     final onAnswer =
         _pendingShift || _pendingDouble ? null : _e.answerAt(hits.childStrictlyAt(_pendingDx));
-    if (onAnswer != null) {
+    if (onAnswer != null && _e.canToggleAnswer(onAnswer)) {
       setState(() {
         _probeTexes = null;
         _probeKeys = null;

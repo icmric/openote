@@ -65,17 +65,20 @@ void main() {
             'fraction nobody can see');
   });
 
-  testWidgets('tapping the equation asks to edit it, with its own rect',
-      (tester) async {
+  testWidgets(
+      'tapping the equation asks to edit it, with its own rect and the '
+      'click', (tester) async {
     final c = make(r'We define $\frac{n}{2}$ here');
     int? gotStart, gotEnd;
     String? gotLatex;
     Rect? gotRect;
-    c.onMathTap = (s, e, latex, rect) {
+    Offset? gotTapGlobal;
+    c.onMathTap = (s, e, latex, rect, tapGlobal) {
       gotStart = s;
       gotEnd = e;
       gotLatex = latex;
       gotRect = rect;
+      gotTapGlobal = tapGlobal;
     };
     await pump(tester, c);
     await tester.tap(find.byType(OnoteMath));
@@ -89,6 +92,12 @@ void main() {
     expect(gotRect!.width, greaterThan(0),
         reason: 'the editor anchors to this rect — a zero rect puts the card '
             'in the corner of the screen');
+    expect(gotTapGlobal, isNotNull,
+        reason: 'the click itself, so the caret can land where it fell '
+            'instead of always at a fixed end');
+    expect(gotRect!.contains(gotTapGlobal!), isTrue,
+        reason: 'the click has to have landed somewhere inside its own '
+            'equation');
   });
 
   group('writing an edit back into the sentence', () {

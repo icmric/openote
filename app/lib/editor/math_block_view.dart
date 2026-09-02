@@ -155,6 +155,12 @@ class _MathBlockViewState extends State<MathBlockView> {
     final textColor = dark ? OnoteColors.moon0 : OnoteColors.graphite900;
 
     if (editing) {
+      // Consume the click-point token the canvas set, once the field exists
+      // — the caret lands where the click did instead of jumping to a fixed
+      // end regardless of it ("clicking into an equation just puts me at
+      // [a fixed spot] every time").
+      final tapAt = widget.app.pendingCaretGlobal;
+      if (tapAt != null) widget.app.pendingCaretGlobal = null;
       return Padding(
         padding: const EdgeInsets.all(10),
         child: EquationEditor(
@@ -171,6 +177,7 @@ class _MathBlockViewState extends State<MathBlockView> {
           onDrawGraph: _drawGraph,
           onEvaluateAtValue: _evaluateAtValue,
           onWidthWanted: _growToWidth,
+          initialTapGlobal: tapAt,
         ),
       );
     }

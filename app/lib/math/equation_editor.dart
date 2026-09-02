@@ -57,6 +57,7 @@ class EquationEditor extends StatefulWidget {
     this.onDrawGraph,
     this.onEvaluateAtValue,
     this.onReworkSiblings,
+    this.initialTapGlobal,
   });
 
   /// Only for `setActiveMath` / `noteMathUse` — the toolbar's Maths tab has to
@@ -118,6 +119,13 @@ class EquationEditor extends StatefulWidget {
   /// Null for an equation in a box of its own — it has no siblings, and the
   /// page-wide pass reaches every other block already.
   final void Function(AngleMode writtenIn)? onReworkSiblings;
+
+  /// Where the click that is opening this equation landed, in global
+  /// coordinates, straight through to [MathField.initialTapGlobal] — see
+  /// there for why a click has to be threaded all the way down rather than
+  /// resolved to an index up here (there is nothing to measure against
+  /// until the field itself is laid out).
+  final Offset? initialTapGlobal;
 
   @override
   State<EquationEditor> createState() => EquationEditorState();
@@ -333,6 +341,7 @@ class EquationEditorState extends State<EquationEditor> {
         textStyle: widget.textStyle,
         onChanged: widget.onChanged,
         onExit: widget.onExit,
+        initialTapGlobal: widget.initialTapGlobal,
       ),
     );
 

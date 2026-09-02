@@ -1120,6 +1120,17 @@ class MathEditor {
   bool toggleAnswer(MAnswer a) =>
       setAnswerForm(a, fraction: !answerIsFraction(a));
 
+  /// Would a click on this answer actually switch anything? An answer only
+  /// intercepts a click when this is true — a whole number, or a decimal
+  /// with no tidy fraction, has nothing to switch TO and the click falls
+  /// through to placing the caret instead, exactly like a click anywhere
+  /// else (see `MathField._resolveGesture`). Every equation with a worked,
+  /// whole-number answer — most of them — used to turn a click anywhere on
+  /// that answer into a silent no-op: "clicking in it does not actually
+  /// move me there, nothing happens."
+  bool canToggleAnswer(MAnswer a) =>
+      answerIsFraction(a) || answerHasFraction(a);
+
   /// Is this answer showing a fraction right now?
   bool answerIsFraction(MAnswer a) =>
       a.content.children.any((c) => c is MFrac);

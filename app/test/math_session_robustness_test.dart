@@ -92,12 +92,24 @@ void main() {
     return (app, b);
   }
 
+  /// Open an equation by clicking its RIGHT edge, not dead centre — a click
+  /// now lands the caret where it fell (math_click_position_test.dart), and
+  /// a centred click on a short equation like `$x$` is genuinely ambiguous
+  /// between its two ends. These tests are about the session surviving a
+  /// foreign rewrite, not about where a click lands, so they open the same
+  /// way a click on the last character always has: caret at the end.
+  Future<void> tapToOpen(WidgetTester tester, {bool last = false}) async {
+    final finder = find.byType(InlineMathAtom);
+    final r = tester.getRect(last ? finder.last : finder.first);
+    await tester.tapAt(Offset(r.right - 1, r.center.dy));
+  }
+
   testWidgets('a foreign buffer rewrite CLOSES the session instead of '
       'corrupting the note (the toolbar-Bold route)', (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, b) = await openEditing(tester, r'aa $x$ bb cc dd');
 
-    await tester.tap(find.byType(InlineMathAtom));
+    await tapToOpen(tester);
     await settle(tester);
     expect(app.activeSession!.inlineMathFocused, isTrue);
 
@@ -129,7 +141,7 @@ void main() {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, b) = await openEditing(tester, r'aa $x$ bb');
 
-    await tester.tap(find.byType(InlineMathAtom));
+    await tapToOpen(tester);
     await settle(tester);
     await typeChar(tester, '+');
     await typeChar(tester, '2');
@@ -162,7 +174,7 @@ void main() {
     expect(b.content['text'], r'$$ start $y^2$ end');
 
     // Click B while A is still open and empty.
-    await tester.tap(find.byType(InlineMathAtom).last);
+    await tapToOpen(tester, last: true);
     await settle(tester);
 
     final text = b.content['text'] as String;

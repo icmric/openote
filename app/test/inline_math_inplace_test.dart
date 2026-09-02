@@ -103,12 +103,25 @@ void main() {
     return (app, b);
   }
 
+  /// Open the (first) equation in the sentence by clicking its RIGHT edge.
+  ///
+  /// A plain `tester.tap` lands dead centre, which a click-position-aware
+  /// caret (math_click_position_test.dart) can resolve to either end of a
+  /// short equation — these tests are about what happens once you are
+  /// editing, not about where a click lands, so they open the same way a
+  /// click on the last character always has: caret at the end, ready to
+  /// keep typing.
+  Future<void> tapToOpen(WidgetTester tester) async {
+    final r = tester.getRect(find.byType(InlineMathAtom).first);
+    await tester.tapAt(Offset(r.right - 1, r.center.dy));
+  }
+
   testWidgets('clicking an equation edits it IN PLACE — no card, no overlay',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, b) = await openEditing(tester, r'we know $x$ here');
 
-    await tester.tap(find.byType(InlineMathAtom));
+    await tapToOpen(tester);
     await settle(tester);
 
     expect(find.byType(EquationEditor), findsOneWidget,
@@ -132,7 +145,7 @@ void main() {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, b) = await openEditing(tester, r'we know $x$ here');
 
-    await tester.tap(find.byType(InlineMathAtom));
+    await tapToOpen(tester);
     await settle(tester);
 
     await typeChar(tester, '+');
@@ -152,7 +165,7 @@ void main() {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, _) = await openEditing(tester, r'we know $x$ here');
 
-    await tester.tap(find.byType(InlineMathAtom));
+    await tapToOpen(tester);
     await settle(tester);
 
     final tf = tester.widget<TextField>(find.byType(TextField));
@@ -167,7 +180,7 @@ void main() {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, b) = await openEditing(tester, r'we know $x$ here');
 
-    await tester.tap(find.byType(InlineMathAtom));
+    await tapToOpen(tester);
     await settle(tester);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await settle(tester);
@@ -226,7 +239,7 @@ void main() {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, b) = await openEditing(tester, r'so $x$ then');
 
-    await tester.tap(find.byType(InlineMathAtom));
+    await tapToOpen(tester);
     await settle(tester);
     await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
     await settle(tester);
@@ -304,7 +317,7 @@ void main() {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, b) = await openEditing(tester, r'aa $x$ bb cc dd');
 
-    await tester.tap(find.byType(InlineMathAtom));
+    await tapToOpen(tester);
     await settle(tester);
     expect(app.activeSession!.inlineMathFocused, isTrue);
 
@@ -324,7 +337,7 @@ void main() {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, b) = await openEditing(tester, r'sum $\frac{1}{2}$ end');
 
-    await tester.tap(find.byType(InlineMathAtom));
+    await tapToOpen(tester);
     await settle(tester);
     await typeChar(tester, '+');
     await typeChar(tester, 'z');
@@ -371,7 +384,7 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (app, b) = await openEditing(tester, r'we know $y=3x+10$ here');
 
-      await tester.tap(find.byType(InlineMathAtom));
+      await tapToOpen(tester);
       await settle(tester);
       expect(app.activeMath?.drawGraph, isNotNull);
 
@@ -392,7 +405,7 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (app, b) = await openEditing(tester, r'we know $y=3x+10$ here');
 
-      await tester.tap(find.byType(InlineMathAtom));
+      await tapToOpen(tester);
       await settle(tester);
       expect(app.activeMath?.evaluateAtValue, isNotNull);
 

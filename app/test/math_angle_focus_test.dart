@@ -186,7 +186,13 @@ void main() {
     ));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    await tester.tap(find.byType(InlineMathAtom));
+    // The right edge, not dead centre: a click now lands the caret where it
+    // fell (math_click_position_test.dart), and a centred click on a
+    // one-character equation like `$x$` is genuinely ambiguous between its
+    // two ends — this test wants the ordinary "opened, ready to keep
+    // typing" state, unrelated to click position.
+    final atom = tester.getRect(find.byType(InlineMathAtom));
+    await tester.tapAt(Offset(atom.right - 1, atom.center.dy));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.byType(MathField), findsOneWidget);

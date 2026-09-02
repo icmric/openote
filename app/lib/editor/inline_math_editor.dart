@@ -218,8 +218,10 @@ class InlineMathAtom extends StatelessWidget {
   /// want the highlighting to be always there."*
   final Color? linkTint;
 
-  /// Called with the equation's rect in global coordinates.
-  final void Function(Rect anchor)? onTap;
+  /// Called with the equation's rect and the click's own position, both in
+  /// global coordinates — the click's position is what lets the caret land
+  /// where you clicked instead of at a fixed end regardless of it.
+  final void Function(Rect anchor, Offset tapGlobal)? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -279,11 +281,15 @@ class InlineMathAtom extends StatelessWidget {
           // one key away, so the cost of an accidental entry is a single
           // keystroke — far less than the cost of an equation that looks
           // editable and isn't.
-          onTap: () {
+          //
+          // `onTapUp`, not `onTap`, because a click here has to carry not just
+          // "you were tapped" but WHERE — the caret that opens the equation
+          // belongs at the click, not always at a fixed end regardless of it.
+          onTapUp: (details) {
             final box = ctx.findRenderObject() as RenderBox?;
             if (box == null || !box.hasSize) return;
             final origin = box.localToGlobal(Offset.zero);
-            onTap!(origin & box.size);
+            onTap!(origin & box.size, details.globalPosition);
           },
           child: Semantics(
             label: 'equation',

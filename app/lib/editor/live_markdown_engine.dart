@@ -119,8 +119,8 @@ class _LiveMarkdownSession extends OnoteEditSession {
     controller.onSelfEdit = () => onChanged(controller.text);
     // Forwarded, not handled: only the host may touch the block (ADR-0004).
     controller.requestExtraWidth = (extra) => requestExtraWidth?.call(extra);
-    controller.onMathTap = (start, end, latex, _) =>
-        enterInlineMath(start, end, latex, atStart: false);
+    controller.onMathTap = (start, end, latex, _, tapGlobal) =>
+        enterInlineMath(start, end, latex, atStart: false, tapGlobal: tapGlobal);
     controller.mathEditorBuilder = _buildInlineEditor;
     controller.graphLinkTint = (latex) {
       final host = app.editingBlockId;
@@ -205,6 +205,15 @@ class _LiveMarkdownSession extends OnoteEditSession {
   final GlobalKey<EquationEditorState> _mathKey =
       GlobalKey<EquationEditorState>();
 
+  /// Where the click that opened this equation landed, global — set by
+  /// [enterInlineMath] and handed straight to [EquationEditor], which is the
+  /// one thing able to convert it into a caret position once the field is
+  /// actually laid out. Null for every entry that was NOT a click (Alt+=,
+  /// the caret walking in from either side): those already know exactly
+  /// where the caret belongs and a stale click from a previous equation must
+  /// never override that.
+  Offset? _mathInitialTapGlobal;
+
   @override
   bool get inlineMathFocused => _mathFocus.hasFocus;
 
@@ -239,6 +248,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
       onDrawGraph: _drawGraph,
       onEvaluateAtValue: _evaluateAtValue,
       onReworkSiblings: _reworkSiblingMath,
+      initialTapGlobal: _mathInitialTapGlobal,
       // A summation's stacked limits are far wider than the same maths reads
       // inline; without this the equation hits the paragraph's edge and
       // starts scrolling inside its span. The deficit seam is the one
@@ -255,8 +265,16 @@ class _LiveMarkdownSession extends OnoteEditSession {
 
   /// One click on an equation in a sentence - or the caret crossing into it,
   /// or Alt+= - and it is being edited, in place.
+  ///
+  /// [tapGlobal] is the click's own position, global — set only when this
+  /// really was a click, never for the caret walking in from either side or
+  /// Alt+=, which already know exactly where the caret belongs and must not
+  /// have it overridden by whatever a previous equation's click happened to
+  /// be. [atStart] is still the fallback: the click is resolved to a caret
+  /// position asynchronously, once the field has a size to measure against,
+  /// so there has to be something sane on screen before that frame lands.
   void enterInlineMath(int start, int end, String latex,
-      {required bool atStart}) {
+      {required bool atStart, Offset? tapGlobal}) {
     // One session at a time. Equation B's atom stays tappable while A is
     // open, and entering B without closing A left A's empty pair unswept —
     // or, for an unsupported B, TWO editors writing the same buffer. Closing
@@ -289,6 +307,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
     } else {
       ed.placeAtEnd();
     }
+    _mathInitialTapGlobal = tapGlobal;
     _mathStart = start;
     _mathEnd = end;
     _mathEditor = ed;

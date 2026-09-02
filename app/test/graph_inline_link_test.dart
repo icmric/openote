@@ -83,9 +83,16 @@ void main() {
     await tester.pump();
 
     // Into the SECOND equation, and type it up to the first one's text.
+    // Clicked at its RIGHT edge, not dead centre: a click now lands the
+    // caret where it fell (the bug this file's neighbour,
+    // math_click_position_test.dart, covers), and a centred click on a
+    // ONE-CHARACTER equation like `$y$` is genuinely ambiguous between
+    // its two ends — this test is about the anchor, not about that.
     final atoms = tester.widgetList(find.byType(InlineMathAtom)).toList();
     expect(atoms.length, 2, reason: 'two equations in the sentence');
-    await tester.tap(find.byType(InlineMathAtom).last);
+    final second = tester.getRect(find.byType(InlineMathAtom).last);
+    await tester.tapAt(Offset(second.right - 1, second.center.dy));
+    await tester.pump();
     await tester.pump();
     for (final ch in ['=', 'x', '+', '3']) {
       final key = switch (ch) {

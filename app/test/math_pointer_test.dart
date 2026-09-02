@@ -183,4 +183,40 @@ void main() {
     final boxed = tester.getSize(find.byKey(const Key('b'))).height;
     expect(boxed - plain, closeTo(kSelectionBoxEm * fs, 1.0));
   });
+
+  testWidgets(
+      'clicking an answer that cannot be toggled still places the caret',
+      (tester) async {
+    // The owner: "even once I'm in clicking in it does not actually move me
+    // there, nothing happens." A click ON an answer takes priority over
+    // placing the caret, because it might switch decimal to fraction — but a
+    // whole number has no fraction to switch to, `toggleAnswer` declines, and
+    // nothing else was ever written to fall back to placing the caret. Any
+    // equation with a worked answer — which is most of them — turned every
+    // click on that answer into exactly this silent no-op.
+    await pump(tester);
+    await type(tester, '2+3= ');
+    final i = editor.root.length - 1;
+    final answer = editor.answerAt(i);
+    expect(answer, isNotNull, reason: '"=" should have worked it out');
+    expect(editor.toggleAnswer(answer!), isFalse,
+        reason: 'a whole number (5) has no fraction to switch to — the '
+            'exact case the click below lands on');
+
+    // Pin the caret to a KNOWN position first, so the click that follows is
+    // the only thing that can move it.
+    await tester.sendKeyEvent(LogicalKeyboardKey.home);
+    await tester.pump();
+    expect(editor.caretIndex, 0);
+
+    // Click ON the answer: \boxed{5} sits at the right-hand end of the field.
+    final box = tester.getRect(find.byType(MathField));
+    await tester.tapAt(Offset(box.right - 2, box.center.dy));
+    await resolve(tester);
+
+    expect(editor.caretIndex, greaterThan(0),
+        reason: 'a click that cannot toggle the answer must still place the '
+            'caret, exactly like any other click — instead it did nothing '
+            'at all, indistinguishable from the click never landing');
+  });
 }

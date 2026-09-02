@@ -72,9 +72,11 @@ class LiveMarkdownController extends TextEditingController {
 
   /// A student clicked an equation sitting in a sentence. Offsets are into the
   /// buffer and cover the whole `$…$`; the rect is in global coordinates, for
-  /// anchoring the editor. Null leaves inline equations as plain drawings,
-  /// which is what a read-only surface wants.
-  void Function(int start, int end, String latex, Rect anchor)? onMathTap;
+  /// anchoring the editor, and `tapGlobal` is the click itself, also global —
+  /// where the caret lands once the equation opens. Null leaves inline
+  /// equations as plain drawings, which is what a read-only surface wants.
+  void Function(int start, int end, String latex, Rect anchor, Offset tapGlobal)?
+      onMathTap;
 
   /// **Does this equation have a graph worth pointing at right now?**
   ///
@@ -1284,7 +1286,8 @@ class LiveMarkdownController extends TextEditingController {
                   linkTint: graphLinkTint?.call(c.inner),
                   onTap: tap == null
                       ? null
-                      : (rect) => tap(from, to, c.inner, rect),
+                      : (rect, tapGlobal) =>
+                          tap(from, to, c.inner, rect, tapGlobal),
                 ),
         ));
         out.add(TextSpan(text: full.substring(1), style: _hidden(cBase)));

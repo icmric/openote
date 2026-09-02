@@ -128,8 +128,12 @@ class _BlockViewState extends State<BlockView> {
       // next text box opened by any other route would jump its caret to a
       // point on a completely different block. Text consumes it in the
       // markdown engine; code consumes it in code_block_view (the
-      // "doesn't respect click position" report).
-      if (b.type == BlockType.text || b.type == BlockType.code) {
+      // "doesn't respect click position" report); a math block consumes it
+      // in math_block_view ("clicking into an equation just puts me at [a
+      // fixed spot] every time").
+      if (b.type == BlockType.text ||
+          b.type == BlockType.code ||
+          b.type == BlockType.math) {
         app.pendingCaretGlobal = _pressGlobal;
       }
       app.select(b.id, edit: true); // tap-to-edit (F-4)
