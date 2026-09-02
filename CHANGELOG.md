@@ -4,6 +4,30 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed — typing no longer rebuilds the toolbars (2026-09-02)
+
+- **The command bar and the object row are no longer rebuilt for a keystroke
+  that cannot change them.** Every character marks the page dirty — it has to,
+  because that is what makes a box grow as you type — and the whole window was
+  being rebuilt from the top for it. Measured on a page of forty blocks in a
+  ninety-page notebook: the toolbars were 47 ms of a 63 ms frame, and neither
+  can look any different because a character was typed in the middle of a
+  paragraph. That frame is now 19 ms. The parts that really do change while
+  you type — the word count, the study and planner badges — keep themselves up
+  to date on their own.
+
+### Added — the toolbars and the navigator can be translated (2026-09-02)
+
+- **The chrome that is on screen all session now reads its words from the
+  translation file**, joining the welcome flow. Around 200 messages, and six
+  of them are things that were being assembled by hand in a way no other
+  language would accept: "1 card" against "5 cards", reminders waiting, days
+  left in the recycle bin, and the word count, badge numbers and zoom
+  percentage, which are now grouped and shaped the way each language does it.
+  Openote still ships in English only; what changed is that it no longer has
+  to.
+
+
 ### Added — the welcome flow teaches the app, and other languages have somewhere to go (2026-09-02)
 
 - **The first thing you see now says what Openote IS.** The welcome dialog
