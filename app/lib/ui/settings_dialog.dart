@@ -5,6 +5,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../update/app_update.dart';
 import 'mcp_dialog.dart';
+import 'onboarding.dart';
 import 'onote_dialog.dart';
 import 'shortcut_overlay.dart';
 import 'sync_dialog.dart';
@@ -153,7 +154,16 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                       ? 'On — AI helpers on this computer can use your notes.'
                       : 'Off — connect Claude or other AI helpers.',
                   () => showMcpDialog(context, app)),
-              _section('Keyboard'),
+              _section('Help'),
+              // The welcome flow is the only place that teaches the canvas
+              // itself, and it used to be shown exactly once, ever: skip it
+              // on the first run — or be the second person to use the
+              // machine — and there was no way back to it. A door here is
+              // what makes "Skip" a fair offer.
+              _door(Icons.school_outlined, 'Welcome tour',
+                  'The three-minute version: the canvas, maths and ink, and '
+                      'where your notes live.',
+                  () => showOnboarding(context, app)),
               _door(Icons.keyboard_outlined, 'Keyboard shortcuts',
                   'Everything has a key — the full list.  (Ctrl+/)',
                   () => showShortcutOverlay(context)),
