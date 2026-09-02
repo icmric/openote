@@ -4,6 +4,42 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — the welcome flow teaches the app, and other languages have somewhere to go (2026-09-02)
+
+- **The first thing you see now says what Openote IS.** The welcome dialog
+  offered three ways to get notes *in* — sync, OneNote import, start fresh —
+  and never mentioned the canvas. That is the discoverable half: both of
+  those live in the notebook manager and in Settings. The canvas is not.
+  Nothing on an empty page tells you that clicking anywhere and typing is the
+  whole interaction, and someone arriving from OneNote who does not learn
+  that in the first ten seconds concludes the page is broken. It is now three
+  short steps, each led by a drawing rather than a paragraph: the canvas
+  (animated, because the thing it teaches is an order of events — pointer,
+  click, caret, words, and only then a box), maths and ink, and where your
+  notes live. Every starting point the old dialog had is kept, as the last
+  step.
+- **The welcome flow can be reopened.** It ran once, ever, on a first run
+  that had already been stamped by the time you decided you wanted it —
+  skipping it was permanent, and being the second person to use the machine
+  meant never seeing it. Settings ▸ Help now has a door back in.
+- **Openote can be translated.** The foundation is in: the localisation
+  delegates, an English `.arb` template that is now the source of truth for
+  the welcome flow's words, and a generated strings class checked into the
+  repository. Adding a language is a single `.arb` file and a codegen run —
+  no code to change. The app still ships in English only; the rest of the
+  migration is tracked in
+  [v0.24 — the road to 1.0](docs/planning/v0.24-road-to-1.0.md).
+
+### Fixed — layout and consistency in the dialogs (2026-09-02)
+
+- **The welcome flow's starting-point cards overflowed by 25 pixels**, on the
+  one step someone switching from OneNote actually has to read. The existing
+  smoke test never caught it because it only ever opened the first step.
+- **Three confirmation dialogs in Sync appeared without the fade-and-scale
+  every other dialog in the app uses**, because they opened through Flutter's
+  own `showDialog` rather than Openote's.
+
+
 ### Fixed — a picture Openote couldn't find could be self-healed, and wasn't (2026-09-01)
 
 - **A blob file missing from `blobs/` — but still sitting safely in the

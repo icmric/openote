@@ -1,6 +1,8 @@
 # Openote Roadmap
 
-> **Status: v0.8.0 released** · **1,564 Dart (16 skipped) + 74 Rust tests green, analyzer clean** (verified 2026-08-17) · Last updated 2026-08-17
+> **Status: v0.8.0 released** · **2,745 Dart (49 skipped) + 78 Rust tests green, analyzer clean — 0 errors, 0 warnings** (verified 2026-09-02) · Last updated 2026-09-02
+>
+> **Getting to 1.0:** [v0.24 — the road to 1.0](docs/planning/v0.24-road-to-1.0.md) is a whole-project review with a definition of what 1.0 should promise and a three-revision order to get there. The short version — **run the macOS and Linux builds** (still the largest unknown in the project, and the one real blocker), **finish the translation migration** whose foundation landed 2026-09-02, and **stop the whole shell rebuilding on every keystroke**. The body of this document below has not had the same pass and still describes some work that has since shipped.
 >
 > **Shipped since v0.2:** the student release (v0.3) · dates, reminders and the planner (v0.5) · the UI revamp (v0.6) · installers for all three platforms (v0.7) · events and the timetable (v0.8) · the performance pass (v0.9) · responsiveness and storage waves 1a + 1c (v0.10) · size and speed phase 0, including ink-as-bytes — 63.09 MB of handwriting became 3.22 MB (v0.11) · **git/GitHub sync with join-by-link** · **password-protected pages** ([ADR-0008](docs/adr/ADR-0008-page-protection.md)) · **MCP / AI access** ([spec 14](docs/specs/14-external-api-mcp.md)) · **local code cells** (v0.14) · **keyboard control phases 1–2** (v0.16) · **update through the app** (v0.7.0).
 >
