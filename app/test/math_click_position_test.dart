@@ -232,6 +232,115 @@ void main() {
     });
 
     testWidgets(
+        'the VERY FIRST click, on a paragraph that was not being edited '
+        'yet, still opens its equation where you clicked', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The realistic sequence: the note is open, nothing is selected, and
+      // the student's first-ever click on the page happens to land on an
+      // inline equation mid-sentence. Unlike every test above, the block is
+      // NOT already in edit mode — so this goes through the real BlockView,
+      // whose OWN tap turns "not editing" into "editing", not through
+      // InlineMathAtom's tap at all (that widget does not even exist until
+      // AFTER this click, since a closed block draws read-only Markdown).
+      final b = Block(
+        id: 'b1',
+        type: BlockType.text,
+        x: 0,
+        y: 0,
+        w: 400,
+        content: {'text': r'we know $123456789$ here', 'autoWidth': false},
+      );
+      app.blocks.add(b);
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ListenableBuilder(
+            listenable: app,
+            builder: (_, __) => Stack(
+              children: [BlockView(block: b, app: app, controller: app.canvas)],
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+      expect(app.editingBlockId, isNot('b1'),
+          reason: 'the block must start out NOT being edited for this to '
+              'be the scenario it claims to be');
+
+      final atomRect = tester.getRect(find.byType(InlineMathAtom));
+      await tester.tapAt(Offset(atomRect.center.dx, atomRect.center.dy));
+      await resolve(tester);
+      await resolve(tester); // the block's own edit-mode transition, +1 frame
+
+      expect(app.editingBlockId, 'b1',
+          reason: 'the click must have entered the paragraph for editing');
+      expect(find.byType(MathField), findsOneWidget,
+          reason: 'and the click landed ON the equation, so it must have '
+              'opened it too — not just parked the host caret beside it');
+      final field = tester.widget<MathField>(find.byType(MathField));
+      expect(field.editor.caretIndex, inInclusiveRange(2, 7),
+          reason: 'a click dead centre of nine digits must land in the '
+              'middle of them, even on the very first click');
+      await settle(tester);
+    });
+
+    testWidgets(
+        'the VERY FIRST click on an equation that ENDS its line also opens '
+        'it where you clicked, not always at a fixed end', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The other half of the FIRST-click path: an equation with nothing
+      // after it goes through `_enterMathOnTapAtLineEnd`'s own, narrower
+      // route rather than `_enterMathOnFirstClickInside`'s — and it used to
+      // ignore the click position entirely, opening at the end regardless
+      // of where on the equation you clicked. This is very likely the
+      // owner's actual, exact repro: an equation is very often the last
+      // thing on its line ("solve for x: $123456789$").
+      final b = Block(
+        id: 'b1',
+        type: BlockType.text,
+        x: 0,
+        y: 0,
+        w: 400,
+        content: {'text': r'solve for x: $123456789$', 'autoWidth': false},
+      );
+      app.blocks.add(b);
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ListenableBuilder(
+            listenable: app,
+            builder: (_, __) => Stack(
+              children: [BlockView(block: b, app: app, controller: app.canvas)],
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+      expect(app.editingBlockId, isNot('b1'));
+
+      final atomRect = tester.getRect(find.byType(InlineMathAtom));
+      await tester.tapAt(Offset(atomRect.left + 2, atomRect.center.dy));
+      await resolve(tester);
+      await resolve(tester);
+
+      expect(app.editingBlockId, 'b1');
+      expect(find.byType(MathField), findsOneWidget,
+          reason: 'a trailing equation clicked for the first time must open');
+      final field = tester.widget<MathField>(find.byType(MathField));
+      expect(field.editor.caretIndex, lessThanOrEqualTo(1),
+          reason: 'a click at the far left of a trailing equation, clicked '
+              'for the very first time, belongs at the start of it — before '
+              'this fix it always opened at the END no matter where you '
+              'clicked, since _enterMathOnTapAtLineEnd never carried the '
+              'click\'s position at all');
+      await settle(tester);
+    });
+
+    testWidgets(
         'clicking a closed equation in the MIDDLE opens it with the caret '
         'in the middle, not snapped to either end', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
@@ -251,6 +360,56 @@ void main() {
       expect(field.editor.caretIndex, inInclusiveRange(2, 7),
           reason: 'a click dead centre of nine digits must land somewhere '
               'in the middle of them, not snapped to either end');
+      await settle(tester);
+    });
+
+    testWidgets(
+        'the same MIDDLE click, through the real canvas at 1.6x zoom and '
+        'panned off (0, 0), still lands in the middle', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The owner's report was specific to inline equations reached the
+      // ordinary way: on the CANVAS, not through a bare TextBlockView — so
+      // this goes through the real BlockView, at a non-1:1 zoom and a block
+      // that does not sit at the canvas origin, to rule out the pan/zoom
+      // Transform as the source of any coordinate mismatch.
+      final b = Block(
+        id: 'b1',
+        type: BlockType.text,
+        x: 137,
+        y: 82,
+        w: 400,
+        content: {'text': r'we know $123456789$ here', 'autoWidth': false},
+      );
+      app.blocks.add(b);
+      app.editingBlockId = 'b1';
+      app.canvas.scale = 1.6;
+      app.canvas.offset = const Offset(53, 19);
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ListenableBuilder(
+            listenable: app,
+            builder: (_, __) => Stack(
+              children: [BlockView(block: b, app: app, controller: app.canvas)],
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      final atomRect = tester.getRect(find.byType(InlineMathAtom));
+      await tester.tapAt(Offset(atomRect.center.dx, atomRect.center.dy));
+      await resolve(tester);
+
+      expect(find.byType(MathField), findsOneWidget,
+          reason: 'the click must have opened the equation at all');
+      final field = tester.widget<MathField>(find.byType(MathField));
+      expect(field.editor.caretIndex, inInclusiveRange(2, 7),
+          reason: 'zoomed and panned, a click dead centre of nine digits '
+              'must still land in the middle, not snapped to either end');
       await settle(tester);
     });
 

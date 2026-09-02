@@ -598,6 +598,27 @@ class _LiveMarkdownSession extends OnoteEditSession {
     return false;
   }
 
+  /// **A click that resolved to somewhere INSIDE a math run opens it there.**
+  ///
+  /// Only reachable from the very first click on a paragraph that was not
+  /// yet being edited (see the caller) — every later click on an equation
+  /// goes through `InlineMathAtom`'s own tap instead, which already carries
+  /// the click's position (v0.24 §click-to-position). Unambiguous the same
+  /// way `_enterMathOnTapAtLineEnd` reasons about its own narrower case: an
+  /// ORDINARY, continuing-sentence caret placement can land at a run's
+  /// trailing seam (`run.end` — the seam is real text you go on typing from,
+  /// so that stays that function's stricter job) but never strictly INSIDE
+  /// one, because there is nothing else at those offsets to place a caret
+  /// for.
+  bool _enterMathOnFirstClickInside(int at, Offset tapGlobal) {
+    if (_mathStart != null) return false; // one is already open
+    final run = controller.mathRunNear(at);
+    if (run == null || at >= run.end) return false;
+    enterInlineMath(run.start, run.end, run.inner,
+        atStart: false, tapGlobal: tapGlobal);
+    return true;
+  }
+
   /// **A click past an equation that ENDS its line steps into it.**
   ///
   /// The owner: *"clicking on the end of a text box doesnt at the moment
@@ -614,7 +635,14 @@ class _LiveMarkdownSession extends OnoteEditSession {
   ///
   /// Escape is still one key away, and lands the caret back at `run.end` with
   /// the editor closed, so a student who wants to keep writing can.
-  bool _enterMathOnTapAtLineEnd() {
+  ///
+  /// [tapGlobal] is the click that caused this, when there was one — the
+  /// FIRST click on a paragraph that was not yet being edited never reaches
+  /// `InlineMathAtom`'s own tap (a closed block draws read-only Markdown,
+  /// with no equation widget to click on yet); this is the only place left
+  /// that still knows where that click actually landed, for a trailing
+  /// equation the click landed ON rather than past.
+  bool _enterMathOnTapAtLineEnd({Offset? tapGlobal}) {
     if (_mathStart != null) return false; // one is already open
     final sel = controller.selection;
     if (!sel.isValid || !sel.isCollapsed) return false;
@@ -623,7 +651,8 @@ class _LiveMarkdownSession extends OnoteEditSession {
     if (run == null || at != run.end) return false;
     final t = controller.text;
     if (run.end != t.length && t.codeUnitAt(run.end) != 0x0A) return false;
-    enterInlineMath(run.start, run.end, run.inner, atStart: false);
+    enterInlineMath(run.start, run.end, run.inner,
+        atStart: false, tapGlobal: tapGlobal);
     return true;
   }
 
@@ -897,8 +926,16 @@ class _LiveMarkdownSession extends OnoteEditSession {
         if (at != null) {
           controller.selection = TextSelection.collapsed(offset: at);
           // The first click into a block that was not being edited comes
-          // through here rather than through the field's own onTap.
-          _enterMathOnTapAtLineEnd();
+          // through here rather than through `InlineMathAtom`'s own tap — a
+          // closed block draws read-only Markdown, with no equation widget
+          // to click on yet, so this is the only place left that knows
+          // where the click actually landed. Tried in order: a click that
+          // resolved to somewhere INSIDE a run opens it wherever that is;
+          // one that resolved to exactly its trailing seam only opens it
+          // when the seam is unambiguous (see _enterMathOnTapAtLineEnd).
+          if (!_enterMathOnFirstClickInside(at, want)) {
+            _enterMathOnTapAtLineEnd(tapGlobal: want);
+          }
         }
       }
       if (!_focus.hasFocus) _focus.requestFocus();
