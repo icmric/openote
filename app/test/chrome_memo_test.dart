@@ -216,6 +216,44 @@ void main() {
       app.cancelPendingSave();
     });
 
+    // THE CLASSIC MEMO BUG. A cached subtree is built against the theme, the
+    // locale and the text direction that were in force when it was built —
+    // none of which appear in any key, because they arrive through inherited
+    // widgets rather than through `app`. Get this wrong and switching to dark
+    // leaves the toolbars painted for the light theme until something else
+    // happens to invalidate them. `MemoBuild` drops the cache in
+    // `didChangeDependencies`, which covers every inherited widget including
+    // ones added later; this is the proof.
+    testWidgets('changing the theme rebuilds it, though no key changed',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await pump(tester);
+      final before = bar(tester);
+
+      // Nothing on either row's key list has moved — only the theme.
+      await tester.pumpWidget(testApp(
+        Scaffold(
+          body: Column(children: [
+            ListenableBuilder(
+              listenable: app,
+              builder: (_, __) => Column(children: [
+                CommandBar(app: app),
+                ObjectRow(app: app),
+              ]),
+            ),
+          ]),
+        ),
+        brightness: Brightness.dark,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(identical(bar(tester), before), isFalse,
+          reason: 'the toolbars were still painted for the light theme — a '
+              'cached subtree must be dropped when an inherited widget it was '
+              'built against changes');
+      app.cancelPendingSave();
+    });
+
     testWidgets('the panel buttons still light up when their panel opens',
         (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
