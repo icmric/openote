@@ -15,6 +15,7 @@ import '../markdown/md_syntax.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
 import '../l10n/l10n.dart';
+import '../l10n/labels.dart';
 import '../state/app_state.dart';
 import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
@@ -720,8 +721,23 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       _FontSizeField(app: app, enabled: canFormat),
       if (!canFormat) ...[
         const SizedBox(width: 10),
-        Text(l.barClickIntoTextBox,
-            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
+        // **Clipped, not wrapped, if it does not fit.** The Home row is a
+        // horizontal scroll view, so this sentence gets whatever space is
+        // left and no more — and every translation of it is longer than the
+        // English. Spanish ran off the right edge of a 1440px window the
+        // first time the app was rendered in another language. A hard cap
+        // plus an ellipsis keeps the row's shape whatever the sentence turns
+        // out to be; the tooltip on the greyed-out buttons says the same
+        // thing anyway.
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 260),
+          child: Text(l.barClickIntoTextBox,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: 11, color: context.surfaces.textSecondary)),
+        ),
+        const SizedBox(width: 10),
       ],
     ]);
   }
@@ -781,18 +797,20 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
   /// entry is the same 40px every compact `IconButton` in this app
   /// measures, +22 for the split button's own dropdown arrow when the item
   /// has [InsertItem.extras], +2 for `_InsertButton`'s own trailing gap.
-  static double _insertItemWidth(InsertItem item) {
-    final base = item.showLabel ? 40 + item.label.length * 12 : 40;
+  static double _insertItemWidth(InsertItem item, L l) {
+    final base = item.showLabel ? 40 + item.label(l).length * 12 : 40;
     return base + (item.extras.isEmpty ? 0 : 22) + 2;
   }
 
-  Widget _insertRow(BuildContext context) => CompactingToolbar(
+  Widget _insertRow(BuildContext context) => _insertRowFor(context, L.of(context));
+
+  Widget _insertRowFor(BuildContext context, L l) => CompactingToolbar(
         controls: [
           for (final item in kInsertRibbon)
             ToolbarControl(
-              width: _insertItemWidth(item),
+              width: _insertItemWidth(item, l),
               icon: item.icon,
-              label: item.label,
+              label: item.label(l),
               inline: _InsertButton(app: app, item: item),
               onPressed: () =>
                   item.run(context, app, insertAnchor(app, item)),
@@ -804,14 +822,14 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                       // had before it grew a dropdown arrow.
                       ToolbarSubmenuItem(
                         icon: item.icon,
-                        label: item.label,
+                        label: item.label(l),
                         onPressed: () =>
                             item.run(context, app, insertAnchor(app, item)),
                       ),
                       for (final extra in item.extras)
                         ToolbarSubmenuItem(
                           icon: extra.icon,
-                          label: extra.label,
+                          label: extra.label(l),
                           onPressed: () => extra.run(
                               context, app, insertAnchor(app, extra)),
                         ),
@@ -950,7 +968,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
               style: TextStyle(fontSize: 11, color: scheme.onSurface),
               items: [
                 for (final v in TouchDrawing.values)
-                  DropdownMenuItem(value: v, child: Text(v.label)),
+                  DropdownMenuItem(value: v, child: Text(v.label(l))),
               ],
               onChanged: (v) => v == null ? null : app.setTouchDrawing(v),
             ),
@@ -1123,7 +1141,7 @@ class _TagButton extends StatelessWidget {
       builder: (context, controller, _) => Tooltip(
         message: active.isEmpty
             ? l.barTagLine
-            : l.barTagged(active.map((k) => k.label).join(', ')),
+            : l.barTagged(active.map((k) => k.label(l)).join(', ')),
         child: InkWell(
           borderRadius: BorderRadius.circular(6),
           onTap: enabled
@@ -1153,7 +1171,7 @@ class _TagButton extends StatelessWidget {
                 ? Icon(Icons.check, size: 16, color: scheme.primary)
                 : null,
             onPressed: () => app.toggleTagOnSelection(k),
-            child: Text(k.label),
+            child: Text(k.label(l)),
           ),
         // Dating a tag belongs here, beside applying one — a deadline you could
         // only set from a separate panel would be a feature most people never
@@ -1546,11 +1564,11 @@ class _InsertButton extends StatelessWidget {
   /// What a hover says. A labelled command adds only what the label does not
   /// already carry; a wordless one leads with its name, so nothing on the row
   /// is nameless.
-  String get _tip {
-    if (item.showLabel) return item.tooltip ?? '';
+  String _tip(L l) {
+    if (item.showLabel) return item.tooltip?.call(l) ?? '';
     return item.tooltip == null
-        ? item.label
-        : '${item.label} — ${item.tooltip}';
+        ? item.label(l)
+        : '${item.label(l)} — ${item.tooltip!(l)}';
   }
 
   /// The button itself.
@@ -1566,12 +1584,13 @@ class _InsertButton extends StatelessWidget {
       _run(context, item);
     }
 
+    final l = L.of(context);
     return Tooltip(
-      message: _tip,
+      message: _tip(l),
       child: item.showLabel
           ? CommandButton(
               icon: item.icon,
-              label: item.label,
+              label: item.label(l),
               onPressed: press,
             )
           : IconButton(
@@ -1622,7 +1641,7 @@ class _InsertButton extends StatelessWidget {
             MenuItemButton(
               leadingIcon: Icon(extra.icon, size: 16),
               onPressed: () => _run(context, extra),
-              child: Text(extra.label),
+              child: Text(extra.label(L.of(context))),
             ),
         ],
       ),

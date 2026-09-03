@@ -5,7 +5,13 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart' as intl;
 
+import 'app_localizations_de.dart';
 import 'app_localizations_en.dart';
+import 'app_localizations_es.dart';
+import 'app_localizations_fr.dart';
+import 'app_localizations_it.dart';
+import 'app_localizations_pt.dart';
+import 'app_localizations_zh.dart';
 
 // ignore_for_file: type=lint
 
@@ -91,7 +97,15 @@ abstract class L {
   ];
 
   /// A list of this localizations delegate's supported locales.
-  static const List<Locale> supportedLocales = <Locale>[Locale('en')];
+  static const List<Locale> supportedLocales = <Locale>[
+    Locale('de'),
+    Locale('en'),
+    Locale('es'),
+    Locale('fr'),
+    Locale('it'),
+    Locale('pt'),
+    Locale('zh')
+  ];
 
   /// Button: return to the previous step of a multi-step flow.
   ///
@@ -525,7 +539,7 @@ abstract class L {
   /// **'Text font…'**
   String get barTextFont;
 
-  /// Shown in place of the formatting controls when nothing is being written, to say why they are greyed out.
+  /// Shown in place of the formatting controls when nothing is being written, to say why they are greyed out. **Keep it short** — it sits at the end of a row that scrolls sideways, so a long translation simply ends up off the edge of the window where nobody reads it. The English is 31 characters; treat that as the budget.
   ///
   /// In en, this message translates to:
   /// **'Click into a text box to format'**
@@ -1665,6 +1679,492 @@ abstract class L {
   /// **'Equation: {latex}'**
   String mathSemanticLabel(String latex);
 
+  /// Heading over the Insert items that make something to fill in — a text box, an equation, a table.
+  ///
+  /// In en, this message translates to:
+  /// **'Write'**
+  String get insertGroupWrite;
+
+  /// Heading over the Insert items that bring something in from elsewhere — a picture, a video, a file.
+  ///
+  /// In en, this message translates to:
+  /// **'Bring in'**
+  String get insertGroupBringIn;
+
+  /// Heading over the Insert items that point at something that already exists — a page link, a template.
+  ///
+  /// In en, this message translates to:
+  /// **'Link up'**
+  String get insertGroupLinkUp;
+
+  /// Insert item: a box to type in. One noun, the one a fifteen-year-old would use.
+  ///
+  /// In en, this message translates to:
+  /// **'Text box'**
+  String get insertTextBox;
+
+  /// Insert item: a mathematical equation.
+  ///
+  /// In en, this message translates to:
+  /// **'Equation'**
+  String get insertEquation;
+
+  /// The keyboard shortcut, shown as the item's tooltip. Not translated unless the shortcut itself differs in this language.
+  ///
+  /// In en, this message translates to:
+  /// **'Alt+='**
+  String get insertEquationTip;
+
+  /// Insert item: a grid of rows and columns.
+  ///
+  /// In en, this message translates to:
+  /// **'Table'**
+  String get insertTable;
+
+  /// Insert item, under Table: build the table from a spreadsheet.
+  ///
+  /// In en, this message translates to:
+  /// **'From a file'**
+  String get insertTableFromFile;
+
+  /// Tooltip naming the file kinds accepted. Both are product/format names.
+  ///
+  /// In en, this message translates to:
+  /// **'CSV or Excel'**
+  String get insertTableFromFileTip;
+
+  /// Insert item: a box of computer code that can be run.
+  ///
+  /// In en, this message translates to:
+  /// **'Code'**
+  String get insertCode;
+
+  /// Insert item: a kanban board.
+  ///
+  /// In en, this message translates to:
+  /// **'Board'**
+  String get insertBoard;
+
+  /// Tooltip explaining what a board is, for someone who has not met the word.
+  ///
+  /// In en, this message translates to:
+  /// **'Columns of cards you move along'**
+  String get insertBoardTip;
+
+  /// Insert item: an image.
+  ///
+  /// In en, this message translates to:
+  /// **'Picture'**
+  String get insertPicture;
+
+  /// Insert item: a PDF, usually a lecture slide deck. PDF is not translated.
+  ///
+  /// In en, this message translates to:
+  /// **'PDF slides'**
+  String get insertPdfSlides;
+
+  /// Insert choice: lay the PDF's pages onto this page to write over, the way a paper printout would be.
+  ///
+  /// In en, this message translates to:
+  /// **'Printout on this page'**
+  String get insertPdfPrintout;
+
+  /// Insert choice: give each slide a page of its own.
+  ///
+  /// In en, this message translates to:
+  /// **'One page per slide'**
+  String get insertPdfPerSlide;
+
+  /// Insert choice: a small card on the page that opens the PDF in a window when clicked.
+  ///
+  /// In en, this message translates to:
+  /// **'As a card — open in a popup'**
+  String get insertPdfAsCard;
+
+  /// Insert item: a video or audio recording.
+  ///
+  /// In en, this message translates to:
+  /// **'Video'**
+  String get insertVideo;
+
+  /// Tooltip: it takes a file from this computer or a link to one online.
+  ///
+  /// In en, this message translates to:
+  /// **'A lecture recording, or any web link'**
+  String get insertVideoTip;
+
+  /// Insert item: attach any file to the page.
+  ///
+  /// In en, this message translates to:
+  /// **'File'**
+  String get insertFile;
+
+  /// Insert item: a revision card with a question on one side.
+  ///
+  /// In en, this message translates to:
+  /// **'Flashcard'**
+  String get insertFlashcardItem;
+
+  /// Insert item: a link to another page in the notebook.
+  ///
+  /// In en, this message translates to:
+  /// **'Page link'**
+  String get insertPageLink;
+
+  /// Insert item: a live window showing another page inside this one.
+  ///
+  /// In en, this message translates to:
+  /// **'Page window'**
+  String get insertPageWindow;
+
+  /// Insert item: a saved page layout to lay over this page.
+  ///
+  /// In en, this message translates to:
+  /// **'Template'**
+  String get insertTemplate;
+
+  /// File-type name in the operating system's own picker, beside png/jpg/gif/webp.
+  ///
+  /// In en, this message translates to:
+  /// **'Images'**
+  String get insertPickImages;
+
+  /// File-type name in the OS file picker, beside csv/tsv/xlsx.
+  ///
+  /// In en, this message translates to:
+  /// **'Tables'**
+  String get insertPickTables;
+
+  /// File-type name in the OS file picker, beside the video and audio extensions.
+  ///
+  /// In en, this message translates to:
+  /// **'Video and audio'**
+  String get insertPickVideo;
+
+  /// Tag name: something that still has to be done. Title case as a proper label.
+  ///
+  /// In en, this message translates to:
+  /// **'To Do'**
+  String get tagTodo;
+
+  /// Tag name.
+  ///
+  /// In en, this message translates to:
+  /// **'Important'**
+  String get tagImportant;
+
+  /// Tag name. Also the front of a flashcard — keep it consistent with barQuestionCard.
+  ///
+  /// In en, this message translates to:
+  /// **'Question'**
+  String get tagQuestion;
+
+  /// Tag name: worth committing to memory.
+  ///
+  /// In en, this message translates to:
+  /// **'Remember'**
+  String get tagRemember;
+
+  /// Tag name. Also a flashcard kind — keep it consistent with barDefinitionCard.
+  ///
+  /// In en, this message translates to:
+  /// **'Definition'**
+  String get tagDefinition;
+
+  /// Tag name.
+  ///
+  /// In en, this message translates to:
+  /// **'Idea'**
+  String get tagIdea;
+
+  /// Tag name: more urgent than Important.
+  ///
+  /// In en, this message translates to:
+  /// **'Critical'**
+  String get tagCritical;
+
+  /// Tag name: a person to get in touch with.
+  ///
+  /// In en, this message translates to:
+  /// **'Contact'**
+  String get tagContact;
+
+  /// The fallback name for a tag with no kind of its own — the generic word.
+  ///
+  /// In en, this message translates to:
+  /// **'Tag'**
+  String get tagCustom;
+
+  /// Setting: a finger draws until a stylus is used, then touch moves the page instead so a resting palm cannot mark it.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto (pen takes over)'**
+  String get touchDrawAuto;
+
+  /// Setting: a finger always draws, even when a stylus is present. Shown in a small dropdown, so keep it to one word if the language allows.
+  ///
+  /// In en, this message translates to:
+  /// **'Always'**
+  String get touchDrawAlways;
+
+  /// Setting: fingers only move and zoom the page; drawing needs a stylus or the mouse. Shown in a small dropdown — one word if the language allows.
+  ///
+  /// In en, this message translates to:
+  /// **'Never'**
+  String get touchDrawNever;
+
+  /// Title of the dialog that picks which page to link to.
+  ///
+  /// In en, this message translates to:
+  /// **'Link to page'**
+  String get insertLinkToPage;
+
+  /// Error when a chosen PDF could not be opened at all.
+  ///
+  /// In en, this message translates to:
+  /// **'That PDF couldn\'t be read.'**
+  String get insertPdfUnreadable;
+
+  /// Confirmation after importing a PDF. {where} is either empty or insertPdfOntoThisPage.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Imported 1 slide} other{Imported {count} slides}}{where} — pick the pen and write on them. The slide text is searchable.'**
+  String insertPdfImported(int count, String where);
+
+  /// Appended when the slides landed on the page already open rather than on new pages. Keep the leading space.
+  ///
+  /// In en, this message translates to:
+  /// **' onto this page'**
+  String get insertPdfOntoThisPage;
+
+  /// Error when the import itself broke.
+  ///
+  /// In en, this message translates to:
+  /// **'PDF import failed: {reason}'**
+  String insertPdfFailed(String reason);
+
+  /// Row label in Settings for choosing the interface language.
+  ///
+  /// In en, this message translates to:
+  /// **'Language'**
+  String get settingsLanguage;
+
+  /// The default language choice: follow whatever the operating system is set to. Chosen over the word 'Automatic', which does not say what it will do.
+  ///
+  /// In en, this message translates to:
+  /// **'Same as my computer'**
+  String get settingsLanguageAuto;
+
+  /// Supporting line under the language picker, inviting corrections. 'one file' means one .arb translation file.
+  ///
+  /// In en, this message translates to:
+  /// **'Openote is translated by the people who use it. If yours is missing or wrong, it is one file — the link says how.'**
+  String get settingsLanguageHelp;
+
+  /// Link opening the contributing guide in a browser.
+  ///
+  /// In en, this message translates to:
+  /// **'How to add or fix a language'**
+  String get settingsLanguageContribute;
+
+  /// Result of Replace All when the search text was not on the page.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing replaced'**
+  String get shellNothingReplaced;
+
+  /// Result of Replace All.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Replaced 1 occurrence} other{Replaced {count} occurrences}}'**
+  String shellReplaced(int count);
+
+  /// Placeholder in the replacement box of the find bar.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace with…'**
+  String get shellReplaceWith;
+
+  /// Button: replace the match the caret is on.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace'**
+  String get shellReplace;
+
+  /// Button beside Replace: replace every match at once. Short, because it sits in a narrow bar.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get shellReplaceAll;
+
+  /// Placeholder in the find box.
+  ///
+  /// In en, this message translates to:
+  /// **'Find on this page…'**
+  String get shellFindOnThisPage;
+
+  /// Shown in the find bar when the search text is not on the page.
+  ///
+  /// In en, this message translates to:
+  /// **'No matches'**
+  String get shellNoMatches;
+
+  /// Tooltip. Keep the keys as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous match (Shift+Enter)'**
+  String get shellPreviousMatch;
+
+  /// Tooltip. Keep the key as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Next match (Enter)'**
+  String get shellNextMatch;
+
+  /// Tooltip on the find bar's close button. Esc is the Escape key.
+  ///
+  /// In en, this message translates to:
+  /// **'Close (Esc)'**
+  String get shellCloseEsc;
+
+  /// Empty state of the tags panel.
+  ///
+  /// In en, this message translates to:
+  /// **'No tags in this notebook yet.'**
+  String get shellNoTags;
+
+  /// Explains what tags are, under shellNoTags. The four words are tag names: keep them consistent with tagTodo, tagImportant, tagQuestion, tagDefinition.
+  ///
+  /// In en, this message translates to:
+  /// **'Tags mark a line — to do, important, question, definition — so you can find it again, revise from it, or give it a deadline.'**
+  String get shellTagsHint;
+
+  /// Button in the empty tags panel.
+  ///
+  /// In en, this message translates to:
+  /// **'Tag the line you are on'**
+  String get shellTagTheLine;
+
+  /// Empty state of the page-outline panel.
+  ///
+  /// In en, this message translates to:
+  /// **'No headings on this page.'**
+  String get shellNoHeadings;
+
+  /// Explains how to make a heading. The # is the Markdown character and must stay.
+  ///
+  /// In en, this message translates to:
+  /// **'Start a line with # to make a heading — the outline builds itself as you write.'**
+  String get shellHeadingsHint;
+
+  /// Heading in the links panel: pages that point AT this one.
+  ///
+  /// In en, this message translates to:
+  /// **'Linked from'**
+  String get shellLinkedFrom;
+
+  /// Empty state under shellLinkedFrom.
+  ///
+  /// In en, this message translates to:
+  /// **'No pages link here yet.'**
+  String get shellNoBacklinks;
+
+  /// Heading in the links panel: pages this one points at.
+  ///
+  /// In en, this message translates to:
+  /// **'Links to'**
+  String get shellLinksTo;
+
+  /// Empty state under shellLinksTo.
+  ///
+  /// In en, this message translates to:
+  /// **'This page links nowhere yet.'**
+  String get shellNoLinks;
+
+  /// Tooltip on the save indicator. '.onote' is the file extension.
+  ///
+  /// In en, this message translates to:
+  /// **'This page is saved to your local .onote file.'**
+  String get shellSavedLocally;
+
+  /// Shown while a page is being written to disk.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving…'**
+  String get shellSaving;
+
+  /// Status-bar text when everything is written and the notebook is not synced anywhere.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved on this device'**
+  String get shellSavedOnDevice;
+
+  /// Tooltip on the engine indicator. 'onote-core' is a component name. {build} is a line naming when the native library was built, already assembled.
+  ///
+  /// In en, this message translates to:
+  /// **'The Rust core (onote-core) is linked and computing this page\'s content hash on save.\n{build}'**
+  String shellRustLinked(String build);
+
+  /// Tooltip when the native library is absent. 'onote-core' is a component name.
+  ///
+  /// In en, this message translates to:
+  /// **'Running the pure-Dart engine. Build the onote-core library to link the Rust core.'**
+  String get shellRustMissing;
+
+  /// The one-line keyboard cheat sheet along the bottom. Each item is a key followed by what it does; the separator is a middle dot. It is dropped whole when the window is too narrow, never truncated, so a longer translation costs nothing but its own visibility on small windows.
+  ///
+  /// In en, this message translates to:
+  /// **'V select · T text · P pen · H highlight · E erase · Ctrl+Z undo · Ctrl+scroll zoom'**
+  String get shellCheatSheet;
+
+  /// Heading shown when no page is open.
+  ///
+  /// In en, this message translates to:
+  /// **'An open page awaits'**
+  String get shellEmptyTitle;
+
+  /// Under shellEmptyTitle. Keep the line break.
+  ///
+  /// In en, this message translates to:
+  /// **'Everything you make here lives on your device,\nin an open format you own.'**
+  String get shellEmptyBody;
+
+  /// Button in the empty state.
+  ///
+  /// In en, this message translates to:
+  /// **'Create your first page'**
+  String get shellCreateFirstPage;
+
+  /// Result of a manual sync that found nothing new.
+  ///
+  /// In en, this message translates to:
+  /// **'Already up to date.'**
+  String get shellAlreadyUpToDate;
+
+  /// Result of a manual sync.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Pulled 1 change} other{Pulled {count} changes}}'**
+  String shellPulled(int count);
+
+  /// Shown in place of a page that has a passcode on it.
+  ///
+  /// In en, this message translates to:
+  /// **'“{title}” is locked'**
+  String shellPageLocked(String title);
+
+  /// Heading over one tag's group in the tags panel — the tag's name and how many lines carry it.
+  ///
+  /// In en, this message translates to:
+  /// **'{tag}  ({count})'**
+  String shellTagGroup(String tag, int count);
+
+  /// Button that asks for the passcode on a locked page.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock'**
+  String get shellUnlock;
+
   /// Welcome flow, step 1 of 3. Heading over an animation of clicking on an empty page and typing.
   ///
   /// In en, this message translates to:
@@ -1831,8 +2331,15 @@ class _LDelegate extends LocalizationsDelegate<L> {
   }
 
   @override
-  bool isSupported(Locale locale) =>
-      <String>['en'].contains(locale.languageCode);
+  bool isSupported(Locale locale) => <String>[
+        'de',
+        'en',
+        'es',
+        'fr',
+        'it',
+        'pt',
+        'zh'
+      ].contains(locale.languageCode);
 
   @override
   bool shouldReload(_LDelegate old) => false;
@@ -1841,8 +2348,20 @@ class _LDelegate extends LocalizationsDelegate<L> {
 L lookupL(Locale locale) {
   // Lookup logic when only language code is specified.
   switch (locale.languageCode) {
+    case 'de':
+      return LDe();
     case 'en':
       return LEn();
+    case 'es':
+      return LEs();
+    case 'fr':
+      return LFr();
+    case 'it':
+      return LIt();
+    case 'pt':
+      return LPt();
+    case 'zh':
+      return LZh();
   }
 
   throw FlutterError(

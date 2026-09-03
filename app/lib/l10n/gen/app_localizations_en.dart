@@ -962,6 +962,288 @@ class LEn extends L {
   }
 
   @override
+  String get insertGroupWrite => 'Write';
+
+  @override
+  String get insertGroupBringIn => 'Bring in';
+
+  @override
+  String get insertGroupLinkUp => 'Link up';
+
+  @override
+  String get insertTextBox => 'Text box';
+
+  @override
+  String get insertEquation => 'Equation';
+
+  @override
+  String get insertEquationTip => 'Alt+=';
+
+  @override
+  String get insertTable => 'Table';
+
+  @override
+  String get insertTableFromFile => 'From a file';
+
+  @override
+  String get insertTableFromFileTip => 'CSV or Excel';
+
+  @override
+  String get insertCode => 'Code';
+
+  @override
+  String get insertBoard => 'Board';
+
+  @override
+  String get insertBoardTip => 'Columns of cards you move along';
+
+  @override
+  String get insertPicture => 'Picture';
+
+  @override
+  String get insertPdfSlides => 'PDF slides';
+
+  @override
+  String get insertPdfPrintout => 'Printout on this page';
+
+  @override
+  String get insertPdfPerSlide => 'One page per slide';
+
+  @override
+  String get insertPdfAsCard => 'As a card — open in a popup';
+
+  @override
+  String get insertVideo => 'Video';
+
+  @override
+  String get insertVideoTip => 'A lecture recording, or any web link';
+
+  @override
+  String get insertFile => 'File';
+
+  @override
+  String get insertFlashcardItem => 'Flashcard';
+
+  @override
+  String get insertPageLink => 'Page link';
+
+  @override
+  String get insertPageWindow => 'Page window';
+
+  @override
+  String get insertTemplate => 'Template';
+
+  @override
+  String get insertPickImages => 'Images';
+
+  @override
+  String get insertPickTables => 'Tables';
+
+  @override
+  String get insertPickVideo => 'Video and audio';
+
+  @override
+  String get tagTodo => 'To Do';
+
+  @override
+  String get tagImportant => 'Important';
+
+  @override
+  String get tagQuestion => 'Question';
+
+  @override
+  String get tagRemember => 'Remember';
+
+  @override
+  String get tagDefinition => 'Definition';
+
+  @override
+  String get tagIdea => 'Idea';
+
+  @override
+  String get tagCritical => 'Critical';
+
+  @override
+  String get tagContact => 'Contact';
+
+  @override
+  String get tagCustom => 'Tag';
+
+  @override
+  String get touchDrawAuto => 'Auto (pen takes over)';
+
+  @override
+  String get touchDrawAlways => 'Always';
+
+  @override
+  String get touchDrawNever => 'Never';
+
+  @override
+  String get insertLinkToPage => 'Link to page';
+
+  @override
+  String get insertPdfUnreadable => 'That PDF couldn\'t be read.';
+
+  @override
+  String insertPdfImported(int count, String where) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Imported $count slides',
+      one: 'Imported 1 slide',
+    );
+    return '$_temp0$where — pick the pen and write on them. The slide text is searchable.';
+  }
+
+  @override
+  String get insertPdfOntoThisPage => ' onto this page';
+
+  @override
+  String insertPdfFailed(String reason) {
+    return 'PDF import failed: $reason';
+  }
+
+  @override
+  String get settingsLanguage => 'Language';
+
+  @override
+  String get settingsLanguageAuto => 'Same as my computer';
+
+  @override
+  String get settingsLanguageHelp =>
+      'Openote is translated by the people who use it. If yours is missing or wrong, it is one file — the link says how.';
+
+  @override
+  String get settingsLanguageContribute => 'How to add or fix a language';
+
+  @override
+  String get shellNothingReplaced => 'Nothing replaced';
+
+  @override
+  String shellReplaced(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Replaced $count occurrences',
+      one: 'Replaced 1 occurrence',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get shellReplaceWith => 'Replace with…';
+
+  @override
+  String get shellReplace => 'Replace';
+
+  @override
+  String get shellReplaceAll => 'All';
+
+  @override
+  String get shellFindOnThisPage => 'Find on this page…';
+
+  @override
+  String get shellNoMatches => 'No matches';
+
+  @override
+  String get shellPreviousMatch => 'Previous match (Shift+Enter)';
+
+  @override
+  String get shellNextMatch => 'Next match (Enter)';
+
+  @override
+  String get shellCloseEsc => 'Close (Esc)';
+
+  @override
+  String get shellNoTags => 'No tags in this notebook yet.';
+
+  @override
+  String get shellTagsHint =>
+      'Tags mark a line — to do, important, question, definition — so you can find it again, revise from it, or give it a deadline.';
+
+  @override
+  String get shellTagTheLine => 'Tag the line you are on';
+
+  @override
+  String get shellNoHeadings => 'No headings on this page.';
+
+  @override
+  String get shellHeadingsHint =>
+      'Start a line with # to make a heading — the outline builds itself as you write.';
+
+  @override
+  String get shellLinkedFrom => 'Linked from';
+
+  @override
+  String get shellNoBacklinks => 'No pages link here yet.';
+
+  @override
+  String get shellLinksTo => 'Links to';
+
+  @override
+  String get shellNoLinks => 'This page links nowhere yet.';
+
+  @override
+  String get shellSavedLocally =>
+      'This page is saved to your local .onote file.';
+
+  @override
+  String get shellSaving => 'Saving…';
+
+  @override
+  String get shellSavedOnDevice => 'Saved on this device';
+
+  @override
+  String shellRustLinked(String build) {
+    return 'The Rust core (onote-core) is linked and computing this page\'s content hash on save.\n$build';
+  }
+
+  @override
+  String get shellRustMissing =>
+      'Running the pure-Dart engine. Build the onote-core library to link the Rust core.';
+
+  @override
+  String get shellCheatSheet =>
+      'V select · T text · P pen · H highlight · E erase · Ctrl+Z undo · Ctrl+scroll zoom';
+
+  @override
+  String get shellEmptyTitle => 'An open page awaits';
+
+  @override
+  String get shellEmptyBody =>
+      'Everything you make here lives on your device,\nin an open format you own.';
+
+  @override
+  String get shellCreateFirstPage => 'Create your first page';
+
+  @override
+  String get shellAlreadyUpToDate => 'Already up to date.';
+
+  @override
+  String shellPulled(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Pulled $count changes',
+      one: 'Pulled 1 change',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String shellPageLocked(String title) {
+    return '“$title” is locked';
+  }
+
+  @override
+  String shellTagGroup(String tag, int count) {
+    return '$tag  ($count)';
+  }
+
+  @override
+  String get shellUnlock => 'Unlock';
+
+  @override
   String get onboardingStep1Title => 'The page is a canvas';
 
   @override

@@ -38,10 +38,17 @@ enum TagKind {
   contact('contact', 'Contact', Icons.person_outline, Color(0xFF4F7A8B)),
   custom('custom', 'Tag', Icons.label_outline, Color(0xFF6B7280));
 
-  const TagKind(this.key, this.label, this.icon, this.color);
+  const TagKind(this.key, this.englishLabel, this.icon, this.color);
 
   final String key;
-  final String label;
+  /// The English name, and ONLY the English name.
+  ///
+  /// Named so, because a `const` cannot take a `BuildContext` and therefore
+  /// cannot be translated. Anything drawing this on screen should use
+  /// `TagKindLabel.label(L)` in `lib/l10n/labels.dart` instead; what is left
+  /// here is for the places that genuinely want English — export formats, and
+  /// the surfaces not yet converted, which are listed in v0.24 §1.
+  final String englishLabel;
   final IconData icon;
   final Color color;
 
@@ -114,7 +121,7 @@ class NoteTag {
   /// is the planner's business.
   final String? due;
 
-  String get displayLabel => label ?? kind.label;
+  String get displayLabel => label ?? kind.englishLabel;
 
   /// [due] parsed, or null when unset or malformed. A garbage date must not
   /// cost the tag — same tolerance as [fromJson].

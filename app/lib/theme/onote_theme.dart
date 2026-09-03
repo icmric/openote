@@ -37,6 +37,25 @@ const List<String> onoteFontFallback = <String>[
   'Noto Sans Symbols 2',
   'Noto Sans Math',
   'DejaVu Sans', // Linux workhorse, very wide BMP coverage
+  // **CJK.** Inter has no Chinese, Japanese or Korean glyphs at all, so once
+  // Openote could be read in Chinese the interface itself depended on this
+  // list resolving them. Named per platform rather than trusted to the
+  // engine's own system fallback: that fallback exists, but "it usually
+  // works" is not a thing to find out from a screenshot of tofu. Every one of
+  // these ships with its OS by default, and naming a font that is not
+  // installed costs nothing.
+  'Microsoft YaHei', // Windows: Simplified Chinese
+  'Microsoft JhengHei', // Windows: Traditional Chinese
+  'Yu Gothic', // Windows: Japanese
+  'Malgun Gothic', // Windows: Korean
+  'PingFang SC', // macOS: Simplified Chinese
+  'PingFang TC', // macOS: Traditional Chinese
+  'Hiragino Sans', // macOS: Japanese
+  'Apple SD Gothic Neo', // macOS: Korean
+  'Noto Sans CJK SC', // Linux, and the usual fontconfig answer
+  'Noto Sans CJK TC',
+  'Noto Sans CJK JP',
+  'Noto Sans CJK KR',
   // Office stores a Symbol/Wingdings character as U+F000+n in the Private Use
   // Area, and no ordinary font claims the PUA — so those characters render as
   // blank boxes however good the rest of the fallback chain is. Microsoft's own

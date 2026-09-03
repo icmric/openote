@@ -23,5 +23,6 @@ Widget testApp(Widget home,
       locale: locale,
       localizationsDelegates: kOnoteLocalizations,
       supportedLocales: kOnoteLocales,
+      localeListResolutionCallback: onoteResolveLocale,
       home: home,
     );

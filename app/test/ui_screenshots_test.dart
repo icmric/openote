@@ -147,6 +147,11 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       localizationsDelegates: kOnoteLocalizations,
       supportedLocales: kOnoteLocales,
+      localeListResolutionCallback: onoteResolveLocale,
+      // The harness mounts its own MaterialApp, so it has to honour the
+      // language the same way `main.dart` does — otherwise a screenshot
+      // "in Spanish" is a screenshot in English.
+      locale: app.uiLocale,
       theme: onoteTheme(b),
       darkTheme: onoteTheme(Brightness.dark),
       themeMode: b == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
@@ -264,6 +269,18 @@ void main() {
         at: DateTime.now().subtract(const Duration(minutes: 3)));
     app.planner.startScheduler();
     await shot(t, app, Brightness.light, 'alert_popup');
+  });
+
+  // The chrome in another language, because a translation that overflows a
+  // toolbar is invisible to every assertion in the suite. Spanish is the
+  // longest of the six on the words that matter (Configuraciones, Sincronizar,
+  // Insertar), so it is the one that would break first.
+  testWidgets('shell in Spanish', (t) async {
+    if (!_enabled) return markTestSkipped('set ONOTE_SCREENSHOTS=1 to render');
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await seed(t);
+    app.setUiLocale(const Locale('es'));
+    await shot(t, app, Brightness.light, 'shell_spanish');
   });
 
   // The welcome flow, which is drawn rather than written and therefore cannot

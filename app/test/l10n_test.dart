@@ -23,10 +23,13 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/l10n/l10n.dart';
+import 'package:openote/state/app_state.dart';
 
 import 'support/app.dart';
 
@@ -39,6 +42,8 @@ const _converted = [
   'lib/ui/sidebar.dart',
   'lib/ui/settings_dialog.dart',
   'lib/ui/notebook_manager.dart',
+  'lib/ui/insert_catalog.dart',
+  'lib/ui/app_shell.dart',
 ];
 
 void main() {
@@ -86,18 +91,32 @@ void main() {
     // carry an actual word: a comment, a debug string, a semantic key or the
     // empty string a `PopupMenuButton` takes to suppress its own tooltip is
     // not what this is looking for.
+    // Where a literal reaches the screen.
     final patterns = <RegExp>[
-      RegExp(r'''\bText\(\s*(?:'[^']|"[^"])'''),
-      RegExp(r'''\b(?:label|title|hintText|tooltip|helperText|semanticLabel)\s*:\s*(?:'[^']|"[^"])'''),
+      RegExp(r'''\bText\(\s*('[^']*'|"[^"]*")'''),
+      RegExp(r'''\b(?:label|title|hintText|tooltip|helperText|semanticLabel)\s*:\s*('[^']*'|"[^"]*")'''),
     ];
+
+    /// Is there a WORD in this literal, once the interpolations are taken
+    /// out? `Text('  ›  ')` between breadcrumbs and `Text('\${pages.length}')`
+    /// on a badge have nothing to translate; demanding a message for either
+    /// buys a worse app, not a better one.
+    bool hasWords(String literal) => literal
+        .replaceAll(RegExp(r'\$\{[^}]*\}'), '')
+        .replaceAll(RegExp(r'\$\w+'), '')
+        .contains(RegExp('[A-Za-z]'));
     final offenders = <String>[];
     for (final path in _converted) {
       final lines = File(path).readAsLinesSync();
       for (var i = 0; i < lines.length; i++) {
         final line = lines[i].trim();
         if (line.startsWith('//') || line.startsWith('///')) continue;
-        if (patterns.any((p) => p.hasMatch(line))) {
-          offenders.add('$path:${i + 1}  $line');
+        for (final p in patterns) {
+          final m = p.firstMatch(line);
+          if (m != null && hasWords(m.group(1)!)) {
+            offenders.add('$path:${i + 1}  $line');
+            break;
+          }
         }
       }
     }
@@ -116,8 +135,10 @@ void main() {
         return Text(l.onboardingStep1Title);
       }),
       // Not a language Openote has strings for — the app must still open, in
-      // English, rather than throwing on the first lookup.
-      locale: const Locale('fr'),
+      // English, rather than throwing on the first lookup. (It was French
+      // when this was written. French shipped, which is a nice way for a test
+      // to go stale; Icelandic is the stand-in now.)
+      locale: const Locale('is'),
     ));
     await tester.pumpAndSettle();
 
@@ -128,5 +149,135 @@ void main() {
         'Importing School 2026.onepkg');
     expect(l.onboardingReadFailed('no such file'),
         contains('no such file'));
+  });
+
+  group('the languages themselves', () {
+    /// Every `app_*.arb` beside the template.
+    List<File> translations() => Directory('lib/l10n')
+        .listSync()
+        .whereType<File>()
+        .where((f) =>
+            f.path.endsWith('.arb') && !f.path.endsWith('app_en.arb'))
+        .toList()
+      ..sort((a, b) => a.path.compareTo(b.path));
+
+    Map<String, String> messages(File f) {
+      final j = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
+      return {
+        for (final e in j.entries)
+          if (!e.key.startsWith('@')) e.key: e.value as String
+      };
+    }
+
+    test('there are some, and each one is complete', () {
+      final en = messages(File('lib/l10n/app_en.arb'));
+      expect(translations(), isNotEmpty,
+          reason: 'the whole point of the .arb machinery is other languages');
+      for (final f in translations()) {
+        final them = messages(f);
+        final missing = en.keys.where((k) => !them.containsKey(k)).toList()
+          ..sort();
+        // A missing message falls back to English rather than crashing, so
+        // this is a quality bar, not a safety one — but a half-translated
+        // language reads worse than an untranslated one, and the person who
+        // added the message is better placed to notice than the person who
+        // meets it in the wild.
+        expect(missing, isEmpty,
+            reason: '${p.basename(f.path)} is missing $missing');
+        final extra = them.keys.where((k) => !en.containsKey(k)).toList()
+          ..sort();
+        expect(extra, isEmpty,
+            reason: '${p.basename(f.path)} has messages the template does '
+                'not: $extra — a renamed key leaves these behind');
+      }
+    });
+
+    test('every translation keeps every placeholder', () {
+      // THE ONE THAT BREAKS AT RUNTIME. `{count}` dropped from a translation
+      // is a message that renders without its number; `{coutn}` is worse.
+      // Codegen catches a missing placeholder in the ARB's metadata, not a
+      // sentence that simply forgot to use one.
+      final en = messages(File('lib/l10n/app_en.arb'));
+      final holes = RegExp(r'\{(\w+)[,}]');
+      for (final f in translations()) {
+        messages(f).forEach((key, value) {
+          final want = holes
+              .allMatches(en[key] ?? '')
+              .map((m) => m.group(1)!)
+              .where((n) => n != 'plural')
+              .toSet();
+          final got = holes
+              .allMatches(value)
+              .map((m) => m.group(1)!)
+              .where((n) => n != 'plural')
+              .toSet();
+          expect(got, containsAll(want),
+              reason: '${p.basename(f.path)} · $key drops ${want.difference(got)}');
+        });
+      }
+    });
+
+    testWidgets('a Chinese computer gets a Chinese app, with no setup',
+        (tester) async {
+      // The owner's own example: "if I run through the setup of it and my
+      // computer's language is in Chinese, it should set it up automatically
+      // in Chinese, not English". No locale is passed to `testApp` here —
+      // exactly as `main.dart` passes none while `AppState.uiLocale` is null
+      // — and the PLATFORM locale is what resolution sees.
+      tester.platformDispatcher.localesTestValue = const [Locale('zh', 'CN')];
+      addTearDown(tester.platformDispatcher.clearLocalesTestValue);
+      late L l;
+      await tester.pumpWidget(testApp(Builder(builder: (context) {
+        l = L.of(context);
+        return Text(l.settingsTitle);
+      })));
+      await tester.pumpAndSettle();
+      expect(l.localeName, startsWith('zh'));
+      expect(find.text('设置'), findsOneWidget);
+    });
+
+    testWidgets('a language Openote does not have falls back to English',
+        (tester) async {
+      tester.platformDispatcher.localesTestValue = const [Locale('is')];
+      addTearDown(tester.platformDispatcher.clearLocalesTestValue);
+      await tester.pumpWidget(testApp(Builder(
+          builder: (context) => Text(L.of(context).settingsTitle))));
+      await tester.pumpAndSettle();
+      expect(find.text('Settings'), findsOneWidget);
+    });
+
+    testWidgets('the Settings override beats the computer', (tester) async {
+      // A Spanish machine, a student who wants the app in French.
+      tester.platformDispatcher.localesTestValue = const [Locale('es')];
+      addTearDown(tester.platformDispatcher.clearLocalesTestValue);
+      await tester.pumpWidget(testApp(
+        Builder(builder: (context) => Text(L.of(context).settingsTitle)),
+        locale: const Locale('fr'),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('Réglages'), findsOneWidget);
+    });
+
+    test('a stored language tag reads back, and a broken one means "follow '
+        'the computer"', () {
+      expect(AppState.parseLocale('fr'), const Locale('fr'));
+      expect(AppState.parseLocale('pt-BR'), const Locale('pt', 'BR'));
+      expect(AppState.parseLocale('zh_Hant')?.scriptCode, 'Hant');
+      // Null is the important one: it means follow the OS, and anything we
+      // cannot read must land there rather than pinning the app to English.
+      expect(AppState.parseLocale(null), isNull);
+      expect(AppState.parseLocale(''), isNull);
+    });
+
+    test('every supported language has a name written in that language', () {
+      for (final loc in kOnoteLocales) {
+        final name = languageNameOf(loc);
+        expect(name, isNotEmpty);
+        expect(name, isNot(loc.toLanguageTag()),
+            reason: 'add ${loc.toLanguageTag()} to kLanguageNames — a row '
+                'reading "${loc.toLanguageTag()}" helps nobody find their '
+                'own language');
+      }
+    });
   });
 }

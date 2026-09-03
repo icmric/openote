@@ -91,11 +91,9 @@ enum TouchDrawing {
   /// behaviour, and what Openote used to do unconditionally.
   never;
 
-  String get label => switch (this) {
-        TouchDrawing.auto => 'Auto (pen takes over)',
-        TouchDrawing.always => 'Always',
-        TouchDrawing.never => 'Never',
-      };
+  // The names live in `lib/l10n/labels.dart` as `TouchDrawingLabel.label(L)`:
+  // a `const` enum cannot take a `BuildContext`, and a getter that silently
+  // returns English is the one thing `l10n_test.dart` cannot see.
 }
 
 /// The panels that can occupy the right-hand slot (style guide §7c).
@@ -4098,7 +4096,7 @@ class AppState extends ChangeNotifier
     final made = cardsFromBlock(b, pageId ?? '', '')
         .where((c) => c.line == idx)
         .isNotEmpty;
-    if (made) return '${kind.label} card created.';
+    if (made) return '${kind.englishLabel} card created.';
     return kind == TagKind.question
         ? 'Tagged as a Question — now indent the answer on the line below.'
         : 'Tagged as a Definition — write it as “term — meaning” to make a card.';
@@ -4643,6 +4641,47 @@ class AppState extends ChangeNotifier
     themeMode = m;
     _repo.setSetting('themeMode', m.name); // persist (§7a.5)
     notifyListeners();
+  }
+
+  /// The language, when the student has picked one; **null means follow the
+  /// computer**, which is the default and what almost everybody wants.
+  ///
+  /// Null is not "English". Handing `MaterialApp.locale` a null makes Flutter
+  /// resolve against the OS's preferred-language list, so an app installed on
+  /// a Chinese-language machine opens in Chinese with nothing to set up — and
+  /// falls back to English only when it has nothing better. Storing "en" here
+  /// by default would pin every install to English and quietly undo that.
+  ///
+  /// The override exists because the OS language and the language you want to
+  /// study in are not always the same, and because a translation in progress
+  /// is sometimes worse than the English it replaces.
+  Locale? uiLocale;
+
+  void setUiLocale(Locale? l) {
+    uiLocale = l;
+    // The tag, not the object: `Locale.toString()` gives `zh_Hant_TW`, which
+    // `parseLocale` reads back. Storing null REMOVES the setting rather than
+    // writing "null", so a workspace that never chose reads as never chose.
+    _repo.setSetting('uiLocale', l?.toLanguageTag());
+    notifyListeners();
+  }
+
+  /// `en`, `pt-BR`, `zh-Hant` → a [Locale]. Anything unparseable is null,
+  /// which means "follow the computer" and is the safe answer.
+  static Locale? parseLocale(String? tag) {
+    if (tag == null || tag.isEmpty) return null;
+    final parts = tag.split(RegExp('[-_]'));
+    if (parts.isEmpty || parts.first.isEmpty) return null;
+    return switch (parts.length) {
+      1 => Locale(parts[0]),
+      2 => parts[1].length == 4
+          ? Locale.fromSubtags(languageCode: parts[0], scriptCode: parts[1])
+          : Locale(parts[0], parts[1]),
+      _ => Locale.fromSubtags(
+          languageCode: parts[0],
+          scriptCode: parts[1].length == 4 ? parts[1] : null,
+          countryCode: parts[1].length == 4 ? parts[2] : parts[1]),
+    };
   }
 
   /// The text/code editor currently mounted & editing, registered by its view
@@ -5726,6 +5765,7 @@ class AppState extends ChangeNotifier
     // Session restore (§7a.5): theme, custom colours, per-page views, last loc.
     final tm = _repo.getSetting('themeMode') as String?;
     if (tm != null) themeMode = ThemeMode.values.asNameMap()[tm] ?? themeMode;
+    uiLocale = parseLocale(_repo.getSetting('uiLocale') as String?);
     final nsw = _repo.getSetting('navSectionsW');
     if (nsw is num) navSectionsW = nsw.toDouble().clamp(96, 220);
     final npw = _repo.getSetting('navPagesW');

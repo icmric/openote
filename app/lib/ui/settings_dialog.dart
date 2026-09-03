@@ -148,6 +148,48 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   onSelectionChanged: (s) => app.setThemeMode(s.first),
                 ),
               ),
+              // **Language sits under Appearance, not behind a "Region" page
+              // nobody opens.** It is the first thing somebody whose computer
+              // is not in English needs, and by then they are reading a
+              // dialog they cannot read.
+              _row(
+                l.settingsLanguage,
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: app.uiLocale?.toLanguageTag() ?? '',
+                    isDense: true,
+                    style: const TextStyle(fontSize: 12),
+                    items: [
+                      DropdownMenuItem(
+                          value: '',
+                          child: Text(l.settingsLanguageAuto,
+                              style: const TextStyle(fontSize: 12))),
+                      for (final loc in kOnoteLocales)
+                        DropdownMenuItem(
+                            value: loc.toLanguageTag(),
+                            child: Text(languageNameOf(loc),
+                                style: const TextStyle(fontSize: 12))),
+                    ],
+                    onChanged: (v) => app.setUiLocale(
+                        v == null || v.isEmpty ? null : Locale(v)),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: 2, bottom: 2),
+                child: Text(l.settingsLanguageHelp,
+                    style: const TextStyle(
+                        fontSize: 11, color: OnoteColors.graphite400)),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: () => PlatformOpen.url(
+                      'https://github.com/icmric/openote/blob/master/CONTRIBUTING.md#ways-to-help-right-now'),
+                  child: Text(l.settingsLanguageContribute,
+                      style: const TextStyle(fontSize: 12)),
+                ),
+              ),
               _section(l.settingsWriting),
               _row(l.settingsSpellCheck,
                   _toggle(app.spellCheckEnabled, app.setSpellCheck)),

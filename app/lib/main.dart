@@ -146,6 +146,7 @@ class _OpenoteBootState extends State<OpenoteBoot> {
       title: 'Openote',
       localizationsDelegates: kOnoteLocalizations,
       supportedLocales: kOnoteLocales,
+      localeListResolutionCallback: onoteResolveLocale,
       debugShowCheckedModeBanner: false,
       theme: onoteTheme(Brightness.light),
       darkTheme: onoteTheme(Brightness.dark),
@@ -179,6 +180,7 @@ class _StartupError extends StatelessWidget {
       title: 'Openote',
       localizationsDelegates: kOnoteLocalizations,
       supportedLocales: kOnoteLocales,
+      localeListResolutionCallback: onoteResolveLocale,
       theme: onoteTheme(Brightness.light),
       home: Scaffold(
         body: Center(
@@ -219,6 +221,7 @@ class OpenoteApp extends StatefulWidget {
 
 class _OpenoteAppState extends State<OpenoteApp> {
   ThemeMode? _builtMode;
+  Locale? _builtLocale;
   Widget? _built;
 
   @override
@@ -230,14 +233,25 @@ class _OpenoteAppState extends State<OpenoteApp> {
         // Content updates ride AppShell's own listener — rebuilding the whole
         // tree from the root on every notify (each keystroke, drag frame)
         // doubled per-frame build work.
-        if (_built != null && _builtMode == widget.app.themeMode) {
+        if (_built != null &&
+            _builtMode == widget.app.themeMode &&
+            _builtLocale == widget.app.uiLocale) {
           return _built!;
         }
         _builtMode = widget.app.themeMode;
+        _builtLocale = widget.app.uiLocale;
         return _built = MaterialApp(
           title: 'Openote',
           localizationsDelegates: kOnoteLocalizations,
           supportedLocales: kOnoteLocales,
+      localeListResolutionCallback: onoteResolveLocale,
+          // **Null means follow the computer**, and null is the default.
+          // Flutter then resolves against the OS's preferred-language list —
+          // exact match, then language, then script — so Openote installed on
+          // a Chinese machine opens in Chinese with nothing to set up, and
+          // falls back to English only when it has nothing closer. A locale
+          // is set here only when the student has picked one in Settings.
+          locale: widget.app.uiLocale,
           debugShowCheckedModeBanner: false,
           theme: onoteTheme(Brightness.light),
           darkTheme: onoteTheme(Brightness.dark),

@@ -1,3 +1,5 @@
+import '../l10n/l10n.dart';
+import '../l10n/labels.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -1312,8 +1314,8 @@ class _FindBarState extends State<_FindBar> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(n == 0
-            ? 'Nothing replaced'
-            : 'Replaced $n occurrence${n == 1 ? '' : 's'}')));
+            ? L.of(context).shellNothingReplaced
+            : L.of(context).shellReplaced(n))));
   }
 
   @override
@@ -1337,10 +1339,10 @@ class _FindBarState extends State<_FindBar> {
           Expanded(
             child: TextField(
               controller: _replaceCtl,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
-                hintText: 'Replace with…',
+                hintText: L.of(context).shellReplaceWith,
               ),
               style: const TextStyle(fontSize: 13),
               onSubmitted: (_) => _replace(all: false),
@@ -1348,11 +1350,11 @@ class _FindBarState extends State<_FindBar> {
           ),
           TextButton(
             onPressed: app.findMatches.isEmpty ? null : () => _replace(all: false),
-            child: const Text('Replace', style: TextStyle(fontSize: 12)),
+            child: Text(L.of(context).shellReplace, style: TextStyle(fontSize: 12)),
           ),
           TextButton(
             onPressed: app.findMatches.isEmpty ? null : () => _replace(all: true),
-            child: const Text('All', style: TextStyle(fontSize: 12)),
+            child: Text(L.of(context).shellReplaceAll, style: TextStyle(fontSize: 12)),
           ),
         ]),
       );
@@ -1393,34 +1395,34 @@ class _FindBarState extends State<_FindBar> {
               },
               child: TextField(
                 autofocus: true,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isDense: true,
                   border: InputBorder.none,
-                  hintText: 'Find on this page…',
+                  hintText: L.of(context).shellFindOnThisPage,
                 ),
-                style: const TextStyle(fontSize: 13),
+                style: TextStyle(fontSize: 13),
                 onChanged: app.setFindQuery,
               ),
             ),
           ),
           Text(
             app.findMatches.isEmpty
-                ? (app.findQuery.isEmpty ? '' : 'No matches')
+                ? (app.findQuery.isEmpty ? '' : L.of(context).shellNoMatches)
                 : '${app.findIndex + 1} of ${app.findMatches.length}',
             style: TextStyle(fontSize: 12, color: context.surfaces.textSecondary),
           ),
           // The two buttons that had no tooltip at all: the chord is the
           // faster route and the button is where anyone would look for it.
           IconButton(
-            icon: const Icon(Icons.keyboard_arrow_up, size: 18),
+            icon: Icon(Icons.keyboard_arrow_up, size: 18),
             visualDensity: VisualDensity.compact,
-            tooltip: 'Previous match (Shift+Enter)',
+            tooltip: L.of(context).shellPreviousMatch,
             onPressed: app.findMatches.isEmpty ? null : () => app.findNext(-1),
           ),
           IconButton(
-            icon: const Icon(Icons.keyboard_arrow_down, size: 18),
+            icon: Icon(Icons.keyboard_arrow_down, size: 18),
             visualDensity: VisualDensity.compact,
-            tooltip: 'Next match (Enter)',
+            tooltip: L.of(context).shellNextMatch,
             onPressed: app.findMatches.isEmpty ? null : () => app.findNext(1),
           ),
           IconButton(
@@ -1429,13 +1431,13 @@ class _FindBarState extends State<_FindBar> {
                 size: 18),
             visualDensity: VisualDensity.compact,
             isSelected: _showReplace,
-            tooltip: 'Replace',
+            tooltip: L.of(context).shellReplace,
             onPressed: () => setState(() => _showReplace = !_showReplace),
           ),
           IconButton(
-            icon: const Icon(Icons.close, size: 16),
+            icon: Icon(Icons.close, size: 16),
             visualDensity: VisualDensity.compact,
-            tooltip: 'Close (Esc)',
+            tooltip: L.of(context).shellCloseEsc,
             onPressed: app.toggleFind,
           ),
         ],
@@ -1503,14 +1505,12 @@ class _TagsPanel extends StatelessWidget {
       onClose: app.closePanel,
       child: all.isEmpty
           ? PanelEmpty(
-              headline: 'No tags in this notebook yet.',
-              body: 'Tags mark a line — to do, important, question, '
-                  'definition — so you can find it again, revise from it, or '
-                  'give it a deadline.',
+              headline: L.of(context).shellNoTags,
+              body: L.of(context).shellTagsHint,
               actions: [
                 PanelAction(
                     icon: Icons.label_outline,
-                    label: 'Tag the line you are on',
+                    label: L.of(context).shellTagTheLine,
                     onTap: () => app.toggleTagOnSelection(TagKind.todo)),
               ],
             )
@@ -1526,7 +1526,10 @@ class _TagsPanel extends StatelessWidget {
                           child: Row(children: [
                             Icon(kind.icon, size: 16, color: kind.color),
                             const SizedBox(width: 5),
-                            Text('${kind.label}  (${byKind[kind]!.length})',
+                            Text(
+                                L.of(context).shellTagGroup(
+                                    kind.label(L.of(context)),
+                                    byKind[kind]!.length),
                                 style: const TextStyle(
                                     fontSize: 11, fontWeight: FontWeight.w600)),
                           ]),
@@ -1577,7 +1580,7 @@ class _TagsPanel extends StatelessWidget {
 /// `# text` in a text block, so an outline that could disagree with the page
 /// would be a second source of truth for no gain.
 class _TocPanel extends StatelessWidget {
-  const _TocPanel({required this.app});
+  _TocPanel({required this.app});
   final AppState app;
 
   @override
@@ -1588,11 +1591,9 @@ class _TocPanel extends StatelessWidget {
       icon: Icons.toc,
       onClose: app.closePanel,
       child: items.isEmpty
-          ? const PanelEmpty(
-              headline: 'No headings on this page.',
-              body: 'Start a line with # to make a heading — the outline '
-                  'follows the page, so there is nothing separate to keep up '
-                  'to date.',
+          ? PanelEmpty(
+              headline: L.of(context).shellNoHeadings,
+              body: L.of(context).shellHeadingsHint,
             )
           : ListView.builder(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -1691,11 +1692,11 @@ class _LinksPanel extends StatelessWidget {
       onClose: app.closePanel,
       child: ListView(
         children: [
-          section('Linked from', Icons.call_received, backlinks,
-              'No pages link here yet.'),
-          const SizedBox(height: OnoteSpace.x4),
-          section('Links to', Icons.call_made, outgoing,
-              'This page links nowhere yet.'),
+          section(L.of(context).shellLinkedFrom, Icons.call_received,
+              backlinks, L.of(context).shellNoBacklinks),
+          SizedBox(height: OnoteSpace.x4),
+          section(L.of(context).shellLinksTo, Icons.call_made, outgoing,
+              L.of(context).shellNoLinks),
         ],
       ),
     );
@@ -1757,8 +1758,8 @@ class _StatusBar extends StatelessWidget {
             message: failed
                 ? '${problem.message}\n\nMore detail.'
                 : saved
-                    ? 'This page is saved to your local .onote file.'
-                    : 'Saving…',
+                    ? L.of(context).shellSavedLocally
+                    : L.of(context).shellSaving,
             child: MouseRegion(
               cursor: failed ? SystemMouseCursors.click : MouseCursor.defer,
               child: GestureDetector(
@@ -1777,13 +1778,13 @@ class _StatusBar extends StatelessWidget {
                           : saved
                               ? OnoteColors.success
                               : context.surfaces.textSecondary),
-                  const SizedBox(width: 5),
+                  SizedBox(width: 5),
                   Text(
                       failed
                           ? problem.short
                           : saved
-                              ? 'Saved on this device'
-                              : 'Saving…',
+                              ? L.of(context).shellSavedOnDevice
+                              : L.of(context).shellSaving,
                       style: TextStyle(
                           fontSize: 11,
                           color: failed
@@ -1824,10 +1825,8 @@ class _StatusBar extends StatelessWidget {
             // Importer and repair fixes live in that library, so "I pulled and
             // it still does the old thing" is answered by reading this line.
             message: rust
-                ? 'The Rust core (onote-core) is linked and computing this '
-                    "page's content hash on save.\n${_coreBuildLine()}"
-                : 'Running the pure-Dart engine. Build the onote-core library '
-                    'to link the Rust core.',
+                ? L.of(context).shellRustLinked(_coreBuildLine())
+                : L.of(context).shellRustMissing,
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.memory,
                   size: 16,
@@ -1861,8 +1860,7 @@ class _StatusBar extends StatelessWidget {
             child: Align(
               alignment: Alignment.centerRight,
               child: _DropIfTight(
-                text: 'V select · T text · P pen · H highlight · E erase · '
-                    'Ctrl+Z undo · Ctrl+scroll zoom',
+                text: L.of(context).shellCheatSheet,
                 style: OnoteType.caption
                     .copyWith(color: context.surfaces.textSecondary),
               ),
@@ -1921,19 +1919,18 @@ class _EmptyState extends StatelessWidget {
         children: [
           Icon(Icons.auto_stories_outlined,
               size: OnoteIcon.xl, color: context.surfaces.textSecondary),
-          const SizedBox(height: 12),
-          const Text('An open page awaits',
-              style: OnoteType.headline),
-          const SizedBox(height: 6),
+          SizedBox(height: 12),
+          Text(L.of(context).shellEmptyTitle, style: OnoteType.headline),
+          SizedBox(height: 6),
           Text(
-            'Everything you make here lives on your device,\nin an open format you own.',
+            L.of(context).shellEmptyBody,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: context.surfaces.textSecondary),
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
-            icon: const Icon(Icons.note_add_outlined, size: 18),
-            label: const Text('Create your first page'),
+            icon: Icon(Icons.note_add_outlined, size: 18),
+            label: Text(L.of(context).shellCreateFirstPage),
             onPressed: () => app.addPage(),
           ),
         ],
@@ -1993,8 +1990,8 @@ class _SyncChip extends StatelessWidget {
                             : await app.syncPull(nb);
                         messenger.showSnackBar(SnackBar(
                             content: Text(n == 0
-                                ? 'Already up to date.'
-                                : 'Pulled $n change${n == 1 ? '' : 's'}.')));
+                                ? L.of(context).shellAlreadyUpToDate
+                                : L.of(context).shellPulled(n))));
                       },
                 child: Icon(Icons.refresh, size: 16, color: scheme.primary),
               ),
@@ -2036,8 +2033,8 @@ class _LockedPage extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.lock_outline, size: 40, color: scheme.primary),
-            const SizedBox(height: 14),
-            Text('“$rootTitle” is locked',
+            SizedBox(height: 14),
+            Text(L.of(context).shellPageLocked(rootTitle),
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
@@ -2051,7 +2048,7 @@ class _LockedPage extends StatelessWidget {
             const SizedBox(height: 18),
             FilledButton.icon(
               icon: const Icon(Icons.lock_open_outlined, size: 18),
-              label: const Text('Unlock'),
+              label: Text(L.of(context).shellUnlock),
               onPressed: () => promptUnlock(context, app, page.id),
             ),
           ],

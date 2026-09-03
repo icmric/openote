@@ -35,3 +35,52 @@ const List<LocalizationsDelegate<Object>> kOnoteLocalizations = [
 /// regenerating is the whole job of adding French — no list to remember to
 /// update, and no locale that is offered but has no strings behind it.
 const List<Locale> kOnoteLocales = L.supportedLocales;
+
+/// Pick the language, given what the computer asks for.
+///
+/// **This exists because Flutter's default answer is wrong for us.**
+/// `basicLocaleListResolution` matches the OS's preferred languages properly —
+/// exact locale, then script, then language — and that part is exactly what is
+/// wanted: a Chinese machine gets Chinese with nothing to set up. But when
+/// NOTHING matches it returns `supportedLocales.first`, and that list is
+/// generated in alphabetical order of the `.arb` files. The first entry is
+/// `de`. So an Icelandic student, whose language Openote does not have, was
+/// being handed **German** — a language they very likely do not read, chosen
+/// because "de" sorts before "en".
+///
+/// English is the fallback because English is the template every other
+/// translation is made from: it is the one language guaranteed to be complete.
+Locale onoteResolveLocale(List<Locale>? preferred, Iterable<Locale> supported) {
+  final chosen = basicLocaleListResolution(preferred, supported);
+  if (preferred == null || preferred.isEmpty) return const Locale('en');
+  // `basicLocaleListResolution` returning the first supported locale is how it
+  // says "nothing matched" — there is no other signal. Check the answer
+  // against what was actually asked for rather than trusting it.
+  final asked = preferred.map((l) => l.languageCode).toSet();
+  return asked.contains(chosen.languageCode) ? chosen : const Locale('en');
+}
+
+/// What each supported language is called **in that language**.
+///
+/// Not "Spanish" but "Español": somebody looking for their own language is
+/// looking for the word they would write it with, and a list that names them
+/// all in English is a list they have to translate in their head first.
+///
+/// Anything in [kOnoteLocales] with no entry here falls back to its own
+/// language tag, so adding an `.arb` never leaves a blank row — but do add the
+/// name, because a row reading "sv" helps nobody.
+const Map<String, String> kLanguageNames = {
+  'en': 'English',
+  'de': 'Deutsch',
+  'es': 'Español',
+  'fr': 'Français',
+  'it': 'Italiano',
+  'pt': 'Português',
+  'zh': '中文',
+};
+
+/// The name to show for [locale] in the language picker.
+String languageNameOf(Locale locale) =>
+    kLanguageNames[locale.toLanguageTag()] ??
+    kLanguageNames[locale.languageCode] ??
+    locale.toLanguageTag();
