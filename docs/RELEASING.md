@@ -93,6 +93,7 @@ what 0.3.0 → 0.3.1 was.
 | You are on `master`, not a feature branch | The bump has to be on the commit the tag points at. Committing it elsewhere makes `git push origin master` a silent no-op. |
 | `CHANGELOG.md` names this version | Nothing checks it, and the auto-generated notes are a list of merged PRs — not a description of what changed for a user. |
 | No release already exists for the tag | The `version` job now refuses if one does, because publishing into an existing release bypasses the draft review entirely. |
+| [The pre-release checklist](pre-release-checklist.md) has been run | The test suite runs headless, in one process, with a fake clock and a fake file picker. It cannot see a stuttering frame, a real file dialog, an installer, a stylus, or the update path. About 35 minutes, on the packaged build. |
 
 **Version numbers.** `M.m.p` on both sides; increment the `+build` counter too,
 because some platforms care about it even though this workflow does not.

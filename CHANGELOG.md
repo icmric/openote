@@ -4,6 +4,52 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — Openote speaks six more languages, and picks one without asking (2026-09-03)
+
+- **German, Spanish, French, Italian, Portuguese and Simplified Chinese**, all
+  complete. Nothing to configure: Openote reads the language list your computer
+  already has and comes up in the first one it can speak, so somebody whose
+  machine is set to Chinese sees Chinese on the very first run, welcome flow
+  included. If it guesses wrong, or you'd rather read the app in something
+  else, Settings ▸ Appearance ▸ Language changes it there and then, no restart.
+- **Chinese, Japanese and Korean text now has fonts to fall back on.** The
+  fallback list was Latin and maths families only, so a machine without a CJK
+  default drew empty boxes.
+- Adding the *seventh* language still needs no Dart at all — one `.arb` file
+  and a codegen run. [CONTRIBUTING §5](CONTRIBUTING.md#ways-to-help-right-now)
+  is the whole procedure.
+
+### Fixed — an unfamiliar language fell back to German, not English (2026-09-03)
+
+- **A computer set to a language Openote does not speak got German**, because
+  Flutter's default resolution falls back to the first supported locale and
+  the locale list is built from the `.arb` files in alphabetical order. It
+  falls back to English now.
+- **The language your computer prefers is read as a list, not a single
+  answer.** `localeResolutionCallback` hands over one locale at a time, so a
+  machine set to Chinese-then-English could resolve on the wrong end of its own
+  preference order. It uses `localeListResolutionCallback` now.
+
+### Fixed — turning sync off did not wait for the folder watcher to let go (2026-09-03)
+
+- **`setAutoSync(false)` returned before the watcher had actually stopped.**
+  The stop was started and its result thrown away, so for a moment afterwards
+  a notebook you had just told Openote to stop watching could still be written
+  to — which on Windows also means an open handle on a folder you may be about
+  to move, rename or delete. It now waits, and everything that turns the
+  watcher off waits with it. This is what made one CI run fail on Windows and
+  pass everywhere else; the flake was the bug reporting itself.
+
+### Added — a pre-release checklist a human can actually run (2026-09-03)
+
+- **[docs/pre-release-checklist.md](docs/pre-release-checklist.md)**: the
+  manual pass, action and expected result, run on the packaged build before
+  every release. The automated suite is nearly 2,800 tests, but all of them run
+  headless in one process with a fake clock and a fake file picker — it cannot
+  see a stuttering frame, a real file dialog, an installer, a stylus, or the
+  update path. About 35 minutes, deliberately short enough to run every time.
+
+
 ### Added — a screen reader can hear an equation (2026-09-02)
 
 - **Equations announce themselves.** Maths is drawn as glyph boxes, which say
@@ -39,8 +85,7 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   language would accept: "1 card" against "5 cards", reminders waiting, days
   left in the recycle bin, and the word count, badge numbers and zoom
   percentage, which are now grouped and shaped the way each language does it.
-  Openote still ships in English only; what changed is that it no longer has
-  to.
+  This was the groundwork; the six languages above are what it enabled.
 
 
 ### Added — the welcome flow teaches the app, and other languages have somewhere to go (2026-09-02)
@@ -65,8 +110,8 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   delegates, an English `.arb` template that is now the source of truth for
   the welcome flow's words, and a generated strings class checked into the
   repository. Adding a language is a single `.arb` file and a codegen run —
-  no code to change. The app still ships in English only; the rest of the
-  migration is tracked in
+  no code to change — which is exactly how the six languages above arrived a
+  day later. The rest of the migration is tracked in
   [v0.24 — the road to 1.0](docs/planning/v0.24-road-to-1.0.md).
 
 ### Fixed — layout and consistency in the dialogs (2026-09-02)

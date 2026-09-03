@@ -56,6 +56,12 @@ Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/AD
 - [Roadmap](../ROADMAP.md) — phased plan from MVP to collaboration.
 - [Planning documents](planning/README.md) — one per release-sized piece of work, kept after shipping: what was reported, what was measured, which options were weighed, and what it cost. The index separates **open** plans from shipped reasoning and from the one plan that was **rejected**. Currently v0.2 → v0.16, plus the ranked standing backlog in [v0.4-and-beyond](planning/v0.4-and-beyond.md).
 - [Releasing](RELEASING.md) — how a commit on `master` becomes a download: the three commands, the four manual steps (publishing the draft, the two Cloudflare secrets, pointing the domain, and the signing decision), what each platform artifact is, why the site is a Worker rather than static hosting, and what to do when a job fails.
+- [The pre-release checklist](pre-release-checklist.md) — the manual pass run on the
+  packaged build before every release. Action and expected result, about 35
+  minutes, deliberately covering only what a headless test suite cannot see:
+  real frames, real file dialogs, the installer, the stylus, the update path.
+  Complements [TESTING](../TESTING.md), which is the rolling frontier rather
+  than the fixed floor.
 - [Contributing](../CONTRIBUTING.md) — how to get involved.
 - [README](../README.md) — project overview.
 
