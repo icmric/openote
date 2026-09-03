@@ -21,7 +21,7 @@ import '../markdown/md_syntax.dart';
 
 /// The running app's version. pubspec.yaml is the source of truth;
 /// app_update_test.dart fails the build the moment the two drift.
-const kAppVersion = '0.8.0';
+const kAppVersion = '0.9.0';
 
 const _kLatestReleaseApi =
     'https://api.github.com/repos/icmric/openote/releases/latest';

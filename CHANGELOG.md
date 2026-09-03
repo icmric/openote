@@ -2,7 +2,7 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
-## [Unreleased]
+## [0.9.0] — 2026-09-03
 
 ### Added — Openote speaks six more languages, and picks one without asking (2026-09-03)
 
