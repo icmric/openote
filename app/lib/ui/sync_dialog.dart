@@ -10,6 +10,7 @@
 /// did read as.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
@@ -376,7 +377,14 @@ class _SyncDialogState extends State<_SyncDialog> {
                     : (v) {
                         // setAutoSync notifies listeners itself; wrapping it in
                         // setState would notify during a build.
-                        app.setAutoSync(v);
+                        //
+                        // Deliberately not awaited HERE: the toggle must move
+                        // under the finger, and it notifies before the watcher
+                        // has finished stopping. Anything that goes on to
+                        // touch the folder must await it instead — the future
+                        // exists for exactly that, and dropping it everywhere
+                        // is what broke on Windows.
+                        unawaited(app.setAutoSync(v));
                         setState(() {});
                       },
                 title: const Text('Pull changes automatically',

@@ -2518,11 +2518,36 @@ class AppState extends ChangeNotifier
   /// a sync you have to remember to click isn't sync.
   bool autoSync = true;
 
-  void setAutoSync(bool v) {
+  /// Turn the folder watcher on or off.
+  ///
+  /// **Returns the Future, and turning it OFF is only true once that Future
+  /// completes.** [OpFolderWatcher.stop] says so in bold and explains why: a
+  /// `StreamSubscription.cancel()` is asynchronous, and on Windows the
+  /// underlying `ReadDirectoryChangesW` handle is not released until it
+  /// finishes — so between the call and the completion the watch is still
+  /// live and can still deliver one more event, which re-arms the debounce
+  /// and runs a pull.
+  ///
+  /// This used to discard that Future, which made "auto-sync is off" a
+  /// statement about intent rather than about the operating system. It is
+  /// what made `cloud_sync_test.dart`'s purge test flake **on Windows only**:
+  /// the test turned both devices' watchers off, photographed the shared
+  /// folder, purged, and photographed again — and on a starved runner the
+  /// still-open watch fired in between, pulled, and appended to a log in that
+  /// folder, so the purge was blamed for bytes it never wrote.
+  ///
+  /// The user-facing version of the same bug is worse than a flaky test: turn
+  /// auto-sync off and immediately move or delete the notebook, and the delete
+  /// races a handle that is still open. That is the exact failure the doc
+  /// comment on `stop()` was written about.
+  ///
+  /// [notifyListeners] fires first, so a toggle in the UI still moves at once.
+  Future<void> setAutoSync(bool v) {
     autoSync = v;
     _repo.setSetting('autoSync', v);
-    v ? _startWatching() : _stopWatching();
+    final settled = v ? _startWatching() : _stopWatching();
     notifyListeners();
+    return settled;
   }
 
   OpFolderWatcher? _watcher;
@@ -2562,9 +2587,13 @@ class AppState extends ChangeNotifier
     return 'the folder could not be watched';
   }
 
-  void _startWatching() {
-    _stopWatching();
-    if (!autoSync || notebookId == null || !syncLogEnabled) return;
+  /// Start watching, having first stopped whatever was watching before.
+  ///
+  /// Returns the Future the stop half needs — see [setAutoSync] for why a
+  /// discarded one is not merely untidy.
+  Future<void> _startWatching() {
+    final stopped = _stopWatching();
+    if (!autoSync || notebookId == null || !syncLogEnabled) return stopped;
     // Paths and a device id — NOT a recorder. Opening a recorder here replayed
     // the whole log on the UI thread during startup's first frame, which was
     // most of "the app is locked up for the first few seconds after
@@ -2573,7 +2602,7 @@ class AppState extends ChangeNotifier
     // change actually arrives, which is the earliest moment its replayed state
     // is needed.
     final store = _bareLog(notebookId!);
-    if (store == null || !store.opsDir.existsSync()) return;
+    if (store == null || !store.opsDir.existsSync()) return stopped;
     _watcher = OpFolderWatcher(
       opsDir: store.opsDir,
       ownDevice: localDeviceId(),
@@ -2591,15 +2620,22 @@ class AppState extends ChangeNotifier
         });
       },
     )..start();
+    return stopped;
   }
 
   /// Stop the folder watcher, and hand back the future that says when its
   /// handle is actually released.
   ///
-  /// Most callers do not care and drop it — a watcher that stops a few
-  /// milliseconds later is harmless when nothing is about to touch the
-  /// directory. The one caller that MUST wait is `moveNotebookToFolder`, which
-  /// goes on to delete the old log directory; see `FolderWatch.stop`.
+  /// **Whoever is about to touch that directory must await this.** The rule
+  /// was written for `moveNotebookToFolder`, which deletes the old log
+  /// directory next — but it is the same rule for anything that is about to
+  /// assert the folder did not change, or to delete a notebook out of it, and
+  /// [setAutoSync] dropping this future is what made the shared-folder purge
+  /// test flake on Windows. See `FolderWatch.stop` for why the cancel is
+  /// asynchronous, and why Windows is where it shows.
+  ///
+  /// `dispose` is the one place that legitimately cannot wait: it is
+  /// synchronous by signature, and the process is going anyway.
   Future<void> _stopWatching() {
     final w = _watcher;
     _watcher = null;
@@ -2924,7 +2960,10 @@ class AppState extends ChangeNotifier
     // restarted after; anything that arrives meanwhile is picked up by the
     // poll on the next tick. try/finally, because a run that escapes without
     // restarting the watcher leaves auto-pull silently off for the session.
-    _stopWatching();
+    // AWAITED: "stopped" is only true once the handle is released, and a pull
+    // that slips through in the meantime is exactly what this line exists to
+    // prevent (see `setAutoSync`).
+    await _stopWatching();
 
     var freed = 0, converted = 0, failed = 0;
     var aborted = false;
