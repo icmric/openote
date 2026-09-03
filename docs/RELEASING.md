@@ -366,10 +366,22 @@ git push --delete origin vX.Y.Z
 
 Stated plainly, because this is where the surprises come from.
 
-**The three platform jobs have never run to completion.** Two tag attempts both
-stopped at the version guard, so everything after it was skipped. An audit of
-that never-executed path found two independent faults in the Windows job, both
-now fixed, and neither of which any amount of reading had caught before:
+> **Superseded 2026-09-02.** The paragraph below is kept because its two
+> findings are still worth reading, but its headline is no longer true:
+> **eight releases have shipped**, v0.3.1 through v0.8.0, and every one of the
+> three platform jobs runs to completion. v0.8.0 published `.exe`, `.zip`,
+> `.deb`, `.rpm`, `.tar.gz` and a universal `.dmg`, and people have downloaded
+> all of them. What is still true — and is the one thing this section should
+> now say — is that **nobody has reported back from running the macOS or
+> Linux build**. Artifacts existing is not the same as artifacts working, and
+> the release notes are right to keep saying macOS is the least-tested
+> platform by far.
+
+**The three platform jobs had never run to completion when this was written.**
+Two tag attempts both stopped at the version guard, so everything after it was
+skipped. An audit of that never-executed path found two independent faults in
+the Windows job, both since fixed, and neither of which any amount of reading
+had caught before:
 
 - `"$env:ProgramFiles(x86)\..."` expands to `C:\Program Files(x86)\...` —
   without the space. PowerShell ends an unbraced variable name at `(`, so the
