@@ -1387,4 +1387,18 @@ class LEs extends L {
   String onboardingReadFailed(String reason) {
     return 'No se ha podido leer ese archivo: $reason';
   }
+
+  @override
+  String get oneNoteFileTitle => 'Usar un archivo exportado';
+
+  @override
+  String get oneNoteFileBody =>
+      'Sin iniciar sesión, y la escritura a mano también se copia. Necesitarás OneNote en Windows para exportar el cuaderno antes.';
+
+  @override
+  String get oneNoteSignInBody =>
+      'Elige un cuaderno y pasa directamente, sin exportar nada antes. Funciona en cualquier ordenador.';
+
+  @override
+  String get oneNotePickTitle => '¿Qué cuaderno?';
 }

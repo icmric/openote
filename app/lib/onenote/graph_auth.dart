@@ -10,7 +10,7 @@
 ///  3. They sign in there. Openote never sees the password, cannot see it, and
 ///     is not in a position to — which is the whole reason the system browser
 ///     is used rather than a window inside the app.
-///  4. Microsoft redirects the browser back to `http://127.0.0.1:<port>` with
+///  4. Microsoft redirects the browser back to `http://localhost:<port>` with
 ///     a one-time code. The little server catches it and shuts down.
 ///  5. Openote swaps the code for a token, proving it is the same app that
 ///     started the flow by presenting the verifier whose hash it sent in
@@ -207,7 +207,20 @@ class GraphAuth {
     // Port 0 asks the OS for any free port, which is what makes a registered
     // `http://localhost` work without reserving one.
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final redirect = 'http://127.0.0.1:${server.port}';
+    // **`localhost`, not `127.0.0.1`, and they are not interchangeable here.**
+    //
+    // Entra wildcards the PORT of a registered loopback redirect but matches
+    // the host string exactly. The registration says `http://localhost`, so
+    // sending the numeric form is rejected outright:
+    //
+    //     invalid_request: The provided value for the input parameter
+    //     'redirect_uri' is not valid.
+    //
+    // Binding stays on the numeric loopback address, because that is an
+    // address rather than a name and needs no resolver. The browser resolves
+    // `localhost` to it — every desktop platform maps the name to the IPv4
+    // loopback, and a browser that tries `::1` first falls back.
+    final redirect = 'http://localhost:${server.port}';
     try {
       final url = Uri.parse('$kGraphAuthority/oauth2/v2.0/authorize').replace(
         queryParameters: {

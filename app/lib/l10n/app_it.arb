@@ -382,5 +382,9 @@
   "oneNoteCloudLoading": "Ricerca dei tuoi blocchi appunti…",
   "oneNoteCloudEmpty": "Nessun blocco appunti trovato per questo account.",
   "oneNoteCloudOther": "Usa un altro account",
-  "oneNoteCloudNoInk": "La scrittura a mano non può essere importata in questo modo — tutto il resto sì."
+  "oneNoteCloudNoInk": "La scrittura a mano non può essere importata in questo modo — tutto il resto sì.",
+  "oneNoteFileTitle": "Usa un file esportato",
+  "oneNoteFileBody": "Senza accedere, e viene importata anche la scrittura a mano. Ti servirà OneNote su Windows per esportare prima il blocco appunti.",
+  "oneNoteSignInBody": "Scegli un blocco appunti e arriva direttamente, senza esportare nulla prima. Funziona su qualsiasi computer.",
+  "oneNotePickTitle": "Quale blocco appunti?"
 }

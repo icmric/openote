@@ -382,5 +382,9 @@
   "oneNoteCloudLoading": "Ihre Notizbücher werden gesucht…",
   "oneNoteCloudEmpty": "Für dieses Konto wurden keine Notizbücher gefunden.",
   "oneNoteCloudOther": "Anderes Konto verwenden",
-  "oneNoteCloudNoInk": "Handschrift kann auf diesem Weg nicht übernommen werden — alles andere schon."
+  "oneNoteCloudNoInk": "Handschrift kann auf diesem Weg nicht übernommen werden — alles andere schon.",
+  "oneNoteFileTitle": "Eine exportierte Datei verwenden",
+  "oneNoteFileBody": "Ohne Anmeldung, und die Handschrift kommt mit. Sie brauchen OneNote unter Windows, um das Notizbuch zuerst zu exportieren.",
+  "oneNoteSignInBody": "Ein Notizbuch auswählen, und es kommt direkt herüber — nichts vorher exportieren. Funktioniert auf jedem Computer.",
+  "oneNotePickTitle": "Welches Notizbuch?"
 }

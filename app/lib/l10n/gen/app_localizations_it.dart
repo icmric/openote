@@ -1396,4 +1396,18 @@ class LIt extends L {
   String onboardingReadFailed(String reason) {
     return 'Non è stato possibile leggere quel file: $reason';
   }
+
+  @override
+  String get oneNoteFileTitle => 'Usa un file esportato';
+
+  @override
+  String get oneNoteFileBody =>
+      'Senza accedere, e viene importata anche la scrittura a mano. Ti servirà OneNote su Windows per esportare prima il blocco appunti.';
+
+  @override
+  String get oneNoteSignInBody =>
+      'Scegli un blocco appunti e arriva direttamente, senza esportare nulla prima. Funziona su qualsiasi computer.';
+
+  @override
+  String get oneNotePickTitle => 'Quale blocco appunti?';
 }

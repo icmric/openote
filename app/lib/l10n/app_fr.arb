@@ -382,5 +382,9 @@
   "oneNoteCloudLoading": "Recherche de vos carnets…",
   "oneNoteCloudEmpty": "Aucun carnet trouvé sur ce compte.",
   "oneNoteCloudOther": "Utiliser un autre compte",
-  "oneNoteCloudNoInk": "L'écriture manuscrite ne peut pas être importée par ce moyen — tout le reste, oui."
+  "oneNoteCloudNoInk": "L'écriture manuscrite ne peut pas être importée par ce moyen — tout le reste, oui.",
+  "oneNoteFileTitle": "Utiliser un fichier exporté",
+  "oneNoteFileBody": "Sans connexion, et l'écriture manuscrite est conservée. Il vous faudra OneNote sous Windows pour exporter le carnet au préalable.",
+  "oneNoteSignInBody": "Choisissez un carnet et il arrive directement, sans rien exporter. Fonctionne sur n'importe quel ordinateur.",
+  "oneNotePickTitle": "Quel carnet ?"
 }

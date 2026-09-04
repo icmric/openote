@@ -1395,4 +1395,18 @@ class LFr extends L {
   String onboardingReadFailed(String reason) {
     return 'Impossible de lire ce fichier : $reason';
   }
+
+  @override
+  String get oneNoteFileTitle => 'Utiliser un fichier exporté';
+
+  @override
+  String get oneNoteFileBody =>
+      'Sans connexion, et l\'écriture manuscrite est conservée. Il vous faudra OneNote sous Windows pour exporter le carnet au préalable.';
+
+  @override
+  String get oneNoteSignInBody =>
+      'Choisissez un carnet et il arrive directement, sans rien exporter. Fonctionne sur n\'importe quel ordinateur.';
+
+  @override
+  String get oneNotePickTitle => 'Quel carnet ?';
 }

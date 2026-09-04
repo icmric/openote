@@ -1389,4 +1389,18 @@ class LPt extends L {
   String onboardingReadFailed(String reason) {
     return 'Não deu para ler esse arquivo: $reason';
   }
+
+  @override
+  String get oneNoteFileTitle => 'Usar um ficheiro exportado';
+
+  @override
+  String get oneNoteFileBody =>
+      'Sem iniciar sessão, e a escrita à mão também vem. Vai precisar do OneNote no Windows para exportar o bloco de notas primeiro.';
+
+  @override
+  String get oneNoteSignInBody =>
+      'Escolha um bloco de notas e vem directamente, sem exportar nada antes. Funciona em qualquer computador.';
+
+  @override
+  String get oneNotePickTitle => 'Qual bloco de notas?';
 }

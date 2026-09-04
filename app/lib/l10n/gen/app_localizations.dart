@@ -2404,6 +2404,30 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Couldn\'t read that file: {reason}'**
   String onboardingReadFailed(String reason);
+
+  /// Import route that needs no Microsoft sign-in, using an exported .onepkg file.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a file you exported'**
+  String get oneNoteFileTitle;
+
+  /// Body for the file import route. 'OneNote' is a product name.
+  ///
+  /// In en, this message translates to:
+  /// **'No signing in, and handwriting comes across too. You will need OneNote on Windows to export the notebook first.'**
+  String get oneNoteFileBody;
+
+  /// Body for the Microsoft sign-in import route.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a notebook and it comes straight over, with nothing to export first. Works on any computer.'**
+  String get oneNoteSignInBody;
+
+  /// Heading above the list of notebooks found in the signed-in account.
+  ///
+  /// In en, this message translates to:
+  /// **'Which notebook?'**
+  String get oneNotePickTitle;
 }
 
 class _LDelegate extends LocalizationsDelegate<L> {

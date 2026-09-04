@@ -152,7 +152,12 @@ void main() {
           (200, {'access_token': 'AT', 'expires_in': 3600});
       await auth.signIn();
       final q = Uri.parse(seen!).queryParameters;
-      expect(q['redirect_uri'], startsWith('http://127.0.0.1:'));
+      // `localhost`, matching the registered redirect. Entra wildcards the
+      // port but compares the host verbatim, so the numeric form is refused
+      // with `invalid_request` — which is exactly what shipped and had to be
+      // found by signing in for real.
+      expect(q['redirect_uri'], startsWith('http://localhost:'));
+      expect(q['redirect_uri'], isNot(contains('127.0.0.1')));
       expect(q['code_challenge_method'], 'S256');
       // Without this a machine already signed in to a work account imports
       // from the wrong one silently.

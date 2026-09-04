@@ -1394,4 +1394,18 @@ class LDe extends L {
   String onboardingReadFailed(String reason) {
     return 'Diese Datei konnte nicht gelesen werden: $reason';
   }
+
+  @override
+  String get oneNoteFileTitle => 'Eine exportierte Datei verwenden';
+
+  @override
+  String get oneNoteFileBody =>
+      'Ohne Anmeldung, und die Handschrift kommt mit. Sie brauchen OneNote unter Windows, um das Notizbuch zuerst zu exportieren.';
+
+  @override
+  String get oneNoteSignInBody =>
+      'Ein Notizbuch auswählen, und es kommt direkt herüber — nichts vorher exportieren. Funktioniert auf jedem Computer.';
+
+  @override
+  String get oneNotePickTitle => 'Welches Notizbuch?';
 }

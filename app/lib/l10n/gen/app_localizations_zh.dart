@@ -1340,4 +1340,17 @@ class LZh extends L {
   String onboardingReadFailed(String reason) {
     return '无法读取该文件：$reason';
   }
+
+  @override
+  String get oneNoteFileTitle => '使用导出的文件';
+
+  @override
+  String get oneNoteFileBody =>
+      '无需登录，手写内容也会一并导入。需要先在 Windows 版 OneNote 中导出笔记本。';
+
+  @override
+  String get oneNoteSignInBody => '选择一个笔记本即可直接导入，无需事先导出。任何电脑都能用。';
+
+  @override
+  String get oneNotePickTitle => '选择哪个笔记本？';
 }

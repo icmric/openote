@@ -1380,4 +1380,18 @@ class LEn extends L {
   String onboardingReadFailed(String reason) {
     return 'Couldn\'t read that file: $reason';
   }
+
+  @override
+  String get oneNoteFileTitle => 'Use a file you exported';
+
+  @override
+  String get oneNoteFileBody =>
+      'No signing in, and handwriting comes across too. You will need OneNote on Windows to export the notebook first.';
+
+  @override
+  String get oneNoteSignInBody =>
+      'Pick a notebook and it comes straight over, with nothing to export first. Works on any computer.';
+
+  @override
+  String get oneNotePickTitle => 'Which notebook?';
 }
