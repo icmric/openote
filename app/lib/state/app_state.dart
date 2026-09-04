@@ -5899,9 +5899,62 @@ class AppState extends ChangeNotifier
         (_repo.notebooks.any((n) => n.id == lastNb)
             ? lastNb!
             : _repo.notebooks.first.id);
+    // **One unreadable notebook must not be the end of the app.**
+    //
+    // Everything below assumes the chosen notebook opens: the recycle-bin
+    // sweep, `reloadNodes`, the page load. When it does not — a container on a
+    // drive that has gone, a file another program is holding, an I/O error the
+    // operating system will not explain — the whole launch used to die on the
+    // first of them, on an error screen offering nothing but the stack. The
+    // notes were never in danger and the OTHER notebooks were all fine; the
+    // app simply refused to open.
+    //
+    // So: try the notebook, and if the container will not answer, say so in
+    // words and fall back to one that will. Landing in a working notebook with
+    // a notice beats a dead window every time, and `pendingOpenNotice` is the
+    // surface that already exists for exactly this sentence.
+    final trouble = notebookOpenProblem(notebookId!);
+    if (trouble != null) {
+      final stuck = notebookId!;
+      final fallback = _repo.notebooks
+          .where((n) => n.id != stuck)
+          .map((n) => n.id)
+          .where((id) => _repo.notebookOpenError(id) == null)
+          .firstOrNull;
+      pendingOpenNotice ??= trouble;
+      // Null is a legitimate answer: every notebook is unreadable, which is
+      // its own (rare, alarming) story. The shell already draws the empty
+      // state, and the notice says why it is empty — which is strictly more
+      // than a crash said.
+      notebookId = fallback;
+      if (fallback != null) _repo.setSetting('lastNotebook', fallback);
+    }
+    if (notebookId == null) {
+      nodes = const [];
+      return;
+    }
     // Clear out anything that has outlived the recycle-bin retention window.
-    await _repo.purgeExpiredNotebooks();
-    _repo.purgeExpiredNodes(notebookId!);
+    //
+    // **Never fatal.** This is housekeeping: it deletes rows that are already
+    // past thirty days, and skipping it costs exactly one launch's worth of
+    // tidiness because the next launch runs it again. It was unguarded, so a
+    // notebook whose container would not open took the whole app down with a
+    // raw `SqliteException` on a screen with no way forward — reported from a
+    // real build, where the app could not start at all because a sweep of the
+    // recycle bin failed. The rule the handed-path branch above already states
+    // ("a path that could not be opened must not end the launch") is the same
+    // rule here, and it applies far more obviously to a chore nobody asked
+    // for.
+    try {
+      await _repo.purgeExpiredNotebooks();
+    } catch (e) {
+      debugPrint('[openote/store] could not purge expired notebooks: $e');
+    }
+    try {
+      _repo.purgeExpiredNodes(notebookId!);
+    } catch (e) {
+      debugPrint('[openote/store] could not purge expired nodes: $e');
+    }
     reloadNodes();
     // Startup does NOT go through _loadNotebook — it opens the last notebook
     // inline — so the gate has to be rehydrated here as well. Both paths, or
@@ -6020,6 +6073,44 @@ class AppState extends ChangeNotifier
   /// The notice the shell still has to show about a notebook we were handed:
   /// null on the happy path, because a notebook that opened is its own
   /// confirmation. Cleared by whoever displays it.
+  /// Why [nb]'s container will not open, in words, or null when it opens fine.
+  ///
+  /// The sentences matter as much as the check. A student who reads
+  /// `SqliteException(1546): disk I/O error` learns nothing they can act on,
+  /// and that is exactly what a real build put in front of one — full screen,
+  /// on launch, with the app refusing to start at all. So: name the notebook,
+  /// give the causes that are actually likely on a desktop, say what Openote
+  /// did about it, and say plainly that the writing is safe — because it is.
+  /// The container is a working copy the op log can rebuild; the notes live in
+  /// the `.onotebook` folder beside it.
+  OpenNotebookResult? notebookOpenProblem(String nb) {
+    final e = _repo.notebookOpenError(nb);
+    if (e == null) return null;
+    final title = _repo.notebooks
+            .where((n) => n.id == nb)
+            .firstOrNull
+            ?.title ??
+        'That notebook';
+    if (e is NotebookFileMissing) {
+      return OpenNotebookResult(
+          OpenNotebookOutcome.notFound,
+          '“$title” could not be opened, because its file is not where Openote '
+          'left it. If it lives on a drive or a memory stick, plug that in and '
+          'open it again. Your writing is safe either way — it is in the '
+          'notebook folder beside this file, not inside it.',
+          details: '$e');
+    }
+    return OpenNotebookResult(
+        OpenNotebookOutcome.failed,
+        '“$title” could not be opened. That is almost always another program '
+        'holding the file — a backup or antivirus tool, a cloud sync client, '
+        'or a second copy of Openote — or the disk it sits on being full. '
+        'Openote has opened a different notebook so you can carry on; try this '
+        'one again in a moment. Nothing has been lost: your writing lives in '
+        'the notebook folder, and this file can be rebuilt from it.',
+        details: '$e');
+  }
+
   OpenNotebookResult? pendingOpenNotice;
 
   /// Open the notebook stored at [path], switching to it if it is one of ours

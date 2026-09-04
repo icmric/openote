@@ -707,6 +707,34 @@ class Repository {
   /// [adoptLogDirectory], [adoptWorkspaceNotebook]) call [openOnote] directly
   /// and put the handle in `_open` themselves, so none of them comes through
   /// here.
+  /// The error [notebookId]'s container raises on open, or null when it opens.
+  ///
+  /// A probe, so a caller can decide what to do instead of discovering it by
+  /// being thrown out of. Cheap when the handle is already cached, which is
+  /// the usual case, and cheap when it is not: opening is what the next line
+  /// was going to do anyway.
+  ///
+  /// Returns the raw error and nothing else on purpose. Turning a
+  /// `SqliteException` into a sentence a student can act on is a job for the
+  /// layer that talks to people — see `AppState.notebookOpenProblem` — and
+  /// `store` does not depend on `state`.
+  Object? notebookOpenError(String notebookId) {
+    if (_open.containsKey(notebookId)) return null;
+    if (!notebooks.any((n) => n.id == notebookId)) {
+      return StateError('No notebook $notebookId in this workspace.');
+    }
+    try {
+      _db(notebookId);
+      return null;
+    } catch (e) {
+      // Deliberately every error, not a list of the ones seen so far. This
+      // runs on the launch path; a cause nobody predicted must still end in a
+      // sentence and a working app rather than in a stack trace and a dead
+      // window.
+      return e;
+    }
+  }
+
   Database _db(String notebookId) {
     final nb = notebooks.firstWhere((n) => n.id == notebookId);
     return _open.putIfAbsent(notebookId,

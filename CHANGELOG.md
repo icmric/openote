@@ -50,6 +50,33 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - Both showed up as one CI run failing on Windows while the same commit passed
   everywhere else. The flake was the bug reporting itself.
 
+### Fixed — Openote refused to start (2026-09-04)
+
+- **A notebook Openote could not read stopped the whole app from opening**, on
+  a screen with nothing on it but an error. Reported from a real build: it
+  never got as far as a window. Three separate things had to be wrong for that,
+  and all three are fixed.
+- **Tidying the recycle bin is no longer allowed to stop the launch.** Openote
+  clears out anything past thirty days when it starts. That is housekeeping —
+  skipping it costs nothing, because the next launch does it — and it was
+  taking the entire app down with it.
+- **One unreadable notebook no longer means no Openote.** If the notebook you
+  had open last will not open — a drive that is not plugged in, a file another
+  program is holding, a disk that is full — Openote now opens one that works
+  and tells you what happened to the other, instead of refusing to start. Even
+  if *every* notebook is unreadable, the window opens and says why.
+- **And it says it in words.** "SqliteException(1546): disk I/O error" is not
+  something anybody can act on. It now names the notebook, gives the handful of
+  things that actually cause this on a desktop, and says the thing that matters
+  most: nothing has been lost. Your writing is in the notebook folder, not in
+  that file, and the file can be rebuilt from it.
+- **Opening a notebook no longer asks SQLite for a setting it could not
+  apply.** Every open ran `PRAGMA auto_vacuum=INCREMENTAL`, which reads like a
+  preference but takes a write transaction — and on a notebook that already has
+  content the setting cannot change anyway, so every notebook you own paid for
+  it and none of them got anything. It now runs only when a notebook is being
+  created, which is the only time it does anything.
+
 ### Added — a pre-release checklist a human can actually run (2026-09-03)
 
 - **[docs/pre-release-checklist.md](docs/pre-release-checklist.md)**: the
