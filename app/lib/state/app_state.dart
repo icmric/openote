@@ -6086,11 +6086,8 @@ class AppState extends ChangeNotifier
   OpenNotebookResult? notebookOpenProblem(String nb) {
     final e = _repo.notebookOpenError(nb);
     if (e == null) return null;
-    final title = _repo.notebooks
-            .where((n) => n.id == nb)
-            .firstOrNull
-            ?.title ??
-        'That notebook';
+    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull;
+    final title = ref?.title ?? 'That notebook';
     if (e is NotebookFileMissing) {
       return OpenNotebookResult(
           OpenNotebookOutcome.notFound,
@@ -6098,7 +6095,7 @@ class AppState extends ChangeNotifier
           'left it. If it lives on a drive or a memory stick, plug that in and '
           'open it again. Your writing is safe either way — it is in the '
           'notebook folder beside this file, not inside it.',
-          details: '$e');
+          details: _openFailureDetails(ref?.file, e));
     }
     return OpenNotebookResult(
         OpenNotebookOutcome.failed,
@@ -6108,7 +6105,41 @@ class AppState extends ChangeNotifier
         'Openote has opened a different notebook so you can carry on; try this '
         'one again in a moment. Nothing has been lost: your writing lives in '
         'the notebook folder, and this file can be rebuilt from it.',
-        details: '$e');
+        details: _openFailureDetails(ref?.file, e));
+  }
+
+  /// The exception, plus what the files it names actually look like right now.
+  ///
+  /// **Written for the person who has to diagnose this, which is usually the
+  /// person it happened to.** "disk I/O error" says nothing on its own; a
+  /// container of 0 bytes, or a `-wal` larger than the notebook, or a missing
+  /// `.onotebook` folder beside it, each say something quite specific — and
+  /// asking a user to go and measure those by hand is asking most of them to
+  /// give up. Behind the Advanced fold, so nobody sees it who did not ask.
+  static String _openFailureDetails(String? file, Object e) {
+    final out = StringBuffer('$e');
+    if (file == null) return out.toString();
+    out.write('\n\n$file');
+    for (final suffix in const ['', '-wal', '-shm']) {
+      final f = File('$file$suffix');
+      // `statSync` rather than `existsSync` + `lengthSync`: a file that
+      // exists but cannot be measured is itself a finding, and two calls
+      // could disagree about a file being replaced underneath them.
+      try {
+        final st = f.statSync();
+        out.write(st.type == FileSystemEntityType.notFound
+            ? '\n  ${suffix.isEmpty ? '.onote' : suffix}: not there'
+            : '\n  ${suffix.isEmpty ? '.onote' : suffix}: ${st.size} B, '
+                'modified ${st.modified.toIso8601String()}, mode ${st.modeString()}');
+      } catch (err) {
+        out.write('\n  ${suffix.isEmpty ? '.onote' : suffix}: unreadable ($err)');
+      }
+    }
+    final logs = Directory('${p.withoutExtension(file)}.onotebook');
+    out.write(logs.existsSync()
+        ? '\n  .onotebook: present — the writing is here'
+        : '\n  .onotebook: MISSING');
+    return out.toString();
   }
 
   OpenNotebookResult? pendingOpenNotice;

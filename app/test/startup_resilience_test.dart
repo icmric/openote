@@ -159,6 +159,28 @@ void main() {
           reason: 'the technical cause is kept, just not put on the screen');
     });
 
+    test('carries the diagnosis, not just the exception', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // "disk I/O error" says nothing on its own. What the files look like at
+      // the moment it failed says a great deal — and the person who has to
+      // read it is usually the person it happened to, who should not have to
+      // go and measure three files by hand to report a bug.
+      final repo = await workspaceOf(['Good', 'Broken']);
+      final broken = repo.notebooks.firstWhere((n) => n.title == 'Broken').id;
+      final file = repo.notebooks.firstWhere((n) => n.id == broken).file;
+      corrupt(repo, broken);
+      final app = AppState(repo);
+      addTearDown(app.dispose);
+
+      final details = app.notebookOpenProblem(broken)!.details!;
+      expect(details, contains(file), reason: 'which file');
+      expect(details, contains('.onote:'), reason: 'and how big it is');
+      expect(details, contains('-wal'), reason: 'and its write-ahead log');
+      expect(details, contains('.onotebook'),
+          reason: 'and whether the notes themselves are still beside it — '
+              'which is the difference between a scare and a disaster');
+    });
+
     test('DOES NOT STOP THE APP STARTING — it opens another one', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final repo = await workspaceOf(['Good', 'Broken']);
