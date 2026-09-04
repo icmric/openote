@@ -7,7 +7,6 @@
 // accepting a sign-in Openote did not start, and that PKCE is computed the way
 // the specification says rather than the way it looked right.
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -32,12 +31,6 @@ Future<void> hitRedirect(String authorizeUrl,
   } finally {
     client.close(force: true);
   }
-}
-
-String idTokenFor(Map<String, dynamic> claims) {
-  String seg(Object o) =>
-      base64Url.encode(utf8.encode(jsonEncode(o))).replaceAll('=', '');
-  return '${seg({'alg': 'none'})}.${seg(claims)}.signature';
 }
 
 void main() {
@@ -165,6 +158,14 @@ void main() {
       // from the wrong one silently.
       expect(q['prompt'], 'select_account');
       expect(q['scope'], contains('Notes.Read'));
+      // Data minimisation, pinned: Openote asks for the notebooks and a
+      // refresh token, and learns nothing about the person. Adding an
+      // identity scope back should have to be a deliberate act that breaks a
+      // test, not something that drifts in.
+      expect(q['scope'], isNot(contains('profile')));
+      expect(q['scope'], isNot(contains('openid')));
+      expect(q['scope'], isNot(contains('email')));
+      expect(q['scope'], isNot(contains('User.Read')));
     });
   });
 
@@ -260,18 +261,4 @@ void main() {
     });
   });
 
-  group('who is signed in', () {
-    test('the account name is read from the id token', () {
-      expect(
-          GraphAuth.accountFromIdToken(
-              idTokenFor({'preferred_username': 'sam@uni.edu'})),
-          'sam@uni.edu');
-    });
-
-    test('a malformed id token is nobody, not a crash', () {
-      expect(GraphAuth.accountFromIdToken('not-a-token'), isNull);
-      expect(GraphAuth.accountFromIdToken(null), isNull);
-      expect(GraphAuth.accountFromIdToken('a.!!!not-base64!!!.c'), isNull);
-    });
-  });
 }

@@ -74,29 +74,32 @@ const String kGraphAuthority = 'https://login.microsoftonline.com/common';
 
 /// What Openote asks to be allowed to do.
 ///
-/// **The least it can possibly ask for.**
+/// **The least it can possibly ask for, and nothing whatsoever about the
+/// person.**
 ///
-/// `Notes.Read` and nothing else of the account: read the notebooks, write
-/// nothing back, touch no mail, no files, no calendar, no contacts. Even a
-/// stolen token is therefore read-only against OneNote and useless for
-/// anything else.
+/// `Notes.Read` reads the notebooks and does nothing else: no writing back, no
+/// mail, no files, no calendar, no contacts. `offline_access` grants no data at
+/// all — it only allows a refresh token, so a long import can outlive the
+/// one-hour access token instead of stopping halfway to ask for a password
+/// again.
 ///
-/// `offline_access` is what allows a long import to outlive the one-hour
-/// access token instead of stopping halfway to ask for a password again.
+/// **`openid` and `profile` were here and have been removed.** They were added
+/// so the app could show *"signed in as …"*, on the reasoning that the
+/// commonest setup mistake is having two Microsoft accounts and importing from
+/// the wrong one. The owner's objection was the right one: *"I dont personally
+/// see why we need to collect that data if we are just reading a notebook."*
 ///
-/// `openid` and `profile` are what make Microsoft return an id token at all —
-/// without them there is no id token, so [GraphAuth._accountFrom] finds
-/// nothing and the app cannot show WHICH account it is about to import from.
-/// That matters more than it sounds: the commonest setup mistake is being
-/// signed in to a work account and importing from the wrong one. Neither
-/// grants access to anything; they are how OpenID Connect says "tell me who
-/// just signed in".
-const List<String> kGraphScopes = [
-  'Notes.Read',
-  'offline_access',
-  'openid',
-  'profile',
-];
+/// Nothing is lost, because the identity was never the thing that answered the
+/// question. Microsoft's own account picker shows which account is being
+/// chosen (`prompt=select_account`, always), and the notebook list that comes
+/// back names the notebooks — which is a far better signal than an email
+/// address, since it is the notebooks the student is actually looking for. For
+/// a remembered sign-in the picker offers "use a different account", which
+/// solves the same problem without knowing who anybody is.
+///
+/// So Openote never learns the student's name, username, email or user id, and
+/// the consent screen has two lines on it instead of four.
+const List<String> kGraphScopes = ['Notes.Read', 'offline_access'];
 
 /// Where the refresh token lives: the OS credential store, never a file.
 const String _kRefreshKey = 'onenote.graph.refresh';
@@ -107,16 +110,11 @@ class GraphSession {
     required this.accessToken,
     required this.expiresAt,
     this.refreshToken,
-    this.account,
   });
 
   final String accessToken;
   final DateTime expiresAt;
   final String? refreshToken;
-
-  /// Whoever is signed in, for showing back to them. Never used to decide
-  /// anything.
-  final String? account;
 
   /// Treated as expired a minute early, so a token cannot lapse *during* the
   /// request it was fetched for.
@@ -167,9 +165,6 @@ class GraphAuth {
   @visibleForTesting
   static String friendlyTokenError(String? code, String? description) =>
       _friendlyTokenError(code, description);
-
-  @visibleForTesting
-  static String? accountFromIdToken(String? idToken) => _accountFrom(idToken);
 
   /// A token that is good right now, signing in or refreshing as needed.
   Future<String> accessToken() async {
@@ -386,7 +381,6 @@ class GraphAuth {
       accessToken: json['access_token'] as String? ?? '',
       expiresAt: DateTime.now().add(Duration(seconds: expires)),
       refreshToken: json['refresh_token'] as String?,
-      account: _accountFrom(json['id_token'] as String?),
     );
   }
 
@@ -418,26 +412,6 @@ class GraphAuth {
         return 'Openote was not given permission to read your notebooks.';
       default:
         return 'Microsoft would not complete the sign-in.';
-    }
-  }
-
-  /// The signed-in name, read from the id token's middle segment.
-  ///
-  /// **Not verified, and deliberately not trusted for anything.** It came down
-  /// the same TLS connection as the access token and is used only to show the
-  /// student which account they picked; nothing is decided from it.
-  static String? _accountFrom(String? idToken) {
-    if (idToken == null) return null;
-    final parts = idToken.split('.');
-    if (parts.length < 2) return null;
-    try {
-      final pad = '=' * ((4 - parts[1].length % 4) % 4);
-      final claims =
-          jsonDecode(utf8.decode(base64Url.decode(parts[1] + pad))) as Map;
-      return (claims['preferred_username'] ?? claims['email'] ?? claims['name'])
-          as String?;
-    } catch (_) {
-      return null;
     }
   }
 
