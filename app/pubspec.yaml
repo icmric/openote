@@ -37,6 +37,12 @@ dependencies:
   # spreadsheet package. Licences audited per LICENSING.md.
   archive: ^4.0.9
   xml: ^6.6.1
+  # OneNote-over-the-internet import: Microsoft Graph returns a page as HTML,
+  # and HTML is not XML -- unclosed <img>/<br>, named entities, implied tbody.
+  # The Dart team's tolerant HTML5 parser rather than a hand-rolled one,
+  # because "mostly well-formed" input is exactly where hand-rolling bites.
+  # Pure Dart, no native code. BSD-3-Clause; audited per LICENSING.md.
+  html: ^0.15.4
 
   # PDF export (pure Dart)
   pdf: ^3.10.0
