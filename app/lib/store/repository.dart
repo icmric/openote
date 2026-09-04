@@ -260,33 +260,222 @@ class Repository {
     return repo;
   }
 
-  /// Prefer ~/Documents/Openote, but fall back to the app-support directory.
-  /// On Windows the Documents "known folder" can be redirected (OneDrive) so
-  /// the literal path may not exist — creating it then fails with errno 2.
+  /// Where the workspace lives: **app data first, and Documents only if a
+  /// notebook is already there.**
+  ///
+  /// ## Why not Documents, which is where this used to go
+  ///
+  /// Windows Defender's **Controlled Folder Access** — its anti-ransomware
+  /// feature — guards Documents, Desktop, Pictures, Videos, Music and
+  /// Favourites, and refuses writes from any program not on its allow list.
+  /// Openote is not on it, so every write into `Documents\Openote` was
+  /// refused and the app came up saying it could not read the notebook.
+  /// Measured on the owner's machine, repeatedly, over three weeks:
+  ///
+  ///     Event 1123: openote.exe has been blocked from modifying
+  ///     %userprofile%\Documents\Openote\ by Controlled Folder Access
+  ///
+  /// Three things about that are worth writing down, because all three are
+  /// the opposite of what the symptom suggests:
+  ///
+  ///  1. **Nothing was detected as malware.** SQLite merely happened to be
+  ///     holding the pen when the write was refused, so the failure surfaced
+  ///     as a database error and read as "Defender is blocking SQLite".
+  ///  2. **Code signing would not have helped.** Controlled Folder Access is
+  ///     an allow list, not a reputation check; signed and well-known
+  ///     applications are blocked by it too until a human allows them.
+  ///  3. **The old fallback could never fire.** It fell back to app data only
+  ///     when `dir.create()` THREW — and creating a directory that already
+  ///     exists succeeds, blocked or not. It tested creatability and the
+  ///     thing that fails is writability.
+  ///
+  /// App data is not on the guarded list, so a fresh install cannot hit any of
+  /// this. Notebooks are still reachable from anywhere the student likes: the
+  /// sync folder, "Save the whole notebook as folders and files…", and opening
+  /// a `.onotebook` by double-click all work on paths of their choosing.
+  ///
+  /// ## Why an existing Documents workspace is left where it is
+  ///
+  /// Moving somebody's notes without asking is worse than the bug. If a
+  /// workspace is already in Documents this keeps using it, and
+  /// [workspaceIsWritable] is what the shell asks before deciding whether to
+  /// offer the move — because a Documents workspace on a machine with the
+  /// feature turned off is working perfectly and must not be disturbed.
+  ///
+  /// Note the one-way constraint if it is NOT working: reading out of
+  /// Documents is allowed and writing into app data is allowed, but *deleting*
+  /// from Documents is itself a modification and is refused. So the move is a
+  /// copy that leaves the original in place.
   ///
   /// Public because `main()` needs the answer *before* it opens anything: the
   /// single-instance lock lives in this folder, and a second Openote has to
   /// find it and step aside before it paints a window (see
   /// `core/single_instance.dart`).
   static Future<Directory> resolveWorkspaceDir() async {
-    Future<Directory?> tryCreate(Future<Directory> Function() base) async {
+    Future<Directory?> at(Future<Directory> Function() base,
+        {required bool create}) async {
       try {
         final root = await base();
         final dir = Directory(p.join(root.path, 'Openote'));
-        await dir.create(recursive: true);
+        if (create) await dir.create(recursive: true);
         return dir;
       } catch (_) {
         return null;
       }
     }
 
-    final dir = await tryCreate(getApplicationDocumentsDirectory) ??
-        await tryCreate(getApplicationSupportDirectory);
-    if (dir == null) {
+    // Already living in app data: nothing to decide.
+    final appData = await at(getApplicationSupportDirectory, create: false);
+    if (appData != null && _looksLikeWorkspace(appData)) return appData;
+
+    // Already living in Documents: stay, so nobody's notes move on their own.
+    final docs = await at(getApplicationDocumentsDirectory, create: false);
+    if (docs != null && _looksLikeWorkspace(docs)) return docs;
+
+    // A fresh install, and the whole point of this method: app data, where
+    // Controlled Folder Access has no say.
+    final made = await at(getApplicationSupportDirectory, create: true) ??
+        await at(getApplicationDocumentsDirectory, create: true);
+    if (made == null) {
       throw StateError(
-          'Openote could not create a workspace folder in Documents or app data.');
+          'Openote could not create a workspace folder in app data or Documents.');
     }
-    return dir;
+    return made;
+  }
+
+  /// Where a blocked workspace should move to, or null if there is nowhere
+  /// better — which is the case on every platform but Windows, and on Windows
+  /// when the workspace is already in app data.
+  static Future<Directory?> saferWorkspaceDir(Directory blocked) async {
+    try {
+      final root = await getApplicationSupportDirectory();
+      final dir = Directory(p.join(root.path, 'Openote'));
+      if (p.equals(dir.path, blocked.path)) return null;
+      return dir;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Copy a workspace out of a guarded folder, leaving the original untouched.
+  ///
+  /// **A copy, and deliberately not a move.** Deleting out of Documents is
+  /// itself a modification of Documents, so Controlled Folder Access refuses
+  /// it — the very feature that caused this would block the tidy-up. Leaving
+  /// the original behind is also the safer half of the trade: if anything here
+  /// is wrong, every byte of the student's writing is still where it was.
+  ///
+  /// Every file is verified byte-for-byte as it lands ([_copyDirectory]), so a
+  /// half-finished copy throws rather than being adopted.
+  static Future<Directory> copyWorkspaceTo(
+      Directory from, Directory to) async {
+    if (p.equals(from.path, to.path)) return to;
+    if (_looksLikeWorkspace(to)) {
+      throw StateError(
+          'There is already a workspace at ${to.path} — nothing was copied.');
+    }
+    await _copyDirectory(from, to);
+    final problem = workspaceWriteProblem(to);
+    if (problem != null) {
+      throw StateError('The copy landed but cannot be written to: $problem');
+    }
+    return to;
+  }
+
+  /// A workspace is somewhere `workspace.json` already is.
+  ///
+  /// The registry file, not the folder: an empty `Openote` directory is what
+  /// the old code left behind in Documents on every machine it ever ran on,
+  /// and treating that as "your notebooks are here" would send every existing
+  /// user to an empty app.
+  static bool _looksLikeWorkspace(Directory dir) {
+    try {
+      return File(p.join(dir.path, 'workspace.json')).existsSync();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Can Openote actually write here — not "does the folder exist".
+  ///
+  /// The distinction is the whole bug: under Controlled Folder Access the
+  /// folder is readable, `create()` on it succeeds, and every write into it is
+  /// refused. So this writes a real file and deletes it again.
+  ///
+  /// Returns null when all is well, or a sentence saying what is wrong. The
+  /// sentence is deliberately about the *folder*, not about SQLite, because
+  /// the student did not choose SQLite and cannot do anything about it.
+  static String? workspaceWriteProblem(Directory dir) {
+    final probe = File(p.join(dir.path, '.openote-write-test'));
+    try {
+      probe.writeAsBytesSync(const [0], flush: true);
+      probe.deleteSync();
+      return null;
+    } on FileSystemException catch (e) {
+      return writeProblemSentence(
+          path: dir.path,
+          errorCode: e.osError?.errorCode,
+          detail: e.osError?.message ?? e.message);
+    } catch (e) {
+      return 'Openote could not save into this folder: $e';
+    }
+  }
+
+  /// Which sentence a failed write earns.
+  ///
+  /// Separated from the write itself so it can be tested: the case that
+  /// matters most — Controlled Folder Access refusing a write into Documents
+  /// — cannot be reproduced in a test without an antivirus product and an
+  /// administrator, and the *sentence* is the part that was wrong before.
+  ///
+  /// errno 5 on Windows is `ERROR_ACCESS_DENIED`, and 13 is POSIX `EACCES`.
+  /// Controlled Folder Access refuses the write rather than announcing itself,
+  /// so a denied write into one of the folders it guards is as close to a
+  /// positive identification as is available.
+  @visibleForTesting
+  static String? writeProblemSentence({
+    required String path,
+    required int? errorCode,
+    required String detail,
+  }) {
+    final denied = errorCode == 5 || errorCode == 13;
+    if (denied && Platform.isWindows && _isGuardedFolder(path)) {
+      return 'Windows Defender is blocking Openote from saving into this '
+          'folder. Its ransomware protection — "Controlled folder access" — '
+          'guards Documents, and Openote is not on its list of allowed '
+          'programs.';
+    }
+    if (denied) {
+      return 'Openote is not allowed to save into this folder.';
+    }
+    return 'Openote could not save into this folder: $detail';
+  }
+
+  /// The folders Windows Defender guards out of the box.
+  ///
+  /// Matched on the folder NAME rather than by asking Defender, because there
+  /// is no API for the question and shelling out to PowerShell on a startup
+  /// path to ask would cost more than the guess is worth. Only used to choose
+  /// which sentence to show, never to decide anything.
+  @visibleForTesting
+  static bool isGuardedFolderPath(String path) => _isGuardedFolder(path);
+
+  static bool _isGuardedFolder(String path) {
+    final lower = path.toLowerCase();
+    for (final name in const [
+      'documents',
+      'desktop',
+      'pictures',
+      'videos',
+      'music',
+      'favorites',
+    ]) {
+      if (lower.contains('${Platform.pathSeparator}$name${Platform.pathSeparator}') ||
+          lower.endsWith('${Platform.pathSeparator}$name')) {
+        return true;
+      }
+    }
+    return false;
   }
 
   File get _workspaceFile => File(p.join(workspaceDir.path, 'workspace.json'));

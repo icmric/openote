@@ -1,5 +1,5 @@
 import 'l10n/l10n.dart';
-import 'dart:io' show exit;
+import 'dart:io' show Directory, exit;
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
@@ -93,6 +93,7 @@ class OpenoteBoot extends StatefulWidget {
 class _OpenoteBootState extends State<OpenoteBoot> {
   AppState? _app;
   (Object, StackTrace)? _error;
+  _WorkspaceBlocked? _blocked;
   AppLifecycleListener? _lifecycle;
 
   @override
@@ -103,6 +104,21 @@ class _OpenoteBootState extends State<OpenoteBoot> {
 
   Future<void> _open() async {
     try {
+      // **Before opening anything.** A workspace inside a folder Windows
+      // Defender guards is readable but not writable, so every check that asks
+      // "is it there?" passes and the first save fails — which used to surface
+      // as a SQLite error about a notebook that could not be read. Ask the
+      // question that actually matters, once, and answer it in words.
+      final dir = await Repository.resolveWorkspaceDir();
+      final problem = Repository.workspaceWriteProblem(dir);
+      if (problem != null) {
+        final safer = await Repository.saferWorkspaceDir(dir);
+        if (mounted) {
+          setState(() => _blocked =
+              _WorkspaceBlocked(dir: dir, safer: safer, problem: problem));
+        }
+        return;
+      }
       final repo = await Repository.open();
       final app = AppState(repo);
       await app.init(notebookPath: widget.notebookPath);
@@ -136,8 +152,24 @@ class _OpenoteBootState extends State<OpenoteBoot> {
     super.dispose();
   }
 
+  /// Copy the workspace somewhere writable, then carry on into the app.
+  Future<String?> _moveWorkspace(_WorkspaceBlocked blocked) async {
+    try {
+      await Repository.copyWorkspaceTo(blocked.dir, blocked.safer!);
+      if (mounted) setState(() => _blocked = null);
+      await _open();
+      return null;
+    } catch (e) {
+      return '$e';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final blocked = _blocked;
+    if (blocked != null) {
+      return _BlockedWorkspace(blocked: blocked, onMove: _moveWorkspace);
+    }
     final err = _error;
     if (err != null) return _StartupError(error: err.$1, stack: err.$2);
     final app = _app;
@@ -162,6 +194,154 @@ class _OpenoteBootState extends State<OpenoteBoot> {
                   height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2.4)),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A workspace Openote can read but not write, and where it could go instead.
+class _WorkspaceBlocked {
+  const _WorkspaceBlocked(
+      {required this.dir, required this.safer, required this.problem});
+
+  /// Where the notebooks are now.
+  final Directory dir;
+
+  /// Somewhere nothing guards, or null when there is nowhere better.
+  final Directory? safer;
+
+  /// What went wrong, already in plain words.
+  final String problem;
+}
+
+/// **"Openote cannot save here"**, and one button that fixes it.
+///
+/// This screen exists because of what the old one said instead. A student
+/// whose Documents folder is guarded by Windows Defender got a SQLite
+/// exception and a stack trace about a notebook that could not be read — which
+/// names neither the cause (an antivirus setting), the place (one folder), nor
+/// anything they could do. The fix was two clicks away in Windows Security and
+/// there was no way to know that from the screen.
+///
+/// So: say what is blocking, say where, and offer to move the notebooks
+/// somewhere it does not apply. The manual route is spelled out underneath for
+/// anyone who would rather keep their notes in Documents and allow Openote —
+/// both are legitimate and the student picks.
+class _BlockedWorkspace extends StatefulWidget {
+  const _BlockedWorkspace({required this.blocked, required this.onMove});
+
+  final _WorkspaceBlocked blocked;
+
+  /// Returns null on success, or the failure in words.
+  final Future<String?> Function(_WorkspaceBlocked) onMove;
+
+  @override
+  State<_BlockedWorkspace> createState() => _BlockedWorkspaceState();
+}
+
+class _BlockedWorkspaceState extends State<_BlockedWorkspace> {
+  bool _moving = false;
+  String? _failed;
+
+  @override
+  Widget build(BuildContext context) {
+    final b = widget.blocked;
+    return MaterialApp(
+      title: 'Openote',
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
+      localeListResolutionCallback: onoteResolveLocale,
+      debugShowCheckedModeBanner: false,
+      theme: onoteTheme(Brightness.light),
+      darkTheme: onoteTheme(Brightness.dark),
+      home: Scaffold(
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Openote cannot save to this folder',
+                      style: TextStyle(
+                          fontSize: 22, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 10),
+                  Text(b.problem),
+                  const SizedBox(height: 10),
+                  // Named plainly, because the next paragraph asks them to
+                  // approve moving what is in it.
+                  Text('Your notebooks are in:\n${b.dir.path}',
+                      style: const TextStyle(fontSize: 12)),
+                  const SizedBox(height: 10),
+                  const Text(
+                      'Nothing has been lost and nothing has been changed — '
+                      'Openote can read your notes, it just cannot save into '
+                      'this folder.'),
+                  const SizedBox(height: 18),
+                  if (b.safer != null) ...[
+                    FilledButton.icon(
+                      onPressed: _moving
+                          ? null
+                          : () async {
+                              setState(() {
+                                _moving = true;
+                                _failed = null;
+                              });
+                              final err = await widget.onMove(b);
+                              if (mounted && err != null) {
+                                setState(() {
+                                  _moving = false;
+                                  _failed = err;
+                                });
+                              }
+                            },
+                      icon: _moving
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.drive_file_move_outlined,
+                              size: 18),
+                      label: Text(_moving
+                          ? 'Copying your notebooks…'
+                          : 'Copy my notebooks somewhere Openote can save'),
+                    ),
+                    const SizedBox(height: 6),
+                    // Said before they press it, not after: a copy that leaves
+                    // the original behind is the safe choice here, and it is
+                    // also the only one available — removing anything from a
+                    // guarded folder is itself blocked.
+                    Text(
+                        'Copies them to ${b.safer!.path}. The originals stay '
+                        'exactly where they are.',
+                        style: const TextStyle(fontSize: 12)),
+                  ],
+                  if (_failed != null) ...[
+                    const SizedBox(height: 12),
+                    SelectableText('That did not work: $_failed',
+                        style: const TextStyle(fontSize: 12)),
+                  ],
+                  const SizedBox(height: 22),
+                  const Text('Or allow Openote to save where it is',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  const Text(
+                      '1. Open Windows Security, then Virus & threat '
+                      'protection.\n'
+                      '2. Under Ransomware protection, choose Manage '
+                      'ransomware protection.\n'
+                      '3. Choose Allow an app through Controlled folder '
+                      'access, then Add an allowed app, and pick Openote.\n'
+                      '4. Start Openote again.',
+                      style: TextStyle(fontSize: 13)),
+                ],
+              ),
+            ),
           ),
         ),
       ),
