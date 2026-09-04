@@ -33,6 +33,26 @@ void main() {
     return d;
   }
 
+  /// Wait until the hand-off's request file has actually landed.
+  ///
+  /// This used to be `await Future.delayed(120ms)`, which is a bet on how
+  /// fast the machine is rather than a statement about what happened: the
+  /// hand-off writes a temp file and renames it, and on a starved CI runner
+  /// (two cores, a full suite in parallel, an antivirus between the write
+  /// and the rename — the shape of windows-latest) 120 ms is not always
+  /// enough. It failed there while the same commit passed in a second run.
+  /// Polling asks the real question, and costs a millisecond when the answer
+  /// is already yes.
+  Future<void> awaitRequest(Directory dir) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (!SingleInstance.requestFile(dir).existsSync()) {
+      if (DateTime.now().isAfter(deadline)) {
+        fail('the hand-off never wrote its request file');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+  }
+
   test('nothing pending means nothing to do', () {
     expect(SingleInstance.takeRequest(tempDir()), isNull);
   });
@@ -42,8 +62,7 @@ void main() {
     // Written by the launching process; the holder consumes it.
     unawaited(SingleInstance.handOff(dir, r'C:\notes\Physics.onote',
         timeout: const Duration(seconds: 2)));
-    // Give the write + rename a moment to land.
-    await Future<void>.delayed(const Duration(milliseconds: 120));
+    await awaitRequest(dir);
 
     expect(SingleInstance.takeRequest(dir), r'C:\notes\Physics.onote');
     expect(SingleInstance.takeRequest(dir), isNull,
@@ -55,7 +74,7 @@ void main() {
     final dir = tempDir();
     unawaited(SingleInstance.handOff(dir, null,
         timeout: const Duration(seconds: 2)));
-    await Future<void>.delayed(const Duration(milliseconds: 120));
+    await awaitRequest(dir);
 
     // '' and null mean different things: '' is "you were launched with no
     // notebook, just show yourself", null is "there was no request".

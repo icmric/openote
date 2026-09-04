@@ -1375,4 +1375,43 @@ void _autoSyncIsAwaitable(bool Function() haveSqlite) {
     expect(app.autoSync, isFalse);
     app.cancelPendingSave();
   });
+
+  // Stopping the watcher is only half of "the folder is quiet now". The other
+  // half is the pull the watcher ALREADY started, which is the actual writer:
+  // it folds foreign ops and advances a watermark inside the very folder the
+  // caller is usually about to move, purge or photograph.
+  //
+  // That is not a hypothetical. After the stop itself was made awaitable, the
+  // purge test still failed on windows-latest and passed on a second run of
+  // the same commit — an in-flight auto-pull, tracked by nothing, writing
+  // between the two photographs.
+  //
+  // Asserted against the source because reproducing it needs a real OS watch
+  // event, which is exactly the thing that only fires reliably on the machine
+  // where it breaks. Three claims, each one a line somebody could delete
+  // without noticing:
+  test('an auto-pull the watcher started can be waited on', () {
+    final src = File('lib/state/app_state.dart').readAsStringSync();
+
+    /// The source from [from] to the next [close] — enough to tell "inside
+    /// this member" from "anywhere in an 8,900-line file", which is the whole
+    /// point of reading it this way.
+    String memberAfter(String from, String close) {
+      final i = src.indexOf(from);
+      expect(i, greaterThan(-1), reason: 'the source still has `$from`');
+      final j = src.indexOf(close, i);
+      expect(j, greaterThan(i), reason: 'could not find the end of `$from`');
+      return src.substring(i, j);
+    }
+
+    expect(memberAfter('onForeignChange: () {', '\n      },'),
+        contains('_autoPulls['),
+        reason: 'the watcher must park the pull it starts, not drop it');
+    expect(memberAfter('Future<void> settleBackgroundWork() async {', '\n  }'),
+        contains('_autoPulls.values'),
+        reason: '"all background work is done" has to include the pulls');
+    expect(memberAfter('Future<void> _stopWatching() async {', '\n  }'),
+        contains('_autoPulls'),
+        reason: 'turning the watcher off must wait for the pull it fired');
+  });
 }

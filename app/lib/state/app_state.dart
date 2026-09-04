@@ -2450,6 +2450,7 @@ class AppState extends ChangeNotifier
         ..._recorderWarms.values,
         ..._blobBackfills.values,
         ..._mirrorRuns.values,
+        ..._autoPulls.values,
         if (_housekeepingRun != null) _housekeepingRun!,
       ];
       if (pending.isEmpty) return;
@@ -2605,24 +2606,46 @@ class AppState extends ChangeNotifier
       opsDir: store.opsDir,
       ownDevice: localDeviceId(),
       onForeignChange: () {
+        final nb = notebookId!;
         lastForeignSignalAt = DateTime.now();
         debugPrint('[openote/sync] a foreign log changed — pulling');
         // Fire-and-forget: a failed pull must not take down the watcher, and
         // the next change (or the manual button) retries anyway.
-        syncPull(notebookId!).then((n) {
+        //
+        // **But parked in [_autoPulls], for the same reason [runMirrors]
+        // parks its run.** Fire-and-forget is about who WAITS, not about who
+        // CAN wait, and a pull is the longest-running writer into the shared
+        // folder there is. Without this, stopping the watcher stopped future
+        // events and said nothing about the pull already in flight — so
+        // `settleBackgroundWork()` could report everything quiet while a pull
+        // was still folding ops and advancing a watermark. That is a real
+        // hazard on the two paths that ask precisely that question before
+        // touching the folder (purge and move), and it is what failed the
+        // purge test on windows-latest even after the watcher stop itself
+        // was already being awaited.
+        final Future<void> f = syncPull(nb).then<void>((n) {
           lastPullAt = DateTime.now();
           debugPrint('[openote/sync] auto-pull folded $n op(s)');
           notifyListeners();
         }).catchError((Object e) {
           debugPrint('[openote/sync] auto-pull failed: $e');
         });
+        _autoPulls[nb] = f;
+        unawaited(f.whenComplete(() {
+          if (identical(_autoPulls[nb], f)) _autoPulls.remove(nb);
+        }));
       },
     )..start();
     return stopped;
   }
 
-  /// Stop the folder watcher, and hand back the future that says when its
-  /// handle is actually released.
+  /// Auto-pulls the watcher has started, parked so they can be waited on.
+  ///
+  /// Keyed by notebook, and at most one entry per notebook because [syncPull]
+  /// refuses to run two at once for the same one.
+  final Map<String, Future<void>> _autoPulls = {};
+
+  /// Stop the folder watcher, and wait for the work it already started.
   ///
   /// **Whoever is about to touch that directory must await this.** The rule
   /// was written for `moveNotebookToFolder`, which deletes the old log
@@ -2632,12 +2655,24 @@ class AppState extends ChangeNotifier
   /// test flake on Windows. See `FolderWatch.stop` for why the cancel is
   /// asynchronous, and why Windows is where it shows.
   ///
+  /// **Two things have to settle, not one.** Stopping the watch ends future
+  /// events; it says nothing about a pull the watch has ALREADY fired, and
+  /// that pull is the actual writer — it folds foreign ops and advances a
+  /// watermark, both inside the folder the caller is about to move, purge or
+  /// photograph. Awaiting only the handle release left that hole, and the
+  /// purge test went on failing on windows-latest until [_autoPulls] closed
+  /// it.
+  ///
   /// `dispose` is the one place that legitimately cannot wait: it is
   /// synchronous by signature, and the process is going anyway.
-  Future<void> _stopWatching() {
+  Future<void> _stopWatching() async {
     final w = _watcher;
     _watcher = null;
-    return w?.stop() ?? Future<void>.value();
+    await w?.stop();
+    final pulls = _autoPulls.values.toList();
+    if (pulls.isNotEmpty) {
+      await Future.wait(pulls).catchError((_) => const <void>[]);
+    }
   }
 
   /// Where this notebook lives, for the sync surface.
