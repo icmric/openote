@@ -30,15 +30,25 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   machine set to Chinese-then-English could resolve on the wrong end of its own
   preference order. It uses `localeListResolutionCallback` now.
 
-### Fixed — turning sync off did not wait for the folder watcher to let go (2026-09-03)
+### Fixed — turning sync off did not wait for the work already running (2026-09-03)
 
 - **`setAutoSync(false)` returned before the watcher had actually stopped.**
   The stop was started and its result thrown away, so for a moment afterwards
   a notebook you had just told Openote to stop watching could still be written
   to — which on Windows also means an open handle on a folder you may be about
   to move, rename or delete. It now waits, and everything that turns the
-  watcher off waits with it. This is what made one CI run fail on Windows and
-  pass everywhere else; the flake was the bug reporting itself.
+  watcher off waits with it.
+- **And stopping the watcher was only half of it.** Noticing another device's
+  change starts a catch-up, and that catch-up is the thing that actually
+  writes — it folds the other device's edits in and records how far it got,
+  both inside the folder. Stopping the watcher stopped it noticing anything
+  new; a catch-up already under way carried on regardless, and nothing in the
+  app could wait for it. So "everything has finished" was answered wrongly on
+  the two occasions that ask it precisely because they are about to touch that
+  folder: moving a notebook, and deleting one for good. Both wait properly
+  now.
+- Both showed up as one CI run failing on Windows while the same commit passed
+  everywhere else. The flake was the bug reporting itself.
 
 ### Added — a pre-release checklist a human can actually run (2026-09-03)
 
