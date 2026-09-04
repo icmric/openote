@@ -74,11 +74,29 @@ const String kGraphAuthority = 'https://login.microsoftonline.com/common';
 
 /// What Openote asks to be allowed to do.
 ///
-/// `Notes.Read` and nothing else — read the notebooks, write nothing, touch no
-/// mail, no files, no calendar. `offline_access` is what allows a long import
-/// to outlive the one-hour access token without asking the student to sign in
-/// again halfway through.
-const List<String> kGraphScopes = ['Notes.Read', 'offline_access'];
+/// **The least it can possibly ask for.**
+///
+/// `Notes.Read` and nothing else of the account: read the notebooks, write
+/// nothing back, touch no mail, no files, no calendar, no contacts. Even a
+/// stolen token is therefore read-only against OneNote and useless for
+/// anything else.
+///
+/// `offline_access` is what allows a long import to outlive the one-hour
+/// access token instead of stopping halfway to ask for a password again.
+///
+/// `openid` and `profile` are what make Microsoft return an id token at all —
+/// without them there is no id token, so [GraphAuth._accountFrom] finds
+/// nothing and the app cannot show WHICH account it is about to import from.
+/// That matters more than it sounds: the commonest setup mistake is being
+/// signed in to a work account and importing from the wrong one. Neither
+/// grants access to anything; they are how OpenID Connect says "tell me who
+/// just signed in".
+const List<String> kGraphScopes = [
+  'Notes.Read',
+  'offline_access',
+  'openid',
+  'profile',
+];
 
 /// Where the refresh token lives: the OS credential store, never a file.
 const String _kRefreshKey = 'onenote.graph.refresh';
