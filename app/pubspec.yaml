@@ -43,6 +43,10 @@ dependencies:
   # because "mostly well-formed" input is exactly where hand-rolling bites.
   # Pure Dart, no native code. BSD-3-Clause; audited per LICENSING.md.
   html: ^0.15.4
+  # SHA-256 for the PKCE challenge in the Microsoft sign-in. Already in the
+  # tree transitively; promoted because this app now imports it directly.
+  # BSD-3-Clause (Dart team); audited per LICENSING.md.
+  crypto: ^3.0.0
 
   # PDF export (pure Dart)
   pdf: ^3.10.0
