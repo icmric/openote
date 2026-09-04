@@ -368,5 +368,19 @@
   "shellPulled": "{count, plural, =1{1 alteração recebida} other{{count} alterações recebidas}}",
   "shellPageLocked": "“{title}” está bloqueada",
   "shellTagGroup": "{tag}  ({count})",
-  "shellUnlock": "Desbloquear"
+  "shellUnlock": "Desbloquear",
+  "onboardingFreshTitle": "Começar um bloco de notas novo",
+  "onboardingFreshBody": "Um bloco de notas vazio, pronto a escrever. Pode trazer as suas notas mais tarde.",
+  "onboardingFreshAction": "Começar do zero",
+  "onboardingCloudTitle": "Trazer notas do OneNote",
+  "onboardingCloudBody": "Inicie sessão na Microsoft e escolha um bloco de notas. Não é preciso exportar nada antes, e funciona em qualquer computador.",
+  "onboardingCloudAction": "Iniciar sessão",
+  "oneNoteCloudTitle": "Trazer um bloco de notas do OneNote",
+  "oneNoteCloudIntro": "O Openote vai ler os seus blocos de notas do OneNote. Não os pode alterar.",
+  "oneNoteCloudSignIn": "Iniciar sessão na Microsoft",
+  "oneNoteCloudSigningIn": "A aguardar o seu navegador…",
+  "oneNoteCloudLoading": "A procurar os seus blocos de notas…",
+  "oneNoteCloudEmpty": "Não foram encontrados blocos de notas nesta conta.",
+  "oneNoteCloudOther": "Usar outra conta",
+  "oneNoteCloudNoInk": "A escrita à mão não pode ser trazida por esta via — todo o resto pode."
 }

@@ -368,5 +368,19 @@
   "shellPulled": "{count, plural, =1{1 modification récupérée} other{{count} modifications récupérées}}",
   "shellPageLocked": "« {title} » est verrouillée",
   "shellTagGroup": "{tag}  ({count})",
-  "shellUnlock": "Déverrouiller"
+  "shellUnlock": "Déverrouiller",
+  "onboardingFreshTitle": "Commencer un nouveau carnet",
+  "onboardingFreshBody": "Un carnet vide, prêt à l'emploi. Vous pourrez importer vos notes plus tard.",
+  "onboardingFreshAction": "Commencer à zéro",
+  "onboardingCloudTitle": "Importer des notes depuis OneNote",
+  "onboardingCloudBody": "Connectez-vous à Microsoft et choisissez un carnet. Rien à exporter au préalable, et cela fonctionne sur n'importe quel ordinateur.",
+  "onboardingCloudAction": "Se connecter",
+  "oneNoteCloudTitle": "Importer un carnet depuis OneNote",
+  "oneNoteCloudIntro": "Openote lira vos carnets OneNote. Il ne peut pas les modifier.",
+  "oneNoteCloudSignIn": "Se connecter à Microsoft",
+  "oneNoteCloudSigningIn": "En attente de votre navigateur…",
+  "oneNoteCloudLoading": "Recherche de vos carnets…",
+  "oneNoteCloudEmpty": "Aucun carnet trouvé sur ce compte.",
+  "oneNoteCloudOther": "Utiliser un autre compte",
+  "oneNoteCloudNoInk": "L'écriture manuscrite ne peut pas être importée par ce moyen — tout le reste, oui."
 }

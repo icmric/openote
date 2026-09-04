@@ -1307,6 +1307,52 @@ class LFr extends L {
   String get onboardingOneNoteAction => 'Choisir un fichier…';
 
   @override
+  String get onboardingFreshTitle => 'Commencer un nouveau carnet';
+
+  @override
+  String get onboardingFreshBody =>
+      'Un carnet vide, prêt à l\'emploi. Vous pourrez importer vos notes plus tard.';
+
+  @override
+  String get onboardingFreshAction => 'Commencer à zéro';
+
+  @override
+  String get onboardingCloudTitle => 'Importer des notes depuis OneNote';
+
+  @override
+  String get onboardingCloudBody =>
+      'Connectez-vous à Microsoft et choisissez un carnet. Rien à exporter au préalable, et cela fonctionne sur n\'importe quel ordinateur.';
+
+  @override
+  String get onboardingCloudAction => 'Se connecter';
+
+  @override
+  String get oneNoteCloudTitle => 'Importer un carnet depuis OneNote';
+
+  @override
+  String get oneNoteCloudIntro =>
+      'Openote lira vos carnets OneNote. Il ne peut pas les modifier.';
+
+  @override
+  String get oneNoteCloudSignIn => 'Se connecter à Microsoft';
+
+  @override
+  String get oneNoteCloudSigningIn => 'En attente de votre navigateur…';
+
+  @override
+  String get oneNoteCloudLoading => 'Recherche de vos carnets…';
+
+  @override
+  String get oneNoteCloudEmpty => 'Aucun carnet trouvé sur ce compte.';
+
+  @override
+  String get oneNoteCloudOther => 'Utiliser un autre compte';
+
+  @override
+  String get oneNoteCloudNoInk =>
+      'L\'écriture manuscrite ne peut pas être importée par ce moyen — tout le reste, oui.';
+
+  @override
   String get onboardingOnePkgFileType => 'Paquet de carnet OneNote';
 
   @override

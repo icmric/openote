@@ -368,5 +368,19 @@
   "shellPulled": "{count, plural, =1{1 Änderung geholt} other{{count} Änderungen geholt}}",
   "shellPageLocked": "„{title}“ ist gesperrt",
   "shellTagGroup": "{tag}  ({count})",
-  "shellUnlock": "Entsperren"
+  "shellUnlock": "Entsperren",
+  "onboardingFreshTitle": "Neues Notizbuch beginnen",
+  "onboardingFreshBody": "Ein leeres Notizbuch, bereit zum Schreiben. Notizen können Sie später jederzeit übernehmen.",
+  "onboardingFreshAction": "Neu beginnen",
+  "onboardingCloudTitle": "Notizen aus OneNote übernehmen",
+  "onboardingCloudBody": "Bei Microsoft anmelden und ein Notizbuch auswählen. Nichts vorher exportieren, und es funktioniert auf jedem Computer.",
+  "onboardingCloudAction": "Anmelden",
+  "oneNoteCloudTitle": "Ein Notizbuch aus OneNote übernehmen",
+  "oneNoteCloudIntro": "Openote liest Ihre Notizbücher aus OneNote. Es kann sie nicht ändern.",
+  "oneNoteCloudSignIn": "Bei Microsoft anmelden",
+  "oneNoteCloudSigningIn": "Warten auf Ihren Browser…",
+  "oneNoteCloudLoading": "Ihre Notizbücher werden gesucht…",
+  "oneNoteCloudEmpty": "Für dieses Konto wurden keine Notizbücher gefunden.",
+  "oneNoteCloudOther": "Anderes Konto verwenden",
+  "oneNoteCloudNoInk": "Handschrift kann auf diesem Weg nicht übernommen werden — alles andere schon."
 }

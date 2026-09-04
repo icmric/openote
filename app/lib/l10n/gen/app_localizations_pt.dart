@@ -1299,6 +1299,53 @@ class LPt extends L {
   String get onboardingOneNoteAction => 'Escolher arquivo…';
 
   @override
+  String get onboardingFreshTitle => 'Começar um bloco de notas novo';
+
+  @override
+  String get onboardingFreshBody =>
+      'Um bloco de notas vazio, pronto a escrever. Pode trazer as suas notas mais tarde.';
+
+  @override
+  String get onboardingFreshAction => 'Começar do zero';
+
+  @override
+  String get onboardingCloudTitle => 'Trazer notas do OneNote';
+
+  @override
+  String get onboardingCloudBody =>
+      'Inicie sessão na Microsoft e escolha um bloco de notas. Não é preciso exportar nada antes, e funciona em qualquer computador.';
+
+  @override
+  String get onboardingCloudAction => 'Iniciar sessão';
+
+  @override
+  String get oneNoteCloudTitle => 'Trazer um bloco de notas do OneNote';
+
+  @override
+  String get oneNoteCloudIntro =>
+      'O Openote vai ler os seus blocos de notas do OneNote. Não os pode alterar.';
+
+  @override
+  String get oneNoteCloudSignIn => 'Iniciar sessão na Microsoft';
+
+  @override
+  String get oneNoteCloudSigningIn => 'A aguardar o seu navegador…';
+
+  @override
+  String get oneNoteCloudLoading => 'A procurar os seus blocos de notas…';
+
+  @override
+  String get oneNoteCloudEmpty =>
+      'Não foram encontrados blocos de notas nesta conta.';
+
+  @override
+  String get oneNoteCloudOther => 'Usar outra conta';
+
+  @override
+  String get oneNoteCloudNoInk =>
+      'A escrita à mão não pode ser trazida por esta via — todo o resto pode.';
+
+  @override
   String get onboardingOnePkgFileType => 'Pacote de caderno do OneNote';
 
   @override

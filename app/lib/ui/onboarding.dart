@@ -38,6 +38,7 @@ import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
+import 'onenote_cloud_dialog.dart';
 import 'onote_dialog.dart';
 import 'sync_dialog.dart';
 
@@ -105,7 +106,6 @@ class _OnboardingState extends State<_Onboarding>
           .map((e) => (name: e.name, path: e.path, folder: e.folder as dynamic))
           .toList();
 
-  bool _oneNoteHelp = false;
   bool _importing = false;
 
   /// Held as a FUNCTION of the translations rather than as finished text: the
@@ -342,6 +342,16 @@ class _OnboardingState extends State<_Onboarding>
               primary: true,
               onTap: () => _open(n.path),
             ),
+        // **Starting fresh is an option, not a consolation.** The owner:
+        // *"id like to make it more clear to users in the onboarding screen
+        // the option to create a fresh notebook, as currently it doesnt
+        // imedietly seem like they have the option (or at least on my end as
+        // i have existing cloud notebooks)."* It was only ever the footer
+        // button, which reads as "next" rather than as a choice — and with
+        // found notebooks listed above it, it did not read as anything at
+        // all. It sits with the others now, and FIRST when there is nothing
+        // to open, because on a clean machine it is the likeliest answer.
+        if (_found.isEmpty) _freshRow(s, l),
         _row(
           s,
           title: l.onboardingSyncTitle,
@@ -359,22 +369,47 @@ class _OnboardingState extends State<_Onboarding>
         // years of notes stream in while they finish this dialog and poke
         // around — instead of the app freezing for a minute the moment they
         // arrive.
+        // **One OneNote row, and signing in is the main way.**
+        //
+        // There used to be two routes here and the file one was primary: pick
+        // a `.onepkg` you had exported by hand. That only ever worked on
+        // Windows — OneNote for Mac cannot export a notebook at all and there
+        // is no OneNote for Linux — so for two platforms out of three it was
+        // not the slower option, it was no option. Signing in works
+        // everywhere and skips the export entirely.
+        //
+        // The file route stays as the quiet second action, because it is
+        // still the higher-fidelity one: a `.onepkg` carries handwriting and
+        // Graph's HTML cannot.
         if (_importing)
           _importRow(s, l)
         else
           _row(
             s,
-            title: l.onboardingOneNoteTitle,
-            body: l.onboardingOneNoteBody,
-            action: l.onboardingOneNoteAction,
-            onTap: _startImport,
-            secondary: _oneNoteHelp
-                ? l.onboardingOneNoteHideSteps
-                : l.onboardingOneNoteHowTo,
-            onSecondary: () => setState(() => _oneNoteHelp = !_oneNoteHelp),
+            title: l.onboardingCloudTitle,
+            body: l.onboardingCloudBody,
+            action: l.onboardingCloudAction,
+            onTap: () async {
+              Navigator.of(context).pop();
+              await showOneNoteCloudDialog(context, app);
+            },
+            secondary: l.onboardingOneNoteAction,
+            onSecondary: _startImport,
           ),
-        if (_oneNoteHelp) _oneNoteSteps(s, l),
+        // Last when there ARE notebooks to open, because then it is the least
+        // likely thing somebody came here to do — but still present, still
+        // phrased as a choice, and never only a footer button.
+        if (_found.isNotEmpty) _freshRow(s, l),
       ];
+
+  /// An empty notebook, said plainly.
+  Widget _freshRow(OnoteSurfaces s, L l) => _row(
+        s,
+        title: l.onboardingFreshTitle,
+        body: l.onboardingFreshBody,
+        action: l.onboardingFreshAction,
+        onTap: () => Navigator.of(context).pop(),
+      );
 
   /// One starting point. Deliberately no leading icon: three of these stacked,
   /// each with its own little glyph, is decoration standing where the
@@ -505,34 +540,6 @@ class _OnboardingState extends State<_Onboarding>
   /// Exporting from OneNote is the step people get stuck on, and it is not
   /// discoverable — the desktop app hides it, and the web and store versions
   /// cannot do it at all. Saying so plainly beats letting someone hunt.
-  Widget _oneNoteSteps(OnoteSurfaces s, L l) => Container(
-        margin: const EdgeInsets.only(bottom: OnoteSpace.x3),
-        padding: const EdgeInsets.all(OnoteSpace.x5),
-        decoration: BoxDecoration(
-          color: s.textSecondary.withValues(alpha: .08),
-          borderRadius: OnoteRadius.mdAll,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(l.onboardingExportTitle,
-                style: OnoteType.uiStrong.copyWith(color: s.textPrimary)),
-            const SizedBox(height: OnoteSpace.x3),
-            Text(
-              l.onboardingExportSteps,
-              style: OnoteType.small
-                  .copyWith(color: s.textPrimary, height: 1.55),
-            ),
-            const SizedBox(height: OnoteSpace.x4),
-            Text(
-              l.onboardingExportMacNote,
-              style: OnoteType.caption
-                  .copyWith(color: s.textSecondary, height: 1.45),
-            ),
-          ],
-        ),
-      );
-
   Widget _details(OnoteSurfaces s, L l) => Theme(
         // The divider lines an ExpansionTile draws by default cut the dialog
         // in half for one folded line of text.

@@ -13,6 +13,7 @@ import 'join_git_dialog.dart';
 import 'onboarding.dart';
 import 'sync_dot.dart';
 import '../theme/tokens.dart';
+import 'onenote_cloud_dialog.dart';
 import 'onote_dialog.dart';
 
 /// The notebook manager (style guide §7b) — the one place notebooks are managed.
@@ -257,6 +258,13 @@ class _NotebookManagerState extends State<_NotebookManager> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
       child: Wrap(children: [
+        // FIRST among the OneNote routes, because it is the one that works
+        // everywhere. Exporting a .onepkg needs OneNote for Windows; there is
+        // no export at all on macOS and no OneNote on Linux, so for two
+        // platforms out of three the file routes below are not a slower
+        // option, they are no option.
+        choice(Icons.cloud_sync_outlined, l.oneNoteCloudTitle,
+            (m, c) => showOneNoteCloudDialog(c, app)),
         choice(Icons.library_books_outlined, l.nbImportOnepkg,
             (m, _) => importOneNotePackageWithFeedback(m, app)),
         choice(Icons.upload_file_outlined, l.nbImportOne,

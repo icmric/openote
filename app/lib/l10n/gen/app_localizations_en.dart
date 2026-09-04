@@ -1292,6 +1292,52 @@ class LEn extends L {
   String get onboardingOneNoteAction => 'Choose file…';
 
   @override
+  String get onboardingFreshTitle => 'Start a fresh notebook';
+
+  @override
+  String get onboardingFreshBody =>
+      'An empty notebook, ready to write in. You can always bring notes over later.';
+
+  @override
+  String get onboardingFreshAction => 'Start fresh';
+
+  @override
+  String get onboardingCloudTitle => 'Bring notes over from OneNote';
+
+  @override
+  String get onboardingCloudBody =>
+      'Sign in to Microsoft and pick a notebook. Nothing to export first, and it works on any computer.';
+
+  @override
+  String get onboardingCloudAction => 'Sign in';
+
+  @override
+  String get oneNoteCloudTitle => 'Bring a notebook over from OneNote';
+
+  @override
+  String get oneNoteCloudIntro =>
+      'Openote will read your notebooks from OneNote. It cannot change them.';
+
+  @override
+  String get oneNoteCloudSignIn => 'Sign in to Microsoft';
+
+  @override
+  String get oneNoteCloudSigningIn => 'Waiting for your browser…';
+
+  @override
+  String get oneNoteCloudLoading => 'Looking for your notebooks…';
+
+  @override
+  String get oneNoteCloudEmpty => 'No notebooks were found on this account.';
+
+  @override
+  String get oneNoteCloudOther => 'Use a different account';
+
+  @override
+  String get oneNoteCloudNoInk =>
+      'Handwriting cannot come over this way — everything else can.';
+
+  @override
   String get onboardingOnePkgFileType => 'OneNote notebook package';
 
   @override

@@ -1258,6 +1258,48 @@ class LZh extends L {
   String get onboardingOneNoteAction => '选择文件…';
 
   @override
+  String get onboardingFreshTitle => '新建笔记本';
+
+  @override
+  String get onboardingFreshBody => '一个空白笔记本，可以直接开始写。之后随时可以导入笔记。';
+
+  @override
+  String get onboardingFreshAction => '从空白开始';
+
+  @override
+  String get onboardingCloudTitle => '从 OneNote 导入笔记';
+
+  @override
+  String get onboardingCloudBody => '登录 Microsoft 并选择一个笔记本。无需先导出，任何电脑都能用。';
+
+  @override
+  String get onboardingCloudAction => '登录';
+
+  @override
+  String get oneNoteCloudTitle => '从 OneNote 导入笔记本';
+
+  @override
+  String get oneNoteCloudIntro => 'Openote 将读取你在 OneNote 中的笔记本，不会修改它们。';
+
+  @override
+  String get oneNoteCloudSignIn => '登录 Microsoft';
+
+  @override
+  String get oneNoteCloudSigningIn => '正在等待浏览器…';
+
+  @override
+  String get oneNoteCloudLoading => '正在查找你的笔记本…';
+
+  @override
+  String get oneNoteCloudEmpty => '此账户下未找到任何笔记本。';
+
+  @override
+  String get oneNoteCloudOther => '使用其他账户';
+
+  @override
+  String get oneNoteCloudNoInk => '手写内容无法通过这种方式导入，其余内容都可以。';
+
+  @override
   String get onboardingOnePkgFileType => 'OneNote 笔记本包';
 
   @override

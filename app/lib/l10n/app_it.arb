@@ -368,5 +368,19 @@
   "shellPulled": "{count, plural, =1{1 modifica scaricata} other{{count} modifiche scaricate}}",
   "shellPageLocked": "«{title}» è bloccata",
   "shellTagGroup": "{tag}  ({count})",
-  "shellUnlock": "Sblocca"
+  "shellUnlock": "Sblocca",
+  "onboardingFreshTitle": "Inizia un nuovo blocco appunti",
+  "onboardingFreshBody": "Un blocco appunti vuoto, pronto per scrivere. Potrai importare le tue note in qualsiasi momento.",
+  "onboardingFreshAction": "Inizia da zero",
+  "onboardingCloudTitle": "Importa note da OneNote",
+  "onboardingCloudBody": "Accedi a Microsoft e scegli un blocco appunti. Non serve esportare nulla prima, e funziona su qualsiasi computer.",
+  "onboardingCloudAction": "Accedi",
+  "oneNoteCloudTitle": "Importa un blocco appunti da OneNote",
+  "oneNoteCloudIntro": "Openote leggerà i tuoi blocchi appunti da OneNote. Non può modificarli.",
+  "oneNoteCloudSignIn": "Accedi a Microsoft",
+  "oneNoteCloudSigningIn": "In attesa del browser…",
+  "oneNoteCloudLoading": "Ricerca dei tuoi blocchi appunti…",
+  "oneNoteCloudEmpty": "Nessun blocco appunti trovato per questo account.",
+  "oneNoteCloudOther": "Usa un altro account",
+  "oneNoteCloudNoInk": "La scrittura a mano non può essere importata in questo modo — tutto il resto sì."
 }

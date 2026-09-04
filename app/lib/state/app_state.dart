@@ -24,6 +24,10 @@ import '../model/history.dart';
 import '../math/active_math.dart';
 import '../math/evaluate.dart';
 import '../math/linear_math.dart';
+import '../export/import_job.dart';
+import '../onenote/graph_auth.dart';
+import '../onenote/graph_client.dart';
+import '../onenote/graph_import.dart';
 import '../model/models.dart';
 import '../store/database.dart'
     show NotebookFileMissing, NotebookFileProblem, notebookFileProblem;
@@ -3734,6 +3738,34 @@ class AppState extends ChangeNotifier
   /// half-built notebook — and it is safe only because of that later switch.
   Future<NotebookRef> importCreateNotebook(String title) =>
       _repo.createNotebook(title);
+
+  /// Bring a notebook over from OneNote, over the internet.
+  ///
+  /// Starts a background job and returns immediately: the import writes a
+  /// section at a time, so the notebook fills in on screen while the student
+  /// carries on. Everything difficult lives in `onenote/` — this is the seam
+  /// the UI presses, and it exists so a dialog never has to hold a Graph
+  /// client or a token.
+  Future<void> importFromOneNoteCloud({
+    required GraphAuth auth,
+    required GraphNotebook notebook,
+  }) async {
+    ImportJob.startFromCloud(this, notebook.name,
+        (sink, onProgress, shouldCancel) async {
+      final client = GraphClient(token: auth.accessToken);
+      try {
+        return await importNotebookFromGraph(
+          client: client,
+          notebookId: notebook.id,
+          sink: sink,
+          onProgress: onProgress,
+          shouldCancel: shouldCancel,
+        );
+      } finally {
+        client.close();
+      }
+    });
+  }
 
   /// Shared so toolbar/shortcuts can drive zoom (style guide §8.2).
   final canvas = CanvasController();

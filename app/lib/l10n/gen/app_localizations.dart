@@ -2249,6 +2249,90 @@ abstract class L {
   /// **'Choose file…'**
   String get onboardingOneNoteAction;
 
+  /// Welcome flow: begin with an empty notebook rather than importing or syncing.
+  ///
+  /// In en, this message translates to:
+  /// **'Start a fresh notebook'**
+  String get onboardingFreshTitle;
+
+  /// Body for the start-fresh option in the welcome flow.
+  ///
+  /// In en, this message translates to:
+  /// **'An empty notebook, ready to write in. You can always bring notes over later.'**
+  String get onboardingFreshBody;
+
+  /// Button creating an empty notebook and closing the welcome flow.
+  ///
+  /// In en, this message translates to:
+  /// **'Start fresh'**
+  String get onboardingFreshAction;
+
+  /// Welcome flow: import straight from Microsoft OneNote over the internet. 'OneNote' is a product name.
+  ///
+  /// In en, this message translates to:
+  /// **'Bring notes over from OneNote'**
+  String get onboardingCloudTitle;
+
+  /// Body for the sign-in-to-Microsoft import option.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to Microsoft and pick a notebook. Nothing to export first, and it works on any computer.'**
+  String get onboardingCloudBody;
+
+  /// Button starting the Microsoft sign-in.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in'**
+  String get onboardingCloudAction;
+
+  /// Dialog title for importing from OneNote over the internet.
+  ///
+  /// In en, this message translates to:
+  /// **'Bring a notebook over from OneNote'**
+  String get oneNoteCloudTitle;
+
+  /// Reassurance shown before signing in: the import is read-only.
+  ///
+  /// In en, this message translates to:
+  /// **'Openote will read your notebooks from OneNote. It cannot change them.'**
+  String get oneNoteCloudIntro;
+
+  /// Button opening the browser to sign in.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to Microsoft'**
+  String get oneNoteCloudSignIn;
+
+  /// Shown while the browser sign-in is open.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for your browser…'**
+  String get oneNoteCloudSigningIn;
+
+  /// Shown while the notebook list is being fetched.
+  ///
+  /// In en, this message translates to:
+  /// **'Looking for your notebooks…'**
+  String get oneNoteCloudLoading;
+
+  /// Shown when the signed-in account has no OneNote notebooks.
+  ///
+  /// In en, this message translates to:
+  /// **'No notebooks were found on this account.'**
+  String get oneNoteCloudEmpty;
+
+  /// Button signing out and starting the sign-in again.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a different account'**
+  String get oneNoteCloudOther;
+
+  /// Honest note that ink strokes are not available over the internet import.
+  ///
+  /// In en, this message translates to:
+  /// **'Handwriting cannot come over this way — everything else can.'**
+  String get oneNoteCloudNoInk;
+
   /// The file-type name shown in the operating system's own file picker, next to the .onepkg extension it filters on.
   ///
   /// In en, this message translates to:

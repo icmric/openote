@@ -136,10 +136,18 @@ void main() {
     expect(tester.takeException(), isNull,
         reason: 'the starting points overflowed their card');
 
-    await tester.tap(find.text('How do I export?'));
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull,
-        reason: 'and again with the export steps folded out');
+    // Every starting point is REACHABLE on a small window, not merely
+    // present. This is what caught the fourth row being added: the card
+    // scrolls, but a choice you have to discover by scrolling is a choice
+    // most people never see, which was the owner's complaint about starting
+    // fresh in the first place.
+    for (final label in ['Start fresh', 'Sign in']) {
+      final button = find.text(label);
+      expect(button, findsOneWidget, reason: '"$label" should be offered');
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
   });
 
   // THE ONE THAT WOULD HANG THE SUITE. The canvas demonstration is an
@@ -161,7 +169,13 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('the OneNote export steps fold out on the last step',
+  // The how-to-export panel that used to be here has gone, with the workflow
+  // it taught. Signing in needs no export at all, so the instructions for
+  // performing one were scaffolding for the problem this release removes —
+  // and OneNote for Mac cannot export a notebook however well the steps are
+  // explained. The file route survives as the quiet second action, because a
+  // `.onepkg` still carries handwriting that Graph's HTML cannot.
+  testWidgets('both ways into OneNote are offered, signing in first',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final app = await newApp(tester);
@@ -172,11 +186,11 @@ void main() {
     await tester.tap(find.text('Next'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Exporting from OneNote'), findsNothing);
-    await tester.tap(find.text('How do I export?'));
-    await tester.pumpAndSettle();
-    expect(find.text('Exporting from OneNote'), findsOneWidget,
-        reason: 'the step people get stuck on is spelled out on request');
+    expect(find.text('Bring notes over from OneNote'), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget,
+        reason: 'the route that works on every platform is the main one');
+    expect(find.text('Choose file…'), findsOneWidget,
+        reason: 'and the higher-fidelity file route is still reachable');
     expect(tester.takeException(), isNull);
   });
 

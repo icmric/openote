@@ -1304,6 +1304,53 @@ class LDe extends L {
   String get onboardingOneNoteAction => 'Datei wählen…';
 
   @override
+  String get onboardingFreshTitle => 'Neues Notizbuch beginnen';
+
+  @override
+  String get onboardingFreshBody =>
+      'Ein leeres Notizbuch, bereit zum Schreiben. Notizen können Sie später jederzeit übernehmen.';
+
+  @override
+  String get onboardingFreshAction => 'Neu beginnen';
+
+  @override
+  String get onboardingCloudTitle => 'Notizen aus OneNote übernehmen';
+
+  @override
+  String get onboardingCloudBody =>
+      'Bei Microsoft anmelden und ein Notizbuch auswählen. Nichts vorher exportieren, und es funktioniert auf jedem Computer.';
+
+  @override
+  String get onboardingCloudAction => 'Anmelden';
+
+  @override
+  String get oneNoteCloudTitle => 'Ein Notizbuch aus OneNote übernehmen';
+
+  @override
+  String get oneNoteCloudIntro =>
+      'Openote liest Ihre Notizbücher aus OneNote. Es kann sie nicht ändern.';
+
+  @override
+  String get oneNoteCloudSignIn => 'Bei Microsoft anmelden';
+
+  @override
+  String get oneNoteCloudSigningIn => 'Warten auf Ihren Browser…';
+
+  @override
+  String get oneNoteCloudLoading => 'Ihre Notizbücher werden gesucht…';
+
+  @override
+  String get oneNoteCloudEmpty =>
+      'Für dieses Konto wurden keine Notizbücher gefunden.';
+
+  @override
+  String get oneNoteCloudOther => 'Anderes Konto verwenden';
+
+  @override
+  String get oneNoteCloudNoInk =>
+      'Handschrift kann auf diesem Weg nicht übernommen werden — alles andere schon.';
+
+  @override
   String get onboardingOnePkgFileType => 'OneNote-Notizbuchpaket';
 
   @override

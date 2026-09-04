@@ -1299,6 +1299,52 @@ class LEs extends L {
   String get onboardingOneNoteAction => 'Elegir archivo…';
 
   @override
+  String get onboardingFreshTitle => 'Empezar un cuaderno nuevo';
+
+  @override
+  String get onboardingFreshBody =>
+      'Un cuaderno vacío, listo para escribir. Siempre puedes traer tus notas más tarde.';
+
+  @override
+  String get onboardingFreshAction => 'Empezar de cero';
+
+  @override
+  String get onboardingCloudTitle => 'Traer notas desde OneNote';
+
+  @override
+  String get onboardingCloudBody =>
+      'Inicia sesión en Microsoft y elige un cuaderno. No hay que exportar nada antes, y funciona en cualquier ordenador.';
+
+  @override
+  String get onboardingCloudAction => 'Iniciar sesión';
+
+  @override
+  String get oneNoteCloudTitle => 'Traer un cuaderno desde OneNote';
+
+  @override
+  String get oneNoteCloudIntro =>
+      'Openote leerá tus cuadernos de OneNote. No puede modificarlos.';
+
+  @override
+  String get oneNoteCloudSignIn => 'Iniciar sesión en Microsoft';
+
+  @override
+  String get oneNoteCloudSigningIn => 'Esperando a tu navegador…';
+
+  @override
+  String get oneNoteCloudLoading => 'Buscando tus cuadernos…';
+
+  @override
+  String get oneNoteCloudEmpty => 'No se encontraron cuadernos en esta cuenta.';
+
+  @override
+  String get oneNoteCloudOther => 'Usar otra cuenta';
+
+  @override
+  String get oneNoteCloudNoInk =>
+      'La escritura a mano no puede traerse por esta vía — todo lo demás sí.';
+
+  @override
   String get onboardingOnePkgFileType => 'Paquete de cuaderno de OneNote';
 
   @override

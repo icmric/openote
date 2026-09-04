@@ -1306,6 +1306,53 @@ class LIt extends L {
   String get onboardingOneNoteAction => 'Scegli il file…';
 
   @override
+  String get onboardingFreshTitle => 'Inizia un nuovo blocco appunti';
+
+  @override
+  String get onboardingFreshBody =>
+      'Un blocco appunti vuoto, pronto per scrivere. Potrai importare le tue note in qualsiasi momento.';
+
+  @override
+  String get onboardingFreshAction => 'Inizia da zero';
+
+  @override
+  String get onboardingCloudTitle => 'Importa note da OneNote';
+
+  @override
+  String get onboardingCloudBody =>
+      'Accedi a Microsoft e scegli un blocco appunti. Non serve esportare nulla prima, e funziona su qualsiasi computer.';
+
+  @override
+  String get onboardingCloudAction => 'Accedi';
+
+  @override
+  String get oneNoteCloudTitle => 'Importa un blocco appunti da OneNote';
+
+  @override
+  String get oneNoteCloudIntro =>
+      'Openote leggerà i tuoi blocchi appunti da OneNote. Non può modificarli.';
+
+  @override
+  String get oneNoteCloudSignIn => 'Accedi a Microsoft';
+
+  @override
+  String get oneNoteCloudSigningIn => 'In attesa del browser…';
+
+  @override
+  String get oneNoteCloudLoading => 'Ricerca dei tuoi blocchi appunti…';
+
+  @override
+  String get oneNoteCloudEmpty =>
+      'Nessun blocco appunti trovato per questo account.';
+
+  @override
+  String get oneNoteCloudOther => 'Usa un altro account';
+
+  @override
+  String get oneNoteCloudNoInk =>
+      'La scrittura a mano non può essere importata in questo modo — tutto il resto sì.';
+
+  @override
   String get onboardingOnePkgFileType => 'Pacchetto di quaderno OneNote';
 
   @override

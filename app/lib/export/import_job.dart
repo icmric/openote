@@ -45,7 +45,11 @@ import 'package:flutter/scheduler.dart';
 import 'package:path/path.dart' as p;
 
 import '../core/onote_ffi.dart';
+import '../onenote/graph_auth.dart';
+import '../onenote/graph_client.dart';
+import '../onenote/graph_import.dart';
 import '../state/app_state.dart';
+import 'import_sink.dart';
 import 'import_writer.dart';
 import 'onenote_import.dart';
 
@@ -125,6 +129,110 @@ class ImportJob extends ChangeNotifier {
     app.refresh(); // the shell mounts the card by watching AppState
     job._run(sourcePath, debugOverrides);
     return job;
+  }
+
+  /// Begin importing a notebook straight out of OneNote over the internet.
+  ///
+  /// Shares every field, the progress card, and cancel with the `.onepkg`
+  /// path, because to a student they are the same thing happening. What
+  /// differs is underneath: there is no file and no parse, so no writer
+  /// isolate — the work is network latency, and the writing happens here in
+  /// small batches so the notebook fills in **as it arrives** rather than
+  /// appearing all at once at the end.
+  static ImportJob? startFromCloud(
+    AppState app,
+    String notebookName,
+    Future<GraphImportResult> Function(
+            ImportSink sink,
+            void Function(GraphImportProgress) onProgress,
+            bool Function() shouldCancel)
+        run,
+  ) {
+    if (current != null && !current!.isFinished) return null;
+    final job = ImportJob._(app, notebookName);
+    current = job;
+    app.refresh();
+    job._runCloud(run);
+    return job;
+  }
+
+  Future<void> _runCloud(
+      Future<GraphImportResult> Function(
+              ImportSink sink,
+              void Function(GraphImportProgress) onProgress,
+              bool Function() shouldCancel)
+          run) async {
+    var nb = '';
+    try {
+      resetImportReport();
+      state = ImportJobState.writing;
+      message = 'Signing in to OneNote…';
+      notifyListeners();
+
+      final ref = await app.importCreateNotebook(
+          importTitleFromName(fileName));
+      notebookId = nb = ref.id;
+
+      // Opened straight away, deliberately. The whole point of writing section
+      // by section is that somebody can WATCH it arrive, and they cannot watch
+      // a notebook they are not looking at.
+      await app.selectNotebook(nb);
+
+      final result = await run(
+        AppStateImportSink(app, nb),
+        (p) {
+          pagesDone = p.pagesDone;
+          pagesTotal = 0;
+          message = 'Bringing in "${p.sectionName}" — ${p.pagesDone} '
+              'page${p.pagesDone == 1 ? '' : 's'} so far…';
+          notifyListeners();
+          app.reloadNodes();
+          app.refresh();
+        },
+        () => _cancelRequested,
+      );
+
+      app.reloadNodes();
+      app.refresh();
+      importedPages = result.pages;
+      firstPageId = result.firstPageId;
+
+      if (result.cancelled) {
+        // NOT torn down, unlike the file path. A cancelled cloud import has
+        // already put real pages on screen and the student has been watching
+        // them arrive; deleting them because they pressed stop would be the
+        // opposite of what stop means.
+        return _finish(ImportJobState.done,
+            message: 'Stopped — kept the ${result.pages} '
+                'page${result.pages == 1 ? '' : 's'} already brought in.');
+      }
+      if (result.pages == 0) {
+        return _finish(ImportJobState.failed,
+            message: 'That notebook had no pages in it.');
+      }
+      final lost = result.loss;
+      final note = 'Imported ${result.pages} page'
+          '${result.pages == 1 ? '' : 's'}';
+      _finish(ImportJobState.done,
+          message: lost.any
+              ? '$note. Handwriting and some attachments could not come '
+                  'over the internet.'
+              : '$note.');
+    } on GraphAuthException catch (e) {
+      error = e.message;
+      if (nb.isNotEmpty) await _teardown();
+      _finish(ImportJobState.failed, message: e.message);
+    } on GraphException catch (e) {
+      error = e.message;
+      // Kept rather than torn down when pages already landed: see above.
+      if (nb.isNotEmpty && importedPages == 0) await _teardown();
+      _finish(ImportJobState.failed, message: e.message);
+    } catch (e) {
+      error = '$e';
+      if (nb.isNotEmpty && importedPages == 0) await _teardown();
+      _finish(ImportJobState.failed,
+          message: 'That notebook could not be brought over.');
+    }
   }
 
   bool get isFinished =>

@@ -368,5 +368,19 @@
   "shellPulled": "{count, plural, =1{1 cambio recibido} other{{count} cambios recibidos}}",
   "shellPageLocked": "«{title}» está bloqueada",
   "shellTagGroup": "{tag}  ({count})",
-  "shellUnlock": "Desbloquear"
+  "shellUnlock": "Desbloquear",
+  "onboardingFreshTitle": "Empezar un cuaderno nuevo",
+  "onboardingFreshBody": "Un cuaderno vacío, listo para escribir. Siempre puedes traer tus notas más tarde.",
+  "onboardingFreshAction": "Empezar de cero",
+  "onboardingCloudTitle": "Traer notas desde OneNote",
+  "onboardingCloudBody": "Inicia sesión en Microsoft y elige un cuaderno. No hay que exportar nada antes, y funciona en cualquier ordenador.",
+  "onboardingCloudAction": "Iniciar sesión",
+  "oneNoteCloudTitle": "Traer un cuaderno desde OneNote",
+  "oneNoteCloudIntro": "Openote leerá tus cuadernos de OneNote. No puede modificarlos.",
+  "oneNoteCloudSignIn": "Iniciar sesión en Microsoft",
+  "oneNoteCloudSigningIn": "Esperando a tu navegador…",
+  "oneNoteCloudLoading": "Buscando tus cuadernos…",
+  "oneNoteCloudEmpty": "No se encontraron cuadernos en esta cuenta.",
+  "oneNoteCloudOther": "Usar otra cuenta",
+  "oneNoteCloudNoInk": "La escritura a mano no puede traerse por esta vía — todo lo demás sí."
 }
