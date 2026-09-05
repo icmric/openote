@@ -28,6 +28,7 @@ import '../export/import_job.dart';
 import '../onenote/graph_auth.dart';
 import '../onenote/graph_client.dart';
 import '../onenote/graph_import.dart';
+import '../onenote/graph_links.dart';
 import '../model/models.dart';
 import '../store/database.dart'
     show NotebookFileMissing, NotebookFileProblem, notebookFileProblem;
@@ -3738,6 +3739,43 @@ class AppState extends ChangeNotifier
   /// half-built notebook — and it is safe only because of that later switch.
   Future<NotebookRef> importCreateNotebook(String title) =>
       _repo.createNotebook(title);
+
+  /// Point a freshly imported notebook's own cross-references at itself.
+  ///
+  /// Returns how many pages were changed. Run once, after the whole import,
+  /// for the reason in `onenote/graph_links.dart`: a link on the first page
+  /// routinely points at the last one.
+  ///
+  /// Only pages that actually contain a `onenote:` link are read and written —
+  /// on a real notebook that is a handful out of hundreds, and reading every
+  /// page back to change nothing would cost more than the import did.
+  int relinkImportedPages(String nb, Map<String, String> pageIdsByOneNoteId) {
+    if (pageIdsByOneNoteId.isEmpty) return 0;
+    var changed = 0;
+    for (final pageId in pageIdsByOneNoteId.values) {
+      final data = _repo.readPage(nb, pageId);
+      var touched = false;
+      final blocks = <Block>[];
+      for (final b in data.blocks) {
+        final text = b.content['text'] as String?;
+        if (text == null || !hasOneNoteLink(text)) {
+          blocks.add(b);
+          continue;
+        }
+        final next = relinkMarkdown(text, pageIdsByOneNoteId);
+        if (next == text) {
+          blocks.add(b);
+          continue;
+        }
+        touched = true;
+        blocks.add(b..content['text'] = next);
+      }
+      if (!touched) continue;
+      importPage(nb, pageId, blocks, data.props);
+      changed++;
+    }
+    return changed;
+  }
 
   /// Bring a notebook over from OneNote, over the internet.
   ///

@@ -77,6 +77,7 @@ class GraphImportResult {
     required this.loss,
     required this.firstPageId,
     this.cancelled = false,
+    this.pageIdsByOneNoteId = const {},
   });
 
   final int pages;
@@ -84,6 +85,14 @@ class GraphImportResult {
   final GraphPageLoss loss;
   final String? firstPageId;
   final bool cancelled;
+
+  /// OneNote's own page GUID to the page written for it.
+  ///
+  /// The raw material for turning a notebook's cross-references into real
+  /// links. It cannot be used DURING the import: a link on the first page
+  /// often points at the last, and the import writes progressively on purpose,
+  /// so the mapping is only complete once everything has landed.
+  final Map<String, String> pageIdsByOneNoteId;
 }
 
 /// How many pages are fetched and written at a time.
@@ -136,6 +145,7 @@ Future<GraphImportResult> importNotebookFromGraph({
       'a${(posBase + pos++).toString().padLeft(15, '0')}';
 
   final groupIds = <String, String>{};
+  final oneNoteIds = <String, String>{};
   var pagesWritten = 0;
   var sectionsWritten = 0;
   String? firstPageId;
@@ -143,7 +153,7 @@ Future<GraphImportResult> importNotebookFromGraph({
   Duration? waiting;
 
   // One future per section, started ahead of when it is written.
-  final ahead = <int, Future<List<Map<String, dynamic>>>>{};
+  final ahead = <int, Future<List<ReadyPage>>>{};
   void startFetching(int index) {
     if (index < 0 || index >= sections.length) return;
     if (ahead.containsKey(index) || pageLists[index].isEmpty) return;
@@ -212,9 +222,11 @@ Future<GraphImportResult> importNotebookFromGraph({
         final end = (start + kGraphBatchPages).clamp(0, ready.length);
         sink.batch(() {
           for (var i = start; i < end; i++) {
-            final id =
-                importOneParsedPage(sink, sectionNode.id, ready[i], nextPosition);
+            final id = importOneParsedPage(
+                sink, sectionNode.id, ready[i].page, nextPosition);
             firstPageId ??= id;
+            final guid = ready[i].oneNoteId;
+            if (guid != null) oneNoteIds[guid] = id;
           }
           return null;
         });
@@ -256,7 +268,15 @@ Future<GraphImportResult> importNotebookFromGraph({
     loss: loss,
     firstPageId: firstPageId,
     cancelled: cancelled,
+    pageIdsByOneNoteId: oneNoteIds,
   );
+}
+
+/// A converted page, and the OneNote id its neighbours link to it by.
+class ReadyPage {
+  const ReadyPage(this.page, this.oneNoteId);
+  final Map<String, dynamic> page;
+  final String? oneNoteId;
 }
 
 /// Everything a section needs before any of it can be written.
@@ -264,13 +284,13 @@ Future<GraphImportResult> importNotebookFromGraph({
 /// Runs entirely off the network and touches the sink not at all, which is
 /// what lets several of these be in flight at once while the writing stays
 /// strictly in order.
-Future<List<Map<String, dynamic>>> _readSection(
+Future<List<ReadyPage>> _readSection(
   GraphClient client,
   List<GraphPageRef> refs,
   GraphPageLoss loss,
   bool Function()? shouldCancel,
 ) async {
-  final out = <Map<String, dynamic>>[];
+  final out = <ReadyPage>[];
   for (var start = 0; start < refs.length; start += kGraphBatchPages) {
     if (shouldCancel?.call() ?? false) break;
     final end = (start + kGraphBatchPages).clamp(0, refs.length);
@@ -281,6 +301,7 @@ Future<List<Map<String, dynamic>>> _readSection(
     final htmls = await client.pageHtmlMany([for (final r in slice) r.id]);
 
     final reads = <GraphPage>[];
+    final ids = <String?>[];
     for (var i = 0; i < slice.length; i++) {
       final html = htmls[i];
       if (html == null) continue;
@@ -291,6 +312,7 @@ Future<List<Map<String, dynamic>>> _readSection(
           level: slice[i].level,
           createdIso: slice[i].createdIso,
         ));
+        ids.add(slice[i].oneNoteId);
       } catch (_) {
         // One page that will not parse costs that page, never the import.
       }
@@ -319,11 +341,12 @@ Future<List<Map<String, dynamic>>> _readSection(
       }
       attachFileBytes(r.page, r.files, myFiles, r.loss);
       attachImageBytes(r.page, r.images, mine, r.loss);
+      final which = reads.indexOf(r);
       loss
         ..images += r.loss.images
         ..attachments += r.loss.attachments
         ..inkPages += r.loss.inkPages;
-      out.add(r.page);
+      out.add(ReadyPage(r.page, which < ids.length ? ids[which] : null));
     }
   }
   return out;

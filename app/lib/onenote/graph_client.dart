@@ -54,11 +54,29 @@ class GraphPageRef {
     required this.title,
     this.level = 0,
     this.createdIso,
+    this.oneNoteId,
   });
   final String id;
   final String title;
   final int level;
   final String? createdIso;
+
+  /// The GUID OneNote's own links use, taken from `links.oneNoteClientUrl`.
+  ///
+  /// Not the same thing as [id], which is Graph's. A page's own address inside
+  /// a notebook — `onenote:…&page-id={C60353C1-…}` — is written with this one,
+  /// so it is what a cross-reference has to be matched against.
+  final String? oneNoteId;
+}
+
+/// The `page-id` in a OneNote URL, normalised.
+///
+/// The two places it appears disagree cosmetically: `links.oneNoteClientUrl`
+/// writes it bare and lower-case, an `<a href>` inside a page writes it in
+/// braces and upper-case. Both are the same GUID.
+String? oneNotePageIdIn(String url) {
+  final m = RegExp(r'page-id=\{?([0-9a-fA-F-]{36})\}?').firstMatch(url);
+  return m == null ? null : m.group(1)!.toLowerCase();
 }
 
 /// Something went wrong talking to Graph. Always a sentence: these reach a
@@ -289,6 +307,10 @@ class GraphClient {
               : 'Untitled page',
           level: (r['level'] as num?)?.toInt() ?? 0,
           createdIso: r['createdDateTime'] as String?,
+          oneNoteId: oneNotePageIdIn(
+              (((r['links'] as Map?)?['oneNoteClientUrl'] as Map?)?['href']
+                      as String?) ??
+                  ''),
         ),
     ];
   }

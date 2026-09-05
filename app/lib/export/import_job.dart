@@ -211,6 +211,12 @@ class ImportJob extends ChangeNotifier {
       );
 
       app.reloadNodes();
+      // **Now, and only now.** A link on the first page routinely points at
+      // the last, so the mapping is complete only once everything has landed.
+      // Rewriting as we went would have fixed the backward links and missed
+      // every forward one.
+      final relinked = app.relinkImportedPages(nb, result.pageIdsByOneNoteId);
+      if (relinked > 0) app.reloadNodes();
       app.refresh();
       importedPages = result.pages;
       firstPageId = result.firstPageId;
