@@ -182,9 +182,27 @@ class ImportJob extends ChangeNotifier {
         AppStateImportSink(app, nb),
         (p) {
           pagesDone = p.pagesDone;
-          pagesTotal = 0;
-          message = 'Bringing in "${p.sectionName}" — ${p.pagesDone} '
-              'page${p.pagesDone == 1 ? '' : 's'} so far…';
+          // The total IS known now — every section's page list is fetched up
+          // front — so the card can show a bar rather than a rising count.
+          pagesTotal = p.pagesTotal;
+          final waiting = p.waitingFor;
+          if (waiting != null) {
+            // **Say that it is waiting.** OneNote throttles by request count,
+            // and a large notebook WILL be asked to slow down: measured at six
+            // and a half minutes of reading before the first refusal, with a
+            // cooldown still in force minutes later. A card that sits silent
+            // for two minutes cannot be told from one that has hung, and the
+            // student's next move would be to kill the app halfway through
+            // their own notebook.
+            final secs = waiting.inSeconds;
+            message = 'Microsoft has asked Openote to slow down — carrying on '
+                'in ${secs < 1 ? 'a moment' : '${secs}s'}. '
+                'Nothing already brought in is lost.';
+          } else {
+            message = 'Bringing in "${p.sectionName}" — ${p.pagesDone}'
+                '${p.pagesTotal > 0 ? ' of ${p.pagesTotal}' : ''} '
+                'page${p.pagesDone == 1 ? '' : 's'}…';
+          }
           notifyListeners();
           app.reloadNodes();
           app.refresh();
@@ -213,11 +231,22 @@ class ImportJob extends ChangeNotifier {
       final lost = result.loss;
       final note = 'Imported ${result.pages} page'
           '${result.pages == 1 ? '' : 's'}';
+      // Ink and attachments DO come across now, so the old blanket apology
+      // would be a lie. Only real losses are named, and named specifically.
+      final gone = <String>[
+        if (lost.inkPages > 0)
+          'handwriting on ${lost.inkPages} page'
+              '${lost.inkPages == 1 ? '' : 's'}',
+        if (lost.images > 0) '${lost.images} picture'
+            '${lost.images == 1 ? '' : 's'}',
+        if (lost.attachments > 0) '${lost.attachments} attachment'
+            '${lost.attachments == 1 ? '' : 's'}',
+      ];
       _finish(ImportJobState.done,
-          message: lost.any
-              ? '$note. Handwriting and some attachments could not come '
-                  'over the internet.'
-              : '$note.');
+          message: gone.isEmpty
+              ? '$note. Subpages arrive as ordinary pages — OneNote does not '
+                  'send how they were nested.'
+              : '$note, but could not bring ${gone.join(', ')}.');
     } on GraphAuthException catch (e) {
       error = e.message;
       if (nb.isNotEmpty) await _teardown();
