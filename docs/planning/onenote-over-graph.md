@@ -97,7 +97,18 @@ Consequences, all now built in:
 |---|---|
 | Where it started | ~5 s per page |
 | One `$batch` of 20 pages, carrying ink | 1,151,526 bytes in **7.1 s** — about 350 ms a page |
-| A three-hundred-page notebook | roughly two minutes, against the ">10 minutes" first reported |
+| A real 332-page notebook, end to end | **152 pages in 72 s**, of which the first 40 s is startup — so about **210 ms a page** once running |
+
+A warning about measuring it: the notebook's `.onote` is a WAL database, so
+**watching the file size is not watching progress**. An import that looked
+stalled at seven megabytes for eleven minutes was in fact running normally the
+whole time — the log said 152 of 332 pages at 72 seconds. Read the progress
+callback, not the disk.
+
+The 40 s before the first page appears is the startup cost: listing the
+sections, walking the section groups, and fetching every section's page list.
+It buys the page total, which is what lets the card show how far through it is,
+and it is paid once.
 
 What got it there, in order of how much each was worth:
 
