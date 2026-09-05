@@ -124,6 +124,29 @@ What got it there, in order of how much each was worth:
    isolate and every node carries a position, so two sections interleaving
    their writes would shuffle the notebook.
 
+## The bug only a real import could find
+
+Both of the first two full-notebook runs stopped at **exactly page 152 of 332**
+and then sat there for over ten minutes.
+
+It looked like throttling and was not: throttling is not deterministic and does
+not stop at the same page twice, and the second run had the whole adaptive rate
+control the first did not. It was a request that never came back.
+
+**There was no timeout anywhere in the client.** Every request holds one of the
+concurrency slots while it runs, and with no deadline it holds one for ever.
+Six of those and the import is stopped permanently — no error, no progress, and
+nothing to tell it from a very slow notebook. I killed the first run believing
+it was throttled; only the second stopping at the same page said otherwise.
+
+Two lessons worth keeping:
+
+- **Every request needs a deadline**, and it belongs at the request level as
+  well as inside the transport, so the property is testable rather than only
+  observable on somebody's real notebook.
+- **A stalled connection is not throttling.** Treating it as such would narrow
+  the pipe and punish the whole import for one bad socket.
+
 ## Parity with the `.onepkg` route
 
 | | `.onepkg` | Over Graph |
