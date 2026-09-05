@@ -53,6 +53,57 @@ void main() {
           '**bold** and *slanted* and [a link](https://example.com)');
     });
 
+    test('bold and italic carried in a span style are kept', () {
+      // Counted over sixty real pages: 375 `font-weight` spans, 173 `color`,
+      // 124 `font-style` — and NOT ONE `<b>`, `<i>`, `<strong>` or `<em>`.
+      // The tag-based rules never fired on a real notebook, so bold and
+      // italic were being dropped wholesale.
+      final r = readGraphPage(
+          wrap('<p><span style="font-weight:bold">heavy</span> and '
+              '<span style="font-style:italic">leaning</span></p>'),
+          title: 'Page');
+      expect((r.page['boxes'] as List).first['markdown'],
+          '**heavy** and *leaning*');
+    });
+
+    test('a numeric font weight counts as bold from 600', () {
+      final r = readGraphPage(
+          wrap('<p><span style="font-weight:700">heavy</span>'
+              '<span style="font-weight:400">plain</span></p>'),
+          title: 'Page');
+      expect((r.page['boxes'] as List).first['markdown'],
+          '**heavy**plain');
+    });
+
+    test('strikethrough survives', () {
+      final r = readGraphPage(
+          wrap('<p><span style="text-decoration:line-through">gone</span></p>'),
+          title: 'Page');
+      expect((r.page['boxes'] as List).first['markdown'], '~~gone~~');
+    });
+
+    test('a span that only sets colour or font adds no markers', () {
+      // The app's colour syntax is private and marked for replacement, and a
+      // per-run font has nowhere to live in a Markdown box. Importing either
+      // would bake a decision that is being reversed into every page.
+      final r = readGraphPage(
+          wrap('<p><span style="color:#ff0000;font-family:Calibri">red</span>'
+              '</p>'),
+          title: 'Page');
+      expect((r.page['boxes'] as List).first['markdown'], 'red');
+    });
+
+    test('bold and italic together nest rather than fight', () {
+      final r = readGraphPage(
+          wrap('<p><span style="font-weight:bold;font-style:italic">both'
+              '</span></p>'),
+          title: 'Page');
+      final md = (r.page['boxes'] as List).first['markdown'] as String;
+      expect(md, contains('both'));
+      expect(md, startsWith('**'));
+      expect(md, contains('*both*'));
+    });
+
     test('headings keep their level', () {
       final r = readGraphPage(wrap('<h1>Big</h1><h2>Smaller</h2>'),
           title: 'Page');
@@ -286,6 +337,35 @@ void main() {
       expect(r.images.first.url, contains('resources/1'));
       expect((r.page['boxes'] as List).first['markdown'],
           contains('![image](onote-img://0 =300x200)'));
+    });
+
+    test('an image OneNote positioned itself floats, and does not join the '
+        'paragraph', () {
+      // Taken off the wire: some `<img>` carry
+      // `style="position:absolute;left:799px;top:144px"` and some carry none.
+      // Treating both as part of the paragraph put a diagram the student had
+      // dragged to the side back into the middle of their sentence.
+      final r = readGraphPage(
+          wrap('<p>see</p><img width="200" height="100" src="https://g/x" '
+              'style="position:absolute;left:799px;top:144px" />'),
+          title: 'Page');
+      final maps = (r.page['images'] as List).cast<Map>();
+      expect(maps.single['in_flow'], isFalse);
+      expect(maps.single['x'], 799.0 * kGraphPxToCanvas);
+      expect(maps.single['y'], 144.0 * kGraphPxToCanvas);
+      // And it is NOT referenced from the paragraph's markdown.
+      final text = (r.page['boxes'] as List).first['markdown'] as String;
+      expect(text, isNot(contains('onote-img://')));
+    });
+
+    test('an image with no position of its own still flows in the text', () {
+      final r = readGraphPage(
+          wrap('<p>see</p><img width="200" height="100" src="https://g/x" />'),
+          title: 'Page');
+      final maps = (r.page['images'] as List).cast<Map>();
+      expect(maps.single['in_flow'], isTrue);
+      expect((r.page['boxes'] as List).first['markdown'],
+          contains('onote-img://0'));
     });
 
     test('the full-resolution source wins over the display copy', () {

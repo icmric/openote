@@ -44,6 +44,8 @@ import 'dart:typed_data';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 
+import 'mathml_latex.dart';
+
 /// What a page lost on the way through Graph, so the import can say so.
 ///
 /// Stated rather than hidden: notes that LOOK complete when something has
@@ -155,7 +157,12 @@ GraphPage readGraphPage(
   int level = 0,
   String? createdIso,
 }) {
-  final doc = html_parser.parse(htmlSource);
+  // **Equations first, before the HTML parser sees them.** MathML is XML and
+  // uses self-closing tags; HTML has no such concept, so an HTML parser reads
+  // `<mrow />` as an opening tag that swallows everything after it. Measured
+  // on a real page: `⌊ ⌋ Floor (Round down)` came out as the single word
+  // `Floor`. See `mathml_latex.dart`.
+  final doc = html_parser.parse(inlineMathIntoHtml(htmlSource));
   final body = doc.body;
   final boxes = <Map<String, dynamic>>[];
   final images = <GraphImageRef>[];
@@ -304,13 +311,27 @@ void _readContainer(
           });
         }
       case 'img':
-        final ref = _readImage(node, images.length, inFlow: true);
+        // **A picture OneNote placed itself floats; one it did not flows.**
+        // Taken off the wire: some `<img>` carry
+        // `style="position:absolute;left:799px;top:144px"` and some carry no
+        // style at all. Treating both as part of the paragraph put a diagram
+        // the student had dragged to the side of the page back into the middle
+        // of their sentence.
+        final floating = _hasPosition(node);
+        final ref = _readImage(node, images.length, inFlow: !floating);
         if (ref == null) {
           loss.images++;
           break;
         }
         images.add(ref);
-        imageMaps.add({'x': left, 'y': top});
+        if (floating) {
+          final at = _positionOf(node);
+          // Its own box at its own place, and its own flow so the restacker
+          // does not slide the paragraph under it.
+          imageMaps.add({'x': at.$1, 'y': at.$2, 'in_flow': false});
+          break;
+        }
+        imageMaps.add({'x': left, 'y': top, 'in_flow': true});
         // The same placeholder the `.one` parser writes, so the existing
         // rewrite step turns it into a stored blob reference and the picture
         // flows inside the paragraph rather than floating over it.
@@ -449,6 +470,15 @@ String _inline(dom.Node node) {
 String inlineElement(dom.Element el) {
   if (el.localName == 'br') return '\n';
   final inner = _inline(el);
+  // **This is where nearly all OneNote formatting actually is.** Counted over
+  // sixty real pages: 375 `font-weight` spans, 173 `color`, 124 `font-style`,
+  // 90 `font-family` — and NOT ONE `<b>`, `<i>`, `<strong>` or `<em>` in the
+  // entire sample. The tag-based branches below are kept because other
+  // producers use them and they cost nothing, but on a notebook that came out
+  // of OneNote they never fire, which is why bold and italic were being
+  // dropped wholesale while everything else imported.
+  final styled = _styledRun(el, inner);
+  if (styled != null) return styled;
   switch (el.localName) {
     case 'b':
     case 'strong':
@@ -623,6 +653,49 @@ bool _isBlankParagraph(dom.Element el) {
   }
   return true;
 }
+
+/// Bold, italic and strikethrough carried in a `style` attribute.
+///
+/// Returns null when the element carries no formatting worth keeping, so the
+/// caller falls through to the tag-based rules.
+///
+/// **Colour and font are deliberately not kept.** The app has a private
+/// `{{#hex text}}` colour syntax that PLANNING already marks for replacement,
+/// and a font per run has nowhere to live in a Markdown box — importing either
+/// would bake a decision that is being reversed into every page of somebody's
+/// notebook. Losing a colour is a smaller harm than that, and it is the same
+/// choice the `.one` importer makes.
+String? _styledRun(dom.Element el, String inner) {
+  final style = el.attributes['style'];
+  if (style == null || style.isEmpty) return null;
+  if (inner.trim().isEmpty) return null;
+  final lower = style.toLowerCase();
+
+  var out = inner;
+  // Order matters only for readability of the result: bold outermost is what
+  // a person would type.
+  if (_declares(lower, 'font-style', 'italic') ||
+      _declares(lower, 'font-style', 'oblique')) {
+    out = _mark(out, '*');
+  }
+  if (_isBold(lower)) out = _mark(out, '**');
+  if (lower.contains('line-through')) out = _mark(out, '~~');
+  return identical(out, inner) || out == inner ? null : out;
+}
+
+/// A weight is bold at 600 and above, which is what `bold` means in CSS and
+/// what OneNote writes when a student presses Ctrl+B.
+bool _isBold(String lowerStyle) {
+  final m = RegExp(r'font-weight\s*:\s*([a-z0-9]+)').firstMatch(lowerStyle);
+  if (m == null) return false;
+  final v = m.group(1)!;
+  if (v == 'bold' || v == 'bolder') return true;
+  final n = int.tryParse(v);
+  return n != null && n >= 600;
+}
+
+bool _declares(String lowerStyle, String prop, String value) =>
+    RegExp('$prop' r'\s*:\s*' '$value').hasMatch(lowerStyle);
 
 bool _hasPosition(dom.Element el) =>
     (el.attributes['style'] ?? '').contains('position:absolute');
