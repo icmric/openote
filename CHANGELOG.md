@@ -57,6 +57,10 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **One stalled connection no longer stops the whole import.** A request that
   never came back used to hold its place for ever; six of those and a notebook
   stopped halfway with nothing on screen to say why.
+- **Pictures are no longer lost when Microsoft asks Openote to slow down.**
+  Bringing a five-year notebook over, four pictures went missing and nothing
+  else did: a "come back shortly" on a picture was being read as "this picture
+  does not exist". It waits and asks again now.
 - **The wait before the first page now says what it is doing.** Finding out
   what is in a big notebook takes half a minute or so before anything can
   appear, and the card sat on "Signing in to OneNote…" for all of it. It now

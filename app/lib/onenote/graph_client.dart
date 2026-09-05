@@ -666,23 +666,79 @@ class GraphClient {
   ///
   /// Null rather than throwing: one unreadable picture must cost that picture
   /// and nothing else, and the page around it is still worth importing.
+  /// A picture or attachment, or null if it genuinely could not be had.
+  ///
+  /// **This was the one request path that ignored throttling entirely**, and a
+  /// real 332-page import showed exactly what that costs: 46 pictures arrived
+  /// and **4 were lost**, with nothing else lost at all. Three separate
+  /// mistakes, all in the same few lines:
+  ///
+  ///   - It never waited out the shared quiet period, so pictures barged
+  ///     through backoff that every other request was respecting — which both
+  ///     loses the picture and deepens the throttling for everything else.
+  ///   - `statusCode != 200` returned null, so a 429 — *come back shortly* —
+  ///     was treated as *this picture does not exist*.
+  ///   - There was no retry, so there was no shortly to come back in.
+  ///
+  /// Now it backs off and asks again like everything else. Null still means a
+  /// real failure: a 404, a body that stopped arriving, an exhausted retry.
   Future<Uint8List?> resource(String url) async {
+    for (var attempt = 0;; attempt++) {
+      await _waitOutThrottle();
+      final (status, bytes, headers) = await _resourceOnce(url);
+      if (status == 200 && bytes != null) {
+        _sawSuccess();
+        return bytes;
+      }
+      // Anything that is not the service asking us to wait is a real failure:
+      // a 404, a body that stopped arriving, a token that will not mint.
+      if (status != 429 && status != 503) return null;
+      if (attempt >= _maxRetries) return null;
+      _sawRefusal();
+      _stopIfHopeless();
+      final after = int.tryParse(headers['retry-after'] ?? '') ?? 0;
+      final wait = after > 0
+          ? Duration(seconds: after)
+          : Duration(milliseconds: 500 * (1 << attempt));
+      _holdEveryoneBack(wait > _maxBackoff ? _maxBackoff : wait);
+    }
+  }
+
+  /// Test seam for [resource]: answers with bytes and a status, no network.
+  ///
+  /// Separate from [debugFetch] because this path carries bytes rather than
+  /// text, and because the retry policy above is the part worth testing —
+  /// four real pictures were lost to its absence.
+  @visibleForTesting
+  static Future<(int, Uint8List?, Map<String, String>)> Function(String url)?
+      debugResource;
+
+  /// One attempt at fetching bytes. Never throws; a failure is a status.
+  Future<(int, Uint8List?, Map<String, String>)> _resourceOnce(
+      String url) async {
+    final fake = debugResource;
     await _acquire();
     try {
+      if (fake != null) return await fake(url).timeout(kRequestTimeout);
       final t = await token();
       final req = await _client.getUrl(Uri.parse(url));
       req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
       final res = await req.close().timeout(kRequestTimeout);
-      if (res.statusCode != 200) return null;
+      final headers = <String, String>{};
+      res.headers.forEach((k, v) => headers[k.toLowerCase()] = v.join(','));
+      if (res.statusCode != 200) return (res.statusCode, null, headers);
       // Bounded by the same deadline as everything else. A picture that stops
       // arriving halfway costs that picture; before this it cost the import,
       // by holding a slot until the process was killed.
       final bytes = await res
           .fold<List<int>>(<int>[], (a, c) => a..addAll(c))
           .timeout(kRequestTimeout);
-      return Uint8List.fromList(bytes);
+      return (200, Uint8List.fromList(bytes), headers);
     } catch (_) {
-      return null;
+      // Deliberately not 429: a broken socket is not the service asking for
+      // patience, and retrying it as though it were would spend the whole
+      // backoff budget on a connection that is simply gone.
+      return (0, null, const <String, String>{});
     } finally {
       _release();
     }

@@ -216,6 +216,45 @@ this path is caught somewhere and turned into *skip this page* — right for one
 bad page, catastrophic here, where the result would be several hundred empty
 pages reported as a success. The type is what stops it being swallowed.
 
+## The third real import: the whole notebook
+
+Once the account's penalty had worn off, the same notebook went through end to
+end:
+
+```
+time            133s          per page   403 ms
+pages           332 (332 nodes)
+sections        25, groups 6
+text boxes      1004    tables 32    images 46    attachments 2
+ink blocks      109 (64,060 strokes)
+inline maths    548
+lost: ink pages 0, images 4, attachments 0
+```
+
+Five years of notes in **two minutes and thirteen seconds**, with sixty-four
+thousand ink strokes and five hundred equations intact. The 45 s of that spent
+"looking around" is the section and page-list phase, and it is now reported
+rather than silent.
+
+**Four pictures were lost, and nothing else was** — which is what made the
+cause findable. `resource`, the path that fetches pictures and attachments, was
+the one request path in the client that ignored throttling completely:
+
+- it never waited out the shared quiet period, so pictures barged through
+  backoff every other request was respecting — losing the picture *and*
+  deepening the throttling for everything else;
+- `statusCode != 200` returned null, so a 429 (*come back shortly*) was read as
+  *this picture does not exist*;
+- and there was no retry, so there was no shortly to come back in.
+
+It backs off and asks again now, like everything else. Null still means a real
+failure — a 404, a body that stopped arriving, an exhausted retry.
+
+The general lesson is worth more than the fix: **a partial loss of one kind of
+thing, with no loss of any other kind, points at the code path unique to that
+kind.** The pages, ink, maths and attachments all shared the throttle-aware
+path. The pictures did not.
+
 ## Parity with the `.onepkg` route
 
 | | `.onepkg` | Over Graph |
@@ -241,7 +280,6 @@ that must be kept in step.
   their position. Seen in real content — `[b]<sub>d</sub>`.
 - **`list-style-type`** on `<li>` and `value` on ordered items are ignored, so
   a list restarting at 7 restarts at 1.
-- **The sustained rate is still unknown.** Every throughput number here was
-  measured against one account that had been probed hard the same day. What a
-  first import looks like from a cold account has not been measured, and cannot
-  be until this one's penalty has worn off.
+- **A cold-account first import has now been measured once** (133 s for 332
+  pages) but only once, and only on one notebook. Treat 400 ms a page as the
+  shape of it rather than as a promise.

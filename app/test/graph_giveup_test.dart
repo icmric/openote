@@ -17,6 +17,7 @@
 // with a five-year notebook.
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -100,6 +101,45 @@ void main() {
       await c.pageHtml('p1');
       expect(c.refusedFor, Duration.zero,
           reason: 'the run of refusals ended when one request got through');
+    });
+
+    test('a picture refused with 429 is asked for again, not thrown away',
+        () async {
+      // Found by importing a real notebook: 46 pictures arrived and 4 were
+      // lost, with nothing else lost at all. `resource` was the one request
+      // path that ignored throttling — it never waited out the shared quiet
+      // period, and it read a 429 ("come back shortly") as "this picture does
+      // not exist".
+      GraphClient.giveUpAfterThrottledFor = const Duration(hours: 1);
+      var n = 0;
+      GraphClient.debugResource = (url) async {
+        n++;
+        if (n <= 2) {
+          return (429, null, <String, String>{'retry-after': '0'});
+        }
+        return (200, Uint8List.fromList([1, 2, 3]), <String, String>{});
+      };
+      addTearDown(() => GraphClient.debugResource = null);
+      final c = GraphClient(token: () async => 't');
+
+      expect(await c.resource('https://example/pic'), [1, 2, 3]);
+      expect(n, 3, reason: 'refused twice, then asked a third time');
+    });
+
+    test('a picture that really is not there is not retried for ever',
+        () async {
+      // Null still has to mean null. Retrying a 404 ten times would spend the
+      // backoff budget on something that is never going to arrive.
+      var n = 0;
+      GraphClient.debugResource = (url) async {
+        n++;
+        return (404, null, <String, String>{});
+      };
+      addTearDown(() => GraphClient.debugResource = null);
+      final c = GraphClient(token: () async => 't');
+
+      expect(await c.resource('https://example/gone'), isNull);
+      expect(n, 1);
     });
 
     test('giving up is not mistaken for one bad page', () {
