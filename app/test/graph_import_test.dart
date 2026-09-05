@@ -718,6 +718,39 @@ void main() {
           ['Loose', 'Term 1', 'Term 2']);
     });
 
+    test('a page that could not be read is COUNTED, not shrugged off',
+        () async {
+      // Found by importing the same real notebook four times: three brought
+      // 332 pages and the fourth brought 331. A page whose content request
+      // failed was dropped with a bare `continue` and counted by nothing, so
+      // the card would have said "Imported 331 pages" — a number that looks
+      // like success. That is the quiet partial success this project refuses
+      // everywhere else.
+      final sink = RecordingSink();
+      final result = await importNotebookFromGraph(
+        client: fakeGraph({
+          '/notebooks/nb1/sections?': listOf([
+            {'id': 's1', 'displayName': 'Week 1'}
+          ]),
+          '/notebooks/nb1/sectionGroups?': listOf([]),
+          '/sections/s1/pages': listOf([
+            {'id': 'p1', 'title': 'Fine'},
+            {'id': 'p2', 'title': 'Broken'},
+          ]),
+          '/pages/p1/content': pageHtml('<p>one</p>'),
+        }, statuses: {'/pages/p2/content': 500}),
+        notebookId: 'nb1',
+        sink: sink,
+      );
+
+      expect(result.pages, 1);
+      expect(result.loss.pages, 1, reason: 'the missing page is on the record');
+      expect(result.loss.any, isTrue);
+      // And it is not in the written list, so finishing the import later
+      // goes back for exactly this page and no other.
+      expect(result.graphPageIds, ['p1']);
+    });
+
     test('one unreadable page does not end the import', () async {
       // A five-year notebook with one bad page must not lose the other 400.
       final routes = <String, String>{

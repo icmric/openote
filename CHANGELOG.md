@@ -28,9 +28,15 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   a Microsoft account is a perfectly good reason not to.
 
 - **Subpages stay subpages.** They arrive indented under the page they belong
-  to, exactly as in OneNote — including a subpage of a subpage.
+  to, exactly as in OneNote — including a subpage of a subpage. Measured on a
+  real notebook: 212 of 331 pages came over nested, two of them two deep.
 
 ### Fixed
+
+- **A page that could not be read now says so, and comes back for.** One page
+  in a 332-page notebook went missing without a word — the count simply said
+  331, which looks like success. It is counted, named on the finished card,
+  and fetched on the next attempt.
 
 - **The import speaks your language.** Bringing a notebook over from OneNote
   is the first thing many people do, and it was the last part of Openote still

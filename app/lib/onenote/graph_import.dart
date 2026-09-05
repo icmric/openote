@@ -448,7 +448,11 @@ Future<List<ReadyPage>> _readSection(
     final graphIds = <String>[];
     for (var i = 0; i < slice.length; i++) {
       final html = htmls[i];
-      if (html == null) continue;
+      if (html == null) {
+        // Counted rather than shrugged off. See [GraphPageLoss.pages].
+        loss.pages++;
+        continue;
+      }
       try {
         reads.add(readGraphPage(
           html,
@@ -459,7 +463,9 @@ Future<List<ReadyPage>> _readSection(
         ids.add(slice[i].oneNoteId);
         graphIds.add(slice[i].id);
       } catch (_) {
-        // One page that will not parse costs that page, never the import.
+        // One page that will not parse costs that page, never the import —
+        // but it still costs a page, and that is now said rather than hidden.
+        loss.pages++;
       }
     }
 
@@ -493,7 +499,8 @@ Future<List<ReadyPage>> _readSection(
       loss
         ..images += r.loss.images
         ..attachments += r.loss.attachments
-        ..inkPages += r.loss.inkPages;
+        ..inkPages += r.loss.inkPages
+        ..pages += r.loss.pages;
       out.add(ReadyPage(r.page, i < ids.length ? ids[i] : null,
           i < graphIds.length ? graphIds[i] : ''));
     }

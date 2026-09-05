@@ -402,10 +402,20 @@ class ImportJob extends ChangeNotifier {
             status: const ImportStatus(ImportStage.emptyNotebook),
             message: 'That notebook had no pages in it.');
       }
-      // **Finished, so the reminder goes.** A notebook that says it is
-      // incomplete when it is not is the same kind of lie as one that says
-      // nothing when it is.
-      app.clearUnfinishedImport(nb);
+      // **Finished, so the reminder goes** — unless a page could not be
+      // read, in which case it did not finish.
+      //
+      // Found by importing the same notebook four times: three brought 332
+      // pages and the fourth brought 331. A page whose content request failed
+      // was dropped and counted by nothing, so the card said a number that
+      // looked like success. Such a page was never written, so it is not in
+      // the resume list and is still owed — which means the machinery for
+      // finishing an interrupted import already knows how to go back for it.
+      if (result.loss.pages > 0) {
+        _rememberUnfinished(nb, UnfinishedReason.interrupted, pagesTotal);
+      } else {
+        app.clearUnfinishedImport(nb);
+      }
 
       final lost = result.loss;
       final note = 'Imported ${result.pages} page'
@@ -413,6 +423,10 @@ class ImportJob extends ChangeNotifier {
       // Ink and attachments DO come across now, so the old blanket apology
       // would be a lie. Only real losses are named, and named specifically.
       final gone = <String>[
+        if (lost.pages > 0)
+          '${lost.pages} page${lost.pages == 1 ? '' : 's'} '
+              '(Openote will go back for '
+              '${lost.pages == 1 ? 'it' : 'them'})',
         if (lost.inkPages > 0)
           'handwriting on ${lost.inkPages} page'
               '${lost.inkPages == 1 ? '' : 's'}',
