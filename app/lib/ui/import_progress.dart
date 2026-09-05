@@ -17,6 +17,8 @@ library;
 import 'package:flutter/material.dart';
 
 import '../export/import_job.dart';
+import '../l10n/l10n.dart';
+import '../l10n/labels.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
@@ -30,6 +32,30 @@ class ImportProgressCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final job = ImportJob.current;
     if (job == null) return const SizedBox.shrink();
+    // **A first import is a different situation.** Every later one happens
+    // beside notebooks that already exist, so a card in the corner reads as
+    // "something is going on over there". A first one happens in front of an
+    // empty notebook with nothing else on screen, and the same card reads as
+    // "it did nothing". The panel below sits where the person is looking.
+    if (job.isFirstNotebook && !job.isFinished) {
+      return Positioned.fill(
+        child: IgnorePointer(
+          // Only the panel takes clicks — the rest of the canvas stays live,
+          // which is the whole point of importing in the background.
+          ignoring: false,
+          child: Align(
+            alignment: Alignment.center,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: ListenableBuilder(
+                listenable: job,
+                builder: (context, _) => _FirstImportPanel(job: job),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Positioned(
       left: OnoteSpace.x6,
       bottom: OnoteSize.statusBar + OnoteSpace.x4,
@@ -38,6 +64,139 @@ class ImportProgressCard extends StatelessWidget {
         child: ListenableBuilder(
           listenable: job,
           builder: (context, _) => _Card(job: job),
+        ),
+      ),
+    );
+  }
+}
+
+/// What a first import looks like: a panel in the middle of the empty
+/// notebook it is filling.
+///
+/// Reported: *"as it creates a blank notebook its easy to think that its just
+/// doing nothing/it failed"*. Three things it has to say, in this order —
+/// that something IS happening, how far along it is, and that the person does
+/// not have to sit and watch.
+///
+/// It is not a modal. It takes no keyboard focus, dims nothing, and blocks
+/// nothing but the rectangle it occupies; a first-run user can close the
+/// welcome flow, poke at the sidebar and start reading the pages that have
+/// already landed. Making it a modal would put back the wait the background
+/// import exists to remove.
+class _FirstImportPanel extends StatelessWidget {
+  const _FirstImportPanel({required this.job});
+
+  final ImportJob job;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.surfaces;
+    final scheme = Theme.of(context).colorScheme;
+    final total = job.pagesTotal;
+    final done = job.pagesDone;
+
+    return Material(
+      color: s.raised,
+      elevation: 10,
+      shadowColor: Colors.black.withValues(alpha: .32),
+      borderRadius: OnoteRadius.lgAll,
+      child: Container(
+        padding: const EdgeInsets.all(OnoteSpace.x7),
+        decoration: BoxDecoration(
+          borderRadius: OnoteRadius.lgAll,
+          border: Border.all(color: s.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(children: [
+              const SizedBox(
+                  width: OnoteIcon.md,
+                  height: OnoteIcon.md,
+                  child: CircularProgressIndicator(strokeWidth: 2.6)),
+              const SizedBox(width: OnoteSpace.x4),
+              Expanded(
+                child: Text('Bringing your notes over',
+                    style: OnoteType.title.copyWith(color: s.textPrimary)),
+              ),
+            ]),
+            const SizedBox(height: OnoteSpace.x4),
+            // `status.describe` rather than `job.message`: the job has no
+            // context and so can only ever produce English. Here there is one.
+            Text(job.status.describe(L.of(context)),
+                style: OnoteType.ui.copyWith(color: s.textSecondary),
+                maxLines: 3),
+            if (total > 0) ...[
+              const SizedBox(height: OnoteSpace.x5),
+              ClipRRect(
+                borderRadius: OnoteRadius.smAll,
+                child: LinearProgressIndicator(
+                  value: done / total,
+                  minHeight: 7,
+                  backgroundColor: s.chrome2,
+                ),
+              ),
+              const SizedBox(height: OnoteSpace.x3),
+              Text('$done of $total pages',
+                  style: OnoteType.small.copyWith(color: s.textSecondary)),
+            ],
+            const SizedBox(height: OnoteSpace.x5),
+            // The sentence that stops somebody sitting and watching a bar.
+            // The notebook is empty ONLY because nothing has landed yet, and
+            // saying so is the difference between waiting and getting on.
+            Container(
+              padding: const EdgeInsets.all(OnoteSpace.x4),
+              decoration: BoxDecoration(
+                color: s.chrome2,
+                borderRadius: OnoteRadius.mdAll,
+              ),
+              child: Row(children: [
+                Icon(Icons.info_outline,
+                    size: OnoteIcon.sm, color: s.textSecondary),
+                const SizedBox(width: OnoteSpace.x3),
+                Expanded(
+                  child: Text(
+                      'Your notebook is empty until the first pages arrive. '
+                      'They show up in the sidebar as they come in, and you '
+                      'can read and edit them straight away — there is no '
+                      'need to wait here.',
+                      style:
+                          OnoteType.small.copyWith(color: s.textSecondary)),
+                ),
+              ]),
+            ),
+            const SizedBox(height: OnoteSpace.x5),
+            // A Wrap rather than a Row: these are two full sentences of
+            // button, and a narrow window or a larger text size has them
+            // overflow rather than stack. Caught by the test at 800px, which
+            // is a perfectly ordinary window.
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: OnoteSpace.x2,
+              runSpacing: OnoteSpace.x2,
+              children: [
+                if (job.isStopping)
+                  TextButton(
+                      onPressed: job.dismiss, child: const Text('Hide this'))
+                else ...[
+                  TextButton(
+                      onPressed: job.cancel, child: const Text('Stop import')),
+                  FilledButton.tonal(
+                    onPressed: job.dismiss,
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      foregroundColor: scheme.primary,
+                    ),
+                    // Keeps importing; only stops explaining. Somebody who has
+                    // read this once should not have to read it for the next
+                    // three minutes.
+                    child: const Text('Keep importing, hide this'),
+                  ),
+                ],
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -103,7 +262,7 @@ class _Card extends StatelessWidget {
               ),
             ]),
             const SizedBox(height: OnoteSpace.x3),
-            Text(job.message,
+            Text(job.status.describe(L.of(context)),
                 style: OnoteType.small.copyWith(color: s.textSecondary),
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis),
@@ -127,7 +286,17 @@ class _Card extends StatelessWidget {
               // line above the buttons already says what is happening, and
               // this row keeps the one escape hatch visible throughout.
               const Spacer(),
-              if (running)
+              if (running && job.isStopping)
+                // **Always a way out.** A user pressed Cancel, watched it say
+                // "Stopping…", and then had nothing else to press — the card
+                // sat there for good. Stopping is prompt now, but a card with
+                // no escape is how a bug like that becomes unrecoverable, so
+                // there is always a second press available.
+                TextButton(
+                  onPressed: job.dismiss,
+                  child: const Text('Hide this'),
+                )
+              else if (running)
                 TextButton(
                   onPressed: job.cancel,
                   child: const Text('Cancel'),

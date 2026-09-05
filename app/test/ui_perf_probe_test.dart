@@ -2,11 +2,18 @@
 // 3–7ms per switch, so the half-second lives in widget builds. This times
 // whole-shell interactions on a big notebook. Debug-mode numbers run
 // 2–3× release, but they say WHERE the time goes.
+//
+// `notify=` is the keystroke-shaped one, and the reason the command bar and
+// the object row are memoised (`lib/ui/memo.dart`): the single frame after a
+// `markDirty()` measured 62.7 ms here before that and 18.7 ms after. This
+// probe prints, it does not assert — `test/chrome_memo_test.dart` is what
+// holds the memo to its promises.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -84,6 +91,8 @@ void main() {
     addTearDown(tester.view.reset);
     var sw = Stopwatch()..start();
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       theme: onoteTheme(Brightness.light),
       home: AppShell(app: app),
     ));

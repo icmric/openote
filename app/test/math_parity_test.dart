@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/editor/inline_math_editor.dart';
 import 'package:openote/editor/math_block_view.dart';
 import 'package:openote/editor/text_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/math_field.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -70,6 +71,8 @@ void main() {
   }
 
   Widget hostText(Block b) => MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,
@@ -139,6 +142,8 @@ void main() {
       b.content['linearSource'] = '1/2';
       b.content['latex'] = r'\frac{1}{2}';
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,

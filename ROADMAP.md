@@ -1,6 +1,8 @@
 # Openote Roadmap
 
-> **Status: v0.8.0 released** · **1,564 Dart (16 skipped) + 74 Rust tests green, analyzer clean** (verified 2026-08-17) · Last updated 2026-08-17
+> **Status: v0.9.0 prepared** (v0.8.0 is the last shipped release) · **2,764 Dart (54 skipped) + 78 Rust tests green, analyzer clean — 0 errors, 0 warnings** (verified 2026-09-03) · Last updated 2026-09-03
+>
+> **Getting to 1.0:** [v0.24 — the road to 1.0](docs/planning/v0.24-road-to-1.0.md) is a whole-project review with a definition of what 1.0 should promise and a three-revision order to get there. Landed since: the welcome flow rebuilt around drawings, the translation foundation plus six surfaces (~450 messages) and **six shipping languages** chosen from the computer's own settings, the per-keystroke chrome rebuild (62.7 ms → 18.7 ms a frame), equations announcing themselves to a screen reader, and [a manual pre-release checklist](docs/pre-release-checklist.md) for the failures a headless suite cannot see. **The one real blocker is unchanged: nobody has opened the macOS or Linux build.** The one thing worth BREAKING before the format promise binds is §0 — every autosave rewrites the whole block, measured at 2,534 bytes of op log per save on a 2,193-character paragraph. The body of this document below has not had the same pass and still describes some work that has since shipped.
 >
 > **Shipped since v0.2:** the student release (v0.3) · dates, reminders and the planner (v0.5) · the UI revamp (v0.6) · installers for all three platforms (v0.7) · events and the timetable (v0.8) · the performance pass (v0.9) · responsiveness and storage waves 1a + 1c (v0.10) · size and speed phase 0, including ink-as-bytes — 63.09 MB of handwriting became 3.22 MB (v0.11) · **git/GitHub sync with join-by-link** · **password-protected pages** ([ADR-0008](docs/adr/ADR-0008-page-protection.md)) · **MCP / AI access** ([spec 14](docs/specs/14-external-api-mcp.md)) · **local code cells** (v0.14) · **keyboard control phases 1–2** (v0.16) · **update through the app** (v0.7.0).
 >
@@ -47,7 +49,7 @@ by *scope*. Anything marked started has code or a decision in the tree already.
 Two items belong to this document rather than to the backlog, because they are
 acceptance criteria this project set itself and then did not meet:
 
-- **The atom-like inline-math caret** — [ADR-0004](docs/adr/ADR-0004-editor-engine.md) criterion 3. `$…$` renders, but in the live field the caret still walks the source character by character.
+- **The atom-like inline-math caret** — [ADR-0004](docs/adr/ADR-0004-editor-engine.md) criterion 3. **Measured 2026-09-02, and neither this line nor the ADR's table was right.** On `a $x^2$ b`, eight presses of ArrowRight from the start give offsets `1, 2, 3, 3, 3, 3, 3, 3`: the caret does *not* walk through the equation's contents any more — arrowing in hands over to the equation editor, which is what [v0.20](docs/planning/v0.20-one-equation-editor.md) built. What is left is smaller and precise: **the opening `$` is still a character the caret steps onto**, so one press moves nothing you can see. Fix that one step and criterion 3 is met; update the ADR's table when it is, rather than this line alone.
 - **A CJK / IME pass on Linux and Windows** — ADR-0004 criterion 5, never done. Inherited from a stock `TextField` rather than reimplemented, so it is probably fine; "probably" is the problem.
 
 *(The historic version of this list — licence ratification, tags, canvas parity, bundled fonts, CI — is in the git history of this file. Everything on it shipped.)*

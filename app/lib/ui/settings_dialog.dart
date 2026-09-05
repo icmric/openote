@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../core/platform_open.dart';
+import '../l10n/l10n.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../update/app_update.dart';
 import 'mcp_dialog.dart';
+import 'onboarding.dart';
 import 'onote_dialog.dart';
 import 'shortcut_overlay.dart';
 import 'sync_dialog.dart';
@@ -46,7 +48,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     setState(() {
       _checking = false;
       _updateNote = app.updateAvailable == null
-          ? "You're up to date ($kAppVersion is the newest version)."
+          ? L.of(context).settingsUpToDate(kAppVersion)
           : null;
     });
     if (app.updateAvailable != null && mounted) {
@@ -80,9 +82,10 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         style: const ButtonStyle(
             visualDensity: VisualDensity.compact,
             textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 11))),
-        segments: const [
-          ButtonSegment(value: false, label: Text('Off')),
-          ButtonSegment(value: true, label: Text('On')),
+        segments: [
+          ButtonSegment(
+              value: false, label: Text(L.of(context).commonOff)),
+          ButtonSegment(value: true, label: Text(L.of(context).commonOn)),
         ],
         selected: {value},
         onSelectionChanged: (s) => onChanged(s.first),
@@ -102,7 +105,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
           ),
           TextButton.icon(
             icon: Icon(icon, size: 15),
-            label: const Text('Open…', style: TextStyle(fontSize: 12)),
+            label: Text(L.of(context).commonOpenEllipsis,
+                style: const TextStyle(fontSize: 12)),
             onPressed: open,
           ),
         ]),
@@ -112,54 +116,106 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: app,
-      builder: (context, _) => AlertDialog(
-        title: const Text('Settings'),
+      builder: (context, _) {
+        final l = L.of(context);
+        return AlertDialog(
+        title: Text(l.settingsTitle),
         content: SizedBox(
           width: 460,
           child: ListView(
             shrinkWrap: true,
             children: [
-              _section('Appearance'),
+              _section(l.settingsAppearance),
               _row(
-                'Theme',
+                l.settingsTheme,
                 SegmentedButton<ThemeMode>(
                   showSelectedIcon: false,
                   style: const ButtonStyle(
                       visualDensity: VisualDensity.compact,
                       textStyle:
                           WidgetStatePropertyAll(TextStyle(fontSize: 11))),
-                  segments: const [
+                  segments: [
                     ButtonSegment(
-                        value: ThemeMode.system, label: Text('System')),
-                    ButtonSegment(value: ThemeMode.light, label: Text('Light')),
-                    ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
+                        value: ThemeMode.system,
+                        label: Text(l.settingsThemeSystem)),
+                    ButtonSegment(
+                        value: ThemeMode.light,
+                        label: Text(l.settingsThemeLight)),
+                    ButtonSegment(
+                        value: ThemeMode.dark, label: Text(l.settingsThemeDark)),
                   ],
                   selected: {app.themeMode},
                   onSelectionChanged: (s) => app.setThemeMode(s.first),
                 ),
               ),
-              _section('Writing and drawing'),
-              _row('Spell check', _toggle(app.spellCheckEnabled, app.setSpellCheck)),
-              _row('Pen near the page switches to inking',
-                  _toggle(app.penProximitySwitch, app.setPenProximitySwitch)),
-              _section('Connections'),
-              _door(Icons.sync, 'Sync',
-                  'Back up and share this notebook — GitHub or a folder.',
+              // **Language sits under Appearance, not behind a "Region" page
+              // nobody opens.** It is the first thing somebody whose computer
+              // is not in English needs, and by then they are reading a
+              // dialog they cannot read.
+              _row(
+                l.settingsLanguage,
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: app.uiLocale?.toLanguageTag() ?? '',
+                    isDense: true,
+                    style: const TextStyle(fontSize: 12),
+                    items: [
+                      DropdownMenuItem(
+                          value: '',
+                          child: Text(l.settingsLanguageAuto,
+                              style: const TextStyle(fontSize: 12))),
+                      for (final loc in kOnoteLocales)
+                        DropdownMenuItem(
+                            value: loc.toLanguageTag(),
+                            child: Text(languageNameOf(loc),
+                                style: const TextStyle(fontSize: 12))),
+                    ],
+                    onChanged: (v) => app.setUiLocale(
+                        v == null || v.isEmpty ? null : Locale(v)),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: 2, bottom: 2),
+                child: Text(l.settingsLanguageHelp,
+                    style: const TextStyle(
+                        fontSize: 11, color: OnoteColors.graphite400)),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: () => PlatformOpen.url(
+                      'https://github.com/icmric/openote/blob/master/CONTRIBUTING.md#ways-to-help-right-now'),
+                  child: Text(l.settingsLanguageContribute,
+                      style: const TextStyle(fontSize: 12)),
+                ),
+              ),
+              _section(l.settingsWriting),
+              _row(l.settingsSpellCheck,
+                  _toggle(app.spellCheckEnabled, app.setSpellCheck)),
+              _section(l.settingsConnections),
+              _door(Icons.sync, l.settingsSync, l.settingsSyncHint,
                   () => showSyncDialog(context, app)),
               _door(
                   Icons.smart_toy_outlined,
-                  'AI access',
-                  app.mcpEnabled
-                      ? 'On — AI helpers on this computer can use your notes.'
-                      : 'Off — connect Claude or other AI helpers.',
+                  l.settingsAi,
+                  app.mcpEnabled ? l.settingsAiOn : l.settingsAiOff,
                   () => showMcpDialog(context, app)),
-              _section('Keyboard'),
-              _door(Icons.keyboard_outlined, 'Keyboard shortcuts',
-                  'Everything has a key — the full list.  (Ctrl+/)',
+              _section(l.settingsHelp),
+              // The welcome flow is the only place that teaches the canvas
+              // itself, and it used to be shown exactly once, ever: skip it
+              // on the first run — or be the second person to use the
+              // machine — and there was no way back to it. A door here is
+              // what makes "Skip" a fair offer.
+              _door(Icons.school_outlined, l.settingsWelcomeTour,
+                  l.settingsWelcomeTourHint,
+                  () => showOnboarding(context, app)),
+              _door(Icons.keyboard_outlined, l.settingsShortcuts,
+                  l.settingsShortcutsHint,
                   () => showShortcutOverlay(context)),
-              _section('About'),
+              _section(l.settingsAbout),
               _row(
-                'Openote $kAppVersion',
+                l.settingsVersion(kAppVersion),
                 _checking
                     ? const SizedBox(
                         width: 14,
@@ -167,8 +223,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                         child: CircularProgressIndicator(strokeWidth: 2))
                     : TextButton(
                         onPressed: _checkNow,
-                        child: const Text('Check for updates',
-                            style: TextStyle(fontSize: 12)),
+                        child: Text(l.settingsCheckUpdates,
+                            style: const TextStyle(fontSize: 12)),
                       ),
               ),
               if (_updateNote != null)
@@ -180,8 +236,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 child: TextButton(
                   onPressed: () => PlatformOpen.url(
                       'https://github.com/icmric/openote/releases'),
-                  child: const Text("What's new",
-                      style: TextStyle(fontSize: 12)),
+                  child: Text(l.settingsWhatsNew,
+                      style: const TextStyle(fontSize: 12)),
                 ),
               ),
             ],
@@ -190,9 +246,10 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         actions: [
           TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close')),
+              child: Text(l.commonClose)),
         ],
-      ),
+      );
+      },
     );
   }
 }

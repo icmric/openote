@@ -10,12 +10,15 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/core/platform_open.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/markdown/md_render.dart';
 
 void main() {
   const base = TextStyle(fontSize: 14);
 
   Future<void> pump(WidgetTester t, String text) => t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: SizedBox(
             width: 600,
@@ -82,6 +85,8 @@ void main() {
     // A WidgetSpan child does not inherit the enclosing span's style, so a
     // link used to render at the default size inside a 24pt heading.
     await t.pumpWidget(const MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: MarkdownView(
           text: '[x](https://example.com)',

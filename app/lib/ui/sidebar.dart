@@ -5,6 +5,7 @@ import '../export/pdf_vector_export.dart';
 import '../export/print_page.dart';
 import '../model/models.dart';
 import '../planner/agenda.dart';
+import '../l10n/l10n.dart';
 import '../state/app_state.dart';
 import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
@@ -202,6 +203,7 @@ class _SidebarState extends State<Sidebar> {
   // ── Search / quick-jump ───────────────────────────────────────────────
 
   Widget _searchRow(BuildContext context) {
+    final l = L.of(context);
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 2, 4, 6),
@@ -217,7 +219,7 @@ class _SidebarState extends State<Sidebar> {
                 decoration: InputDecoration(
                   isDense: true,
                   filled: true,
-                  hintText: 'Search or jump to…',
+                  hintText: l.navSearchHint,
                   hintStyle: const TextStyle(fontSize: 13),
                   prefixIcon: const Icon(Icons.search, size: 16),
                   prefixIconConstraints:
@@ -250,6 +252,7 @@ class _SidebarState extends State<Sidebar> {
   }
 
   Widget _searchResults(BuildContext context) {
+    final l = L.of(context);
     final q = _query.trim().toLowerCase();
     final results = app.nodes
         .where((n) =>
@@ -273,7 +276,7 @@ class _SidebarState extends State<Sidebar> {
     ];
     if (results.isEmpty && contentHits.isEmpty) {
       return Center(
-        child: Text('No matches for “${_query.trim()}”',
+        child: Text(l.navNoMatches(_query.trim()),
             style: TextStyle(fontSize: 12, color: context.surfaces.textSecondary)),
       );
     }
@@ -311,7 +314,7 @@ class _SidebarState extends State<Sidebar> {
         if (contentHits.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-            child: Text('In page content',
+            child: Text(l.navInPageContent,
                 style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -322,7 +325,7 @@ class _SidebarState extends State<Sidebar> {
               dense: true,
               visualDensity: VisualDensity.compact,
               leading: const Icon(Icons.search, size: 16),
-              title: Text(app.node(h.pageId)?.title ?? 'Untitled',
+              title: Text(app.node(h.pageId)?.title ?? l.navUntitled,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 13)),
               subtitle: h.snippet.isEmpty
@@ -365,13 +368,14 @@ class _SidebarState extends State<Sidebar> {
   // thing that makes OneNote's navigator effortless to scan.
 
   Widget _twoColumnBody(BuildContext context) {
+    final l = L.of(context);
     final sections =
         app.nodes.where((n) => n.kind == NodeKind.section).toList();
     if (sections.isEmpty) {
       return _EmptyHint(
         icon: Icons.folder_outlined,
-        text: 'No sections yet.\nCreate one to get started.',
-        actionLabel: 'New section',
+        text: l.navNoSections,
+        actionLabel: l.navNewSection,
         onAction: app.addSection,
       );
     }
@@ -411,6 +415,7 @@ class _SidebarState extends State<Sidebar> {
   }
 
   Widget _pagesZone(BuildContext context, TreeNode section) {
+    final l = L.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
     final color = _sectionColor(section.color, dark);
     final pages = _pageEntriesFor(app, section);
@@ -445,7 +450,7 @@ class _SidebarState extends State<Sidebar> {
               IconButton(
                 icon: const Icon(Icons.add, size: 16),
                 visualDensity: VisualDensity.compact,
-                tooltip: 'New page in ${section.title}',
+                tooltip: l.navNewPageIn(section.title),
                 onPressed: () => app.addPage(sectionId: section.id),
               ),
             ],
@@ -454,7 +459,7 @@ class _SidebarState extends State<Sidebar> {
         Expanded(
           child: pages.isEmpty
               ? Center(
-                  child: Text('No pages yet',
+                  child: Text(l.navNoPages,
                       style: TextStyle(
                           fontSize: 12, color: context.surfaces.textSecondary)),
                 )
@@ -470,6 +475,7 @@ class _SidebarState extends State<Sidebar> {
   // ── Section list (groups → sections) ──────────────────────────────────
 
   Widget _sectionsColumn(BuildContext context) {
+    final l = L.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
     final groups = app.nodes
         .where((n) => n.kind == NodeKind.sectionGroup && n.parentId == null)
@@ -481,8 +487,8 @@ class _SidebarState extends State<Sidebar> {
     if (groups.isEmpty && looseSections.isEmpty) {
       return _EmptyHint(
         icon: Icons.folder_outlined,
-        text: 'No sections yet.\nCreate one to get started.',
-        actionLabel: 'New section',
+        text: l.navNoSections,
+        actionLabel: l.navNewSection,
         onAction: app.addSection,
       );
     }
@@ -534,30 +540,33 @@ class _SidebarState extends State<Sidebar> {
 
   // ── Footer toolbar ────────────────────────────────────────────────────
 
-  Widget _footer(BuildContext context) => Padding(
+  Widget _footer(BuildContext context) {
+    final l = L.of(context);
+    return Padding(
         padding: const EdgeInsets.all(6),
         child: Row(
           children: [
             Expanded(
               child: TextButton.icon(
                 icon: const Icon(Icons.create_new_folder_outlined, size: 16),
-                label: const Text('Section', style: TextStyle(fontSize: 12)),
+                label: Text(l.navSection, style: const TextStyle(fontSize: 12)),
                 onPressed: app.addSection,
               ),
             ),
             IconButton(
               icon: const Icon(Icons.topic_outlined, size: 16),
-              tooltip: 'New section group',
+              tooltip: l.navNewSectionGroup,
               onPressed: app.addSectionGroup,
             ),
             IconButton(
               icon: const Icon(Icons.delete_outline, size: 16),
-              tooltip: 'Recycle bin',
+              tooltip: l.navRecycleBin,
               onPressed: () => showRecycleBin(context, app),
             ),
           ],
         ),
       );
+  }
 }
 
 class _GroupHeader extends StatefulWidget {
@@ -704,6 +713,7 @@ class _HomeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = L.of(context);
     final scheme = Theme.of(context).colorScheme;
     final active = app.navHome;
     return Padding(
@@ -724,7 +734,7 @@ class _HomeTile extends StatelessWidget {
                 color: active ? scheme.primary : OnoteColors.brass400),
             const SizedBox(width: 8),
             Expanded(
-              child: Text('Home',
+              child: Text(l.navHome,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                       fontSize: 13,
@@ -746,6 +756,7 @@ class _HomePane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = L.of(context);
     final favourites = app.favouritePages();
     final recents = app.recentPages(max: 8);
 
@@ -770,7 +781,7 @@ class _HomePane extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(page.title.isEmpty ? 'Untitled' : page.title,
+                    Text(page.title.isEmpty ? l.navUntitled : page.title,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 13)),
                     Text(app.node(page.parentId)?.title ?? '',
@@ -835,6 +846,7 @@ class _ComingUp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = L.of(context);
     final scheme = Theme.of(context).colorScheme;
     final now = DateTime.now();
     final sections = app.planner.sections(now: now);
@@ -858,7 +870,7 @@ class _ComingUp extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 6, 4),
           child: Row(children: [
-            Text('COMING UP',
+            Text(l.navComingUp,
                 style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -869,7 +881,7 @@ class _ComingUp extends StatelessWidget {
               onTap: app.openPlanner,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                child: Text(total > _max ? 'All $total' : 'Open',
+                child: Text(total > _max ? l.navAllCount(total) : l.navOpen,
                     style: TextStyle(fontSize: 11, color: scheme.primary)),
               ),
             ),
@@ -960,6 +972,7 @@ class _NavRail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = L.of(context);
     final scheme = Theme.of(context).colorScheme;
     final current = app.notebooks.firstWhere((n) => n.id == app.notebookId);
     final sections =
@@ -972,7 +985,7 @@ class _NavRail extends StatelessWidget {
           const SizedBox(height: 6),
           IconButton(
             icon: const Icon(Icons.keyboard_double_arrow_right, size: 18),
-            tooltip: 'Expand the navigator  (Ctrl+\\)',
+            tooltip: l.navExpand,
             visualDensity: VisualDensity.compact,
             onPressed: app.toggleNavCollapsed,
           ),
@@ -1005,7 +1018,7 @@ class _NavRail extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.star_outline, size: 16),
             color: OnoteColors.brass400,
-            tooltip: 'Home — favourites & recents',
+            tooltip: l.navHomeTip,
             visualDensity: VisualDensity.compact,
             onPressed: () {
               app.toggleNavCollapsed();
@@ -1083,13 +1096,30 @@ class _NotebookHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = L.of(context);
     final scheme = Theme.of(context).colorScheme;
     final current =
-        app.notebooks.firstWhere((n) => n.id == app.notebookId);
+        app.notebooks.firstWhere((n) => n.id == app.notebookId,
+            // **Never throws.** This ran `firstWhere` with no `orElse`, so a
+            // `notebookId` naming a notebook that had just been deleted took
+            // the entire sidebar down with `Bad state: No element` — and an
+            // error widget inside a stretched Column then reported an
+            // overflow of ninety-odd thousand pixels, which is what somebody
+            // actually sees.
+            //
+            // The cause is fixed where it belongs, in
+            // `discardImportedNotebook`. This stays because a header is not
+            // a place worth crashing from: whatever goes wrong upstream, the
+            // chrome should still draw.
+            orElse: () => NotebookRef(
+                  id: app.notebookId ?? '',
+                  title: '',
+                  file: '',
+                ));
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 10, 6, 4),
       child: Tooltip(
-        message: 'Notebooks — switch, rename, duplicate, import',
+        message: l.navNotebooksTip,
         waitDuration: const Duration(milliseconds: 600),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
@@ -1120,7 +1150,7 @@ class _NotebookHeader extends StatelessWidget {
                 const Icon(Icons.unfold_more, size: 16),
                 IconButton(
                   icon: const Icon(Icons.keyboard_double_arrow_left, size: 16),
-                  tooltip: 'Collapse the navigator  (Ctrl+)',
+                  tooltip: l.navCollapse,
                   visualDensity: VisualDensity.compact,
                   onPressed: app.toggleNavCollapsed,
                 ),
@@ -1293,6 +1323,7 @@ String _retentionSubtitle(int deletedAt, int retentionDays) {
 /// and, within the current notebook, sections/pages/groups. Items are
 /// auto-purged after the retention window (swept on open).
 Future<void> showRecycleBin(BuildContext context, AppState app) async {
+  final l = L.of(context);
   await app.purgeExpiredTrash();
   if (!context.mounted) return;
   final retention = app.recycleRetentionDays;
@@ -1303,13 +1334,13 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
         final notebooks = app.trashedNotebooks;
         final items = app.deletedNodes();
         return AlertDialog(
-          title: const Text('Recycle bin'),
+          title: Text(l.navRecycleBin),
           content: SizedBox(
             width: 400,
             child: (notebooks.isEmpty && items.isEmpty)
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    child: Text('Nothing deleted.'))
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Text(l.navBinEmpty))
                 : ConstrainedBox(
                     constraints: const BoxConstraints(maxHeight: 400),
                     child: ListView(
@@ -1318,13 +1349,13 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
                         Padding(
                           padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
                           child: Text(
-                              'Items here are permanently deleted after $retention days.',
+                              l.navBinRetention(retention),
                               style: TextStyle(
                                   fontSize: 11,
                                   color: context.surfaces.textSecondary)),
                         ),
                         if (notebooks.isNotEmpty) ...[
-                          const _BinSectionLabel('Notebooks'),
+                          _BinSectionLabel(l.navBinNotebooks),
                           for (final nb in notebooks)
                             ListTile(
                               dense: true,
@@ -1345,12 +1376,12 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
                                       await app.restoreNotebook(nb.id);
                                       setLocal(() {});
                                     },
-                                    child: const Text('Restore'),
+                                    child: Text(l.navRestore),
                                   ),
                                   IconButton(
                                     icon: const Icon(Icons.delete_forever,
                                         size: 16, color: OnoteColors.danger),
-                                    tooltip: 'Delete permanently',
+                                    tooltip: l.navDeletePermanently,
                                     onPressed: () async {
                                       final ok = await _confirmPurgeNotebook(
                                           ctx, nb,
@@ -1364,7 +1395,7 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
                                 ],
                               ),
                             ),
-                          if (items.isNotEmpty) const _BinSectionLabel('Items'),
+                          if (items.isNotEmpty) _BinSectionLabel(l.navBinItems),
                         ],
                         for (final it in items)
                           ListTile(
@@ -1390,12 +1421,12 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
                                     await app.restoreDeleted(it.id);
                                     setLocal(() {});
                                   },
-                                  child: const Text('Restore'),
+                                  child: Text(l.navRestore),
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.delete_forever,
                                       size: 16, color: OnoteColors.danger),
-                                  tooltip: 'Delete permanently',
+                                  tooltip: l.navDeletePermanently,
                                   onPressed: () {
                                     app.purgeDeleted(it.id);
                                     setLocal(() {});
@@ -1410,7 +1441,7 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+                onPressed: () => Navigator.pop(ctx), child: Text(l.navClose)),
           ],
         );
       },
@@ -1423,18 +1454,18 @@ Future<bool> _confirmPurgeNotebook(BuildContext context, NotebookRef nb,
   final ok = await showOnoteDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Delete permanently?'),
+      title: Text(L.of(ctx).navDeleteForeverTitle),
       content: Text(
           '“${nb.title}” and all its pages will be removed for good. This can\'t '
           'be undone.${caveat == null ? '' : '\n\n$caveat'}'),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel')),
+            child: Text(L.of(ctx).commonCancel)),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: OnoteColors.danger),
           onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Delete forever'),
+          child: Text(L.of(ctx).navDeleteForever),
         ),
       ],
     ),
@@ -1871,8 +1902,7 @@ KeyEventResult _nodeDeleteKey(BuildContext context, AppState app, TreeNode node,
   // locked.
   if (app.protectionFor(node.id) != null || app.isLocked(node.id)) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('“${node.title}” is locked. Remove its passcode before '
-            'deleting it.')));
+        content: Text(L.of(context).navLockedCannotDelete(node.title))));
     return KeyEventResult.handled;
   }
   _deleteNodeFromKey(context, app, node, row);
@@ -1882,6 +1912,9 @@ KeyEventResult _nodeDeleteKey(BuildContext context, AppState app, TreeNode node,
 Future<void> _deleteNodeFromKey(BuildContext context, AppState app,
     TreeNode node, FocusNode row) async {
   final messenger = ScaffoldMessenger.of(context);
+  // Taken BEFORE the await below: by the time the delete returns, this row's
+  // element may be gone and its context no good for a lookup.
+  final deleted = L.of(context);
   final title = node.title;
   // Hand the keyboard on BEFORE this row is destroyed, and before the await:
   // once the tile leaves the tree its focus node is detached and focus falls
@@ -1896,7 +1929,7 @@ Future<void> _deleteNodeFromKey(BuildContext context, AppState app,
   // still sitting in the list is worse than saying nothing at all.
   if (app.node(node.id) != null) return;
   messenger.showSnackBar(SnackBar(
-      content: Text('Deleted “$title” — restore it from the recycle bin.')));
+      content: Text(deleted.navDeletedRestorable(title))));
 }
 
 /// Is a TEXT FIELD holding the keyboard?
@@ -1944,6 +1977,7 @@ void _keyboardEnteredRow(AppState app) {
 /// the title) so it's not in this list; reorder + structural moves are.
 Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
     {required bool canIndent, required Offset position}) async {
+  final l = L.of(context);
   final isPage = node.kind == NodeKind.page;
   final isSection = node.kind == NodeKind.section;
   final overlay =
@@ -1957,8 +1991,8 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       position.dy,
     ),
     items: [
-      _nodeItem('up', Icons.keyboard_arrow_up, 'Move up'),
-      _nodeItem('down', Icons.keyboard_arrow_down, 'Move down'),
+      _nodeItem('up', Icons.keyboard_arrow_up, l.navMenuMoveUp),
+      _nodeItem('down', Icons.keyboard_arrow_down, l.navMenuMoveDown),
       if (isSection) ...[
         const PopupMenuDivider(),
         // The colour chip is the obvious thing to right-click, so this is
@@ -1973,10 +2007,10 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         // The one-click add lived on every section row until the two-column
         // layout tightened those rows; the pages pane's [+] covers the ACTIVE
         // section, and this covers the rest.
-        _nodeItem('newpage', Icons.note_add_outlined, 'New page'),
-        _nodeItem('togroup', Icons.drive_file_move_outline, 'Move to group…'),
-        _nodeItem('sortaz', Icons.sort_by_alpha, 'Sort pages A→Z'),
-        _nodeItem('sortdate', Icons.schedule, 'Sort pages by last edited'),
+        _nodeItem('newpage', Icons.note_add_outlined, l.navMenuNewPage),
+        _nodeItem('togroup', Icons.drive_file_move_outline, l.navMenuMoveToGroup),
+        _nodeItem('sortaz', Icons.sort_by_alpha, l.navMenuSortAZ),
+        _nodeItem('sortdate', Icons.schedule, l.navMenuSortEdited),
         // The navigator is where a student thinks in subjects rather than in
         // decks, so it is the more natural of the two places an exam date is
         // set. The label carries the current value: a menu that says only
@@ -1986,49 +2020,49 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         // section far more often than a page — and for an imported deck it is
         // the whole deck. Vector export made the output worth sending.
         _nodeItem('sectionpdf', Icons.picture_as_pdf_outlined,
-            'Export section as PDF…'),
-        _nodeItem('printsection', Icons.print_outlined, 'Print section…'),
+            l.navMenuExportSectionPdf),
+        _nodeItem('printsection', Icons.print_outlined, l.navMenuPrintSection),
         if (app.study.examDate(node.id) case final exam?) ...[
           _nodeItem('exam', Icons.flag_outlined,
               _examMenuLabel(context, app, node.id, exam)),
-          _nodeItem('examclear', Icons.event_busy_outlined, 'Remove exam date'),
+          _nodeItem('examclear', Icons.event_busy_outlined, l.navMenuRemoveExam),
         ] else
-          _nodeItem('exam', Icons.event_outlined, 'Set exam date…'),
+          _nodeItem('exam', Icons.event_outlined, l.navMenuSetExam),
       ],
       // A page can always indent (make subpage) or outdent (promote) at some
       // level in 0..2, so the separator is shown whenever those items are.
       if (canIndent) const PopupMenuDivider(),
       if (canIndent && node.level < 2)
-        _nodeItem('indent', Icons.subdirectory_arrow_right, 'Make subpage'),
+        _nodeItem('indent', Icons.subdirectory_arrow_right, l.navMenuMakeSubpage),
       if (canIndent && node.level > 0)
-        _nodeItem('outdent', Icons.arrow_back, 'Move back out'),
+        _nodeItem('outdent', Icons.arrow_back, l.navMenuMoveBackOut),
       if (isPage) ...[
         const PopupMenuDivider(),
         _nodeItem(
             'favourite',
             app.isFavourite(node.id) ? Icons.star : Icons.star_border,
-            app.isFavourite(node.id) ? 'Remove from favourites' : 'Add to favourites'),
-        _nodeItem('sharepdf', Icons.picture_as_pdf_outlined, 'Share as PDF…'),
-        _nodeItem('print', Icons.print_outlined, 'Print…'),
-        _nodeItem('copylink', Icons.link, 'Copy link to page'),
-        _nodeItem('history', Icons.history, 'Recent changes…'),
-        _nodeItem('template', Icons.bookmark_add_outlined, 'Save as template…'),
+            app.isFavourite(node.id) ? l.navMenuRemoveFavourite : l.navMenuAddFavourite),
+        _nodeItem('sharepdf', Icons.picture_as_pdf_outlined, l.navMenuSharePdf),
+        _nodeItem('print', Icons.print_outlined, l.navMenuPrint),
+        _nodeItem('copylink', Icons.link, l.navMenuCopyLink),
+        _nodeItem('history', Icons.history, l.navMenuRecentChanges),
+        _nodeItem('template', Icons.bookmark_add_outlined, l.navMenuSaveTemplate),
         // Laying out a whole page is not INSERTING something into it, which
         // is why this left the Insert ribbon. It belongs beside saving one —
         // and beside where "No templates yet" already sends people.
         _nodeItem('applytemplate', Icons.dashboard_customize_outlined,
-            'Apply a template…'),
+            l.navMenuApplyTemplate),
       ],
       const PopupMenuDivider(),
       // Available on every kind, because the ask was "a page ... a section, or
       // a section group" and protection is resolved by walking up from a page
       // to whichever of those carries it.
       if (app.protectionFor(node.id) != null)
-        _nodeItem('unprotect', Icons.lock_open_outlined, 'Remove passcode…')
+        _nodeItem('unprotect', Icons.lock_open_outlined, l.navMenuRemovePasscode)
       else
-        _nodeItem('protect', Icons.lock_outline, 'Lock with a passcode…'),
+        _nodeItem('protect', Icons.lock_outline, l.navMenuLock),
       const PopupMenuDivider(),
-      _nodeItem('delete', Icons.delete_outline, 'Delete', danger: true),
+      _nodeItem('delete', Icons.delete_outline, l.navMenuDelete, danger: true),
     ],
   );
   if (!context.mounted) return;
@@ -2039,15 +2073,14 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       app.protectNode(node.id, set.passcode, set.policy);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('“${node.title}” is locked. It is hidden inside '
-                'Openote, not encrypted in the file.')));
+            content: Text(L.of(context).navLockedNotEncrypted(node.title))));
       }
     case 'unprotect':
       final ok = await askToUnlock(
           context, node.title, (pw) => app.unprotectNode(node.id, pw));
       if (ok && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Passcode removed from “${node.title}”.')));
+            SnackBar(content: Text(L.of(context).navPasscodeRemoved(node.title))));
       }
     case 'up':
       app.moveNode(node.id, -1);
@@ -2083,13 +2116,13 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       if (cameFrom != null) await app.selectPage(cameFrom);
       if (saved != null && context.mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Saved to $saved')));
+            .showSnackBar(SnackBar(content: Text(l.navSavedTo(saved))));
       }
     case 'sectionpdf':
       final messenger = ScaffoldMessenger.of(context);
       final saved = await exportSectionPdfVector(app, node.id);
       if (saved != null) {
-        messenger.showSnackBar(SnackBar(content: Text('Saved to $saved')));
+        messenger.showSnackBar(SnackBar(content: Text(l.navSavedTo(saved))));
       }
     case 'copylink':
       // The wiki-link form the editor already resolves. Copying it means
@@ -2097,8 +2130,8 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       await Clipboard.setData(
           ClipboardData(text: '[[${node.title}|${node.id}]]'));
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Link copied — paste it into any page')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(L.of(context).navLinkCopied)));
       }
     case 'togroup':
       final groups = app.nodes
@@ -2107,11 +2140,11 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       final choice = await showOnoteDialog<String>(
         context: context,
         builder: (ctx) => SimpleDialog(
-          title: const Text('Move section to…'),
+          title: Text(L.of(ctx).navMoveSectionTo),
           children: [
             SimpleDialogOption(
                 onPressed: () => Navigator.pop(ctx, ''),
-                child: const Text('(No group — top level)')),
+                child: Text(L.of(ctx).navNoGroupTopLevel)),
             for (final g in groups)
               SimpleDialogOption(
                   onPressed: () => Navigator.pop(ctx, g.id),
@@ -2145,6 +2178,7 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
 }
 
 Future<void> _promptSaveTemplate(BuildContext context, AppState app) async {
+  final l = L.of(context);
   // Through [promptForText], which owns the field's controller in the dialog's
   // own State. This used to build the field here and `controller.dispose()`
   // straight after the await — the route is popped by then but its 150 ms exit
@@ -2152,12 +2186,14 @@ Future<void> _promptSaveTemplate(BuildContext context, AppState app) async {
   // rebuilding against a dead controller. Same defect as the new-notebook
   // prompt, which is what crashed the app.
   final name = await promptForText(context,
-      title: 'Save as template', okLabel: 'Save', hintText: 'Template name');
+      title: l.navSaveTemplateTitle,
+      okLabel: l.navSave,
+      hintText: l.navTemplateNameHint);
   if (name == null) return;
   app.saveCurrentAsTemplate(name);
   if (context.mounted) {
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('Template "$name" saved')));
+        .showSnackBar(SnackBar(content: Text(l.navTemplateSaved(name))));
   }
 }
 
@@ -2191,18 +2227,19 @@ class _SectionColorRow extends StatefulWidget {
 class _SectionColorRowState extends State<_SectionColorRow> {
   @override
   Widget build(BuildContext context) {
+    final l = L.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
     final scheme = Theme.of(context).colorScheme;
     final current = widget.app.node(widget.section.id)?.color;
     return Row(children: [
-      const Text('Colour',
+      Text(l.navColour,
           style: TextStyle(fontSize: 13, color: OnoteColors.graphite500)),
       const SizedBox(width: 10),
       for (final token in AppState.sectionColorTokens)
         Padding(
           padding: const EdgeInsets.only(right: 5),
           child: Tooltip(
-            message: token ?? 'Default',
+            message: token ?? l.navColourDefault,
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
               onTap: () {
@@ -2251,14 +2288,14 @@ String _examMenuLabel(
 Future<void> promptApplyTemplate(BuildContext context, AppState app) async {
   final names = app.templateNames();
   if (names.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('No templates yet — "Save as template…" first.')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(L.of(context).navNoTemplates)));
     return;
   }
   final choice = await showOnoteDialog<String>(
     context: context,
     builder: (ctx) => SimpleDialog(
-      title: const Text('Apply template'),
+      title: Text(L.of(ctx).navApplyTemplate),
       children: [
         for (final n in names)
           SimpleDialogOption(

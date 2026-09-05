@@ -13,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/canvas/block_view.dart';
 import 'package:openote/canvas/page_canvas.dart';
 import 'package:openote/editor/text_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -71,6 +72,8 @@ void main() {
 
     Future<void> pump(WidgetTester t) async {
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: SizedBox(
             width: 800,

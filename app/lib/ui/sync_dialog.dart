@@ -10,6 +10,7 @@
 /// did read as.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
@@ -376,7 +377,14 @@ class _SyncDialogState extends State<_SyncDialog> {
                     : (v) {
                         // setAutoSync notifies listeners itself; wrapping it in
                         // setState would notify during a build.
-                        app.setAutoSync(v);
+                        //
+                        // Deliberately not awaited HERE: the toggle must move
+                        // under the finger, and it notifies before the watcher
+                        // has finished stopping. Anything that goes on to
+                        // touch the folder must await it instead — the future
+                        // exists for exactly that, and dropping it everywhere
+                        // is what broke on Windows.
+                        unawaited(app.setAutoSync(v));
                         setState(() {});
                       },
                 title: const Text('Pull changes automatically',
@@ -1121,7 +1129,7 @@ class _StorageSectionState extends State<_StorageSection> {
   /// all of that is in the Advanced fold, which is where the jargon rule
   /// (PLANNING, year-10 bar) puts it.
   Future<void> _confirmUpgrade() async {
-    final ok = await showDialog<bool>(
+    final ok = await showOnoteDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Update how this notebook is stored?'),
@@ -1176,7 +1184,7 @@ class _StorageSectionState extends State<_StorageSection> {
   }
 
   Future<void> _confirmUndoUpgrade() async {
-    final ok = await showDialog<bool>(
+    final ok = await showOnoteDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Go back to the old way?'),
@@ -1289,7 +1297,7 @@ class _StorageSectionState extends State<_StorageSection> {
   }
 
   Future<void> _confirmTidyPictures() async {
-    final ok = await showDialog<bool>(
+    final ok = await showOnoteDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Stop keeping pictures twice?'),

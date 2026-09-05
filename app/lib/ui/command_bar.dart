@@ -1,7 +1,6 @@
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,12 +14,15 @@ import '../editor/list_editing.dart';
 import '../markdown/md_syntax.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
+import '../l10n/l10n.dart';
+import '../l10n/labels.dart';
 import '../state/app_state.dart';
 import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'color_picker.dart';
 import 'command_button.dart';
 import 'compacting_toolbar.dart';
+import 'memo.dart';
 import 'font_picker.dart';
 import 'insert_catalog.dart';
 import 'object_face.dart';
@@ -40,7 +42,7 @@ class CommandBar extends StatefulWidget {
   State<CommandBar> createState() => _CommandBarState();
 }
 
-class _CommandBarState extends State<CommandBar> {
+class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
   /// The tab the user last chose among the permanent ones.
   int _tab = 0;
 
@@ -53,13 +55,70 @@ class _CommandBarState extends State<CommandBar> {
   /// palette is on the object row now, where it arrives without moving
   /// anybody; View's page controls are on the same row, and the four
   /// preferences it also held were already in Settings.
-  static const _tabs = ['Home', 'Insert', 'Draw'];
+  static List<String> _tabNames(L l) => [l.barTabHome, l.barTabInsert, l.barTabDraw];
+  static const _tabCount = 3;
 
   AppState get app => widget.app;
 
+  /// Everything this bar RENDERS, so a keystroke that changes none of it does
+  /// not rebuild fifty controls. See `memo.dart` — including the measurements
+  /// that made this worth doing, and the guard test that keeps the list
+  /// honest.
+  ///
+  /// Deliberately absent: the five child widgets below that carry live
+  /// numbers — the tag and card buttons, the font-size field, and the study
+  /// and planner badges. Each of those listens to [AppState] for itself, so
+  /// its own contents stay live inside a bar that did not rebuild. That is
+  /// better than hoisting their derived counts up here, where they would be
+  /// values this widget never renders and nobody could check against the
+  /// code that does.
   @override
-  Widget build(BuildContext context) {
+  List<Object?> memoInputs() => [
+        // The widget's own configuration, because `didUpdateWidget` cannot
+        // help here — see `memo.dart`.
+        app,
+        _tab,
+        app.tool,
+        // The version, not the object: a new `UpdateInfo` for the same release
+        // must not count as a change.
+        app.updateAvailable?.version,
+        app.canFormatText,
+        app.canUndo,
+        app.canRedo,
+        app.lastColor,
+        app.penColor,
+        app.penSize,
+        app.touchDrawing,
+        app.eraserMode,
+        app.hasInkSelection,
+        app.findOpen,
+        app.showStudyPanel,
+        app.showTocPanel,
+        app.showTagsPanel,
+        app.showPlannerPanel,
+        app.showLinksPanel,
+        // A `Set` compares by identity, and a fresh one comes back every call
+        // — so as a key it would never match and the memo would never hit.
+        // Folded to a bitmask, which does compare by value.
+        _mask(app.marksAtCaret(), MdInline.values),
+        // Not an `app.` read, so the guard test cannot see it: the badge in
+        // the tab row appears only while an equation is open.
+        objectFaceOf(app),
+      ];
+
+  static int _mask<T>(Set<T> on, List<T> all) {
+    var m = 0;
+    for (var i = 0; i < all.length; i++) {
+      if (on.contains(all[i])) m |= 1 << i;
+    }
+    return m;
+  }
+
+  @override
+  Widget buildMemo(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final l = L.of(context);
+    final tabs = _tabNames(l);
     return Container(
       decoration: BoxDecoration(
         color: scheme.surface,
@@ -80,16 +139,16 @@ class _CommandBarState extends State<CommandBar> {
                 // part of the frame — and cost hit area at the screen edge,
                 // which is the one place a pointer can be thrown at infinitely
                 // fast (Fitts's law) and always land.
-                for (var i = 0; i < _tabs.length; i++)
-                  _tabButton(scheme, i, _tabs[i]),
+                for (var i = 0; i < _tabCount; i++)
+                  _tabButton(scheme, i, tabs[i]),
                 // **A badge, not a tab.** It says what the row below is
                 // about and it cannot be pressed, so there is nothing here to
                 // be moved onto and nothing to be moved back from. It sits
                 // where the old Maths tab sat, deliberately: same place,
                 // opposite kind.
                 if (objectFaceOf(app) == ObjectFace.equation)
-                  const _SubjectBadge(
-                      icon: Icons.functions, label: 'Equation'),
+                  _SubjectBadge(
+                      icon: Icons.functions, label: l.barEquationBadge),
                 const Spacer(),
                 // The trailing cluster COMPACTS rather than scrolling.
                 //
@@ -117,13 +176,13 @@ class _CommandBarState extends State<CommandBar> {
                         ToolbarControl(
                           width: 40,
                           icon: Icons.system_update_alt,
-                          label: 'Update to ${app.updateAvailable!.version}…',
+                          label: l.barUpdateTo(app.updateAvailable!.version),
                           onPressed: () => showUpdateDialog(context, app),
                           inline: IconButton(
                             icon: Icon(Icons.system_update_alt,
                                 size: 18, color: scheme.primary),
                             tooltip:
-                                'Update to ${app.updateAvailable!.version}…',
+                                l.barUpdateTo(app.updateAvailable!.version),
                             visualDensity: VisualDensity.compact,
                             onPressed: () => showUpdateDialog(context, app),
                           ),
@@ -133,14 +192,14 @@ class _CommandBarState extends State<CommandBar> {
                         ToolbarControl(
                           width: 98,
                           icon: _toolIcon(app.tool),
-                          label: 'Done',
+                          label: l.barDone,
                           onPressed: () => app.setTool(Tool.select),
                           inline: Padding(
                             padding: const EdgeInsets.only(right: 4),
                             child: ActionChip(
                               avatar: Icon(_toolIcon(app.tool), size: 16),
-                              label: const Text('Done',
-                                  style: TextStyle(fontSize: 11)),
+                              label: Text(l.barDone,
+                                  style: const TextStyle(fontSize: 11)),
                               visualDensity: VisualDensity.compact,
                               onPressed: () => app.setTool(Tool.select),
                             ),
@@ -151,7 +210,7 @@ class _CommandBarState extends State<CommandBar> {
                       ToolbarControl(
                         width: 40,
                         icon: Icons.school_outlined,
-                        label: 'Study',
+                        label: l.barStudy,
                         selected: app.showStudyPanel,
                         onPressed: app.toggleStudyPanel,
                         inline: _StudyButton(app: app),
@@ -163,7 +222,7 @@ class _CommandBarState extends State<CommandBar> {
                       ToolbarControl(
                         width: 40,
                         icon: Icons.event_note_outlined,
-                        label: 'Planner',
+                        label: l.barPlanner,
                         selected: app.showPlannerPanel,
                         onPressed: app.togglePlannerPanel,
                         inline: _PlannerButton(app: app),
@@ -171,12 +230,12 @@ class _CommandBarState extends State<CommandBar> {
                       ToolbarControl(
                         width: 40,
                         icon: Icons.label_outline,
-                        label: 'Find tags',
+                        label: l.barFindTags,
                         selected: app.showTagsPanel,
                         onPressed: app.toggleTagsPanel,
                         inline: IconButton(
                           icon: const Icon(Icons.label_outline, size: 18),
-                          tooltip: 'Find tags',
+                          tooltip: l.barFindTags,
                           isSelected: app.showTagsPanel,
                           visualDensity: VisualDensity.compact,
                           onPressed: app.toggleTagsPanel,
@@ -185,12 +244,12 @@ class _CommandBarState extends State<CommandBar> {
                       ToolbarControl(
                         width: 40,
                         icon: Icons.toc,
-                        label: 'Page outline',
+                        label: l.barPageOutline,
                         selected: app.showTocPanel,
                         onPressed: app.toggleTocPanel,
                         inline: IconButton(
                           icon: const Icon(Icons.toc, size: 18),
-                          tooltip: 'Page outline',
+                          tooltip: l.barPageOutline,
                           isSelected: app.showTocPanel,
                           visualDensity: VisualDensity.compact,
                           onPressed: app.toggleTocPanel,
@@ -199,12 +258,12 @@ class _CommandBarState extends State<CommandBar> {
                       ToolbarControl(
                         width: 40,
                         icon: Icons.account_tree_outlined,
-                        label: 'Links & backlinks',
+                        label: l.barLinks,
                         selected: app.showLinksPanel,
                         onPressed: app.toggleLinksPanel,
                         inline: IconButton(
                           icon: const Icon(Icons.account_tree_outlined, size: 18),
-                          tooltip: 'Links & backlinks',
+                          tooltip: l.barLinks,
                           isSelected: app.showLinksPanel,
                           visualDensity: VisualDensity.compact,
                           onPressed: app.toggleLinksPanel,
@@ -213,12 +272,12 @@ class _CommandBarState extends State<CommandBar> {
                       ToolbarControl(
                         width: 40,
                         icon: Icons.search,
-                        label: 'Find on page',
+                        label: l.barFindOnPage,
                         selected: app.findOpen,
                         onPressed: app.toggleFind,
                         inline: IconButton(
                           icon: const Icon(Icons.search, size: 18),
-                          tooltip: 'Find on page  (Ctrl+F)',
+                          tooltip: l.barFindOnPageTip,
                           isSelected: app.findOpen,
                           visualDensity: VisualDensity.compact,
                           onPressed: app.toggleFind,
@@ -227,11 +286,11 @@ class _CommandBarState extends State<CommandBar> {
                       ToolbarControl(
                         width: 40,
                         icon: Icons.ios_share_outlined,
-                        label: 'Export',
+                        label: l.barExport,
                         inline: MenuAnchor(
                           builder: (context, controller, _) => IconButton(
                             icon: const Icon(Icons.ios_share_outlined, size: 18),
-                            tooltip: 'Export page…',
+                            tooltip: l.barExportTip,
                             visualDensity: VisualDensity.compact,
                             onPressed: () => controller.isOpen
                                 ? controller.close()
@@ -242,7 +301,7 @@ class _CommandBarState extends State<CommandBar> {
                         submenu: [
                           ToolbarSubmenuItem(
                             icon: Icons.description_outlined,
-                            label: 'Markdown (.md)',
+                            label: l.barExportMarkdown,
                             onPressed: () =>
                                 _export(context, exportPageMarkdown),
                           ),
@@ -252,29 +311,29 @@ class _CommandBarState extends State<CommandBar> {
                           // whose look matters more than its text.
                           ToolbarSubmenuItem(
                             icon: Icons.picture_as_pdf_outlined,
-                            label: 'PDF (.pdf)',
+                            label: l.barExportPdf,
                             onPressed: () =>
                                 _export(context, exportPagePdfVector),
                           ),
                           ToolbarSubmenuItem(
                             icon: Icons.print_outlined,
-                            label: 'Print…',
+                            label: l.barExportPrint,
                             onPressed: () => printCurrentPage(app),
                           ),
                           ToolbarSubmenuItem(
                             icon: Icons.image_outlined,
-                            label: 'PDF — picture of the page',
+                            label: l.barExportPdfPicture,
                             onPressed: () => _export(context, exportPagePdf),
                           ),
                           ToolbarSubmenuItem(
                             icon: Icons.hub_outlined,
-                            label: 'For Obsidian Canvas (.canvas)',
+                            label: l.barExportCanvas,
                             onPressed: () =>
                                 _export(context, exportPageJsonCanvas),
                           ),
                           ToolbarSubmenuItem(
                             icon: Icons.gesture,
-                            label: 'Just the drawing (.inkml)',
+                            label: l.barExportInk,
                             onPressed: () => _export(context, exportPageInkML),
                           ),
                           // Say what lands on disk. "Materialize" is this
@@ -283,13 +342,13 @@ class _CommandBarState extends State<CommandBar> {
                           // other user-visible string in the app.
                           ToolbarSubmenuItem(
                             icon: Icons.folder_zip_outlined,
-                            label: 'Save the whole notebook as folders and files…',
+                            label: l.barExportNotebook,
                             onPressed: () => _exportWithProgress(
                                 context,
-                                'Saving the notebook…',
+                                l.barExportNotebookBusy,
                                 (report) => materializeNotebook(app,
                                     onProgress: (done, total) => report(
-                                        'Page $done of $total…'))),
+                                        l.barExportPageProgress(done, total)))),
                           ),
                         ],
                       ),
@@ -298,11 +357,11 @@ class _CommandBarState extends State<CommandBar> {
                       ToolbarControl(
                         width: 40,
                         icon: Icons.settings_outlined,
-                        label: 'Settings',
+                        label: l.barSettings,
                         onPressed: () => showSettingsDialog(context, app),
                         inline: IconButton(
                           icon: const Icon(Icons.settings_outlined, size: 18),
-                          tooltip: 'Settings…',
+                          tooltip: l.barSettingsTip,
                           visualDensity: VisualDensity.compact,
                           onPressed: () => showSettingsDialog(context, app),
                         ),
@@ -442,13 +501,14 @@ class _CommandBarState extends State<CommandBar> {
     progress.dispose();
     if (failed != null) {
       messenger?.showSnackBar(SnackBar(
-        content: Text("That couldn't be saved: $failed"),
+        content: Text(L.of(context).barSaveFailed('$failed')),
         duration: const Duration(seconds: 6),
       ));
       return;
     }
-    if (path != null) {
-      messenger?.showSnackBar(SnackBar(content: Text('Exported to $path')));
+    if (path != null && context.mounted) {
+      messenger?.showSnackBar(
+          SnackBar(content: Text(L.of(context).barExportedTo(path))));
     }
   }
 
@@ -456,11 +516,14 @@ class _CommandBarState extends State<CommandBar> {
   /// (shown while there's room) and the folded `ToolbarSubmenuItem` list
   /// (shown once Export itself has to fold into the command bar's own
   /// "More" menu) can share one definition rather than drifting apart.
-  List<Widget> _exportMenuItems(BuildContext context) => [
+  List<Widget> _exportMenuItems(BuildContext context) =>
+      _exportMenuItemsFor(context, L.of(context));
+
+  List<Widget> _exportMenuItemsFor(BuildContext context, L l) => [
         MenuItemButton(
           leadingIcon: const Icon(Icons.description_outlined, size: 18),
           onPressed: () => _export(context, exportPageMarkdown),
-          child: const Text('Markdown (.md)'),
+          child: Text(l.barExportMarkdown),
         ),
         // Vector by default: the shared/printed artefact should be
         // searchable, selectable and small. The raster capture stays
@@ -468,42 +531,42 @@ class _CommandBarState extends State<CommandBar> {
         MenuItemButton(
           leadingIcon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
           onPressed: () => _export(context, exportPagePdfVector),
-          child: const Text('PDF (.pdf)'),
+          child: Text(l.barExportPdf),
         ),
         MenuItemButton(
           leadingIcon: const Icon(Icons.print_outlined, size: 18),
           shortcut: const SingleActivator(LogicalKeyboardKey.keyP, control: true),
           onPressed: () => printCurrentPage(app),
-          child: const Text('Print…'),
+          child: Text(l.barExportPrint),
         ),
         MenuItemButton(
           leadingIcon: const Icon(Icons.image_outlined, size: 18),
           onPressed: () => _export(context, exportPagePdf),
-          child: const Text('PDF — picture of the page'),
+          child: Text(l.barExportPdfPicture),
         ),
         MenuItemButton(
           leadingIcon: const Icon(Icons.hub_outlined, size: 18),
           onPressed: () => _export(context, exportPageJsonCanvas),
-          child: const Text('For Obsidian Canvas (.canvas)'),
+          child: Text(l.barExportCanvas),
         ),
         MenuItemButton(
           leadingIcon: const Icon(Icons.gesture, size: 18),
           onPressed: () => _export(context, exportPageInkML),
-          child: const Text('Just the drawing (.inkml)'),
+          child: Text(l.barExportInk),
         ),
         const Divider(height: 6),
         MenuItemButton(
           leadingIcon: const Icon(Icons.folder_zip_outlined, size: 18),
           onPressed: () => _exportWithProgress(
               context,
-              'Saving the notebook…',
+              l.barExportNotebookBusy,
               (report) => materializeNotebook(app,
                   onProgress: (done, total) =>
-                      report('Page $done of $total…'))),
+                      report(l.barExportPageProgress(done, total)))),
           // Say what lands on disk. "Materialize" is this codebase's own
           // architecture vocabulary (`sync/materializer.dart`) and appears
           // in no other user-visible string in the app.
-          child: const Text('Save the whole notebook as folders and files…'),
+          child: Text(l.barExportNotebook),
         ),
       ];
 
@@ -512,13 +575,13 @@ class _CommandBarState extends State<CommandBar> {
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
       final path = await fn(app);
-      if (path != null) {
+      if (path != null && context.mounted) {
         messenger?.showSnackBar(
-            SnackBar(content: Text('Exported to $path')));
+            SnackBar(content: Text(L.of(context).barExportedTo(path))));
       }
     } catch (e) {
       messenger?.showSnackBar(SnackBar(
-        content: Text("That couldn't be saved: $e"),
+        content: Text(L.of(context).barSaveFailed('$e')),
         duration: const Duration(seconds: 6),
       ));
     }
@@ -527,6 +590,7 @@ class _CommandBarState extends State<CommandBar> {
   // ── HOME: history + text formatting ──────────────────────────────────
 
   Widget _homeRow(BuildContext context) {
+    final l = L.of(context);
     // Enable from state, not child build order (fixes the greyed-out bug).
     final canFormat = app.canFormatText;
     // What is switched ON at the caret. With the markers collapsed to nothing
@@ -549,13 +613,13 @@ class _CommandBarState extends State<CommandBar> {
     return Row(children: [
       IconButton(
         icon: const Icon(Icons.undo, size: 18),
-        tooltip: 'Undo  (Ctrl+Z)',
+        tooltip: l.barUndo,
         visualDensity: VisualDensity.compact,
         onPressed: app.canUndo ? app.undo : null,
       ),
       IconButton(
         icon: const Icon(Icons.redo, size: 18),
-        tooltip: 'Redo  (Ctrl+Y)',
+        tooltip: l.barRedo,
         visualDensity: VisualDensity.compact,
         onPressed: app.canRedo ? app.redo : null,
       ),
@@ -573,30 +637,30 @@ class _CommandBarState extends State<CommandBar> {
       // command holds its position always; the ones that need a caret are
       // greyed, and the hint at the end of the row — which only ever appears
       // AFTER the last control, so it displaces nothing — says why.
-      fmt(Icons.format_bold, 'Bold  (Ctrl+B)', () => app.wrapSelection('**'),
+      fmt(Icons.format_bold, l.barBold, () => app.wrapSelection('**'),
           MdInline.bold),
-      fmt(Icons.format_italic, 'Italic  (Ctrl+I)',
+      fmt(Icons.format_italic, l.barItalic,
           () => app.wrapSelection('*'), MdInline.italic),
-      fmt(Icons.format_underlined, 'Underline  (Ctrl+U)',
+      fmt(Icons.format_underlined, l.barUnderline,
           () => app.wrapSelection('++'), MdInline.underline),
-      fmt(Icons.strikethrough_s, 'Strikethrough',
+      fmt(Icons.strikethrough_s, l.barStrikethrough,
           () => app.wrapSelection('~~'), MdInline.strike),
-      fmt(Icons.code, 'Inline code', () => app.wrapSelection('`'),
+      fmt(Icons.code, l.barInlineCode, () => app.wrapSelection('`'),
           MdInline.code),
-      fmt(Icons.border_color, 'Highlight', () => app.wrapSelection('=='),
+      fmt(Icons.border_color, l.barHighlight, () => app.wrapSelection('=='),
           MdInline.highlight),
       const _Div(),
-      fmt(Icons.title, 'Heading 1', () => app.toggleLinePrefix('# ')),
+      fmt(Icons.title, l.barHeading1, () => app.toggleLinePrefix('# ')),
       _TextBtn('H2', canFormat, () => app.toggleLinePrefix('## ')),
       _TextBtn('H3', canFormat, () => app.toggleLinePrefix('### ')),
       const _Div(),
-      fmt(Icons.format_list_bulleted, 'Bullet list',
+      fmt(Icons.format_list_bulleted, l.barBulletList,
           () => app.toggleList(ListKind.bullet)),
-      fmt(Icons.format_list_numbered, 'Numbered list',
+      fmt(Icons.format_list_numbered, l.barNumberedList,
           () => app.toggleList(ListKind.numbered)),
-      fmt(Icons.check_box_outlined, 'Checkbox',
+      fmt(Icons.check_box_outlined, l.barCheckbox,
           () => app.toggleList(ListKind.checkbox)),
-      fmt(Icons.format_quote, 'Quote', () => app.toggleLinePrefix('> ')),
+      fmt(Icons.format_quote, l.barQuote, () => app.toggleLinePrefix('> ')),
       const _Div(),
       // Tags (TEXT-5). OneNote users organise around these, so they get a
       // first-class place on Home rather than a submenu. The button shows the
@@ -607,7 +671,7 @@ class _CommandBarState extends State<CommandBar> {
       // Text colour — split button (§7a.2): main area applies the current
       // colour; the arrow opens the full picker (palette/wheel/RGBA).
       Tooltip(
-        message: 'Apply text colour',
+        message: l.barTextColour,
         child: InkWell(
           borderRadius: BorderRadius.circular(6),
           onTap: canFormat ? () => app.applyTextColor(app.lastColor) : null,
@@ -640,7 +704,7 @@ class _CommandBarState extends State<CommandBar> {
       // Font — opens the searchable system-font picker.
       IconButton(
         icon: const Icon(Icons.font_download_outlined, size: 18),
-        tooltip: 'Text font…',
+        tooltip: l.barTextFont,
         visualDensity: VisualDensity.compact,
         onPressed: canFormat
             ? () async {
@@ -656,8 +720,23 @@ class _CommandBarState extends State<CommandBar> {
       _FontSizeField(app: app, enabled: canFormat),
       if (!canFormat) ...[
         const SizedBox(width: 10),
-        Text('Click into a text box to format',
-            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
+        // **Clipped, not wrapped, if it does not fit.** The Home row is a
+        // horizontal scroll view, so this sentence gets whatever space is
+        // left and no more — and every translation of it is longer than the
+        // English. Spanish ran off the right edge of a 1440px window the
+        // first time the app was rendered in another language. A hard cap
+        // plus an ellipsis keeps the row's shape whatever the sentence turns
+        // out to be; the tooltip on the greyed-out buttons says the same
+        // thing anyway.
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 260),
+          child: Text(l.barClickIntoTextBox,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: 11, color: context.surfaces.textSecondary)),
+        ),
+        const SizedBox(width: 10),
       ],
     ]);
   }
@@ -717,18 +796,20 @@ class _CommandBarState extends State<CommandBar> {
   /// entry is the same 40px every compact `IconButton` in this app
   /// measures, +22 for the split button's own dropdown arrow when the item
   /// has [InsertItem.extras], +2 for `_InsertButton`'s own trailing gap.
-  static double _insertItemWidth(InsertItem item) {
-    final base = item.showLabel ? 40 + item.label.length * 12 : 40;
+  static double _insertItemWidth(InsertItem item, L l) {
+    final base = item.showLabel ? 40 + item.label(l).length * 12 : 40;
     return base + (item.extras.isEmpty ? 0 : 22) + 2;
   }
 
-  Widget _insertRow(BuildContext context) => CompactingToolbar(
+  Widget _insertRow(BuildContext context) => _insertRowFor(context, L.of(context));
+
+  Widget _insertRowFor(BuildContext context, L l) => CompactingToolbar(
         controls: [
           for (final item in kInsertRibbon)
             ToolbarControl(
-              width: _insertItemWidth(item),
+              width: _insertItemWidth(item, l),
               icon: item.icon,
-              label: item.label,
+              label: item.label(l),
               inline: _InsertButton(app: app, item: item),
               onPressed: () =>
                   item.run(context, app, insertAnchor(app, item)),
@@ -740,14 +821,14 @@ class _CommandBarState extends State<CommandBar> {
                       // had before it grew a dropdown arrow.
                       ToolbarSubmenuItem(
                         icon: item.icon,
-                        label: item.label,
+                        label: item.label(l),
                         onPressed: () =>
                             item.run(context, app, insertAnchor(app, item)),
                       ),
                       for (final extra in item.extras)
                         ToolbarSubmenuItem(
                           icon: extra.icon,
-                          label: extra.label,
+                          label: extra.label(l),
                           onPressed: () => extra.run(
                               context, app, insertAnchor(app, extra)),
                         ),
@@ -756,6 +837,7 @@ class _CommandBarState extends State<CommandBar> {
         ],
       );
   Widget _drawRow(BuildContext context) {
+    final l = L.of(context);
     final scheme = Theme.of(context).colorScheme;
     Widget toolButton(Tool t, IconData icon, String tip) => IconButton(
           icon: Icon(icon, size: 18),
@@ -777,14 +859,25 @@ class _CommandBarState extends State<CommandBar> {
     final colors = app.tool == Tool.highlighter
         ? OnoteColors.highlighterColors
         : OnoteColors.penColors;
+    // **The default swatch shows what the pen will actually draw.**
+    //
+    // Reported: *"The default color swatch should also match the actual ink
+    // color."* It did not: the swatch was painted a fixed near-black while the
+    // default pen draws in whatever contrasts with the page, so in dark mode
+    // the toolbar advertised black and the pen wrote white.
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    Color swatchColor(Color c) =>
+        (app.tool != Tool.highlighter && c == OnoteColors.graphite900 && dark)
+            ? OnoteColors.moon100
+            : c;
     return Row(children: [
-      toolButton(Tool.select, Icons.near_me_outlined, 'Select / move  (V)'),
-      toolButton(Tool.text, Icons.text_fields, 'Text  (T)'),
-      toolButton(Tool.pen, Icons.edit_outlined, 'Pen  (P)'),
+      toolButton(Tool.select, Icons.near_me_outlined, l.barToolSelect),
+      toolButton(Tool.text, Icons.text_fields, l.barToolText),
+      toolButton(Tool.pen, Icons.edit_outlined, l.barToolPen),
       toolButton(
-          Tool.highlighter, Icons.border_color_outlined, 'Highlighter  (H)'),
-      toolButton(Tool.eraser, Icons.cleaning_services_outlined, 'Eraser  (E)'),
-      toolButton(Tool.lasso, Icons.gesture_outlined, 'Lasso-select ink'),
+          Tool.highlighter, Icons.border_color_outlined, l.barToolHighlighter),
+      toolButton(Tool.eraser, Icons.cleaning_services_outlined, l.barToolEraser),
+      toolButton(Tool.lasso, Icons.gesture_outlined, l.barToolLasso),
       const _Div(),
       if (inkActive) ...[
         for (final (i, c) in colors.indexed)
@@ -809,7 +902,7 @@ class _CommandBarState extends State<CommandBar> {
                 width: 18,
                 height: 18,
                 decoration: BoxDecoration(
-                  color: c,
+                  color: swatchColor(c),
                   shape: BoxShape.circle,
                   border: Border.all(
                     width: 2,
@@ -851,14 +944,14 @@ class _CommandBarState extends State<CommandBar> {
         const SizedBox(width: 8),
         Text(
             app.eraserMode == EraserMode.area
-                ? 'Splits strokes where you rub'
-                : 'Removes any stroke you touch',
+                ? l.barEraserSplit
+                : l.barEraserWhole,
             style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
       ] else if (app.tool == Tool.lasso)
-        Text('Draw a loop around ink to select it — then drag or delete',
+        Text(l.barLassoHint,
             style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary))
       else
-        Text('Pick the pen or highlighter to draw',
+        Text(l.barPickPenHint,
             style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
       // NO `Spacer` here, and none in any command row. Every row is built
       // inside a horizontal `SingleChildScrollView`, which offers unbounded
@@ -873,9 +966,7 @@ class _CommandBarState extends State<CommandBar> {
       // hand on the glass while thinking.
       const _Div(),
       Tooltip(
-        message: 'Draw with your finger.\nAuto: a finger draws until you use '
-            'the pen, then touch pans so your palm can\'t mark the page.\n'
-            'Two fingers always pan and zoom.',
+        message: l.barTouchDrawing,
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.touch_app_outlined,
               size: 16, color: context.surfaces.textSecondary),
@@ -887,25 +978,12 @@ class _CommandBarState extends State<CommandBar> {
               style: TextStyle(fontSize: 11, color: scheme.onSurface),
               items: [
                 for (final v in TouchDrawing.values)
-                  DropdownMenuItem(value: v, child: Text(v.label)),
+                  DropdownMenuItem(value: v, child: Text(v.label(l))),
               ],
               onChanged: (v) => v == null ? null : app.setTouchDrawing(v),
             ),
           ),
         ]),
-      ),
-      const _Div(),
-      // Pen proximity → pen tool. On by default because it is what a pen
-      // means; the toggle exists for people who use the pen as a pointer.
-      IconButton(
-        icon: const Icon(Icons.draw_outlined, size: 18),
-        tooltip: 'Bringing the pen near the page switches to inking.\n'
-            'Pick another tool while the pen hovers and it sticks until the\n'
-            'pen leaves and comes back. The pen\'s tail (or its barrel\n'
-            'button, held while drawing) erases.',
-        visualDensity: VisualDensity.compact,
-        isSelected: app.penProximitySwitch,
-        onPressed: () => app.setPenProximitySwitch(!app.penProximitySwitch),
       ),
       const SizedBox(width: 4),
     ]);
@@ -969,8 +1047,18 @@ class _FontSizeField extends StatelessWidget {
     48
   ];
 
+  // **Listens for itself**, because the bar around it does not rebuild for a
+  // keystroke that changes nothing it shows (`memo.dart`) — and with a key,
+  // so it only rebuilds when the size shown in the field actually changes.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MemoBuilder(
+        listenable: app,
+        inputs: () => [app, enabled, app.activeBlockFontSize],
+        builder: _build,
+      );
+
+  Widget _build(BuildContext context) {
+    final l = L.of(context);
     // Stored px → pt for display; null means "the theme default".
     final px = app.activeBlockFontSize;
     final pt = px == null ? null : px * 72.0 / 120.0;
@@ -979,8 +1067,8 @@ class _FontSizeField extends StatelessWidget {
         : (pt % 1 == 0 ? pt.toStringAsFixed(0) : pt.toStringAsFixed(1));
     return Tooltip(
       message: enabled
-          ? 'Text size (points)'
-          : 'Click into a text box to change its size',
+          ? l.barTextSize
+          : l.barTextSizeDisabled,
       child: MenuAnchor(
         builder: (context, controller, _) => InkWell(
           borderRadius: BorderRadius.circular(6),
@@ -1011,12 +1099,12 @@ class _FontSizeField extends StatelessWidget {
         menuChildren: [
           MenuItemButton(
             onPressed: () => app.setActiveBlockFontSize(null),
-            child: const Text('Default'),
+            child: Text(l.barFontSizeDefault),
           ),
           for (final s in _sizes)
             MenuItemButton(
               onPressed: () => app.setActiveBlockFontSize(s),
-              child: Text('${s.toStringAsFixed(0)} pt'),
+              child: Text(l.barFontSizePt(s.toStringAsFixed(0))),
             ),
         ],
       ),
@@ -1033,16 +1121,27 @@ class _TagButton extends StatelessWidget {
   const _TagButton({required this.app});
   final AppState app;
 
+  // **Listens for itself**, because the bar around it does not rebuild for a
+  // keystroke that changes nothing it shows (`memo.dart`) — and with a key,
+  // so it only rebuilds when the tags on the caret's line change.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MemoBuilder(
+        listenable: app,
+        inputs: () => [app, app.canFormatText,
+              _CommandBarState._mask(app.tagsAtCaret(), TagKind.values)],
+        builder: _build,
+      );
+
+  Widget _build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final l = L.of(context);
     final active = app.tagsAtCaret();
     final enabled = app.canFormatText;
     return MenuAnchor(
       builder: (context, controller, _) => Tooltip(
         message: active.isEmpty
-            ? 'Tag this line (To Do, Important, Question…)'
-            : 'Tagged: ${active.map((k) => k.label).join(', ')}',
+            ? l.barTagLine
+            : l.barTagged(active.map((k) => k.label(l)).join(', ')),
         child: InkWell(
           borderRadius: BorderRadius.circular(6),
           onTap: enabled
@@ -1072,7 +1171,7 @@ class _TagButton extends StatelessWidget {
                 ? Icon(Icons.check, size: 16, color: scheme.primary)
                 : null,
             onPressed: () => app.toggleTagOnSelection(k),
-            child: Text(k.label),
+            child: Text(k.label(l)),
           ),
         // Dating a tag belongs here, beside applying one — a deadline you could
         // only set from a separate panel would be a feature most people never
@@ -1082,13 +1181,13 @@ class _TagButton extends StatelessWidget {
           MenuItemButton(
             leadingIcon: const Icon(Icons.event_outlined, size: 16),
             onPressed: () => _setDue(context),
-            child: Text(_dueOfCaret() == null ? 'Due date…' : 'Change due date…'),
+            child: Text(_dueOfCaret() == null ? l.barDueDateSet : l.barDueDateChange),
           ),
           if (_dueOfCaret() != null)
             MenuItemButton(
               leadingIcon: const Icon(Icons.event_busy_outlined, size: 16),
               onPressed: _clearDue,
-              child: const Text('Clear the due date'),
+              child: Text(l.barDueDateClear),
             ),
         ],
       ],
@@ -1120,6 +1219,7 @@ class _TagButton extends StatelessWidget {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final existing = _dueOfCaret()?.dueDate;
+    final l = L.of(context);
     final picked = await showDatePicker(
       context: context,
       initialDate: existing != null && !existing.isBefore(today)
@@ -1127,8 +1227,8 @@ class _TagButton extends StatelessWidget {
           : DateTime(today.year, today.month, today.day + 7),
       firstDate: DateTime(today.year, today.month, today.day - 365),
       lastDate: DateTime(today.year + 5, today.month, today.day),
-      helpText: 'Due date',
-      confirmText: 'Set',
+      helpText: l.barDueDatePickerTitle,
+      confirmText: l.barDueDatePickerConfirm,
     );
     if (picked == null) return;
     // Onto the first tag on the line, and any other dated tag there is cleared,
@@ -1169,22 +1269,32 @@ class _MakeCardButton extends StatelessWidget {
         SnackBar(content: Text(msg), duration: const Duration(seconds: 3)));
   }
 
+  // **Listens for itself**, because the bar around it does not rebuild for a
+  // keystroke that changes nothing it shows (`memo.dart`) — and with a key,
+  // so it only rebuilds when there is, or is not, a line to turn into a card.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MemoBuilder(
+        listenable: app,
+        inputs: () => [app, app.canFormatText],
+        builder: _build,
+      );
+
+  Widget _build(BuildContext context) {
     // **Never disabled.** With a caret on a line it turns THAT line into a
     // card, which is the good form; with no caret it makes a new card in a
     // box of its own. That second behaviour used to be a separate Insert
     // ribbon entry with the same icon, on a different tab, doing a different
     // thing — one button, two ways of arriving at it.
     final onLine = app.canFormatText;
+    final l = L.of(context);
     return MenuAnchor(
       builder: (context, controller, _) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Tooltip(
             message: onLine
-                ? 'Make this line a flashcard'
-                : 'New flashcard',
+                ? l.barMakeCardFromLine
+                : l.barNewCard,
             child: InkWell(
               borderRadius: BorderRadius.circular(6),
               onTap: () {
@@ -1215,7 +1325,7 @@ class _MakeCardButton extends StatelessWidget {
           shortcut:
               const SingleActivator(LogicalKeyboardKey.digit3, control: true),
           onPressed: () => app.toggleTagOnSelection(TagKind.question),
-          child: const Text('Question card'),
+          child: Text(l.barQuestionCard),
         ),
         MenuItemButton(
           leadingIcon: Icon(TagKind.definition.icon,
@@ -1223,16 +1333,16 @@ class _MakeCardButton extends StatelessWidget {
           shortcut:
               const SingleActivator(LogicalKeyboardKey.digit5, control: true),
           onPressed: () => app.toggleTagOnSelection(TagKind.definition),
-          child: const Text('Definition card'),
+          child: Text(l.barDefinitionCard),
         ),
         MenuItemButton(
           leadingIcon: const Icon(Icons.format_underlined, size: 16),
           onPressed: () {
             if (!app.blankOutSelection()) {
-              _say(context, 'Select the words to blank out first.');
+              _say(context, l.barBlankOutNeedsSelection);
             }
           },
-          child: const Text('Blank out selection'),
+          child: Text(l.barBlankOut),
         ),
         const Divider(height: 8),
         MenuItemButton(
@@ -1240,7 +1350,7 @@ class _MakeCardButton extends StatelessWidget {
           onPressed: () {
             if (!app.showStudyPanel) app.toggleStudyPanel();
           },
-          child: const Text('Open study panel'),
+          child: Text(l.barOpenStudyPanel),
         ),
       ],
     );
@@ -1260,8 +1370,25 @@ class _StudyButton extends StatelessWidget {
   /// enough to still mean something when it appears.
   static const _urgentDays = 7;
 
+  // **Listens for itself**, because the bar around it does not rebuild for a
+  // keystroke that changes nothing it shows (`memo.dart`) — and with a key,
+  // so it only rebuilds when the badge's own numbers move.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MemoBuilder(
+        listenable: app,
+        inputs: () => [app,
+              app.showStudyPanel,
+              app.activeSectionId,
+              // The counts themselves: a card falling due, or a line tagged
+              // into being one, must light the badge without waiting for
+              // something else to change.
+              app.study.deckCounts(sectionId: app.activeSectionId),
+              app.study.examDate(app.activeSectionId)],
+        builder: _build,
+      );
+
+  Widget _build(BuildContext context) {
+    final l = L.of(context);
     final (due, total) = app.study.deckCounts(sectionId: app.activeSectionId);
     // Read from the date map and the counts already in hand — deliberately not
     // through `examPlanFor`, which would walk the deck a second time on a
@@ -1273,12 +1400,11 @@ class _StudyButton extends StatelessWidget {
         daysLeft != null && daysLeft >= 0 && daysLeft <= _urgentDays && due > 0;
     final countdown = daysLeft == null || daysLeft < 0
         ? ''
-        : ' · exam ${formatCountdown(daysLeft)}';
+        : l.barStudyExamCountdown(formatCountdown(daysLeft));
     return Tooltip(
       message: total == 0
-          ? 'Study — tag a line Question or Definition to make a card'
-          : '$due of $total card${total == 1 ? '' : 's'} due in this section'
-              '$countdown',
+          ? l.barStudyEmpty
+          : l.barStudyDue(due, total, countdown),
       child: Stack(clipBehavior: Clip.none, children: [
         IconButton(
           icon: const Icon(Icons.school_outlined, size: 18),
@@ -1302,7 +1428,7 @@ class _StudyButton extends StatelessWidget {
                       : Theme.of(context).colorScheme.primary,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text('$due',
+                child: Text(l.barBadgeCount(due),
                     style: TextStyle(
                         fontSize: 11,
                         height: 1.2,
@@ -1318,6 +1444,31 @@ class _StudyButton extends StatelessWidget {
   }
 }
 
+/// What the planner badge counts: everything due today plus everything
+/// overdue, and whether any of it is overdue.
+///
+/// Pulled out of `_PlannerButton._build` so the memo key and the render can be
+/// derived by the SAME code. A key that recomputes a total by hand is a key
+/// that drifts from what is on screen the first time either side is edited.
+(int, bool) _agendaSplit(AppState app) {
+  var count = 0;
+  var overdue = false;
+  for (final s in app.planner.sections(now: DateTime.now())) {
+    if (s.bucket == AgendaBucket.overdue) {
+      overdue = true;
+      count += s.items.length;
+    } else if (s.bucket == AgendaBucket.today) {
+      count += s.items.length;
+    }
+  }
+  return (count, overdue);
+}
+
+int _agendaCount(AppState app) {
+  final (count, overdue) = _agendaSplit(app);
+  return overdue ? -count : count;
+}
+
 /// Opens the planner, and says what is on today without opening it.
 ///
 /// The badge counts **today's and overdue** rows, not everything dated. A
@@ -1328,29 +1479,32 @@ class _PlannerButton extends StatelessWidget {
   const _PlannerButton({required this.app});
   final AppState app;
 
+  // **Listens for itself**, because the bar around it does not rebuild for a
+  // keystroke that changes nothing it shows (`memo.dart`) — and with a key,
+  // so it only rebuilds when the agenda behind it changes.
   @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final sections = app.planner.sections(now: now);
-    var count = 0;
-    var overdue = false;
-    for (final s in sections) {
-      if (s.bucket == AgendaBucket.overdue) {
-        overdue = true;
-        count += s.items.length;
-      } else if (s.bucket == AgendaBucket.today) {
-        count += s.items.length;
-      }
-    }
+  Widget build(BuildContext context) => MemoBuilder(
+        listenable: app,
+        inputs: () => [app,
+              app.showPlannerPanel,
+              app.planner.pendingAlerts.length,
+              // What the badge counts, derived exactly as `_build` derives it.
+              _agendaCount(app)],
+        builder: _build,
+      );
+
+  Widget _build(BuildContext context) {
+    final l = L.of(context);
+    final (count, overdue) = _agendaSplit(app);
     final alerts = app.planner.pendingAlerts.length;
     return Tooltip(
       message: alerts > 0
-          ? '$alerts reminder${alerts == 1 ? '' : 's'} waiting'
+          ? l.barRemindersWaiting(alerts)
           : count == 0
-              ? 'Planner — every date you have, in one place'
+              ? l.barPlannerEmpty
               : overdue
-                  ? 'Planner — $count today or overdue'
-                  : 'Planner — $count today',
+                  ? l.barPlannerOverdue(count)
+                  : l.barPlannerToday(count),
       child: Stack(clipBehavior: Clip.none, children: [
         IconButton(
           icon: const Icon(Icons.event_note_outlined, size: 18),
@@ -1377,7 +1531,7 @@ class _PlannerButton extends StatelessWidget {
                           : Theme.of(context).colorScheme.primary,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text('${alerts > 0 ? alerts : count}',
+                child: Text(l.barBadgeCount(alerts > 0 ? alerts : count),
                     style: TextStyle(
                         fontSize: 11,
                         height: 1.2,
@@ -1410,11 +1564,11 @@ class _InsertButton extends StatelessWidget {
   /// What a hover says. A labelled command adds only what the label does not
   /// already carry; a wordless one leads with its name, so nothing on the row
   /// is nameless.
-  String get _tip {
-    if (item.showLabel) return item.tooltip ?? '';
+  String _tip(L l) {
+    if (item.showLabel) return item.tooltip?.call(l) ?? '';
     return item.tooltip == null
-        ? item.label
-        : '${item.label} — ${item.tooltip}';
+        ? item.label(l)
+        : '${item.label(l)} — ${item.tooltip!(l)}';
   }
 
   /// The button itself.
@@ -1430,12 +1584,13 @@ class _InsertButton extends StatelessWidget {
       _run(context, item);
     }
 
+    final l = L.of(context);
     return Tooltip(
-      message: _tip,
+      message: _tip(l),
       child: item.showLabel
           ? CommandButton(
               icon: item.icon,
-              label: item.label,
+              label: item.label(l),
               onPressed: press,
             )
           : IconButton(
@@ -1486,7 +1641,7 @@ class _InsertButton extends StatelessWidget {
             MenuItemButton(
               leadingIcon: Icon(extra.icon, size: 16),
               onPressed: () => _run(context, extra),
-              child: Text(extra.label),
+              child: Text(extra.label(L.of(context))),
             ),
         ],
       ),
@@ -1532,6 +1687,7 @@ class _SubjectBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
+    final l = L.of(context);
     return ExcludeFocus(
       child: Padding(
         padding: const EdgeInsets.only(left: 6),
@@ -1540,7 +1696,7 @@ class _SubjectBadge extends StatelessWidget {
               width: 1, height: 18, color: context.surfaces.border),
           const SizedBox(width: 6),
           Tooltip(
-            message: 'Esc when you are done',
+            message: l.barEscWhenDone,
             child: Container(
               height: 22,
               padding: const EdgeInsets.symmetric(horizontal: 8),

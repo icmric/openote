@@ -8,6 +8,11 @@
 > **half-verified** — you confirmed part and deferred the rest. Tick things
 > off as you go; tell me what breaks. Confirmed things get deleted, so this
 > file stays the honest queue rather than a museum.
+>
+> Not to be confused with [the pre-release checklist](docs/pre-release-checklist.md),
+> which is the *fixed* pass — the same forty-odd rows run on the packaged build
+> before every release. This file is the frontier: what is new, what is
+> half-verified, what is waiting on hardware you have and I don't.
 
 ---
 

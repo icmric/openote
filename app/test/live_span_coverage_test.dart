@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/live_markdown_controller.dart';
+import 'package:openote/l10n/l10n.dart';
 
 /// Build the spans for [source] with the caret at [caret], and report
 /// whether the controller kept them or fell back to one unstyled span.
@@ -33,7 +34,10 @@ bool styled(WidgetTester t, String source, {int caret = 0}) {
 
 void main() {
   Future<void> host(WidgetTester t) => t.pumpWidget(
-      const MaterialApp(home: Scaffold(body: SizedBox(width: 400))));
+      const MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
+      home: Scaffold(body: SizedBox(width: 400))));
 
   group('every line shape still builds styled spans', () {
     const shapes = <String, String>{

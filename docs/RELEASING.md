@@ -93,6 +93,7 @@ what 0.3.0 → 0.3.1 was.
 | You are on `master`, not a feature branch | The bump has to be on the commit the tag points at. Committing it elsewhere makes `git push origin master` a silent no-op. |
 | `CHANGELOG.md` names this version | Nothing checks it, and the auto-generated notes are a list of merged PRs — not a description of what changed for a user. |
 | No release already exists for the tag | The `version` job now refuses if one does, because publishing into an existing release bypasses the draft review entirely. |
+| [The pre-release checklist](pre-release-checklist.md) has been run | The test suite runs headless, in one process, with a fake clock and a fake file picker. It cannot see a stuttering frame, a real file dialog, an installer, a stylus, or the update path. About 35 minutes, on the packaged build. |
 
 **Version numbers.** `M.m.p` on both sides; increment the `+build` counter too,
 because some platforms care about it even though this workflow does not.
@@ -366,10 +367,22 @@ git push --delete origin vX.Y.Z
 
 Stated plainly, because this is where the surprises come from.
 
-**The three platform jobs have never run to completion.** Two tag attempts both
-stopped at the version guard, so everything after it was skipped. An audit of
-that never-executed path found two independent faults in the Windows job, both
-now fixed, and neither of which any amount of reading had caught before:
+> **Superseded 2026-09-02.** The paragraph below is kept because its two
+> findings are still worth reading, but its headline is no longer true:
+> **eight releases have shipped**, v0.3.1 through v0.8.0, and every one of the
+> three platform jobs runs to completion. v0.8.0 published `.exe`, `.zip`,
+> `.deb`, `.rpm`, `.tar.gz` and a universal `.dmg`, and people have downloaded
+> all of them. What is still true — and is the one thing this section should
+> now say — is that **nobody has reported back from running the macOS or
+> Linux build**. Artifacts existing is not the same as artifacts working, and
+> the release notes are right to keep saying macOS is the least-tested
+> platform by far.
+
+**The three platform jobs had never run to completion when this was written.**
+Two tag attempts both stopped at the version guard, so everything after it was
+skipped. An audit of that never-executed path found two independent faults in
+the Windows job, both since fixed, and neither of which any amount of reading
+had caught before:
 
 - `"$env:ProgramFiles(x86)\..."` expands to `C:\Program Files(x86)\...` —
   without the space. PowerShell ends an unbraced variable name at `(`, so the

@@ -16,10 +16,62 @@ Color colorFromHex(String hex) =>
 /// their colour.
 class InkPainter extends CustomPainter {
   InkPainter(this.strokes,
-      {this.wet, this.autoColor = const Color(0xFF211F1B), super.repaint});
+      {this.wet,
+      this.autoColor = const Color(0xFF211F1B),
+      this.documentRects = const [],
+      this.overDocument,
+      super.repaint});
   final List<Stroke> strokes;
   final Stroke? wet; // in-progress stroke, drawn last (mutated between repaints)
   final Color autoColor;
+
+  /// Page-space rectangles of anything that brings its own background — an
+  /// imported picture, a PDF page.
+  final List<Rect> documentRects;
+
+  /// **What `auto` means on top of one of those.**
+  ///
+  /// Reported: *"I can't reliably write over imported images/PDFs … Automatic
+  /// white ink is also invisible on white documents in dark mode."* Quite so:
+  /// `auto` meant "contrast with the PAGE", and on a dark page that is white
+  /// ink — which then disappears against the white scan the person is actually
+  /// writing on.
+  ///
+  /// The rule is deliberately one rule, not a per-pixel inverse: **a document
+  /// brings its own background, so ink on top of it contrasts with the
+  /// document rather than with the page.** Scans, PDFs, screenshots and
+  /// diagrams are overwhelmingly light, so that means dark ink, in either
+  /// theme — which is also what a pen on paper does, and therefore what
+  /// somebody expects without being told. Anyone writing on a genuinely dark
+  /// picture picks a colour, and a chosen colour is never overridden.
+  ///
+  /// Null keeps the old behaviour, for surfaces with no page to inspect.
+  final Color? overDocument;
+
+  /// Which colour an `auto` stroke resolves to.
+  ///
+  /// Decided per stroke rather than per block: one ink block can easily run
+  /// off the side of a picture, and half a word changing colour mid-stroke
+  /// would be worse than either answer. The stroke's MIDPOINT decides, so a
+  /// stroke that mostly sits on the picture reads as being on the picture.
+  static bool _sameRects(List<Rect> a, List<Rect> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  Color autoFor(Stroke s) {
+    final over = overDocument;
+    if (over == null || documentRects.isEmpty || s.x.isEmpty) return autoColor;
+    final mid = s.x.length ~/ 2;
+    final at = Offset(s.x[mid], s.y[mid]);
+    for (final r in documentRects) {
+      if (r.contains(at)) return over;
+    }
+    return autoColor;
+  }
 
   /// Tessellated outlines, attached to the **Stroke object itself**.
   ///
@@ -54,7 +106,7 @@ class InkPainter extends CustomPainter {
       if (path == null) return;
       if (cache) _outlines[s] = path;
     }
-    final base = s.colorHex == 'auto' ? autoColor : colorFromHex(s.colorHex);
+    final base = s.colorHex == 'auto' ? autoFor(s) : colorFromHex(s.colorHex);
     final paint = Paint()
       ..color = base.withValues(alpha: s.opacity)
       ..style = PaintingStyle.fill
@@ -97,6 +149,8 @@ class InkPainter extends CustomPainter {
   bool shouldRepaint(covariant InkPainter old) =>
       old.wet != wet ||
       old.autoColor != autoColor ||
+      old.overDocument != overDocument ||
+      !_sameRects(old.documentRects, documentRects) ||
       old.strokes.length != strokes.length ||
       (strokes.isNotEmpty &&
           (!identical(old.strokes.first, strokes.first) ||

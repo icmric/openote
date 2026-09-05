@@ -25,6 +25,7 @@ import 'package:openote/ui/onboarding.dart';
 import 'package:openote/ui/sync_dialog.dart';
 import 'package:openote/ui/sync_dot.dart';
 
+import 'support/app.dart';
 import 'support/sqlite.dart';
 
 void main() {
@@ -63,21 +64,24 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: Builder(
-          builder: (context) => TextButton(
-            onPressed: () => open(context, app),
-            child: const Text('open'),
-          ),
+    await tester.pumpWidget(testApp(Scaffold(
+      body: Builder(
+        builder: (context) => TextButton(
+          onPressed: () => open(context, app),
+          child: const Text('open'),
         ),
       ),
-    ));
+    )));
     await tester.tap(find.text('open'));
     // The debounced workspace write (400ms) is drained too, so a dialog that
-    // touches settings doesn't leave a pending timer behind.
+    // touches settings doesn't leave a pending timer behind — BEFORE settling
+    // for anything armed on the way in, and again after, because a dialog can
+    // arm it during its own first frames (the sync dialog caches whether git
+    // is installed the first time it is opened) and a timer armed during the
+    // settle would still be pending when the test ends.
     await tester.pump(const Duration(milliseconds: 450));
     await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 450));
   }
 
   // A laptop with the navigator open, and a small window. Both are ordinary,

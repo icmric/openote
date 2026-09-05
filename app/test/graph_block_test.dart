@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/graph_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/graph_plot.dart';
 import 'package:flutter/gestures.dart';
 import 'package:openote/canvas/page_canvas.dart';
@@ -330,6 +331,8 @@ void main() {
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
@@ -594,6 +597,8 @@ void main() {
 
       final g = app.insertGraph(latex: 'y=x^2', at: const Offset(120, 120));
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
@@ -635,6 +640,8 @@ void main() {
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
@@ -790,6 +797,8 @@ void main() {
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,

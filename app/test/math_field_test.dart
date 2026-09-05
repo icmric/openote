@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/math_editor.dart';
 import 'package:openote/math/math_field.dart';
 import 'package:openote/math/math_inventory.dart';
@@ -23,6 +24,8 @@ void main() {
 
   Future<void> pump(WidgetTester tester, {bool compact = false}) async {
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,

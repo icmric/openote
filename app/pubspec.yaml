@@ -3,7 +3,7 @@ description: An open-source, natively cross-platform alternative to Microsoft On
 publish_to: "none"
 # Single source of truth for the app version; release.yml derives artifact
 # names from the git tag and asserts it matches this field.
-version: 0.8.0+14
+version: 0.9.0+15
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -11,6 +11,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Translation (see docs/planning/v0.24-road-to-1.0.md §Languages). The
+  # generated `AppLocalizations` is CHECKED IN under lib/l10n rather than
+  # produced into a synthetic package at build time, so it is reviewable in a
+  # diff and cannot go missing in a build that skipped codegen.
+  flutter_localizations:
+    sdk: flutter
+  intl: any
   # Storage — the .onote container (File Format Spec 10)
   sqlite3: ^2.4.0
   sqlite3_flutter_libs: ^0.5.24 # bundles SQLite (incl. FTS5) on all desktop/mobile targets
@@ -30,6 +37,16 @@ dependencies:
   # spreadsheet package. Licences audited per LICENSING.md.
   archive: ^4.0.9
   xml: ^6.6.1
+  # OneNote-over-the-internet import: Microsoft Graph returns a page as HTML,
+  # and HTML is not XML -- unclosed <img>/<br>, named entities, implied tbody.
+  # The Dart team's tolerant HTML5 parser rather than a hand-rolled one,
+  # because "mostly well-formed" input is exactly where hand-rolling bites.
+  # Pure Dart, no native code. BSD-3-Clause; audited per LICENSING.md.
+  html: ^0.15.4
+  # SHA-256 for the PKCE challenge in the Microsoft sign-in. Already in the
+  # tree transitively; promoted because this app now imports it directly.
+  # BSD-3-Clause (Dart team); audited per LICENSING.md.
+  crypto: ^3.0.0
 
   # PDF export (pure Dart)
   pdf: ^3.10.0
@@ -68,6 +85,9 @@ flutter_launcher_icons:
 
 flutter:
   uses-material-design: true
+  # `flutter gen-l10n` reads l10n.yaml; `generate: true` is what makes
+  # `flutter run`/`build` re-run it when an .arb changes.
+  generate: true
   assets:
     - assets/icon/openote_icon.png
     # Spell-check wordlist (TEXT-11). Loaded lazily on a background isolate the

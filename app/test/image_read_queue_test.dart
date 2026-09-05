@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/image_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -90,6 +91,8 @@ void main() {
     // The bad read is queued FIRST, so the good image's read is chained
     // behind the failure — the exact ordering that used to lose it.
     await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Column(children: [
           ImageBlockView(block: img('b1', 'queue-bad'), app: app),

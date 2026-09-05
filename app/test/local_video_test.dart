@@ -21,6 +21,7 @@ import 'package:media_kit_video/media_kit_video.dart' show Video;
 import 'package:openote/editor/file_block_view.dart';
 import 'package:openote/editor/video_block_view.dart';
 import 'package:openote/media/video_playback.dart' show VideoPlayback, VideoUnavailable;
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/media_store.dart';
@@ -182,6 +183,8 @@ void main() {
 
     Future<void> show(WidgetTester t, AppState app, Block b) async {
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: SizedBox(
               width: 420, height: 240, child: FileBlockView(block: b, app: app)),

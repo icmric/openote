@@ -916,7 +916,7 @@ class _StudyPanelState extends State<StudyPanel> {
   /// turning it over rather than as more text appearing underneath.
   Widget _face(Flashcard c, bool dark) {
     final kind = c.kind;
-    final label = c.isCloze ? 'FILL IN THE BLANK' : kind.label.toUpperCase();
+    final label = c.isCloze ? 'FILL IN THE BLANK' : kind.englishLabel.toUpperCase();
     return Container(
       decoration: BoxDecoration(
         color: context.surfaces.raised,

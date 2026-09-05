@@ -56,6 +56,7 @@ import '../editor/board_block_view.dart';
 import '../export/csv_import.dart';
 import '../export/pdf_import.dart';
 import '../model/models.dart';
+import '../l10n/l10n.dart';
 import '../state/app_state.dart';
 import '../store/media_store.dart';
 import 'insert_portal_dialog.dart';
@@ -86,7 +87,13 @@ class InsertItem {
   final IconData icon;
 
   /// The word on the button. One noun, the one a fifteen-year-old would use.
-  final String label;
+  ///
+  /// **A function of the translations, not a string.** This catalog is a
+  /// `const`-shaped data table, and a `const` cannot take a `BuildContext` —
+  /// which is how the Insert ribbon and the right-click menu stayed English
+  /// inside an app that had otherwise been translated. Taking an [L] keeps the
+  /// table a table and moves only the words.
+  final String Function(L) label;
 
   /// Roughly how big the thing arrives. Only used to decide where it lands:
   /// a ribbon press centres it on the view, a right-click puts its corner
@@ -140,13 +147,13 @@ class InsertItem {
   final List<InsertItem> extras;
 
   /// The second line, for a hover. Never repeats the label.
-  final String? tooltip;
+  final String Function(L)? tooltip;
 
   final InsertRun run;
 
   /// The label as it is written in a menu, where an ellipsis is the
   /// convention for "something else opens".
-  String get menuLabel => opensPicker ? '$label…' : label;
+  String menuLabel(L l) => opensPicker ? '${label(l)}…' : label(l);
 }
 
 /// A named run of items. The title is shown as a column head in the menu and
@@ -154,7 +161,10 @@ class InsertItem {
 /// without spending a row of height on words.
 class InsertGroup {
   const InsertGroup({required this.title, required this.items});
-  final String title;
+
+  /// See [InsertItem.label] for why this takes the translations rather than
+  /// being a string.
+  final String Function(L) title;
   final List<InsertItem> items;
 }
 
@@ -237,11 +247,11 @@ List<InsertItem> get kMenuItemsAndExtras => [
 /// student is doing: making something to fill in, bringing something in from
 /// elsewhere, and pointing at something that already exists.
 final List<InsertGroup> kInsertGroups = [
-  InsertGroup(title: 'Write', items: [
+  InsertGroup(title: (l) => l.insertGroupWrite, items: [
     InsertItem(
       id: 'text',
       icon: Icons.text_fields,
-      label: 'Text box',
+      label: (l) => l.insertTextBox,
       // Not on the right-click menu: a click on the page already makes one,
       // and a menu row that repeats the gesture you used to open it is
       // clutter. On the ribbon because that is where it has always been.
@@ -260,22 +270,22 @@ final List<InsertGroup> kInsertGroups = [
     InsertItem(
       id: 'equation',
       icon: Icons.functions,
-      label: 'Equation',
-      tooltip: 'Alt+=',
+      label: (l) => l.insertEquation,
+      tooltip: (l) => l.insertEquationTip,
       size: const Size(360, 60),
       run: (context, app, at) async => app.insertEquation(at: at),
     ),
     InsertItem(
       id: 'table',
       icon: Icons.table_chart_outlined,
-      label: 'Table',
+      label: (l) => l.insertTable,
       size: const Size(360, 80),
       extras: [
         InsertItem(
           id: 'table-file',
           icon: Icons.grid_on_outlined,
-          label: 'From a file',
-          tooltip: 'CSV or Excel',
+          label: (l) => l.insertTableFromFile,
+          tooltip: (l) => l.insertTableFromFileTip,
           opensPicker: true,
           size: const Size(360, 80),
           run: insertTableFromPickedFile,
@@ -299,7 +309,7 @@ final List<InsertGroup> kInsertGroups = [
     InsertItem(
       id: 'code',
       icon: Icons.code,
-      label: 'Code',
+      label: (l) => l.insertCode,
       size: const Size(400, 80),
       run: (context, app, at) async {
         final b = app.addBlock(Block(
@@ -314,8 +324,8 @@ final List<InsertGroup> kInsertGroups = [
     InsertItem(
       id: 'board',
       icon: Icons.view_kanban_outlined,
-      label: 'Board',
-      tooltip: 'Columns of cards you move along',
+      label: (l) => l.insertBoard,
+      tooltip: (l) => l.insertBoardTip,
       size: const Size(700, 200),
       run: (context, app, at) async {
         final b = app.addBlock(Block(
@@ -329,12 +339,12 @@ final List<InsertGroup> kInsertGroups = [
       },
     ),
   ]),
-  InsertGroup(title: 'Bring in', items: [
+  InsertGroup(title: (l) => l.insertGroupBringIn, items: [
     InsertItem(
       id: 'image',
       icon: Icons.image_outlined,
       // "Picture", not "Image": one is a word a student uses.
-      label: 'Picture',
+      label: (l) => l.insertPicture,
       opensPicker: true,
       size: const Size(320, 240),
       run: insertPickedImage,
@@ -342,14 +352,14 @@ final List<InsertGroup> kInsertGroups = [
     InsertItem(
       id: 'pdf',
       icon: Icons.picture_as_pdf_outlined,
-      label: 'PDF slides',
+      label: (l) => l.insertPdfSlides,
       opensPicker: true,
       size: Size.zero, // it lays itself out down the page
       extras: [
         InsertItem(
           id: 'pdf-here',
           icon: Icons.vertical_align_bottom,
-          label: 'Printout on this page',
+          label: (l) => l.insertPdfPrintout,
           opensPicker: true,
           size: Size.zero,
           run: (c, a, at) =>
@@ -358,7 +368,7 @@ final List<InsertGroup> kInsertGroups = [
         InsertItem(
           id: 'pdf-pages',
           icon: Icons.auto_stories_outlined,
-          label: 'One page per slide',
+          label: (l) => l.insertPdfPerSlide,
           opensPicker: true,
           size: Size.zero,
           run: (c, a, at) =>
@@ -367,7 +377,7 @@ final List<InsertGroup> kInsertGroups = [
         InsertItem(
           id: 'pdf-card',
           icon: Icons.branding_watermark_outlined,
-          label: 'As a card — open in a popup',
+          label: (l) => l.insertPdfAsCard,
           opensPicker: true,
           size: Size.zero,
           run: (c, a, at) =>
@@ -380,8 +390,8 @@ final List<InsertGroup> kInsertGroups = [
     InsertItem(
       id: 'video',
       icon: Icons.play_circle_outline,
-      label: 'Video',
-      tooltip: 'A lecture recording, or any web link',
+      label: (l) => l.insertVideo,
+      tooltip: (l) => l.insertVideoTip,
       opensPicker: true,
       size: const Size(340, 56),
       run: insertVideoOrLink,
@@ -389,17 +399,17 @@ final List<InsertGroup> kInsertGroups = [
     InsertItem(
       id: 'file',
       icon: Icons.attach_file,
-      label: 'File',
+      label: (l) => l.insertFile,
       opensPicker: true,
       size: const Size(280, 48),
       run: insertPickedFile,
     ),
   ]),
-  InsertGroup(title: 'Link up', items: [
+  InsertGroup(title: (l) => l.insertGroupLinkUp, items: [
     InsertItem(
       id: 'flashcard',
       icon: Icons.style_outlined,
-      label: 'Flashcard',
+      label: (l) => l.insertFlashcardItem,
       // Not on the right-click menu: the button on Home reads the LINE you
       // are on, and a right click on empty canvas is not on a line.
       onMenu: false,
@@ -409,7 +419,7 @@ final List<InsertGroup> kInsertGroups = [
     InsertItem(
       id: 'pagelink',
       icon: Icons.link,
-      label: 'Page link',
+      label: (l) => l.insertPageLink,
       opensPicker: true,
       size: const Size(240, 40),
       run: insertPageLink,
@@ -417,7 +427,7 @@ final List<InsertGroup> kInsertGroups = [
     InsertItem(
       id: 'portal',
       icon: Icons.picture_in_picture_alt_outlined,
-      label: 'Page window',
+      label: (l) => l.insertPageWindow,
       opensPicker: true,
       size: const Size(380, 260),
       run: (context, app, at) => showInsertPortalDialog(context, app, at),
@@ -425,7 +435,7 @@ final List<InsertGroup> kInsertGroups = [
     InsertItem(
       id: 'template',
       icon: Icons.dashboard_customize_outlined,
-      label: 'Template',
+      label: (l) => l.insertTemplate,
       opensPicker: true,
       // Not on the right-click menu: this lays out a whole PAGE, which is not
       // "put this thing here". It is on the page's own menu as well, beside
@@ -462,9 +472,10 @@ Future<XFile?> _pick(BuildContext context,
 
 Future<void> insertPickedImage(
     BuildContext context, AppState app, Offset at) async {
-  final file = await _pick(context, groups: const [
+  final file = await _pick(context, groups: [
     XTypeGroup(
-        label: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'])
+        label: L.of(context).insertPickImages,
+        extensions: const ['png', 'jpg', 'jpeg', 'gif', 'webp'])
   ]);
   if (file == null) return;
   final Uint8List bytes = await file.readAsBytes();
@@ -515,8 +526,10 @@ Future<void> insertPickedFile(
 
 Future<void> insertTableFromPickedFile(
     BuildContext context, AppState app, Offset at) async {
-  final file = await _pick(context, groups: const [
-    XTypeGroup(label: 'Tables', extensions: ['csv', 'tsv', 'xlsx'])
+  final file = await _pick(context, groups: [
+    XTypeGroup(
+        label: L.of(context).insertPickTables,
+        extensions: const ['csv', 'tsv', 'xlsx'])
   ]);
   if (file == null) return;
   final bytes = await file.readAsBytes();
@@ -581,9 +594,9 @@ bool looksLikeVideo(String url) {
 Future<void> copyVideoIntoNotebook(
     BuildContext context, AppState app, Offset at) async {
   final picked = await _pick(context, groups: [
-    const XTypeGroup(
-        label: 'Video and audio',
-        extensions: [...kVideoExtensions, ...kAudioExtensions]),
+    XTypeGroup(
+        label: L.of(context).insertPickVideo,
+        extensions: const [...kVideoExtensions, ...kAudioExtensions]),
   ]);
   if (picked == null) return;
   final chosen = picked;
@@ -657,7 +670,7 @@ Future<void> insertPageLink(
   final choice = await showOnoteDialog<String>(
     context: context,
     builder: (ctx) => SimpleDialog(
-      title: const Text('Link to page'),
+      title: Text(L.of(ctx).insertLinkToPage),
       children: [
         for (final p in pages)
           SimpleDialogOption(
@@ -727,8 +740,8 @@ Future<void> importPdfWithProgress(BuildContext context, AppState app,
     if (result == null) return; // cancelled at the file picker
     if (!context.mounted) return;
     if (result.pages == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("That PDF couldn't be read.")));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(L.of(context).insertPdfUnreadable)));
       return;
     }
     // Only navigate for the page-per-slide import — a printout landed on the
@@ -739,10 +752,11 @@ Future<void> importPdfWithProgress(BuildContext context, AppState app,
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       duration: const Duration(seconds: 6),
-      content: Text('Imported ${result.pages} '
-          '${result.pages == 1 ? 'slide' : 'slides'}'
-          '${result.sectionId == null ? ' onto this page' : ''} — pick the pen '
-          'and write on them. The slide text is searchable.'),
+      content: Text(L.of(context).insertPdfImported(
+          result.pages,
+          result.sectionId == null
+              ? L.of(context).insertPdfOntoThisPage
+              : '')),
     ));
   } catch (e) {
     if (dialogOpen && context.mounted) {
@@ -750,7 +764,8 @@ Future<void> importPdfWithProgress(BuildContext context, AppState app,
     }
     if (context.mounted) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('PDF import failed: $e')));
+          .showSnackBar(SnackBar(
+              content: Text(L.of(context).insertPdfFailed('$e'))));
     }
   } finally {
     progress.dispose();

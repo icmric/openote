@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/math_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/markdown/md_render.dart';
 import 'package:openote/math/math_view.dart';
 import 'package:openote/model/models.dart';
@@ -67,6 +68,8 @@ void main() {
         w: 420,
         content: {'latex': latex, 'display': true});
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,
@@ -143,6 +146,8 @@ void main() {
     const markdown =
         '  - We can define the bijection f(n) = \$$kImportedPiecewiseTex\$';
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,

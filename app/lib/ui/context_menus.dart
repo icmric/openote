@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
@@ -273,7 +274,7 @@ class _InsertGridState extends State<_InsertGrid> {
                 children: [
                   Padding(
                     padding: const EdgeInsets.fromLTRB(6, 4, 0, 4),
-                    child: Text(group.title.toUpperCase(),
+                    child: Text(group.title(L.of(context)).toUpperCase(),
                         style: OnoteType.caption.copyWith(
                           color: s.textSecondary,
                           letterSpacing: 0.6,
@@ -320,7 +321,7 @@ class _Tile extends StatelessWidget {
               Icon(item.icon, size: 16),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(item.menuLabel,
+                child: Text(item.menuLabel(L.of(context)),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

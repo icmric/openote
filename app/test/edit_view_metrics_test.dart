@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/live_markdown_controller.dart';
 import 'package:openote/editor/text_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/markdown/md_render.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/theme/onote_theme.dart';
@@ -43,6 +44,8 @@ Widget readView(String text, TextStyle style) =>
 Future<double> widthOf(WidgetTester t, Widget w) async {
   final key = GlobalKey();
   await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
     theme: onoteTheme(Brightness.light),
     home: Scaffold(
       body: Align(
@@ -57,6 +60,8 @@ Future<double> widthOf(WidgetTester t, Widget w) async {
 Future<double> heightOf(WidgetTester t, Widget w) async {
   final key = GlobalKey();
   await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
     home: Scaffold(
       body: Align(
         alignment: Alignment.topLeft,

@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/inline_math_editor.dart';
 import 'package:openote/editor/live_markdown_controller.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/markdown/md_render.dart';
 import 'package:openote/markdown/md_syntax.dart';
 import 'package:openote/math/math_view.dart';
@@ -21,6 +22,8 @@ void main() {
 
   Future<void> pump(WidgetTester tester, LiveMarkdownController c) async {
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: SizedBox(
           width: 600,
@@ -208,6 +211,8 @@ void main() {
       (tester) async {
     // Read-only surfaces pass no handler; the maths must still draw.
     await tester.pumpWidget(const MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: InlineMathAtom(
             latex: r'\frac{1}{2}', style: TextStyle(fontSize: 14)),

@@ -20,6 +20,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/ui/update_dialog.dart';
 import 'package:openote/update/app_update.dart';
 
@@ -76,6 +77,8 @@ bool hasBoldRun(WidgetTester tester) {
 }
 
 Widget host(Widget child) => MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(body: Center(child: SizedBox(width: 440, child: child))),
     );
 
@@ -186,13 +189,25 @@ void main() {
   });
 
   group('ReleaseNotesView', () {
-    testWidgets('renders the real 0.8.0 body as Markdown, not as markers',
+    testWidgets('renders the shipping body as Markdown, not as markers',
         (tester) async {
       final body = releaseBodyTemplate();
       // Guard the fixture itself: if the extraction ever silently returns
       // nothing, the assertions below would all pass on an empty string.
       expect(body, contains('**'));
       expect(body, contains("## What's new"));
+
+      // The lead bullet's bold phrase, taken from the body rather than
+      // written here: this test used to assert a literal from 0.8.0's notes
+      // ('Half the download'), which meant every release had to remember to
+      // edit a test that is not about any one release. What is being checked
+      // is that the FIRST thing a reader sees survives the render — whatever
+      // this release chose to lead with.
+      final lead = RegExp(r'^- \*\*(.+?)\*\*', multiLine: true)
+          .firstMatch(body.substring(body.indexOf("## What's new")))
+          ?.group(1);
+      expect(lead, isNotNull,
+          reason: 'the overview opens with a bolded bullet');
 
       await tester.pumpWidget(host(ReleaseNotesView(notes: body)));
       await tester.pumpAndSettle();
@@ -204,7 +219,8 @@ void main() {
           reason: 'a heading must be a heading, not two hashes');
       expect(shown, isNot(contains('<!--')),
           reason: 'the draft comment is for the person publishing, not the user');
-      expect(shown, contains('Half the download'));
+      expect(shown, contains(lead!),
+          reason: 'the lead bullet is what most readers ever see');
       expect(hasBoldRun(tester), isTrue,
           reason: 'something on screen is actually drawn bold');
       expect(tester.takeException(), isNull);

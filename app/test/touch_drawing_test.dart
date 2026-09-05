@@ -4,7 +4,13 @@
 // unconditionally, so ink was simply unreachable on a touch-only tablet. Palm
 // rejection is meant to be stylus-CONDITIONAL — a resting palm is only a hazard
 // while a pen is in use.
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'package:openote/l10n/l10n.dart';
+import 'package:openote/l10n/labels.dart';
+
+import 'support/app.dart';
 
 import 'package:openote/canvas/ink_ops.dart';
 import 'package:openote/state/app_state.dart';
@@ -47,9 +53,19 @@ void main() {
     });
   });
 
-  test('every mode has a label for the Draw tab', () {
+  testWidgets('every mode has a translated label for the Draw tab',
+      (tester) async {
+    // Through `L`, not a const getter: the names moved into the .arb so the
+    // Draw row is not three English words inside an otherwise translated app.
+    // The loop is the point — a mode added without a message turns this red at
+    // the switch, which is where it should be caught.
+    late L l;
+    await tester.pumpWidget(testApp(Builder(builder: (context) {
+      l = L.of(context);
+      return const SizedBox();
+    })));
     for (final m in TouchDrawing.values) {
-      expect(m.label, isNotEmpty);
+      expect(m.label(l), isNotEmpty);
     }
   });
 }

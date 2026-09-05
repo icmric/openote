@@ -26,6 +26,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/model/tags.dart';
 import 'package:openote/export/import_job.dart';
@@ -33,6 +34,7 @@ import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/theme/onote_theme.dart';
 import 'package:openote/ui/app_shell.dart';
+import 'package:openote/ui/onboarding.dart';
 
 import 'support/sqlite.dart';
 
@@ -143,6 +145,13 @@ void main() {
     addTearDown(tester.view.reset);
     final key = GlobalKey();
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
+      localeListResolutionCallback: onoteResolveLocale,
+      // The harness mounts its own MaterialApp, so it has to honour the
+      // language the same way `main.dart` does — otherwise a screenshot
+      // "in Spanish" is a screenshot in English.
+      locale: app.uiLocale,
       theme: onoteTheme(b),
       darkTheme: onoteTheme(Brightness.dark),
       themeMode: b == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
@@ -190,6 +199,8 @@ void main() {
     addTearDown(t.view.reset);
     final key = GlobalKey();
     await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       theme: onoteTheme(Brightness.light),
       debugShowCheckedModeBanner: false,
       home: RepaintBoundary(key: key, child: AppShell(app: app)),
@@ -225,6 +236,8 @@ void main() {
     addTearDown(t.view.reset);
     final key = GlobalKey();
     await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       theme: onoteTheme(Brightness.light),
       debugShowCheckedModeBanner: false,
       home: RepaintBoundary(key: key, child: AppShell(app: app)),
@@ -257,4 +270,58 @@ void main() {
     app.planner.startScheduler();
     await shot(t, app, Brightness.light, 'alert_popup');
   });
+
+  // The chrome in another language, because a translation that overflows a
+  // toolbar is invisible to every assertion in the suite. Spanish is the
+  // longest of the six on the words that matter (Configuraciones, Sincronizar,
+  // Insertar), so it is the one that would break first.
+  testWidgets('shell in Spanish', (t) async {
+    if (!_enabled) return markTestSkipped('set ONOTE_SCREENSHOTS=1 to render');
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await seed(t);
+    app.setUiLocale(const Locale('es'));
+    await shot(t, app, Brightness.light, 'shell_spanish');
+  });
+
+  // The welcome flow, which is drawn rather than written and therefore cannot
+  // be reviewed any other way — reading `_CanvasStoryPainter` tells you what
+  // it paints, not whether it reads. One image per step; the first is caught
+  // at the frame its animation rests on.
+  for (final step in [0, 1, 2]) {
+    testWidgets('onboarding step $step', (t) async {
+      if (!_enabled) return markTestSkipped('set ONOTE_SCREENSHOTS=1 to render');
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await seed(t);
+      const key = ValueKey('onboarding-shot');
+      t.view.physicalSize = const Size(1100, 800);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      await t.pumpWidget(RepaintBoundary(
+        key: key,
+        child: MaterialApp(
+          localizationsDelegates: kOnoteLocalizations,
+          supportedLocales: kOnoteLocales,
+          debugShowCheckedModeBanner: false,
+          theme: onoteTheme(Brightness.light),
+          home: Scaffold(
+            body: Builder(
+              builder: (c) => TextButton(
+                  onPressed: () => showOnboarding(c, app),
+                  child: const Text('open')),
+            ),
+          ),
+        ),
+      ));
+      await t.tap(find.text('open'));
+      await t.pump(const Duration(milliseconds: 450));
+      await t.pumpAndSettle();
+      for (var i = 0; i < step; i++) {
+        await t.tap(find.text('Next'));
+        await t.pumpAndSettle();
+      }
+      await expectLater(
+          find.byKey(key), matchesGoldenFile('goldens/onboarding_$step.png'));
+      app.cancelPendingSave();
+    });
+  }
 }

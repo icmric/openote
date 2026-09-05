@@ -25,6 +25,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/markdown/md_render.dart';
 import 'package:openote/math/math_view.dart';
 
@@ -38,6 +39,8 @@ void main() {
   Future<void> pump(WidgetTester tester, String text,
       {double width = 900}) async {
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,
@@ -215,6 +218,8 @@ void main() {
     // reading their own notes.
     Future<double> heightOf({required bool compact}) async {
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,

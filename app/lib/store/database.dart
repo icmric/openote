@@ -171,18 +171,47 @@ Database openExistingOnote(String path,
 
 Database openOnote(String path, {required String notebookId, required String title}) {
   final db = sqlite3.open(path);
-  // **Before `journal_mode`, and before any table exists.** `auto_vacuum` can
-  // only be set on a database with no pages — after that it takes a full
-  // `VACUUM` to change, which is why this line's position is load-bearing
-  // rather than stylistic.
+  // **Read this BEFORE writing anything**, which is why it is the first
+  // statement rather than sitting with the other `PRAGMA` reads below. It is
+  // a pure read — it opens no transaction and creates no page — and the whole
+  // point of the block after it is that it must not run on a database that
+  // already has content.
+  final appId = db.select('PRAGMA application_id;').first.columnAt(0) as int;
+  final freshFile = appId == 0;
+
+  // **Only on a genuinely empty file, and that is not a micro-optimisation:
+  // this statement takes a WRITE TRANSACTION.**
   //
-  // INCREMENTAL rather than FULL: FULL repacks on every commit, moving pages
-  // during ordinary saves. INCREMENTAL only records what is free, and
-  // [reclaimFreeSpace] spends it when the user asks. Without either, the file
-  // holds its high-water mark forever — a notebook that once contained a
-  // 60-slide deck stays that size after the deck is deleted, which is the
-  // shape of complaint that started this work.
-  db.execute('PRAGMA auto_vacuum=INCREMENTAL;');
+  // It reads as a settings line, and it was written as one — run on every
+  // open, for the ordering reason still described below. But SQLite's
+  // `auto_vacuum` setter does not merely record a preference: when the value
+  // is FULL or INCREMENTAL it emits an `OP_Transaction ... 1` (a write) so it
+  // can put the mode in meta[6]. So every notebook opened took a write lock
+  // and touched the journal before anybody had asked for anything — on the
+  // startup path, where `AppState.init` opens the last notebook to sweep its
+  // recycle bin.
+  //
+  // That turned any I/O trouble on the file into a crash **before the window
+  // ever appeared**: reported from a real Windows build as
+  // `SqliteException(1546): disk I/O error` — extended code 1546 is
+  // `SQLITE_IOERR_TRUNCATE`, a failure inside the VFS's `xTruncate`, which is
+  // journal work this line had no business doing.
+  //
+  // And it bought nothing. `auto_vacuum` can only be set on a database with
+  // no pages; on every notebook that already exists the write transaction ran
+  // and the mode did not change. The pages are reclaimed by the explicit
+  // `VACUUM` in [Repository.reclaimFreeSpace], whose own doc comment already
+  // says it uses `VACUUM` *rather than* `PRAGMA incremental_vacuum` — and
+  // nothing in this codebase calls `incremental_vacuum` at all. So the cost
+  // was a write transaction per open, and the benefit was zero.
+  //
+  // Kept for the fresh file, where it is free and does take effect, so a
+  // notebook created from here on is auto-vacuum capable if that is ever
+  // wanted. INCREMENTAL rather than FULL: FULL repacks on every commit,
+  // moving pages during ordinary saves.
+  if (freshFile) {
+    db.execute('PRAGMA auto_vacuum=INCREMENTAL;');
+  }
   db.execute('PRAGMA journal_mode=WAL;');
   // WAL's recommended durability level: commits don't each fsync (a power cut
   // can lose the last few commits but never corrupts). Import measured ~700
@@ -190,8 +219,6 @@ Database openOnote(String path, {required String notebookId, required String tit
   db.execute('PRAGMA synchronous=NORMAL;');
   db.execute('PRAGMA foreign_keys=ON;');
 
-  final appId = db.select('PRAGMA application_id;').first.columnAt(0) as int;
-  final freshFile = appId == 0;
   if (!freshFile && appId != onoteApplicationId) {
     db.dispose();
     throw StateError('Not an Openote notebook: $path');

@@ -18,6 +18,7 @@ import 'package:openote/editor/code_block_view.dart';
 import 'package:openote/editor/code_highlight.dart';
 import 'package:openote/editor/code_languages.dart';
 import 'package:openote/editor/wrap_selection.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -688,6 +689,8 @@ weekly: true
         'source': source,
       });
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,

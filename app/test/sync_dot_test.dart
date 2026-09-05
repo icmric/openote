@@ -12,6 +12,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/sync/mirrors.dart';
@@ -94,6 +95,8 @@ void main() {
     final nb = app.notebookId!;
 
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Row(children: [
           SyncDot(app: app, notebookId: nb),
@@ -136,6 +139,8 @@ void main() {
 
     // The navigator is narrow and user-resizable, so this is the real case.
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: SizedBox(
             width: 150, child: SyncDotWithLabel(app: app, notebookId: nb)),

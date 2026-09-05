@@ -24,8 +24,12 @@
 ///   only**, never argv — an argv secret is visible to every process on the
 ///   machine, which is the exact leak `git_sync.dart` documents. If the tool
 ///   is not installed, [write] reports false and the caller says so in plain
-///   words instead of falling back to a plain file. **Not verified by running
-///   it** either.
+///   words instead of falling back to a plain file. **Verified by running it,
+///   2026-09-02** — on a Linux machine WITHOUT libsecret-tools, which is the
+///   case this promise exists for and the default on a minimal desktop: write
+///   returns false, read returns null, delete returns true, and nothing
+///   throws. `github_token_storage_test.dart` asserts both branches and says
+///   which one it took.
 ///
 /// There is deliberately **no plaintext fallback of any kind**: a machine with
 /// no usable store means "connecting a GitHub account is not available here",

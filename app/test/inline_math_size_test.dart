@@ -26,6 +26,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/inline_math_editor.dart';
 import 'package:openote/editor/text_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/math_view.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -73,6 +74,8 @@ void main() {
       app.blocks.add(b);
       app.editingBlockId = 'b1';
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,
@@ -124,6 +127,8 @@ void main() {
       // the body, measured against OneNote's own export). The owner wants the
       // full-size setting instead, tall line and all.
       await tester.pumpWidget(const MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -176,6 +181,8 @@ void main() {
           content: {'text': text, 'autoWidth': false},
         );
         await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           home: Scaffold(
             body: Align(
               alignment: Alignment.topLeft,
@@ -225,6 +232,8 @@ void main() {
       app.blocks.add(b);
       app.editingBlockId = 'b1';
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Align(
             alignment: Alignment.topLeft,

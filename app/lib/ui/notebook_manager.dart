@@ -6,12 +6,14 @@ import '../export/import_job.dart';
 import '../export/md_import.dart';
 import '../export/onenote_import.dart';
 import '../model/models.dart';
+import '../l10n/l10n.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'join_git_dialog.dart';
 import 'onboarding.dart';
 import 'sync_dot.dart';
 import '../theme/tokens.dart';
+import 'onenote_cloud_dialog.dart';
 import 'onote_dialog.dart';
 
 /// The notebook manager (style guide §7b) — the one place notebooks are managed.
@@ -114,6 +116,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
 
   @override
   Widget build(BuildContext context) {
+    final l = L.of(context);
     final scheme = Theme.of(context).colorScheme;
     final notebooks = app.notebooks;
     final trashed = app.trashedNotebooks;
@@ -121,9 +124,9 @@ class _NotebookManagerState extends State<_NotebookManager> {
       title: Row(children: [
         Icon(Icons.menu_book_outlined, size: 18, color: scheme.primary),
         const SizedBox(width: 9),
-        const Text('Notebooks'),
+        Text(l.nbTitle),
         const Spacer(),
-        Text('${notebooks.length} open',
+        Text(l.nbOpenCount(notebooks.length),
             style: TextStyle(
                 fontSize: 12, color: context.surfaces.textSecondary)),
       ]),
@@ -137,13 +140,12 @@ class _NotebookManagerState extends State<_NotebookManager> {
               for (final nb in notebooks) _row(nb, scheme),
               if (trashed.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                _sectionLabel(
-                    'In the recycle bin · deleted after ${app.recycleRetentionDays} days'),
+                _sectionLabel(l.nbInBin(app.recycleRetentionDays)),
                 for (final nb in trashed) _trashRow(nb),
               ],
               if (_importOpen) ...[
                 const SizedBox(height: 6),
-                _sectionLabel('Import into a new notebook'),
+                _sectionLabel(l.nbImportInto),
                 _importRow(),
               ],
               // Repeated imports of the same notebook. Shown here rather than
@@ -166,7 +168,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
         Row(children: [
           TextButton.icon(
             icon: const Icon(Icons.add, size: 18),
-            label: const Text('New'),
+            label: Text(l.nbNew),
             onPressed: () async {
               // Through the shared prompt, which owns the field's controller in
               // the dialog's own State. This used to build the field and
@@ -175,9 +177,9 @@ class _NotebookManagerState extends State<_NotebookManager> {
               // unmounting the field. That is what crashed the app on Enter;
               // see [promptForText].
               final title = await promptForText(context,
-                  title: 'New notebook',
-                  okLabel: 'Create',
-                  hintText: 'Notebook name');
+                  title: l.nbNewTitle,
+                  okLabel: l.nbCreate,
+                  hintText: l.nbNameHint);
               if (title == null || !mounted) return;
               await app.createNotebook(title);
               if (mounted) setState(() {});
@@ -188,12 +190,12 @@ class _NotebookManagerState extends State<_NotebookManager> {
           TextButton.icon(
             icon: Icon(_importOpen ? Icons.expand_less : Icons.download_outlined,
                 size: 18),
-            label: const Text('Import'),
+            label: Text(l.nbImport),
             onPressed: () => setState(() => _importOpen = !_importOpen),
           ),
           TextButton.icon(
             icon: const Icon(Icons.healing_outlined, size: 18),
-            label: const Text('Repair'),
+            label: Text(l.nbRepair),
             onPressed: () => _repairWithProgress(context, app),
           ),
           // The welcome flow is where "open the notebook that's already in my
@@ -202,7 +204,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
           // after the first one.
           TextButton.icon(
             icon: const Icon(Icons.explore_outlined, size: 18),
-            label: const Text('Get started'),
+            label: Text(l.nbGetStarted),
             onPressed: () async {
               // Root navigator's context, captured before the pop — the same
               // trap as the import row below: `showDialog` on a route that has
@@ -215,7 +217,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
           const Spacer(),
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Done')),
+              child: Text(l.commonDone)),
         ]),
       ],
     );
@@ -234,6 +236,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
   /// A `ScaffoldMessengerState` and the ROOT navigator's context both outlive
   /// this route, so neither can go stale under an import that takes a minute.
   Widget _importRow() {
+    final l = L.of(context);
     Widget choice(IconData icon, String label,
             Future<void> Function(ScaffoldMessengerState, BuildContext) run) =>
         Padding(
@@ -255,18 +258,25 @@ class _NotebookManagerState extends State<_NotebookManager> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
       child: Wrap(children: [
-        choice(Icons.library_books_outlined, 'OneNote notebook (.onepkg)',
+        // FIRST among the OneNote routes, because it is the one that works
+        // everywhere. Exporting a .onepkg needs OneNote for Windows; there is
+        // no export at all on macOS and no OneNote on Linux, so for two
+        // platforms out of three the file routes below are not a slower
+        // option, they are no option.
+        choice(Icons.cloud_sync_outlined, l.oneNoteCloudTitle,
+            (m, c) => showOneNoteCloudDialog(c, app)),
+        choice(Icons.library_books_outlined, l.nbImportOnepkg,
             (m, _) => importOneNotePackageWithFeedback(m, app)),
-        choice(Icons.upload_file_outlined, 'OneNote section (.one)',
+        choice(Icons.upload_file_outlined, l.nbImportOne,
             (m, c) => importOneNoteSectionWithFeedback(c, app, messenger: m)),
-        choice(Icons.drive_folder_upload_outlined, 'Markdown folder',
+        choice(Icons.drive_folder_upload_outlined, l.nbImportMarkdown,
             (m, _) => importMarkdownWithFeedback(m, app)),
         // The other end of "put this notebook on GitHub". It sits with the
         // imports because that is where someone looks for "I have a notebook
         // somewhere else and I want it here" — the fact that this one arrives
         // over git rather than as a file is not the user's distinction to
         // make.
-        choice(Icons.cloud_download_outlined, 'From a git address',
+        choice(Icons.cloud_download_outlined, l.nbImportGit,
             (m, c) => showJoinFromGitDialog(c, app, messenger: m)),
       ]),
     );
@@ -286,10 +296,11 @@ class _NotebookManagerState extends State<_NotebookManager> {
   late final List<DuplicateGroup> _dupes = app.findDuplicateNotebooks();
 
   List<Widget> _duplicateSection() {
+    final l = L.of(context);
     if (_dupes.isEmpty) return const [];
     return [
       const SizedBox(height: 6),
-      _sectionLabel('Possible duplicates · same title and same page count'),
+      _sectionLabel(l.nbDuplicates),
       for (final g in _dupes)
         Padding(
           padding: const EdgeInsets.fromLTRB(6, 2, 6, 8),
@@ -297,16 +308,15 @@ class _NotebookManagerState extends State<_NotebookManager> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '${g.members.length} copies of "${g.title}" · ${g.pages} pages '
-                'each · ${_bytes(g.reclaimable)} would come back',
+                l.nbDuplicateGroup(g.members.length, g.title, g.pages,
+                    _bytes(g.reclaimable)),
                 style: const TextStyle(fontSize: 12, height: 1.35),
               ),
               const SizedBox(height: 2),
               Text(
                 // Said explicitly, because "delete the duplicates" is a
                 // frightening sentence unless the safest one is named.
-                'Keep the largest — an import interrupted part way through is '
-                'the smaller one. Deleted copies go to the recycle bin.',
+                l.nbDuplicatesHint,
                 style: TextStyle(
                     fontSize: 11,
                     height: 1.35,
@@ -348,8 +358,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
                                   _dupes.remove(g);
                                 });
                               },
-                        child: const Text('Delete',
-                            style: TextStyle(fontSize: 11)),
+                        child: Text(l.commonDelete,
+                            style: const TextStyle(fontSize: 11)),
                       ),
                   ]),
                 ),
@@ -377,6 +387,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
       );
 
   Widget _row(NotebookRef nb, ColorScheme scheme) {
+    final l = L.of(context);
     final current = nb.id == app.notebookId;
     final renaming = _renamingId == nb.id;
     final confirming = _confirmDeleteId == nb.id;
@@ -462,14 +473,14 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 )
               else if (!renaming && !confirming) ...[
                 if (!current)
-                  _act(Icons.open_in_new, 'Open this notebook', () async {
+                  _act(Icons.open_in_new, l.nbOpenThis, () async {
                     Navigator.pop(context);
                     await app.selectNotebook(nb.id);
                   }),
-                _act(Icons.edit_outlined, 'Rename', () => _startRename(nb)),
-                _act(Icons.copy_all_outlined, 'Duplicate',
+                _act(Icons.edit_outlined, l.nbRename, () => _startRename(nb)),
+                _act(Icons.copy_all_outlined, l.nbDuplicate,
                     () => _duplicate(nb)),
-                _act(Icons.delete_outline, 'Move to recycle bin',
+                _act(Icons.delete_outline, l.nbMoveToBin,
                     () => setState(() {
                           _confirmDeleteId = nb.id;
                           _renamingId = null;
@@ -484,21 +495,20 @@ class _NotebookManagerState extends State<_NotebookManager> {
             Padding(
               padding: const EdgeInsets.only(top: 8, left: 28),
               child: Row(children: [
-                const Expanded(
-                  child: Text(
-                      'Move to the recycle bin? You can restore it from here.',
-                      style: TextStyle(fontSize: 13)),
+                Expanded(
+                  child: Text(l.nbConfirmBin,
+                      style: const TextStyle(fontSize: 13)),
                 ),
                 TextButton(
                     onPressed: () => setState(() => _confirmDeleteId = null),
-                    child: const Text('Cancel')),
+                    child: Text(l.commonCancel)),
                 const SizedBox(width: 4),
                 FilledButton(
                   style: FilledButton.styleFrom(
                       backgroundColor: OnoteColors.danger,
                       visualDensity: VisualDensity.compact),
                   onPressed: () => _delete(nb),
-                  child: const Text('Delete'),
+                  child: Text(l.commonDelete),
                 ),
               ]),
             ),
@@ -509,6 +519,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
   }
 
   Widget _trashRow(NotebookRef nb) {
+    final l = L.of(context);
     final days = _daysLeft(nb.deletedAt ?? 0, app.recycleRetentionDays);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
@@ -536,9 +547,9 @@ class _NotebookManagerState extends State<_NotebookManager> {
             await app.restoreNotebook(nb.id);
             if (mounted) setState(() => _highlightId = nb.id);
           },
-          child: const Text('Restore'),
+          child: Text(l.navRestore),
         ),
-        _act(Icons.delete_forever, 'Delete permanently', () async {
+        _act(Icons.delete_forever, l.navDeletePermanently, () async {
           final ok =
               await _confirmPurge(context, nb, caveat: app.purgeCaveat(nb.id));
           if (!ok || !mounted) return;
@@ -573,17 +584,17 @@ Future<bool> _confirmPurge(BuildContext context, NotebookRef nb,
   final ok = await showOnoteDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Delete permanently?'),
-      content: Text('“${nb.title}” and all its pages will be removed for good. '
-          "This can't be undone.${caveat == null ? '' : '\n\n$caveat'}"),
+      title: Text(L.of(ctx).navDeleteForeverTitle),
+      content: Text(L.of(ctx).navDeleteForeverBody(
+          nb.title, caveat == null ? '' : '\n\n$caveat')),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel')),
+            child: Text(L.of(ctx).commonCancel)),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: OnoteColors.danger),
           onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Delete forever'),
+          child: Text(L.of(ctx).navDeleteForever),
         ),
       ],
     ),
@@ -609,23 +620,24 @@ Future<bool> _confirmPurge(BuildContext context, NotebookRef nb,
 Future<void> importOneNotePackageWithFeedback(
     ScaffoldMessengerState messenger, AppState app,
     {Future<XFile?> Function()? pickFile}) async {
+  // Through the MESSENGER's context, not a dialog's: this function
+  // deliberately takes no `BuildContext` (see above), and the messenger lives
+  // above the navigator, so its context is still good.
+  final l = L.of(messenger.context);
   final file = await (pickFile?.call() ??
-      openFile(acceptedTypeGroups: const [
-        XTypeGroup(label: 'OneNote notebook package', extensions: ['onepkg'])
+      openFile(acceptedTypeGroups: [
+        XTypeGroup(label: l.nbOnePkgFileType, extensions: const ['onepkg'])
       ]));
   if (file == null) return;
   try {
     final job = ImportJob.start(app, p.basename(file.name), file.path);
     _say(
         messenger,
-        job == null
-            ? 'An import is already running — one at a time.'
-            : 'Importing in the background — keep working, the card in the '
-                "corner will say when it's done.");
+        job == null ? l.nbImportBusy : l.nbImportStarted);
   } on OneNoteUnavailable {
-    _say(messenger, _coreMissing, seconds: 8);
+    _say(messenger, l.nbCoreMissing, seconds: 8);
   } catch (e) {
-    _say(messenger, "Couldn't read that file: $e");
+    _say(messenger, l.nbReadFileFailed('$e'));
   }
 }
 
@@ -639,18 +651,20 @@ Future<void> importOneNotePackageWithFeedback(
 Future<void> importOneNoteSectionWithFeedback(BuildContext context, AppState app,
     {ScaffoldMessengerState? messenger}) async {
   final m = messenger ?? ScaffoldMessenger.of(context);
+  final l = L.of(context);
   try {
     final count = await importOneNoteFile(app, progressContext: context);
     if (count == null) return;
     _say(
         m,
         count == 0
-            ? "Couldn't read any content from that .one file."
-            : 'Imported '
-                '${importArrivalNote(count, lastImportedImages, lastImportedStrokes, lastImportedTags)}'
-                ' from OneNote.${_strokeNote()}');
+            ? l.nbOneFileEmpty
+            : l.nbImportedFromOneNote(
+                importArrivalNote(count, lastImportedImages,
+                    lastImportedStrokes, lastImportedTags),
+                _strokeNote()));
   } on OneNoteUnavailable {
-    _say(m, _coreMissing, seconds: 8);
+    _say(m, l.nbCoreMissing, seconds: 8);
   }
 }
 
@@ -659,36 +673,29 @@ Future<void> importMarkdownWithFeedback(
     ScaffoldMessengerState messenger, AppState app) async {
   // **It says what it is doing while it does it.** A vault of a few hundred
   // notes is seconds of work, and there was nothing on screen for any of it.
-  final progress = ValueNotifier<String>('Reading the folder…');
+  final l = L.of(messenger.context);
+  final progress = ValueNotifier<String>(l.nbReadingFolder);
   int? count;
   try {
     count = await importMarkdownFolder(
       app,
-      onProgress: (done) => progress.value = 'Imported $done '
-          'page${done == 1 ? '' : 's'}…',
+      onProgress: (done) => progress.value = l.nbImportedPagesProgress(done),
     );
   } catch (e) {
     progress.dispose();
-    _say(messenger, "That folder couldn't be imported: $e", seconds: 8);
+    _say(messenger, l.nbReadFolderFailed('$e'), seconds: 8);
     return;
   }
   progress.dispose();
   if (count == null) return;
-  _say(
-      messenger,
-      count == 0
-          ? 'No Markdown files found in that folder.'
-          : 'Imported $count page${count == 1 ? '' : 's'}.');
+  _say(messenger,
+      count == 0 ? l.nbNoMarkdown : l.nbImportedPages(count));
 }
 
 /// Show a snackbar through a messenger that cannot go stale.
 void _say(ScaffoldMessengerState m, String msg, {int seconds = 4}) =>
     m.showSnackBar(
         SnackBar(content: Text(msg), duration: Duration(seconds: seconds)));
-
-const _coreMissing =
-    'OneNote import needs the Rust core — build onote_core.dll '
-    '(see rust/onote_core/INTEGRATION.md).';
 
 /// One sentence when the parser dropped undecodable ink (~0.02 % of strokes on
 /// the reference notebook). The notes LOOK complete when a stroke vanishes,
@@ -708,7 +715,8 @@ String _strokeNote() => lastDroppedStrokes == 0
 /// This is the explicit "just fix all of it" pass, with a live count because
 /// on a 300-page notebook it is seconds rather than milliseconds.
 Future<void> _repairWithProgress(BuildContext context, AppState app) async {
-  final progress = ValueNotifier<String>('Checking pages…');
+  final l = L.of(context);
+  final progress = ValueNotifier<String>(l.nbCheckingPages);
   var open = false;
   if (context.mounted) {
     open = true;
@@ -735,7 +743,7 @@ Future<void> _repairWithProgress(BuildContext context, AppState app) async {
   try {
     final r = await app.repairWholeNotebook(
       onProgress: (done, total) =>
-          progress.value = 'Checking page $done of $total…',
+          progress.value = l.nbCheckingPageProgress(done, total),
     );
     if (open && context.mounted) {
       Navigator.of(context, rootNavigator: true).pop();
@@ -745,9 +753,9 @@ Future<void> _repairWithProgress(BuildContext context, AppState app) async {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       duration: const Duration(seconds: 5),
       content: Text(r.pages == 0
-          ? 'Nothing to repair — every page is already up to date.'
-          : 'Repaired ${r.blocks} box${r.blocks == 1 ? '' : 'es'} '
-              'across ${r.pages} page${r.pages == 1 ? '' : 's'}.'),
+          ? l.nbNothingToRepair
+          : l.nbRepaired(
+              l.nbRepairedBoxes(r.blocks), l.nbRepairedPages(r.pages))),
     ));
   } catch (e) {
     if (open && context.mounted) {
@@ -755,7 +763,7 @@ Future<void> _repairWithProgress(BuildContext context, AppState app) async {
     }
     if (context.mounted) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Repair failed: $e')));
+          .showSnackBar(SnackBar(content: Text(l.nbRepairFailed('$e'))));
     }
   } finally {
     progress.dispose();

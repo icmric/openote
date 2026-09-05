@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/canvas/page_canvas.dart';
 import 'package:openote/editor/inline_math_editor.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/markdown/md_syntax.dart';
 import 'package:openote/math/evaluate.dart';
 import 'package:openote/math/math_editor.dart';
@@ -154,6 +155,8 @@ void main() {
       addTearDown(tester.view.reset);
       final b = app.insertEquation(at: const Offset(20, 20));
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
@@ -292,6 +295,8 @@ void main() {
       app.editingBlockId = 'p1';
 
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
@@ -346,6 +351,8 @@ void main() {
       app.editingBlockId = 'p2';
 
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,

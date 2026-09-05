@@ -21,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/canvas/block_view.dart';
 import 'package:openote/editor/live_markdown_controller.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/markdown/md_render.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -81,6 +82,8 @@ void main() {
       const text = '- alpha bravo charlie delta echo foxtrot golf hotel';
       final c = LiveMarkdownController(text: text, dark: false);
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           theme: onoteTheme(Brightness.light),
           home: Scaffold(body: _editField(c, 200))));
       await t.pumpAndSettle();
@@ -102,6 +105,8 @@ void main() {
       const text = '    - nested alpha bravo charlie delta echo foxtrot golf';
       final c = LiveMarkdownController(text: text, dark: false);
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           theme: onoteTheme(Brightness.light),
           home: Scaffold(body: _editField(c, 260))));
       await t.pumpAndSettle();
@@ -121,6 +126,8 @@ void main() {
       const text = 'plain alpha bravo charlie delta echo foxtrot golf hotel';
       final c = LiveMarkdownController(text: text, dark: false);
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           theme: onoteTheme(Brightness.light),
           home: Scaffold(body: _editField(c, 200))));
       await t.pumpAndSettle();
@@ -143,6 +150,8 @@ void main() {
           '- supercalifragilisticexpialidociousandthensomemore tail words here';
       final c = LiveMarkdownController(text: text, dark: false);
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           theme: onoteTheme(Brightness.light),
           home: Scaffold(body: _editField(c, 200))));
       await t.pumpAndSettle();
@@ -162,6 +171,8 @@ void main() {
       const text = '- alpha bravo charlie delta echo foxtrot golf hotel';
       final c = LiveMarkdownController(text: text, dark: false);
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           theme: onoteTheme(Brightness.light),
           home: Scaffold(body: _editField(c, 200))));
       await t.pumpAndSettle();
@@ -189,6 +200,8 @@ void main() {
       const text = '- alpha bravo charlie delta echo foxtrot golf hotel';
       final c = LiveMarkdownController(text: text, dark: false);
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           theme: onoteTheme(Brightness.light),
           home: Scaffold(body: _editField(c, 200))));
       await t.pumpAndSettle();
@@ -219,6 +232,8 @@ void main() {
       const text = '- alpha bravo charlie delta echo foxtrot golf hotel';
       final c = LiveMarkdownController(text: text, dark: false);
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           theme: onoteTheme(Brightness.light),
           home: Scaffold(
               body: Align(
@@ -325,6 +340,8 @@ void main() {
     testWidgets('the engine gives the controller its layout width', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         theme: onoteTheme(Brightness.light),
         home: Scaffold(
           body: ListenableBuilder(

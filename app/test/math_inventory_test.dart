@@ -13,6 +13,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/math_editor.dart';
 import 'package:openote/math/math_inventory.dart';
 import 'package:openote/math/math_tree.dart';
@@ -22,6 +23,8 @@ import 'package:openote/ui/math_bar.dart';
 void main() {
   Future<bool> drawn(WidgetTester tester, String tex) async {
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,

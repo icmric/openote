@@ -68,6 +68,23 @@ Thank you for your interest in Openote — an open-source, cross-platform altern
 
 **4. Prototype a spike.** The remaining open work is spike-shaped: the editor-engine bake-off ([ADR-0004](docs/adr/ADR-0004-editor-engine.md)), the first-party canvas core, the Saber-style ink pipeline feel-check, and the Loro-via-FFI round-trip benchmark. If you want to build one, say so in an issue — spike evidence settles arguments here.
 
+**5. Translate Openote.** This is the one job that needs no Dart at all. Copy `app/lib/l10n/app_en.arb` to `app/lib/l10n/app_<code>.arb`, translate the values, drop the `@` description entries (those belong to the English template), and run `flutter gen-l10n` from `app/`. Nothing else changes — the list of supported languages is generated from the files present, and any message you leave out falls back to English, so a partial translation is a useful contribution rather than a broken build.
+
+Openote already ships in German, Spanish, French, Italian, Portuguese and
+Simplified Chinese, and picks a language from the computer's own settings
+without asking, so a new `.arb` is live for its speakers the moment it lands.
+
+Two things to know before you start. The English `.arb` is still growing: the
+welcome flow, the toolbars, the navigator, the insert catalogue and Settings
+read their words from it, but several dialogs (sync, AI access, the planner and
+study panels) are still Dart string literals — the order they are being
+converted in is in [v0.24 §1](docs/planning/v0.24-road-to-1.0.md). And every
+message carries an `@` entry describing where it appears and what any
+placeholder holds; read it, because it is the only context you get, and it is
+where "this is a Windows menu path", "this is a file extension, leave it alone"
+and "keep this under 31 characters or it falls off the edge of the toolbar" are
+written down.
+
 ## Principles contributions are held to
 
 Every contribution is weighed against the project's [design principles](docs/00-product-vision.md#5-design-principles) and [non-goals](docs/00-product-vision.md#9-non-goals). In short:

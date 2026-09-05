@@ -14,6 +14,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
+
+import 'support/app.dart';
+
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -60,8 +64,9 @@ void main() {
   }
 
   group('the catalog itself', () {
-    test('is thirteen things, grouped for the menu', () {
-      expect(kInsertGroups.map((g) => g.title).toList(),
+    testWidgets('is thirteen things, grouped for the menu', (tester) async {
+      final l = await _translations(tester);
+      expect(kInsertGroups.map((g) => g.title(l)).toList(),
           ['Write', 'Bring in', 'Link up']);
       expect(kInsertItems.length, 13);
     });
@@ -103,22 +108,33 @@ void main() {
       expect(menu.length, 10);
     });
 
-    test('every label is a noun a fifteen-year-old uses', () {
+    // Through `L`, because the catalog's words moved into the .arb: the
+    // Insert ribbon and the right-click menu are the two most visible things
+    // in the app and were the last English left in the toolbars. The rules
+    // themselves are unchanged, and are checked against ENGLISH — a
+    // translation is allowed to be longer than fourteen characters; the
+    // ribbon compacts, and holding another language to an English width is
+    // not a rule anyone could keep.
+    testWidgets('every label is a noun a fifteen-year-old uses',
+        (tester) async {
+      final l = await _translations(tester);
       for (final i in kInsertItems) {
-        expect(i.label, isNot(contains('here')));
-        expect(i.label.trim(), i.label);
-        expect(i.label.length, lessThan(14), reason: i.id);
+        expect(i.label(l), isNot(contains('here')));
+        expect(i.label(l).trim(), i.label(l));
+        expect(i.label(l).length, lessThan(14), reason: i.id);
       }
       // The renames, explicitly.
-      expect(kInsertItems.firstWhere((i) => i.id == 'image').label, 'Picture');
-      expect(kInsertItems.firstWhere((i) => i.id == 'board').label, 'Board');
-      expect(kInsertItems.firstWhere((i) => i.id == 'video').label, 'Video');
+      expect(kInsertItems.firstWhere((i) => i.id == 'image').label(l), 'Picture');
+      expect(kInsertItems.firstWhere((i) => i.id == 'board').label(l), 'Board');
+      expect(kInsertItems.firstWhere((i) => i.id == 'video').label(l), 'Video');
     });
 
-    test('a tooltip never repeats the label', () {
+    testWidgets('a tooltip never repeats the label', (tester) async {
+      final l = await _translations(tester);
       for (final i in kInsertItems) {
         if (i.tooltip == null) continue;
-        expect(i.tooltip!.toLowerCase(), isNot(contains(i.label.toLowerCase())),
+        expect(i.tooltip!(l).toLowerCase(),
+            isNot(contains(i.label(l).toLowerCase())),
             reason: i.id);
       }
     });
@@ -157,6 +173,8 @@ void main() {
       widen(tester);
       late BuildContext ctx;
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(body: Builder(builder: (c) {
           ctx = c;
           return const SizedBox();
@@ -182,9 +200,12 @@ void main() {
   group('the Insert ribbon', () {
     testWidgets('shows the catalog, in order, and nothing else',
         (tester) async {
+      final l = await _translations(tester);
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       widen(tester);
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
@@ -198,15 +219,15 @@ void main() {
 
       for (final i in kInsertRibbon) {
         if (i.showLabel) {
-          expect(find.text(i.label), findsOneWidget, reason: i.id);
+          expect(find.text(i.label(l)), findsOneWidget, reason: i.id);
         } else {
           // Wordless, but never nameless: the icon is there and the name is
           // one hover away.
           expect(find.byIcon(i.icon), findsOneWidget, reason: i.id);
           expect(
               find.byTooltip(i.tooltip == null
-                  ? i.label
-                  : '${i.label} — ${i.tooltip}'),
+                  ? i.label(l)
+                  : '${i.label(l)} — ${i.tooltip!(l)}'),
               findsOneWidget,
               reason: i.id);
         }
@@ -219,9 +240,12 @@ void main() {
     });
 
     testWidgets('fits the smallest window the app opens, wide open', (tester) async {
+      final l = await _translations(tester);
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       widen(tester);
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
@@ -233,7 +257,7 @@ void main() {
       await tester.tap(find.text('Insert'));
       await tester.pumpAndSettle();
       for (final item in kInsertRibbon) {
-        expect(find.text(item.label), findsOneWidget, reason: item.id);
+        expect(find.text(item.label(l)), findsOneWidget, reason: item.id);
       }
       expect(find.byTooltip('More'), findsNothing,
           reason: 'wide open, all thirteen fit inline — nothing to fold');
@@ -243,6 +267,7 @@ void main() {
     testWidgets(
         'compacts instead of scrolling once the ribbon runs past a '
         '1280px window', (tester) async {
+      final l = await _translations(tester);
       // **It does not fit, and that is the shape that was asked for back.**
       //
       // Thirteen labelled buttons run past the ~965px a 1280 window leaves
@@ -254,6 +279,8 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       widen(tester, const Size(1280, 900));
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
@@ -276,7 +303,7 @@ void main() {
       await tester.tap(find.byTooltip('More'));
       await tester.pumpAndSettle();
       final visible = kInsertRibbon
-          .where((i) => find.text(i.label).evaluate().isNotEmpty)
+          .where((i) => find.text(i.label(l)).evaluate().isNotEmpty)
           .length;
       expect(visible, kInsertRibbon.length,
           reason: 'every item is on screen SOMEWHERE — inline or in the '
@@ -289,6 +316,8 @@ void main() {
     Future<void> open(WidgetTester tester) async {
       widen(tester);
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Builder(
             builder: (ctx) => Center(
@@ -310,10 +339,11 @@ void main() {
 
     testWidgets('says the same ten things the ribbon does', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final l = await _translations(tester);
       await open(tester);
       for (final g in kMenuGroups) {
         for (final i in g.items) {
-          expect(find.text(i.menuLabel), findsOneWidget, reason: i.id);
+          expect(find.text(i.menuLabel(l)), findsOneWidget, reason: i.id);
         }
       }
       expect(find.text('Paste'), findsOneWidget);
@@ -383,13 +413,26 @@ void main() {
       expect(flat, contains('table-file'));
     });
 
-    test('and every one of them can be run', () {
+    testWidgets('and every one of them can be run', (tester) async {
+      final l = await _translations(tester);
       for (final i in kMenuItemsAndExtras) {
-        expect(i.label.trim(), isNotEmpty, reason: i.id);
-        expect(i.label.toLowerCase(), isNot(contains('here')),
+        expect(i.label(l).trim(), isNotEmpty, reason: i.id);
+        expect(i.label(l).toLowerCase(), isNot(contains('here')),
             reason: '${i.id}: a right click already means here');
       }
     });
   });
 
+}
+
+
+/// The English translations, for the rules above. Mounting a widget is the
+/// only way to reach an `L`, and it is cheap.
+Future<L> _translations(WidgetTester tester) async {
+  late L l;
+  await tester.pumpWidget(testApp(Builder(builder: (context) {
+    l = L.of(context);
+    return const SizedBox();
+  })));
+  return l;
 }

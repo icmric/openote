@@ -4,6 +4,308 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — bring your notes over from OneNote without exporting anything
+
+- **Sign in to Microsoft, pick a notebook, and it arrives.** No exporting, no
+  files, no leaving the app. On a Mac or on Linux this is not merely the easier
+  way, it is the **only** way: OneNote for Mac cannot export a notebook at all,
+  and there is no OneNote for Linux.
+- **Your notebook fills in while you watch.** Each section is written as it
+  arrives, so you can open and read the parts already in while the rest is
+  still coming, and keep typing the whole time. It says how far through it is.
+- **Handwriting comes too.** So do equations, pictures, tables, lists, your
+  to-do ticks, and **attachments** — which the file import has never managed.
+- **Your notebook's own links work.** A contents page that pointed at other
+  pages still points at them, now inside Openote. A link to something you did
+  not import still opens OneNote, exactly as before.
+- **Openote learns nothing about you.** It asks to read your notebooks and
+  nothing else — no name, no email, no address book, no files, no calendar —
+  and it cannot change anything in OneNote even if it wanted to. There is no
+  Openote server, so your notes go from Microsoft to your own machine and
+  nowhere else.
+- **You do not have to sign in at all.** The exported-file route is still there
+  on the same screen, described side by side, because not wanting to sign in to
+  a Microsoft account is a perfectly good reason not to.
+
+- **Subpages stay subpages.** They arrive indented under the page they belong
+  to, exactly as in OneNote — including a subpage of a subpage. Measured on a
+  real notebook: 212 of 331 pages came over nested, two of them two deep.
+
+### Fixed
+
+- **A hiccup at Microsoft's end no longer ends the whole import.** If one of
+  their servers stumbled — even for a moment, even on one section out of
+  twenty-five — the import stopped there and then with nothing brought over.
+  It waits a moment and asks again, and a section that really cannot be read
+  costs that section rather than the notebook.
+
+- **A failed import no longer breaks the sidebar.** It deleted the notebook it
+  had just opened for you and left the app pointing at it, which turned the
+  whole left-hand panel into a red error box.
+- **A big notebook is less likely to be turned away before it starts.** Working
+  out the subpage structure was asking Microsoft about every section at once,
+  before a single page had been brought over — which is exactly when being
+  told to slow down costs you the whole import.
+
+- **Writing on a picture or a PDF actually shows up.** Handwriting was painted
+  underneath everything on the page, so a stroke over a photo disappeared
+  behind it and looked as though the pen had not worked at all. Ink is drawn on
+  top now, the way a pen on paper is.
+
+- **A page that could not be read now says so, and comes back for.** One page
+  in a 332-page notebook went missing without a word — the count simply said
+  331, which looks like success. It is counted, named on the finished card,
+  and fetched on the next attempt.
+
+- **The import speaks your language.** Bringing a notebook over from OneNote
+  is the first thing many people do, and it was the last part of Openote still
+  in English however the rest of the app was set.
+
+- **An import that stops early finishes itself later.** If Microsoft slows
+  Openote down, or the wifi goes, or you close the app halfway through, the
+  notebook says how much is still to come and quietly finishes the rest about
+  an hour later. There is a **Finish now** button if you would rather not
+  wait, and a **Leave it** if you are happy as you are.
+- **Finishing an import never touches a page you have already edited.** Pages
+  that arrived the first time are skipped outright, not brought over again.
+- **An import you stopped on purpose is never restarted for you.** It still
+  says it is unfinished, and still offers to finish, but nothing happens
+  behind your back.
+
+- **Default handwriting stays readable when you switch between light and dark.**
+  It used to be fixed at the colour it was drawn in, so notes written on a
+  light page disappeared on a dark one. Colours you picked yourself are never
+  changed.
+- **Writing on a picture or a PDF shows up.** Default ink on a document is
+  dark, in either theme — before, on a dark page it was white, which is
+  invisible on the white scan you were actually writing on.
+- **The pen's colour dot matches the ink it draws.** In dark mode the toolbar
+  showed black while the pen wrote white.
+
+- **The pen's side button erases while you hold it.** It only ever worked if
+  the button was already down at the exact moment the pen touched the page,
+  and only for one of the three ways a pen can report that button — so on many
+  pens it did nothing at all. Press it while the pen is hovering and the
+  pointer changes to the eraser before you touch down.
+- **The lasso outline is visible again.** It was a thin, half-transparent line
+  that disappeared over handwriting, over pictures and on a dark page.
+- **The pen no longer needs telling that it is a pen.** The setting for
+  "switch to inking when the pen comes near" is gone; it always does.
+
+- **A first import now explains itself.** Bringing your first notebook over
+  created it empty and opened it, with only a small card in a corner — so the
+  natural reading was that nothing had happened. It now says what it is doing
+  in the middle of the notebook it is filling, including that you do not have
+  to sit and watch: pages appear as they arrive and can be read straight away.
+  Hiding the message does not stop the import.
+- **The pointer changes over things you can click.** Buttons, tick boxes and
+  list rows kept the plain arrow, which made a dense toolbar hard to read.
+  Disabled controls still show the arrow — a hand over a button that will not
+  respond is worse than no hand at all.
+- **Handwriting is no longer lost** when bringing a notebook over the internet.
+- **Equations arrive as equations**, not as one letter per line.
+- **Blank lines between paragraphs survive.** They were being dropped, so
+  paragraphs ran together however many returns you had typed — and the gap
+  turned out not to be written the way anyone would guess, so the first fix
+  missed most of them.
+- **Multiplication signs stay multiplication signs.** A × written in an
+  equation came over as a star. Along with ÷ ⋅ ≤ ≥ ≠ ± ∑ ∏ ∫ ∞ ∂ ∇ and the
+  rest.
+- **Bold and italic survive.** OneNote does not use the tags anyone would
+  expect, so all of it was being quietly discarded.
+- **Tables fit where they were.** They were coming in far too wide and
+  overlapping whatever sat beside them, with every column the same width
+  however much was in it.
+- **Pictures you had moved stay where you put them** instead of jumping back
+  into the middle of a paragraph.
+- **A big notebook imports in about three minutes** rather than the ten or
+  more it used to take — a real five-year notebook of 332 pages, 64,000 pen
+  strokes and 548 equations came over three times running with nothing
+  missing — and when Microsoft asks Openote to slow down it says so and
+  waits, instead of going quiet or giving up.
+- **An import that goes wrong keeps the pages it already brought you.** If
+  something failed halfway, Openote used to delete the whole notebook — every
+  page you had just watched arrive. Now it stops, keeps them, and tells you how
+  many are in.
+- **If Microsoft will not let Openote read for several minutes together, it
+  says so and stops** rather than sitting there apparently working. One run
+  spent forty minutes to bring in a single page.
+- **One stalled connection no longer stops the whole import.** A request that
+  never came back used to hold its place for ever; six of those and a notebook
+  stopped halfway with nothing on screen to say why.
+- **Pictures are no longer lost when Microsoft asks Openote to slow down.**
+  Bringing a five-year notebook over, four pictures went missing and nothing
+  else did: a "come back shortly" on a picture was being read as "this picture
+  does not exist". It waits and asks again now.
+- **A moment of bad wifi no longer costs the whole import.** One failed
+  lookup — a laptop changing network, a router blinking — used to end it
+  outright. It waits a moment and carries on; if the connection really has
+  gone it says so quickly, and says that your imported pages are safe.
+- **The wait before the first page now says what it is doing.** Finding out
+  what is in a big notebook takes half a minute or so before anything can
+  appear, and the card sat on "Signing in to OneNote…" for all of it. It now
+  tells you how many sections and pages it found, and **Stop works during it**
+  instead of waiting until the first section had already been brought over.
+
+## [0.9.0] — 2026-09-03
+
+### Added — Openote speaks six more languages, and picks one without asking (2026-09-03)
+
+- **German, Spanish, French, Italian, Portuguese and Simplified Chinese**, all
+  complete. Nothing to configure: Openote reads the language list your computer
+  already has and comes up in the first one it can speak, so somebody whose
+  machine is set to Chinese sees Chinese on the very first run, welcome flow
+  included. If it guesses wrong, or you'd rather read the app in something
+  else, Settings ▸ Appearance ▸ Language changes it there and then, no restart.
+- **Chinese, Japanese and Korean text now has fonts to fall back on.** The
+  fallback list was Latin and maths families only, so a machine without a CJK
+  default drew empty boxes.
+- Adding the *seventh* language still needs no Dart at all — one `.arb` file
+  and a codegen run. [CONTRIBUTING §5](CONTRIBUTING.md#ways-to-help-right-now)
+  is the whole procedure.
+
+### Fixed — an unfamiliar language fell back to German, not English (2026-09-03)
+
+- **A computer set to a language Openote does not speak got German**, because
+  Flutter's default resolution falls back to the first supported locale and
+  the locale list is built from the `.arb` files in alphabetical order. It
+  falls back to English now.
+- **The language your computer prefers is read as a list, not a single
+  answer.** `localeResolutionCallback` hands over one locale at a time, so a
+  machine set to Chinese-then-English could resolve on the wrong end of its own
+  preference order. It uses `localeListResolutionCallback` now.
+
+### Fixed — turning sync off did not wait for the work already running (2026-09-03)
+
+- **`setAutoSync(false)` returned before the watcher had actually stopped.**
+  The stop was started and its result thrown away, so for a moment afterwards
+  a notebook you had just told Openote to stop watching could still be written
+  to — which on Windows also means an open handle on a folder you may be about
+  to move, rename or delete. It now waits, and everything that turns the
+  watcher off waits with it.
+- **And stopping the watcher was only half of it.** Noticing another device's
+  change starts a catch-up, and that catch-up is the thing that actually
+  writes — it folds the other device's edits in and records how far it got,
+  both inside the folder. Stopping the watcher stopped it noticing anything
+  new; a catch-up already under way carried on regardless, and nothing in the
+  app could wait for it. So "everything has finished" was answered wrongly on
+  the two occasions that ask it precisely because they are about to touch that
+  folder: moving a notebook, and deleting one for good. Both wait properly
+  now.
+- Both showed up as one CI run failing on Windows while the same commit passed
+  everywhere else. The flake was the bug reporting itself.
+
+### Fixed — Openote refused to start (2026-09-04)
+
+- **A notebook Openote could not read stopped the whole app from opening**, on
+  a screen with nothing on it but an error. Reported from a real build: it
+  never got as far as a window. Three separate things had to be wrong for that,
+  and all three are fixed.
+- **Tidying the recycle bin is no longer allowed to stop the launch.** Openote
+  clears out anything past thirty days when it starts. That is housekeeping —
+  skipping it costs nothing, because the next launch does it — and it was
+  taking the entire app down with it.
+- **One unreadable notebook no longer means no Openote.** If the notebook you
+  had open last will not open — a drive that is not plugged in, a file another
+  program is holding, a disk that is full — Openote now opens one that works
+  and tells you what happened to the other, instead of refusing to start. Even
+  if *every* notebook is unreadable, the window opens and says why.
+- **And it says it in words.** "SqliteException(1546): disk I/O error" is not
+  something anybody can act on. It now names the notebook, gives the handful of
+  things that actually cause this on a desktop, and says the thing that matters
+  most: nothing has been lost. Your writing is in the notebook folder, not in
+  that file, and the file can be rebuilt from it.
+- **Opening a notebook no longer asks SQLite for a setting it could not
+  apply.** Every open ran `PRAGMA auto_vacuum=INCREMENTAL`, which reads like a
+  preference but takes a write transaction — and on a notebook that already has
+  content the setting cannot change anyway, so every notebook you own paid for
+  it and none of them got anything. It now runs only when a notebook is being
+  created, which is the only time it does anything.
+
+### Added — a pre-release checklist a human can actually run (2026-09-03)
+
+- **[docs/pre-release-checklist.md](docs/pre-release-checklist.md)**: the
+  manual pass, action and expected result, run on the packaged build before
+  every release. The automated suite is nearly 2,800 tests, but all of them run
+  headless in one process with a fake clock and a fake file picker — it cannot
+  see a stuttering frame, a real file dialog, an installer, a stylus, or the
+  update path. About 35 minutes, deliberately short enough to run every time.
+
+
+### Added — a screen reader can hear an equation (2026-09-02)
+
+- **Equations announce themselves.** Maths is drawn as glyph boxes, which say
+  nothing at all, so an equation was silence in the middle of a page whose
+  prose reads perfectly well. It now carries what you typed. That is not
+  spoken maths — "x squared over two" is a separate, planned job — but it
+  beats a blank.
+- The rest of the app came out of the same check better than expected, and
+  the review has been corrected: every icon-only button in Openote already
+  carries a tooltip, and a tooltip is what a screen reader reads out, so the
+  toolbars and the navigator name themselves. The words on a page reach a
+  screen reader too. What is still missing is a way to jump straight to the
+  navigator, the toolbar or the page instead of walking through everything.
+
+
+### Changed — typing no longer rebuilds the toolbars (2026-09-02)
+
+- **The command bar and the object row are no longer rebuilt for a keystroke
+  that cannot change them.** Every character marks the page dirty — it has to,
+  because that is what makes a box grow as you type — and the whole window was
+  being rebuilt from the top for it. Measured on a page of forty blocks in a
+  ninety-page notebook: the toolbars were 47 ms of a 63 ms frame, and neither
+  can look any different because a character was typed in the middle of a
+  paragraph. That frame is now 19 ms. The parts that really do change while
+  you type — the word count, the study and planner badges — keep themselves up
+  to date on their own.
+
+### Added — the toolbars and the navigator can be translated (2026-09-02)
+
+- **The chrome that is on screen all session now reads its words from the
+  translation file**, joining the welcome flow. Around 200 messages, and six
+  of them are things that were being assembled by hand in a way no other
+  language would accept: "1 card" against "5 cards", reminders waiting, days
+  left in the recycle bin, and the word count, badge numbers and zoom
+  percentage, which are now grouped and shaped the way each language does it.
+  This was the groundwork; the six languages above are what it enabled.
+
+
+### Added — the welcome flow teaches the app, and other languages have somewhere to go (2026-09-02)
+
+- **The first thing you see now says what Openote IS.** The welcome dialog
+  offered three ways to get notes *in* — sync, OneNote import, start fresh —
+  and never mentioned the canvas. That is the discoverable half: both of
+  those live in the notebook manager and in Settings. The canvas is not.
+  Nothing on an empty page tells you that clicking anywhere and typing is the
+  whole interaction, and someone arriving from OneNote who does not learn
+  that in the first ten seconds concludes the page is broken. It is now three
+  short steps, each led by a drawing rather than a paragraph: the canvas
+  (animated, because the thing it teaches is an order of events — pointer,
+  click, caret, words, and only then a box), maths and ink, and where your
+  notes live. Every starting point the old dialog had is kept, as the last
+  step.
+- **The welcome flow can be reopened.** It ran once, ever, on a first run
+  that had already been stamped by the time you decided you wanted it —
+  skipping it was permanent, and being the second person to use the machine
+  meant never seeing it. Settings ▸ Help now has a door back in.
+- **Openote can be translated.** The foundation is in: the localisation
+  delegates, an English `.arb` template that is now the source of truth for
+  the welcome flow's words, and a generated strings class checked into the
+  repository. Adding a language is a single `.arb` file and a codegen run —
+  no code to change — which is exactly how the six languages above arrived a
+  day later. The rest of the migration is tracked in
+  [v0.24 — the road to 1.0](docs/planning/v0.24-road-to-1.0.md).
+
+### Fixed — layout and consistency in the dialogs (2026-09-02)
+
+- **The welcome flow's starting-point cards overflowed by 25 pixels**, on the
+  one step someone switching from OneNote actually has to read. The existing
+  smoke test never caught it because it only ever opened the first step.
+- **Three confirmation dialogs in Sync appeared without the fade-and-scale
+  every other dialog in the app uses**, because they opened through Flutter's
+  own `showDialog` rather than Openote's.
+
+
 ### Fixed — a picture Openote couldn't find could be self-healed, and wasn't (2026-09-01)
 
 - **A blob file missing from `blobs/` — but still sitting safely in the

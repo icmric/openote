@@ -709,94 +709,131 @@ jobs:
           # docs/RELEASING.md §"Writing the notes".
           body: |
             <!-- Draft: review — the What's new below was written with the
-                 tag, from CHANGELOG.md's 0.8.0 section — then publish. -->
+                 tag, from CHANGELOG.md's 0.9.0 section — then publish. -->
 
             ## What's new
 
-            - **Half the download** — about 50 MB now, instead of 100 MB.
-            - **Your notebook can take half the room** — one button does it.
-            - **Double-click a notebook to open it**, even with Openote shut.
-            - **Get deletions back** — your last ten, one click each.
-            - **OneNote import overhauled** — nothing cut off or doubled up.
-            - **Every part of the app now works from the keyboard.**
+            - **Write maths by looking at it** — type 1/2, get a fraction. No LaTeX.
+            - **Draw the graph of any equation**, beside it, redrawn as you type.
+            - **Type = and a space** and it works the answer out, in degrees.
+            - **Openote speaks six more languages**, and picks yours by itself.
+            - **A welcome tour that teaches the canvas** — in pictures, not paragraphs.
+            - **Typing is smoother** — the toolbars stopped rebuilding for every key.
+            - **A word count**, with reading time, on the page's own row.
 
             ## All of it, in more detail
 
-            - **The download is about half the size** — roughly 100 MB down
-              to about 50 MB. Openote used to carry a video player inside it;
-              now it is fetched once, the first time you play a video. Your
-              videos themselves are always on your computer, and if you are
-              updating from an older Openote the player you already have
-              keeps working — nothing to download.
-            - **Notebooks can take about half the space they did.** One
-              button (sharing window ▸ Storage) stops Openote keeping every
-              picture and drawing twice; on two real notebooks it took them
-              from 63 MB down to 33 MB apiece. It checks every single picture
-              is safe in the notebook's own folder before it removes
-              anything, and changes nothing unless all of them are.
-            - **Double-clicking a notebook now opens it — even when Openote
-              is closed.** Opening another notebook switches the window you
-              already have, rather than starting a second copy.
-            - **See who changed what on a page, and get deletions back.** The
-              page history button now says which computer each paragraph,
-              picture or drawing last came from — and your last ten notable
-              deletions (a page, a section, a picture, a recording, a long
-              stretch of writing) can each be put back with one click.
-              The old copy Openote quietly took of every page every ten
-              minutes is gone, and those old copies cannot be brought back —
-              if there is an old page version you still want, get it out
-              before you update. Undo, the recycle bin and your backups all
-              carry on exactly as before.
-            - **OneNote import overhauled.** Pages no longer come out cut
-              off, blank lines and layout are preserved, erased ink stays
-              erased, titles land on the right pages, and importing the same
-              file twice no longer doubles up your handwriting or paragraphs.
-              Re-import a section to pick up the fixes.
-            - **Sharing and sync are much safer, and faster.** Several ways a
-              shared notebook could quietly lose things are fixed — one
-              computer's bad copy of a picture can no longer delete the good
-              copies everywhere else, a sync that silently stopped now picks
-              itself up, a save that never reached the notebook's history now
-              says so — and catching up with another computer no longer
-              freezes the app.
-            - **The whole app works from the keyboard.** F6 moves between the
-              sidebar, toolbar, page and panels; Ctrl+/ shows every shortcut.
-              A paste that cannot be saved now tells you plainly instead of
-              doing nothing, and error messages are clearer throughout.
-            - **Your GitHub key now lives in your computer's own password
-              storage** — Credential Manager on Windows, the Keychain on Mac,
-              the keyring on Linux — never in a plain file. A key you saved
-              before is moved over automatically.
-            - **Openote can rebuild a notebook's working file from your
-              notes** if it is ever damaged or lost. Your notes live in the
-              notebook's own folder; the working file is only the copy
-              Openote reads while the notebook is open.
+            **Maths, rebuilt.** This is most of the release.
+
+            - **You write an equation by looking at it now.** Press Alt+= and
+              type `1/2` — the moment you press space it *becomes* a fraction,
+              where you were typing. A square root gives you a √ with a dotted
+              box under it and the cursor already inside. Tab hops to the next
+              box. The old panel of backslashes with a preview underneath is
+              gone.
+            - **A row of shapes appears while you write one** — fraction,
+              powers, roots, Σ, ∫, lim, brackets, piecewise, matrix, accents —
+              with symbols by category behind it and a search box that speaks
+              plain English: type "square root", "not equal" or "theta". Type
+              names instead if you prefer: `sqrt`, `theta`, `pi` become their
+              symbols on space, and `<=` `>=` `!=` `->` change as you type.
+            - **Backspace never eats what you wrote.** At the edge of a
+              fraction it takes the fraction apart back into `1/2`. The wrapper
+              goes; your numbers stay. That holds for every shape.
+            - **Maths inside a sentence is edited inside the sentence**, at
+              full size, sitting properly on the line — no floating card, no
+              characters landing in the wrong order.
+            - **Type `=` then a space and the answer appears.** It works in
+              degrees like the calculator on your desk, gives ten significant
+              figures, and right-clicking an answer offers decimal or fraction,
+              how many figures, and work it out again.
+            - **Draw the graph of an equation** and it sits beside it, tied to
+              it: change `y = 3x+10` to `y = 2x+6` and the curve follows as you
+              type. Drag to move around, scroll to zoom, double-click to fit.
+              `1/x` and `tan x` break at their asymptotes instead of drawing a
+              line through them, and `2y = 6x + 4` is rearranged for you rather
+              than silently drawn with twice the gradient. It prints and
+              exports as a real graph, not a picture of one.
+            - **Plug a value into an equation** and see the result without
+              retyping it.
+            - **A pile of wrong answers are right now.** `sin 30` is a half
+              (it was working in radians); `sin⁻¹(0.5)` is 30°; `sin(x)²` is
+              the square of sin x, not sin of x²; the cube root of a negative
+              number is a number; `17 mod 5` is 2; `log₂ 8` works; and maths
+              finally renders in tables, on flashcards and in study review,
+              which all drew raw backslashes before.
+
+            **Everything else.**
+
+            - **Openote is translated.** German, Spanish, French, Italian,
+              Portuguese and Simplified Chinese, chosen from your computer's
+              own language settings without asking — so a machine set to
+              Chinese sees Chinese on its very first run. Settings ▸ Appearance
+              ▸ Language changes it if you would rather read something else.
+            - **The welcome tour teaches the app.** It used to offer three
+              ways to get notes *in* and never mention the canvas — which is
+              the one thing nothing else tells you. Three short steps now, led
+              by drawings rather than paragraphs, and it can be reopened from
+              Settings ▸ Help.
+            - **Typing is smoother.** Every keystroke was rebuilding the whole
+              window, toolbars included, neither of which can look any
+              different because you typed a letter mid-paragraph. On a page of
+              forty blocks that frame went from 63 ms to 19 ms.
+            - **A word count on the page's own row** — words, characters, and
+              reading time. It counts what you wrote the way a marker would:
+              a word in bold is one word and not three, a link is the words
+              you can see rather than its address, and an equation is one
+              word.
+            - **The toolbars fold instead of scrolling off the edge.** On a
+              narrow window the trailing buttons — Study, Planner, tags,
+              outline, links, find, export, settings — used to hide past a
+              horizontal scrollbar. They fold into a More menu now and unfold
+              when there is room.
+            - **The keyboard reaches the page list.** Del and Backspace delete
+              the page or section you clicked, and the whole list navigates by
+              keyboard. Shift+F10 opens the page menu.
+            - **A screen reader can hear an equation.** Maths is drawn as
+              glyph boxes, which say nothing at all; it now carries what you
+              typed.
+            - **Fixes from real use**, each root-caused rather than patched:
+              a picture missing from a notebook's folder now heals itself from
+              the notebook's own container, clicking at the end of a line that
+              ends in an equation puts you in it, an empty equation looks like
+              one, and turning sync off now waits for the folder watcher to
+              actually let go before it reports done.
 
             ## The fine print
 
+            - **The six translations have not been read by a native speaker
+              yet.** They are seeds, and they are there so that fixing them is
+              possible; Settings ▸ Appearance ▸ Language links straight to how.
+              If a word is wrong in your language, that is the contribution the
+              project most wants.
             - Openote is still in active development. Updates are worth
               taking, but a major update may occasionally break a feature —
               and macOS is the least-tested platform by far.
             - On Linux, whether double-clicking a notebook *folder* opens
               Openote depends on your file manager; the **Open this
               notebook** file inside the folder works either way.
-            - The storage format changed this release: Openote can now tuck
-              a notebook's working file out of the way and rebuild it on
-              demand. It is opt-in, one notebook at a time, and **Put it
-              back** undoes it.
 
             ## For the technically curious
 
-            This release lands the storage-cluster work: the append-only op
-            log in the notebook's folder is now the source of truth, and the
-            SQLite container is demoted to a working copy the app can always
-            reproduce from that log. Pictures and drawings are stored once,
-            as content-addressed files verified by re-hash on read-back —
-            a corrupt copy is set aside and healed rather than deleted, so
-            one machine's bad blob can never propagate a delete through a
-            shared notebook. The change set then went through adversarial
-            review passes whose every confirmed finding was fixed, and the
-            test suite grew from 1,272 to 1,564 over the cycle.
+            The maths work replaced a LaTeX-string-with-preview editor with a
+            real structural one: a tree, a caret that walks it, and a linear
+            input grammar that builds the tree as you type — the same idea
+            OneNote uses, specified in `docs/specs/12-math-input-spec.md`.
+            Graphs plot from that tree rather than from a re-parsed string,
+            which is why a curve can follow an equation being edited. The
+            localisation is `flutter_localizations` over ARB with the
+            generated class checked in, so adding a language is one file and a
+            codegen run and no Dart at all. The per-keystroke rebuild was
+            fixed with a small memoisation mixin rather than by splitting
+            state: `notifyListeners` still fires on every character — a text
+            box has to measure itself to grow — but a widget whose inputs did
+            not change no longer rebuilds its subtree. Over the cycle the test
+            suite grew from 1,564 to 2,764, and the app now carries a
+            [manual pre-release checklist](https://github.com/icmric/openote/blob/master/docs/pre-release-checklist.md)
+            for the failures a headless suite cannot see.
 
             ## Downloads
             - **Windows**: `openote-*-windows-x64-setup.exe` — the installer.

@@ -21,6 +21,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/canvas/page_canvas.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -37,6 +38,8 @@ void main() {
     testWidgets('submitting with Enter raises nothing', (t) async {
       String? got;
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
@@ -65,6 +68,8 @@ void main() {
 
     testWidgets('cancelling raises nothing either', (t) async {
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
@@ -133,7 +138,11 @@ void main() {
       addTearDown(t.view.reset);
 
       final b = editableBlock();
-      await t.pumpWidget(MaterialApp(home: AppShell(app: app)));
+      await t.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        home: AppShell(app: app),
+      ));
       await t.pump();
       await t.pump();
 
@@ -165,6 +174,8 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final b = editableBlock();
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
@@ -202,6 +213,8 @@ void main() {
       await t.runAsync(() => app.selectPage(first));
       final b = editableBlock();
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,

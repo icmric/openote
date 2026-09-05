@@ -24,6 +24,12 @@ import '../model/history.dart';
 import '../math/active_math.dart';
 import '../math/evaluate.dart';
 import '../math/linear_math.dart';
+import '../export/import_job.dart';
+import '../onenote/graph_auth.dart';
+import '../onenote/graph_client.dart';
+import '../onenote/graph_import.dart';
+import '../onenote/unfinished_import.dart';
+import '../onenote/graph_links.dart';
 import '../model/models.dart';
 import '../store/database.dart'
     show NotebookFileMissing, NotebookFileProblem, notebookFileProblem;
@@ -91,11 +97,9 @@ enum TouchDrawing {
   /// behaviour, and what Openote used to do unconditionally.
   never;
 
-  String get label => switch (this) {
-        TouchDrawing.auto => 'Auto (pen takes over)',
-        TouchDrawing.always => 'Always',
-        TouchDrawing.never => 'Never',
-      };
+  // The names live in `lib/l10n/labels.dart` as `TouchDrawingLabel.label(L)`:
+  // a `const` enum cannot take a `BuildContext`, and a getter that silently
+  // returns English is the one thing `l10n_test.dart` cannot see.
 }
 
 /// The panels that can occupy the right-hand slot (style guide §7c).
@@ -2452,6 +2456,7 @@ class AppState extends ChangeNotifier
         ..._recorderWarms.values,
         ..._blobBackfills.values,
         ..._mirrorRuns.values,
+        ..._autoPulls.values,
         if (_housekeepingRun != null) _housekeepingRun!,
       ];
       if (pending.isEmpty) return;
@@ -2518,11 +2523,36 @@ class AppState extends ChangeNotifier
   /// a sync you have to remember to click isn't sync.
   bool autoSync = true;
 
-  void setAutoSync(bool v) {
+  /// Turn the folder watcher on or off.
+  ///
+  /// **Returns the Future, and turning it OFF is only true once that Future
+  /// completes.** [OpFolderWatcher.stop] says so in bold and explains why: a
+  /// `StreamSubscription.cancel()` is asynchronous, and on Windows the
+  /// underlying `ReadDirectoryChangesW` handle is not released until it
+  /// finishes — so between the call and the completion the watch is still
+  /// live and can still deliver one more event, which re-arms the debounce
+  /// and runs a pull.
+  ///
+  /// This used to discard that Future, which made "auto-sync is off" a
+  /// statement about intent rather than about the operating system. It is
+  /// what made `cloud_sync_test.dart`'s purge test flake **on Windows only**:
+  /// the test turned both devices' watchers off, photographed the shared
+  /// folder, purged, and photographed again — and on a starved runner the
+  /// still-open watch fired in between, pulled, and appended to a log in that
+  /// folder, so the purge was blamed for bytes it never wrote.
+  ///
+  /// The user-facing version of the same bug is worse than a flaky test: turn
+  /// auto-sync off and immediately move or delete the notebook, and the delete
+  /// races a handle that is still open. That is the exact failure the doc
+  /// comment on `stop()` was written about.
+  ///
+  /// [notifyListeners] fires first, so a toggle in the UI still moves at once.
+  Future<void> setAutoSync(bool v) {
     autoSync = v;
     _repo.setSetting('autoSync', v);
-    v ? _startWatching() : _stopWatching();
+    final settled = v ? _startWatching() : _stopWatching();
     notifyListeners();
+    return settled;
   }
 
   OpFolderWatcher? _watcher;
@@ -2562,9 +2592,13 @@ class AppState extends ChangeNotifier
     return 'the folder could not be watched';
   }
 
-  void _startWatching() {
-    _stopWatching();
-    if (!autoSync || notebookId == null || !syncLogEnabled) return;
+  /// Start watching, having first stopped whatever was watching before.
+  ///
+  /// Returns the Future the stop half needs — see [setAutoSync] for why a
+  /// discarded one is not merely untidy.
+  Future<void> _startWatching() {
+    final stopped = _stopWatching();
+    if (!autoSync || notebookId == null || !syncLogEnabled) return stopped;
     // Paths and a device id — NOT a recorder. Opening a recorder here replayed
     // the whole log on the UI thread during startup's first frame, which was
     // most of "the app is locked up for the first few seconds after
@@ -2573,37 +2607,78 @@ class AppState extends ChangeNotifier
     // change actually arrives, which is the earliest moment its replayed state
     // is needed.
     final store = _bareLog(notebookId!);
-    if (store == null || !store.opsDir.existsSync()) return;
+    if (store == null || !store.opsDir.existsSync()) return stopped;
     _watcher = OpFolderWatcher(
       opsDir: store.opsDir,
       ownDevice: localDeviceId(),
       onForeignChange: () {
+        final nb = notebookId!;
         lastForeignSignalAt = DateTime.now();
         debugPrint('[openote/sync] a foreign log changed — pulling');
         // Fire-and-forget: a failed pull must not take down the watcher, and
         // the next change (or the manual button) retries anyway.
-        syncPull(notebookId!).then((n) {
+        //
+        // **But parked in [_autoPulls], for the same reason [runMirrors]
+        // parks its run.** Fire-and-forget is about who WAITS, not about who
+        // CAN wait, and a pull is the longest-running writer into the shared
+        // folder there is. Without this, stopping the watcher stopped future
+        // events and said nothing about the pull already in flight — so
+        // `settleBackgroundWork()` could report everything quiet while a pull
+        // was still folding ops and advancing a watermark. That is a real
+        // hazard on the two paths that ask precisely that question before
+        // touching the folder (purge and move), and it is what failed the
+        // purge test on windows-latest even after the watcher stop itself
+        // was already being awaited.
+        final Future<void> f = syncPull(nb).then<void>((n) {
           lastPullAt = DateTime.now();
           debugPrint('[openote/sync] auto-pull folded $n op(s)');
           notifyListeners();
         }).catchError((Object e) {
           debugPrint('[openote/sync] auto-pull failed: $e');
         });
+        _autoPulls[nb] = f;
+        unawaited(f.whenComplete(() {
+          if (identical(_autoPulls[nb], f)) _autoPulls.remove(nb);
+        }));
       },
     )..start();
+    return stopped;
   }
 
-  /// Stop the folder watcher, and hand back the future that says when its
-  /// handle is actually released.
+  /// Auto-pulls the watcher has started, parked so they can be waited on.
   ///
-  /// Most callers do not care and drop it — a watcher that stops a few
-  /// milliseconds later is harmless when nothing is about to touch the
-  /// directory. The one caller that MUST wait is `moveNotebookToFolder`, which
-  /// goes on to delete the old log directory; see `FolderWatch.stop`.
-  Future<void> _stopWatching() {
+  /// Keyed by notebook, and at most one entry per notebook because [syncPull]
+  /// refuses to run two at once for the same one.
+  final Map<String, Future<void>> _autoPulls = {};
+
+  /// Stop the folder watcher, and wait for the work it already started.
+  ///
+  /// **Whoever is about to touch that directory must await this.** The rule
+  /// was written for `moveNotebookToFolder`, which deletes the old log
+  /// directory next — but it is the same rule for anything that is about to
+  /// assert the folder did not change, or to delete a notebook out of it, and
+  /// [setAutoSync] dropping this future is what made the shared-folder purge
+  /// test flake on Windows. See `FolderWatch.stop` for why the cancel is
+  /// asynchronous, and why Windows is where it shows.
+  ///
+  /// **Two things have to settle, not one.** Stopping the watch ends future
+  /// events; it says nothing about a pull the watch has ALREADY fired, and
+  /// that pull is the actual writer — it folds foreign ops and advances a
+  /// watermark, both inside the folder the caller is about to move, purge or
+  /// photograph. Awaiting only the handle release left that hole, and the
+  /// purge test went on failing on windows-latest until [_autoPulls] closed
+  /// it.
+  ///
+  /// `dispose` is the one place that legitimately cannot wait: it is
+  /// synchronous by signature, and the process is going anyway.
+  Future<void> _stopWatching() async {
     final w = _watcher;
     _watcher = null;
-    return w?.stop() ?? Future<void>.value();
+    await w?.stop();
+    final pulls = _autoPulls.values.toList();
+    if (pulls.isNotEmpty) {
+      await Future.wait(pulls).catchError((_) => const <void>[]);
+    }
   }
 
   /// Where this notebook lives, for the sync surface.
@@ -2924,7 +2999,10 @@ class AppState extends ChangeNotifier
     // restarted after; anything that arrives meanwhile is picked up by the
     // poll on the next tick. try/finally, because a run that escapes without
     // restarting the watcher leaves auto-pull silently off for the session.
-    _stopWatching();
+    // AWAITED: "stopped" is only true once the handle is released, and a pull
+    // that slips through in the meantime is exactly what this line exists to
+    // prevent (see `setAutoSync`).
+    await _stopWatching();
 
     var freed = 0, converted = 0, failed = 0;
     var aborted = false;
@@ -3663,6 +3741,166 @@ class AppState extends ChangeNotifier
   Future<NotebookRef> importCreateNotebook(String title) =>
       _repo.createNotebook(title);
 
+  /// Point a freshly imported notebook's own cross-references at itself.
+  ///
+  /// Returns how many pages were changed. Run once, after the whole import,
+  /// for the reason in `onenote/graph_links.dart`: a link on the first page
+  /// routinely points at the last one.
+  ///
+  /// Only pages that actually contain a `onenote:` link are read and written —
+  /// on a real notebook that is a handful out of hundreds, and reading every
+  /// page back to change nothing would cost more than the import did.
+  int relinkImportedPages(String nb, Map<String, String> pageIdsByOneNoteId) {
+    if (pageIdsByOneNoteId.isEmpty) return 0;
+    var changed = 0;
+    for (final pageId in pageIdsByOneNoteId.values) {
+      final data = _repo.readPage(nb, pageId);
+      var touched = false;
+      final blocks = <Block>[];
+      for (final b in data.blocks) {
+        final text = b.content['text'] as String?;
+        if (text == null || !hasOneNoteLink(text)) {
+          blocks.add(b);
+          continue;
+        }
+        final next = relinkMarkdown(text, pageIdsByOneNoteId);
+        if (next == text) {
+          blocks.add(b);
+          continue;
+        }
+        touched = true;
+        blocks.add(b..content['text'] = next);
+      }
+      if (!touched) continue;
+      importPage(nb, pageId, blocks, data.props);
+      changed++;
+    }
+    return changed;
+  }
+
+  /// Bring a notebook over from OneNote, over the internet.
+  ///
+  /// Starts a background job and returns immediately: the import writes a
+  /// section at a time, so the notebook fills in on screen while the student
+  /// carries on. Everything difficult lives in `onenote/` — this is the seam
+  /// the UI presses, and it exists so a dialog never has to hold a Graph
+  /// client or a token.
+  Future<void> importFromOneNoteCloud({
+    required GraphAuth auth,
+    required GraphNotebook notebook,
+  }) async {
+    ImportJob.startFromCloud(this, notebook.name,
+        (sink, onProgress, shouldCancel) async {
+      final client = GraphClient(token: auth.accessToken);
+      try {
+        return await importNotebookFromGraph(
+          client: client,
+          notebookId: notebook.id,
+          sink: sink,
+          onProgress: onProgress,
+          shouldCancel: shouldCancel,
+        );
+      } finally {
+        client.close();
+      }
+    }, graphNotebookId: notebook.id);
+  }
+
+  // ── An import that stopped before it finished ──────────────────────────
+
+  String _unfinishedKey(String nb) => 'onenote.unfinished:$nb';
+
+  /// What is left of an import that stopped early, or null.
+  UnfinishedImport? unfinishedImportFor(String nb) =>
+      UnfinishedImport.fromJson(_repo.getSetting(_unfinishedKey(nb)));
+
+  /// Every notebook holding a half-finished import.
+  ///
+  /// Read at startup so a notebook that was mid-import when the app was closed
+  /// still says so when it comes back — which is most of the point. An import
+  /// interrupted by quitting is exactly the case somebody would otherwise
+  /// never be told about.
+  List<(String, UnfinishedImport)> unfinishedImports() => [
+        for (final n in _repo.notebooks)
+          if (unfinishedImportFor(n.id) case final u?) (n.id, u),
+      ];
+
+  void recordUnfinishedImport(String nb, UnfinishedImport u) {
+    _repo.setSetting(_unfinishedKey(nb), u.toJson());
+    notifyListeners();
+  }
+
+  /// Forget it. Called when the import finishes, and when somebody dismisses
+  /// the reminder for good.
+  void clearUnfinishedImport(String nb) {
+    _repo.setSetting(_unfinishedKey(nb), null);
+    notifyListeners();
+  }
+
+  /// **Finish an unfinished import without being asked, when it is safe to.**
+  ///
+  /// Four conditions, all of which have to hold, and each of which is there
+  /// because the alternative is worse than not finishing at all:
+  ///
+  ///   * **Nobody stopped it.** [UnfinishedImport.mayRetryAt] refuses for ever
+  ///     on a record somebody cancelled. An app that quietly restarts the
+  ///     thing you just stopped is worse than one that forgets.
+  ///   * **Long enough has passed.** An hour — see [kUnfinishedRetryAfter].
+  ///     Trying again straight away is how a throttled account stays
+  ///     throttled.
+  ///   * **Nothing else is importing.** Two imports at once would halve each
+  ///     other's speed and confuse every surface that reports on them.
+  ///   * **There is still a sign-in.** Resuming must never pop a Microsoft
+  ///     login window at somebody who is in the middle of writing; if the
+  ///     credential has gone, the reminder stays and waits to be pressed.
+  ///
+  /// Returns the notebook it started on, or null if it did nothing — which is
+  /// the ordinary case and is not a failure.
+  Future<String?> maybeResumeUnfinishedImport({DateTime? now}) async {
+    if (ImportJob.current != null && !ImportJob.current!.isFinished) {
+      return null;
+    }
+    final at = now ?? DateTime.now();
+    for (final (nb, u) in unfinishedImports()) {
+      if (!u.mayRetryAt(at)) continue;
+      final auth = GraphAuth();
+      if (!auth.hasStoredSignIn) continue;
+      await resumeOneNoteImport(auth: auth, nb: nb);
+      return nb;
+    }
+    return null;
+  }
+
+  /// Pick up where an unfinished import left off.
+  ///
+  /// Writes into the notebook that already exists rather than making another,
+  /// and skips every page the earlier run wrote — so a page somebody has since
+  /// edited is left exactly as they left it.
+  Future<void> resumeOneNoteImport({
+    required GraphAuth auth,
+    required String nb,
+  }) async {
+    final u = unfinishedImportFor(nb);
+    if (u == null) return;
+    ImportJob.startFromCloud(this, u.notebookName,
+        (sink, onProgress, shouldCancel) async {
+      final client = GraphClient(token: auth.accessToken);
+      try {
+        return await importNotebookFromGraph(
+          client: client,
+          notebookId: u.graphNotebookId,
+          sink: sink,
+          onProgress: onProgress,
+          shouldCancel: shouldCancel,
+          skipPageIds: u.donePageIds.toSet(),
+          seedLinks: u.linkMap,
+        );
+      } finally {
+        client.close();
+      }
+    }, graphNotebookId: u.graphNotebookId, intoNotebook: nb, resuming: u);
+  }
+
   /// Shared so toolbar/shortcuts can drive zoom (style guide §8.2).
   final canvas = CanvasController();
 
@@ -4059,7 +4297,7 @@ class AppState extends ChangeNotifier
     final made = cardsFromBlock(b, pageId ?? '', '')
         .where((c) => c.line == idx)
         .isNotEmpty;
-    if (made) return '${kind.label} card created.';
+    if (made) return '${kind.englishLabel} card created.';
     return kind == TagKind.question
         ? 'Tagged as a Question — now indent the answer on the line below.'
         : 'Tagged as a Definition — write it as “term — meaning” to make a card.';
@@ -4488,13 +4726,13 @@ class AppState extends ChangeNotifier
   /// anything else) while the pen hovers sticks until the pen leaves and
   /// comes back, which is the "unless the user specifically selects another
   /// option" half of the ask.
-  bool penProximitySwitch = true;
-
-  void setPenProximitySwitch(bool v) {
-    penProximitySwitch = v;
-    _repo.setSetting('penProximity', v);
-    notifyListeners();
-  }
+  /// **No longer a choice.** Bringing the pen to the page switches to
+  /// inking, always. The toggle was there for people who use a pen as a
+  /// pointer, but a setting that has one sensible value is a question nobody
+  /// wanted asked: the pen already has a tail for erasing and a button for
+  /// erasing, and the tool bar is one click away for the rest.
+  ///
+  /// Nothing consults a flag any more — [PageCanvas] simply switches.
 
   /// True when the selection is ink and can therefore be recoloured (INK-7).
   bool get hasInkSelection =>
@@ -4604,6 +4842,47 @@ class AppState extends ChangeNotifier
     themeMode = m;
     _repo.setSetting('themeMode', m.name); // persist (§7a.5)
     notifyListeners();
+  }
+
+  /// The language, when the student has picked one; **null means follow the
+  /// computer**, which is the default and what almost everybody wants.
+  ///
+  /// Null is not "English". Handing `MaterialApp.locale` a null makes Flutter
+  /// resolve against the OS's preferred-language list, so an app installed on
+  /// a Chinese-language machine opens in Chinese with nothing to set up — and
+  /// falls back to English only when it has nothing better. Storing "en" here
+  /// by default would pin every install to English and quietly undo that.
+  ///
+  /// The override exists because the OS language and the language you want to
+  /// study in are not always the same, and because a translation in progress
+  /// is sometimes worse than the English it replaces.
+  Locale? uiLocale;
+
+  void setUiLocale(Locale? l) {
+    uiLocale = l;
+    // The tag, not the object: `Locale.toString()` gives `zh_Hant_TW`, which
+    // `parseLocale` reads back. Storing null REMOVES the setting rather than
+    // writing "null", so a workspace that never chose reads as never chose.
+    _repo.setSetting('uiLocale', l?.toLanguageTag());
+    notifyListeners();
+  }
+
+  /// `en`, `pt-BR`, `zh-Hant` → a [Locale]. Anything unparseable is null,
+  /// which means "follow the computer" and is the safe answer.
+  static Locale? parseLocale(String? tag) {
+    if (tag == null || tag.isEmpty) return null;
+    final parts = tag.split(RegExp('[-_]'));
+    if (parts.isEmpty || parts.first.isEmpty) return null;
+    return switch (parts.length) {
+      1 => Locale(parts[0]),
+      2 => parts[1].length == 4
+          ? Locale.fromSubtags(languageCode: parts[0], scriptCode: parts[1])
+          : Locale(parts[0], parts[1]),
+      _ => Locale.fromSubtags(
+          languageCode: parts[0],
+          scriptCode: parts[1].length == 4 ? parts[1] : null,
+          countryCode: parts[1].length == 4 ? parts[2] : parts[1]),
+    };
   }
 
   /// The text/code editor currently mounted & editing, registered by its view
@@ -5687,6 +5966,7 @@ class AppState extends ChangeNotifier
     // Session restore (§7a.5): theme, custom colours, per-page views, last loc.
     final tm = _repo.getSetting('themeMode') as String?;
     if (tm != null) themeMode = ThemeMode.values.asNameMap()[tm] ?? themeMode;
+    uiLocale = parseLocale(_repo.getSetting('uiLocale') as String?);
     final nsw = _repo.getSetting('navSectionsW');
     if (nsw is num) navSectionsW = nsw.toDouble().clamp(96, 220);
     final npw = _repo.getSetting('navPagesW');
@@ -5738,7 +6018,12 @@ class AppState extends ChangeNotifier
       touchDrawing = TouchDrawing.values.asNameMap()[td] ?? touchDrawing;
     }
     final pp = _repo.getSetting('penProximity');
-    if (pp is bool) penProximitySwitch = pp;
+    // `penProximity` was a stored setting and is now always on. Read and
+    // discarded rather than left to rot in the file: a value nothing consults
+    // is a trap for the next person to read this.
+    if (pp is bool) {
+      // ignore: dead_code
+    }
     // Detached: binding a port must never gate the app opening.
     unawaited(_restoreMcp());
     unawaited(checkForAppUpdate());
@@ -5785,9 +6070,62 @@ class AppState extends ChangeNotifier
         (_repo.notebooks.any((n) => n.id == lastNb)
             ? lastNb!
             : _repo.notebooks.first.id);
+    // **One unreadable notebook must not be the end of the app.**
+    //
+    // Everything below assumes the chosen notebook opens: the recycle-bin
+    // sweep, `reloadNodes`, the page load. When it does not — a container on a
+    // drive that has gone, a file another program is holding, an I/O error the
+    // operating system will not explain — the whole launch used to die on the
+    // first of them, on an error screen offering nothing but the stack. The
+    // notes were never in danger and the OTHER notebooks were all fine; the
+    // app simply refused to open.
+    //
+    // So: try the notebook, and if the container will not answer, say so in
+    // words and fall back to one that will. Landing in a working notebook with
+    // a notice beats a dead window every time, and `pendingOpenNotice` is the
+    // surface that already exists for exactly this sentence.
+    final trouble = notebookOpenProblem(notebookId!);
+    if (trouble != null) {
+      final stuck = notebookId!;
+      final fallback = _repo.notebooks
+          .where((n) => n.id != stuck)
+          .map((n) => n.id)
+          .where((id) => _repo.notebookOpenError(id) == null)
+          .firstOrNull;
+      pendingOpenNotice ??= trouble;
+      // Null is a legitimate answer: every notebook is unreadable, which is
+      // its own (rare, alarming) story. The shell already draws the empty
+      // state, and the notice says why it is empty — which is strictly more
+      // than a crash said.
+      notebookId = fallback;
+      if (fallback != null) _repo.setSetting('lastNotebook', fallback);
+    }
+    if (notebookId == null) {
+      nodes = const [];
+      return;
+    }
     // Clear out anything that has outlived the recycle-bin retention window.
-    await _repo.purgeExpiredNotebooks();
-    _repo.purgeExpiredNodes(notebookId!);
+    //
+    // **Never fatal.** This is housekeeping: it deletes rows that are already
+    // past thirty days, and skipping it costs exactly one launch's worth of
+    // tidiness because the next launch runs it again. It was unguarded, so a
+    // notebook whose container would not open took the whole app down with a
+    // raw `SqliteException` on a screen with no way forward — reported from a
+    // real build, where the app could not start at all because a sweep of the
+    // recycle bin failed. The rule the handed-path branch above already states
+    // ("a path that could not be opened must not end the launch") is the same
+    // rule here, and it applies far more obviously to a chore nobody asked
+    // for.
+    try {
+      await _repo.purgeExpiredNotebooks();
+    } catch (e) {
+      debugPrint('[openote/store] could not purge expired notebooks: $e');
+    }
+    try {
+      _repo.purgeExpiredNodes(notebookId!);
+    } catch (e) {
+      debugPrint('[openote/store] could not purge expired nodes: $e');
+    }
     reloadNodes();
     // Startup does NOT go through _loadNotebook — it opens the last notebook
     // inline — so the gate has to be rehydrated here as well. Both paths, or
@@ -5906,6 +6244,75 @@ class AppState extends ChangeNotifier
   /// The notice the shell still has to show about a notebook we were handed:
   /// null on the happy path, because a notebook that opened is its own
   /// confirmation. Cleared by whoever displays it.
+  /// Why [nb]'s container will not open, in words, or null when it opens fine.
+  ///
+  /// The sentences matter as much as the check. A student who reads
+  /// `SqliteException(1546): disk I/O error` learns nothing they can act on,
+  /// and that is exactly what a real build put in front of one — full screen,
+  /// on launch, with the app refusing to start at all. So: name the notebook,
+  /// give the causes that are actually likely on a desktop, say what Openote
+  /// did about it, and say plainly that the writing is safe — because it is.
+  /// The container is a working copy the op log can rebuild; the notes live in
+  /// the `.onotebook` folder beside it.
+  OpenNotebookResult? notebookOpenProblem(String nb) {
+    final e = _repo.notebookOpenError(nb);
+    if (e == null) return null;
+    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull;
+    final title = ref?.title ?? 'That notebook';
+    if (e is NotebookFileMissing) {
+      return OpenNotebookResult(
+          OpenNotebookOutcome.notFound,
+          '“$title” could not be opened, because its file is not where Openote '
+          'left it. If it lives on a drive or a memory stick, plug that in and '
+          'open it again. Your writing is safe either way — it is in the '
+          'notebook folder beside this file, not inside it.',
+          details: _openFailureDetails(ref?.file, e));
+    }
+    return OpenNotebookResult(
+        OpenNotebookOutcome.failed,
+        '“$title” could not be opened. That is almost always another program '
+        'holding the file — a backup or antivirus tool, a cloud sync client, '
+        'or a second copy of Openote — or the disk it sits on being full. '
+        'Openote has opened a different notebook so you can carry on; try this '
+        'one again in a moment. Nothing has been lost: your writing lives in '
+        'the notebook folder, and this file can be rebuilt from it.',
+        details: _openFailureDetails(ref?.file, e));
+  }
+
+  /// The exception, plus what the files it names actually look like right now.
+  ///
+  /// **Written for the person who has to diagnose this, which is usually the
+  /// person it happened to.** "disk I/O error" says nothing on its own; a
+  /// container of 0 bytes, or a `-wal` larger than the notebook, or a missing
+  /// `.onotebook` folder beside it, each say something quite specific — and
+  /// asking a user to go and measure those by hand is asking most of them to
+  /// give up. Behind the Advanced fold, so nobody sees it who did not ask.
+  static String _openFailureDetails(String? file, Object e) {
+    final out = StringBuffer('$e');
+    if (file == null) return out.toString();
+    out.write('\n\n$file');
+    for (final suffix in const ['', '-wal', '-shm']) {
+      final f = File('$file$suffix');
+      // `statSync` rather than `existsSync` + `lengthSync`: a file that
+      // exists but cannot be measured is itself a finding, and two calls
+      // could disagree about a file being replaced underneath them.
+      try {
+        final st = f.statSync();
+        out.write(st.type == FileSystemEntityType.notFound
+            ? '\n  ${suffix.isEmpty ? '.onote' : suffix}: not there'
+            : '\n  ${suffix.isEmpty ? '.onote' : suffix}: ${st.size} B, '
+                'modified ${st.modified.toIso8601String()}, mode ${st.modeString()}');
+      } catch (err) {
+        out.write('\n  ${suffix.isEmpty ? '.onote' : suffix}: unreadable ($err)');
+      }
+    }
+    final logs = Directory('${p.withoutExtension(file)}.onotebook');
+    out.write(logs.existsSync()
+        ? '\n  .onotebook: present — the writing is here'
+        : '\n  .onotebook: MISSING');
+    return out.toString();
+  }
+
   OpenNotebookResult? pendingOpenNotice;
 
   /// Open the notebook stored at [path], switching to it if it is one of ours
@@ -6261,6 +6668,30 @@ class AppState extends ChangeNotifier
       } catch (_) {/* a failed warm is not this operation's problem */}
     }
     _recorders.remove(id);
+    // **Look away before it is gone.**
+    //
+    // Deleting a notebook that is still the selected one leaves `notebookId`
+    // naming something that no longer exists, and the next rebuild of the
+    // sidebar header — `notebooks.firstWhere((n) => n.id == notebookId)` —
+    // throws `Bad state: No element` and takes the whole chrome down with it.
+    //
+    // Latent for as long as this method has existed, and reachable only since
+    // the cloud import began OPENING the notebook the moment it is created so
+    // somebody can watch their pages arrive. A `.onepkg` import never selects
+    // one until Open is pressed, so a failed import there had nothing to
+    // strand. Progressive import turned an old unreachable bug into a crash
+    // on the ordinary failure path.
+    if (notebookId == id) {
+      final other = _repo.notebooks.where((n) => n.id != id).firstOrNull;
+      if (other != null) {
+        await selectNotebook(other.id);
+      } else {
+        notebookId = null;
+        pageId = null;
+        nodes = [];
+        blocks = [];
+      }
+    }
     await _repo.discardNotebook(id);
     _invalidateSyncStatus();
     notifyListeners();

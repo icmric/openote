@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/state/page_protection.dart';
@@ -27,6 +28,8 @@ import 'package:openote/ui/sidebar.dart';
 import 'support/sqlite.dart';
 
 Widget host(AppState app) => MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
       theme: onoteTheme(Brightness.light),
       home: Scaffold(
         body: ListenableBuilder(
@@ -294,6 +297,8 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         theme: onoteTheme(Brightness.light),
         home: AppShell(app: app),
       ));

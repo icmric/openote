@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/markdown/md_render.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:openote/model/models.dart';
@@ -23,6 +24,8 @@ void main() {
       'wGA60e6kgAAAABJRU5ErkJggg==');
 
   Future<void> render(WidgetTester t, String md) => t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: MarkdownView(
             text: md,

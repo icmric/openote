@@ -19,6 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/editor/live_markdown_engine.dart';
 import 'package:openote/editor/onote_text_editor.dart';
 import 'package:openote/editor/text_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -119,6 +120,8 @@ void main() {
       );
 
   Widget host(AppState app, List<Block> blocks) => MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: Column(
             children: [

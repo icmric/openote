@@ -45,7 +45,13 @@ import 'package:flutter/scheduler.dart';
 import 'package:path/path.dart' as p;
 
 import '../core/onote_ffi.dart';
+import '../onenote/graph_auth.dart';
+import '../onenote/graph_client.dart';
+import '../onenote/graph_import.dart';
+import '../onenote/unfinished_import.dart';
 import '../state/app_state.dart';
+import 'import_sink.dart';
+import 'import_status.dart';
 import 'import_writer.dart';
 import 'onenote_import.dart';
 
@@ -61,8 +67,27 @@ class ImportJob extends ChangeNotifier {
 
   ImportJobState state = ImportJobState.parsing;
 
-  /// One human sentence about where the job is. The card renders it verbatim.
+  /// One human sentence about where the job is, **in English**.
+  ///
+  /// Kept as the fallback and as what tests read. The card prefers [status],
+  /// which it can render in the reader's own language; this is what anything
+  /// without a `BuildContext` gets.
   String message = 'Reading the notebook…';
+
+  /// The same thing as data, so a surface with a context can translate it.
+  ///
+  /// The import card was the last English-only surface in an app that ships
+  /// in seven languages, and the reason was structural: a `ChangeNotifier`
+  /// cannot reach `L`, so every sentence had to be built where there was no
+  /// way to say it in anybody's language. Reporting a stage instead moves the
+  /// wording to where the language is — see `l10n/labels.dart`.
+  ImportStatus status = const ImportStatus(ImportStage.reading);
+
+  /// Set both at once, so they can never disagree.
+  void _say(ImportStatus s, String english) {
+    status = s;
+    message = english;
+  }
 
   /// Pages written so far / total to write. 0/0 during the parse phase.
   int pagesDone = 0;
@@ -83,6 +108,25 @@ class ImportJob extends ChangeNotifier {
   String? error;
 
   bool _cancelRequested = false;
+
+  /// **Whether this is the first notebook the person has ever had here.**
+  ///
+  /// A first import is a different situation from every later one, and it was
+  /// being shown the same small card in the corner. The import creates the
+  /// notebook empty and opens it straight away — which is right, it is what
+  /// lets somebody watch their pages arrive — but on a first run it means
+  /// staring at an empty notebook with a modest card away in one corner. The
+  /// natural reading is that it did nothing, or that it failed.
+  ///
+  /// There is nothing else on screen to look at on a first run, so the
+  /// explanation goes where the person is already looking.
+  bool isFirstNotebook = false;
+
+  /// Whether Stop has been pressed and the job has not finished stopping.
+  ///
+  /// Exposed so the card can stop offering a button that has already been
+  /// pressed, and offer a way out instead.
+  bool get isStopping => _cancelRequested && !isFinished;
 
   /// The running job, if any. Global because the *surfaces* are global: the
   /// progress card floats over whatever the user is doing, which may be three
@@ -120,11 +164,354 @@ class ImportJob extends ChangeNotifier {
     final willParse =
         sourcePath.isNotEmpty && debugOverrides?.preparsedJson == null;
     if (willParse && OnoteCore.instance == null) throw OneNoteUnavailable();
-    final job = ImportJob._(app, fileName);
+    final job = ImportJob._(app, fileName)
+      ..isFirstNotebook = app.notebooks.isEmpty;
     current = job;
     app.refresh(); // the shell mounts the card by watching AppState
     job._run(sourcePath, debugOverrides);
     return job;
+  }
+
+  /// Begin importing a notebook straight out of OneNote over the internet.
+  ///
+  /// Shares every field, the progress card, and cancel with the `.onepkg`
+  /// path, because to a student they are the same thing happening. What
+  /// differs is underneath: there is no file and no parse, so no writer
+  /// isolate — the work is network latency, and the writing happens here in
+  /// small batches so the notebook fills in **as it arrives** rather than
+  /// appearing all at once at the end.
+  static ImportJob? startFromCloud(
+    AppState app,
+    String notebookName,
+    Future<GraphImportResult> Function(
+            ImportSink sink,
+            void Function(GraphImportProgress) onProgress,
+            bool Function() shouldCancel)
+        run, {
+    /// The OneNote notebook being read, so an import that stops early can be
+    /// picked up later without having to ask which one it was.
+    String? graphNotebookId,
+
+    /// An existing notebook to write into, when finishing an earlier attempt.
+    String? intoNotebook,
+
+    /// The record being continued, if this is a second attempt.
+    UnfinishedImport? resuming,
+  }) {
+    if (current != null && !current!.isFinished) return null;
+    final job = ImportJob._(app, notebookName)
+      // Counted BEFORE the import makes its own, so the notebook about to be
+      // created does not make itself look like company. Finishing an earlier
+      // attempt is never a first import: the notebook is already there and
+      // already has pages in it.
+      ..isFirstNotebook = app.notebooks.isEmpty && intoNotebook == null
+      ..graphNotebookId = graphNotebookId
+      ..intoNotebook = intoNotebook
+      ..resuming = resuming;
+    current = job;
+    app.refresh();
+    job._runCloud(run);
+    return job;
+  }
+
+  /// The OneNote notebook this import is reading, when it is a cloud one.
+  String? graphNotebookId;
+
+  /// An existing notebook to write into, when finishing an earlier attempt.
+  String? intoNotebook;
+
+  /// What is being continued, if anything.
+  UnfinishedImport? resuming;
+
+  /// Graph page ids written by this run.
+  final List<String> _wroteGraphIds = [];
+
+  /// **Write down what this attempt did not manage.**
+  ///
+  /// Called at every way out of a cloud import except the one where it
+  /// finished, so a notebook holding 152 of 332 pages says so — and goes on
+  /// saying so after the app is closed and reopened, which is the case
+  /// somebody would otherwise never be told about at all.
+  ///
+  /// Everything already brought over is carried forward, across as many
+  /// attempts as it takes: [UnfinishedImport.donePageIds] accumulates rather
+  /// than being replaced, so the third attempt skips what the first two
+  /// managed and cannot overwrite a page somebody has since edited.
+  void _rememberUnfinished(String nb, UnfinishedReason why, int total) {
+    final graph = graphNotebookId;
+    if (nb.isEmpty || graph == null) return;
+    final before = resuming;
+    _rememberedUnfinished = true;
+    app.recordUnfinishedImport(
+      nb,
+      UnfinishedImport(
+        graphNotebookId: graph,
+        notebookName: fileName,
+        // Counted across every attempt, not just this one, or the card would
+        // announce a smaller number each time somebody tried again.
+        pagesDone: (before?.pagesDone ?? 0) + importedPages,
+        pagesTotal: before?.pagesTotal ?? total,
+        donePageIds: [...?before?.donePageIds, ..._wroteGraphIds],
+        linkMap: {...?before?.linkMap, ...?_lastLinkMap},
+        reason: why,
+        lastTryMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }
+
+  /// Whether this job has already written a record, so the generic handler
+  /// does not overwrite a more specific one.
+  bool _rememberedUnfinished = false;
+
+  Map<String, String>? _lastLinkMap;
+
+  Future<void> _runCloud(
+      Future<GraphImportResult> Function(
+              ImportSink sink,
+              void Function(GraphImportProgress) onProgress,
+              bool Function() shouldCancel)
+          run) async {
+    var nb = '';
+    try {
+      resetImportReport();
+      state = ImportJobState.writing;
+      _say(const ImportStatus(ImportStage.signingIn),
+          'Signing in to OneNote…');
+      notifyListeners();
+
+      // Finishing an earlier attempt writes into the notebook that already
+      // holds its pages. Making a second one would leave somebody with two
+      // half-notebooks and no way to tell which was which.
+      final into = intoNotebook;
+      if (into != null) {
+        notebookId = nb = into;
+      } else {
+        final ref = await app.importCreateNotebook(
+            importTitleFromName(fileName));
+        notebookId = nb = ref.id;
+      }
+
+      // Opened straight away, deliberately. The whole point of writing section
+      // by section is that somebody can WATCH it arrive, and they cannot watch
+      // a notebook they are not looking at.
+      await app.selectNotebook(nb);
+
+      final result = await run(
+        AppStateImportSink(app, nb),
+        (p) {
+          pagesDone = p.pagesDone;
+          // **Kept here, not only on the way out.** `importedPages` used to be
+          // assigned after the import RETURNED, so an import that failed
+          // partway looked like it had brought nothing — and the teardown
+          // below then deleted the notebook, with every page the student had
+          // just watched arrive. A failure must cost the rest, never the part
+          // that already worked.
+          if (p.pagesDone > importedPages) importedPages = p.pagesDone;
+          // The total IS known now — every section's page list is fetched up
+          // front — so the card can show a bar rather than a rising count.
+          pagesTotal = p.pagesTotal;
+          final waiting = p.waitingFor;
+          if (p.preparing && waiting == null) {
+            // Named plainly, because "enumerating sections" is not a sentence
+            // anybody outside this file would write. What the student wants to
+            // know is that something is happening and roughly how big this is
+            // going to be.
+            if (p.sectionsTotal == 0) {
+              _say(const ImportStatus(ImportStage.lookingAround),
+                  'Looking through your notebook…');
+            } else if (p.pagesTotal == 0) {
+              _say(
+                  ImportStatus(ImportStage.foundSections,
+                      count: p.sectionsTotal),
+                  'Found ${p.sectionsTotal} section'
+                      '${p.sectionsTotal == 1 ? '' : 's'} — seeing what is '
+                      'in them…');
+            } else {
+              _say(
+                  ImportStatus(ImportStage.foundPages, count: p.pagesTotal),
+                  '${p.pagesTotal} page'
+                      '${p.pagesTotal == 1 ? '' : 's'} to bring over. '
+                      'Starting now…');
+            }
+          } else if (waiting != null) {
+            // **Say that it is waiting.** OneNote throttles by request count,
+            // and a large notebook WILL be asked to slow down: measured at six
+            // and a half minutes of reading before the first refusal, with a
+            // cooldown still in force minutes later. A card that sits silent
+            // for two minutes cannot be told from one that has hung, and the
+            // student's next move would be to kill the app halfway through
+            // their own notebook.
+            final secs = waiting.inSeconds;
+            _say(
+                ImportStatus(ImportStage.throttled, count: secs),
+                'Microsoft has asked Openote to slow down — carrying on '
+                    'in ${secs < 1 ? 'a moment' : '${secs}s'}. '
+                    'Nothing already brought in is lost.');
+          } else {
+            _say(
+                ImportStatus(ImportStage.bringingIn,
+                    name: p.sectionName,
+                    count: p.pagesDone,
+                    total: p.pagesTotal),
+                'Bringing in "${p.sectionName}" — ${p.pagesDone}'
+                    '${p.pagesTotal > 0 ? ' of ${p.pagesTotal}' : ''} '
+                    'page${p.pagesDone == 1 ? '' : 's'}…');
+          }
+          notifyListeners();
+          app.reloadNodes();
+          app.refresh();
+        },
+        () => _cancelRequested,
+      );
+
+      app.reloadNodes();
+      // **Now, and only now.** A link on the first page routinely points at
+      // the last, so the mapping is complete only once everything has landed.
+      // Rewriting as we went would have fixed the backward links and missed
+      // every forward one.
+      final relinked = app.relinkImportedPages(nb, result.pageIdsByOneNoteId);
+      if (relinked > 0) app.reloadNodes();
+      app.refresh();
+      _wroteGraphIds
+        ..clear()
+        ..addAll(result.graphPageIds);
+      _lastLinkMap = result.pageIdsByOneNoteId;
+      importedPages = result.pages;
+      firstPageId = result.firstPageId;
+
+      if (result.cancelled) {
+        // NOT torn down, unlike the file path. A cancelled cloud import has
+        // already put real pages on screen and the student has been watching
+        // them arrive; deleting them because they pressed stop would be the
+        // opposite of what stop means.
+        // Stopped ON PURPOSE. Recorded so the notebook still says it is
+        // incomplete and can be finished by hand — but never picked up
+        // automatically, because pressing Stop is an instruction and an app
+        // that quietly restarts what you just stopped is worse than one that
+        // forgets.
+        _rememberUnfinished(nb, UnfinishedReason.stopped, pagesTotal);
+        return _finish(ImportJobState.done,
+            status:
+                ImportStatus(ImportStage.stoppedKept, count: result.pages),
+            message: 'Stopped — kept the ${result.pages} '
+                'page${result.pages == 1 ? '' : 's'} already brought in. '
+                'You can finish it whenever you like.');
+      }
+      if (result.pages == 0) {
+        return _finish(ImportJobState.failed,
+            status: const ImportStatus(ImportStage.emptyNotebook),
+            message: 'That notebook had no pages in it.');
+      }
+      // **Finished, so the reminder goes** — unless a page could not be
+      // read, in which case it did not finish.
+      //
+      // Found by importing the same notebook four times: three brought 332
+      // pages and the fourth brought 331. A page whose content request failed
+      // was dropped and counted by nothing, so the card said a number that
+      // looked like success. Such a page was never written, so it is not in
+      // the resume list and is still owed — which means the machinery for
+      // finishing an interrupted import already knows how to go back for it.
+      if (result.loss.pages > 0 || result.loss.sections > 0) {
+        _rememberUnfinished(nb, UnfinishedReason.interrupted, pagesTotal);
+      } else {
+        app.clearUnfinishedImport(nb);
+      }
+
+      final lost = result.loss;
+      final note = 'Imported ${result.pages} page'
+          '${result.pages == 1 ? '' : 's'}';
+      // Ink and attachments DO come across now, so the old blanket apology
+      // would be a lie. Only real losses are named, and named specifically.
+      final gone = <String>[
+        if (lost.sections > 0)
+          '${lost.sections} section${lost.sections == 1 ? '' : 's'} '
+              '(Openote will go back for '
+              '${lost.sections == 1 ? 'it' : 'them'})',
+        if (lost.pages > 0)
+          '${lost.pages} page${lost.pages == 1 ? '' : 's'} '
+              '(Openote will go back for '
+              '${lost.pages == 1 ? 'it' : 'them'})',
+        if (lost.inkPages > 0)
+          'handwriting on ${lost.inkPages} page'
+              '${lost.inkPages == 1 ? '' : 's'}',
+        if (lost.images > 0) '${lost.images} picture'
+            '${lost.images == 1 ? '' : 's'}',
+        if (lost.attachments > 0) '${lost.attachments} attachment'
+            '${lost.attachments == 1 ? '' : 's'}',
+      ];
+      // The apology that used to live here — "subpages arrive as ordinary
+      // pages" — was true and is not any more: the nesting comes over now.
+      // A completion message that names a loss the import did not suffer is
+      // as misleading as one that hides a loss it did.
+      _finish(ImportJobState.done,
+          status: gone.isEmpty
+              ? ImportStatus(ImportStage.imported, count: result.pages)
+              : ImportStatus(ImportStage.importedButLost,
+                  count: result.pages, detail: gone.join(', ')),
+          message: gone.isEmpty
+              ? '$note.'
+              : '$note, but could not bring ${gone.join(', ')}.');
+    } on GraphAuthException catch (e) {
+      error = e.message;
+      if (nb.isNotEmpty) await _teardown();
+      _finish(ImportJobState.failed, message: e.message);
+    } on GraphException catch (e) {
+      error = e.message;
+      // Kept rather than torn down when pages already landed: see above.
+      if (nb.isNotEmpty && importedPages == 0) {
+        await _teardown();
+      } else {
+        app.reloadNodes();
+        app.refresh();
+      }
+      // Not `failed` when something arrived. The student has a notebook with
+      // real pages in it, and calling that a failure invites them to delete it
+      // and start again — which is the one thing that would actually lose
+      // work.
+      _rememberUnfinished(
+          nb,
+          e is GraphGaveUp
+              ? UnfinishedReason.throttled
+              : UnfinishedReason.interrupted,
+          pagesTotal);
+      if (importedPages > 0) {
+        return _finish(ImportJobState.done,
+            status: ImportStatus(ImportStage.partialThrottled,
+                count: importedPages, detail: e.message),
+            message: '${e.message} The $importedPages page'
+                '${importedPages == 1 ? '' : 's'} already brought over '
+                '${importedPages == 1 ? 'is' : 'are'} here. Openote will '
+                'finish the rest on its own later, or you can start it again '
+                'whenever you like.');
+      }
+      _finish(ImportJobState.failed, message: e.message);
+    } catch (e) {
+      error = '$e';
+      // Same rule as the branch above, and for the same reason: an unexpected
+      // fault is no more entitled to delete pages the student is looking at
+      // than an expected one is.
+      if (nb.isNotEmpty && importedPages == 0) {
+        await _teardown();
+      } else {
+        app.reloadNodes();
+        app.refresh();
+      }
+      if (!_rememberedUnfinished) {
+        _rememberUnfinished(nb, UnfinishedReason.interrupted, pagesTotal);
+      }
+      if (importedPages > 0) {
+        return _finish(ImportJobState.done,
+            status: ImportStatus(ImportStage.partialBroke,
+                count: importedPages),
+            message: 'Something went wrong partway through, but the '
+                '$importedPages page${importedPages == 1 ? '' : 's'} already '
+                'brought over ${importedPages == 1 ? 'is' : 'are'} here. '
+                'Openote will finish the rest on its own later.');
+      }
+      _finish(ImportJobState.failed,
+          status: const ImportStatus(ImportStage.failed),
+          message: 'That notebook could not be brought over.');
+    }
   }
 
   bool get isFinished =>
@@ -139,7 +526,7 @@ class ImportJob extends ChangeNotifier {
   void cancel() {
     if (isFinished) return;
     _cancelRequested = true;
-    message = 'Stopping…';
+    _say(const ImportStatus(ImportStage.stopping), 'Stopping…');
     // The writer finishes the batch it is in — a few pages — then shuts down
     // cleanly. Killing the isolate outright would leave its SQLite handle open,
     // and on Windows an open handle is exactly why the teardown's delete would
@@ -235,12 +622,14 @@ class ImportJob extends ChangeNotifier {
         onParsed: (pages) {
           state = ImportJobState.writing;
           pagesTotal = pages;
-          message = 'Importing $pages pages…';
+          _say(ImportStatus(ImportStage.writingPages, count: pages),
+              'Importing $pages pages…');
           notifyListeners();
         },
         onProgress: (sectionName, done, total) {
           pagesDone = done;
-          message = 'Importing "$sectionName"…';
+          _say(ImportStatus(ImportStage.writingSection, name: sectionName),
+              'Importing "$sectionName"…');
           notifyListeners();
         },
       );
@@ -344,10 +733,34 @@ class ImportJob extends ChangeNotifier {
     } catch (_) {/* a leftover notebook beats a crash during cleanup */}
   }
 
-  void _finish(ImportJobState s, {String? message}) {
+  void _finish(ImportJobState s, {String? message, ImportStatus? status}) {
     state = s;
     if (message != null) this.message = message;
-    if (s == ImportJobState.cancelled) this.message = 'Import cancelled.';
+    if (status != null) {
+      this.status = status;
+    } else if (message != null) {
+      // **Never finish in a stage that has stopped being true.**
+      //
+      // The card renders `status`, so a terminal state that set only
+      // `message` left the last PROGRESS line on screen: "Import failed" over
+      // a body still reading "Found 25 sections…", with the actual reason
+      // sitting in a field nothing displayed. Carrying the sentence through
+      // as [ImportStage.raw] means a new failure path cannot reintroduce
+      // that by forgetting an argument.
+      this.status = ImportStatus(ImportStage.raw, detail: message);
+    }
+    if (s == ImportJobState.cancelled) {
+      this.message = 'Import cancelled.';
+      this.status = const ImportStatus(ImportStage.cancelled);
+    }
+    // **Said out loud when it goes wrong.** An import that fails leaves one
+    // line on a card, which is the right amount for the person and nowhere
+    // near enough for whoever has to work out why. `error` carries the
+    // service's own words and, for a `GraphException`, the status code behind
+    // them.
+    if (s == ImportJobState.failed) {
+      debugPrint('[openote/import] failed: ${error ?? message}');
+    }
     notifyListeners();
     // The card is watching this job, not AppState — but whether a card should
     // exist at all is AppState-level (the shell checks ImportJob.current).

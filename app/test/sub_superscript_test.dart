@@ -24,6 +24,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/editor/live_markdown_controller.dart';
 import 'package:openote/export/markdown_export.dart';
 import 'package:openote/export/md_common.dart';
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/markdown/md_render.dart';
 import 'package:openote/markdown/md_syntax.dart';
 import 'package:openote/model/models.dart';
@@ -148,7 +149,10 @@ void main() {
     testWidgets('the live editor keeps every code unit of the source',
         (t) async {
       await t.pumpWidget(
-          const MaterialApp(home: Scaffold(body: SizedBox(width: 400))));
+          const MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
+      home: Scaffold(body: SizedBox(width: 400))));
       for (final src in ['H~2~O', 'x^2^', '~~struck~~ and H~2~O']) {
         final c = LiveMarkdownController(text: src, dark: false)
           ..selection = const TextSelection.collapsed(offset: 0);
@@ -168,7 +172,10 @@ void main() {
 
     testWidgets('and it styles the inner text while you type', (t) async {
       await t.pumpWidget(
-          const MaterialApp(home: Scaffold(body: SizedBox(width: 400))));
+          const MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
+      home: Scaffold(body: SizedBox(width: 400))));
       final c = LiveMarkdownController(text: 'H~2~O', dark: false)
         ..selection = const TextSelection.collapsed(offset: 0);
       final root = c.buildTextSpan(
@@ -208,6 +215,8 @@ void main() {
       final style =
           TextStyle(fontSize: 20, height: lh, color: const Color(0xFF000000));
       await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         home: Scaffold(
           backgroundColor: const Color(0xFFFFFFFF),
           body: Align(
@@ -528,6 +537,8 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
         theme: onoteTheme(Brightness.light),
         home: AppShell(app: app),
       ));

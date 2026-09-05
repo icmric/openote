@@ -362,6 +362,7 @@ void main() {
 
   _pullStaysInteractive(() => haveSqlite);
   _deletingASharedNotebook(() => haveSqlite);
+  _autoSyncIsAwaitable(() => haveSqlite);
   _convergesWhateverOrderLogsArriveIn(() => haveSqlite);
   _oneFoldThatCreatesAndDeletes(() => haveSqlite);
 }
@@ -693,11 +694,77 @@ void _deletingASharedNotebook(bool Function() haveSqlite) {
       // warm's tree backfill), and on a starved machine (two cores, low
       // priority — the shape of a busy CI runner) one of those landed between
       // the two reads and the purge was blamed for it.
-      a.app.setAutoSync(false);
-      appB.setAutoSync(false);
-      await a.app.settleBackgroundWork();
-      await appB.settleBackgroundWork();
-      final before = photograph();
+      //
+      // **AWAITED.** `setAutoSync(false)` used to discard the future from
+      // `_stopWatching`, so "the watchers are off" was a statement about
+      // intent rather than about the operating system: the cancel is
+      // asynchronous, on Windows the `ReadDirectoryChangesW` handle is not
+      // released until it completes, and the still-live watch delivered one
+      // more event — a pull — between the two photographs. That is what this
+      // test was failing on, on windows-latest only, roughly one run in two.
+      //
+      // **AND SETTLING IS STILL NOT THE SAME AS BEING QUIET.**
+      // `settleBackgroundWork()` drains the jobs that are in flight at the
+      // moment it looks; a job that starts a millisecond later is not in that
+      // set. Two real holes were found and closed by chasing this failure
+      // (the watcher's stop, then the pull that watch had already fired), and
+      // it came back a third time — so the baseline no longer *assumes* the
+      // folder went quiet. It waits until two consecutive reads agree, which
+      // is the thing the next line actually needs to be true. It does not
+      // weaken anything: the assertion after the purge is still byte-exact,
+      // so a purge that writes is still caught, and now named.
+      await a.app.setAutoSync(false);
+      await appB.setAutoSync(false);
+
+      /// How the folder changed, or null when it did not.
+      ///
+      /// `expect(after, before)` on two maps of byte lists prints two walls of
+      /// integers and says which file changed only by luck. This failure
+      /// happens on windows-latest and nowhere else, where nobody can attach a
+      /// debugger and the job log is not always reachable — it has now been
+      /// diagnosed twice from the test's NAME alone. It will not have to be a
+      /// third time: the failure carries its own evidence.
+      String? changed(Map<String, List<int>> a, Map<String, List<int>> b) {
+        final notes = <String>[];
+        for (final k in ({...a.keys, ...b.keys}.toList()..sort())) {
+          final was = a[k], now = b[k];
+          if (was == null) {
+            notes.add('ADDED     $k (${now!.length} B)');
+          } else if (now == null) {
+            notes.add('REMOVED   $k (was ${was.length} B)');
+          } else if (was.length != now.length) {
+            notes.add('${now.length > was.length ? 'GREW     ' : 'SHRANK   '} '
+                '$k  ${was.length} → ${now.length} B');
+          } else {
+            for (var i = 0; i < now.length; i++) {
+              if (now[i] != was[i]) {
+                notes.add('REWRITTEN $k at byte $i of ${now.length}');
+                break;
+              }
+            }
+          }
+        }
+        return notes.isEmpty ? null : notes.join('\n');
+      }
+
+      /// Read the folder once it has actually stopped moving.
+      Future<Map<String, List<int>>> whenQuiet() async {
+        var last = photograph();
+        for (var round = 0; round < 40; round++) {
+          await a.app.settleBackgroundWork();
+          await appB.settleBackgroundWork();
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          final next = photograph();
+          if (changed(last, next) == null) return next;
+          last = next;
+        }
+        fail('the shared folder never stopped changing by itself, so this '
+            'test could not establish what the purge is being compared '
+            'against. Last two seconds of movement:\n'
+            '${changed(last, photograph())}');
+      }
+
+      final before = await whenQuiet();
       expect(before, isNotEmpty);
       // What the confirmation dialog says, asked when it asks — before the
       // click. Afterwards there is no registry entry left to ask about.
@@ -712,8 +779,10 @@ void _deletingASharedNotebook(bool Function() haveSqlite) {
       // asked this workspace, which cannot see another computer.
       expect(sharedLogs.existsSync(), isTrue,
           reason: "device B deleting its copy must not remove device A's ops");
-      expect(photograph(), before,
-          reason: 'not one byte of the shared folder changed');
+      expect(changed(before, photograph()), isNull,
+          reason: 'not one byte of the shared folder may change — a purge '
+              'that appended so much as one op here would replicate the '
+              'deletion to every other device');
       expect(File(a.repo.notebooks.firstWhere((n) => n.id == a.id).file)
               .existsSync(),
           isTrue,
@@ -1312,5 +1381,97 @@ void _oneFoldThatCreatesAndDeletes(bool Function() haveSqlite) {
       expect(watermark(nb.id), 7);
       expect(repo.readPage(nb.id, 'safe').blocks, hasLength(2));
     }, timeout: const Timeout(Duration(minutes: 3)));
+  });
+}
+
+// ── The contract `setAutoSync` broke ────────────────────────────────────────
+//
+// This is the regression guard for a Windows-only CI flake whose root cause
+// was not in the test at all: `AppState.setAutoSync` called `_stopWatching()`
+// and **discarded the future**, so "auto-sync is off" was a statement about
+// intent rather than about the operating system. `OpFolderWatcher.stop` says
+// in bold why that matters — a `StreamSubscription.cancel()` is asynchronous,
+// and on Windows the `ReadDirectoryChangesW` handle is not released until it
+// completes — so between the call and the completion the watch was still live
+// and could still deliver one more event, run a pull, and append to a log.
+//
+// The user-facing version is worse than a flaky test: turn auto-sync off and
+// immediately move or delete the notebook, and the delete races a handle that
+// is still open. That is the exact failure `stop()`'s doc comment was written
+// about, and `moveNotebookToFolder` is the caller it was written for.
+//
+// Asserted on the SIGNATURE rather than on a race, because a race cannot be
+// reproduced reliably on a machine that is not starved — and the signature is
+// what makes awaiting it possible at every call site that needs to.
+void _autoSyncIsAwaitable(bool Function() haveSqlite) {
+  test('turning auto-sync off is awaitable, and settles', () async {
+    if (!haveSqlite()) return markTestSkipped('sqlite unavailable');
+    final tmp = Directory.systemTemp.createTempSync('onote_autosync_');
+    addTearDown(() {
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    final repo = await Repository.openAt(tmp);
+    addTearDown(repo.dispose);
+    final nb = await repo.createNotebook('Watched');
+    final app = AppState(repo)..notebookId = nb.id;
+    addTearDown(app.dispose);
+    app.reloadNodes();
+
+    // The whole point: it returns something to wait on. A `void` here is the
+    // bug — the analyzer would not let this line compile.
+    final Future<void> off = app.setAutoSync(false);
+    await off;
+    expect(app.autoSync, isFalse);
+
+    // And on, and off again, without leaving anything behind: the second stop
+    // must also complete rather than hanging on a subscription that was never
+    // created.
+    await app.setAutoSync(true);
+    expect(app.autoSync, isTrue);
+    await app.setAutoSync(false).timeout(const Duration(seconds: 5),
+        onTimeout: () => fail('stopping the watcher never completed'));
+    expect(app.autoSync, isFalse);
+    app.cancelPendingSave();
+  });
+
+  // Stopping the watcher is only half of "the folder is quiet now". The other
+  // half is the pull the watcher ALREADY started, which is the actual writer:
+  // it folds foreign ops and advances a watermark inside the very folder the
+  // caller is usually about to move, purge or photograph.
+  //
+  // That is not a hypothetical. After the stop itself was made awaitable, the
+  // purge test still failed on windows-latest and passed on a second run of
+  // the same commit — an in-flight auto-pull, tracked by nothing, writing
+  // between the two photographs.
+  //
+  // Asserted against the source because reproducing it needs a real OS watch
+  // event, which is exactly the thing that only fires reliably on the machine
+  // where it breaks. Three claims, each one a line somebody could delete
+  // without noticing:
+  test('an auto-pull the watcher started can be waited on', () {
+    final src = File('lib/state/app_state.dart').readAsStringSync();
+
+    /// The source from [from] to the next [close] — enough to tell "inside
+    /// this member" from "anywhere in an 8,900-line file", which is the whole
+    /// point of reading it this way.
+    String memberAfter(String from, String close) {
+      final i = src.indexOf(from);
+      expect(i, greaterThan(-1), reason: 'the source still has `$from`');
+      final j = src.indexOf(close, i);
+      expect(j, greaterThan(i), reason: 'could not find the end of `$from`');
+      return src.substring(i, j);
+    }
+
+    expect(memberAfter('onForeignChange: () {', '\n      },'),
+        contains('_autoPulls['),
+        reason: 'the watcher must park the pull it starts, not drop it');
+    expect(memberAfter('Future<void> settleBackgroundWork() async {', '\n  }'),
+        contains('_autoPulls.values'),
+        reason: '"all background work is done" has to include the pulls');
+    expect(memberAfter('Future<void> _stopWatching() async {', '\n  }'),
+        contains('_autoPulls'),
+        reason: 'turning the watcher off must wait for the pull it fired');
   });
 }

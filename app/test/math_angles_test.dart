@@ -15,6 +15,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/evaluate.dart';
 import 'package:openote/math/latex_compat.dart';
 import 'package:openote/math/math_editor.dart';
@@ -213,6 +214,8 @@ void main() {
       // reason the selection highlight does.
       Future<Size> sizeOf(String tex) async {
         await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           home: Scaffold(
             body: Align(
               alignment: Alignment.topLeft,
@@ -234,6 +237,8 @@ void main() {
     testWidgets('and it still draws, in both themes', (tester) async {
       for (final dark in [false, true]) {
         await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
           theme: ThemeData(brightness: dark ? Brightness.dark : Brightness.light),
           home: const Scaffold(
             body: Align(
