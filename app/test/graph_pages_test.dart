@@ -155,6 +155,41 @@ void main() {
       expect((r.page['boxes'] as List).first['markdown'], 'one\n\ntwo');
     });
 
+    test('a bare <br> BETWEEN paragraphs is the blank line OneNote meant', () {
+      // The shape taken off the wire, not invented. OneNote does not write a
+      // gap as an empty paragraph — it writes a bare `<br />` as a SIBLING,
+      // between one `</p>` and the next `<p>`. That never reached the
+      // paragraph branch, so every gap the writer typed closed up and their
+      // paragraphs ran together.
+      final p = readGraphPage(
+        '<html><body><div style="position:absolute;left:48px;top:90px">'
+        '<p>First thought.</p>'
+        '<br />'
+        '<p>Second thought.</p>'
+        '</div></body></html>',
+        title: 'Gaps',
+      );
+      final md = (p.page['boxes'] as List).first['markdown'] as String;
+      expect(md, 'First thought.\n\nSecond thought.');
+    });
+
+    test('paragraphs with no <br> between them do NOT gain a gap', () {
+      // The failure mode this fix has to avoid, and the one that matters more.
+      // The same change on the `.one` side once double-spaced a whole notebook
+      // by assuming every empty thing was a gap — 24 content lines came back
+      // separated by 31 blanks. Counted across fifty real pages first: 492
+      // paragraphs to 332 `<br>`, and eighteen pages carrying none at all, so
+      // a `<br>` is selective rather than the separator.
+      final p = readGraphPage(
+        '<html><body><div style="position:absolute;left:48px;top:90px">'
+        '<p>One.</p><p>Two.</p><p>Three.</p>'
+        '</div></body></html>',
+        title: 'Tight',
+      );
+      final md = (p.page['boxes'] as List).first['markdown'] as String;
+      expect(md, 'One.\nTwo.\nThree.');
+    });
+
     test('several blank lines stay several', () {
       final r = readGraphPage(
           wrap('<p>one</p><p></p><p><br/></p><p></p><p>two</p>'),

@@ -192,9 +192,66 @@ String _node(XmlNode node) {
 }
 
 /// An operator, with the ones that mean nothing to a reader removed.
+/// Operator characters that have a LaTeX command, and should use it.
+///
+/// **A `\times` written in OneNote came back as `*`.** MathML sends the
+/// operator as the CHARACTER — `<mo>\u00d7</mo>` — and passing that straight
+/// through put a bare `\u00d7` inside `$\u2026$`, where the renderer has to
+/// guess. Emitting the command instead means the stored maths is ordinary
+/// LaTeX that every part of the app already understands, rather than a
+/// character that happens to look right in some fonts.
+///
+/// Only characters with an unambiguous command are listed. Anything else keeps
+/// its character, which is the right answer for `+`, `=`, brackets and the
+/// rest.
+const Map<String, String> kMathOperatorLatex = {
+  '\u00d7': r'\times',
+  '\u00f7': r'\div',
+  '\u22c5': r'\cdot',
+  '\u2264': r'\leq',
+  '\u2265': r'\geq',
+  '\u2260': r'\neq',
+  '\u00b1': r'\pm',
+  '\u2213': r'\mp',
+  '\u2192': r'\to',
+  '\u21d2': r'\Rightarrow',
+  '\u21d4': r'\Leftrightarrow',
+  '\u2208': r'\in',
+  '\u2209': r'\notin',
+  '\u2282': r'\subset',
+  '\u2286': r'\subseteq',
+  '\u222a': r'\cup',
+  '\u2229': r'\cap',
+  '\u2211': r'\sum',
+  '\u220f': r'\prod',
+  '\u222b': r'\int',
+  '\u221e': r'\infty',
+  '\u2202': r'\partial',
+  '\u2207': r'\nabla',
+  '\u2248': r'\approx',
+  '\u2261': r'\equiv',
+  '\u221d': r'\propto',
+  '\u2200': r'\forall',
+  '\u2203': r'\exists',
+  '\u00ac': r'\neg',
+  '\u2227': r'\land',
+  '\u2228': r'\lor',
+  '\u2225': r'\parallel',
+  '\u22a5': r'\perp',
+  '\u2220': r'\angle',
+  '\u00b0': r'\degree',
+  '\u2032': r'\prime',
+  '\u221a': r'\surd',
+};
+
 String _operator(String raw) {
   final cleaned = _text(raw);
   if (cleaned.trim().isEmpty) return cleaned.isEmpty ? '' : ' ';
+  final named = kMathOperatorLatex[cleaned.trim()];
+  // A trailing space so `\times x` cannot run together into `\timesx`. The
+  // surrounding assembly collapses runs of whitespace, so this costs nothing
+  // when the operator is already spaced.
+  if (named != null) return '$named ';
   return cleaned;
 }
 

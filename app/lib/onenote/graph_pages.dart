@@ -432,6 +432,31 @@ void _readContainer(
           fileMaps: fileMaps,
           loss: loss,
         );
+      case 'br':
+        // **A blank line the writer typed.** Reported as paragraphs running
+        // together into one block however many returns had been pressed.
+        //
+        // The gap is NOT what anyone would guess. OneNote does not write it as
+        // an empty paragraph — it writes a bare `<br />` as a SIBLING of the
+        // paragraphs, between one `</p>` and the next `<p>`:
+        //
+        //     <p …>Dictionary</p>
+        //     <br />
+        //     <p …>Bridge Assessment Folder</p>
+        //
+        // So it never reached the paragraph branch below, and fell through to
+        // a default that emits nothing for an element with no text.
+        //
+        // Counted before trusting it, because the same fix on the `.one` side
+        // once double-spaced an entire notebook by assuming every empty thing
+        // was a gap: across fifty real pages there are 492 paragraphs to 332
+        // `<br>`, and **eighteen of the fifty pages contain none at all**. A
+        // separator would be on every page and between every pair. This is
+        // selective, which is what a deliberate gap looks like.
+        //
+        // The other 99 sit INSIDE a paragraph; those are line breaks within
+        // one block and are handled by the inline reader, not here.
+        writeBlock('', evenIfEmpty: true);
       default:
         // A paragraph ALWAYS gets its line, even with nothing in it. OneNote
         // writes a deliberate gap as `<p></p>` or as a paragraph holding only

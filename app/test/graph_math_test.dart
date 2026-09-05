@@ -7,6 +7,7 @@
 // as three elements and `Floor` as five.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/onenote/graph_pages.dart';
+import 'package:openote/onenote/mathml_latex.dart';
 
 String wrap(String body) =>
     '<html><head><title>T</title></head><body data-absolute-enabled="true">'
@@ -83,6 +84,29 @@ void main() {
   });
 
   group('MathML to LaTeX', () {
+    test('an operator arrives as a command, not as a lookalike character', () {
+      // Reported: "what i wrote originally with \times is imported as *
+      // rather than the x symbol". MathML sends the operator as the CHARACTER,
+      // so a bare U+00D7 was landing inside the maths and the renderer was
+      // left to guess at it.
+      expect(
+        mathmlToLatex('<math><mrow><mi>a</mi><mo>\u00d7</mo><mi>b</mi>'
+            '</mrow></math>'),
+        'a\\times b',
+        reason: 'the command, and a space so it cannot run into the next letter',
+      );
+    });
+
+    test('an operator with no command keeps its character', () {
+      // The list is deliberately short. Plus, equals and brackets are already
+      // exactly what LaTeX wants, and rewriting them would be churn.
+      expect(
+        mathmlToLatex('<math><mrow><mi>a</mi><mo>+</mo><mi>b</mi>'
+            '</mrow></math>'),
+        'a+b',
+      );
+    });
+
     test('fractions, powers and roots', () {
       const m = '<math><mfrac><mn>1</mn><mn>2</mn></mfrac>'
           '<msup><mi>x</mi><mn>2</mn></msup>'

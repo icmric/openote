@@ -36,7 +36,12 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **Handwriting is no longer lost** when bringing a notebook over the internet.
 - **Equations arrive as equations**, not as one letter per line.
 - **Blank lines between paragraphs survive.** They were being dropped, so
-  paragraphs ran together however many returns you had typed.
+  paragraphs ran together however many returns you had typed — and the gap
+  turned out not to be written the way anyone would guess, so the first fix
+  missed most of them.
+- **Multiplication signs stay multiplication signs.** A × written in an
+  equation came over as a star. Along with ÷ ⋅ ≤ ≥ ≠ ± ∑ ∏ ∫ ∞ ∂ ∇ and the
+  rest.
 - **Bold and italic survive.** OneNote does not use the tags anyone would
   expect, so all of it was being quietly discarded.
 - **Tables fit where they were.** They were coming in far too wide and
