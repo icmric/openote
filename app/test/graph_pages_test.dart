@@ -87,6 +87,31 @@ void main() {
       expect((r.page['boxes'] as List).first['markdown'], 'lead\npara');
     });
 
+    test('a blank line between paragraphs survives', () {
+      // "if i put an extra return between paragraphs, that is gone and they
+      // are now touching, doesnt matter if it was 1 or 10". An empty
+      // paragraph is not nothing — it is the gap the student typed.
+      final r = readGraphPage(
+          wrap('<p>one</p><p></p><p>two</p>'), title: 'Page');
+      expect((r.page['boxes'] as List).first['markdown'], 'one\n\ntwo');
+    });
+
+    test('a paragraph holding only a break is still a blank line', () {
+      // How OneNote actually spells it: 332 `<br>`s against 4 truly empty
+      // paragraphs across forty-seven real pages.
+      final r = readGraphPage(
+          wrap('<p>one</p><p><br/></p><p>two</p>'), title: 'Page');
+      expect((r.page['boxes'] as List).first['markdown'], 'one\n\ntwo');
+    });
+
+    test('several blank lines stay several', () {
+      final r = readGraphPage(
+          wrap('<p>one</p><p></p><p><br/></p><p></p><p>two</p>'),
+          title: 'Page');
+      expect((r.page['boxes'] as List).first['markdown'],
+          'one\n\n\n\ntwo');
+    });
+
     test('an empty page produces no boxes rather than an empty one', () {
       final r = readGraphPage(wrap('<p></p><p>   </p>'), title: 'Page');
       expect(r.page['boxes'], isEmpty);
@@ -175,44 +200,69 @@ void main() {
       expect(boxes.last['markdown'], 'after');
     });
 
-    test('columns keep the widths OneNote gave them', () {
-      // Without them the importer falls back to 140 px a column clamped to
-      // 240-900, which is wider than most real tables: "they all default to
-      // larger when they should be smaller ... overlap horizontally".
+    test('a table is fitted to the outline it sits in', () {
+      // Measured on the real notebook: every `<td>` carried exactly one style
+      // property, `border`. OneNote sends NO cell widths, so the earlier
+      // attempt to read them was reading something that is never there.
+      //
+      // With nothing supplied the importer falls back to 140 px a column
+      // clamped to 240-900, so a six-column table became 840 px whatever
+      // outline it was in — wider than its outline, which is exactly how a
+      // table comes to overlap what is beside it.
+      final r = readGraphPage(
+          wrap('<table><tr><td>a</td><td>b</td><td>c</td>'
+              '<td>d</td><td>e</td><td>f</td></tr></table>'),
+          title: 'Page');
+      final table = (r.page['boxes'] as List)
+          .firstWhere((b) => b['kind'] == 'table');
+      final outline = 624.0 * kGraphPxToCanvas;
+      expect((table['w'] as double), lessThanOrEqualTo(outline + 0.5));
+      final cols = (table['col_w'] as List).cast<double>();
+      expect(cols, hasLength(6));
+      expect(cols.reduce((a, b) => a + b),
+          closeTo(table['w'] as double, 0.001));
+    });
+
+    test('a column holding more text gets more room', () {
+      // The other half of what was wrong: every column got an equal share
+      // whatever it held, so a column of single digits took as much room as
+      // one holding a sentence.
       final r = readGraphPage(
           wrap('<table><tr>'
-              '<td style="width:80px">a</td>'
-              '<td style="width:220px">b</td>'
+              '<td>1</td>'
+              '<td>a much longer cell with a whole sentence in it</td>'
               '</tr></table>'),
           title: 'Page');
       final table = (r.page['boxes'] as List)
           .firstWhere((b) => b['kind'] == 'table');
-      expect(table['col_w'],
-          [80.0 * kGraphPxToCanvas, 220.0 * kGraphPxToCanvas]);
-      expect(table['w'], 300.0 * kGraphPxToCanvas);
+      final cols = (table['col_w'] as List).cast<double>();
+      expect(cols[1], greaterThan(cols[0]));
     });
 
-    test('a table that says nothing about widths keeps the old fallback', () {
-      final r = readGraphPage(
-          wrap('<table><tr><td>a</td><td>b</td></tr></table>'),
-          title: 'Page');
-      final table = (r.page['boxes'] as List)
-          .firstWhere((b) => b['kind'] == 'table');
-      expect(table.containsKey('col_w'), isFalse);
-    });
-
-    test('a partial set of widths is refused rather than stretching some', () {
-      // One width per column or none: a partial array would size two columns
-      // from the source and invent the rest, which is worse than inventing
-      // all of them consistently.
+    test('no column is squeezed to nothing', () {
+      // A column of empty cells still has to be clickable.
       final r = readGraphPage(
           wrap('<table><tr>'
-              '<td style="width:80px">a</td><td>b</td>'
+              '<td></td>'
+              '<td>${'x' * 400}</td>'
               '</tr></table>'),
           title: 'Page');
       final table = (r.page['boxes'] as List)
           .firstWhere((b) => b['kind'] == 'table');
-      expect(table.containsKey('col_w'), isFalse);
+      final cols = (table['col_w'] as List).cast<double>();
+      expect(cols[0], greaterThanOrEqualTo(48.0));
+    });
+
+    test('a table outside any sized outline still gets sane widths', () {
+      final r = readGraphPage(
+          '<html><body><table><tr><td>a</td><td>b</td></tr></table></body>'
+          '</html>',
+          title: 'Page');
+      final table = (r.page['boxes'] as List)
+          .firstWhere((b) => b['kind'] == 'table');
+      final cols = (table['col_w'] as List).cast<double>();
+      expect(cols, hasLength(2));
+      expect(cols.every((c) => c > 0), isTrue);
     });
 
     test('cell formatting is kept', () {

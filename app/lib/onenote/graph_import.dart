@@ -7,27 +7,36 @@
 /// > being able to do anything it would be a pretty poor experience"*
 ///
 /// So nothing here batches to the end. A section's pages are fetched,
-/// converted and **written** before the next section is started, and the write
+/// converted and **written** before the next section is written, and the write
 /// goes through the same `AppState` funnel every other edit does — which means
 /// the section appears in the navigator, with its pages in it, the moment it
 /// lands. A student watches their notebook arrive rather than watching a
-/// spinner, and can open and read the parts that have already come in while
-/// the rest is still coming.
+/// spinner, and can read the parts already in while the rest is still coming.
 ///
 /// Between every batch the loop yields to the event loop, so typing, scrolling
-/// and painting all continue. That is inherited wholesale from the `.onepkg`
-/// path, whose own doc comment records what it was like before: *"a first-run
-/// user picked their `.onepkg` and watched a frozen app do apparently nothing
-/// for a minute. That is the single worst moment the product had."*
+/// and painting all continue.
 ///
-/// ## Why the network shape is different from the file shape
+/// ## Fetching ahead, writing in order
 ///
-/// The `.onepkg` import runs its writes in a separate isolate, because parsing
-/// a five-year notebook is seconds of solid CPU. This is not that: the work is
-/// almost entirely **waiting on the network**, and the per-page conversion is
-/// cheap. Writing on the UI isolate in small batches is therefore both simpler
-/// and better here — it needs no cross-isolate handle, and it is what lets the
-/// content appear progressively at all.
+/// The owner again: *"do you recon we could import several sections in
+/// paralell too"*. The **fetching** can, and now does — it is all waiting on
+/// the network. The **writing** cannot: the sink is a transaction on one
+/// isolate, and every node carries a position that decides where it appears,
+/// so two sections interleaving their writes would shuffle the notebook.
+///
+/// So the halves are separated. [kGraphSectionsAhead] sections are in flight
+/// while the current one is written, and each is written in its own turn. The
+/// progress does jump a little, which the owner accepted in advance — it jumps
+/// because the work genuinely is ahead of the display.
+///
+/// ## Waiting is not hanging
+///
+/// OneNote throttles by request COUNT, so batching cuts round trips and not
+/// throttling, and a notebook of several hundred pages will be asked to slow
+/// down. Measured on the real thing: six and a half minutes of reading before
+/// the first 429, and a cooldown still in force minutes later. That wait is
+/// reported rather than swallowed, because an import that goes quiet for two
+/// minutes with no explanation cannot be told from one that has hung.
 library;
 
 import 'dart:async';
@@ -39,8 +48,7 @@ import '../model/models.dart';
 import 'graph_client.dart';
 import 'graph_pages.dart';
 
-/// Where a running import has got to. Reported often enough that the card
-/// never sits on one sentence for long.
+/// Where a running import has got to.
 class GraphImportProgress {
   const GraphImportProgress({
     required this.sectionName,
@@ -48,6 +56,7 @@ class GraphImportProgress {
     required this.pagesTotal,
     required this.sectionsDone,
     required this.sectionsTotal,
+    this.waitingFor,
   });
 
   final String sectionName;
@@ -55,6 +64,9 @@ class GraphImportProgress {
   final int pagesTotal;
   final int sectionsDone;
   final int sectionsTotal;
+
+  /// Non-null while Microsoft has asked the app to slow down.
+  final Duration? waitingFor;
 }
 
 /// What an import ended up doing.
@@ -76,16 +88,20 @@ class GraphImportResult {
 
 /// How many pages are fetched and written at a time.
 ///
-/// Matched to [kGraphBatchRequests], because a batch of pages is now ONE round
+/// Matched to [kGraphBatchRequests], because a batch of pages is ONE round
 /// trip rather than a wave of them: asking for fewer than twenty wastes the
 /// request, and asking for more just splits into a second one while delaying
 /// the write and the cancel check.
 const int kGraphBatchPages = kGraphBatchRequests;
 
-/// Pull [notebookId] into the notebook behind [sink], writing as it goes.
+/// How many sections are read ahead of the one being written.
 ///
-/// [shouldCancel] is asked at every batch boundary, so stopping lands within a
-/// page or two rather than at the end of the notebook.
+/// Two rather than ten. What actually bounds parallelism is the client's own
+/// request gate, so reading further ahead buys none — it only holds more pages
+/// in memory and makes a cancel waste more of them.
+const int kGraphSectionsAhead = 2;
+
+/// Pull [notebookId] into the notebook behind [sink], writing as it goes.
 Future<GraphImportResult> importNotebookFromGraph({
   required GraphClient client,
   required String notebookId,
@@ -99,9 +115,8 @@ Future<GraphImportResult> importNotebookFromGraph({
   // **Every section's page list up front, together.** Asked for one at a time
   // inside the loop, each was a round trip the student waited through with
   // nothing happening — *"it also seems to take a while when changing
-  // sections"*. Fetching them all at once also makes the total known, so the
-  // progress can say how far through it is rather than only how far it has
-  // got.
+  // sections"*. It also makes the total known, so progress can say how far
+  // through it is rather than only how far it has got.
   final pageLists = await graphPool<List<GraphPageRef>>([
     for (final section in sections) () => client.pages(section.id),
   ]);
@@ -109,6 +124,7 @@ Future<GraphImportResult> importNotebookFromGraph({
   for (final list in pageLists) {
     pagesTotal += list.length;
   }
+
   // The starter section `createNotebook` seeds, remembered so it can go once
   // real content has landed — and only then, so a cancelled import does not
   // leave an empty notebook with nothing in it at all.
@@ -124,113 +140,106 @@ Future<GraphImportResult> importNotebookFromGraph({
   var sectionsWritten = 0;
   String? firstPageId;
   var cancelled = false;
+  Duration? waiting;
 
-  for (var si = 0; si < sections.length; si++) {
-    final section = sections[si];
-    if (shouldCancel?.call() ?? false) {
-      cancelled = true;
-      break;
-    }
-    final pageRefs = pageLists[si];
-    if (pageRefs.isEmpty) continue;
+  // One future per section, started ahead of when it is written.
+  final ahead = <int, Future<List<Map<String, dynamic>>>>{};
+  void startFetching(int index) {
+    if (index < 0 || index >= sections.length) return;
+    if (ahead.containsKey(index) || pageLists[index].isEmpty) return;
+    ahead[index] = _readSection(client, pageLists[index], loss, shouldCancel);
+  }
 
-    // The section node first, so it appears in the navigator immediately and
-    // its pages arrive underneath it rather than all at once at the end.
-    String? groupId;
-    if (section.groupPath.isNotEmpty) {
-      groupId = groupIds.putIfAbsent(
-          section.groupPath,
-          () => sink
-              .node(TreeNode(
-                kind: NodeKind.sectionGroup,
-                title: section.groupPath.replaceAll('/', ' › '),
-                position: nextPosition(),
-              ))
-              .id);
-    }
-    final sectionNode = sink.node(TreeNode(
-      kind: NodeKind.section,
-      parentId: groupId,
-      title: importTitleFromName(section.name),
-      position: nextPosition(),
+  // Reported whenever the client starts waiting on a throttle, so a two-minute
+  // pause reads as a pause rather than as a freeze.
+  client.onThrottle = (d) {
+    waiting = d;
+    onProgress?.call(GraphImportProgress(
+      sectionName: '',
+      pagesDone: pagesWritten,
+      pagesTotal: pagesTotal,
+      sectionsDone: sectionsWritten,
+      sectionsTotal: sections.length,
+      waitingFor: d,
     ));
+  };
 
-    for (var start = 0; start < pageRefs.length; start += kGraphBatchPages) {
+  try {
+    for (var i = 0; i <= kGraphSectionsAhead; i++) {
+      startFetching(i);
+    }
+
+    for (var si = 0; si < sections.length; si++) {
       if (shouldCancel?.call() ?? false) {
         cancelled = true;
         break;
       }
-      final end = (start + kGraphBatchPages).clamp(0, pageRefs.length);
-      // Fetched OUTSIDE the transaction: these are network round trips, and
-      // holding a write transaction open across them would lock the notebook
-      // for the duration of somebody's internet connection.
-      // **One round trip for the whole batch.** Every page used to be its own
-      // request; twenty at a time through `\$batch` is what takes a
-      // three-hundred-page notebook from fifty waves of latency to fifteen.
-      final slice = pageRefs.sublist(start, end);
-      final htmls = await client.pageHtmlMany([for (final r in slice) r.id]);
-      final ready = <Map<String, dynamic>>[];
-      // Images are still per-picture requests, so they go out together across
-      // the whole batch rather than page by page.
-      final reads = <GraphPage>[];
-      for (var i = 0; i < slice.length; i++) {
-        final html = htmls[i];
-        if (html == null) continue;
-        try {
-          reads.add(readGraphPage(
-            html,
-            title: slice[i].title,
-            level: slice[i].level,
-            createdIso: slice[i].createdIso,
-          ));
-        } catch (_) {
-          // One page that will not parse costs that page, never the import.
-        }
-      }
-      final wanted = <(GraphPage, GraphImageRef)>[
-        for (final r in reads)
-          for (final img in r.images) (r, img),
-      ];
-      final bytes = await graphPool<Uint8List?>([
-        for (final (_, img) in wanted) () => client.resource(img.url),
-      ]);
-      var at = 0;
-      for (final r in reads) {
-        final mine = <Uint8List?>[];
-        for (var k = 0; k < r.images.length; k++) {
-          mine.add(bytes[at++]);
-        }
-        attachImageBytes(r.page, r.images, mine, r.loss);
-        loss
-          ..images += r.loss.images
-          ..attachments += r.loss.attachments
-          ..inkPages += r.loss.inkPages;
-        ready.add(r.page);
-      }
+      final section = sections[si];
+      final pending = ahead.remove(si);
+      if (pending == null) continue;
+      // Keep the pipe full while this one is written.
+      startFetching(si + kGraphSectionsAhead + 1);
+
+      final ready = await pending;
       if (ready.isEmpty) continue;
 
-      sink.batch(() {
-        for (final page in ready) {
-          final id = importOneParsedPage(
-              sink, sectionNode.id, page, nextPosition);
-          firstPageId ??= id;
-        }
-        return null;
-      });
-      pagesWritten += ready.length;
-
-      onProgress?.call(GraphImportProgress(
-        sectionName: section.name,
-        pagesDone: pagesWritten,
-        pagesTotal: pagesTotal,
-        sectionsDone: sectionsWritten,
-        sectionsTotal: sections.length,
+      // The section node first, so it appears in the navigator with its pages
+      // arriving underneath it.
+      String? groupId;
+      if (section.groupPath.isNotEmpty) {
+        groupId = groupIds.putIfAbsent(
+            section.groupPath,
+            () => sink
+                .node(TreeNode(
+                  kind: NodeKind.sectionGroup,
+                  title: section.groupPath.replaceAll('/', ' › '),
+                  position: nextPosition(),
+                ))
+                .id);
+      }
+      final sectionNode = sink.node(TreeNode(
+        kind: NodeKind.section,
+        parentId: groupId,
+        title: importTitleFromName(section.name),
+        position: nextPosition(),
       ));
-      // The yield that keeps the app usable while this runs.
-      await (yieldToUi?.call() ?? Future<void>.delayed(Duration.zero));
+
+      for (var start = 0; start < ready.length; start += kGraphBatchPages) {
+        if (shouldCancel?.call() ?? false) {
+          cancelled = true;
+          break;
+        }
+        final end = (start + kGraphBatchPages).clamp(0, ready.length);
+        sink.batch(() {
+          for (var i = start; i < end; i++) {
+            final id =
+                importOneParsedPage(sink, sectionNode.id, ready[i], nextPosition);
+            firstPageId ??= id;
+          }
+          return null;
+        });
+        pagesWritten += end - start;
+        onProgress?.call(GraphImportProgress(
+          sectionName: section.name,
+          pagesDone: pagesWritten,
+          pagesTotal: pagesTotal,
+          sectionsDone: sectionsWritten,
+          sectionsTotal: sections.length,
+          waitingFor: waiting,
+        ));
+        // The yield that keeps the app usable while this runs.
+        await (yieldToUi?.call() ?? Future<void>.delayed(Duration.zero));
+      }
+      sectionsWritten++;
+      if (cancelled) break;
     }
-    sectionsWritten++;
-    if (cancelled) break;
+  } finally {
+    client.onThrottle = null;
+    // Sections read ahead of a cancel are abandoned, but their futures are
+    // live and an unawaited error surfaces later somewhere unrelated.
+    for (final f in ahead.values) {
+      unawaited(f.then((_) {}, onError: (Object _) {}));
+    }
   }
 
   // Only once something real is in it. A notebook whose starter section was
@@ -248,4 +257,64 @@ Future<GraphImportResult> importNotebookFromGraph({
     firstPageId: firstPageId,
     cancelled: cancelled,
   );
+}
+
+/// Everything a section needs before any of it can be written.
+///
+/// Runs entirely off the network and touches the sink not at all, which is
+/// what lets several of these be in flight at once while the writing stays
+/// strictly in order.
+Future<List<Map<String, dynamic>>> _readSection(
+  GraphClient client,
+  List<GraphPageRef> refs,
+  GraphPageLoss loss,
+  bool Function()? shouldCancel,
+) async {
+  final out = <Map<String, dynamic>>[];
+  for (var start = 0; start < refs.length; start += kGraphBatchPages) {
+    if (shouldCancel?.call() ?? false) break;
+    final end = (start + kGraphBatchPages).clamp(0, refs.length);
+    final slice = refs.sublist(start, end);
+    // **One round trip for the whole batch.** Every page used to be its own
+    // request; twenty at a time through `$batch` is what takes a
+    // three-hundred-page notebook from fifty waves of latency to fifteen.
+    final htmls = await client.pageHtmlMany([for (final r in slice) r.id]);
+
+    final reads = <GraphPage>[];
+    for (var i = 0; i < slice.length; i++) {
+      final html = htmls[i];
+      if (html == null) continue;
+      try {
+        reads.add(readGraphPage(
+          html,
+          title: slice[i].title,
+          level: slice[i].level,
+          createdIso: slice[i].createdIso,
+        ));
+      } catch (_) {
+        // One page that will not parse costs that page, never the import.
+      }
+    }
+
+    // Pictures are separate authenticated requests, so they go out together
+    // across the whole batch rather than page by page.
+    final wanted = <GraphImageRef>[for (final r in reads) ...r.images];
+    final bytes = await graphPool<Uint8List?>([
+      for (final img in wanted) () => client.resource(img.url),
+    ]);
+    var at = 0;
+    for (final r in reads) {
+      final mine = <Uint8List?>[];
+      for (var k = 0; k < r.images.length; k++) {
+        mine.add(bytes[at++]);
+      }
+      attachImageBytes(r.page, r.images, mine, r.loss);
+      loss
+        ..images += r.loss.images
+        ..attachments += r.loss.attachments
+        ..inkPages += r.loss.inkPages;
+      out.add(r.page);
+    }
+  }
+  return out;
 }

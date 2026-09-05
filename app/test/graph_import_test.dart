@@ -79,9 +79,16 @@ String pageHtml(String body) =>
     '</body></html>';
 
 void main() {
+  setUp(() {
+    // Real behaviour, measured in wall-clock seconds, is not what these are
+    // testing — and paying it would add twenty seconds to the suite.
+    GraphClient.batchThrottleHold = Duration.zero;
+  });
+
   tearDown(() {
     GraphClient.debugFetch = null;
     GraphClient.debugBatch = null;
+    GraphClient.batchThrottleHold = const Duration(seconds: 20);
   });
 
   group('listing', () {

@@ -163,7 +163,36 @@ class GraphClient {
       debugFetch;
 
   /// How many times a throttled request is retried before giving up.
-  static const int _maxRetries = 5;
+  ///
+  /// Raised from five after a measured run: reading three pages from each of
+  /// sixty sections got a 429 after six and a half minutes, and a **second
+  /// attempt minutes later was throttled on its first request**. OneNote's
+  /// cooldown is long, so five quick retries covering fifteen seconds gave up
+  /// while the wait had barely started, and the import failed rather than
+  /// waited.
+  static const int _maxRetries = 10;
+
+  /// The longest a single backoff will wait before trying again.
+  static const Duration _maxBackoff = Duration(minutes: 2);
+
+  /// Nothing is sent before this moment.
+  ///
+  /// **Shared across every request, not per request.** A 429 means the whole
+  /// application has been asked to slow down; letting the other five in-flight
+  /// requests carry on regardless is what turns one 429 into six, each costing
+  /// a round trip AND its own wait. When one request is told to back off, all
+  /// of them do.
+  DateTime _quietUntil = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Set when the client is waiting out a throttle, so the import can say so
+  /// rather than looking frozen.
+  Duration? get throttledFor {
+    final left = _quietUntil.difference(DateTime.now());
+    return left.isNegative ? null : left;
+  }
+
+  /// Called when a throttle starts or ends, for the progress line.
+  void Function(Duration? waiting)? onThrottle;
 
   void close() => _client.close(force: true);
 
@@ -356,6 +385,7 @@ class GraphClient {
       if (fake != null) {
         (status, text) = await fake(body);
       } else {
+        await _waitOutThrottle();
         await _acquire();
         try {
           final t = await token();
@@ -370,6 +400,13 @@ class GraphClient {
         } finally {
           _release();
         }
+      }
+      if (status == 429 || status == 503) {
+        // Falling straight through to twenty individual requests would be
+        // twenty more 429s. Back off first, then let the caller retry them
+        // one at a time through the same gate.
+        _holdEveryoneBack(batchThrottleHold);
+        return null;
       }
       if (status != 200) return null;
       final json = jsonDecode(text) as Map<String, dynamic>;
@@ -406,9 +443,31 @@ class GraphClient {
     }
   }
 
+  /// How long a throttled batch quiets the whole client for.
+  ///
+  /// A guess, because a `\$batch` envelope carries no `Retry-After` of its
+  /// own — twenty seconds is short enough not to strand an import and long
+  /// enough to be worth more than an immediate retry. Overridable so tests do
+  /// not pay it in wall-clock time.
+  @visibleForTesting
+  static Duration batchThrottleHold = const Duration(seconds: 20);
+
   /// Test seam for the batch endpoint. Returns `(status, body)`.
   @visibleForTesting
   static Future<(int, String)> Function(String requestBody)? debugBatch;
+
+  /// The raw JSON at [url], for looking at what Graph actually sends.
+  ///
+  /// Used by `tool/graph_probe.dart`. Three fixes in a row were built on an
+  /// assumption about the real markup and three in a row were wrong, so the
+  /// wire is worth being able to read directly.
+  Future<String> debugRawJson(String url) async {
+    final (status, body, _) = await _fetch(url);
+    if (status != 200) {
+      throw GraphException(_friendly(status), details: 'HTTP $status');
+    }
+    return body;
+  }
 
   /// An image or attachment's bytes, or null when it cannot be had.
   ///
@@ -460,23 +519,49 @@ class GraphClient {
   Future<(int, String, Map<String, String>)> _fetch(String url) async {
     final fake = debugFetch;
     for (var attempt = 0;; attempt++) {
+      await _waitOutThrottle();
       final (status, body, headers) = fake != null
           ? await fake(url)
           : await _realFetch(url);
       // 429 is throttling and 503 is "busy, come back"; both carry
       // Retry-After, and both are normal on a large notebook rather than
-      // exceptional.
+      // exceptional. A five-year notebook is hundreds of requests and OneNote
+      // throttles by request COUNT, so batching reduces round trips but not
+      // this — being asked to slow down is the expected path, not a failure.
       if ((status == 429 || status == 503) && attempt < _maxRetries) {
         final after = int.tryParse(headers['retry-after'] ?? '') ?? 0;
         // Exponential backoff when the server did not say, because hammering
         // a throttled endpoint is how an account gets a longer ban.
         final wait = after > 0
-            ? Duration(seconds: after.clamp(1, 120))
+            ? Duration(seconds: after)
             : Duration(milliseconds: 500 * (1 << attempt));
-        await Future<void>.delayed(wait);
+        _holdEveryoneBack(wait > _maxBackoff ? _maxBackoff : wait);
         continue;
       }
       return (status, body, headers);
+    }
+  }
+
+  /// Push the shared quiet-until forward, never backward.
+  void _holdEveryoneBack(Duration wait) {
+    final until = DateTime.now().add(wait);
+    if (until.isAfter(_quietUntil)) {
+      _quietUntil = until;
+      onThrottle?.call(wait);
+    }
+  }
+
+  /// Sleep until the shared quiet period is over.
+  Future<void> _waitOutThrottle() async {
+    while (true) {
+      final left = _quietUntil.difference(DateTime.now());
+      if (left.isNegative || left.inMilliseconds == 0) return;
+      // In slices, so a cancelled import is not stuck behind a two-minute
+      // sleep it can no longer do anything with.
+      final slice = left > const Duration(seconds: 1)
+          ? const Duration(seconds: 1)
+          : left;
+      await Future<void>.delayed(slice);
     }
   }
 

@@ -234,8 +234,16 @@ void _readContainer(
   }
 
   /// Start a new line for a block. Never doubles a newline that is there.
-  void writeBlock(String md) {
-    if (md.isEmpty) return;
+  ///
+  /// [evenIfEmpty] is what keeps a blank line blank. An empty paragraph is not
+  /// nothing — it is the gap the student typed — and dropping it ran their
+  /// paragraphs together: *"if i put an extra return between paragraphs, that
+  /// is gone and they are now touching, doesnt matter if it was 1 or 10."*
+  /// Measured on the real notebook: 492 paragraphs and 332 `<br>`s across
+  /// forty-seven pages, so this is most of a page's shape rather than an edge
+  /// case.
+  void writeBlock(String md, {bool evenIfEmpty = false}) {
+    if (md.isEmpty && !evenIfEmpty) return;
     final soFar = markdown.toString();
     if (soFar.isNotEmpty && !soFar.endsWith('\n')) {
       markdown.write('\n');
@@ -284,23 +292,15 @@ void _readContainer(
         flushText();
         final cells = _readTable(node);
         if (cells.isNotEmpty && cells.first.isNotEmpty) {
-          // **The widths OneNote chose, not a guess per column.** Without
-          // them the importer falls back to 140 px a column clamped to
-          // 240–900, which is wider than most real tables and the reason
-          // *"they all default to larger when they should be smaller"* and
-          // *"overlap horizontally"*: the box is right vertically, because
-          // the rows are, and wrong across because every column was given
-          // the same invented share of an invented total.
-          final colW = _columnWidths(node, cells.first.length);
+          final colW = _columnWidths(node, cells.first.length, width);
           boxes.add({
             'kind': 'table',
             'flow': flow,
             'x': left,
             'y': top,
             'cells': cells,
-            if (colW != null) 'col_w': colW,
-            if (colW != null)
-              'w': colW.reduce((a, b) => a + b),
+            'col_w': colW,
+            'w': colW.reduce((a, b) => a + b),
           });
         }
       case 'img':
@@ -343,7 +343,12 @@ void _readContainer(
           loss: loss,
         );
       default:
-        writeBlock(_blockToMarkdown(node));
+        // A paragraph ALWAYS gets its line, even with nothing in it. OneNote
+        // writes a deliberate gap as `<p></p>` or as a paragraph holding only
+        // a `<br>`, and both used to vanish.
+        final isParagraph = node.localName == 'p';
+        writeBlock(_blockToMarkdown(node),
+            evenIfEmpty: isParagraph && _isBlankParagraph(node));
     }
   }
   flushText();
@@ -490,28 +495,80 @@ String _collapseSpaces(String s) => s
     .map((line) => line.replaceAll(RegExp(r'[ \t]+'), ' '))
     .join('\n');
 
-/// The width of each column, in canvas space, or null when OneNote did not
-/// say.
+/// The width of each column, in canvas space.
 ///
-/// Read from the first row, because that is where OneNote puts them and a
-/// later row's spanned cell would measure the wrong thing. Returned only when
-/// there is one width per column and all of them are sane — a partial or
-/// nonsense array would stretch the wrong columns, which is worse than the
-/// fallback it replaces.
-List<double>? _columnWidths(dom.Element table, int columns) {
-  final firstRow = table.querySelector('tr');
-  if (firstRow == null) return null;
-  final widths = <double>[];
-  for (final cell in firstRow.children) {
-    if (cell.localName != 'td' && cell.localName != 'th') continue;
-    final style = cell.attributes['style'] ?? '';
-    final m = RegExp(r'(?:^|[;{\s])width\s*:\s*([0-9.]+)\s*px')
-        .firstMatch(style);
-    final raw = m == null ? null : double.tryParse(m.group(1)!);
-    if (raw == null || raw <= 1) return null;
-    widths.add(raw * kGraphPxToCanvas);
+/// **OneNote sends no widths at all.** Measured on the real notebook: every
+/// one of forty-two `<td>`s carried exactly one style property, `border`, and
+/// the `<table>` itself only `border` and `border-collapse`. The earlier
+/// attempt to read a `width` from each cell was therefore reading something
+/// that is never there, which is why the tables did not change.
+///
+/// So the widths have to be derived, and the two things that were wrong before
+/// are both fixable without them:
+///
+///  * **Too wide.** With nothing supplied the importer falls back to 140 px a
+///    column, clamped to 240–900, and a six-column table became 840 px
+///    regardless of the outline it sits in — *"they all default to larger when
+///    they should be smaller"*, and wider than its outline is exactly how a
+///    table comes to *"overlap horizontally"* with whatever is beside it. The
+///    table is now fitted to [outlineWidth], which OneNote DOES send, on every
+///    positioned div.
+///  * **All the same.** Every column got an equal share whatever it held. They
+///    are now shared out by how much text is in each, so a column of single
+///    digits stops taking the same room as one holding a sentence.
+///
+/// This is a layout guess and says so. It is a much better guess than a fixed
+/// 140, and the only honest alternative — the real widths — is not in the
+/// format. A `.onepkg` import still has them (`col_w`, from 0x1D66 in the
+/// binary), which is one of the things that route is still better at.
+List<double> _columnWidths(
+    dom.Element table, int columns, double? outlineWidth) {
+  // Longest cell per column, as a stand-in for how much room it wants.
+  final weights = List<double>.filled(columns, 1);
+  for (final tr in table.querySelectorAll('tr')) {
+    var col = 0;
+    for (final cell in tr.children) {
+      if (cell.localName != 'td' && cell.localName != 'th') continue;
+      if (col >= columns) break;
+      // Square-rooted so a paragraph does not swallow the whole table: a cell
+      // with a hundred characters wants more room than one with four, but not
+      // twenty-five times more.
+      final len = cell.text.trim().length;
+      final want = 1.0 + (len <= 0 ? 0.0 : _sqrt(len.toDouble()));
+      if (want > weights[col]) weights[col] = want;
+      col++;
+    }
   }
-  return widths.length == columns ? widths : null;
+  final total = weights.reduce((a, b) => a + b);
+  // The outline is the room the student gave it. Without one, a page-ish width
+  // that at least does not run off the side.
+  final available = outlineWidth ?? (620 * kGraphPxToCanvas);
+  // **Reserve the minimum first, then share what is left.** Clamping each
+  // column and rescaling afterwards fights itself: the rescale pushes the
+  // clamped ones back under the floor it just applied. Taking the floor off
+  // the top means every column keeps it AND the total is exactly the room
+  // available, with no second pass.
+  const minColumn = 48.0;
+  final reserved = minColumn * columns;
+  if (reserved >= available) {
+    // More columns than room. An even split is the only fair answer, and the
+    // table will scroll rather than hide a column.
+    return List<double>.filled(columns, available / columns);
+  }
+  final share = available - reserved;
+  return [
+    for (final w in weights) minColumn + share * (w / total),
+  ];
+}
+
+/// Newton's method, because `dart:math` is not imported here for one call and
+/// this needs no more precision than a column width.
+double _sqrt(double v) {
+  var x = v;
+  for (var i = 0; i < 12; i++) {
+    x = 0.5 * (x + v / x);
+  }
+  return x;
 }
 
 /// A table as the rectangular grid of per-cell Markdown the importer stores.
@@ -553,6 +610,18 @@ GraphImageRef? _readImage(dom.Element img, int index, {bool inFlow = false}) {
     height: double.tryParse(img.attributes['height'] ?? ''),
     inFlow: inFlow,
   );
+}
+
+/// Is this paragraph a deliberate gap rather than content?
+///
+/// True for `<p></p>` and for one holding nothing but `<br>`s and spaces,
+/// which is how OneNote spells the blank line between two paragraphs.
+bool _isBlankParagraph(dom.Element el) {
+  if (el.text.trim().isNotEmpty) return false;
+  for (final child in el.children) {
+    if (child.localName != 'br' && child.localName != 'span') return false;
+  }
+  return true;
 }
 
 bool _hasPosition(dom.Element el) =>
