@@ -62,7 +62,12 @@ String? _boundaryOf(String body) {
   final firstBreak = body.indexOf('\n');
   if (firstBreak <= 0) return null;
   final first = body.substring(0, firstBreak).trim();
-  if (!first.startsWith('--') || first.length < 4) return null;
+  // At least one character after the two dashes. The bound used to be four,
+  // which quietly refused a short boundary and returned the whole body as
+  // HTML — the ink silently gone, with nothing raised anywhere. Real
+  // boundaries are GUIDs so it never bit in practice, but "never in practice"
+  // is not a reason to keep an arbitrary limit that fails silently.
+  if (!first.startsWith('--') || first.length < 3) return null;
   // A closing delimiter has a trailing `--`; the opening one does not, and it
   // is the opening one that names the boundary.
   final name = first.substring(2);

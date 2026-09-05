@@ -97,6 +97,78 @@ void main() {
     });
   });
 
+  group('bodies that are not the happy path', () {
+    /// Join with real CRLF, which is what the wire uses and what a Dart
+    /// source file cannot hold inside a single-quoted literal.
+    String crlf(List<String> lines) => lines.join('\r\n');
+
+    test('CRLF line endings, which is what actually comes down the wire', () {
+      final body = crlf([
+        '--b',
+        'Content-Type: text/html',
+        '',
+        pageHtml,
+        '--b',
+        'Content-Type: application/inkml+xml',
+        '',
+        emptyInk,
+        '--b--',
+      ]);
+      final r = readPageBody(body);
+      expect(r.html, contains('written'));
+      expect(r.inkml, contains('traceGroup'));
+    });
+
+    test('a part with an unfamiliar type is taken as the page', () {
+      // A page that imports without its ink beats one that imports as
+      // nothing, so an unrecognised part is more likely the page than
+      // nothing at all.
+      final body = crlf([
+        '--b',
+        'Content-Type: application/octet-stream',
+        '',
+        pageHtml,
+        '--b--',
+      ]);
+      expect(readPageBody(body).html, contains('written'));
+    });
+
+    test('a part with no blank line is skipped, not misread as content', () {
+      final body = crlf([
+        '--b',
+        'Content-Type: text/html',
+        '',
+        pageHtml,
+        '--b',
+        'not-a-part',
+        '--b--',
+      ]);
+      expect(readPageBody(body).html, contains('written'));
+    });
+
+    test('an empty body is empty, not a crash', () {
+      expect(readPageBody('').html, '');
+      expect(readPageBody('').inkml, isNull);
+    });
+
+    test('the order of the parts does not matter', () {
+      final body = crlf([
+        '--b',
+        'Content-Type: application/inkml+xml',
+        '',
+        realInk,
+        '--b',
+        'Content-Type: text/html',
+        '',
+        pageHtml,
+        '--b--',
+      ]);
+      final r = readPageBody(body);
+      expect(r.html, contains('written'));
+      expect(r.inkml, contains('inkml:trace'));
+    });
+  });
+
   group('reading the strokes', () {
     test('every trace becomes a stroke', () {
       final strokes = strokesFromInkML(realInk);
