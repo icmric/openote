@@ -156,8 +156,50 @@ class GraphClient {
   int _inFlight = 0;
   final List<Completer<void>> _waiting = [];
 
+  /// **How many requests to have in flight, adjusted as the service answers.**
+  ///
+  /// A fixed number cannot be right, because the limit is OneNote's and it is
+  /// not published. Too low wastes the whole import waiting; too high spends
+  /// it collecting 429s, and a 429 costs a round trip AND the wait after it —
+  /// so being too fast is slower than being too slow.
+  ///
+  /// Measured on a real notebook: a burst of six ran at about 350 ms a page,
+  /// and a sustained run of the same six was throttled inside seven minutes
+  /// and stayed throttled. Neither number is the sustainable rate; the
+  /// sustainable rate is what this looks for.
+  ///
+  /// Halve on a refusal, add one after a run of successes. That is TCP's
+  /// congestion control and it is the same problem: find the fastest rate a
+  /// shared resource will accept without being told what it is.
+  int _limit = kGraphConcurrency;
+  int _goodRun = 0;
+
+  /// After this many clean replies, try one more at a time.
+  static const int _speedUpAfter = 24;
+
+  void _sawRefusal() {
+    _goodRun = 0;
+    final next = _limit ~/ 2;
+    _limit = next < 1 ? 1 : next;
+  }
+
+  void _sawSuccess() {
+    if (_limit >= kGraphConcurrency) return;
+    if (++_goodRun < _speedUpAfter) return;
+    _goodRun = 0;
+    _limit++;
+    // Wake one waiter, since there is now room for it.
+    if (_waiting.isNotEmpty && _inFlight < _limit) {
+      _waiting.removeAt(0).complete();
+    }
+  }
+
+  /// What the gate is currently allowing, for tests and for the log.
+  @visibleForTesting
+  int get concurrencyLimit => _limit;
+
   Future<void> _acquire() async {
-    if (_inFlight < kGraphConcurrency) {
+    if (_inFlight < _limit) {
       _inFlight++;
       return;
     }
@@ -169,7 +211,9 @@ class GraphClient {
 
   void _release() {
     _inFlight--;
-    if (_waiting.isNotEmpty) _waiting.removeAt(0).complete();
+    if (_waiting.isNotEmpty && _inFlight < _limit) {
+      _waiting.removeAt(0).complete();
+    }
   }
 
   static const String _root = 'https://graph.microsoft.com/v1.0';
@@ -435,9 +479,11 @@ class GraphClient {
         // Falling straight through to twenty individual requests would be
         // twenty more 429s. Back off first, then let the caller retry them
         // one at a time through the same gate.
+        _sawRefusal();
         _holdEveryoneBack(batchThrottleHold);
         return null;
       }
+      if (status == 200) _sawSuccess();
       if (status != 200) return null;
       final json = jsonDecode(text) as Map<String, dynamic>;
       final responses = json['responses'] as List?;
@@ -564,7 +610,9 @@ class GraphClient {
       // exceptional. A five-year notebook is hundreds of requests and OneNote
       // throttles by request COUNT, so batching reduces round trips but not
       // this — being asked to slow down is the expected path, not a failure.
+      if (status == 200) _sawSuccess();
       if ((status == 429 || status == 503) && attempt < _maxRetries) {
+        _sawRefusal();
         final after = int.tryParse(headers['retry-after'] ?? '') ?? 0;
         // Exponential backoff when the server did not say, because hammering
         // a throttled endpoint is how an account gets a longer ban.

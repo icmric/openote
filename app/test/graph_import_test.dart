@@ -185,6 +185,58 @@ void main() {
       expect(calls, 2);
     });
 
+    test('a refusal slows the client down, and success speeds it back up',
+        () async {
+      // A fixed rate cannot be right, because the limit is OneNote's and is
+      // not published. Too high spends the import collecting 429s, and a 429
+      // costs a round trip AND the wait after it — so being too fast is
+      // slower than being too slow.
+      //
+      // Refused ONCE per call, then answered: a fake that refuses forever
+      // makes the client spend its real backoff, which is minutes.
+      var nextRefuses = true;
+      GraphClient.debugFetch = (url) async {
+        if (nextRefuses) {
+          nextRefuses = false;
+          return (429, '', {'retry-after': '0'});
+        }
+        return (200, listOf([
+          {'id': 'nb1', 'displayName': 'Physics'}
+        ]), <String, String>{});
+      };
+      final c = GraphClient(token: () async => 'T');
+      expect(c.concurrencyLimit, kGraphConcurrency);
+
+      await c.notebooks();
+      final narrowed = c.concurrencyLimit;
+      expect(narrowed, lessThan(kGraphConcurrency),
+          reason: 'a refusal must narrow the pipe');
+
+      // And it opens again once the service is answering.
+      for (var i = 0; i < 60; i++) {
+        await c.notebooks();
+      }
+      expect(c.concurrencyLimit, greaterThan(narrowed));
+      expect(c.concurrencyLimit, lessThanOrEqualTo(kGraphConcurrency),
+          reason: 'and never past the ceiling');
+    });
+
+    test('the pipe narrows but never closes', () async {
+      // Halving repeatedly has to bottom out at one, not at nothing, or the
+      // import stops for good after enough refusals.
+      var nextRefuses = true;
+      GraphClient.debugFetch = (url) async {
+        nextRefuses = !nextRefuses;
+        if (nextRefuses) return (429, '', {'retry-after': '0'});
+        return (200, listOf(const []), <String, String>{});
+      };
+      final c = GraphClient(token: () async => 'T');
+      for (var i = 0; i < 12; i++) {
+        await c.notebooks();
+      }
+      expect(c.concurrencyLimit, greaterThanOrEqualTo(1));
+    });
+
     test('a hard failure is a sentence, not a status code', () async {
       GraphClient.debugFetch =
           (url) async => (401, '', <String, String>{});
