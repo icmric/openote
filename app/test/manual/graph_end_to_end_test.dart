@@ -62,7 +62,13 @@ void main() {
         onProgress: (p) {
           final line = p.waitingFor != null
               ? 'waiting ${p.waitingFor!.inSeconds}s'
-              : '${p.pagesDone}/${p.pagesTotal} — ${p.sectionName}';
+              : p.preparing
+                  // The stretch before any page can arrive, timed separately:
+                  // it was 33 s on this notebook and used to be reported as
+                  // nothing at all.
+                  ? 'looking around — ${p.sectionsTotal} sections, '
+                      '${p.pagesTotal} pages'
+                  : '${p.pagesDone}/${p.pagesTotal} — ${p.sectionName}';
           if (line != lastReport) {
             lastReport = line;
             // ignore: avoid_print

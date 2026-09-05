@@ -543,7 +543,12 @@ void main() {
         client: twoSections(log: log),
         notebookId: 'nb1',
         sink: sink,
-        onProgress: (p) => order.add('progress:${p.sectionName}'),
+        // The preparing reports — "looking through your notebook", the
+        // section count, the page total — come before any section exists and
+        // are not what this test is about.
+        onProgress: (p) {
+          if (!p.preparing) order.add('progress:${p.sectionName}');
+        },
       );
       // Week 1's pages were reported done before Week 2's pages were asked
       // for at all.
@@ -669,7 +674,12 @@ void main() {
         client: twoSections(),
         notebookId: 'nb1',
         sink: sink,
-        onProgress: (_) => stop = true,
+        // Stop at the first PAGE, not at the first report: the preparing
+        // reports happen before anything has been written, and cancelling
+        // there would be testing the empty case instead of this one.
+        onProgress: (p) {
+          if (!p.preparing) stop = true;
+        },
         shouldCancel: () => stop,
       );
       expect(result.cancelled, isTrue);
@@ -677,6 +687,23 @@ void main() {
       // the pages already on screen.
       expect(result.pages, greaterThan(0));
       expect(result.pages, lessThan(4));
+    });
+
+    test('stop pressed while it is still looking around is honoured', () async {
+      // Listing a real notebook's sections and page lists took 33 seconds,
+      // and Stop is on screen for all of it. Before this the button did
+      // nothing until the first section had already been written.
+      final sink = RecordingSink();
+      final result = await importNotebookFromGraph(
+        client: twoSections(),
+        notebookId: 'nb1',
+        sink: sink,
+        shouldCancel: () => true,
+      );
+      expect(result.cancelled, isTrue);
+      expect(result.pages, 0);
+      expect(sink.written, isEmpty,
+          reason: 'nothing should have been written at all');
     });
 
     test('the starter section is removed only once real pages exist',

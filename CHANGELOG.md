@@ -47,6 +47,21 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **A big notebook imports in about two minutes** rather than the ten or more
   it used to take, and when Microsoft asks Openote to slow down it says so and
   waits, instead of going quiet or giving up.
+- **An import that goes wrong keeps the pages it already brought you.** If
+  something failed halfway, Openote used to delete the whole notebook — every
+  page you had just watched arrive. Now it stops, keeps them, and tells you how
+  many are in.
+- **If Microsoft will not let Openote read for several minutes together, it
+  says so and stops** rather than sitting there apparently working. One run
+  spent forty minutes to bring in a single page.
+- **One stalled connection no longer stops the whole import.** A request that
+  never came back used to hold its place for ever; six of those and a notebook
+  stopped halfway with nothing on screen to say why.
+- **The wait before the first page now says what it is doing.** Finding out
+  what is in a big notebook takes half a minute or so before anything can
+  appear, and the card sat on "Signing in to OneNote…" for all of it. It now
+  tells you how many sections and pages it found, and **Stop works during it**
+  instead of waiting until the first section had already been brought over.
 
 ## [0.9.0] — 2026-09-03
 

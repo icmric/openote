@@ -182,11 +182,32 @@ class ImportJob extends ChangeNotifier {
         AppStateImportSink(app, nb),
         (p) {
           pagesDone = p.pagesDone;
+          // **Kept here, not only on the way out.** `importedPages` used to be
+          // assigned after the import RETURNED, so an import that failed
+          // partway looked like it had brought nothing — and the teardown
+          // below then deleted the notebook, with every page the student had
+          // just watched arrive. A failure must cost the rest, never the part
+          // that already worked.
+          if (p.pagesDone > importedPages) importedPages = p.pagesDone;
           // The total IS known now — every section's page list is fetched up
           // front — so the card can show a bar rather than a rising count.
           pagesTotal = p.pagesTotal;
           final waiting = p.waitingFor;
-          if (waiting != null) {
+          if (p.preparing && waiting == null) {
+            // Named plainly, because "enumerating sections" is not a sentence
+            // anybody outside this file would write. What the student wants to
+            // know is that something is happening and roughly how big this is
+            // going to be.
+            message = p.sectionsTotal == 0
+                ? 'Looking through your notebook…'
+                : p.pagesTotal == 0
+                    ? 'Found ${p.sectionsTotal} section'
+                        '${p.sectionsTotal == 1 ? '' : 's'} — seeing what is '
+                        'in them…'
+                    : '${p.pagesTotal} page'
+                        '${p.pagesTotal == 1 ? '' : 's'} to bring over. '
+                        'Starting now…';
+          } else if (waiting != null) {
             // **Say that it is waiting.** OneNote throttles by request count,
             // and a large notebook WILL be asked to slow down: measured at six
             // and a half minutes of reading before the first refusal, with a
@@ -260,11 +281,41 @@ class ImportJob extends ChangeNotifier {
     } on GraphException catch (e) {
       error = e.message;
       // Kept rather than torn down when pages already landed: see above.
-      if (nb.isNotEmpty && importedPages == 0) await _teardown();
+      if (nb.isNotEmpty && importedPages == 0) {
+        await _teardown();
+      } else {
+        app.reloadNodes();
+        app.refresh();
+      }
+      // Not `failed` when something arrived. The student has a notebook with
+      // real pages in it, and calling that a failure invites them to delete it
+      // and start again — which is the one thing that would actually lose
+      // work.
+      if (importedPages > 0) {
+        return _finish(ImportJobState.done,
+            message: '${e.message} The $importedPages page'
+                '${importedPages == 1 ? '' : 's'} already brought over '
+                '${importedPages == 1 ? 'is' : 'are'} here.');
+      }
       _finish(ImportJobState.failed, message: e.message);
     } catch (e) {
       error = '$e';
-      if (nb.isNotEmpty && importedPages == 0) await _teardown();
+      // Same rule as the branch above, and for the same reason: an unexpected
+      // fault is no more entitled to delete pages the student is looking at
+      // than an expected one is.
+      if (nb.isNotEmpty && importedPages == 0) {
+        await _teardown();
+      } else {
+        app.reloadNodes();
+        app.refresh();
+      }
+      if (importedPages > 0) {
+        return _finish(ImportJobState.done,
+            message: 'Something went wrong partway through, but the '
+                '$importedPages page${importedPages == 1 ? '' : 's'} already '
+                'brought over ${importedPages == 1 ? 'is' : 'are'} here. Try '
+                'again for the rest.');
+      }
       _finish(ImportJobState.failed,
           message: 'That notebook could not be brought over.');
     }

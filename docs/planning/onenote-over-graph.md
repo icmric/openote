@@ -110,6 +110,15 @@ sections, walking the section groups, and fetching every section's page list.
 It buys the page total, which is what lets the card show how far through it is,
 and it is paid once.
 
+**It also used to be forty seconds of nothing.** No progress is reported until
+a section has been written, so for that whole stretch the card read *"Signing
+in to OneNote…"* — finished long before, and indistinguishable from a freeze on
+the one screen where a student is most likely to conclude the app has died and
+kill it. That stretch now reports as it goes ("looking through your notebook",
+then the section count, then the page total), and `shouldCancel` is checked
+before the first write, because Stop is on screen for all forty seconds and was
+doing nothing for all forty seconds.
+
 What got it there, in order of how much each was worth:
 
 1. **`$batch`** — twenty pages in one round trip instead of twenty.
@@ -147,6 +156,66 @@ Two lessons worth keeping:
 - **A stalled connection is not throttling.** Treating it as such would narrow
   the pipe and punish the whole import for one bad socket.
 
+## The second real import: forty minutes, one page
+
+With deadlines in place the same notebook was run again, and the result was
+worse than either run before it:
+
+```
+  1/332 — General  (33570 ms)
+  waiting 0s … waiting 1s … waiting 2s … waiting 4s … waiting 8s … waiting 16s …
+  [26 throttle waits over 40 minutes]
+```
+
+**One page, and the rest was backoff.** Two things to separate out.
+
+*The caveat first:* a day of probing against one account earns a sustained
+throttle penalty, and this run was made from inside it. It is not a
+measurement of what a student's first import looks like — the 210 ms a page
+above was measured on the same code against the same notebook. Both numbers
+are real; they are measurements of different weather.
+
+*The faults it exposed are real regardless*, and neither is about speed.
+
+**1. There was no number of minutes after which the client stopped.** Ten
+retries at up to two minutes each, per request, with the shared quiet-until
+pushed forward every time — the arithmetic allows for an hour of silence, and
+forty minutes of it is what came out. Waiting for ever is not persistence; it
+is a hang with a progress message. `giveUpAfterThrottledFor` (four minutes of
+being refused with **nothing at all** getting through) ends it with a sentence
+a student can act on: try again in a little while.
+
+The clock is reset by any success, so a long import that is throttled now and
+then — which is every large notebook — never trips it. Only an account that is
+genuinely locked out does.
+
+**2. Giving up would have deleted the notebook.** The far worse of the two,
+and it was sitting in the job the whole time:
+
+```dart
+importedPages = result.pages;                                 // after run()
+…
+} on GraphException catch (e) {
+  if (nb.isNotEmpty && importedPages == 0) await _teardown();  // still 0
+```
+
+`importedPages` was only assigned once the import **returned**. Anything thrown
+partway left it at zero, so the teardown — written to clear up an empty shell —
+would instead have deleted a notebook with pages in it, the same pages the
+student had just spent ten minutes watching arrive. Progressive import is what
+made this reachable: before it, nothing was on screen to lose.
+
+It is counted from the progress callback now, as the pages land. And an import
+that brought *something* finishes as **done**, not failed, with a count in the
+message. Calling it a failure is an invitation to delete it and start again,
+which is the one action that would actually lose the work.
+
+A note on the shape of the fix: giving up is `GraphGaveUp`, its own type, not a
+`GraphException` with a distinctive message. Every other `GraphException` on
+this path is caught somewhere and turned into *skip this page* — right for one
+bad page, catastrophic here, where the result would be several hundred empty
+pages reported as a success. The type is what stops it being swallowed.
+
 ## Parity with the `.onepkg` route
 
 | | `.onepkg` | Over Graph |
@@ -172,3 +241,7 @@ that must be kept in step.
   their position. Seen in real content — `[b]<sub>d</sub>`.
 - **`list-style-type`** on `<li>` and `value` on ordered items are ignored, so
   a list restarting at 7 restarts at 1.
+- **The sustained rate is still unknown.** Every throughput number here was
+  measured against one account that had been probed hard the same day. What a
+  first import looks like from a cold account has not been measured, and cannot
+  be until this one's penalty has worn off.

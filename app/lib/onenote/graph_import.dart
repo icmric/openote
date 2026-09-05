@@ -57,6 +57,7 @@ class GraphImportProgress {
     required this.sectionsDone,
     required this.sectionsTotal,
     this.waitingFor,
+    this.preparing = false,
   });
 
   final String sectionName;
@@ -67,6 +68,17 @@ class GraphImportProgress {
 
   /// Non-null while Microsoft has asked the app to slow down.
   final Duration? waitingFor;
+
+  /// **Before any page can arrive.**
+  ///
+  /// Listing the sections and then every section's page list is one round trip
+  /// plus one per section, and on a real notebook that was **thirty-three
+  /// seconds before the first page landed** — thirty-three seconds in which
+  /// the card still read "Signing in to OneNote…", which was both untrue and
+  /// indistinguishable from a freeze. It is the one stretch of the import
+  /// where nothing visible happens, so it is the stretch that most needs
+  /// saying out loud.
+  final bool preparing;
 }
 
 /// What an import ended up doing.
@@ -120,7 +132,23 @@ Future<GraphImportResult> importNotebookFromGraph({
   Future<void> Function()? yieldToUi,
 }) async {
   final loss = GraphPageLoss();
+  onProgress?.call(const GraphImportProgress(
+    sectionName: '',
+    pagesDone: 0,
+    pagesTotal: 0,
+    sectionsDone: 0,
+    sectionsTotal: 0,
+    preparing: true,
+  ));
   final sections = await client.sections(notebookId);
+  onProgress?.call(GraphImportProgress(
+    sectionName: '',
+    pagesDone: 0,
+    pagesTotal: 0,
+    sectionsDone: 0,
+    sectionsTotal: sections.length,
+    preparing: true,
+  ));
   // **Every section's page list up front, together.** Asked for one at a time
   // inside the loop, each was a round trip the student waited through with
   // nothing happening — *"it also seems to take a while when changing
@@ -132,6 +160,31 @@ Future<GraphImportResult> importNotebookFromGraph({
   var pagesTotal = 0;
   for (final list in pageLists) {
     pagesTotal += list.length;
+  }
+  // The last thing said before pages start appearing, and the first time the
+  // total is known — so the bar has a denominator from here on rather than
+  // appearing partway through.
+  onProgress?.call(GraphImportProgress(
+    sectionName: '',
+    pagesDone: 0,
+    pagesTotal: pagesTotal,
+    sectionsDone: 0,
+    sectionsTotal: sections.length,
+    preparing: true,
+  ));
+
+  // **Checked before anything is written.** Listing a large notebook is tens
+  // of seconds, and Stop is on screen throughout; without this, pressing it
+  // during that stretch did nothing until the first section had already been
+  // written, which is not what stop means.
+  if (shouldCancel?.call() ?? false) {
+    return GraphImportResult(
+      pages: 0,
+      sections: 0,
+      loss: loss,
+      firstPageId: null,
+      cancelled: true,
+    );
   }
 
   // The starter section `createNotebook` seeds, remembered so it can go once

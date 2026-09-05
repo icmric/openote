@@ -89,6 +89,16 @@ class GraphException implements Exception {
   String toString() => details == null ? message : '$message ($details)';
 }
 
+/// The import is stopping because the service will not let it get on.
+///
+/// Its own type so that it cannot be mistaken for one page failing. Every
+/// other [GraphException] here is caught somewhere and turned into "skip this
+/// page" — which is right for one bad page and catastrophic for this one,
+/// where the answer would be a notebook of hundreds of empty pages, silently.
+class GraphGaveUp extends GraphException {
+  GraphGaveUp(super.message, {super.details});
+}
+
 /// How many requests are allowed to be in flight at once.
 ///
 /// The import is almost entirely **waiting**: a page is one round trip, and
@@ -180,11 +190,28 @@ class GraphClient {
 
   void _sawRefusal() {
     _goodRun = 0;
+    _refusedSince ??= DateTime.now();
     final next = _limit ~/ 2;
     _limit = next < 1 ? 1 : next;
   }
 
+  /// Throw when the service has been refusing for longer than anyone should
+  /// be asked to wait. Checked where a refusal is recorded, so it cannot be
+  /// reached by a request that is merely slow.
+  void _stopIfHopeless() {
+    if (_refusedSince == null) return;
+    if (refusedFor < giveUpAfterThrottledFor) return;
+    // Two sentences, and neither of them mentions what was kept — the job
+    // adds that, because only the job knows the number. Saying it in both
+    // places produced "…has been kept — try again… (152 pages so far.)".
+    throw GraphGaveUp(
+        'Microsoft is limiting how fast Openote can read this account, and '
+        'has been for several minutes. Try again in a little while.',
+        details: 'throttled continuously for ${refusedFor.inSeconds}s');
+  }
+
   void _sawSuccess() {
+    _refusedSince = null;
     if (_limit >= kGraphConcurrency) return;
     if (++_goodRun < _speedUpAfter) return;
     _goodRun = 0;
@@ -263,6 +290,27 @@ class GraphClient {
 
   /// The longest a single backoff will wait before trying again.
   static const Duration _maxBackoff = Duration(minutes: 2);
+
+  /// **How long the client will go on being refused before it stops.**
+  ///
+  /// Measured on a genuinely rate-limited account: forty minutes, one page
+  /// imported, and every line of the log a throttle wait. Retrying for ever is
+  /// not persistence, it is a hang with a progress message — and the student
+  /// is sitting in front of a notebook that is never going to finish.
+  ///
+  /// Four minutes of being refused with nothing getting through is enough to
+  /// say so and stop, keeping every page that did arrive. Trying again later
+  /// is a real answer; waiting out an hour is not.
+  static Duration giveUpAfterThrottledFor = const Duration(minutes: 4);
+
+  /// When the current unbroken run of refusals began, or null if the last
+  /// request got through.
+  DateTime? _refusedSince;
+
+  /// How long the service has been refusing without a single success.
+  Duration get refusedFor => _refusedSince == null
+      ? Duration.zero
+      : DateTime.now().difference(_refusedSince!);
 
   /// Nothing is sent before this moment.
   ///
@@ -446,6 +494,8 @@ class GraphClient {
           () async {
             try {
               return await pageHtml(pageIds[i]);
+            } on GraphGaveUp {
+              rethrow;
             } on GraphException {
               return null;
             }
@@ -532,6 +582,7 @@ class GraphClient {
         // those carries its own wait. Retrying the batch keeps the cost at
         // twenty requests per attempt instead of forty.
         _sawRefusal();
+        _stopIfHopeless();
         _holdEveryoneBack(batchThrottleHold);
         if (attempt < _maxRetries) return _retryBatch;
         return null;
@@ -550,6 +601,13 @@ class GraphClient {
         out[at] = _decodeBatchBody(m['body']);
       }
       return out;
+    } on GraphGaveUp {
+      // Giving up on a hopelessly throttled account is a decision about the
+      // whole import, not a verdict on this endpoint. Swallowed here it would
+      // read as "\$batch is no good", and the caller would answer by asking
+      // for the same twenty pages one at a time — twenty more requests at the
+      // exact moment the service has run out of patience.
+      rethrow;
     } catch (_) {
       return null;
     }
@@ -679,6 +737,7 @@ class GraphClient {
       if (status == _timedOut && attempt < 2) continue;
       if ((status == 429 || status == 503) && attempt < _maxRetries) {
         _sawRefusal();
+        _stopIfHopeless();
         final after = int.tryParse(headers['retry-after'] ?? '') ?? 0;
         // Exponential backoff when the server did not say, because hammering
         // a throttled endpoint is how an account gets a longer ban.
