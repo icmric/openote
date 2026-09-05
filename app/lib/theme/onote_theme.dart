@@ -206,7 +206,30 @@ ThemeData onoteTheme(Brightness brightness) {
     borderSide: BorderSide(color: surfaces.border),
   );
 
+  /// **The pointer every control in this app uses.**
+  ///
+  /// Reported: *"when hovering over many buttons in the app, the pointer
+  /// style doesnt change to the click style, it always stays as the regular
+  /// pointer"*. Not a scattering of missed widgets — one line of Flutter.
+  /// Since 3.4x every Material button defaults to
+  /// `WidgetStateMouseCursor.adaptiveClickable`, which resolves:
+  ///
+  /// ```dart
+  /// return kIsWeb ? SystemMouseCursors.click : SystemMouseCursors.basic;
+  /// ```
+  ///
+  /// So on Windows, macOS and Linux the framework deliberately hands back the
+  /// plain arrow, on the reading that a hand pointer is a web convention. That
+  /// is a defensible default for a toolkit and the wrong one for this app,
+  /// whose chrome is dense, low-contrast and full of icon-only controls where
+  /// the pointer is the clearest signal that a thing can be pressed at all.
+  ///
+  /// Set in one place, because a per-widget fix is a list that is never
+  /// finished — the reporter said "many buttons", not "this button".
+  const clickable = WidgetStateMouseCursor.clickable;
+
   ButtonStyle buttonBase({Color? fg, Color? bg}) => ButtonStyle(
+        mouseCursor: clickable,
         minimumSize: const WidgetStatePropertyAll(
             Size(0, OnoteSize.buttonCompact)),
         padding: const WidgetStatePropertyAll(OnoteSpace.control),
@@ -265,6 +288,7 @@ ThemeData onoteTheme(Brightness brightness) {
     ),
     iconButtonTheme: const IconButtonThemeData(
       style: ButtonStyle(
+        mouseCursor: clickable,
         iconSize: WidgetStatePropertyAll(OnoteIcon.sm),
         splashFactory: NoSplash.splashFactory,
         shape: WidgetStatePropertyAll(
@@ -300,6 +324,8 @@ ThemeData onoteTheme(Brightness brightness) {
         )),
       ),
     ),
+    // Menu entries, tick boxes, chips and list rows are pressed exactly as
+    // often as buttons are, and were arrows for the same reason.
     menuButtonTheme: const MenuButtonThemeData(
       style: ButtonStyle(
         minimumSize:
@@ -396,6 +422,7 @@ ThemeData onoteTheme(Brightness brightness) {
       errorStyle: OnoteType.caption.copyWith(color: OnoteColors.danger),
     ),
     checkboxTheme: CheckboxThemeData(
+      mouseCursor: clickable,
       side: BorderSide(color: surfaces.textSecondary, width: 1.4),
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(3))),
@@ -404,8 +431,10 @@ ThemeData onoteTheme(Brightness brightness) {
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     ),
     radioTheme: const RadioThemeData(
+      mouseCursor: clickable,
         splashRadius: 0, visualDensity: VisualDensity.compact),
-    switchTheme: const SwitchThemeData(splashRadius: 0),
+    switchTheme: const SwitchThemeData(
+        splashRadius: 0, mouseCursor: clickable),
     chipTheme: ChipThemeData(
       backgroundColor: surfaces.chrome2,
       side: BorderSide(color: surfaces.border),
@@ -415,6 +444,7 @@ ThemeData onoteTheme(Brightness brightness) {
       shape: const RoundedRectangleBorder(borderRadius: OnoteRadius.mdAll),
     ),
     listTileTheme: ListTileThemeData(
+      mouseCursor: clickable,
       dense: true,
       minVerticalPadding: OnoteSpace.x3,
       titleTextStyle: OnoteType.ui.copyWith(color: surfaces.textPrimary),

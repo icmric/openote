@@ -88,6 +88,19 @@ class ImportJob extends ChangeNotifier {
 
   bool _cancelRequested = false;
 
+  /// **Whether this is the first notebook the person has ever had here.**
+  ///
+  /// A first import is a different situation from every later one, and it was
+  /// being shown the same small card in the corner. The import creates the
+  /// notebook empty and opens it straight away — which is right, it is what
+  /// lets somebody watch their pages arrive — but on a first run it means
+  /// staring at an empty notebook with a modest card away in one corner. The
+  /// natural reading is that it did nothing, or that it failed.
+  ///
+  /// There is nothing else on screen to look at on a first run, so the
+  /// explanation goes where the person is already looking.
+  bool isFirstNotebook = false;
+
   /// Whether Stop has been pressed and the job has not finished stopping.
   ///
   /// Exposed so the card can stop offering a button that has already been
@@ -130,7 +143,8 @@ class ImportJob extends ChangeNotifier {
     final willParse =
         sourcePath.isNotEmpty && debugOverrides?.preparsedJson == null;
     if (willParse && OnoteCore.instance == null) throw OneNoteUnavailable();
-    final job = ImportJob._(app, fileName);
+    final job = ImportJob._(app, fileName)
+      ..isFirstNotebook = app.notebooks.isEmpty;
     current = job;
     app.refresh(); // the shell mounts the card by watching AppState
     job._run(sourcePath, debugOverrides);
@@ -155,7 +169,10 @@ class ImportJob extends ChangeNotifier {
         run,
   ) {
     if (current != null && !current!.isFinished) return null;
-    final job = ImportJob._(app, notebookName);
+    final job = ImportJob._(app, notebookName)
+      // Counted BEFORE the import makes its own, so the notebook about to be
+      // created does not make itself look like company.
+      ..isFirstNotebook = app.notebooks.isEmpty;
     current = job;
     app.refresh();
     job._runCloud(run);
