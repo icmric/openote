@@ -32,6 +32,10 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- **The import speaks your language.** Bringing a notebook over from OneNote
+  is the first thing many people do, and it was the last part of Openote still
+  in English however the rest of the app was set.
+
 - **An import that stops early finishes itself later.** If Microsoft slows
   Openote down, or the wifi goes, or you close the app halfway through, the
   notebook says how much is still to come and quietly finishes the rest about

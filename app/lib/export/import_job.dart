@@ -51,6 +51,7 @@ import '../onenote/graph_import.dart';
 import '../onenote/unfinished_import.dart';
 import '../state/app_state.dart';
 import 'import_sink.dart';
+import 'import_status.dart';
 import 'import_writer.dart';
 import 'onenote_import.dart';
 
@@ -66,8 +67,27 @@ class ImportJob extends ChangeNotifier {
 
   ImportJobState state = ImportJobState.parsing;
 
-  /// One human sentence about where the job is. The card renders it verbatim.
+  /// One human sentence about where the job is, **in English**.
+  ///
+  /// Kept as the fallback and as what tests read. The card prefers [status],
+  /// which it can render in the reader's own language; this is what anything
+  /// without a `BuildContext` gets.
   String message = 'Reading the notebook…';
+
+  /// The same thing as data, so a surface with a context can translate it.
+  ///
+  /// The import card was the last English-only surface in an app that ships
+  /// in seven languages, and the reason was structural: a `ChangeNotifier`
+  /// cannot reach `L`, so every sentence had to be built where there was no
+  /// way to say it in anybody's language. Reporting a stage instead moves the
+  /// wording to where the language is — see `l10n/labels.dart`.
+  ImportStatus status = const ImportStatus(ImportStage.reading);
+
+  /// Set both at once, so they can never disagree.
+  void _say(ImportStatus s, String english) {
+    status = s;
+    message = english;
+  }
 
   /// Pages written so far / total to write. 0/0 during the parse phase.
   int pagesDone = 0;
@@ -255,7 +275,8 @@ class ImportJob extends ChangeNotifier {
     try {
       resetImportReport();
       state = ImportJobState.writing;
-      message = 'Signing in to OneNote…';
+      _say(const ImportStatus(ImportStage.signingIn),
+          'Signing in to OneNote…');
       notifyListeners();
 
       // Finishing an earlier attempt writes into the notebook that already
@@ -295,15 +316,23 @@ class ImportJob extends ChangeNotifier {
             // anybody outside this file would write. What the student wants to
             // know is that something is happening and roughly how big this is
             // going to be.
-            message = p.sectionsTotal == 0
-                ? 'Looking through your notebook…'
-                : p.pagesTotal == 0
-                    ? 'Found ${p.sectionsTotal} section'
-                        '${p.sectionsTotal == 1 ? '' : 's'} — seeing what is '
-                        'in them…'
-                    : '${p.pagesTotal} page'
-                        '${p.pagesTotal == 1 ? '' : 's'} to bring over. '
-                        'Starting now…';
+            if (p.sectionsTotal == 0) {
+              _say(const ImportStatus(ImportStage.lookingAround),
+                  'Looking through your notebook…');
+            } else if (p.pagesTotal == 0) {
+              _say(
+                  ImportStatus(ImportStage.foundSections,
+                      count: p.sectionsTotal),
+                  'Found ${p.sectionsTotal} section'
+                      '${p.sectionsTotal == 1 ? '' : 's'} — seeing what is '
+                      'in them…');
+            } else {
+              _say(
+                  ImportStatus(ImportStage.foundPages, count: p.pagesTotal),
+                  '${p.pagesTotal} page'
+                      '${p.pagesTotal == 1 ? '' : 's'} to bring over. '
+                      'Starting now…');
+            }
           } else if (waiting != null) {
             // **Say that it is waiting.** OneNote throttles by request count,
             // and a large notebook WILL be asked to slow down: measured at six
@@ -313,13 +342,20 @@ class ImportJob extends ChangeNotifier {
             // student's next move would be to kill the app halfway through
             // their own notebook.
             final secs = waiting.inSeconds;
-            message = 'Microsoft has asked Openote to slow down — carrying on '
-                'in ${secs < 1 ? 'a moment' : '${secs}s'}. '
-                'Nothing already brought in is lost.';
+            _say(
+                ImportStatus(ImportStage.throttled, count: secs),
+                'Microsoft has asked Openote to slow down — carrying on '
+                    'in ${secs < 1 ? 'a moment' : '${secs}s'}. '
+                    'Nothing already brought in is lost.');
           } else {
-            message = 'Bringing in "${p.sectionName}" — ${p.pagesDone}'
-                '${p.pagesTotal > 0 ? ' of ${p.pagesTotal}' : ''} '
-                'page${p.pagesDone == 1 ? '' : 's'}…';
+            _say(
+                ImportStatus(ImportStage.bringingIn,
+                    name: p.sectionName,
+                    count: p.pagesDone,
+                    total: p.pagesTotal),
+                'Bringing in "${p.sectionName}" — ${p.pagesDone}'
+                    '${p.pagesTotal > 0 ? ' of ${p.pagesTotal}' : ''} '
+                    'page${p.pagesDone == 1 ? '' : 's'}…');
           }
           notifyListeners();
           app.reloadNodes();
@@ -355,12 +391,15 @@ class ImportJob extends ChangeNotifier {
         // forgets.
         _rememberUnfinished(nb, UnfinishedReason.stopped, pagesTotal);
         return _finish(ImportJobState.done,
+            status:
+                ImportStatus(ImportStage.stoppedKept, count: result.pages),
             message: 'Stopped — kept the ${result.pages} '
                 'page${result.pages == 1 ? '' : 's'} already brought in. '
                 'You can finish it whenever you like.');
       }
       if (result.pages == 0) {
         return _finish(ImportJobState.failed,
+            status: const ImportStatus(ImportStage.emptyNotebook),
             message: 'That notebook had no pages in it.');
       }
       // **Finished, so the reminder goes.** A notebook that says it is
@@ -387,6 +426,10 @@ class ImportJob extends ChangeNotifier {
       // A completion message that names a loss the import did not suffer is
       // as misleading as one that hides a loss it did.
       _finish(ImportJobState.done,
+          status: gone.isEmpty
+              ? ImportStatus(ImportStage.imported, count: result.pages)
+              : ImportStatus(ImportStage.importedButLost,
+                  count: result.pages, detail: gone.join(', ')),
           message: gone.isEmpty
               ? '$note.'
               : '$note, but could not bring ${gone.join(', ')}.');
@@ -415,6 +458,8 @@ class ImportJob extends ChangeNotifier {
           pagesTotal);
       if (importedPages > 0) {
         return _finish(ImportJobState.done,
+            status: ImportStatus(ImportStage.partialThrottled,
+                count: importedPages, detail: e.message),
             message: '${e.message} The $importedPages page'
                 '${importedPages == 1 ? '' : 's'} already brought over '
                 '${importedPages == 1 ? 'is' : 'are'} here. Openote will '
@@ -438,12 +483,15 @@ class ImportJob extends ChangeNotifier {
       }
       if (importedPages > 0) {
         return _finish(ImportJobState.done,
+            status: ImportStatus(ImportStage.partialBroke,
+                count: importedPages),
             message: 'Something went wrong partway through, but the '
                 '$importedPages page${importedPages == 1 ? '' : 's'} already '
                 'brought over ${importedPages == 1 ? 'is' : 'are'} here. '
                 'Openote will finish the rest on its own later.');
       }
       _finish(ImportJobState.failed,
+          status: const ImportStatus(ImportStage.failed),
           message: 'That notebook could not be brought over.');
     }
   }
@@ -460,7 +508,7 @@ class ImportJob extends ChangeNotifier {
   void cancel() {
     if (isFinished) return;
     _cancelRequested = true;
-    message = 'Stopping…';
+    _say(const ImportStatus(ImportStage.stopping), 'Stopping…');
     // The writer finishes the batch it is in — a few pages — then shuts down
     // cleanly. Killing the isolate outright would leave its SQLite handle open,
     // and on Windows an open handle is exactly why the teardown's delete would
@@ -556,12 +604,14 @@ class ImportJob extends ChangeNotifier {
         onParsed: (pages) {
           state = ImportJobState.writing;
           pagesTotal = pages;
-          message = 'Importing $pages pages…';
+          _say(ImportStatus(ImportStage.writingPages, count: pages),
+              'Importing $pages pages…');
           notifyListeners();
         },
         onProgress: (sectionName, done, total) {
           pagesDone = done;
-          message = 'Importing "$sectionName"…';
+          _say(ImportStatus(ImportStage.writingSection, name: sectionName),
+              'Importing "$sectionName"…');
           notifyListeners();
         },
       );
@@ -665,10 +715,14 @@ class ImportJob extends ChangeNotifier {
     } catch (_) {/* a leftover notebook beats a crash during cleanup */}
   }
 
-  void _finish(ImportJobState s, {String? message}) {
+  void _finish(ImportJobState s, {String? message, ImportStatus? status}) {
     state = s;
     if (message != null) this.message = message;
-    if (s == ImportJobState.cancelled) this.message = 'Import cancelled.';
+    if (status != null) this.status = status;
+    if (s == ImportJobState.cancelled) {
+      this.message = 'Import cancelled.';
+      this.status = const ImportStatus(ImportStage.cancelled);
+    }
     notifyListeners();
     // The card is watching this job, not AppState — but whether a card should
     // exist at all is AppState-level (the shell checks ImportJob.current).

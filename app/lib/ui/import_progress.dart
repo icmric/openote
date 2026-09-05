@@ -17,6 +17,8 @@ library;
 import 'package:flutter/material.dart';
 
 import '../export/import_job.dart';
+import '../l10n/l10n.dart';
+import '../l10n/labels.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
@@ -120,7 +122,9 @@ class _FirstImportPanel extends StatelessWidget {
               ),
             ]),
             const SizedBox(height: OnoteSpace.x4),
-            Text(job.message,
+            // `status.describe` rather than `job.message`: the job has no
+            // context and so can only ever produce English. Here there is one.
+            Text(job.status.describe(L.of(context)),
                 style: OnoteType.ui.copyWith(color: s.textSecondary),
                 maxLines: 3),
             if (total > 0) ...[
@@ -258,7 +262,7 @@ class _Card extends StatelessWidget {
               ),
             ]),
             const SizedBox(height: OnoteSpace.x3),
-            Text(job.message,
+            Text(job.status.describe(L.of(context)),
                 style: OnoteType.small.copyWith(color: s.textSecondary),
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis),

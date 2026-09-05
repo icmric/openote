@@ -16,6 +16,7 @@
 /// see, so leaving one available is leaving the trap armed.
 library;
 
+import '../export/import_status.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart' show TouchDrawing;
 import 'l10n.dart';
@@ -39,5 +40,40 @@ extension TouchDrawingLabel on TouchDrawing {
         TouchDrawing.auto => l.touchDrawAuto,
         TouchDrawing.always => l.touchDrawAlways,
         TouchDrawing.never => l.touchDrawNever,
+      };
+}
+
+/// **What the import card says, in the reader's language.**
+///
+/// [ImportJob] is a `ChangeNotifier` with no `BuildContext`, so it cannot
+/// reach `L` and therefore could never say anything in anybody's language but
+/// English — which is how the very first screen a switcher sees stayed English
+/// in an app that ships in seven languages. It reports a stage and some
+/// numbers now, and the wording happens here, where the language is.
+///
+/// Same split, and the same reason, as the enums above.
+extension ImportStatusLabel on ImportStatus {
+  String describe(L l) => switch (stage) {
+        ImportStage.reading => l.importReading,
+        ImportStage.signingIn => l.importSigningIn,
+        ImportStage.lookingAround => l.importLookingAround,
+        ImportStage.foundSections => l.importFoundSections(count),
+        ImportStage.foundPages => l.importFoundPages(count),
+        // Under a second reads as "in 0s", which looks like a stuck clock
+        // rather than a short wait.
+        ImportStage.throttled =>
+          count < 1 ? l.importThrottledSoon : l.importThrottled(count),
+        ImportStage.bringingIn => l.importBringingIn(name, count, total),
+        ImportStage.stopping => l.importStopping,
+        ImportStage.stoppedKept => l.importStoppedKept(count),
+        ImportStage.cancelled => l.importCancelledLabel,
+        ImportStage.emptyNotebook => l.importEmptyNotebook,
+        ImportStage.imported => l.importDone(count),
+        ImportStage.importedButLost => l.importDoneButLost(count, detail),
+        ImportStage.partialThrottled => l.importPartialThrottled(detail, count),
+        ImportStage.partialBroke => l.importPartialBroke(count),
+        ImportStage.failed => l.importFailedGeneric,
+        ImportStage.writingPages => l.importWritingPages(count),
+        ImportStage.writingSection => l.importWritingSection(name),
       };
 }

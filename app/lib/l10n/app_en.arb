@@ -1,245 +1,85 @@
 {
-  "@@locale": "en",
-  "@@x-notes": "The English template, and the source of truth for every other language. Rules for anyone adding a string: name it <surface><Thing> so a grep for the surface finds all of it; give every message an @-entry saying WHERE it appears and what any placeholder holds, because a translator sees the string and nothing else; and never build a sentence by concatenating fragments — word order is not the same everywhere. Illustrations in this app are painted, not written, so there is deliberately nothing in them to translate.",
-  "commonBack": "Back",
-  "@commonBack": {
-    "description": "Button: return to the previous step of a multi-step flow."
-  },
-  "commonSkip": "Skip",
-  "@commonSkip": {
-    "description": "Button: leave a flow without completing it."
-  },
-  "commonNext": "Next",
-  "@commonNext": {
-    "description": "Button: advance to the next step of a multi-step flow."
-  },
-  "commonOpen": "Open",
-  "@commonOpen": {
-    "description": "Button: open the notebook named beside it."
-  },
-  "commonCancel": "Cancel",
-  "@commonCancel": {
-    "description": "Button: dismiss a dialog without acting."
-  },
-  "commonDetailsAdvanced": "Details (advanced)",
-  "@commonDetailsAdvanced": {
-    "description": "Fold-out label hiding a raw technical error message from someone who does not want it."
-  },
-  "objectRowBackground": "Background: {kind}",
-  "@objectRowBackground": {
-    "description": "Tooltip on the four page-background buttons in the object row. {kind} is one of objectRowBackgroundBlank/Grid/Dotted/Ruled.",
-    "placeholders": {
-      "kind": {
-        "type": "String",
-        "example": "grid"
-      }
-    }
-  },
-  "objectRowBackgroundBlank": "blank",
-  "@objectRowBackgroundBlank": {
-    "description": "A page with no printed background at all. Lower case: it is substituted into objectRowBackground."
-  },
-  "objectRowBackgroundGrid": "grid",
-  "@objectRowBackgroundGrid": {
-    "description": "A page printed with squared paper. Lower case: substituted into objectRowBackground."
-  },
-  "objectRowBackgroundDotted": "dotted",
-  "@objectRowBackgroundDotted": {
-    "description": "A page printed with a grid of dots. Lower case: substituted into objectRowBackground."
-  },
-  "objectRowBackgroundRuled": "ruled",
-  "@objectRowBackgroundRuled": {
-    "description": "A page printed with horizontal lines to write on. Lower case: substituted into objectRowBackground."
-  },
-  "objectRowPageMode": "Page mode: {paper}{landscape} — click for canvas",
-  "@objectRowPageMode": {
-    "description": "Tooltip when the page is set to a fixed paper size. {paper} is a paper name like A4 or Letter; {landscape} is either empty or objectRowLandscapeSuffix.",
-    "placeholders": {
-      "paper": {
-        "type": "String",
-        "example": "A4"
-      },
-      "landscape": {
-        "type": "String",
-        "example": " landscape"
-      }
-    }
-  },
-  "objectRowLandscapeSuffix": " landscape",
-  "@objectRowLandscapeSuffix": {
-    "description": "Appended to the paper name when the page is rotated. Keep the leading space — it follows the paper name inside objectRowPageMode."
-  },
-  "objectRowCanvasMode": "Canvas mode: boundless — click for pages",
-  "@objectRowCanvasMode": {
-    "description": "Tooltip when the page has no fixed size and simply extends in every direction."
-  },
-  "objectRowPaperSize": "Paper size",
-  "@objectRowPaperSize": {
-    "description": "Tooltip on the menu that picks A4, Letter and so on."
-  },
-  "objectRowLandscape": "Landscape",
-  "@objectRowLandscape": {
-    "description": "Menu item: rotate the page so it is wider than it is tall."
-  },
-  "objectRowSnapOn": "Snap to grid: ON (grid shows while dragging)",
-  "@objectRowSnapOn": {
-    "description": "Tooltip when dragged boxes line up to an invisible grid."
-  },
-  "objectRowSnapOff": "Snap to grid: OFF — free placement",
-  "@objectRowSnapOff": {
-    "description": "Tooltip when boxes can be dropped anywhere."
-  },
-  "objectRowZoomOut": "Zoom out  (Ctrl+-)",
-  "@objectRowZoomOut": {
-    "description": "Tooltip. Keep the shortcut in brackets as typed; the two spaces before it separate it from the words."
-  },
-  "objectRowZoomIn": "Zoom in  (Ctrl+=)",
-  "@objectRowZoomIn": {
-    "description": "Tooltip. Keep the shortcut in brackets as typed."
-  },
-  "objectRowZoomReset": "Back to 100% and the top of the page  (Ctrl+0)",
-  "@objectRowZoomReset": {
-    "description": "Tooltip on the zoom percentage, which is itself a button."
-  },
-  "objectRowZoomFit": "Zoom to fit content",
-  "@objectRowZoomFit": {
-    "description": "Tooltip: choose the zoom that puts everything written on the page on screen at once."
-  },
-  "objectRowWordCount": "Words on this page — click for characters and reading time",
-  "@objectRowWordCount": {
-    "description": "Tooltip on the word count."
-  },
-  "objectRowWords": "Words",
-  "@objectRowWords": {
-    "description": "Row label in the word-count menu."
-  },
-  "objectRowCharacters": "Characters",
-  "@objectRowCharacters": {
-    "description": "Row label in the word-count menu: every character including spaces."
-  },
-  "objectRowCharactersNoSpaces": "Without spaces",
-  "@objectRowCharactersNoSpaces": {
-    "description": "Row label in the word-count menu: characters not counting spaces."
-  },
-  "objectRowReadingTime": "Reading time",
-  "@objectRowReadingTime": {
-    "description": "Row label in the word-count menu: roughly how long the page takes to read."
-  },
-  "objectRowMinutes": "{n} min",
-  "@objectRowMinutes": {
-    "description": "A duration in minutes, abbreviated. Shown beside objectRowReadingTime.",
-    "placeholders": {
-      "n": {
-        "type": "int",
-        "example": "4"
-      }
-    }
-  },
-  "objectRowWordTally": "{count, plural, =0{no words} =1{1 word} other{{formatted} words}}",
-  "@objectRowWordTally": {
-    "description": "The word count shown in the object row itself. {formatted} is the same number already grouped for this language (1,234 in English) — use it rather than {count} wherever the number is printed; {count} is only there to choose the plural form.",
+  "barBadgeCount": "{count}",
+  "@barBadgeCount": {
+    "description": "A small number printed on a toolbar badge — cards due, or reminders waiting. Its own message so the digits are grouped and shaped for this language rather than printed as raw ASCII.",
     "placeholders": {
       "count": {
         "type": "int",
-        "example": "1234"
-      },
-      "formatted": {
-        "type": "String",
-        "example": "1,234"
+        "example": "12"
       }
     }
   },
-  "objectRowZoomPercent": "{percent}%",
-  "@objectRowZoomPercent": {
-    "description": "The zoom level, shown on a button between the zoom-out and zoom-in controls. Some languages put a space before the percent sign, or the sign first.",
-    "placeholders": {
-      "percent": {
-        "type": "int",
-        "example": "100"
-      }
-    }
+  "barBlankOut": "Blank out selection",
+  "@barBlankOut": {
+    "description": "Menu item: hide the selected words so they have to be recalled."
   },
-  "barTabHome": "Home",
-  "@barTabHome": {
-    "description": "Toolbar tab: writing and formatting."
+  "barBlankOutNeedsSelection": "Select the words to blank out first.",
+  "@barBlankOutNeedsSelection": {
+    "description": "Message when that is pressed with nothing selected."
   },
-  "barTabInsert": "Insert",
-  "@barTabInsert": {
-    "description": "Toolbar tab: adding things to the page."
+  "barBold": "Bold  (Ctrl+B)",
+  "@barBold": {
+    "description": "Tooltip on the bold button. Keep the shortcut as typed."
   },
-  "barTabDraw": "Draw",
-  "@barTabDraw": {
-    "description": "Toolbar tab: pens, highlighters and erasers."
+  "barBulletList": "Bullet list",
+  "@barBulletList": {
+    "description": "Tooltip."
   },
-  "barEquationBadge": "Equation",
-  "@barEquationBadge": {
-    "description": "A label, not a button: it appears in the tab row while an equation is being written, to say what the row below is about."
+  "barCheckbox": "Checkbox",
+  "@barCheckbox": {
+    "description": "Tooltip: a list where each line can be ticked off."
   },
-  "barUpdateTo": "Update to {version}…",
-  "@barUpdateTo": {
-    "description": "Button and tooltip shown only when a newer release of Openote exists.",
-    "placeholders": {
-      "version": {
-        "type": "String",
-        "example": "0.9.0"
-      }
-    }
+  "barClickIntoTextBox": "Click into a text box to format",
+  "@barClickIntoTextBox": {
+    "description": "Shown in place of the formatting controls when nothing is being written, to say why they are greyed out. **Keep it short** — it sits at the end of a row that scrolls sideways, so a long translation simply ends up off the edge of the window where nobody reads it. The English is 31 characters; treat that as the budget."
+  },
+  "barDefinitionCard": "Definition card",
+  "@barDefinitionCard": {
+    "description": "Menu item: a card whose front is a term to define."
   },
   "barDone": "Done",
   "@barDone": {
     "description": "Button that puts the pen or eraser down and goes back to selecting."
   },
-  "barStudy": "Study",
-  "@barStudy": {
-    "description": "Opens the flashcard revision panel."
+  "barDueDateChange": "Change due date…",
+  "@barDueDateChange": {
+    "description": "Menu item: alter the deadline this line already has."
   },
-  "barPlanner": "Planner",
-  "@barPlanner": {
-    "description": "Opens the panel listing every date in the notebook."
+  "barDueDateClear": "Clear the due date",
+  "@barDueDateClear": {
+    "description": "Menu item: remove the deadline."
   },
-  "barFindTags": "Find tags",
-  "@barFindTags": {
-    "description": "Opens the panel that lists lines marked To Do, Important and so on."
+  "barDueDatePickerConfirm": "Set",
+  "@barDueDatePickerConfirm": {
+    "description": "Button that confirms the picked deadline."
   },
-  "barPageOutline": "Page outline",
-  "@barPageOutline": {
-    "description": "Opens the panel listing the headings on this page."
+  "barDueDatePickerTitle": "Due date",
+  "@barDueDatePickerTitle": {
+    "description": "Heading of the calendar that picks a deadline."
   },
-  "barLinks": "Links & backlinks",
-  "@barLinks": {
-    "description": "Opens the panel showing what this page links to and what links to it."
+  "barDueDateSet": "Due date…",
+  "@barDueDateSet": {
+    "description": "Menu item: give this line a deadline."
   },
-  "barFindOnPage": "Find on page",
-  "@barFindOnPage": {
-    "description": "Opens the search bar for the open page."
+  "barEquationBadge": "Equation",
+  "@barEquationBadge": {
+    "description": "A label, not a button: it appears in the tab row while an equation is being written, to say what the row below is about."
   },
-  "barFindOnPageTip": "Find on page  (Ctrl+F)",
-  "@barFindOnPageTip": {
-    "description": "Tooltip. Keep the shortcut in brackets as typed; the two spaces separate it from the words."
+  "barEraserSplit": "Splits strokes where you rub",
+  "@barEraserSplit": {
+    "description": "Tooltip: the eraser takes out only the part of a pen stroke it touches."
+  },
+  "barEraserWhole": "Removes any stroke you touch",
+  "@barEraserWhole": {
+    "description": "Tooltip: the eraser removes a whole pen stroke at once."
+  },
+  "barEscWhenDone": "Esc when you are done",
+  "@barEscWhenDone": {
+    "description": "Tooltip on the badge shown while an equation is open. 'Esc' is the Escape key."
   },
   "barExport": "Export",
   "@barExport": {
     "description": "Opens the menu of ways to save a copy elsewhere."
-  },
-  "barExportTip": "Export page…",
-  "@barExportTip": {
-    "description": "Tooltip on the export menu."
-  },
-  "barExportMarkdown": "Markdown (.md)",
-  "@barExportMarkdown": {
-    "description": "Menu item. Markdown is a format name and .md a file extension; neither is translated."
-  },
-  "barExportPdf": "PDF (.pdf)",
-  "@barExportPdf": {
-    "description": "Menu item. Not translated."
-  },
-  "barExportPrint": "Print…",
-  "@barExportPrint": {
-    "description": "Menu item: send the page to a printer."
-  },
-  "barExportPdfPicture": "PDF — picture of the page",
-  "@barExportPdfPicture": {
-    "description": "Menu item: a PDF that is an image of the page rather than selectable text."
   },
   "barExportCanvas": "For Obsidian Canvas (.canvas)",
   "@barExportCanvas": {
@@ -248,6 +88,10 @@
   "barExportInk": "Just the drawing (.inkml)",
   "@barExportInk": {
     "description": "Menu item: only the handwriting, as an InkML file. The extension is not translated."
+  },
+  "barExportMarkdown": "Markdown (.md)",
+  "@barExportMarkdown": {
+    "description": "Menu item. Markdown is a format name and .md a file extension; neither is translated."
   },
   "barExportNotebook": "Save the whole notebook as folders and files…",
   "@barExportNotebook": {
@@ -269,6 +113,22 @@
       }
     }
   },
+  "barExportPdf": "PDF (.pdf)",
+  "@barExportPdf": {
+    "description": "Menu item. Not translated."
+  },
+  "barExportPdfPicture": "PDF — picture of the page",
+  "@barExportPdfPicture": {
+    "description": "Menu item: a PDF that is an image of the page rather than selectable text."
+  },
+  "barExportPrint": "Print…",
+  "@barExportPrint": {
+    "description": "Menu item: send the page to a printer."
+  },
+  "barExportTip": "Export page…",
+  "@barExportTip": {
+    "description": "Tooltip on the export menu."
+  },
   "barExportedTo": "Exported to {path}",
   "@barExportedTo": {
     "description": "Confirmation after an export, naming where the file landed.",
@@ -279,133 +139,17 @@
       }
     }
   },
-  "barSettings": "Settings",
-  "@barSettings": {
-    "description": "Opens the settings dialog."
+  "barFindOnPage": "Find on page",
+  "@barFindOnPage": {
+    "description": "Opens the search bar for the open page."
   },
-  "barSettingsTip": "Settings…",
-  "@barSettingsTip": {
-    "description": "Tooltip on the settings button."
+  "barFindOnPageTip": "Find on page  (Ctrl+F)",
+  "@barFindOnPageTip": {
+    "description": "Tooltip. Keep the shortcut in brackets as typed; the two spaces separate it from the words."
   },
-  "barUndo": "Undo  (Ctrl+Z)",
-  "@barUndo": {
-    "description": "Tooltip. Keep the shortcut in brackets as typed."
-  },
-  "barRedo": "Redo  (Ctrl+Y)",
-  "@barRedo": {
-    "description": "Tooltip. Keep the shortcut in brackets as typed."
-  },
-  "barBold": "Bold  (Ctrl+B)",
-  "@barBold": {
-    "description": "Tooltip on the bold button. Keep the shortcut as typed."
-  },
-  "barItalic": "Italic  (Ctrl+I)",
-  "@barItalic": {
-    "description": "Tooltip. Keep the shortcut as typed."
-  },
-  "barUnderline": "Underline  (Ctrl+U)",
-  "@barUnderline": {
-    "description": "Tooltip. Keep the shortcut as typed."
-  },
-  "barStrikethrough": "Strikethrough",
-  "@barStrikethrough": {
-    "description": "Tooltip: a line drawn through the words."
-  },
-  "barInlineCode": "Inline code",
-  "@barInlineCode": {
-    "description": "Tooltip: format the selected words as computer code, in a monospaced face."
-  },
-  "barHighlight": "Highlight",
-  "@barHighlight": {
-    "description": "Tooltip: mark the words as if with a highlighter pen."
-  },
-  "barHeading1": "Heading 1",
-  "@barHeading1": {
-    "description": "Tooltip: make this line a top-level heading."
-  },
-  "barBulletList": "Bullet list",
-  "@barBulletList": {
-    "description": "Tooltip."
-  },
-  "barNumberedList": "Numbered list",
-  "@barNumberedList": {
-    "description": "Tooltip."
-  },
-  "barCheckbox": "Checkbox",
-  "@barCheckbox": {
-    "description": "Tooltip: a list where each line can be ticked off."
-  },
-  "barQuote": "Quote",
-  "@barQuote": {
-    "description": "Tooltip: set the line off as a quotation."
-  },
-  "barTextColour": "Apply text colour",
-  "@barTextColour": {
-    "description": "Tooltip on the button that colours the selected words."
-  },
-  "barTextFont": "Text font…",
-  "@barTextFont": {
-    "description": "Tooltip on the button that opens the font picker."
-  },
-  "barClickIntoTextBox": "Click into a text box to format",
-  "@barClickIntoTextBox": {
-    "description": "Shown in place of the formatting controls when nothing is being written, to say why they are greyed out. **Keep it short** — it sits at the end of a row that scrolls sideways, so a long translation simply ends up off the edge of the window where nobody reads it. The English is 31 characters; treat that as the budget."
-  },
-  "barToolSelect": "Select / move  (V)",
-  "@barToolSelect": {
-    "description": "Tooltip. The letter in brackets is the key that picks this tool — keep it as typed unless the shortcut itself differs in this language."
-  },
-  "barToolText": "Text  (T)",
-  "@barToolText": {
-    "description": "Tooltip. Keep the key in brackets as typed."
-  },
-  "barToolPen": "Pen  (P)",
-  "@barToolPen": {
-    "description": "Tooltip. Keep the key in brackets as typed."
-  },
-  "barToolHighlighter": "Highlighter  (H)",
-  "@barToolHighlighter": {
-    "description": "Tooltip. Keep the key in brackets as typed."
-  },
-  "barToolEraser": "Eraser  (E)",
-  "@barToolEraser": {
-    "description": "Tooltip. Keep the key in brackets as typed."
-  },
-  "barToolLasso": "Lasso-select ink",
-  "@barToolLasso": {
-    "description": "Tooltip: draw a loop around handwriting to select it."
-  },
-  "barEraserSplit": "Splits strokes where you rub",
-  "@barEraserSplit": {
-    "description": "Tooltip: the eraser takes out only the part of a pen stroke it touches."
-  },
-  "barEraserWhole": "Removes any stroke you touch",
-  "@barEraserWhole": {
-    "description": "Tooltip: the eraser removes a whole pen stroke at once."
-  },
-  "barLassoHint": "Draw a loop around ink to select it — then drag or delete",
-  "@barLassoHint": {
-    "description": "Hint shown in the Draw row while the lasso tool is picked."
-  },
-  "barPickPenHint": "Pick the pen or highlighter to draw",
-  "@barPickPenHint": {
-    "description": "Hint shown in the Draw row when no drawing tool is picked."
-  },
-  "barTouchDrawing": "Draw with your finger.\nAuto: a finger draws until you use the pen, then touch pans so your palm can't mark the page.\nTwo fingers always pan and zoom.",
-  "@barTouchDrawing": {
-    "description": "Tooltip on the finger-drawing setting. 'pans' means moves the page around. Keep the line breaks."
-  },
-  "barPenProximity": "Bringing the pen near the page switches to inking.\nPick another tool while the pen hovers and it sticks until the\npen leaves and comes back. The pen's tail (or its barrel\nbutton, held while drawing) erases.",
-  "@barPenProximity": {
-    "description": "Tooltip on the pen-proximity setting. 'tail' is the blunt end of a stylus; 'barrel button' the button on its side. Keep the line breaks."
-  },
-  "barTextSize": "Text size (points)",
-  "@barTextSize": {
-    "description": "Tooltip on the font-size field. Points are the printer's unit type is measured in."
-  },
-  "barTextSizeDisabled": "Click into a text box to change its size",
-  "@barTextSizeDisabled": {
-    "description": "Tooltip on the font-size field when nothing is being written."
+  "barFindTags": "Find tags",
+  "@barFindTags": {
+    "description": "Opens the panel that lists lines marked To Do, Important and so on."
   },
   "barFontSizeDefault": "Default",
   "@barFontSizeDefault": {
@@ -421,39 +165,29 @@
       }
     }
   },
-  "barTagLine": "Tag this line (To Do, Important, Question…)",
-  "@barTagLine": {
-    "description": "Tooltip on the tag button when the line carries no tag yet. The three words in brackets are examples of tags."
+  "barHeading1": "Heading 1",
+  "@barHeading1": {
+    "description": "Tooltip: make this line a top-level heading."
   },
-  "barTagged": "Tagged: {tags}",
-  "@barTagged": {
-    "description": "Tooltip on the tag button when the line is already tagged. {tags} is a comma-separated list of tag names.",
-    "placeholders": {
-      "tags": {
-        "type": "String",
-        "example": "To Do, Important"
-      }
-    }
+  "barHighlight": "Highlight",
+  "@barHighlight": {
+    "description": "Tooltip: mark the words as if with a highlighter pen."
   },
-  "barDueDateSet": "Due date…",
-  "@barDueDateSet": {
-    "description": "Menu item: give this line a deadline."
+  "barInlineCode": "Inline code",
+  "@barInlineCode": {
+    "description": "Tooltip: format the selected words as computer code, in a monospaced face."
   },
-  "barDueDateChange": "Change due date…",
-  "@barDueDateChange": {
-    "description": "Menu item: alter the deadline this line already has."
+  "barItalic": "Italic  (Ctrl+I)",
+  "@barItalic": {
+    "description": "Tooltip. Keep the shortcut as typed."
   },
-  "barDueDateClear": "Clear the due date",
-  "@barDueDateClear": {
-    "description": "Menu item: remove the deadline."
+  "barLassoHint": "Draw a loop around ink to select it — then drag or delete",
+  "@barLassoHint": {
+    "description": "Hint shown in the Draw row while the lasso tool is picked."
   },
-  "barDueDatePickerTitle": "Due date",
-  "@barDueDatePickerTitle": {
-    "description": "Heading of the calendar that picks a deadline."
-  },
-  "barDueDatePickerConfirm": "Set",
-  "@barDueDatePickerConfirm": {
-    "description": "Button that confirms the picked deadline."
+  "barLinks": "Links & backlinks",
+  "@barLinks": {
+    "description": "Opens the panel showing what this page links to and what links to it."
   },
   "barMakeCardFromLine": "Make this line a flashcard",
   "@barMakeCardFromLine": {
@@ -463,29 +197,98 @@
   "@barNewCard": {
     "description": "Tooltip: add a revision card in a box of its own."
   },
-  "barQuestionCard": "Question card",
-  "@barQuestionCard": {
-    "description": "Menu item: a card whose front is a question."
-  },
-  "barDefinitionCard": "Definition card",
-  "@barDefinitionCard": {
-    "description": "Menu item: a card whose front is a term to define."
-  },
-  "barBlankOut": "Blank out selection",
-  "@barBlankOut": {
-    "description": "Menu item: hide the selected words so they have to be recalled."
-  },
-  "barBlankOutNeedsSelection": "Select the words to blank out first.",
-  "@barBlankOutNeedsSelection": {
-    "description": "Message when that is pressed with nothing selected."
+  "barNumberedList": "Numbered list",
+  "@barNumberedList": {
+    "description": "Tooltip."
   },
   "barOpenStudyPanel": "Open study panel",
   "@barOpenStudyPanel": {
     "description": "Menu item."
   },
-  "barStudyEmpty": "Study — tag a line Question or Definition to make a card",
-  "@barStudyEmpty": {
-    "description": "Tooltip on the study badge when the section has no cards. 'Question' and 'Definition' are the names of two tags and should match barQuestionCard/barDefinitionCard."
+  "barPageOutline": "Page outline",
+  "@barPageOutline": {
+    "description": "Opens the panel listing the headings on this page."
+  },
+  "barPenProximity": "Bringing the pen near the page switches to inking.\nPick another tool while the pen hovers and it sticks until the\npen leaves and comes back. The pen's tail (or its barrel\nbutton, held while drawing) erases.",
+  "@barPenProximity": {
+    "description": "Tooltip on the pen-proximity setting. 'tail' is the blunt end of a stylus; 'barrel button' the button on its side. Keep the line breaks."
+  },
+  "barPickPenHint": "Pick the pen or highlighter to draw",
+  "@barPickPenHint": {
+    "description": "Hint shown in the Draw row when no drawing tool is picked."
+  },
+  "barPlanner": "Planner",
+  "@barPlanner": {
+    "description": "Opens the panel listing every date in the notebook."
+  },
+  "barPlannerEmpty": "Planner — every date you have, in one place",
+  "@barPlannerEmpty": {
+    "description": "Tooltip on the planner badge when nothing is due."
+  },
+  "barPlannerOverdue": "Planner — {count} today or overdue",
+  "@barPlannerOverdue": {
+    "description": "Tooltip on the planner badge when some of the count is already late.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "barPlannerToday": "Planner — {count} today",
+  "@barPlannerToday": {
+    "description": "Tooltip on the planner badge.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "barQuestionCard": "Question card",
+  "@barQuestionCard": {
+    "description": "Menu item: a card whose front is a question."
+  },
+  "barQuote": "Quote",
+  "@barQuote": {
+    "description": "Tooltip: set the line off as a quotation."
+  },
+  "barRedo": "Redo  (Ctrl+Y)",
+  "@barRedo": {
+    "description": "Tooltip. Keep the shortcut in brackets as typed."
+  },
+  "barRemindersWaiting": "{count, plural, =1{1 reminder} other{{count} reminders}} waiting",
+  "@barRemindersWaiting": {
+    "description": "Tooltip on the planner badge when reminders have fired and not been dealt with.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "barSaveFailed": "That couldn't be saved: {reason}",
+  "@barSaveFailed": {
+    "description": "Message after an export or print that did not work. {reason} is the underlying error, in English, from the operating system.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "Permission denied"
+      }
+    }
+  },
+  "barSettings": "Settings",
+  "@barSettings": {
+    "description": "Opens the settings dialog."
+  },
+  "barSettingsTip": "Settings…",
+  "@barSettingsTip": {
+    "description": "Tooltip on the settings button."
+  },
+  "barStrikethrough": "Strikethrough",
+  "@barStrikethrough": {
+    "description": "Tooltip: a line drawn through the words."
+  },
+  "barStudy": "Study",
+  "@barStudy": {
+    "description": "Opens the flashcard revision panel."
   },
   "barStudyDue": "{due} of {total, plural, =1{1 card} other{{total} cards}} due in this section{countdown}",
   "@barStudyDue": {
@@ -503,6 +306,10 @@
       }
     }
   },
+  "barStudyEmpty": "Study — tag a line Question or Definition to make a card",
+  "@barStudyEmpty": {
+    "description": "Tooltip on the study badge when the section has no cards. 'Question' and 'Definition' are the names of two tags and should match barQuestionCard/barDefinitionCard."
+  },
   "barStudyExamCountdown": " · exam {when}",
   "@barStudyExamCountdown": {
     "description": "Appended to barStudyDue when the section has an exam date. Keep the leading space and the separator.",
@@ -513,132 +320,440 @@
       }
     }
   },
-  "barPlannerEmpty": "Planner — every date you have, in one place",
-  "@barPlannerEmpty": {
-    "description": "Tooltip on the planner badge when nothing is due."
+  "barTabDraw": "Draw",
+  "@barTabDraw": {
+    "description": "Toolbar tab: pens, highlighters and erasers."
   },
-  "barPlannerToday": "Planner — {count} today",
-  "@barPlannerToday": {
-    "description": "Tooltip on the planner badge.",
+  "barTabHome": "Home",
+  "@barTabHome": {
+    "description": "Toolbar tab: writing and formatting."
+  },
+  "barTabInsert": "Insert",
+  "@barTabInsert": {
+    "description": "Toolbar tab: adding things to the page."
+  },
+  "barTagLine": "Tag this line (To Do, Important, Question…)",
+  "@barTagLine": {
+    "description": "Tooltip on the tag button when the line carries no tag yet. The three words in brackets are examples of tags."
+  },
+  "barTagged": "Tagged: {tags}",
+  "@barTagged": {
+    "description": "Tooltip on the tag button when the line is already tagged. {tags} is a comma-separated list of tag names.",
+    "placeholders": {
+      "tags": {
+        "type": "String",
+        "example": "To Do, Important"
+      }
+    }
+  },
+  "barTextColour": "Apply text colour",
+  "@barTextColour": {
+    "description": "Tooltip on the button that colours the selected words."
+  },
+  "barTextFont": "Text font…",
+  "@barTextFont": {
+    "description": "Tooltip on the button that opens the font picker."
+  },
+  "barTextSize": "Text size (points)",
+  "@barTextSize": {
+    "description": "Tooltip on the font-size field. Points are the printer's unit type is measured in."
+  },
+  "barTextSizeDisabled": "Click into a text box to change its size",
+  "@barTextSizeDisabled": {
+    "description": "Tooltip on the font-size field when nothing is being written."
+  },
+  "barToolEraser": "Eraser  (E)",
+  "@barToolEraser": {
+    "description": "Tooltip. Keep the key in brackets as typed."
+  },
+  "barToolHighlighter": "Highlighter  (H)",
+  "@barToolHighlighter": {
+    "description": "Tooltip. Keep the key in brackets as typed."
+  },
+  "barToolLasso": "Lasso-select ink",
+  "@barToolLasso": {
+    "description": "Tooltip: draw a loop around handwriting to select it."
+  },
+  "barToolPen": "Pen  (P)",
+  "@barToolPen": {
+    "description": "Tooltip. Keep the key in brackets as typed."
+  },
+  "barToolSelect": "Select / move  (V)",
+  "@barToolSelect": {
+    "description": "Tooltip. The letter in brackets is the key that picks this tool — keep it as typed unless the shortcut itself differs in this language."
+  },
+  "barToolText": "Text  (T)",
+  "@barToolText": {
+    "description": "Tooltip. Keep the key in brackets as typed."
+  },
+  "barTouchDrawing": "Draw with your finger.\nAuto: a finger draws until you use the pen, then touch pans so your palm can't mark the page.\nTwo fingers always pan and zoom.",
+  "@barTouchDrawing": {
+    "description": "Tooltip on the finger-drawing setting. 'pans' means moves the page around. Keep the line breaks."
+  },
+  "barUnderline": "Underline  (Ctrl+U)",
+  "@barUnderline": {
+    "description": "Tooltip. Keep the shortcut as typed."
+  },
+  "barUndo": "Undo  (Ctrl+Z)",
+  "@barUndo": {
+    "description": "Tooltip. Keep the shortcut in brackets as typed."
+  },
+  "barUpdateTo": "Update to {version}…",
+  "@barUpdateTo": {
+    "description": "Button and tooltip shown only when a newer release of Openote exists.",
+    "placeholders": {
+      "version": {
+        "type": "String",
+        "example": "0.9.0"
+      }
+    }
+  },
+  "commonBack": "Back",
+  "@commonBack": {
+    "description": "Button: return to the previous step of a multi-step flow."
+  },
+  "commonCancel": "Cancel",
+  "@commonCancel": {
+    "description": "Button: dismiss a dialog without acting."
+  },
+  "commonClose": "Close",
+  "@commonClose": {
+    "description": "Button that dismisses a dialog."
+  },
+  "commonDelete": "Delete",
+  "@commonDelete": {
+    "description": "Button or menu item that removes something (to the recycle bin, not for good)."
+  },
+  "commonDetailsAdvanced": "Details (advanced)",
+  "@commonDetailsAdvanced": {
+    "description": "Fold-out label hiding a raw technical error message from someone who does not want it."
+  },
+  "commonDone": "Done",
+  "@commonDone": {
+    "description": "Button that finishes with a dialog."
+  },
+  "commonNext": "Next",
+  "@commonNext": {
+    "description": "Button: advance to the next step of a multi-step flow."
+  },
+  "commonOff": "Off",
+  "@commonOff": {
+    "description": "The other half of that pair."
+  },
+  "commonOn": "On",
+  "@commonOn": {
+    "description": "One half of an on/off pair, shown as a highlighted segment rather than a switch."
+  },
+  "commonOpen": "Open",
+  "@commonOpen": {
+    "description": "Button: open the notebook named beside it."
+  },
+  "commonOpenEllipsis": "Open…",
+  "@commonOpenEllipsis": {
+    "description": "Button on a settings row that opens a dialog of its own."
+  },
+  "commonSkip": "Skip",
+  "@commonSkip": {
+    "description": "Button: leave a flow without completing it."
+  },
+  "importBringingIn": "Bringing in \"{name}\" — {done} of {total} pages…",
+  "@importBringingIn": {
+    "description": "Import card while a section is being written. {name} is a section name.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Week 1"
+      },
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "importCancelledLabel": "Import cancelled.",
+  "@importCancelledLabel": {
+    "description": "Import card when an import was cancelled."
+  },
+  "importDone": "{count, plural, =1{Imported 1 page.} other{Imported {count} pages.}}",
+  "@importDone": {
+    "description": "Import card when everything came over. {count} is a number of pages.",
     "placeholders": {
       "count": {
         "type": "int"
       }
     }
   },
-  "barPlannerOverdue": "Planner — {count} today or overdue",
-  "@barPlannerOverdue": {
-    "description": "Tooltip on the planner badge when some of the count is already late.",
+  "importDoneButLost": "{count, plural, =1{Imported 1 page, but could not bring {detail}.} other{Imported {count} pages, but could not bring {detail}.}}",
+  "@importDoneButLost": {
+    "description": "Import card when the import finished but something specific did not come over. {detail} is an English list such as \"3 pictures\".",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "detail": {
+        "type": "String",
+        "example": "3 pictures"
+      }
+    }
+  },
+  "importEmptyNotebook": "That notebook had no pages in it.",
+  "@importEmptyNotebook": {
+    "description": "Import card when the chosen notebook had no pages at all."
+  },
+  "importFailedGeneric": "That notebook could not be brought over.",
+  "@importFailedGeneric": {
+    "description": "Import card when nothing at all came over."
+  },
+  "importFoundPages": "{count, plural, =1{1 page to bring over. Starting now…} other{{count} pages to bring over. Starting now…}}",
+  "@importFoundPages": {
+    "description": "Import card the moment the page total is known and pages start arriving. {count} is a number of pages.",
     "placeholders": {
       "count": {
         "type": "int"
       }
     }
   },
-  "barRemindersWaiting": "{count, plural, =1{1 reminder} other{{count} reminders}} waiting",
-  "@barRemindersWaiting": {
-    "description": "Tooltip on the planner badge when reminders have fired and not been dealt with.",
+  "importFoundSections": "{count, plural, =1{Found 1 section — seeing what is in it…} other{Found {count} sections — seeing what is in them…}}",
+  "@importFoundSections": {
+    "description": "Import card once the sections are counted but their pages are not. {count} is a number of sections.",
     "placeholders": {
       "count": {
         "type": "int"
       }
     }
   },
-  "barEscWhenDone": "Esc when you are done",
-  "@barEscWhenDone": {
-    "description": "Tooltip on the badge shown while an equation is open. 'Esc' is the Escape key."
+  "importLookingAround": "Looking through your notebook…",
+  "@importLookingAround": {
+    "description": "Import card during the wait before any page can arrive, when nothing is known yet."
   },
-  "barSaveFailed": "That couldn't be saved: {reason}",
-  "@barSaveFailed": {
-    "description": "Message after an export or print that did not work. {reason} is the underlying error, in English, from the operating system.",
+  "importPartialBroke": "{count, plural, =1{Something went wrong partway through, but the 1 page already brought over is here. Openote will finish the rest on its own later.} other{Something went wrong partway through, but the {count} pages already brought over are here. Openote will finish the rest on its own later.}}",
+  "@importPartialBroke": {
+    "description": "Import card when something unexpected stopped the import but pages had already arrived. {count} is a number of pages.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "importPartialThrottled": "{count, plural, =1{{detail} The 1 page already brought over is here. Openote will finish the rest on its own later, or you can start it again whenever you like.} other{{detail} The {count} pages already brought over are here. Openote will finish the rest on its own later, or you can start it again whenever you like.}}",
+  "@importPartialThrottled": {
+    "description": "Import card when Microsoft throttled the import to a stop but pages had already arrived. {detail} is Microsoft's own explanation, in English.",
+    "placeholders": {
+      "detail": {
+        "type": "String",
+        "example": "Microsoft is limiting…"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "importReading": "Reading the notebook…",
+  "@importReading": {
+    "description": "Import card while a OneNote package file is being read."
+  },
+  "importSigningIn": "Signing in to OneNote…",
+  "@importSigningIn": {
+    "description": "Import card while getting permission from Microsoft."
+  },
+  "importStoppedKept": "{count, plural, =1{Stopped — kept the 1 page already brought in. You can finish it whenever you like.} other{Stopped — kept the {count} pages already brought in. You can finish it whenever you like.}}",
+  "@importStoppedKept": {
+    "description": "Import card after the user stopped an import that had already brought pages over. {count} is a number of pages.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "importStopping": "Stopping…",
+  "@importStopping": {
+    "description": "Import card after Stop is pressed."
+  },
+  "importThrottled": "Microsoft has asked Openote to slow down — carrying on in {seconds}s. Nothing already brought in is lost.",
+  "@importThrottled": {
+    "description": "Import card while Microsoft has asked the app to slow down. {seconds} counts down.",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "importThrottledSoon": "Microsoft has asked Openote to slow down — carrying on in a moment. Nothing already brought in is lost.",
+  "@importThrottledSoon": {
+    "description": "Import card while waiting less than a second for Microsoft."
+  },
+  "importWritingPages": "{count, plural, =1{Importing 1 page…} other{Importing {count} pages…}}",
+  "@importWritingPages": {
+    "description": "Import card while a OneNote package file is being written out. {count} is a number of pages.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "importWritingSection": "Importing \"{name}\"…",
+  "@importWritingSection": {
+    "description": "Import card naming the section being written. {name} is a section name.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Week 1"
+      }
+    }
+  },
+  "insertBoard": "Board",
+  "@insertBoard": {
+    "description": "Insert item: a kanban board."
+  },
+  "insertBoardTip": "Columns of cards you move along",
+  "@insertBoardTip": {
+    "description": "Tooltip explaining what a board is, for someone who has not met the word."
+  },
+  "insertCode": "Code",
+  "@insertCode": {
+    "description": "Insert item: a box of computer code that can be run."
+  },
+  "insertEquation": "Equation",
+  "@insertEquation": {
+    "description": "Insert item: a mathematical equation."
+  },
+  "insertEquationTip": "Alt+=",
+  "@insertEquationTip": {
+    "description": "The keyboard shortcut, shown as the item's tooltip. Not translated unless the shortcut itself differs in this language."
+  },
+  "insertFile": "File",
+  "@insertFile": {
+    "description": "Insert item: attach any file to the page."
+  },
+  "insertFlashcardItem": "Flashcard",
+  "@insertFlashcardItem": {
+    "description": "Insert item: a revision card with a question on one side."
+  },
+  "insertGroupBringIn": "Bring in",
+  "@insertGroupBringIn": {
+    "description": "Heading over the Insert items that bring something in from elsewhere — a picture, a video, a file."
+  },
+  "insertGroupLinkUp": "Link up",
+  "@insertGroupLinkUp": {
+    "description": "Heading over the Insert items that point at something that already exists — a page link, a template."
+  },
+  "insertGroupWrite": "Write",
+  "@insertGroupWrite": {
+    "description": "Heading over the Insert items that make something to fill in — a text box, an equation, a table."
+  },
+  "insertLinkToPage": "Link to page",
+  "@insertLinkToPage": {
+    "description": "Title of the dialog that picks which page to link to."
+  },
+  "insertPageLink": "Page link",
+  "@insertPageLink": {
+    "description": "Insert item: a link to another page in the notebook."
+  },
+  "insertPageWindow": "Page window",
+  "@insertPageWindow": {
+    "description": "Insert item: a live window showing another page inside this one."
+  },
+  "insertPdfAsCard": "As a card — open in a popup",
+  "@insertPdfAsCard": {
+    "description": "Insert choice: a small card on the page that opens the PDF in a window when clicked."
+  },
+  "insertPdfFailed": "PDF import failed: {reason}",
+  "@insertPdfFailed": {
+    "description": "Error when the import itself broke.",
     "placeholders": {
       "reason": {
-        "type": "String",
-        "example": "Permission denied"
+        "type": "String"
       }
     }
   },
-  "barBadgeCount": "{count}",
-  "@barBadgeCount": {
-    "description": "A small number printed on a toolbar badge — cards due, or reminders waiting. Its own message so the digits are grouped and shaped for this language rather than printed as raw ASCII.",
+  "insertPdfImported": "{count, plural, =1{Imported 1 slide} other{Imported {count} slides}}{where} — pick the pen and write on them. The slide text is searchable.",
+  "@insertPdfImported": {
+    "description": "Confirmation after importing a PDF. {where} is either empty or insertPdfOntoThisPage.",
     "placeholders": {
       "count": {
-        "type": "int",
-        "example": "12"
+        "type": "int"
+      },
+      "where": {
+        "type": "String"
       }
     }
   },
-  "navSearchHint": "Search or jump to…",
-  "@navSearchHint": {
-    "description": "Placeholder in the navigator's search box."
+  "insertPdfOntoThisPage": " onto this page",
+  "@insertPdfOntoThisPage": {
+    "description": "Appended when the slides landed on the page already open rather than on new pages. Keep the leading space."
   },
-  "navNoMatches": "No matches for “{query}”",
-  "@navNoMatches": {
-    "description": "Shown when a search found nothing. The quotation marks are curly ones — use whatever this language uses.",
+  "insertPdfPerSlide": "One page per slide",
+  "@insertPdfPerSlide": {
+    "description": "Insert choice: give each slide a page of its own."
+  },
+  "insertPdfPrintout": "Printout on this page",
+  "@insertPdfPrintout": {
+    "description": "Insert choice: lay the PDF's pages onto this page to write over, the way a paper printout would be."
+  },
+  "insertPdfSlides": "PDF slides",
+  "@insertPdfSlides": {
+    "description": "Insert item: a PDF, usually a lecture slide deck. PDF is not translated."
+  },
+  "insertPdfUnreadable": "That PDF couldn't be read.",
+  "@insertPdfUnreadable": {
+    "description": "Error when a chosen PDF could not be opened at all."
+  },
+  "insertPickImages": "Images",
+  "@insertPickImages": {
+    "description": "File-type name in the operating system's own picker, beside png/jpg/gif/webp."
+  },
+  "insertPickTables": "Tables",
+  "@insertPickTables": {
+    "description": "File-type name in the OS file picker, beside csv/tsv/xlsx."
+  },
+  "insertPickVideo": "Video and audio",
+  "@insertPickVideo": {
+    "description": "File-type name in the OS file picker, beside the video and audio extensions."
+  },
+  "insertPicture": "Picture",
+  "@insertPicture": {
+    "description": "Insert item: an image."
+  },
+  "insertTable": "Table",
+  "@insertTable": {
+    "description": "Insert item: a grid of rows and columns."
+  },
+  "insertTableFromFile": "From a file",
+  "@insertTableFromFile": {
+    "description": "Insert item, under Table: build the table from a spreadsheet."
+  },
+  "insertTableFromFileTip": "CSV or Excel",
+  "@insertTableFromFileTip": {
+    "description": "Tooltip naming the file kinds accepted. Both are product/format names."
+  },
+  "insertTemplate": "Template",
+  "@insertTemplate": {
+    "description": "Insert item: a saved page layout to lay over this page."
+  },
+  "insertTextBox": "Text box",
+  "@insertTextBox": {
+    "description": "Insert item: a box to type in. One noun, the one a fifteen-year-old would use."
+  },
+  "insertVideo": "Video",
+  "@insertVideo": {
+    "description": "Insert item: a video or audio recording."
+  },
+  "insertVideoTip": "A lecture recording, or any web link",
+  "@insertVideoTip": {
+    "description": "Tooltip: it takes a file from this computer or a link to one online."
+  },
+  "@@locale": "en",
+  "mathSemanticLabel": "Equation: {latex}",
+  "@mathSemanticLabel": {
+    "description": "What a screen reader says for a rendered equation. {latex} is the equation's own LaTeX source — not translated, because it is what the student typed. Only the word before it is yours.",
     "placeholders": {
-      "query": {
+      "latex": {
         "type": "String",
-        "example": "photosynthesis"
+        "example": "E=\\frac{1}{2}mv^{2}"
       }
     }
-  },
-  "navInPageContent": "In page content",
-  "@navInPageContent": {
-    "description": "Heading over search results found in the words ON pages, as opposed to in page titles."
-  },
-  "navUntitled": "Untitled",
-  "@navUntitled": {
-    "description": "Stands in for the name of a page that has none yet."
-  },
-  "navNoSections": "No sections yet.\nCreate one to get started.",
-  "@navNoSections": {
-    "description": "Shown when a notebook has no sections. A section is a divider in a notebook, holding pages. Keep the line break."
-  },
-  "navNewSection": "New section",
-  "@navNewSection": {
-    "description": "Button that adds a section."
-  },
-  "navNewPageIn": "New page in {section}",
-  "@navNewPageIn": {
-    "description": "Tooltip on the + beside a section.",
-    "placeholders": {
-      "section": {
-        "type": "String",
-        "example": "Biology"
-      }
-    }
-  },
-  "navNoPages": "No pages yet",
-  "@navNoPages": {
-    "description": "Shown when a section holds no pages."
-  },
-  "navSection": "Section",
-  "@navSection": {
-    "description": "Column heading over the list of sections."
-  },
-  "navNewSectionGroup": "New section group",
-  "@navNewSectionGroup": {
-    "description": "Tooltip. A section group is a folder holding several sections."
-  },
-  "navRecycleBin": "Recycle bin",
-  "@navRecycleBin": {
-    "description": "Where deleted pages and notebooks wait before being removed for good."
-  },
-  "navHome": "Home",
-  "@navHome": {
-    "description": "The navigator's first pane: favourites, recent pages and what is coming up."
-  },
-  "navHomeTip": "Home — favourites & recents",
-  "@navHomeTip": {
-    "description": "Tooltip on the Home button."
-  },
-  "navHomeEmpty": "Nothing here yet.\n\nRight-click a page and choose Favourite to pin it; pages you visit show up under Recent.",
-  "@navHomeEmpty": {
-    "description": "Shown on the Home pane before anything has been favourited or visited. 'Favourite' and 'Recent' name things elsewhere in this file — keep them consistent. Keep the blank line."
-  },
-  "navComingUp": "COMING UP",
-  "@navComingUp": {
-    "description": "Heading over the next few dated things. Capitals are a style choice: match whatever reads as a small heading in this language."
   },
   "navAllCount": "All {total}",
   "@navAllCount": {
@@ -649,38 +764,21 @@
       }
     }
   },
-  "navOpen": "Open",
-  "@navOpen": {
-    "description": "Link opening the planner when everything dated already fits."
-  },
-  "navExpand": "Expand the navigator  (Ctrl+\\)",
-  "@navExpand": {
-    "description": "Tooltip. Keep the shortcut in brackets as typed — the character is a backslash."
-  },
-  "navCollapse": "Collapse the navigator  (Ctrl+\\)",
-  "@navCollapse": {
-    "description": "Tooltip. Keep the shortcut in brackets as typed."
-  },
-  "navNotebooksTip": "Notebooks — switch, rename, duplicate, import",
-  "@navNotebooksTip": {
-    "description": "Tooltip on the notebook button."
-  },
-  "navDeletesSoon": "Deletes soon",
-  "@navDeletesSoon": {
-    "description": "Shown on a recycle-bin row whose 30 days are up."
-  },
-  "navDeletesInDays": "{days, plural, =1{Deletes in 1 day} other{Deletes in {days} days}}",
-  "@navDeletesInDays": {
-    "description": "How long a deleted thing has left in the recycle bin.",
-    "placeholders": {
-      "days": {
-        "type": "int"
-      }
-    }
+  "navApplyTemplate": "Apply template",
+  "@navApplyTemplate": {
+    "description": "Title of the dialog that lays a saved template over this page."
   },
   "navBinEmpty": "Nothing deleted.",
   "@navBinEmpty": {
     "description": "Shown when the recycle bin holds nothing."
+  },
+  "navBinItems": "Items",
+  "@navBinItems": {
+    "description": "Heading in the recycle bin over deleted pages and sections."
+  },
+  "navBinNotebooks": "Notebooks",
+  "@navBinNotebooks": {
+    "description": "Heading in the recycle bin over deleted notebooks."
   },
   "navBinRetention": "Items here are permanently deleted after {days} days.",
   "@navBinRetention": {
@@ -691,29 +789,29 @@
       }
     }
   },
-  "navBinNotebooks": "Notebooks",
-  "@navBinNotebooks": {
-    "description": "Heading in the recycle bin over deleted notebooks."
-  },
-  "navBinItems": "Items",
-  "@navBinItems": {
-    "description": "Heading in the recycle bin over deleted pages and sections."
-  },
-  "navRestore": "Restore",
-  "@navRestore": {
-    "description": "Button that puts a deleted thing back."
-  },
-  "navDeletePermanently": "Delete permanently",
-  "@navDeletePermanently": {
-    "description": "Tooltip on the button that removes something for good."
-  },
   "navClose": "Close",
   "@navClose": {
     "description": "Button that closes the recycle bin."
   },
-  "navDeleteForeverTitle": "Delete permanently?",
-  "@navDeleteForeverTitle": {
-    "description": "Title of the dialog confirming a permanent deletion."
+  "navCollapse": "Collapse the navigator  (Ctrl+\\)",
+  "@navCollapse": {
+    "description": "Tooltip. Keep the shortcut in brackets as typed."
+  },
+  "navColour": "Colour",
+  "@navColour": {
+    "description": "Label beside the row of colours a section can be given."
+  },
+  "navColourDefault": "Default",
+  "@navColourDefault": {
+    "description": "Tooltip on the swatch meaning 'no colour of its own'."
+  },
+  "navComingUp": "COMING UP",
+  "@navComingUp": {
+    "description": "Heading over the next few dated things. Capitals are a style choice: match whatever reads as a small heading in this language."
+  },
+  "navDeleteForever": "Delete forever",
+  "@navDeleteForever": {
+    "description": "The button that does it."
   },
   "navDeleteForeverBody": "“{title}” and all its pages will be removed for good. This can't be undone.{caveat}",
   "@navDeleteForeverBody": {
@@ -728,18 +826,13 @@
       }
     }
   },
-  "navDeleteForever": "Delete forever",
-  "@navDeleteForever": {
-    "description": "The button that does it."
+  "navDeleteForeverTitle": "Delete permanently?",
+  "@navDeleteForeverTitle": {
+    "description": "Title of the dialog confirming a permanent deletion."
   },
-  "navLockedCannotDelete": "“{title}” is locked. Remove its passcode before deleting it.",
-  "@navLockedCannotDelete": {
-    "description": "Message when someone tries to delete a page they have locked.",
-    "placeholders": {
-      "title": {
-        "type": "String"
-      }
-    }
+  "navDeletePermanently": "Delete permanently",
+  "@navDeletePermanently": {
+    "description": "Tooltip on the button that removes something for good."
   },
   "navDeletedRestorable": "Deleted “{title}” — restore it from the recycle bin.",
   "@navDeletedRestorable": {
@@ -750,82 +843,18 @@
       }
     }
   },
-  "navLockedNotEncrypted": "“{title}” is locked. It is hidden inside Openote, not encrypted in the file.",
-  "@navLockedNotEncrypted": {
-    "description": "Said plainly after locking a page, so nobody mistakes a passcode for encryption.",
+  "navDeletesInDays": "{days, plural, =1{Deletes in 1 day} other{Deletes in {days} days}}",
+  "@navDeletesInDays": {
+    "description": "How long a deleted thing has left in the recycle bin.",
     "placeholders": {
-      "title": {
-        "type": "String"
+      "days": {
+        "type": "int"
       }
     }
   },
-  "navPasscodeRemoved": "Passcode removed from “{title}”.",
-  "@navPasscodeRemoved": {
-    "description": "Confirmation after unlocking a page.",
-    "placeholders": {
-      "title": {
-        "type": "String"
-      }
-    }
-  },
-  "navSavedTo": "Saved to {path}",
-  "@navSavedTo": {
-    "description": "Confirmation naming where an exported file landed.",
-    "placeholders": {
-      "path": {
-        "type": "String",
-        "example": "/home/you/Biology.pdf"
-      }
-    }
-  },
-  "navLinkCopied": "Link copied — paste it into any page",
-  "@navLinkCopied": {
-    "description": "Confirmation after copying a link to a page."
-  },
-  "navMoveSectionTo": "Move section to…",
-  "@navMoveSectionTo": {
-    "description": "Title of the dialog picking which group a section goes into."
-  },
-  "navNoGroupTopLevel": "(No group — top level)",
-  "@navNoGroupTopLevel": {
-    "description": "The choice in that dialog meaning 'not inside any group'."
-  },
-  "navSaveTemplateTitle": "Save as template",
-  "@navSaveTemplateTitle": {
-    "description": "Title of the dialog that saves this page's layout for reuse."
-  },
-  "navSave": "Save",
-  "@navSave": {
-    "description": "Confirm button in that dialog."
-  },
-  "navTemplateNameHint": "Template name",
-  "@navTemplateNameHint": {
-    "description": "Placeholder in that dialog's text box."
-  },
-  "navTemplateSaved": "Template \"{name}\" saved",
-  "@navTemplateSaved": {
-    "description": "Confirmation after saving a template.",
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
-  },
-  "navNoTemplates": "No templates yet — \"Save as template…\" first.",
-  "@navNoTemplates": {
-    "description": "Shown when there is nothing to apply. The quoted phrase must match navSaveTemplateTitle."
-  },
-  "navApplyTemplate": "Apply template",
-  "@navApplyTemplate": {
-    "description": "Title of the dialog that lays a saved template over this page."
-  },
-  "navColour": "Colour",
-  "@navColour": {
-    "description": "Label beside the row of colours a section can be given."
-  },
-  "navColourDefault": "Default",
-  "@navColourDefault": {
-    "description": "Tooltip on the swatch meaning 'no colour of its own'."
+  "navDeletesSoon": "Deletes soon",
+  "@navDeletesSoon": {
+    "description": "Shown on a recycle-bin row whose 30 days are up."
   },
   "navExamCountdown": "Exam {when} · {countdown}…",
   "@navExamCountdown": {
@@ -841,44 +870,70 @@
       }
     }
   },
-  "navMenuMoveUp": "Move up",
-  "@navMenuMoveUp": {
-    "description": "Context-menu item: move this page or section one place earlier."
+  "navExpand": "Expand the navigator  (Ctrl+\\)",
+  "@navExpand": {
+    "description": "Tooltip. Keep the shortcut in brackets as typed — the character is a backslash."
   },
-  "navMenuMoveDown": "Move down",
-  "@navMenuMoveDown": {
-    "description": "Context-menu item: move it one place later."
+  "navHome": "Home",
+  "@navHome": {
+    "description": "The navigator's first pane: favourites, recent pages and what is coming up."
   },
-  "navMenuNewPage": "New page",
-  "@navMenuNewPage": {
+  "navHomeEmpty": "Nothing here yet.\n\nRight-click a page and choose Favourite to pin it; pages you visit show up under Recent.",
+  "@navHomeEmpty": {
+    "description": "Shown on the Home pane before anything has been favourited or visited. 'Favourite' and 'Recent' name things elsewhere in this file — keep them consistent. Keep the blank line."
+  },
+  "navHomeTip": "Home — favourites & recents",
+  "@navHomeTip": {
+    "description": "Tooltip on the Home button."
+  },
+  "navInPageContent": "In page content",
+  "@navInPageContent": {
+    "description": "Heading over search results found in the words ON pages, as opposed to in page titles."
+  },
+  "navLinkCopied": "Link copied — paste it into any page",
+  "@navLinkCopied": {
+    "description": "Confirmation after copying a link to a page."
+  },
+  "navLockedCannotDelete": "“{title}” is locked. Remove its passcode before deleting it.",
+  "@navLockedCannotDelete": {
+    "description": "Message when someone tries to delete a page they have locked.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navLockedNotEncrypted": "“{title}” is locked. It is hidden inside Openote, not encrypted in the file.",
+  "@navLockedNotEncrypted": {
+    "description": "Said plainly after locking a page, so nobody mistakes a passcode for encryption.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navMenuAddFavourite": "Add to favourites",
+  "@navMenuAddFavourite": {
     "description": "Context-menu item."
   },
-  "navMenuMoveToGroup": "Move to group…",
-  "@navMenuMoveToGroup": {
-    "description": "Context-menu item: put this section inside a group."
+  "navMenuApplyTemplate": "Apply a template…",
+  "@navMenuApplyTemplate": {
+    "description": "Context-menu item."
   },
-  "navMenuSortAZ": "Sort pages A→Z",
-  "@navMenuSortAZ": {
-    "description": "Context-menu item: order the pages by title. Use this language's own alphabet in the arrow, e.g. А→Я."
+  "navMenuCopyLink": "Copy link to page",
+  "@navMenuCopyLink": {
+    "description": "Context-menu item."
   },
-  "navMenuSortEdited": "Sort pages by last edited",
-  "@navMenuSortEdited": {
+  "navMenuDelete": "Delete",
+  "@navMenuDelete": {
     "description": "Context-menu item."
   },
   "navMenuExportSectionPdf": "Export section as PDF…",
   "@navMenuExportSectionPdf": {
     "description": "Context-menu item."
   },
-  "navMenuPrintSection": "Print section…",
-  "@navMenuPrintSection": {
-    "description": "Context-menu item."
-  },
-  "navMenuRemoveExam": "Remove exam date",
-  "@navMenuRemoveExam": {
-    "description": "Context-menu item."
-  },
-  "navMenuSetExam": "Set exam date…",
-  "@navMenuSetExam": {
+  "navMenuLock": "Lock with a passcode…",
+  "@navMenuLock": {
     "description": "Context-menu item."
   },
   "navMenuMakeSubpage": "Make subpage",
@@ -889,339 +944,181 @@
   "@navMenuMoveBackOut": {
     "description": "Context-menu item: undo that nesting."
   },
-  "navMenuRemoveFavourite": "Remove from favourites",
-  "@navMenuRemoveFavourite": {
-    "description": "Context-menu item."
+  "navMenuMoveDown": "Move down",
+  "@navMenuMoveDown": {
+    "description": "Context-menu item: move it one place later."
   },
-  "navMenuAddFavourite": "Add to favourites",
-  "@navMenuAddFavourite": {
-    "description": "Context-menu item."
+  "navMenuMoveToGroup": "Move to group…",
+  "@navMenuMoveToGroup": {
+    "description": "Context-menu item: put this section inside a group."
   },
-  "navMenuSharePdf": "Share as PDF…",
-  "@navMenuSharePdf": {
+  "navMenuMoveUp": "Move up",
+  "@navMenuMoveUp": {
+    "description": "Context-menu item: move this page or section one place earlier."
+  },
+  "navMenuNewPage": "New page",
+  "@navMenuNewPage": {
     "description": "Context-menu item."
   },
   "navMenuPrint": "Print…",
   "@navMenuPrint": {
     "description": "Context-menu item."
   },
-  "navMenuCopyLink": "Copy link to page",
-  "@navMenuCopyLink": {
+  "navMenuPrintSection": "Print section…",
+  "@navMenuPrintSection": {
     "description": "Context-menu item."
   },
   "navMenuRecentChanges": "Recent changes…",
   "@navMenuRecentChanges": {
     "description": "Context-menu item: the page's own history."
   },
-  "navMenuSaveTemplate": "Save as template…",
-  "@navMenuSaveTemplate": {
+  "navMenuRemoveExam": "Remove exam date",
+  "@navMenuRemoveExam": {
     "description": "Context-menu item."
   },
-  "navMenuApplyTemplate": "Apply a template…",
-  "@navMenuApplyTemplate": {
+  "navMenuRemoveFavourite": "Remove from favourites",
+  "@navMenuRemoveFavourite": {
     "description": "Context-menu item."
   },
   "navMenuRemovePasscode": "Remove passcode…",
   "@navMenuRemovePasscode": {
     "description": "Context-menu item."
   },
-  "navMenuLock": "Lock with a passcode…",
-  "@navMenuLock": {
+  "navMenuSaveTemplate": "Save as template…",
+  "@navMenuSaveTemplate": {
     "description": "Context-menu item."
   },
-  "navMenuDelete": "Delete",
-  "@navMenuDelete": {
+  "navMenuSetExam": "Set exam date…",
+  "@navMenuSetExam": {
     "description": "Context-menu item."
   },
-  "commonOn": "On",
-  "@commonOn": {
-    "description": "One half of an on/off pair, shown as a highlighted segment rather than a switch."
+  "navMenuSharePdf": "Share as PDF…",
+  "@navMenuSharePdf": {
+    "description": "Context-menu item."
   },
-  "commonOff": "Off",
-  "@commonOff": {
-    "description": "The other half of that pair."
+  "navMenuSortAZ": "Sort pages A→Z",
+  "@navMenuSortAZ": {
+    "description": "Context-menu item: order the pages by title. Use this language's own alphabet in the arrow, e.g. А→Я."
   },
-  "commonClose": "Close",
-  "@commonClose": {
-    "description": "Button that dismisses a dialog."
+  "navMenuSortEdited": "Sort pages by last edited",
+  "@navMenuSortEdited": {
+    "description": "Context-menu item."
   },
-  "commonDone": "Done",
-  "@commonDone": {
-    "description": "Button that finishes with a dialog."
+  "navMoveSectionTo": "Move section to…",
+  "@navMoveSectionTo": {
+    "description": "Title of the dialog picking which group a section goes into."
   },
-  "commonDelete": "Delete",
-  "@commonDelete": {
-    "description": "Button or menu item that removes something (to the recycle bin, not for good)."
-  },
-  "commonOpenEllipsis": "Open…",
-  "@commonOpenEllipsis": {
-    "description": "Button on a settings row that opens a dialog of its own."
-  },
-  "settingsTitle": "Settings",
-  "@settingsTitle": {
-    "description": "Title of the settings dialog."
-  },
-  "settingsAppearance": "Appearance",
-  "@settingsAppearance": {
-    "description": "Section heading."
-  },
-  "settingsTheme": "Theme",
-  "@settingsTheme": {
-    "description": "Row label: light, dark, or follow the computer."
-  },
-  "settingsThemeSystem": "System",
-  "@settingsThemeSystem": {
-    "description": "Theme choice: follow whatever the computer is set to."
-  },
-  "settingsThemeLight": "Light",
-  "@settingsThemeLight": {
-    "description": "Theme choice: dark text on a pale page."
-  },
-  "settingsThemeDark": "Dark",
-  "@settingsThemeDark": {
-    "description": "Theme choice: pale text on a dark page."
-  },
-  "settingsWriting": "Writing and drawing",
-  "@settingsWriting": {
-    "description": "Section heading."
-  },
-  "settingsSpellCheck": "Spell check",
-  "@settingsSpellCheck": {
-    "description": "Row label."
-  },
-  "settingsPenProximity": "Pen near the page switches to inking",
-  "@settingsPenProximity": {
-    "description": "Row label: bringing a stylus close to the screen picks the pen tool."
-  },
-  "settingsConnections": "Connections",
-  "@settingsConnections": {
-    "description": "Section heading."
-  },
-  "settingsSync": "Sync",
-  "@settingsSync": {
-    "description": "Row label for the backup-and-share settings."
-  },
-  "settingsSyncHint": "Back up and share this notebook — GitHub or a folder.",
-  "@settingsSyncHint": {
-    "description": "Supporting line under settingsSync. GitHub is a product name."
-  },
-  "settingsAi": "AI access",
-  "@settingsAi": {
-    "description": "Row label."
-  },
-  "settingsAiOn": "On — AI helpers on this computer can use your notes.",
-  "@settingsAiOn": {
-    "description": "Supporting line when AI access is enabled."
-  },
-  "settingsAiOff": "Off — connect Claude or other AI helpers.",
-  "@settingsAiOff": {
-    "description": "Supporting line when it is not. Claude is a product name."
-  },
-  "settingsHelp": "Help",
-  "@settingsHelp": {
-    "description": "Section heading."
-  },
-  "settingsWelcomeTour": "Welcome tour",
-  "@settingsWelcomeTour": {
-    "description": "Row label: reopens the three-step welcome flow."
-  },
-  "settingsWelcomeTourHint": "The three-minute version: the canvas, maths and ink, and where your notes live.",
-  "@settingsWelcomeTourHint": {
-    "description": "Supporting line naming the flow's three steps."
-  },
-  "settingsShortcuts": "Keyboard shortcuts",
-  "@settingsShortcuts": {
-    "description": "Row label."
-  },
-  "settingsShortcutsHint": "Everything has a key — the full list.  (Ctrl+/)",
-  "@settingsShortcutsHint": {
-    "description": "Supporting line. Keep the shortcut in brackets as typed."
-  },
-  "settingsAbout": "About",
-  "@settingsAbout": {
-    "description": "Section heading."
-  },
-  "settingsVersion": "Openote {version}",
-  "@settingsVersion": {
-    "description": "Row label naming the installed version. Openote is the product name.",
+  "navNewPageIn": "New page in {section}",
+  "@navNewPageIn": {
+    "description": "Tooltip on the + beside a section.",
     "placeholders": {
-      "version": {
+      "section": {
         "type": "String",
-        "example": "0.8.0"
+        "example": "Biology"
       }
     }
   },
-  "settingsCheckUpdates": "Check for updates",
-  "@settingsCheckUpdates": {
-    "description": "Button."
+  "navNewSection": "New section",
+  "@navNewSection": {
+    "description": "Button that adds a section."
   },
-  "settingsUpToDate": "You're up to date ({version} is the newest version).",
-  "@settingsUpToDate": {
-    "description": "Shown after checking, when nothing newer exists.",
+  "navNewSectionGroup": "New section group",
+  "@navNewSectionGroup": {
+    "description": "Tooltip. A section group is a folder holding several sections."
+  },
+  "navNoGroupTopLevel": "(No group — top level)",
+  "@navNoGroupTopLevel": {
+    "description": "The choice in that dialog meaning 'not inside any group'."
+  },
+  "navNoMatches": "No matches for “{query}”",
+  "@navNoMatches": {
+    "description": "Shown when a search found nothing. The quotation marks are curly ones — use whatever this language uses.",
     "placeholders": {
-      "version": {
+      "query": {
         "type": "String",
-        "example": "0.8.0"
+        "example": "photosynthesis"
       }
     }
   },
-  "settingsWhatsNew": "What's new",
-  "@settingsWhatsNew": {
-    "description": "Link opening the release notes in a browser."
+  "navNoPages": "No pages yet",
+  "@navNoPages": {
+    "description": "Shown when a section holds no pages."
   },
-  "nbTitle": "Notebooks",
-  "@nbTitle": {
-    "description": "Title of the notebook manager."
+  "navNoSections": "No sections yet.\nCreate one to get started.",
+  "@navNoSections": {
+    "description": "Shown when a notebook has no sections. A section is a divider in a notebook, holding pages. Keep the line break."
   },
-  "nbOpenCount": "{count} open",
-  "@nbOpenCount": {
-    "description": "Subtitle counting how many notebooks are in the workspace.",
+  "navNoTemplates": "No templates yet — \"Save as template…\" first.",
+  "@navNoTemplates": {
+    "description": "Shown when there is nothing to apply. The quoted phrase must match navSaveTemplateTitle."
+  },
+  "navNotebooksTip": "Notebooks — switch, rename, duplicate, import",
+  "@navNotebooksTip": {
+    "description": "Tooltip on the notebook button."
+  },
+  "navOpen": "Open",
+  "@navOpen": {
+    "description": "Link opening the planner when everything dated already fits."
+  },
+  "navPasscodeRemoved": "Passcode removed from “{title}”.",
+  "@navPasscodeRemoved": {
+    "description": "Confirmation after unlocking a page.",
     "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "nbInBin": "In the recycle bin · deleted after {days} days",
-  "@nbInBin": {
-    "description": "Heading over deleted notebooks.",
-    "placeholders": {
-      "days": {
-        "type": "int"
-      }
-    }
-  },
-  "nbImportInto": "Import into a new notebook",
-  "@nbImportInto": {
-    "description": "Heading over the list of things that can be imported."
-  },
-  "nbNew": "New",
-  "@nbNew": {
-    "description": "Button that creates an empty notebook."
-  },
-  "nbNewTitle": "New notebook",
-  "@nbNewTitle": {
-    "description": "Title of the dialog that names it."
-  },
-  "nbCreate": "Create",
-  "@nbCreate": {
-    "description": "Confirm button in that dialog."
-  },
-  "nbNameHint": "Notebook name",
-  "@nbNameHint": {
-    "description": "Placeholder in that dialog."
-  },
-  "nbImport": "Import",
-  "@nbImport": {
-    "description": "Button opening the import choices."
-  },
-  "nbRepair": "Repair",
-  "@nbRepair": {
-    "description": "Button that checks every page and fixes what it can."
-  },
-  "nbGetStarted": "Get started",
-  "@nbGetStarted": {
-    "description": "Button that opens the welcome flow."
-  },
-  "nbImportOnepkg": "OneNote notebook (.onepkg)",
-  "@nbImportOnepkg": {
-    "description": "Import choice. OneNote is a product name and .onepkg a file extension."
-  },
-  "nbImportOne": "OneNote section (.one)",
-  "@nbImportOne": {
-    "description": "Import choice. Not translated."
-  },
-  "nbImportMarkdown": "Markdown folder",
-  "@nbImportMarkdown": {
-    "description": "Import choice: a folder of .md files. Markdown is a format name."
-  },
-  "nbImportGit": "From a git address",
-  "@nbImportGit": {
-    "description": "Import choice: clone a notebook from a git repository."
-  },
-  "nbDuplicates": "Possible duplicates · same title and same page count",
-  "@nbDuplicates": {
-    "description": "Heading over notebooks that look like copies of each other."
-  },
-  "nbDuplicatesHint": "Keep the largest — an import interrupted part way through is the smaller one. Deleted copies go to the recycle bin.",
-  "@nbDuplicatesHint": {
-    "description": "Advice under that heading, said explicitly because \"delete the duplicates\" is a frightening sentence unless the safest choice is named."
-  },
-  "nbOpenThis": "Open this notebook",
-  "@nbOpenThis": {
-    "description": "Menu item."
-  },
-  "nbRename": "Rename",
-  "@nbRename": {
-    "description": "Menu item."
-  },
-  "nbDuplicate": "Duplicate",
-  "@nbDuplicate": {
-    "description": "Menu item: make a copy."
-  },
-  "nbMoveToBin": "Move to recycle bin",
-  "@nbMoveToBin": {
-    "description": "Menu item."
-  },
-  "nbConfirmBin": "Move to the recycle bin? You can restore it from here.",
-  "@nbConfirmBin": {
-    "description": "Confirmation question before deleting a notebook."
-  },
-  "nbOnePkgFileType": "OneNote notebook package",
-  "@nbOnePkgFileType": {
-    "description": "File-type name shown in the operating system's own file picker beside .onepkg."
-  },
-  "nbImportBusy": "An import is already running — one at a time.",
-  "@nbImportBusy": {
-    "description": "Message when a second import is started while one is running."
-  },
-  "nbImportStarted": "Importing in the background — keep working, the card in the corner will say when it's done.",
-  "@nbImportStarted": {
-    "description": "Message when an import starts."
-  },
-  "nbImportedNamed": "Imported {name}",
-  "@nbImportedNamed": {
-    "description": "Confirmation after importing one file.",
-    "placeholders": {
-      "name": {
-        "type": "String",
-        "example": "Biology.one"
-      }
-    }
-  },
-  "nbReadingFolder": "Reading the folder…",
-  "@nbReadingFolder": {
-    "description": "Progress message while a folder of Markdown is being scanned."
-  },
-  "nbImportedProgress": "Imported {done}",
-  "@nbImportedProgress": {
-    "description": "Progress message naming the file just read.",
-    "placeholders": {
-      "done": {
+      "title": {
         "type": "String"
       }
     }
   },
-  "nbNoMarkdown": "No Markdown files found in that folder.",
-  "@nbNoMarkdown": {
-    "description": "Message when a Markdown import found nothing to read."
+  "navRecycleBin": "Recycle bin",
+  "@navRecycleBin": {
+    "description": "Where deleted pages and notebooks wait before being removed for good."
   },
-  "nbImportedPages": "{count, plural, =1{Imported 1 page} other{Imported {count} pages}}",
-  "@nbImportedPages": {
-    "description": "Confirmation after importing a folder.",
+  "navRestore": "Restore",
+  "@navRestore": {
+    "description": "Button that puts a deleted thing back."
+  },
+  "navSave": "Save",
+  "@navSave": {
+    "description": "Confirm button in that dialog."
+  },
+  "navSaveTemplateTitle": "Save as template",
+  "@navSaveTemplateTitle": {
+    "description": "Title of the dialog that saves this page's layout for reuse."
+  },
+  "navSavedTo": "Saved to {path}",
+  "@navSavedTo": {
+    "description": "Confirmation naming where an exported file landed.",
     "placeholders": {
-      "count": {
-        "type": "int"
+      "path": {
+        "type": "String",
+        "example": "/home/you/Biology.pdf"
       }
     }
   },
-  "nbNeedsNativeCore": "OneNote import needs the Rust core — build onote_core.dll and put it beside the app.",
-  "@nbNeedsNativeCore": {
-    "description": "Error for a build without the native library. 'the Rust core' and the file name are Openote's own components."
+  "navSearchHint": "Search or jump to…",
+  "@navSearchHint": {
+    "description": "Placeholder in the navigator's search box."
   },
-  "nbCheckingPages": "Checking pages…",
-  "@nbCheckingPages": {
-    "description": "Progress message while Repair runs."
+  "navSection": "Section",
+  "@navSection": {
+    "description": "Column heading over the list of sections."
+  },
+  "navTemplateNameHint": "Template name",
+  "@navTemplateNameHint": {
+    "description": "Placeholder in that dialog's text box."
+  },
+  "navTemplateSaved": "Template \"{name}\" saved",
+  "@navTemplateSaved": {
+    "description": "Confirmation after saving a template.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "navUntitled": "Untitled",
+  "@navUntitled": {
+    "description": "Stands in for the name of a page that has none yet."
   },
   "nbCheckingPageProgress": "Checking page {done} of {total}…",
   "@nbCheckingPageProgress": {
@@ -1235,50 +1132,25 @@
       }
     }
   },
-  "nbNothingToRepair": "Nothing to repair — every page is already up to date.",
-  "@nbNothingToRepair": {
-    "description": "Result when Repair found nothing wrong."
+  "nbCheckingPages": "Checking pages…",
+  "@nbCheckingPages": {
+    "description": "Progress message while Repair runs."
   },
-  "nbRepairedBoxes": "{blocks, plural, =1{1 box} other{{blocks} boxes}}",
-  "@nbRepairedBoxes": {
-    "description": "How much Repair fixed. A 'box' is one block of content on a page. Substituted into nbRepaired.",
-    "placeholders": {
-      "blocks": {
-        "type": "int"
-      }
-    }
+  "nbConfirmBin": "Move to the recycle bin? You can restore it from here.",
+  "@nbConfirmBin": {
+    "description": "Confirmation question before deleting a notebook."
   },
-  "nbRepairedPages": "{pages, plural, =1{1 page} other{{pages} pages}}",
-  "@nbRepairedPages": {
-    "description": "How many pages Repair touched. Substituted into nbRepaired.",
-    "placeholders": {
-      "pages": {
-        "type": "int"
-      }
-    }
+  "nbCoreMissing": "OneNote import needs the Rust core — build onote_core.dll (see rust/onote_core/INTEGRATION.md).",
+  "@nbCoreMissing": {
+    "description": "Error for a build without the native library. The file name and the path are literal and must not be translated."
   },
-  "nbRepaired": "Repaired {boxes} across {pages}.",
-  "@nbRepaired": {
-    "description": "Result when Repair fixed something — e.g. 'Repaired 3 boxes across 2 pages.' {boxes} is nbRepairedBoxes and {pages} is nbRepairedPages, each already in its right plural form.",
-    "placeholders": {
-      "boxes": {
-        "type": "String",
-        "example": "3 boxes"
-      },
-      "pages": {
-        "type": "String",
-        "example": "2 pages"
-      }
-    }
+  "nbCreate": "Create",
+  "@nbCreate": {
+    "description": "Confirm button in that dialog."
   },
-  "nbRepairFailed": "Repair failed: {reason}",
-  "@nbRepairFailed": {
-    "description": "Shown when Repair itself could not run.",
-    "placeholders": {
-      "reason": {
-        "type": "String"
-      }
-    }
+  "nbDuplicate": "Duplicate",
+  "@nbDuplicate": {
+    "description": "Menu item: make a copy."
   },
   "nbDuplicateGroup": "{copies} copies of \"{title}\" · {pages} pages each · {size} would come back",
   "@nbDuplicateGroup": {
@@ -1299,9 +1171,157 @@
       }
     }
   },
-  "nbCoreMissing": "OneNote import needs the Rust core — build onote_core.dll (see rust/onote_core/INTEGRATION.md).",
-  "@nbCoreMissing": {
-    "description": "Error for a build without the native library. The file name and the path are literal and must not be translated."
+  "nbDuplicates": "Possible duplicates · same title and same page count",
+  "@nbDuplicates": {
+    "description": "Heading over notebooks that look like copies of each other."
+  },
+  "nbDuplicatesHint": "Keep the largest — an import interrupted part way through is the smaller one. Deleted copies go to the recycle bin.",
+  "@nbDuplicatesHint": {
+    "description": "Advice under that heading, said explicitly because \"delete the duplicates\" is a frightening sentence unless the safest choice is named."
+  },
+  "nbGetStarted": "Get started",
+  "@nbGetStarted": {
+    "description": "Button that opens the welcome flow."
+  },
+  "nbImport": "Import",
+  "@nbImport": {
+    "description": "Button opening the import choices."
+  },
+  "nbImportBusy": "An import is already running — one at a time.",
+  "@nbImportBusy": {
+    "description": "Message when a second import is started while one is running."
+  },
+  "nbImportGit": "From a git address",
+  "@nbImportGit": {
+    "description": "Import choice: clone a notebook from a git repository."
+  },
+  "nbImportInto": "Import into a new notebook",
+  "@nbImportInto": {
+    "description": "Heading over the list of things that can be imported."
+  },
+  "nbImportMarkdown": "Markdown folder",
+  "@nbImportMarkdown": {
+    "description": "Import choice: a folder of .md files. Markdown is a format name."
+  },
+  "nbImportOne": "OneNote section (.one)",
+  "@nbImportOne": {
+    "description": "Import choice. Not translated."
+  },
+  "nbImportOnepkg": "OneNote notebook (.onepkg)",
+  "@nbImportOnepkg": {
+    "description": "Import choice. OneNote is a product name and .onepkg a file extension."
+  },
+  "nbImportStarted": "Importing in the background — keep working, the card in the corner will say when it's done.",
+  "@nbImportStarted": {
+    "description": "Message when an import starts."
+  },
+  "nbImportedFromOneNote": "Imported {what} from OneNote.{strokeNote}",
+  "@nbImportedFromOneNote": {
+    "description": "Result of importing a OneNote section. {what} is a phrase like '12 pages, 4 pictures' and {strokeNote} an optional sentence about undecodable handwriting — both are still assembled in English elsewhere in the code and are on the list to convert.",
+    "placeholders": {
+      "what": {
+        "type": "String",
+        "example": "12 pages, 4 pictures"
+      },
+      "strokeNote": {
+        "type": "String"
+      }
+    }
+  },
+  "nbImportedNamed": "Imported {name}",
+  "@nbImportedNamed": {
+    "description": "Confirmation after importing one file.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Biology.one"
+      }
+    }
+  },
+  "nbImportedPages": "{count, plural, =1{Imported 1 page} other{Imported {count} pages}}",
+  "@nbImportedPages": {
+    "description": "Confirmation after importing a folder.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "nbImportedPagesProgress": "{count, plural, =1{Imported 1 page…} other{Imported {count} pages…}}",
+  "@nbImportedPagesProgress": {
+    "description": "Progress while a Markdown folder is read.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "nbImportedProgress": "Imported {done}",
+  "@nbImportedProgress": {
+    "description": "Progress message naming the file just read.",
+    "placeholders": {
+      "done": {
+        "type": "String"
+      }
+    }
+  },
+  "nbInBin": "In the recycle bin · deleted after {days} days",
+  "@nbInBin": {
+    "description": "Heading over deleted notebooks.",
+    "placeholders": {
+      "days": {
+        "type": "int"
+      }
+    }
+  },
+  "nbMoveToBin": "Move to recycle bin",
+  "@nbMoveToBin": {
+    "description": "Menu item."
+  },
+  "nbNameHint": "Notebook name",
+  "@nbNameHint": {
+    "description": "Placeholder in that dialog."
+  },
+  "nbNeedsNativeCore": "OneNote import needs the Rust core — build onote_core.dll and put it beside the app.",
+  "@nbNeedsNativeCore": {
+    "description": "Error for a build without the native library. 'the Rust core' and the file name are Openote's own components."
+  },
+  "nbNew": "New",
+  "@nbNew": {
+    "description": "Button that creates an empty notebook."
+  },
+  "nbNewTitle": "New notebook",
+  "@nbNewTitle": {
+    "description": "Title of the dialog that names it."
+  },
+  "nbNoMarkdown": "No Markdown files found in that folder.",
+  "@nbNoMarkdown": {
+    "description": "Message when a Markdown import found nothing to read."
+  },
+  "nbNothingToRepair": "Nothing to repair — every page is already up to date.",
+  "@nbNothingToRepair": {
+    "description": "Result when Repair found nothing wrong."
+  },
+  "nbOneFileEmpty": "Couldn't read any content from that .one file.",
+  "@nbOneFileEmpty": {
+    "description": "Shown when a OneNote section file parsed but held nothing. '.one' is a file extension."
+  },
+  "nbOnePkgFileType": "OneNote notebook package",
+  "@nbOnePkgFileType": {
+    "description": "File-type name shown in the operating system's own file picker beside .onepkg."
+  },
+  "nbOpenCount": "{count} open",
+  "@nbOpenCount": {
+    "description": "Subtitle counting how many notebooks are in the workspace.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "nbOpenThis": "Open this notebook",
+  "@nbOpenThis": {
+    "description": "Menu item."
   },
   "nbReadFileFailed": "Couldn't read that file: {reason}",
   "@nbReadFileFailed": {
@@ -1321,230 +1341,420 @@
       }
     }
   },
-  "nbOneFileEmpty": "Couldn't read any content from that .one file.",
-  "@nbOneFileEmpty": {
-    "description": "Shown when a OneNote section file parsed but held nothing. '.one' is a file extension."
+  "nbReadingFolder": "Reading the folder…",
+  "@nbReadingFolder": {
+    "description": "Progress message while a folder of Markdown is being scanned."
   },
-  "nbImportedFromOneNote": "Imported {what} from OneNote.{strokeNote}",
-  "@nbImportedFromOneNote": {
-    "description": "Result of importing a OneNote section. {what} is a phrase like '12 pages, 4 pictures' and {strokeNote} an optional sentence about undecodable handwriting — both are still assembled in English elsewhere in the code and are on the list to convert.",
-    "placeholders": {
-      "what": {
-        "type": "String",
-        "example": "12 pages, 4 pictures"
-      },
-      "strokeNote": {
-        "type": "String"
-      }
-    }
+  "nbRename": "Rename",
+  "@nbRename": {
+    "description": "Menu item."
   },
-  "nbImportedPagesProgress": "{count, plural, =1{Imported 1 page…} other{Imported {count} pages…}}",
-  "@nbImportedPagesProgress": {
-    "description": "Progress while a Markdown folder is read.",
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
+  "nbRepair": "Repair",
+  "@nbRepair": {
+    "description": "Button that checks every page and fixes what it can."
   },
-  "mathSemanticLabel": "Equation: {latex}",
-  "@mathSemanticLabel": {
-    "description": "What a screen reader says for a rendered equation. {latex} is the equation's own LaTeX source — not translated, because it is what the student typed. Only the word before it is yours.",
-    "placeholders": {
-      "latex": {
-        "type": "String",
-        "example": "E=\\frac{1}{2}mv^{2}"
-      }
-    }
-  },
-  "insertGroupWrite": "Write",
-  "@insertGroupWrite": {
-    "description": "Heading over the Insert items that make something to fill in — a text box, an equation, a table."
-  },
-  "insertGroupBringIn": "Bring in",
-  "@insertGroupBringIn": {
-    "description": "Heading over the Insert items that bring something in from elsewhere — a picture, a video, a file."
-  },
-  "insertGroupLinkUp": "Link up",
-  "@insertGroupLinkUp": {
-    "description": "Heading over the Insert items that point at something that already exists — a page link, a template."
-  },
-  "insertTextBox": "Text box",
-  "@insertTextBox": {
-    "description": "Insert item: a box to type in. One noun, the one a fifteen-year-old would use."
-  },
-  "insertEquation": "Equation",
-  "@insertEquation": {
-    "description": "Insert item: a mathematical equation."
-  },
-  "insertEquationTip": "Alt+=",
-  "@insertEquationTip": {
-    "description": "The keyboard shortcut, shown as the item's tooltip. Not translated unless the shortcut itself differs in this language."
-  },
-  "insertTable": "Table",
-  "@insertTable": {
-    "description": "Insert item: a grid of rows and columns."
-  },
-  "insertTableFromFile": "From a file",
-  "@insertTableFromFile": {
-    "description": "Insert item, under Table: build the table from a spreadsheet."
-  },
-  "insertTableFromFileTip": "CSV or Excel",
-  "@insertTableFromFileTip": {
-    "description": "Tooltip naming the file kinds accepted. Both are product/format names."
-  },
-  "insertCode": "Code",
-  "@insertCode": {
-    "description": "Insert item: a box of computer code that can be run."
-  },
-  "insertBoard": "Board",
-  "@insertBoard": {
-    "description": "Insert item: a kanban board."
-  },
-  "insertBoardTip": "Columns of cards you move along",
-  "@insertBoardTip": {
-    "description": "Tooltip explaining what a board is, for someone who has not met the word."
-  },
-  "insertPicture": "Picture",
-  "@insertPicture": {
-    "description": "Insert item: an image."
-  },
-  "insertPdfSlides": "PDF slides",
-  "@insertPdfSlides": {
-    "description": "Insert item: a PDF, usually a lecture slide deck. PDF is not translated."
-  },
-  "insertPdfPrintout": "Printout on this page",
-  "@insertPdfPrintout": {
-    "description": "Insert choice: lay the PDF's pages onto this page to write over, the way a paper printout would be."
-  },
-  "insertPdfPerSlide": "One page per slide",
-  "@insertPdfPerSlide": {
-    "description": "Insert choice: give each slide a page of its own."
-  },
-  "insertPdfAsCard": "As a card — open in a popup",
-  "@insertPdfAsCard": {
-    "description": "Insert choice: a small card on the page that opens the PDF in a window when clicked."
-  },
-  "insertVideo": "Video",
-  "@insertVideo": {
-    "description": "Insert item: a video or audio recording."
-  },
-  "insertVideoTip": "A lecture recording, or any web link",
-  "@insertVideoTip": {
-    "description": "Tooltip: it takes a file from this computer or a link to one online."
-  },
-  "insertFile": "File",
-  "@insertFile": {
-    "description": "Insert item: attach any file to the page."
-  },
-  "insertFlashcardItem": "Flashcard",
-  "@insertFlashcardItem": {
-    "description": "Insert item: a revision card with a question on one side."
-  },
-  "insertPageLink": "Page link",
-  "@insertPageLink": {
-    "description": "Insert item: a link to another page in the notebook."
-  },
-  "insertPageWindow": "Page window",
-  "@insertPageWindow": {
-    "description": "Insert item: a live window showing another page inside this one."
-  },
-  "insertTemplate": "Template",
-  "@insertTemplate": {
-    "description": "Insert item: a saved page layout to lay over this page."
-  },
-  "insertPickImages": "Images",
-  "@insertPickImages": {
-    "description": "File-type name in the operating system's own picker, beside png/jpg/gif/webp."
-  },
-  "insertPickTables": "Tables",
-  "@insertPickTables": {
-    "description": "File-type name in the OS file picker, beside csv/tsv/xlsx."
-  },
-  "insertPickVideo": "Video and audio",
-  "@insertPickVideo": {
-    "description": "File-type name in the OS file picker, beside the video and audio extensions."
-  },
-  "tagTodo": "To Do",
-  "@tagTodo": {
-    "description": "Tag name: something that still has to be done. Title case as a proper label."
-  },
-  "tagImportant": "Important",
-  "@tagImportant": {
-    "description": "Tag name."
-  },
-  "tagQuestion": "Question",
-  "@tagQuestion": {
-    "description": "Tag name. Also the front of a flashcard — keep it consistent with barQuestionCard."
-  },
-  "tagRemember": "Remember",
-  "@tagRemember": {
-    "description": "Tag name: worth committing to memory."
-  },
-  "tagDefinition": "Definition",
-  "@tagDefinition": {
-    "description": "Tag name. Also a flashcard kind — keep it consistent with barDefinitionCard."
-  },
-  "tagIdea": "Idea",
-  "@tagIdea": {
-    "description": "Tag name."
-  },
-  "tagCritical": "Critical",
-  "@tagCritical": {
-    "description": "Tag name: more urgent than Important."
-  },
-  "tagContact": "Contact",
-  "@tagContact": {
-    "description": "Tag name: a person to get in touch with."
-  },
-  "tagCustom": "Tag",
-  "@tagCustom": {
-    "description": "The fallback name for a tag with no kind of its own — the generic word."
-  },
-  "touchDrawAuto": "Auto (pen takes over)",
-  "@touchDrawAuto": {
-    "description": "Setting: a finger draws until a stylus is used, then touch moves the page instead so a resting palm cannot mark it."
-  },
-  "touchDrawAlways": "Always",
-  "@touchDrawAlways": {
-    "description": "Setting: a finger always draws, even when a stylus is present. Shown in a small dropdown, so keep it to one word if the language allows."
-  },
-  "touchDrawNever": "Never",
-  "@touchDrawNever": {
-    "description": "Setting: fingers only move and zoom the page; drawing needs a stylus or the mouse. Shown in a small dropdown — one word if the language allows."
-  },
-  "insertLinkToPage": "Link to page",
-  "@insertLinkToPage": {
-    "description": "Title of the dialog that picks which page to link to."
-  },
-  "insertPdfUnreadable": "That PDF couldn't be read.",
-  "@insertPdfUnreadable": {
-    "description": "Error when a chosen PDF could not be opened at all."
-  },
-  "insertPdfImported": "{count, plural, =1{Imported 1 slide} other{Imported {count} slides}}{where} — pick the pen and write on them. The slide text is searchable.",
-  "@insertPdfImported": {
-    "description": "Confirmation after importing a PDF. {where} is either empty or insertPdfOntoThisPage.",
-    "placeholders": {
-      "count": {
-        "type": "int"
-      },
-      "where": {
-        "type": "String"
-      }
-    }
-  },
-  "insertPdfOntoThisPage": " onto this page",
-  "@insertPdfOntoThisPage": {
-    "description": "Appended when the slides landed on the page already open rather than on new pages. Keep the leading space."
-  },
-  "insertPdfFailed": "PDF import failed: {reason}",
-  "@insertPdfFailed": {
-    "description": "Error when the import itself broke.",
+  "nbRepairFailed": "Repair failed: {reason}",
+  "@nbRepairFailed": {
+    "description": "Shown when Repair itself could not run.",
     "placeholders": {
       "reason": {
         "type": "String"
       }
     }
+  },
+  "nbRepaired": "Repaired {boxes} across {pages}.",
+  "@nbRepaired": {
+    "description": "Result when Repair fixed something — e.g. 'Repaired 3 boxes across 2 pages.' {boxes} is nbRepairedBoxes and {pages} is nbRepairedPages, each already in its right plural form.",
+    "placeholders": {
+      "boxes": {
+        "type": "String",
+        "example": "3 boxes"
+      },
+      "pages": {
+        "type": "String",
+        "example": "2 pages"
+      }
+    }
+  },
+  "nbRepairedBoxes": "{blocks, plural, =1{1 box} other{{blocks} boxes}}",
+  "@nbRepairedBoxes": {
+    "description": "How much Repair fixed. A 'box' is one block of content on a page. Substituted into nbRepaired.",
+    "placeholders": {
+      "blocks": {
+        "type": "int"
+      }
+    }
+  },
+  "nbRepairedPages": "{pages, plural, =1{1 page} other{{pages} pages}}",
+  "@nbRepairedPages": {
+    "description": "How many pages Repair touched. Substituted into nbRepaired.",
+    "placeholders": {
+      "pages": {
+        "type": "int"
+      }
+    }
+  },
+  "nbTitle": "Notebooks",
+  "@nbTitle": {
+    "description": "Title of the notebook manager."
+  },
+  "objectRowBackground": "Background: {kind}",
+  "@objectRowBackground": {
+    "description": "Tooltip on the four page-background buttons in the object row. {kind} is one of objectRowBackgroundBlank/Grid/Dotted/Ruled.",
+    "placeholders": {
+      "kind": {
+        "type": "String",
+        "example": "grid"
+      }
+    }
+  },
+  "objectRowBackgroundBlank": "blank",
+  "@objectRowBackgroundBlank": {
+    "description": "A page with no printed background at all. Lower case: it is substituted into objectRowBackground."
+  },
+  "objectRowBackgroundDotted": "dotted",
+  "@objectRowBackgroundDotted": {
+    "description": "A page printed with a grid of dots. Lower case: substituted into objectRowBackground."
+  },
+  "objectRowBackgroundGrid": "grid",
+  "@objectRowBackgroundGrid": {
+    "description": "A page printed with squared paper. Lower case: substituted into objectRowBackground."
+  },
+  "objectRowBackgroundRuled": "ruled",
+  "@objectRowBackgroundRuled": {
+    "description": "A page printed with horizontal lines to write on. Lower case: substituted into objectRowBackground."
+  },
+  "objectRowCanvasMode": "Canvas mode: boundless — click for pages",
+  "@objectRowCanvasMode": {
+    "description": "Tooltip when the page has no fixed size and simply extends in every direction."
+  },
+  "objectRowCharacters": "Characters",
+  "@objectRowCharacters": {
+    "description": "Row label in the word-count menu: every character including spaces."
+  },
+  "objectRowCharactersNoSpaces": "Without spaces",
+  "@objectRowCharactersNoSpaces": {
+    "description": "Row label in the word-count menu: characters not counting spaces."
+  },
+  "objectRowLandscape": "Landscape",
+  "@objectRowLandscape": {
+    "description": "Menu item: rotate the page so it is wider than it is tall."
+  },
+  "objectRowLandscapeSuffix": " landscape",
+  "@objectRowLandscapeSuffix": {
+    "description": "Appended to the paper name when the page is rotated. Keep the leading space — it follows the paper name inside objectRowPageMode."
+  },
+  "objectRowMinutes": "{n} min",
+  "@objectRowMinutes": {
+    "description": "A duration in minutes, abbreviated. Shown beside objectRowReadingTime.",
+    "placeholders": {
+      "n": {
+        "type": "int",
+        "example": "4"
+      }
+    }
+  },
+  "objectRowPageMode": "Page mode: {paper}{landscape} — click for canvas",
+  "@objectRowPageMode": {
+    "description": "Tooltip when the page is set to a fixed paper size. {paper} is a paper name like A4 or Letter; {landscape} is either empty or objectRowLandscapeSuffix.",
+    "placeholders": {
+      "paper": {
+        "type": "String",
+        "example": "A4"
+      },
+      "landscape": {
+        "type": "String",
+        "example": " landscape"
+      }
+    }
+  },
+  "objectRowPaperSize": "Paper size",
+  "@objectRowPaperSize": {
+    "description": "Tooltip on the menu that picks A4, Letter and so on."
+  },
+  "objectRowReadingTime": "Reading time",
+  "@objectRowReadingTime": {
+    "description": "Row label in the word-count menu: roughly how long the page takes to read."
+  },
+  "objectRowSnapOff": "Snap to grid: OFF — free placement",
+  "@objectRowSnapOff": {
+    "description": "Tooltip when boxes can be dropped anywhere."
+  },
+  "objectRowSnapOn": "Snap to grid: ON (grid shows while dragging)",
+  "@objectRowSnapOn": {
+    "description": "Tooltip when dragged boxes line up to an invisible grid."
+  },
+  "objectRowWordCount": "Words on this page — click for characters and reading time",
+  "@objectRowWordCount": {
+    "description": "Tooltip on the word count."
+  },
+  "objectRowWordTally": "{count, plural, =0{no words} =1{1 word} other{{formatted} words}}",
+  "@objectRowWordTally": {
+    "description": "The word count shown in the object row itself. {formatted} is the same number already grouped for this language (1,234 in English) — use it rather than {count} wherever the number is printed; {count} is only there to choose the plural form.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "1234"
+      },
+      "formatted": {
+        "type": "String",
+        "example": "1,234"
+      }
+    }
+  },
+  "objectRowWords": "Words",
+  "@objectRowWords": {
+    "description": "Row label in the word-count menu."
+  },
+  "objectRowZoomFit": "Zoom to fit content",
+  "@objectRowZoomFit": {
+    "description": "Tooltip: choose the zoom that puts everything written on the page on screen at once."
+  },
+  "objectRowZoomIn": "Zoom in  (Ctrl+=)",
+  "@objectRowZoomIn": {
+    "description": "Tooltip. Keep the shortcut in brackets as typed."
+  },
+  "objectRowZoomOut": "Zoom out  (Ctrl+-)",
+  "@objectRowZoomOut": {
+    "description": "Tooltip. Keep the shortcut in brackets as typed; the two spaces before it separate it from the words."
+  },
+  "objectRowZoomPercent": "{percent}%",
+  "@objectRowZoomPercent": {
+    "description": "The zoom level, shown on a button between the zoom-out and zoom-in controls. Some languages put a space before the percent sign, or the sign first.",
+    "placeholders": {
+      "percent": {
+        "type": "int",
+        "example": "100"
+      }
+    }
+  },
+  "objectRowZoomReset": "Back to 100% and the top of the page  (Ctrl+0)",
+  "@objectRowZoomReset": {
+    "description": "Tooltip on the zoom percentage, which is itself a button."
+  },
+  "onboardingCloudAction": "Sign in",
+  "@onboardingCloudAction": {
+    "description": "Button starting the Microsoft sign-in."
+  },
+  "onboardingCloudBody": "Sign in to Microsoft and pick a notebook. Nothing to export first, and it works on any computer.",
+  "@onboardingCloudBody": {
+    "description": "Body for the sign-in-to-Microsoft import option."
+  },
+  "onboardingCloudTitle": "Bring notes over from OneNote",
+  "@onboardingCloudTitle": {
+    "description": "Welcome flow: import straight from Microsoft OneNote over the internet. 'OneNote' is a product name."
+  },
+  "onboardingExportMacNote": "On a Mac, or with only the Store version: export one section at a time as .one, or ask a Windows machine to make the .onepkg. Openote never signs into your Microsoft account — it only reads the file you hand it.",
+  "@onboardingExportMacNote": {
+    "description": "'.one' and '.onepkg' are file extensions and must not be translated."
+  },
+  "onboardingExportSteps": "1. Open OneNote for Windows (the desktop app — the Store and web versions cannot export).\n2. Let the notebook finish syncing, so everything is on this machine.\n3. File ▸ Export ▸ Notebook ▸ OneNote Package (*.onepkg), then Export.\n4. Come back here and choose that file.",
+  "@onboardingExportSteps": {
+    "description": "Four numbered steps. 'File ▸ Export ▸ Notebook ▸ OneNote Package' is a menu path INSIDE OneNote — translate it to match OneNote's own wording in this language, or leave it in English if unsure. Keep the newlines and the numbering."
+  },
+  "onboardingExportTitle": "Exporting from OneNote",
+  "@onboardingExportTitle": {
+    "description": "Heading over the numbered instructions for getting a .onepkg out of OneNote."
+  },
+  "onboardingFreshAction": "Start fresh",
+  "@onboardingFreshAction": {
+    "description": "Button creating an empty notebook and closing the welcome flow."
+  },
+  "onboardingFreshBody": "An empty notebook, ready to write in. You can always bring notes over later.",
+  "@onboardingFreshBody": {
+    "description": "Body for the start-fresh option in the welcome flow."
+  },
+  "onboardingFreshTitle": "Start a fresh notebook",
+  "@onboardingFreshTitle": {
+    "description": "Welcome flow: begin with an empty notebook rather than importing or syncing."
+  },
+  "onboardingImportDone": "Your notebook is ready",
+  "@onboardingImportDone": {
+    "description": "Shown when the OneNote import has finished successfully."
+  },
+  "onboardingImportRunning": "Keep going — this runs in the background, and the card in the corner will say when it's done.",
+  "@onboardingImportRunning": {
+    "description": "Reassurance under the progress spinner: the user does not have to wait."
+  },
+  "onboardingImportingFile": "Importing {fileName}",
+  "@onboardingImportingFile": {
+    "description": "Progress row while a OneNote package is being read.",
+    "placeholders": {
+      "fileName": {
+        "type": "String",
+        "example": "School 2026.onepkg"
+      }
+    }
+  },
+  "onboardingNoNativeCore": "OneNote import needs the native core, which this build does not include.",
+  "@onboardingNoNativeCore": {
+    "description": "Error: this build was compiled without the Rust library that reads .onepkg files. 'the native core' is a component of Openote."
+  },
+  "onboardingOneNoteAction": "Choose file…",
+  "@onboardingOneNoteAction": {
+    "description": "Button opening the file picker for a .onepkg."
+  },
+  "onboardingOneNoteBody": "Pages, formatting, images, ink and tags from a .onepkg. Runs in the background — keep going while it works.",
+  "@onboardingOneNoteBody": {
+    "description": "'.onepkg' is a file extension and must not be translated. 'ink' means handwriting."
+  },
+  "onboardingOneNoteHideSteps": "Hide steps",
+  "@onboardingOneNoteHideSteps": {
+    "description": "Link folding the OneNote export instructions away again."
+  },
+  "onboardingOneNoteHowTo": "How do I export?",
+  "@onboardingOneNoteHowTo": {
+    "description": "Link folding out the OneNote export instructions."
+  },
+  "onboardingOneNoteTitle": "Bring notes over from OneNote",
+  "@onboardingOneNoteTitle": {
+    "description": "Welcome flow: importing an existing Microsoft OneNote notebook. 'OneNote' is a product name."
+  },
+  "onboardingOnePkgFileType": "OneNote notebook package",
+  "@onboardingOnePkgFileType": {
+    "description": "The file-type name shown in the operating system's own file picker, next to the .onepkg extension it filters on."
+  },
+  "onboardingOpenFailed": "Openote couldn't open that notebook.",
+  "@onboardingOpenFailed": {
+    "description": "Error shown when opening a notebook Openote found on this computer failed. The reason itself is behind commonDetailsAdvanced."
+  },
+  "onboardingReadFailed": "Couldn't read that file: {reason}",
+  "@onboardingReadFailed": {
+    "description": "Error shown when the chosen .onepkg could not be read at all.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "PathNotFoundException"
+      }
+    }
+  },
+  "onboardingStartWriting": "Start writing",
+  "@onboardingStartWriting": {
+    "description": "Button ending the welcome flow and putting the user on the page."
+  },
+  "onboardingStep1Body": "Click anywhere and start typing — a box appears where you clicked, and only once you type. Move one by the bar along its top, and drag pictures in from anywhere.",
+  "@onboardingStep1Body": {
+    "description": "Welcome flow, step 1 of 3. The core interaction: the page is free-form, not a document that flows top to bottom."
+  },
+  "onboardingStep1Title": "The page is a canvas",
+  "@onboardingStep1Title": {
+    "description": "Welcome flow, step 1 of 3. Heading over an animation of clicking on an empty page and typing."
+  },
+  "onboardingStep2Body": "Type 1/2 or press Alt+= and it builds up as real notation as you write, in a box of its own or mid-sentence. The Draw tab takes a pen, a finger or the mouse.",
+  "@onboardingStep2Body": {
+    "description": "Welcome flow, step 2 of 3. 'Alt+=' is a keyboard shortcut and must stay as typed. '1/2' is literally what the user types to get a fraction."
+  },
+  "onboardingStep2Title": "Maths and drawing, in with the words",
+  "@onboardingStep2Title": {
+    "description": "Welcome flow, step 2 of 3. Heading over a rendered equation and a pen stroke."
+  },
+  "onboardingStep3Body": "One open, readable file per notebook — no account, no lock-in. Put it in a folder your cloud already keeps in step and every device stays together.",
+  "@onboardingStep3Body": {
+    "description": "Welcome flow, step 3 of 3. 'no lock-in' means the notes are not trapped in a proprietary service."
+  },
+  "onboardingStep3Title": "Your notes are a file you own",
+  "@onboardingStep3Title": {
+    "description": "Welcome flow, step 3 of 3. Heading over a diagram of one file, a synced folder, and two computers."
+  },
+  "onboardingSyncAction": "Set up…",
+  "@onboardingSyncAction": {
+    "description": "Button opening the sync setup dialog."
+  },
+  "onboardingSyncBodyAlso": "Not one of the above? Choose the folder yourself.",
+  "@onboardingSyncBodyAlso": {
+    "description": "Shown when Openote DID find notebooks and has already listed them above."
+  },
+  "onboardingSyncBodyFirst": "Drive, OneDrive, iCloud, Dropbox, Syncthing, a NAS — or a GitHub repository.",
+  "@onboardingSyncBodyFirst": {
+    "description": "Shown when no existing notebook was found nearby. All names are products and stay untranslated; 'NAS' is a network drive at home."
+  },
+  "onboardingSyncTitle": "Sync with another device",
+  "@onboardingSyncTitle": {
+    "description": "Welcome flow: one of three ways to get notes in."
+  },
+  "oneNoteCloudContinue": "Continue with Microsoft",
+  "@oneNoteCloudContinue": {
+    "description": "Button reusing a remembered Microsoft sign-in, so no browser is needed."
+  },
+  "oneNoteCloudEmpty": "No notebooks were found on this account.",
+  "@oneNoteCloudEmpty": {
+    "description": "Shown when the signed-in account has no OneNote notebooks."
+  },
+  "oneNoteCloudIntro": "Openote will read your notebooks from OneNote. It cannot change them.",
+  "@oneNoteCloudIntro": {
+    "description": "Reassurance shown before signing in: the import is read-only."
+  },
+  "oneNoteCloudLoading": "Looking for your notebooks…",
+  "@oneNoteCloudLoading": {
+    "description": "Shown while the notebook list is being fetched."
+  },
+  "oneNoteCloudNoInk": "Tables are fitted to the page rather than kept at their exact widths, and text colour and font are not carried over.",
+  "@oneNoteCloudNoInk": {
+    "description": "Honest note that page nesting is not available over the internet import. Handwriting IS imported."
+  },
+  "oneNoteCloudOther": "Use a different account",
+  "@oneNoteCloudOther": {
+    "description": "Button signing out and starting the sign-in again."
+  },
+  "oneNoteCloudSignIn": "Sign in to Microsoft",
+  "@oneNoteCloudSignIn": {
+    "description": "Button opening the browser to sign in."
+  },
+  "oneNoteCloudSigningIn": "Waiting for your browser…",
+  "@oneNoteCloudSigningIn": {
+    "description": "Shown while the browser sign-in is open."
+  },
+  "oneNoteCloudTitle": "Bring a notebook over from OneNote",
+  "@oneNoteCloudTitle": {
+    "description": "Dialog title for importing from OneNote over the internet."
+  },
+  "oneNoteFileBody": "No signing in, and the closest copy: tables keep their exact widths. You will need OneNote on Windows to export the notebook first.",
+  "@oneNoteFileBody": {
+    "description": "Body for the file import route. 'OneNote' is a product name."
+  },
+  "oneNoteFileTitle": "Use a file you exported",
+  "@oneNoteFileTitle": {
+    "description": "Import route that needs no Microsoft sign-in, using an exported .onepkg file."
+  },
+  "oneNotePickTitle": "Which notebook?",
+  "@oneNotePickTitle": {
+    "description": "Heading above the list of notebooks found in the signed-in account."
+  },
+  "oneNoteSignInBody": "Pick a notebook and it comes straight over, with nothing to export first. Works on any computer.",
+  "@oneNoteSignInBody": {
+    "description": "Body for the Microsoft sign-in import route."
+  },
+  "settingsAbout": "About",
+  "@settingsAbout": {
+    "description": "Section heading."
+  },
+  "settingsAi": "AI access",
+  "@settingsAi": {
+    "description": "Row label."
+  },
+  "settingsAiOff": "Off — connect Claude or other AI helpers.",
+  "@settingsAiOff": {
+    "description": "Supporting line when it is not. Claude is a product name."
+  },
+  "settingsAiOn": "On — AI helpers on this computer can use your notes.",
+  "@settingsAiOn": {
+    "description": "Supporting line when AI access is enabled."
+  },
+  "settingsAppearance": "Appearance",
+  "@settingsAppearance": {
+    "description": "Section heading."
+  },
+  "settingsCheckUpdates": "Check for updates",
+  "@settingsCheckUpdates": {
+    "description": "Button."
+  },
+  "settingsConnections": "Connections",
+  "@settingsConnections": {
+    "description": "Section heading."
+  },
+  "settingsHelp": "Help",
+  "@settingsHelp": {
+    "description": "Section heading."
   },
   "settingsLanguage": "Language",
   "@settingsLanguage": {
@@ -1554,74 +1764,121 @@
   "@settingsLanguageAuto": {
     "description": "The default language choice: follow whatever the operating system is set to. Chosen over the word 'Automatic', which does not say what it will do."
   },
-  "settingsLanguageHelp": "Openote is translated by the people who use it. If yours is missing or wrong, it is one file — the link says how.",
-  "@settingsLanguageHelp": {
-    "description": "Supporting line under the language picker, inviting corrections. 'one file' means one .arb translation file."
-  },
   "settingsLanguageContribute": "How to add or fix a language",
   "@settingsLanguageContribute": {
     "description": "Link opening the contributing guide in a browser."
   },
-  "shellNothingReplaced": "Nothing replaced",
-  "@shellNothingReplaced": {
-    "description": "Result of Replace All when the search text was not on the page."
+  "settingsLanguageHelp": "Openote is translated by the people who use it. If yours is missing or wrong, it is one file — the link says how.",
+  "@settingsLanguageHelp": {
+    "description": "Supporting line under the language picker, inviting corrections. 'one file' means one .arb translation file."
   },
-  "shellReplaced": "{count, plural, =1{Replaced 1 occurrence} other{Replaced {count} occurrences}}",
-  "@shellReplaced": {
-    "description": "Result of Replace All.",
+  "settingsPenProximity": "Pen near the page switches to inking",
+  "@settingsPenProximity": {
+    "description": "Row label: bringing a stylus close to the screen picks the pen tool."
+  },
+  "settingsShortcuts": "Keyboard shortcuts",
+  "@settingsShortcuts": {
+    "description": "Row label."
+  },
+  "settingsShortcutsHint": "Everything has a key — the full list.  (Ctrl+/)",
+  "@settingsShortcutsHint": {
+    "description": "Supporting line. Keep the shortcut in brackets as typed."
+  },
+  "settingsSpellCheck": "Spell check",
+  "@settingsSpellCheck": {
+    "description": "Row label."
+  },
+  "settingsSync": "Sync",
+  "@settingsSync": {
+    "description": "Row label for the backup-and-share settings."
+  },
+  "settingsSyncHint": "Back up and share this notebook — GitHub or a folder.",
+  "@settingsSyncHint": {
+    "description": "Supporting line under settingsSync. GitHub is a product name."
+  },
+  "settingsTheme": "Theme",
+  "@settingsTheme": {
+    "description": "Row label: light, dark, or follow the computer."
+  },
+  "settingsThemeDark": "Dark",
+  "@settingsThemeDark": {
+    "description": "Theme choice: pale text on a dark page."
+  },
+  "settingsThemeLight": "Light",
+  "@settingsThemeLight": {
+    "description": "Theme choice: dark text on a pale page."
+  },
+  "settingsThemeSystem": "System",
+  "@settingsThemeSystem": {
+    "description": "Theme choice: follow whatever the computer is set to."
+  },
+  "settingsTitle": "Settings",
+  "@settingsTitle": {
+    "description": "Title of the settings dialog."
+  },
+  "settingsUpToDate": "You're up to date ({version} is the newest version).",
+  "@settingsUpToDate": {
+    "description": "Shown after checking, when nothing newer exists.",
     "placeholders": {
-      "count": {
-        "type": "int"
+      "version": {
+        "type": "String",
+        "example": "0.8.0"
       }
     }
   },
-  "shellReplaceWith": "Replace with…",
-  "@shellReplaceWith": {
-    "description": "Placeholder in the replacement box of the find bar."
+  "settingsVersion": "Openote {version}",
+  "@settingsVersion": {
+    "description": "Row label naming the installed version. Openote is the product name.",
+    "placeholders": {
+      "version": {
+        "type": "String",
+        "example": "0.8.0"
+      }
+    }
   },
-  "shellReplace": "Replace",
-  "@shellReplace": {
-    "description": "Button: replace the match the caret is on."
+  "settingsWelcomeTour": "Welcome tour",
+  "@settingsWelcomeTour": {
+    "description": "Row label: reopens the three-step welcome flow."
   },
-  "shellReplaceAll": "All",
-  "@shellReplaceAll": {
-    "description": "Button beside Replace: replace every match at once. Short, because it sits in a narrow bar."
+  "settingsWelcomeTourHint": "The three-minute version: the canvas, maths and ink, and where your notes live.",
+  "@settingsWelcomeTourHint": {
+    "description": "Supporting line naming the flow's three steps."
   },
-  "shellFindOnThisPage": "Find on this page…",
-  "@shellFindOnThisPage": {
-    "description": "Placeholder in the find box."
+  "settingsWhatsNew": "What's new",
+  "@settingsWhatsNew": {
+    "description": "Link opening the release notes in a browser."
   },
-  "shellNoMatches": "No matches",
-  "@shellNoMatches": {
-    "description": "Shown in the find bar when the search text is not on the page."
+  "settingsWriting": "Writing and drawing",
+  "@settingsWriting": {
+    "description": "Section heading."
   },
-  "shellPreviousMatch": "Previous match (Shift+Enter)",
-  "@shellPreviousMatch": {
-    "description": "Tooltip. Keep the keys as typed."
+  "shellAlreadyUpToDate": "Already up to date.",
+  "@shellAlreadyUpToDate": {
+    "description": "Result of a manual sync that found nothing new."
   },
-  "shellNextMatch": "Next match (Enter)",
-  "@shellNextMatch": {
-    "description": "Tooltip. Keep the key as typed."
+  "shellCheatSheet": "V select · T text · P pen · H highlight · E erase · Ctrl+Z undo · Ctrl+scroll zoom",
+  "@shellCheatSheet": {
+    "description": "The one-line keyboard cheat sheet along the bottom. Each item is a key followed by what it does; the separator is a middle dot. It is dropped whole when the window is too narrow, never truncated, so a longer translation costs nothing but its own visibility on small windows."
   },
   "shellCloseEsc": "Close (Esc)",
   "@shellCloseEsc": {
     "description": "Tooltip on the find bar's close button. Esc is the Escape key."
   },
-  "shellNoTags": "No tags in this notebook yet.",
-  "@shellNoTags": {
-    "description": "Empty state of the tags panel."
+  "shellCreateFirstPage": "Create your first page",
+  "@shellCreateFirstPage": {
+    "description": "Button in the empty state."
   },
-  "shellTagsHint": "Tags mark a line — to do, important, question, definition — so you can find it again, revise from it, or give it a deadline.",
-  "@shellTagsHint": {
-    "description": "Explains what tags are, under shellNoTags. The four words are tag names: keep them consistent with tagTodo, tagImportant, tagQuestion, tagDefinition."
+  "shellEmptyBody": "Everything you make here lives on your device,\nin an open format you own.",
+  "@shellEmptyBody": {
+    "description": "Under shellEmptyTitle. Keep the line break."
   },
-  "shellTagTheLine": "Tag the line you are on",
-  "@shellTagTheLine": {
-    "description": "Button in the empty tags panel."
+  "shellEmptyTitle": "An open page awaits",
+  "@shellEmptyTitle": {
+    "description": "Heading shown when no page is open."
   },
-  "shellNoHeadings": "No headings on this page.",
-  "@shellNoHeadings": {
-    "description": "Empty state of the page-outline panel."
+  "shellFindOnThisPage": "Find on this page…",
+  "@shellFindOnThisPage": {
+    "description": "Placeholder in the find box."
   },
   "shellHeadingsHint": "Start a line with # to make a heading — the outline builds itself as you write.",
   "@shellHeadingsHint": {
@@ -1631,29 +1888,80 @@
   "@shellLinkedFrom": {
     "description": "Heading in the links panel: pages that point AT this one."
   },
+  "shellLinksTo": "Links to",
+  "@shellLinksTo": {
+    "description": "Heading in the links panel: pages this one points at."
+  },
+  "shellNextMatch": "Next match (Enter)",
+  "@shellNextMatch": {
+    "description": "Tooltip. Keep the key as typed."
+  },
   "shellNoBacklinks": "No pages link here yet.",
   "@shellNoBacklinks": {
     "description": "Empty state under shellLinkedFrom."
   },
-  "shellLinksTo": "Links to",
-  "@shellLinksTo": {
-    "description": "Heading in the links panel: pages this one points at."
+  "shellNoHeadings": "No headings on this page.",
+  "@shellNoHeadings": {
+    "description": "Empty state of the page-outline panel."
   },
   "shellNoLinks": "This page links nowhere yet.",
   "@shellNoLinks": {
     "description": "Empty state under shellLinksTo."
   },
-  "shellSavedLocally": "This page is saved to your local .onote file.",
-  "@shellSavedLocally": {
-    "description": "Tooltip on the save indicator. '.onote' is the file extension."
+  "shellNoMatches": "No matches",
+  "@shellNoMatches": {
+    "description": "Shown in the find bar when the search text is not on the page."
   },
-  "shellSaving": "Saving…",
-  "@shellSaving": {
-    "description": "Shown while a page is being written to disk."
+  "shellNoTags": "No tags in this notebook yet.",
+  "@shellNoTags": {
+    "description": "Empty state of the tags panel."
   },
-  "shellSavedOnDevice": "Saved on this device",
-  "@shellSavedOnDevice": {
-    "description": "Status-bar text when everything is written and the notebook is not synced anywhere."
+  "shellNothingReplaced": "Nothing replaced",
+  "@shellNothingReplaced": {
+    "description": "Result of Replace All when the search text was not on the page."
+  },
+  "shellPageLocked": "“{title}” is locked",
+  "@shellPageLocked": {
+    "description": "Shown in place of a page that has a passcode on it.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "shellPreviousMatch": "Previous match (Shift+Enter)",
+  "@shellPreviousMatch": {
+    "description": "Tooltip. Keep the keys as typed."
+  },
+  "shellPulled": "{count, plural, =1{Pulled 1 change} other{Pulled {count} changes}}",
+  "@shellPulled": {
+    "description": "Result of a manual sync.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "shellReplace": "Replace",
+  "@shellReplace": {
+    "description": "Button: replace the match the caret is on."
+  },
+  "shellReplaceAll": "All",
+  "@shellReplaceAll": {
+    "description": "Button beside Replace: replace every match at once. Short, because it sits in a narrow bar."
+  },
+  "shellReplaceWith": "Replace with…",
+  "@shellReplaceWith": {
+    "description": "Placeholder in the replacement box of the find bar."
+  },
+  "shellReplaced": "{count, plural, =1{Replaced 1 occurrence} other{Replaced {count} occurrences}}",
+  "@shellReplaced": {
+    "description": "Result of Replace All.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "shellRustLinked": "The Rust core (onote-core) is linked and computing this page's content hash on save.\n{build}",
   "@shellRustLinked": {
@@ -1668,43 +1976,17 @@
   "@shellRustMissing": {
     "description": "Tooltip when the native library is absent. 'onote-core' is a component name."
   },
-  "shellCheatSheet": "V select · T text · P pen · H highlight · E erase · Ctrl+Z undo · Ctrl+scroll zoom",
-  "@shellCheatSheet": {
-    "description": "The one-line keyboard cheat sheet along the bottom. Each item is a key followed by what it does; the separator is a middle dot. It is dropped whole when the window is too narrow, never truncated, so a longer translation costs nothing but its own visibility on small windows."
+  "shellSavedLocally": "This page is saved to your local .onote file.",
+  "@shellSavedLocally": {
+    "description": "Tooltip on the save indicator. '.onote' is the file extension."
   },
-  "shellEmptyTitle": "An open page awaits",
-  "@shellEmptyTitle": {
-    "description": "Heading shown when no page is open."
+  "shellSavedOnDevice": "Saved on this device",
+  "@shellSavedOnDevice": {
+    "description": "Status-bar text when everything is written and the notebook is not synced anywhere."
   },
-  "shellEmptyBody": "Everything you make here lives on your device,\nin an open format you own.",
-  "@shellEmptyBody": {
-    "description": "Under shellEmptyTitle. Keep the line break."
-  },
-  "shellCreateFirstPage": "Create your first page",
-  "@shellCreateFirstPage": {
-    "description": "Button in the empty state."
-  },
-  "shellAlreadyUpToDate": "Already up to date.",
-  "@shellAlreadyUpToDate": {
-    "description": "Result of a manual sync that found nothing new."
-  },
-  "shellPulled": "{count, plural, =1{Pulled 1 change} other{Pulled {count} changes}}",
-  "@shellPulled": {
-    "description": "Result of a manual sync.",
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "shellPageLocked": "“{title}” is locked",
-  "@shellPageLocked": {
-    "description": "Shown in place of a page that has a passcode on it.",
-    "placeholders": {
-      "title": {
-        "type": "String"
-      }
-    }
+  "shellSaving": "Saving…",
+  "@shellSaving": {
+    "description": "Shown while a page is being written to disk."
   },
   "shellTagGroup": "{tag}  ({count})",
   "@shellTagGroup": {
@@ -1719,200 +2001,65 @@
       }
     }
   },
+  "shellTagTheLine": "Tag the line you are on",
+  "@shellTagTheLine": {
+    "description": "Button in the empty tags panel."
+  },
+  "shellTagsHint": "Tags mark a line — to do, important, question, definition — so you can find it again, revise from it, or give it a deadline.",
+  "@shellTagsHint": {
+    "description": "Explains what tags are, under shellNoTags. The four words are tag names: keep them consistent with tagTodo, tagImportant, tagQuestion, tagDefinition."
+  },
   "shellUnlock": "Unlock",
   "@shellUnlock": {
     "description": "Button that asks for the passcode on a locked page."
   },
-  "onboardingStep1Title": "The page is a canvas",
-  "@onboardingStep1Title": {
-    "description": "Welcome flow, step 1 of 3. Heading over an animation of clicking on an empty page and typing."
+  "tagContact": "Contact",
+  "@tagContact": {
+    "description": "Tag name: a person to get in touch with."
   },
-  "onboardingStep1Body": "Click anywhere and start typing — a box appears where you clicked, and only once you type. Move one by the bar along its top, and drag pictures in from anywhere.",
-  "@onboardingStep1Body": {
-    "description": "Welcome flow, step 1 of 3. The core interaction: the page is free-form, not a document that flows top to bottom."
+  "tagCritical": "Critical",
+  "@tagCritical": {
+    "description": "Tag name: more urgent than Important."
   },
-  "onboardingStep2Title": "Maths and drawing, in with the words",
-  "@onboardingStep2Title": {
-    "description": "Welcome flow, step 2 of 3. Heading over a rendered equation and a pen stroke."
+  "tagCustom": "Tag",
+  "@tagCustom": {
+    "description": "The fallback name for a tag with no kind of its own — the generic word."
   },
-  "onboardingStep2Body": "Type 1/2 or press Alt+= and it builds up as real notation as you write, in a box of its own or mid-sentence. The Draw tab takes a pen, a finger or the mouse.",
-  "@onboardingStep2Body": {
-    "description": "Welcome flow, step 2 of 3. 'Alt+=' is a keyboard shortcut and must stay as typed. '1/2' is literally what the user types to get a fraction."
+  "tagDefinition": "Definition",
+  "@tagDefinition": {
+    "description": "Tag name. Also a flashcard kind — keep it consistent with barDefinitionCard."
   },
-  "onboardingStep3Title": "Your notes are a file you own",
-  "@onboardingStep3Title": {
-    "description": "Welcome flow, step 3 of 3. Heading over a diagram of one file, a synced folder, and two computers."
+  "tagIdea": "Idea",
+  "@tagIdea": {
+    "description": "Tag name."
   },
-  "onboardingStep3Body": "One open, readable file per notebook — no account, no lock-in. Put it in a folder your cloud already keeps in step and every device stays together.",
-  "@onboardingStep3Body": {
-    "description": "Welcome flow, step 3 of 3. 'no lock-in' means the notes are not trapped in a proprietary service."
+  "tagImportant": "Important",
+  "@tagImportant": {
+    "description": "Tag name."
   },
-  "onboardingStartWriting": "Start writing",
-  "@onboardingStartWriting": {
-    "description": "Button ending the welcome flow and putting the user on the page."
+  "tagQuestion": "Question",
+  "@tagQuestion": {
+    "description": "Tag name. Also the front of a flashcard — keep it consistent with barQuestionCard."
   },
-  "onboardingSyncTitle": "Sync with another device",
-  "@onboardingSyncTitle": {
-    "description": "Welcome flow: one of three ways to get notes in."
+  "tagRemember": "Remember",
+  "@tagRemember": {
+    "description": "Tag name: worth committing to memory."
   },
-  "onboardingSyncBodyFirst": "Drive, OneDrive, iCloud, Dropbox, Syncthing, a NAS — or a GitHub repository.",
-  "@onboardingSyncBodyFirst": {
-    "description": "Shown when no existing notebook was found nearby. All names are products and stay untranslated; 'NAS' is a network drive at home."
+  "tagTodo": "To Do",
+  "@tagTodo": {
+    "description": "Tag name: something that still has to be done. Title case as a proper label."
   },
-  "onboardingSyncBodyAlso": "Not one of the above? Choose the folder yourself.",
-  "@onboardingSyncBodyAlso": {
-    "description": "Shown when Openote DID find notebooks and has already listed them above."
+  "touchDrawAlways": "Always",
+  "@touchDrawAlways": {
+    "description": "Setting: a finger always draws, even when a stylus is present. Shown in a small dropdown, so keep it to one word if the language allows."
   },
-  "onboardingSyncAction": "Set up…",
-  "@onboardingSyncAction": {
-    "description": "Button opening the sync setup dialog."
+  "touchDrawAuto": "Auto (pen takes over)",
+  "@touchDrawAuto": {
+    "description": "Setting: a finger draws until a stylus is used, then touch moves the page instead so a resting palm cannot mark it."
   },
-  "onboardingOneNoteTitle": "Bring notes over from OneNote",
-  "@onboardingOneNoteTitle": {
-    "description": "Welcome flow: importing an existing Microsoft OneNote notebook. 'OneNote' is a product name."
+  "touchDrawNever": "Never",
+  "@touchDrawNever": {
+    "description": "Setting: fingers only move and zoom the page; drawing needs a stylus or the mouse. Shown in a small dropdown — one word if the language allows."
   },
-  "onboardingOneNoteBody": "Pages, formatting, images, ink and tags from a .onepkg. Runs in the background — keep going while it works.",
-  "@onboardingOneNoteBody": {
-    "description": "'.onepkg' is a file extension and must not be translated. 'ink' means handwriting."
-  },
-  "onboardingOneNoteAction": "Choose file…",
-  "onboardingFreshTitle": "Start a fresh notebook",
-  "@onboardingFreshTitle": {
-    "description": "Welcome flow: begin with an empty notebook rather than importing or syncing."
-  },
-  "onboardingFreshBody": "An empty notebook, ready to write in. You can always bring notes over later.",
-  "@onboardingFreshBody": {
-    "description": "Body for the start-fresh option in the welcome flow."
-  },
-  "onboardingFreshAction": "Start fresh",
-  "@onboardingFreshAction": {
-    "description": "Button creating an empty notebook and closing the welcome flow."
-  },
-  "onboardingCloudTitle": "Bring notes over from OneNote",
-  "@onboardingCloudTitle": {
-    "description": "Welcome flow: import straight from Microsoft OneNote over the internet. 'OneNote' is a product name."
-  },
-  "onboardingCloudBody": "Sign in to Microsoft and pick a notebook. Nothing to export first, and it works on any computer.",
-  "@onboardingCloudBody": {
-    "description": "Body for the sign-in-to-Microsoft import option."
-  },
-  "onboardingCloudAction": "Sign in",
-  "@onboardingCloudAction": {
-    "description": "Button starting the Microsoft sign-in."
-  },
-  "oneNoteCloudTitle": "Bring a notebook over from OneNote",
-  "@oneNoteCloudTitle": {
-    "description": "Dialog title for importing from OneNote over the internet."
-  },
-  "oneNoteCloudIntro": "Openote will read your notebooks from OneNote. It cannot change them.",
-  "@oneNoteCloudIntro": {
-    "description": "Reassurance shown before signing in: the import is read-only."
-  },
-  "oneNoteCloudSignIn": "Sign in to Microsoft",
-  "@oneNoteCloudSignIn": {
-    "description": "Button opening the browser to sign in."
-  },
-  "oneNoteCloudSigningIn": "Waiting for your browser…",
-  "@oneNoteCloudSigningIn": {
-    "description": "Shown while the browser sign-in is open."
-  },
-  "oneNoteCloudLoading": "Looking for your notebooks…",
-  "@oneNoteCloudLoading": {
-    "description": "Shown while the notebook list is being fetched."
-  },
-  "oneNoteCloudEmpty": "No notebooks were found on this account.",
-  "@oneNoteCloudEmpty": {
-    "description": "Shown when the signed-in account has no OneNote notebooks."
-  },
-  "oneNoteCloudOther": "Use a different account",
-  "@oneNoteCloudOther": {
-    "description": "Button signing out and starting the sign-in again."
-  },
-  "oneNoteCloudNoInk": "Tables are fitted to the page rather than kept at their exact widths, and text colour and font are not carried over.",
-  "@oneNoteCloudNoInk": {
-    "description": "Honest note that page nesting is not available over the internet import. Handwriting IS imported."
-  },
-  "@onboardingOneNoteAction": {
-    "description": "Button opening the file picker for a .onepkg."
-  },
-  "onboardingOnePkgFileType": "OneNote notebook package",
-  "@onboardingOnePkgFileType": {
-    "description": "The file-type name shown in the operating system's own file picker, next to the .onepkg extension it filters on."
-  },
-  "onboardingOneNoteHowTo": "How do I export?",
-  "@onboardingOneNoteHowTo": {
-    "description": "Link folding out the OneNote export instructions."
-  },
-  "onboardingOneNoteHideSteps": "Hide steps",
-  "@onboardingOneNoteHideSteps": {
-    "description": "Link folding the OneNote export instructions away again."
-  },
-  "onboardingExportTitle": "Exporting from OneNote",
-  "@onboardingExportTitle": {
-    "description": "Heading over the numbered instructions for getting a .onepkg out of OneNote."
-  },
-  "onboardingExportSteps": "1. Open OneNote for Windows (the desktop app — the Store and web versions cannot export).\n2. Let the notebook finish syncing, so everything is on this machine.\n3. File ▸ Export ▸ Notebook ▸ OneNote Package (*.onepkg), then Export.\n4. Come back here and choose that file.",
-  "@onboardingExportSteps": {
-    "description": "Four numbered steps. 'File ▸ Export ▸ Notebook ▸ OneNote Package' is a menu path INSIDE OneNote — translate it to match OneNote's own wording in this language, or leave it in English if unsure. Keep the newlines and the numbering."
-  },
-  "onboardingExportMacNote": "On a Mac, or with only the Store version: export one section at a time as .one, or ask a Windows machine to make the .onepkg. Openote never signs into your Microsoft account — it only reads the file you hand it.",
-  "@onboardingExportMacNote": {
-    "description": "'.one' and '.onepkg' are file extensions and must not be translated."
-  },
-  "onboardingImportingFile": "Importing {fileName}",
-  "@onboardingImportingFile": {
-    "description": "Progress row while a OneNote package is being read.",
-    "placeholders": {
-      "fileName": {
-        "type": "String",
-        "example": "School 2026.onepkg"
-      }
-    }
-  },
-  "onboardingImportRunning": "Keep going — this runs in the background, and the card in the corner will say when it's done.",
-  "@onboardingImportRunning": {
-    "description": "Reassurance under the progress spinner: the user does not have to wait."
-  },
-  "onboardingImportDone": "Your notebook is ready",
-  "@onboardingImportDone": {
-    "description": "Shown when the OneNote import has finished successfully."
-  },
-  "onboardingOpenFailed": "Openote couldn't open that notebook.",
-  "@onboardingOpenFailed": {
-    "description": "Error shown when opening a notebook Openote found on this computer failed. The reason itself is behind commonDetailsAdvanced."
-  },
-  "onboardingNoNativeCore": "OneNote import needs the native core, which this build does not include.",
-  "@onboardingNoNativeCore": {
-    "description": "Error: this build was compiled without the Rust library that reads .onepkg files. 'the native core' is a component of Openote."
-  },
-  "onboardingReadFailed": "Couldn't read that file: {reason}",
-  "@onboardingReadFailed": {
-    "description": "Error shown when the chosen .onepkg could not be read at all.",
-    "placeholders": {
-      "reason": {
-        "type": "String",
-        "example": "PathNotFoundException"
-      }
-    }
-  },
-  "oneNoteFileTitle": "Use a file you exported",
-  "@oneNoteFileTitle": {
-    "description": "Import route that needs no Microsoft sign-in, using an exported .onepkg file."
-  },
-  "oneNoteFileBody": "No signing in, and the closest copy: tables keep their exact widths. You will need OneNote on Windows to export the notebook first.",
-  "@oneNoteFileBody": {
-    "description": "Body for the file import route. 'OneNote' is a product name."
-  },
-  "oneNoteSignInBody": "Pick a notebook and it comes straight over, with nothing to export first. Works on any computer.",
-  "@oneNoteSignInBody": {
-    "description": "Body for the Microsoft sign-in import route."
-  },
-  "oneNotePickTitle": "Which notebook?",
-  "@oneNotePickTitle": {
-    "description": "Heading above the list of notebooks found in the signed-in account."
-  },
-  "oneNoteCloudContinue": "Continue with Microsoft",
-  "@oneNoteCloudContinue": {
-    "description": "Button reusing a remembered Microsoft sign-in, so no browser is needed."
-  }
+  "@@x-notes": "The English template, and the source of truth for every other language. Rules for anyone adding a string: name it <surface><Thing> so a grep for the surface finds all of it; give every message an @-entry saying WHERE it appears and what any placeholder holds, because a translator sees the string and nothing else; and never build a sentence by concatenating fragments — word order is not the same everywhere. Illustrations in this app are painted, not written, so there is deliberately nothing in them to translate."
 }

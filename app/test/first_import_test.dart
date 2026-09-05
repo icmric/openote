@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/export/import_job.dart';
+import 'package:openote/export/import_status.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/ui/import_progress.dart';
@@ -102,6 +103,42 @@ void main() {
     expect(ImportJob.current, isNull, reason: 'the panel is gone');
     expect(job.state, isNot(ImportJobState.cancelled),
         reason: 'dismissing the explanation must not stop the import');
+  });
+
+  testWidgets("the card speaks the reader's language", (tester) async {
+    // The import card was the last English-only surface in an app that ships
+    // in seven languages — and it is the FIRST thing a switcher sees, so a
+    // German student picking their notebook out of OneNote watched the whole
+    // thing happen in English.
+    //
+    // The cause was structural rather than an oversight: ImportJob is a
+    // ChangeNotifier with no BuildContext, so it could not reach L, so every
+    // sentence had to be built where there was no way to say it in anybody's
+    // language. It reports a stage and some numbers now, and the card does the
+    // wording.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await fixture(tester, 'onote_import_l10n_');
+
+    final job = ImportJob.debugCreate(app, 'Computing Science')
+      ..isFirstNotebook = true
+      ..pagesDone = 12
+      ..pagesTotal = 332
+      ..status = const ImportStatus(ImportStage.bringingIn,
+          name: 'Week 1', count: 12, total: 332);
+    ImportJob.current = job;
+
+    await tester.pumpWidget(testApp(
+      Scaffold(body: Stack(children: [ImportProgressCard(app: app)])),
+      locale: const Locale('de'),
+    ));
+    await tester.pump();
+
+    expect(find.textContaining('Week 1'), findsOneWidget,
+        reason: "the section name is the user's own and is not translated");
+    expect(find.textContaining('übertragen'), findsOneWidget,
+        reason: 'but the sentence around it is');
+    // And the English fallback is still there for anything without a context.
+    expect(job.message, isNotEmpty);
   });
 
   testWidgets('a later import keeps the small corner card', (tester) async {
