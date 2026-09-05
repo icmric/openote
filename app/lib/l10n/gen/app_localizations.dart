@@ -2330,7 +2330,7 @@ abstract class L {
   /// Honest note that page nesting is not available over the internet import. Handwriting IS imported.
   ///
   /// In en, this message translates to:
-  /// **'Subpages arrive as ordinary pages: OneNote does not send how they were nested.'**
+  /// **'Tables are fitted to the page rather than kept at their exact widths, and text colour and font are not carried over.'**
   String get oneNoteCloudNoInk;
 
   /// The file-type name shown in the operating system's own file picker, next to the .onepkg extension it filters on.
@@ -2414,7 +2414,7 @@ abstract class L {
   /// Body for the file import route. 'OneNote' is a product name.
   ///
   /// In en, this message translates to:
-  /// **'No signing in, and subpages keep their nesting. You will need OneNote on Windows to export the notebook first.'**
+  /// **'No signing in, and the closest copy: tables keep their exact widths. You will need OneNote on Windows to export the notebook first.'**
   String get oneNoteFileBody;
 
   /// Body for the Microsoft sign-in import route.

@@ -1348,7 +1348,7 @@ class LDe extends L {
 
   @override
   String get oneNoteCloudNoInk =>
-      'Unterseiten kommen als gewöhnliche Seiten an: OneNote übermittelt ihre Verschachtelung nicht.';
+      'Tabellen werden an die Seite angepasst statt in ihrer genauen Breite übernommen, und Textfarbe und Schriftart kommen nicht mit.';
 
   @override
   String get onboardingOnePkgFileType => 'OneNote-Notizbuchpaket';
@@ -1400,7 +1400,7 @@ class LDe extends L {
 
   @override
   String get oneNoteFileBody =>
-      'Ohne Anmeldung, und Unterseiten behalten ihre Verschachtelung. Sie brauchen OneNote unter Windows, um das Notizbuch zuerst zu exportieren.';
+      'Ohne Anmeldung, und die genaueste Kopie: Tabellen behalten ihre exakte Breite. Sie brauchen OneNote unter Windows, um das Notizbuch zuerst zu exportieren.';
 
   @override
   String get oneNoteSignInBody =>

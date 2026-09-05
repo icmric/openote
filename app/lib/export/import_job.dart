@@ -292,10 +292,13 @@ class ImportJob extends ChangeNotifier {
         if (lost.attachments > 0) '${lost.attachments} attachment'
             '${lost.attachments == 1 ? '' : 's'}',
       ];
+      // The apology that used to live here — "subpages arrive as ordinary
+      // pages" — was true and is not any more: the nesting comes over now.
+      // A completion message that names a loss the import did not suffer is
+      // as misleading as one that hides a loss it did.
       _finish(ImportJobState.done,
           message: gone.isEmpty
-              ? '$note. Subpages arrive as ordinary pages — OneNote does not '
-                  'send how they were nested.'
+              ? '$note.'
               : '$note, but could not bring ${gone.join(', ')}.');
     } on GraphAuthException catch (e) {
       error = e.message;

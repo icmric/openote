@@ -1350,7 +1350,7 @@ class LIt extends L {
 
   @override
   String get oneNoteCloudNoInk =>
-      'Le sottopagine arrivano come pagine normali: OneNote non invia come erano annidate.';
+      'Le tabelle vengono adattate alla pagina invece di mantenere la larghezza esatta, e il colore e il carattere del testo non vengono mantenuti.';
 
   @override
   String get onboardingOnePkgFileType => 'Pacchetto di quaderno OneNote';
@@ -1402,7 +1402,7 @@ class LIt extends L {
 
   @override
   String get oneNoteFileBody =>
-      'Senza accedere, e le sottopagine mantengono l\'annidamento. Ti servirà OneNote su Windows per esportare prima il blocco appunti.';
+      'Senza accedere, e la copia più fedele: le tabelle mantengono la larghezza esatta. Ti servirà OneNote su Windows per esportare prima il blocco appunti.';
 
   @override
   String get oneNoteSignInBody =>

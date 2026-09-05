@@ -382,9 +382,9 @@
   "oneNoteCloudLoading": "Buscando tus cuadernos…",
   "oneNoteCloudEmpty": "No se encontraron cuadernos en esta cuenta.",
   "oneNoteCloudOther": "Usar otra cuenta",
-  "oneNoteCloudNoInk": "Las subpáginas llegan como páginas normales: OneNote no envía cómo estaban anidadas.",
+  "oneNoteCloudNoInk": "Las tablas se ajustan a la página en lugar de conservar su anchura exacta, y el color y la fuente del texto no se conservan.",
   "oneNoteFileTitle": "Usar un archivo exportado",
-  "oneNoteFileBody": "Sin iniciar sesión, y las subpáginas conservan su anidación. Necesitarás OneNote en Windows para exportar el cuaderno antes.",
+  "oneNoteFileBody": "Sin iniciar sesión, y la copia más fiel: las tablas conservan su anchura exacta. Necesitarás OneNote en Windows para exportar el cuaderno antes.",
   "oneNoteSignInBody": "Elige un cuaderno y pasa directamente, sin exportar nada antes. Funciona en cualquier ordenador.",
   "oneNotePickTitle": "¿Qué cuaderno?",
   "oneNoteCloudContinue": "Continuar con Microsoft"

@@ -1343,7 +1343,7 @@ class LPt extends L {
 
   @override
   String get oneNoteCloudNoInk =>
-      'As subpáginas chegam como páginas normais: o OneNote não envia como estavam aninhadas.';
+      'As tabelas são ajustadas à página em vez de manterem a largura exacta, e a cor e o tipo de letra do texto não são mantidos.';
 
   @override
   String get onboardingOnePkgFileType => 'Pacote de caderno do OneNote';
@@ -1395,7 +1395,7 @@ class LPt extends L {
 
   @override
   String get oneNoteFileBody =>
-      'Sem iniciar sessão, e as subpáginas mantêm o aninhamento. Vai precisar do OneNote no Windows para exportar o bloco de notas primeiro.';
+      'Sem iniciar sessão, e a cópia mais fiel: as tabelas mantêm a largura exacta. Vai precisar do OneNote no Windows para exportar o bloco de notas primeiro.';
 
   @override
   String get oneNoteSignInBody =>

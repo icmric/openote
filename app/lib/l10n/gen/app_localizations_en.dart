@@ -1335,7 +1335,7 @@ class LEn extends L {
 
   @override
   String get oneNoteCloudNoInk =>
-      'Subpages arrive as ordinary pages: OneNote does not send how they were nested.';
+      'Tables are fitted to the page rather than kept at their exact widths, and text colour and font are not carried over.';
 
   @override
   String get onboardingOnePkgFileType => 'OneNote notebook package';
@@ -1386,7 +1386,7 @@ class LEn extends L {
 
   @override
   String get oneNoteFileBody =>
-      'No signing in, and subpages keep their nesting. You will need OneNote on Windows to export the notebook first.';
+      'No signing in, and the closest copy: tables keep their exact widths. You will need OneNote on Windows to export the notebook first.';
 
   @override
   String get oneNoteSignInBody =>

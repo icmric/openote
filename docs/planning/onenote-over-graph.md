@@ -55,9 +55,15 @@ Counted over sixty real pages unless stated otherwise.
 
 Measured: 301 traces on one page, 292 KB against the 6 KB a typical page weighs.
 
-## The hierarchy cannot be imported
+## The hierarchy CAN be imported — ask the question backwards
 
-This is settled, not pending. The default page object is:
+This section used to be headed *"The hierarchy cannot be imported"* and began
+*"This is settled, not pending."* It was wrong, and the refutation was sitting
+in its own second paragraph.
+
+Everything below about the field being unreadable is true, and re-checked: on
+v1.0 and on beta, on a collection and on a single page, with `$select`,
+`$select=*` and `$expand`. The default page object is:
 
 ```
 id, self, createdDateTime, title, createdByAppId, contentUrl,
@@ -69,9 +75,44 @@ title,level` comes back as `[id, title]`, with `level` silently dropped.
 `$orderby=order` *works*, so the field exists server-side for sorting, but its
 value is never returned.
 
-So **subpages arrive as ordinary pages** over this route, and the `.onepkg`
-route remains the only way to keep their nesting. The dialog says so, in all
-seven languages, beside the file route which keeps them.
+And there the reasoning stopped, on "the value cannot be read, therefore the
+hierarchy cannot be recovered".
+
+**But `$orderby=order` works.** That sentence was already written down, one
+line above the wrong conclusion. It means the fields exist server-side and are
+merely never *projected into a response* — and a field the server can sort by
+is a field it may also **filter** by. That turns *"what level is this page?"*
+into *"which pages are at this level?"*: the same information, asked from the
+other side, and not a guess about anybody's title.
+
+It works. On a real 80-page section:
+
+```
+$filter=level eq 0  -> Week 12, Week 11: Power Series, Week 10: …
+$filter=level eq 1  -> Test Notes, Taylor Series, Maclaurin Series, …
+$filter=level eq 2  -> none
+$filter=level eq 99 -> none        <- the control
+```
+
+The control is what makes this evidence rather than coincidence: **a filter
+being ignored returns everything**, so an impossible value returning nothing
+proves the server is really applying it. Re-checked with `$select=id` and with
+`$orderby` alongside, all three agreeing at 68 of 80.
+
+Costs one request per level per section, capped at OneNote's own two levels of
+indent, asking for `id` alone; a section with no subpages pays exactly one.
+
+**A page cannot be at two depths at once**, and that is checked. The whole
+method rests on a filter the service never echoes back, and the failure mode if
+it ever stopped applying it is silent and nasty: every query returns every page
+and the notebook arrives with everything indented to the deepest level asked
+for. An overlap proves that happened, so the map is discarded and the notebook
+comes in flat. Better no nesting than invented nesting.
+
+The lesson worth more than the fix: **"the value cannot be read" and "the
+information cannot be obtained" are different claims**, and the first was
+allowed to stand in for the second for weeks, in a document whose whole purpose
+is to record what was measured rather than what was assumed.
 
 ## Throttling is the normal weather
 
@@ -290,7 +331,7 @@ Microsoft's throttling, not the code, decides how long an import takes.
 | Handwriting | yes | yes |
 | **Attachments** | **no — never implemented** | **yes** |
 | **Internal page links** | **no** | **yes, rewritten after the import** |
-| Page nesting | yes | **no, and cannot be** |
+| Page nesting | yes | yes, via `$filter=level` |
 | Works on macOS or Linux | no | yes |
 
 Both routes produce the same intermediate shape and go through

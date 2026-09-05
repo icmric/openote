@@ -1350,7 +1350,7 @@ class LFr extends L {
 
   @override
   String get oneNoteCloudNoInk =>
-      'Les sous-pages arrivent comme des pages ordinaires : OneNote n\'envoie pas leur imbrication.';
+      'Les tableaux sont ajustés à la page plutôt que conservés à leur largeur exacte, et la couleur et la police du texte ne sont pas reprises.';
 
   @override
   String get onboardingOnePkgFileType => 'Paquet de carnet OneNote';
@@ -1401,7 +1401,7 @@ class LFr extends L {
 
   @override
   String get oneNoteFileBody =>
-      'Sans connexion, et les sous-pages conservent leur imbrication. Il vous faudra OneNote sous Windows pour exporter le carnet au préalable.';
+      'Sans connexion, et la copie la plus fidèle : les tableaux conservent leur largeur exacte. Il vous faudra OneNote sous Windows pour exporter le carnet au préalable.';
 
   @override
   String get oneNoteSignInBody =>

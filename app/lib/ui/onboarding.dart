@@ -378,9 +378,13 @@ class _OnboardingState extends State<_Onboarding>
         // not the slower option, it was no option. Signing in works
         // everywhere and skips the export entirely.
         //
-        // The file route stays as the quiet second action, because it is
-        // still the higher-fidelity one: a `.onepkg` carries handwriting and
-        // Graph's HTML cannot.
+        // The file route stays as the quiet second action. It was kept
+        // because a `.onepkg` carried handwriting and Graph's HTML could not
+        // — no longer true, ink comes over the internet too, and so do
+        // attachments, internal links and subpage nesting, which the file
+        // route has never managed for links. What is left to it is exact
+        // table widths and not needing a Microsoft account, which are real
+        // reasons for some people and not reasons to put it first.
         if (_importing)
           _importRow(s, l)
         else

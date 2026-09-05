@@ -1828,7 +1828,7 @@
   "@oneNoteCloudOther": {
     "description": "Button signing out and starting the sign-in again."
   },
-  "oneNoteCloudNoInk": "Subpages arrive as ordinary pages: OneNote does not send how they were nested.",
+  "oneNoteCloudNoInk": "Tables are fitted to the page rather than kept at their exact widths, and text colour and font are not carried over.",
   "@oneNoteCloudNoInk": {
     "description": "Honest note that page nesting is not available over the internet import. Handwriting IS imported."
   },
@@ -1899,7 +1899,7 @@
   "@oneNoteFileTitle": {
     "description": "Import route that needs no Microsoft sign-in, using an exported .onepkg file."
   },
-  "oneNoteFileBody": "No signing in, and subpages keep their nesting. You will need OneNote on Windows to export the notebook first.",
+  "oneNoteFileBody": "No signing in, and the closest copy: tables keep their exact widths. You will need OneNote on Windows to export the notebook first.",
   "@oneNoteFileBody": {
     "description": "Body for the file import route. 'OneNote' is a product name."
   },

@@ -95,15 +95,22 @@ void main() {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await open(tester);
 
-    // The sign-in route admits it cannot carry handwriting; the file route
-    // admits it needs Windows. A choice where each option genuinely wins at
-    // something can only be made honestly if both caveats are on screen.
-    // Ink IS imported now — `includeinkML=true` returns it in a second part
-    // of a multipart body — so the caveat that stands is the one that cannot
-    // be fixed: OneNote does not send page nesting at all.
-    expect(find.textContaining('Subpages arrive as ordinary pages'),
-        findsOneWidget);
+    // Each route admits what it costs, and the costs keep changing as the
+    // sign-in route grows. It once could not carry handwriting; then it
+    // could. It once could not nest subpages; then it could — the service
+    // will filter on a `level` it never sends, which is how that fell.
+    //
+    // What is left is real and unlikely to fall: OneNote sends no table
+    // column widths at all, so they are fitted rather than reproduced, and
+    // colour and font are deliberately dropped. Against that the file route
+    // needs Windows and an export. Both caveats have to be on screen for the
+    // choice to be an honest one.
+    expect(find.textContaining('exact widths'), findsWidgets);
     expect(find.textContaining('OneNote on Windows'), findsOneWidget);
+    // And the claim that is now FALSE must be gone, in every language: it
+    // was in all seven .arb files, telling six sets of users something
+    // untrue about their own notebooks.
+    expect(find.textContaining('arrive as ordinary pages'), findsNothing);
     // And the reassurance that matters most to a hesitant person is on the
     // card they are deciding about.
     expect(find.textContaining('cannot change them'), findsOneWidget);

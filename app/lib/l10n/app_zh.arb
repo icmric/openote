@@ -382,9 +382,9 @@
   "oneNoteCloudLoading": "正在查找你的笔记本…",
   "oneNoteCloudEmpty": "此账户下未找到任何笔记本。",
   "oneNoteCloudOther": "使用其他账户",
-  "oneNoteCloudNoInk": "子页面会变成普通页面：OneNote 不会发送它们的层级关系。",
+  "oneNoteCloudNoInk": "表格会适应页面宽度，而不是保留原有宽度；文字颜色和字体也不会导入。",
   "oneNoteFileTitle": "使用导出的文件",
-  "oneNoteFileBody": "无需登录，且子页面会保留层级。需要先在 Windows 版 OneNote 中导出笔记本。",
+  "oneNoteFileBody": "无需登录，且最为完整：表格会保留原有宽度。需要先在 Windows 版 OneNote 中导出笔记本。",
   "oneNoteSignInBody": "选择一个笔记本即可直接导入，无需事先导出。任何电脑都能用。",
   "oneNotePickTitle": "选择哪个笔记本？",
   "oneNoteCloudContinue": "继续使用 Microsoft"

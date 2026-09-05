@@ -382,9 +382,9 @@
   "oneNoteCloudLoading": "Recherche de vos carnets…",
   "oneNoteCloudEmpty": "Aucun carnet trouvé sur ce compte.",
   "oneNoteCloudOther": "Utiliser un autre compte",
-  "oneNoteCloudNoInk": "Les sous-pages arrivent comme des pages ordinaires : OneNote n'envoie pas leur imbrication.",
+  "oneNoteCloudNoInk": "Les tableaux sont ajustés à la page plutôt que conservés à leur largeur exacte, et la couleur et la police du texte ne sont pas reprises.",
   "oneNoteFileTitle": "Utiliser un fichier exporté",
-  "oneNoteFileBody": "Sans connexion, et les sous-pages conservent leur imbrication. Il vous faudra OneNote sous Windows pour exporter le carnet au préalable.",
+  "oneNoteFileBody": "Sans connexion, et la copie la plus fidèle : les tableaux conservent leur largeur exacte. Il vous faudra OneNote sous Windows pour exporter le carnet au préalable.",
   "oneNoteSignInBody": "Choisissez un carnet et il arrive directement, sans rien exporter. Fonctionne sur n'importe quel ordinateur.",
   "oneNotePickTitle": "Quel carnet ?",
   "oneNoteCloudContinue": "Continuer avec Microsoft"
