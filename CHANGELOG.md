@@ -33,6 +33,14 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- **A failed import no longer breaks the sidebar.** It deleted the notebook it
+  had just opened for you and left the app pointing at it, which turned the
+  whole left-hand panel into a red error box.
+- **A big notebook is less likely to be turned away before it starts.** Working
+  out the subpage structure was asking Microsoft about every section at once,
+  before a single page had been brought over — which is exactly when being
+  told to slow down costs you the whole import.
+
 - **Writing on a picture or a PDF actually shows up.** Handwriting was painted
   underneath everything on the page, so a stroke over a photo disappeared
   behind it and looked as though the pen had not worked at all. Ink is drawn on

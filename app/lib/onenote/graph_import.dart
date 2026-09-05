@@ -200,29 +200,6 @@ Future<GraphImportResult> importNotebookFromGraph({
     pageLists = await graphPool<List<GraphPageRef>>([
       for (final section in sections) () => client.pages(section.id),
     ]);
-    // **The nesting, fetched alongside.** `level` is never in a page row, but
-    // the service will filter on it — see [GraphClient.pageLevels]. One extra
-    // round trip per level per section buys the subpage structure, which was
-    // for a long time written off as impossible over this route.
-    final levelMaps = await graphPool<Map<String, int>>([
-      for (final section in sections) () => client.pageLevels(section.id),
-    ]);
-    for (var i = 0; i < pageLists.length; i++) {
-      final levels = levelMaps[i];
-      if (levels.isEmpty) continue;
-      final list = pageLists[i];
-      for (var k = 0; k < list.length; k++) {
-        final lv = levels[list[k].id];
-        if (lv == null || lv == list[k].level) continue;
-        list[k] = GraphPageRef(
-          id: list[k].id,
-          title: list[k].title,
-          level: lv,
-          createdIso: list[k].createdIso,
-          oneNoteId: list[k].oneNoteId,
-        );
-      }
-    }
   } on GraphCancelled {
     // Stop pressed while it was still looking around. Nothing has been
     // written, so there is nothing to keep and nothing to apologise for.
@@ -302,7 +279,8 @@ Future<GraphImportResult> importNotebookFromGraph({
   void startFetching(int index) {
     if (index < 0 || index >= sections.length) return;
     if (ahead.containsKey(index) || pageLists[index].isEmpty) return;
-    ahead[index] = _readSection(client, pageLists[index], loss, shouldCancel);
+    ahead[index] = _readSection(
+        client, sections[index].id, pageLists[index], loss, shouldCancel);
   }
 
   try {
@@ -429,15 +407,47 @@ class ReadyPage {
 /// strictly in order.
 Future<List<ReadyPage>> _readSection(
   GraphClient client,
+  String sectionId,
   List<GraphPageRef> refs,
   GraphPageLoss loss,
   bool Function()? shouldCancel,
 ) async {
+  // **The nesting, fetched with this section rather than with all of them.**
+  //
+  // `level` is never in a page row, but the service will filter on it — see
+  // [GraphClient.pageLevels]. It was fetched for every section up front, which
+  // doubled the number of requests made BEFORE a single page could appear: a
+  // 25-section notebook went from 25 requests in that phase to 50-odd.
+  //
+  // That is the worst possible place to spend them. The listing phase is one
+  // burst with nothing written yet, so a throttle there fails the whole import
+  // with nothing to keep — and on an account already near its limit it made
+  // exactly that much more likely. Reported as an import that sat on "found
+  // 25 sections" and then failed outright.
+  //
+  // Here the cost is paid inside the read-ahead pipeline, spread across the
+  // import and paced by the same gate as everything else.
+  final levels = await client.pageLevels(sectionId);
+  final pages = levels.isEmpty
+      ? refs
+      : [
+          for (final r in refs)
+            if (levels[r.id] case final lv?)
+              GraphPageRef(
+                id: r.id,
+                title: r.title,
+                level: lv,
+                createdIso: r.createdIso,
+                oneNoteId: r.oneNoteId,
+              )
+            else
+              r
+        ];
   final out = <ReadyPage>[];
-  for (var start = 0; start < refs.length; start += kGraphBatchPages) {
+  for (var start = 0; start < pages.length; start += kGraphBatchPages) {
     if (shouldCancel?.call() ?? false) break;
-    final end = (start + kGraphBatchPages).clamp(0, refs.length);
-    final slice = refs.sublist(start, end);
+    final end = (start + kGraphBatchPages).clamp(0, pages.length);
+    final slice = pages.sublist(start, end);
     // **One round trip for the whole batch.** Every page used to be its own
     // request; twenty at a time through `$batch` is what takes a
     // three-hundred-page notebook from fifty waves of latency to fifteen.

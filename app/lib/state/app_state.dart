@@ -6668,6 +6668,30 @@ class AppState extends ChangeNotifier
       } catch (_) {/* a failed warm is not this operation's problem */}
     }
     _recorders.remove(id);
+    // **Look away before it is gone.**
+    //
+    // Deleting a notebook that is still the selected one leaves `notebookId`
+    // naming something that no longer exists, and the next rebuild of the
+    // sidebar header — `notebooks.firstWhere((n) => n.id == notebookId)` —
+    // throws `Bad state: No element` and takes the whole chrome down with it.
+    //
+    // Latent for as long as this method has existed, and reachable only since
+    // the cloud import began OPENING the notebook the moment it is created so
+    // somebody can watch their pages arrive. A `.onepkg` import never selects
+    // one until Open is pressed, so a failed import there had nothing to
+    // strand. Progressive import turned an old unreachable bug into a crash
+    // on the ordinary failure path.
+    if (notebookId == id) {
+      final other = _repo.notebooks.where((n) => n.id != id).firstOrNull;
+      if (other != null) {
+        await selectNotebook(other.id);
+      } else {
+        notebookId = null;
+        pageId = null;
+        nodes = [];
+        blocks = [];
+      }
+    }
     await _repo.discardNotebook(id);
     _invalidateSyncStatus();
     notifyListeners();

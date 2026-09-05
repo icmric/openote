@@ -1099,7 +1099,23 @@ class _NotebookHeader extends StatelessWidget {
     final l = L.of(context);
     final scheme = Theme.of(context).colorScheme;
     final current =
-        app.notebooks.firstWhere((n) => n.id == app.notebookId);
+        app.notebooks.firstWhere((n) => n.id == app.notebookId,
+            // **Never throws.** This ran `firstWhere` with no `orElse`, so a
+            // `notebookId` naming a notebook that had just been deleted took
+            // the entire sidebar down with `Bad state: No element` — and an
+            // error widget inside a stretched Column then reported an
+            // overflow of ninety-odd thousand pixels, which is what somebody
+            // actually sees.
+            //
+            // The cause is fixed where it belongs, in
+            // `discardImportedNotebook`. This stays because a header is not
+            // a place worth crashing from: whatever goes wrong upstream, the
+            // chrome should still draw.
+            orElse: () => NotebookRef(
+                  id: app.notebookId ?? '',
+                  title: '',
+                  file: '',
+                ));
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 10, 6, 4),
       child: Tooltip(
