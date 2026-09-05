@@ -859,6 +859,17 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
     final colors = app.tool == Tool.highlighter
         ? OnoteColors.highlighterColors
         : OnoteColors.penColors;
+    // **The default swatch shows what the pen will actually draw.**
+    //
+    // Reported: *"The default color swatch should also match the actual ink
+    // color."* It did not: the swatch was painted a fixed near-black while the
+    // default pen draws in whatever contrasts with the page, so in dark mode
+    // the toolbar advertised black and the pen wrote white.
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    Color swatchColor(Color c) =>
+        (app.tool != Tool.highlighter && c == OnoteColors.graphite900 && dark)
+            ? OnoteColors.moon100
+            : c;
     return Row(children: [
       toolButton(Tool.select, Icons.near_me_outlined, l.barToolSelect),
       toolButton(Tool.text, Icons.text_fields, l.barToolText),
@@ -891,7 +902,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                 width: 18,
                 height: 18,
                 decoration: BoxDecoration(
-                  color: c,
+                  color: swatchColor(c),
                   shape: BoxShape.circle,
                   border: Border.all(
                     width: 2,

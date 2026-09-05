@@ -33,6 +33,16 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- **Default handwriting stays readable when you switch between light and dark.**
+  It used to be fixed at the colour it was drawn in, so notes written on a
+  light page disappeared on a dark one. Colours you picked yourself are never
+  changed.
+- **Writing on a picture or a PDF shows up.** Default ink on a document is
+  dark, in either theme — before, on a dark page it was white, which is
+  invisible on the white scan you were actually writing on.
+- **The pen's colour dot matches the ink it draws.** In dark mode the toolbar
+  showed black while the pen wrote white.
+
 - **The pen's side button erases while you hold it.** It only ever worked if
   the button was already down at the exact moment the pen touched the page,
   and only for one of the three ways a pen can report that button — so on many

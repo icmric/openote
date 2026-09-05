@@ -257,17 +257,29 @@ class _PageCanvasState extends State<PageCanvas> {
       _eraseAt(pt);
       return;
     }
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final colors = app.tool == Tool.highlighter
         ? OnoteColors.highlighterColors
         : OnoteColors.penColors;
-    var color = colors[app.penColor % colors.length];
-    if (dark && color == OnoteColors.graphite900) color = OnoteColors.moon0;
+    final color = colors[app.penColor % colors.length];
+    // **The default pen stores `auto`, not a colour.**
+    //
+    // Reported: *"Existing default black/white handwriting should adapt when
+    // switching themes so it stays readable. Other colors should remain
+    // unchanged."* It could not, because the theme was resolved HERE, once,
+    // and a hex was written into the stroke — so a note written on a light
+    // page stayed black and vanished the moment the page went dark. (The
+    // painter has understood `auto` all along; nothing ever wrote it.)
+    //
+    // Only the default swatch becomes `auto`. A colour somebody actually
+    // chose is theirs, and is stored exactly as picked.
+    final isDefaultInk = app.tool != Tool.highlighter &&
+        color == OnoteColors.graphite900;
     setState(() {
       _wet = Stroke(
         tool: app.tool == Tool.highlighter ? 'highlighter' : 'pen',
-        colorHex:
-            '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
+        colorHex: isDefaultInk
+            ? 'auto'
+            : '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
         size: app.penSize,
         opacity: app.tool == Tool.highlighter ? 0.4 : 1.0,
       );
@@ -579,6 +591,23 @@ class _PageCanvasState extends State<PageCanvas> {
 
   Rect _blockRect(Block b) => Rect.fromLTWH(
       b.x, b.y, b.w, b.h ?? app.renderSizes[b.id]?.height ?? 60);
+
+  /// Anything on the page that brings its own background.
+  ///
+  /// A picture and a PDF page are surfaces in their own right: writing on one
+  /// is writing on the thing, not on the page it happens to sit on. That is
+  /// why `auto` ink over one of these contrasts with the DOCUMENT — see
+  /// [InkPainter.overDocument] — and why a note written over a white scan
+  /// stays legible on a dark page, which was the reported failure.
+  ///
+  /// A PDF is a `file` block carrying the mime type, not a type of its own.
+  List<Rect> get _documentRects => [
+        for (final b in app.blocks)
+          if (b.type == BlockType.image ||
+              (b.type == BlockType.file &&
+                  b.content['mime'] == 'application/pdf'))
+            _blockRect(b),
+      ];
 
   String? _hitInk(Offset pagePt) {
     for (final b in app.blocks.reversed.where((b) => b.type == BlockType.ink)) {
@@ -957,7 +986,11 @@ class _PageCanvasState extends State<PageCanvas> {
                                     // ink on light pages, light ink on dark.
                                     autoColor: dark
                                         ? OnoteColors.moon100
-                                        : OnoteColors.graphite900),
+                                        : OnoteColors.graphite900,
+                                    // …except where the page is not what is
+                                    // underneath. See [InkPainter.overDocument].
+                                    documentRects: _documentRects,
+                                    overDocument: OnoteColors.graphite900),
                               ),
                             ),
                           ),
