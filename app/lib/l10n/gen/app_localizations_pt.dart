@@ -1343,7 +1343,7 @@ class LPt extends L {
 
   @override
   String get oneNoteCloudNoInk =>
-      'A escrita à mão não pode ser trazida por esta via — todo o resto pode.';
+      'As subpáginas chegam como páginas normais: o OneNote não envia como estavam aninhadas.';
 
   @override
   String get onboardingOnePkgFileType => 'Pacote de caderno do OneNote';
@@ -1395,7 +1395,7 @@ class LPt extends L {
 
   @override
   String get oneNoteFileBody =>
-      'Sem iniciar sessão, e a escrita à mão também vem. Vai precisar do OneNote no Windows para exportar o bloco de notas primeiro.';
+      'Sem iniciar sessão, e as subpáginas mantêm o aninhamento. Vai precisar do OneNote no Windows para exportar o bloco de notas primeiro.';
 
   @override
   String get oneNoteSignInBody =>

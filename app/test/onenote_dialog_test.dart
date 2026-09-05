@@ -98,8 +98,10 @@ void main() {
     // The sign-in route admits it cannot carry handwriting; the file route
     // admits it needs Windows. A choice where each option genuinely wins at
     // something can only be made honestly if both caveats are on screen.
-    expect(
-        find.textContaining('Handwriting cannot come over this way'),
+    // Ink IS imported now — `includeinkML=true` returns it in a second part
+    // of a multipart body — so the caveat that stands is the one that cannot
+    // be fixed: OneNote does not send page nesting at all.
+    expect(find.textContaining('Subpages arrive as ordinary pages'),
         findsOneWidget);
     expect(find.textContaining('OneNote on Windows'), findsOneWidget);
     // And the reassurance that matters most to a hesitant person is on the

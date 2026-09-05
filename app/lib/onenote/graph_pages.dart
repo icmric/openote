@@ -44,6 +44,8 @@ import 'dart:typed_data';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 
+import 'graph_multipart.dart';
+import 'inkml.dart';
 import 'mathml_latex.dart';
 
 /// What a page lost on the way through Graph, so the import can say so.
@@ -54,9 +56,12 @@ import 'mathml_latex.dart';
 class GraphPageLoss {
   GraphPageLoss();
 
-  /// Pages that contained handwriting. Graph's HTML has no ink in it at all —
-  /// there is no representation of a stroke in the format, so this is a
-  /// limitation of the door, not of the reader.
+  /// Pages whose handwriting could not be read.
+  ///
+  /// Was once "pages that contained handwriting", when ink was thought to be
+  /// unreachable over this route because the page HTML has no representation
+  /// of a stroke. It has none — but `includeinkML=true` returns the ink in a
+  /// second part of a multipart body, so this now counts only real failures.
   int inkPages = 0;
 
   /// Attachments (`<object>`) referenced but not fetched.
@@ -162,7 +167,11 @@ GraphPage readGraphPage(
   // `<mrow />` as an opening tag that swallows everything after it. Measured
   // on a real page: `⌊ ⌋ Floor (Round down)` came out as the single word
   // `Floor`. See `mathml_latex.dart`.
-  final doc = html_parser.parse(inlineMathIntoHtml(htmlSource));
+  // The response may be HTML, or a multipart body with the handwriting
+  // beside it. `readPageBody` is tolerant of both, so the ink request can be
+  // made unconditionally.
+  final parts = readPageBody(htmlSource);
+  final doc = html_parser.parse(inlineMathIntoHtml(parts.html));
   final body = doc.body;
   final boxes = <Map<String, dynamic>>[];
   final images = <GraphImageRef>[];
@@ -210,11 +219,25 @@ GraphPage readGraphPage(
   // Handwriting has no representation in Graph's HTML, so its absence cannot
   // be detected from the HTML either. The caller knows from the page metadata
   // whether ink was there; this flag is set by [markInkLost].
+  // Handwriting, in exactly the shape the `.one` parser produces, so
+  // `importOneParsedPage` builds the ink block with all the same code and
+  // nothing downstream can tell the two routes apart.
+  final ink =
+      parts.inkml == null ? const <InkStroke>[] : strokesFromInkML(parts.inkml!);
+  if (ink.isEmpty && parts.inkml != null) {
+    // An empty traceGroup is the ordinary case and not a loss. Only a page
+    // that HAD ink and could not be read counts against the import, and that
+    // is `strokesFromInkML` returning nothing for a document that plainly had
+    // traces in it.
+    if (parts.inkml!.contains('<inkml:trace ')) loss.inkPages++;
+  }
+
   final page = <String, dynamic>{
     'title': title,
     'level': level.clamp(0, 2),
     'boxes': boxes,
     'images': imageMaps,
+    if (ink.isNotEmpty) 'ink': ink,
     if (createdIso != null) 'created_iso': createdIso,
   };
   return GraphPage(page: page, images: images, loss: loss);

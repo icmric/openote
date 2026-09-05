@@ -382,9 +382,9 @@
   "oneNoteCloudLoading": "A procurar os seus blocos de notas…",
   "oneNoteCloudEmpty": "Não foram encontrados blocos de notas nesta conta.",
   "oneNoteCloudOther": "Usar outra conta",
-  "oneNoteCloudNoInk": "A escrita à mão não pode ser trazida por esta via — todo o resto pode.",
+  "oneNoteCloudNoInk": "As subpáginas chegam como páginas normais: o OneNote não envia como estavam aninhadas.",
   "oneNoteFileTitle": "Usar um ficheiro exportado",
-  "oneNoteFileBody": "Sem iniciar sessão, e a escrita à mão também vem. Vai precisar do OneNote no Windows para exportar o bloco de notas primeiro.",
+  "oneNoteFileBody": "Sem iniciar sessão, e as subpáginas mantêm o aninhamento. Vai precisar do OneNote no Windows para exportar o bloco de notas primeiro.",
   "oneNoteSignInBody": "Escolha um bloco de notas e vem directamente, sem exportar nada antes. Funciona em qualquer computador.",
   "oneNotePickTitle": "Qual bloco de notas?",
   "oneNoteCloudContinue": "Continuar com a Microsoft"

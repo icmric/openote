@@ -293,14 +293,21 @@ class GraphClient {
     ];
   }
 
-  /// One page's HTML.
+  /// One page's content: HTML, and the InkML beside it.
   ///
   /// `includeIDs` is asked for because it also turns on the absolute-position
   /// styles the converter reads to place boxes; without it a page comes back
   /// as one undifferentiated flow and every outline lands on top of the next.
+  ///
+  /// `includeinkML` is what makes handwriting reachable at all — the HTML has
+  /// no representation of a stroke. It changes the response into a MIME
+  /// multipart body, which `readPageBody` unpicks. The cost is a few hundred
+  /// bytes on a page nobody drew on (an empty `<inkml:traceGroup />` arrives
+  /// either way) and real weight only where there is real ink: measured at
+  /// 292 KB for a page carrying 301 traces, against 6 KB for a typical one.
   Future<String> pageHtml(String pageId) async {
-    final (status, body, _) =
-        await _fetch('$_base/pages/$pageId/content?includeIDs=true');
+    final (status, body, _) = await _fetch(
+        '$_base/pages/$pageId/content?includeIDs=true&includeinkML=true');
     if (status != 200) {
       throw GraphException('A page could not be read from OneNote.',
           details: 'HTTP $status');
@@ -371,7 +378,8 @@ class GraphClient {
           {
             'id': '$i',
             'method': 'GET',
-            'url': '/me/onenote/pages/${ids[i]}/content?includeIDs=true',
+            'url': '/me/onenote/pages/${ids[i]}/content'
+                '?includeIDs=true&includeinkML=true',
           }
       ]
     });
@@ -466,6 +474,12 @@ class GraphClient {
     if (status != 200) {
       throw GraphException(_friendly(status), details: 'HTTP $status');
     }
+    return body;
+  }
+
+  /// The raw body at [url] whatever its type, for looking at the wire.
+  Future<String> debugRawText(String url) async {
+    final (_, body, __) = await _fetch(url);
     return body;
   }
 

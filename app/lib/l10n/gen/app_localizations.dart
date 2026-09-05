@@ -2327,10 +2327,10 @@ abstract class L {
   /// **'Use a different account'**
   String get oneNoteCloudOther;
 
-  /// Honest note that ink strokes are not available over the internet import.
+  /// Honest note that page nesting is not available over the internet import. Handwriting IS imported.
   ///
   /// In en, this message translates to:
-  /// **'Handwriting cannot come over this way — everything else can.'**
+  /// **'Subpages arrive as ordinary pages: OneNote does not send how they were nested.'**
   String get oneNoteCloudNoInk;
 
   /// The file-type name shown in the operating system's own file picker, next to the .onepkg extension it filters on.
@@ -2414,7 +2414,7 @@ abstract class L {
   /// Body for the file import route. 'OneNote' is a product name.
   ///
   /// In en, this message translates to:
-  /// **'No signing in, and handwriting comes across too. You will need OneNote on Windows to export the notebook first.'**
+  /// **'No signing in, and subpages keep their nesting. You will need OneNote on Windows to export the notebook first.'**
   String get oneNoteFileBody;
 
   /// Body for the Microsoft sign-in import route.

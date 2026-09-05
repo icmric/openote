@@ -1342,7 +1342,7 @@ class LEs extends L {
 
   @override
   String get oneNoteCloudNoInk =>
-      'La escritura a mano no puede traerse por esta vía — todo lo demás sí.';
+      'Las subpáginas llegan como páginas normales: OneNote no envía cómo estaban anidadas.';
 
   @override
   String get onboardingOnePkgFileType => 'Paquete de cuaderno de OneNote';
@@ -1393,7 +1393,7 @@ class LEs extends L {
 
   @override
   String get oneNoteFileBody =>
-      'Sin iniciar sesión, y la escritura a mano también se copia. Necesitarás OneNote en Windows para exportar el cuaderno antes.';
+      'Sin iniciar sesión, y las subpáginas conservan su anidación. Necesitarás OneNote en Windows para exportar el cuaderno antes.';
 
   @override
   String get oneNoteSignInBody =>

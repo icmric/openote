@@ -1828,9 +1828,9 @@
   "@oneNoteCloudOther": {
     "description": "Button signing out and starting the sign-in again."
   },
-  "oneNoteCloudNoInk": "Handwriting cannot come over this way — everything else can.",
+  "oneNoteCloudNoInk": "Subpages arrive as ordinary pages: OneNote does not send how they were nested.",
   "@oneNoteCloudNoInk": {
-    "description": "Honest note that ink strokes are not available over the internet import."
+    "description": "Honest note that page nesting is not available over the internet import. Handwriting IS imported."
   },
   "@onboardingOneNoteAction": {
     "description": "Button opening the file picker for a .onepkg."
@@ -1899,7 +1899,7 @@
   "@oneNoteFileTitle": {
     "description": "Import route that needs no Microsoft sign-in, using an exported .onepkg file."
   },
-  "oneNoteFileBody": "No signing in, and handwriting comes across too. You will need OneNote on Windows to export the notebook first.",
+  "oneNoteFileBody": "No signing in, and subpages keep their nesting. You will need OneNote on Windows to export the notebook first.",
   "@oneNoteFileBody": {
     "description": "Body for the file import route. 'OneNote' is a product name."
   },

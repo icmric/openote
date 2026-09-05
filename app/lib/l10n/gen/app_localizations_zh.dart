@@ -1297,7 +1297,7 @@ class LZh extends L {
   String get oneNoteCloudOther => '使用其他账户';
 
   @override
-  String get oneNoteCloudNoInk => '手写内容无法通过这种方式导入，其余内容都可以。';
+  String get oneNoteCloudNoInk => '子页面会变成普通页面：OneNote 不会发送它们的层级关系。';
 
   @override
   String get onboardingOnePkgFileType => 'OneNote 笔记本包';
@@ -1345,8 +1345,7 @@ class LZh extends L {
   String get oneNoteFileTitle => '使用导出的文件';
 
   @override
-  String get oneNoteFileBody =>
-      '无需登录，手写内容也会一并导入。需要先在 Windows 版 OneNote 中导出笔记本。';
+  String get oneNoteFileBody => '无需登录，且子页面会保留层级。需要先在 Windows 版 OneNote 中导出笔记本。';
 
   @override
   String get oneNoteSignInBody => '选择一个笔记本即可直接导入，无需事先导出。任何电脑都能用。';

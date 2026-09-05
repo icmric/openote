@@ -1350,7 +1350,7 @@ class LIt extends L {
 
   @override
   String get oneNoteCloudNoInk =>
-      'La scrittura a mano non può essere importata in questo modo — tutto il resto sì.';
+      'Le sottopagine arrivano come pagine normali: OneNote non invia come erano annidate.';
 
   @override
   String get onboardingOnePkgFileType => 'Pacchetto di quaderno OneNote';
@@ -1402,7 +1402,7 @@ class LIt extends L {
 
   @override
   String get oneNoteFileBody =>
-      'Senza accedere, e viene importata anche la scrittura a mano. Ti servirà OneNote su Windows per esportare prima il blocco appunti.';
+      'Senza accedere, e le sottopagine mantengono l\'annidamento. Ti servirà OneNote su Windows per esportare prima il blocco appunti.';
 
   @override
   String get oneNoteSignInBody =>

@@ -1350,7 +1350,7 @@ class LFr extends L {
 
   @override
   String get oneNoteCloudNoInk =>
-      'L\'écriture manuscrite ne peut pas être importée par ce moyen — tout le reste, oui.';
+      'Les sous-pages arrivent comme des pages ordinaires : OneNote n\'envoie pas leur imbrication.';
 
   @override
   String get onboardingOnePkgFileType => 'Paquet de carnet OneNote';
@@ -1401,7 +1401,7 @@ class LFr extends L {
 
   @override
   String get oneNoteFileBody =>
-      'Sans connexion, et l\'écriture manuscrite est conservée. Il vous faudra OneNote sous Windows pour exporter le carnet au préalable.';
+      'Sans connexion, et les sous-pages conservent leur imbrication. Il vous faudra OneNote sous Windows pour exporter le carnet au préalable.';
 
   @override
   String get oneNoteSignInBody =>

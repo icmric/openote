@@ -1335,7 +1335,7 @@ class LEn extends L {
 
   @override
   String get oneNoteCloudNoInk =>
-      'Handwriting cannot come over this way — everything else can.';
+      'Subpages arrive as ordinary pages: OneNote does not send how they were nested.';
 
   @override
   String get onboardingOnePkgFileType => 'OneNote notebook package';
@@ -1386,7 +1386,7 @@ class LEn extends L {
 
   @override
   String get oneNoteFileBody =>
-      'No signing in, and handwriting comes across too. You will need OneNote on Windows to export the notebook first.';
+      'No signing in, and subpages keep their nesting. You will need OneNote on Windows to export the notebook first.';
 
   @override
   String get oneNoteSignInBody =>

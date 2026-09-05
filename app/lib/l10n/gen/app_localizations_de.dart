@@ -1348,7 +1348,7 @@ class LDe extends L {
 
   @override
   String get oneNoteCloudNoInk =>
-      'Handschrift kann auf diesem Weg nicht übernommen werden — alles andere schon.';
+      'Unterseiten kommen als gewöhnliche Seiten an: OneNote übermittelt ihre Verschachtelung nicht.';
 
   @override
   String get onboardingOnePkgFileType => 'OneNote-Notizbuchpaket';
@@ -1400,7 +1400,7 @@ class LDe extends L {
 
   @override
   String get oneNoteFileBody =>
-      'Ohne Anmeldung, und die Handschrift kommt mit. Sie brauchen OneNote unter Windows, um das Notizbuch zuerst zu exportieren.';
+      'Ohne Anmeldung, und Unterseiten behalten ihre Verschachtelung. Sie brauchen OneNote unter Windows, um das Notizbuch zuerst zu exportieren.';
 
   @override
   String get oneNoteSignInBody =>
