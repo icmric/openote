@@ -33,6 +33,16 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- **A first import now explains itself.** Bringing your first notebook over
+  created it empty and opened it, with only a small card in a corner — so the
+  natural reading was that nothing had happened. It now says what it is doing
+  in the middle of the notebook it is filling, including that you do not have
+  to sit and watch: pages appear as they arrive and can be read straight away.
+  Hiding the message does not stop the import.
+- **The pointer changes over things you can click.** Buttons, tick boxes and
+  list rows kept the plain arrow, which made a dense toolbar hard to read.
+  Disabled controls still show the arrow — a hand over a button that will not
+  respond is worse than no hand at all.
 - **Handwriting is no longer lost** when bringing a notebook over the internet.
 - **Equations arrive as equations**, not as one letter per line.
 - **Blank lines between paragraphs survive.** They were being dropped, so
