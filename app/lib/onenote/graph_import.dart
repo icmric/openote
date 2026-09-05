@@ -90,6 +90,7 @@ class GraphImportResult {
     required this.firstPageId,
     this.cancelled = false,
     this.pageIdsByOneNoteId = const {},
+    this.graphPageIds = const [],
   });
 
   final int pages;
@@ -97,6 +98,9 @@ class GraphImportResult {
   final GraphPageLoss loss;
   final String? firstPageId;
   final bool cancelled;
+
+  /// Graph ids of the pages this run wrote. The raw material for resuming.
+  final List<String> graphPageIds;
 
   /// OneNote's own page GUID to the page written for it.
   ///
@@ -130,6 +134,15 @@ Future<GraphImportResult> importNotebookFromGraph({
   void Function(GraphImportProgress)? onProgress,
   bool Function()? shouldCancel,
   Future<void> Function()? yieldToUi,
+  /// Graph page ids already brought over by an earlier, unfinished run.
+  ///
+  /// **Skipped, not re-imported.** Writing a page again would replace whatever
+  /// somebody has since typed into it with a fresh copy of the original, which
+  /// is the one way resuming could destroy work rather than protect it.
+  Set<String> skipPageIds = const {},
+  /// The link map that earlier run built, so a link on a page arriving now can
+  /// still point at one that arrived then.
+  Map<String, String> seedLinks = const {},
 }) async {
   final loss = GraphPageLoss();
 
@@ -167,7 +180,7 @@ Future<GraphImportResult> importNotebookFromGraph({
     preparing: true,
   ));
   final List<GraphSectionRef> sections;
-  final List<List<GraphPageRef>> pageLists;
+  List<List<GraphPageRef>> pageLists;
   try {
     sections = await client.sections(notebookId);
     sectionsTotal = sections.length;
@@ -223,6 +236,17 @@ Future<GraphImportResult> importNotebookFromGraph({
       cancelled: true,
     );
   }
+  // **Pages an earlier run already brought over are dropped here**, before
+  // anything downstream can see them: no content fetch, no conversion, no
+  // write. Filtering at the source is what makes resuming cheap AND safe —
+  // a page that is never fetched cannot overwrite what somebody has since
+  // typed into it.
+  if (skipPageIds.isNotEmpty) {
+    for (var i = 0; i < pageLists.length; i++) {
+      pageLists[i] =
+          pageLists[i].where((p) => !skipPageIds.contains(p.id)).toList();
+    }
+  }
   for (final list in pageLists) {
     pagesTotal += list.length;
   }
@@ -263,8 +287,11 @@ Future<GraphImportResult> importNotebookFromGraph({
       'a${(posBase + pos++).toString().padLeft(15, '0')}';
 
   final groupIds = <String, String>{};
-  final oneNoteIds = <String, String>{};
+  final oneNoteIds = <String, String>{...seedLinks};
   String? firstPageId;
+  // Every page this run actually wrote, so an import that stops early can
+  // say precisely what it managed and a later one can skip exactly that.
+  final writtenGraphIds = <String>[];
   var cancelled = false;
   // Past the listing: from here a throttle report is ordinary progress rather
   // than part of the preamble.
@@ -331,6 +358,7 @@ Future<GraphImportResult> importNotebookFromGraph({
             firstPageId ??= id;
             final guid = ready[i].oneNoteId;
             if (guid != null) oneNoteIds[guid] = id;
+            writtenGraphIds.add(ready[i].graphId);
           }
           return null;
         });
@@ -379,14 +407,19 @@ Future<GraphImportResult> importNotebookFromGraph({
     firstPageId: firstPageId,
     cancelled: cancelled,
     pageIdsByOneNoteId: oneNoteIds,
+    graphPageIds: writtenGraphIds,
   );
 }
 
 /// A converted page, and the OneNote id its neighbours link to it by.
 class ReadyPage {
-  const ReadyPage(this.page, this.oneNoteId);
+  const ReadyPage(this.page, this.oneNoteId, this.graphId);
   final Map<String, dynamic> page;
   final String? oneNoteId;
+
+  /// Graph's own id for the page. Kept so an import that stops early can
+  /// record what it managed, and a later attempt can skip exactly those.
+  final String graphId;
 }
 
 /// Everything a section needs before any of it can be written.
@@ -412,6 +445,7 @@ Future<List<ReadyPage>> _readSection(
 
     final reads = <GraphPage>[];
     final ids = <String?>[];
+    final graphIds = <String>[];
     for (var i = 0; i < slice.length; i++) {
       final html = htmls[i];
       if (html == null) continue;
@@ -423,6 +457,7 @@ Future<List<ReadyPage>> _readSection(
           createdIso: slice[i].createdIso,
         ));
         ids.add(slice[i].oneNoteId);
+        graphIds.add(slice[i].id);
       } catch (_) {
         // One page that will not parse costs that page, never the import.
       }
@@ -459,7 +494,8 @@ Future<List<ReadyPage>> _readSection(
         ..images += r.loss.images
         ..attachments += r.loss.attachments
         ..inkPages += r.loss.inkPages;
-      out.add(ReadyPage(r.page, i < ids.length ? ids[i] : null));
+      out.add(ReadyPage(r.page, i < ids.length ? ids[i] : null,
+          i < graphIds.length ? graphIds[i] : ''));
     }
   }
   return out;

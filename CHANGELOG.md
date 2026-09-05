@@ -32,6 +32,17 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- **An import that stops early finishes itself later.** If Microsoft slows
+  Openote down, or the wifi goes, or you close the app halfway through, the
+  notebook says how much is still to come and quietly finishes the rest about
+  an hour later. There is a **Finish now** button if you would rather not
+  wait, and a **Leave it** if you are happy as you are.
+- **Finishing an import never touches a page you have already edited.** Pages
+  that arrived the first time are skipped outright, not brought over again.
+- **An import you stopped on purpose is never restarted for you.** It still
+  says it is unfinished, and still offers to finish, but nothing happens
+  behind your back.
+
 - **Default handwriting stays readable when you switch between light and dark.**
   It used to be fixed at the colour it was drawn in, so notes written on a
   light page disappeared on a dark one. Colours you picked yourself are never

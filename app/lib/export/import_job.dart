@@ -48,6 +48,7 @@ import '../core/onote_ffi.dart';
 import '../onenote/graph_auth.dart';
 import '../onenote/graph_client.dart';
 import '../onenote/graph_import.dart';
+import '../onenote/unfinished_import.dart';
 import '../state/app_state.dart';
 import 'import_sink.dart';
 import 'import_writer.dart';
@@ -166,18 +167,83 @@ class ImportJob extends ChangeNotifier {
             ImportSink sink,
             void Function(GraphImportProgress) onProgress,
             bool Function() shouldCancel)
-        run,
-  ) {
+        run, {
+    /// The OneNote notebook being read, so an import that stops early can be
+    /// picked up later without having to ask which one it was.
+    String? graphNotebookId,
+
+    /// An existing notebook to write into, when finishing an earlier attempt.
+    String? intoNotebook,
+
+    /// The record being continued, if this is a second attempt.
+    UnfinishedImport? resuming,
+  }) {
     if (current != null && !current!.isFinished) return null;
     final job = ImportJob._(app, notebookName)
       // Counted BEFORE the import makes its own, so the notebook about to be
-      // created does not make itself look like company.
-      ..isFirstNotebook = app.notebooks.isEmpty;
+      // created does not make itself look like company. Finishing an earlier
+      // attempt is never a first import: the notebook is already there and
+      // already has pages in it.
+      ..isFirstNotebook = app.notebooks.isEmpty && intoNotebook == null
+      ..graphNotebookId = graphNotebookId
+      ..intoNotebook = intoNotebook
+      ..resuming = resuming;
     current = job;
     app.refresh();
     job._runCloud(run);
     return job;
   }
+
+  /// The OneNote notebook this import is reading, when it is a cloud one.
+  String? graphNotebookId;
+
+  /// An existing notebook to write into, when finishing an earlier attempt.
+  String? intoNotebook;
+
+  /// What is being continued, if anything.
+  UnfinishedImport? resuming;
+
+  /// Graph page ids written by this run.
+  final List<String> _wroteGraphIds = [];
+
+  /// **Write down what this attempt did not manage.**
+  ///
+  /// Called at every way out of a cloud import except the one where it
+  /// finished, so a notebook holding 152 of 332 pages says so — and goes on
+  /// saying so after the app is closed and reopened, which is the case
+  /// somebody would otherwise never be told about at all.
+  ///
+  /// Everything already brought over is carried forward, across as many
+  /// attempts as it takes: [UnfinishedImport.donePageIds] accumulates rather
+  /// than being replaced, so the third attempt skips what the first two
+  /// managed and cannot overwrite a page somebody has since edited.
+  void _rememberUnfinished(String nb, UnfinishedReason why, int total) {
+    final graph = graphNotebookId;
+    if (nb.isEmpty || graph == null) return;
+    final before = resuming;
+    _rememberedUnfinished = true;
+    app.recordUnfinishedImport(
+      nb,
+      UnfinishedImport(
+        graphNotebookId: graph,
+        notebookName: fileName,
+        // Counted across every attempt, not just this one, or the card would
+        // announce a smaller number each time somebody tried again.
+        pagesDone: (before?.pagesDone ?? 0) + importedPages,
+        pagesTotal: before?.pagesTotal ?? total,
+        donePageIds: [...?before?.donePageIds, ..._wroteGraphIds],
+        linkMap: {...?before?.linkMap, ...?_lastLinkMap},
+        reason: why,
+        lastTryMs: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }
+
+  /// Whether this job has already written a record, so the generic handler
+  /// does not overwrite a more specific one.
+  bool _rememberedUnfinished = false;
+
+  Map<String, String>? _lastLinkMap;
 
   Future<void> _runCloud(
       Future<GraphImportResult> Function(
@@ -192,9 +258,17 @@ class ImportJob extends ChangeNotifier {
       message = 'Signing in to OneNote…';
       notifyListeners();
 
-      final ref = await app.importCreateNotebook(
-          importTitleFromName(fileName));
-      notebookId = nb = ref.id;
+      // Finishing an earlier attempt writes into the notebook that already
+      // holds its pages. Making a second one would leave somebody with two
+      // half-notebooks and no way to tell which was which.
+      final into = intoNotebook;
+      if (into != null) {
+        notebookId = nb = into;
+      } else {
+        final ref = await app.importCreateNotebook(
+            importTitleFromName(fileName));
+        notebookId = nb = ref.id;
+      }
 
       // Opened straight away, deliberately. The whole point of writing section
       // by section is that somebody can WATCH it arrive, and they cannot watch
@@ -262,6 +336,10 @@ class ImportJob extends ChangeNotifier {
       final relinked = app.relinkImportedPages(nb, result.pageIdsByOneNoteId);
       if (relinked > 0) app.reloadNodes();
       app.refresh();
+      _wroteGraphIds
+        ..clear()
+        ..addAll(result.graphPageIds);
+      _lastLinkMap = result.pageIdsByOneNoteId;
       importedPages = result.pages;
       firstPageId = result.firstPageId;
 
@@ -270,14 +348,26 @@ class ImportJob extends ChangeNotifier {
         // already put real pages on screen and the student has been watching
         // them arrive; deleting them because they pressed stop would be the
         // opposite of what stop means.
+        // Stopped ON PURPOSE. Recorded so the notebook still says it is
+        // incomplete and can be finished by hand — but never picked up
+        // automatically, because pressing Stop is an instruction and an app
+        // that quietly restarts what you just stopped is worse than one that
+        // forgets.
+        _rememberUnfinished(nb, UnfinishedReason.stopped, pagesTotal);
         return _finish(ImportJobState.done,
             message: 'Stopped — kept the ${result.pages} '
-                'page${result.pages == 1 ? '' : 's'} already brought in.');
+                'page${result.pages == 1 ? '' : 's'} already brought in. '
+                'You can finish it whenever you like.');
       }
       if (result.pages == 0) {
         return _finish(ImportJobState.failed,
             message: 'That notebook had no pages in it.');
       }
+      // **Finished, so the reminder goes.** A notebook that says it is
+      // incomplete when it is not is the same kind of lie as one that says
+      // nothing when it is.
+      app.clearUnfinishedImport(nb);
+
       final lost = result.loss;
       final note = 'Imported ${result.pages} page'
           '${result.pages == 1 ? '' : 's'}';
@@ -317,11 +407,19 @@ class ImportJob extends ChangeNotifier {
       // real pages in it, and calling that a failure invites them to delete it
       // and start again — which is the one thing that would actually lose
       // work.
+      _rememberUnfinished(
+          nb,
+          e is GraphGaveUp
+              ? UnfinishedReason.throttled
+              : UnfinishedReason.interrupted,
+          pagesTotal);
       if (importedPages > 0) {
         return _finish(ImportJobState.done,
             message: '${e.message} The $importedPages page'
                 '${importedPages == 1 ? '' : 's'} already brought over '
-                '${importedPages == 1 ? 'is' : 'are'} here.');
+                '${importedPages == 1 ? 'is' : 'are'} here. Openote will '
+                'finish the rest on its own later, or you can start it again '
+                'whenever you like.');
       }
       _finish(ImportJobState.failed, message: e.message);
     } catch (e) {
@@ -335,12 +433,15 @@ class ImportJob extends ChangeNotifier {
         app.reloadNodes();
         app.refresh();
       }
+      if (!_rememberedUnfinished) {
+        _rememberUnfinished(nb, UnfinishedReason.interrupted, pagesTotal);
+      }
       if (importedPages > 0) {
         return _finish(ImportJobState.done,
             message: 'Something went wrong partway through, but the '
                 '$importedPages page${importedPages == 1 ? '' : 's'} already '
-                'brought over ${importedPages == 1 ? 'is' : 'are'} here. Try '
-                'again for the rest.');
+                'brought over ${importedPages == 1 ? 'is' : 'are'} here. '
+                'Openote will finish the rest on its own later.');
       }
       _finish(ImportJobState.failed,
           message: 'That notebook could not be brought over.');

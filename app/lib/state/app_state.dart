@@ -28,6 +28,7 @@ import '../export/import_job.dart';
 import '../onenote/graph_auth.dart';
 import '../onenote/graph_client.dart';
 import '../onenote/graph_import.dart';
+import '../onenote/unfinished_import.dart';
 import '../onenote/graph_links.dart';
 import '../model/models.dart';
 import '../store/database.dart'
@@ -3802,7 +3803,102 @@ class AppState extends ChangeNotifier
       } finally {
         client.close();
       }
-    });
+    }, graphNotebookId: notebook.id);
+  }
+
+  // ── An import that stopped before it finished ──────────────────────────
+
+  String _unfinishedKey(String nb) => 'onenote.unfinished:$nb';
+
+  /// What is left of an import that stopped early, or null.
+  UnfinishedImport? unfinishedImportFor(String nb) =>
+      UnfinishedImport.fromJson(_repo.getSetting(_unfinishedKey(nb)));
+
+  /// Every notebook holding a half-finished import.
+  ///
+  /// Read at startup so a notebook that was mid-import when the app was closed
+  /// still says so when it comes back — which is most of the point. An import
+  /// interrupted by quitting is exactly the case somebody would otherwise
+  /// never be told about.
+  List<(String, UnfinishedImport)> unfinishedImports() => [
+        for (final n in _repo.notebooks)
+          if (unfinishedImportFor(n.id) case final u?) (n.id, u),
+      ];
+
+  void recordUnfinishedImport(String nb, UnfinishedImport u) {
+    _repo.setSetting(_unfinishedKey(nb), u.toJson());
+    notifyListeners();
+  }
+
+  /// Forget it. Called when the import finishes, and when somebody dismisses
+  /// the reminder for good.
+  void clearUnfinishedImport(String nb) {
+    _repo.setSetting(_unfinishedKey(nb), null);
+    notifyListeners();
+  }
+
+  /// **Finish an unfinished import without being asked, when it is safe to.**
+  ///
+  /// Four conditions, all of which have to hold, and each of which is there
+  /// because the alternative is worse than not finishing at all:
+  ///
+  ///   * **Nobody stopped it.** [UnfinishedImport.mayRetryAt] refuses for ever
+  ///     on a record somebody cancelled. An app that quietly restarts the
+  ///     thing you just stopped is worse than one that forgets.
+  ///   * **Long enough has passed.** An hour — see [kUnfinishedRetryAfter].
+  ///     Trying again straight away is how a throttled account stays
+  ///     throttled.
+  ///   * **Nothing else is importing.** Two imports at once would halve each
+  ///     other's speed and confuse every surface that reports on them.
+  ///   * **There is still a sign-in.** Resuming must never pop a Microsoft
+  ///     login window at somebody who is in the middle of writing; if the
+  ///     credential has gone, the reminder stays and waits to be pressed.
+  ///
+  /// Returns the notebook it started on, or null if it did nothing — which is
+  /// the ordinary case and is not a failure.
+  Future<String?> maybeResumeUnfinishedImport({DateTime? now}) async {
+    if (ImportJob.current != null && !ImportJob.current!.isFinished) {
+      return null;
+    }
+    final at = now ?? DateTime.now();
+    for (final (nb, u) in unfinishedImports()) {
+      if (!u.mayRetryAt(at)) continue;
+      final auth = GraphAuth();
+      if (!auth.hasStoredSignIn) continue;
+      await resumeOneNoteImport(auth: auth, nb: nb);
+      return nb;
+    }
+    return null;
+  }
+
+  /// Pick up where an unfinished import left off.
+  ///
+  /// Writes into the notebook that already exists rather than making another,
+  /// and skips every page the earlier run wrote — so a page somebody has since
+  /// edited is left exactly as they left it.
+  Future<void> resumeOneNoteImport({
+    required GraphAuth auth,
+    required String nb,
+  }) async {
+    final u = unfinishedImportFor(nb);
+    if (u == null) return;
+    ImportJob.startFromCloud(this, u.notebookName,
+        (sink, onProgress, shouldCancel) async {
+      final client = GraphClient(token: auth.accessToken);
+      try {
+        return await importNotebookFromGraph(
+          client: client,
+          notebookId: u.graphNotebookId,
+          sink: sink,
+          onProgress: onProgress,
+          shouldCancel: shouldCancel,
+          skipPageIds: u.donePageIds.toSet(),
+          seedLinks: u.linkMap,
+        );
+      } finally {
+        client.close();
+      }
+    }, graphNotebookId: u.graphNotebookId, intoNotebook: nb, resuming: u);
   }
 
   /// Shared so toolbar/shortcuts can drive zoom (style guide §8.2).

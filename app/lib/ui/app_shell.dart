@@ -16,6 +16,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'alert_popup.dart';
 import 'import_progress.dart';
+import 'unfinished_import_bar.dart';
 import 'command_bar.dart';
 import 'context_menus.dart';
 import 'object_row.dart';
@@ -97,6 +98,33 @@ class _AppShellState extends State<AppShell> {
       } else {
         maybeShowOnboarding(context, app);
       }
+      _startUnfinishedImportWatch();
+    });
+  }
+
+  /// **Finishing an import that stopped, on its own, later.**
+  ///
+  /// Two triggers, because an unfinished import has two shapes. One was
+  /// interrupted by closing the app, and is waiting when it opens again —
+  /// checked once here, a beat after launch so it never competes with the
+  /// first paint. The other stops while the app stays open, and its hour
+  /// passes with nobody looking; the timer covers that.
+  ///
+  /// Every guard that matters lives in [AppState.maybeResumeUnfinishedImport]
+  /// rather than here: an import somebody STOPPED is never picked up, an hour
+  /// must have passed, nothing else may be importing, and there has to be a
+  /// sign-in already — resuming must never pop a Microsoft login at somebody
+  /// in the middle of writing.
+  Timer? _resumeTimer;
+
+  void _startUnfinishedImportWatch() {
+    unawaited(app.maybeResumeUnfinishedImport());
+    // Well short of the hour it is waiting for, so the retry lands promptly
+    // once it becomes due rather than up to an hour late — and rare enough
+    // that a check costing a few map lookups is free.
+    _resumeTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      if (!mounted) return;
+      unawaited(app.maybeResumeUnfinishedImport());
     });
   }
 
@@ -119,6 +147,7 @@ class _AppShellState extends State<AppShell> {
 
   @override
   void dispose() {
+    _resumeTimer?.cancel();
     HardwareKeyboard.instance.removeHandler(_onKey);
     app.navigateNudge = null;
     app.removeListener(_openNoticeChanged);
@@ -1239,6 +1268,11 @@ class _AppShellState extends State<AppShell> {
                     // named, and it earns the row.
                     if (page != null && app.navCollapsed)
                       _PageHeader(app: app, page: page),
+                    // A notebook that is not all here says so, above the page
+                    // rather than over it: one line, no focus, nothing
+                    // covered. It renders nothing at all unless there is
+                    // something unfinished.
+                    UnfinishedImportBar(app: app),
                     Expanded(
                       child: Row(
                         children: [
