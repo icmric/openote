@@ -103,6 +103,23 @@ class GraphImageRef {
   final bool inFlow;
 }
 
+/// A file attached to the page, ready to be fetched.
+class GraphFileRef {
+  const GraphFileRef({
+    required this.url,
+    required this.name,
+    required this.mime,
+    required this.index,
+  });
+
+  final String url;
+  final String name;
+  final String mime;
+
+  /// Position in the page's file list.
+  final int index;
+}
+
 /// The result of reading one page's HTML: the page map the importer wants,
 /// plus the images it still needs bytes for.
 class GraphPage {
@@ -110,6 +127,7 @@ class GraphPage {
     required this.page,
     required this.images,
     required this.loss,
+    this.files = const [],
   });
 
   /// `{title, level, boxes, images}` — the parser-shaped map.
@@ -117,6 +135,9 @@ class GraphPage {
 
   /// Referenced images, in the order the page map's `images` list expects.
   final List<GraphImageRef> images;
+
+  /// Attachments, in the order the page map's `files` list expects.
+  final List<GraphFileRef> files;
 
   final GraphPageLoss loss;
 }
@@ -176,6 +197,8 @@ GraphPage readGraphPage(
   final boxes = <Map<String, dynamic>>[];
   final images = <GraphImageRef>[];
   final imageMaps = <Map<String, dynamic>>[];
+  final files = <GraphFileRef>[];
+  final fileMaps = <Map<String, dynamic>>[];
   final loss = GraphPageLoss();
 
   if (body != null) {
@@ -211,6 +234,8 @@ GraphPage readGraphPage(
         boxes: boxes,
         images: images,
         imageMaps: imageMaps,
+        files: files,
+        fileMaps: fileMaps,
         loss: loss,
       );
     }
@@ -237,10 +262,12 @@ GraphPage readGraphPage(
     'level': level.clamp(0, 2),
     'boxes': boxes,
     'images': imageMaps,
+    if (fileMaps.isNotEmpty) 'files': fileMaps,
     if (ink.isNotEmpty) 'ink': ink,
     if (createdIso != null) 'created_iso': createdIso,
   };
-  return GraphPage(page: page, images: images, loss: loss);
+  return GraphPage(
+      page: page, images: images, files: files, loss: loss);
 }
 
 /// Walk one container, emitting a box per run of prose and a table per table.
@@ -253,6 +280,8 @@ void _readContainer(
   required List<Map<String, dynamic>> boxes,
   required List<GraphImageRef> images,
   required List<Map<String, dynamic>> imageMaps,
+  required List<GraphFileRef> files,
+  required List<Map<String, dynamic>> fileMaps,
   required GraphPageLoss loss,
 }) {
   final markdown = StringBuffer();
@@ -363,10 +392,25 @@ void _readContainer(
             : '';
         writeBlock('![image](onote-img://${ref.index}$size)');
       case 'object':
-        // An attachment. Graph gives a URL, but a file is not something the
-        // page translation has a box for, so it is counted and reported
-        // rather than silently dropped.
-        loss.attachments++;
+        // **An attachment, kept.** It used to be counted and dropped, on the
+        // reasoning that the translation had no box for a file. It has one —
+        // the same one a dropped file lands in — and the `.one` route imports
+        // attachments not at all, so this is one thing the internet route
+        // does BETTER rather than worse.
+        final url = node.attributes['data']?.trim() ?? '';
+        final name = node.attributes['data-attachment']?.trim() ?? '';
+        if (url.isEmpty) {
+          loss.attachments++;
+          break;
+        }
+        flushText();
+        files.add(GraphFileRef(
+          url: url,
+          name: name.isEmpty ? 'Attachment' : name,
+          mime: node.attributes['type']?.trim() ?? 'application/octet-stream',
+          index: files.length,
+        ));
+        fileMaps.add({'x': left, 'y': top, 'flow': flow});
       case 'div':
         flushText();
         // A nested div that positions ITSELF is a separate outline and gets a
@@ -384,6 +428,8 @@ void _readContainer(
           boxes: boxes,
           images: images,
           imageMaps: imageMaps,
+          files: files,
+          fileMaps: fileMaps,
           loss: loss,
         );
       default:
@@ -750,6 +796,29 @@ bool _hasPosition(dom.Element el) =>
 ///
 /// Separated from [readGraphPage] because fetching needs a token and reading
 /// does not — which is what keeps every rule above testable offline.
+/// Attach fetched attachment bytes, dropping any that did not arrive.
+void attachFileBytes(
+  Map<String, dynamic> page,
+  List<GraphFileRef> refs,
+  List<Uint8List?> bytes,
+  GraphPageLoss loss,
+) {
+  final maps = (page['files'] as List?)?.cast<Map<String, dynamic>>();
+  if (maps == null) return;
+  for (var i = 0; i < maps.length && i < refs.length; i++) {
+    final data = i < bytes.length ? bytes[i] : null;
+    if (data == null || data.isEmpty) {
+      loss.attachments++;
+      continue;
+    }
+    maps[i]
+      ..['bytes'] = data
+      ..['name'] = refs[i].name
+      ..['mime'] = refs[i].mime;
+  }
+  maps.removeWhere((m) => m['bytes'] == null);
+}
+
 void attachImageBytes(
   Map<String, dynamic> page,
   List<GraphImageRef> refs,

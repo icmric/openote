@@ -383,14 +383,52 @@ void main() {
       expect(r.loss.any, isTrue);
     });
 
-    test('attachments are counted rather than silently dropped', () {
-      // Notes that LOOK complete when something has gone is the failure mode
-      // this project refuses elsewhere too.
+    test('an attachment is kept, with its name and type', () {
+      // Real markup: `<object data-attachment="SQL Master Document.pdf"
+      // type="application/pdf" data="…/resources/…/$value" />`. It used to be
+      // counted and dropped; the `.one` route imports attachments not at all,
+      // so keeping them is one thing this route does BETTER.
       final r = readGraphPage(
           wrap('<object data-attachment="notes.pdf" '
               'data="https://graph.example/r/1" type="application/pdf" />'),
           title: 'Page');
+      expect(r.files, hasLength(1));
+      expect(r.files.first.name, 'notes.pdf');
+      expect(r.files.first.mime, 'application/pdf');
+      expect(r.loss.attachments, 0);
+    });
+
+    test('an attachment with no address is still counted as lost', () {
+      final r = readGraphPage(
+          wrap('<object data-attachment="gone.pdf" />'), title: 'Page');
+      expect(r.files, isEmpty);
       expect(r.loss.attachments, 1);
+    });
+
+    test('an attachment whose bytes never arrived is dropped and counted', () {
+      final r = readGraphPage(
+          wrap('<object data-attachment="notes.pdf" '
+              'data="https://graph.example/r/1" type="application/pdf" />'),
+          title: 'Page');
+      final loss = GraphPageLoss();
+      attachFileBytes(r.page, r.files, [null], loss);
+      expect((r.page['files'] as List), isEmpty);
+      expect(loss.attachments, 1);
+    });
+
+    test('an attachment that arrived carries its bytes to the importer', () {
+      final r = readGraphPage(
+          wrap('<object data-attachment="notes.pdf" '
+              'data="https://graph.example/r/1" type="application/pdf" />'),
+          title: 'Page');
+      final loss = GraphPageLoss();
+      attachFileBytes(
+          r.page, r.files, [Uint8List.fromList([1, 2, 3])], loss);
+      final files = (r.page['files'] as List).cast<Map>();
+      expect(files, hasLength(1));
+      expect(files.first['name'], 'notes.pdf');
+      expect(files.first['mime'], 'application/pdf');
+      expect(files.first['bytes'], isA<Uint8List>());
     });
   });
 

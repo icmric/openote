@@ -296,18 +296,28 @@ Future<List<Map<String, dynamic>>> _readSection(
       }
     }
 
-    // Pictures are separate authenticated requests, so they go out together
-    // across the whole batch rather than page by page.
+    // Pictures and attachments are separate authenticated requests, so they
+    // go out together across the whole batch rather than page by page.
     final wanted = <GraphImageRef>[for (final r in reads) ...r.images];
     final bytes = await graphPool<Uint8List?>([
       for (final img in wanted) () => client.resource(img.url),
     ]);
+    final wantedFiles = <GraphFileRef>[for (final r in reads) ...r.files];
+    final fileBytes = await graphPool<Uint8List?>([
+      for (final f in wantedFiles) () => client.resource(f.url),
+    ]);
     var at = 0;
+    var fileAt = 0;
     for (final r in reads) {
       final mine = <Uint8List?>[];
       for (var k = 0; k < r.images.length; k++) {
         mine.add(bytes[at++]);
       }
+      final myFiles = <Uint8List?>[];
+      for (var k = 0; k < r.files.length; k++) {
+        myFiles.add(fileBytes[fileAt++]);
+      }
+      attachFileBytes(r.page, r.files, myFiles, r.loss);
       attachImageBytes(r.page, r.images, mine, r.loss);
       loss
         ..images += r.loss.images

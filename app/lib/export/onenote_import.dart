@@ -1104,6 +1104,30 @@ String importOneParsedPage(ImportSink sink, String sectionId,
       ));
     }
 
+    // Attachments. The `.one` parser emits none — OneNote's binary format
+    // carries them and nothing here has ever read them — so this key only
+    // arrives from the internet route, where an `<object data-attachment=…>`
+    // gives a name, a type and a URL. Same block a dropped file lands in, so
+    // the PDF card and the open-with-default-app path work unchanged.
+    for (final fRaw in (page['files'] as List?) ?? const []) {
+      final f = (fRaw as Map).cast<String, dynamic>();
+      final bytes = f['bytes'] as Uint8List?;
+      if (bytes == null || bytes.isEmpty) continue;
+      final mime = f['mime'] as String? ?? 'application/octet-stream';
+      final hash = sink.blob(bytes, mime);
+      blocks.add(Block(
+        type: BlockType.file,
+        x: (f['x'] as num?)?.toDouble() ?? AppState.pageLeftMargin,
+        y: (f['y'] as num?)?.toDouble() ?? AppState.contentTop,
+        w: 300,
+        content: {
+          'blob': 'sha256:$hash',
+          'name': f['name'] as String? ?? 'Attachment',
+          'mime': mime,
+        },
+      ));
+    }
+
     // Ink: the parser delivers decoded strokes in page pixels (with pressure
     // when the pen recorded it). They become one ink block whose rect is the
     // strokes' bounding box — coordinates stay page-absolute (Ink Spec §3).
