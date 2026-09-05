@@ -689,6 +689,37 @@ void main() {
       expect(result.pages, lessThan(4));
     });
 
+    test('throttling while it is still looking around is reported', () async {
+      // The hang a user hit: restarted after a throttled import, and it sat on
+      // "Looking through your notebook" with no message and no way out. The
+      // throttle callback was wired AFTER the section and page-list requests,
+      // so the one phase a throttled account gets stuck in was the one phase
+      // that could not say so.
+      final sink = RecordingSink();
+      final waits = <Duration?>[];
+      var asked = 0;
+      GraphClient.debugFetch = (url) async {
+        asked++;
+        // Refuse the very first request — the section listing — then relent.
+        if (asked == 1) {
+          return (429, '', <String, String>{'retry-after': '1'});
+        }
+        return (200, listOf(const []), <String, String>{});
+      };
+      addTearDown(() => GraphClient.debugFetch = null);
+
+      await importNotebookFromGraph(
+        client: GraphClient(token: () async => 't'),
+        notebookId: 'nb1',
+        sink: sink,
+        onProgress: (p) {
+          if (p.waitingFor != null) waits.add(p.waitingFor);
+        },
+      );
+      expect(waits, isNotEmpty,
+          reason: 'a throttle during the listing has to reach the card');
+    });
+
     test('stop pressed while it is still looking around is honoured', () async {
       // Listing a real notebook's sections and page lists took 33 seconds,
       // and Stop is on screen for all of it. Before this the button did

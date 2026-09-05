@@ -132,6 +132,32 @@ Future<GraphImportResult> importNotebookFromGraph({
   Future<void> Function()? yieldToUi,
 }) async {
   final loss = GraphPageLoss();
+
+  // **Wired before the first request, not after the listing.** These used to
+  // be attached further down, once every section's page list was in — so for
+  // the whole "looking through your notebook" stretch a throttle was invisible
+  // and Stop was dead. That is exactly the stretch a throttled account gets
+  // stuck in, and it read as a hang: no message, and no way out.
+  var pagesWritten = 0;
+  var sectionsWritten = 0;
+  var sectionsTotal = 0;
+  var pagesTotal = 0;
+  var started = false;
+  Duration? waiting;
+  client.isCancelled = shouldCancel;
+  client.onThrottle = (d) {
+    waiting = d;
+    onProgress?.call(GraphImportProgress(
+      sectionName: '',
+      pagesDone: pagesWritten,
+      pagesTotal: pagesTotal,
+      sectionsDone: sectionsWritten,
+      sectionsTotal: sectionsTotal,
+      waitingFor: d,
+      preparing: !started,
+    ));
+  };
+
   onProgress?.call(const GraphImportProgress(
     sectionName: '',
     pagesDone: 0,
@@ -140,24 +166,40 @@ Future<GraphImportResult> importNotebookFromGraph({
     sectionsTotal: 0,
     preparing: true,
   ));
-  final sections = await client.sections(notebookId);
-  onProgress?.call(GraphImportProgress(
-    sectionName: '',
-    pagesDone: 0,
-    pagesTotal: 0,
-    sectionsDone: 0,
-    sectionsTotal: sections.length,
-    preparing: true,
-  ));
-  // **Every section's page list up front, together.** Asked for one at a time
+  final List<GraphSectionRef> sections;
+  final List<List<GraphPageRef>> pageLists;
+  try {
+    sections = await client.sections(notebookId);
+    sectionsTotal = sections.length;
+    onProgress?.call(GraphImportProgress(
+      sectionName: '',
+      pagesDone: 0,
+      pagesTotal: 0,
+      sectionsDone: 0,
+      sectionsTotal: sections.length,
+      preparing: true,
+    ));
+    // **Every section's page list up front, together.** Asked for one at a time
   // inside the loop, each was a round trip the student waited through with
   // nothing happening — *"it also seems to take a while when changing
   // sections"*. It also makes the total known, so progress can say how far
   // through it is rather than only how far it has got.
-  final pageLists = await graphPool<List<GraphPageRef>>([
-    for (final section in sections) () => client.pages(section.id),
-  ]);
-  var pagesTotal = 0;
+    pageLists = await graphPool<List<GraphPageRef>>([
+      for (final section in sections) () => client.pages(section.id),
+    ]);
+  } on GraphCancelled {
+    // Stop pressed while it was still looking around. Nothing has been
+    // written, so there is nothing to keep and nothing to apologise for.
+    client.onThrottle = null;
+    client.isCancelled = null;
+    return GraphImportResult(
+      pages: 0,
+      sections: 0,
+      loss: loss,
+      firstPageId: null,
+      cancelled: true,
+    );
+  }
   for (final list in pageLists) {
     pagesTotal += list.length;
   }
@@ -199,11 +241,11 @@ Future<GraphImportResult> importNotebookFromGraph({
 
   final groupIds = <String, String>{};
   final oneNoteIds = <String, String>{};
-  var pagesWritten = 0;
-  var sectionsWritten = 0;
   String? firstPageId;
   var cancelled = false;
-  Duration? waiting;
+  // Past the listing: from here a throttle report is ordinary progress rather
+  // than part of the preamble.
+  started = true;
 
   // One future per section, started ahead of when it is written.
   final ahead = <int, Future<List<ReadyPage>>>{};
@@ -212,20 +254,6 @@ Future<GraphImportResult> importNotebookFromGraph({
     if (ahead.containsKey(index) || pageLists[index].isEmpty) return;
     ahead[index] = _readSection(client, pageLists[index], loss, shouldCancel);
   }
-
-  // Reported whenever the client starts waiting on a throttle, so a two-minute
-  // pause reads as a pause rather than as a freeze.
-  client.onThrottle = (d) {
-    waiting = d;
-    onProgress?.call(GraphImportProgress(
-      sectionName: '',
-      pagesDone: pagesWritten,
-      pagesTotal: pagesTotal,
-      sectionsDone: sectionsWritten,
-      sectionsTotal: sections.length,
-      waitingFor: d,
-    ));
-  };
 
   try {
     for (var i = 0; i <= kGraphSectionsAhead; i++) {
@@ -298,8 +326,14 @@ Future<GraphImportResult> importNotebookFromGraph({
       sectionsWritten++;
       if (cancelled) break;
     }
+  } on GraphCancelled {
+    // Thrown from inside a throttle wait or a retry, which is where Stop is
+    // actually pressed. Everything already written stays; this is the ordinary
+    // cancelled path, reached the only way it can be reached mid-request.
+    cancelled = true;
   } finally {
     client.onThrottle = null;
+    client.isCancelled = null;
     // Sections read ahead of a cancel are abandoned, but their futures are
     // live and an unawaited error surfaces later somewhere unrelated.
     for (final f in ahead.values) {

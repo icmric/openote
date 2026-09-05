@@ -88,6 +88,12 @@ class ImportJob extends ChangeNotifier {
 
   bool _cancelRequested = false;
 
+  /// Whether Stop has been pressed and the job has not finished stopping.
+  ///
+  /// Exposed so the card can stop offering a button that has already been
+  /// pressed, and offer a way out instead.
+  bool get isStopping => _cancelRequested && !isFinished;
+
   /// The running job, if any. Global because the *surfaces* are global: the
   /// progress card floats over whatever the user is doing, which may be three
   /// navigations away from wherever the import was started.

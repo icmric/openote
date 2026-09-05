@@ -99,6 +99,18 @@ class GraphGaveUp extends GraphException {
   GraphGaveUp(super.message, {super.details});
 }
 
+/// The person pressed Stop.
+///
+/// Not a failure, and its own type so the import can tell it apart from one.
+/// Before this existed the client had **no idea cancellation was a thing**:
+/// Stop set a flag that was only read between batches, so once a request was
+/// inside a throttle wait or a retry loop — which is exactly when somebody
+/// reaches for Stop — nothing ever read it again. The card said "Stopping…"
+/// and stayed there.
+class GraphCancelled extends GraphException {
+  GraphCancelled() : super('Stopped.');
+}
+
 /// How many requests are allowed to be in flight at once.
 ///
 /// The import is almost entirely **waiting**: a page is one round trip, and
@@ -150,6 +162,17 @@ class GraphClient {
     // rather than paying a TLS handshake every few pages.
     _client.idleTimeout = const Duration(seconds: 60);
     _client.connectionTimeout = const Duration(seconds: 30);
+  }
+
+  /// **Asked before every wait and before every retry.**
+  ///
+  /// Cancellation has to reach in this far. Checking it only between batches
+  /// means it is never checked during the one situation people actually
+  /// cancel in: a long throttle wait.
+  bool Function()? isCancelled;
+
+  void _stopIfAsked() {
+    if (isCancelled?.call() ?? false) throw GraphCancelled();
   }
 
   /// How the client gets a live access token. A callback rather than a string
@@ -227,6 +250,7 @@ class GraphClient {
   int get concurrencyLimit => _limit;
 
   Future<void> _acquire() async {
+    _stopIfAsked();
     if (_inFlight < _limit) {
       _inFlight++;
       return;
@@ -234,7 +258,22 @@ class GraphClient {
     final c = Completer<void>();
     _waiting.add(c);
     await c.future;
+    // Checked again on the way out: a request can sit in this queue for the
+    // whole of a long throttle wait, and the answer may have changed while it
+    // was there.
+    if (isCancelled?.call() ?? false) {
+      _wakeNext();
+      throw GraphCancelled();
+    }
     _inFlight++;
+  }
+
+  /// Let the next queued request through. Used when one leaves without ever
+  /// taking its slot.
+  void _wakeNext() {
+    if (_waiting.isNotEmpty && _inFlight < _limit) {
+      _waiting.removeAt(0).complete();
+    }
   }
 
   void _release() {
@@ -516,6 +555,8 @@ class GraphClient {
               return await pageHtml(pageIds[i]);
             } on GraphGaveUp {
               rethrow;
+            } on GraphCancelled {
+              rethrow;
             } on GraphException {
               return null;
             }
@@ -621,6 +662,10 @@ class GraphClient {
         out[at] = _decodeBatchBody(m['body']);
       }
       return out;
+    } on GraphCancelled {
+      // Same reasoning as below: stopping is a decision about the import, not
+      // a verdict on this endpoint.
+      rethrow;
     } on GraphGaveUp {
       // Giving up on a hopelessly throttled account is a decision about the
       // whole import, not a verdict on this endpoint. Swallowed here it would
@@ -704,6 +749,7 @@ class GraphClient {
   /// real failure: a 404, a body that stopped arriving, an exhausted retry.
   Future<Uint8List?> resource(String url) async {
     for (var attempt = 0;; attempt++) {
+      _stopIfAsked();
       await _waitOutThrottle();
       final (status, bytes, headers) = await _resourceOnce(url);
       if (status == 200 && bytes != null) {
@@ -799,6 +845,7 @@ class GraphClient {
   Future<(int, String, Map<String, String>)> _fetch(String url) async {
     final fake = debugFetch;
     for (var attempt = 0;; attempt++) {
+      _stopIfAsked();
       await _waitOutThrottle();
       // The deadline sits HERE as well as inside the transport, so it holds
       // for the test transport too — and the property being defended (one
@@ -878,10 +925,19 @@ class GraphClient {
   /// Sleep until the shared quiet period is over.
   Future<void> _waitOutThrottle() async {
     while (true) {
+      _stopIfAsked();
       final left = _quietUntil.difference(DateTime.now());
       if (left.isNegative || left.inMilliseconds == 0) return;
+      // **Reported every second, not once at the start.** The wait used to be
+      // announced only when it got LONGER, so a run of one-second backoffs
+      // showed "carrying on in 1s" and then sat there unchanged for as long as
+      // the throttling lasted — a frozen number is worse than no number,
+      // because it looks like the app has stopped rather than that it is
+      // waiting.
+      onThrottle?.call(left);
       // In slices, so a cancelled import is not stuck behind a two-minute
-      // sleep it can no longer do anything with.
+      // sleep it can no longer do anything with — and so the countdown above
+      // actually counts down.
       final slice = left > const Duration(seconds: 1)
           ? const Duration(seconds: 1)
           : left;

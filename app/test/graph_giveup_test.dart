@@ -209,6 +209,50 @@ void main() {
           reason: 'a blip is not a refusal, so it starts no give-up clock');
     });
 
+    test('Stop is honoured inside a throttle wait, not only between batches',
+        () async {
+      // What a real user hit: throttled on the second page, the card said
+      // "carrying on in 1s", they pressed Cancel, it said "Stopping…" — and
+      // stayed there. The flag was only read between batches, and the import
+      // was never going to reach one. The client did not know cancellation
+      // existed.
+      var stop = false;
+      GraphClient.debugFetch = (url) async =>
+          (429, '', <String, String>{'retry-after': '120'});
+      final c = GraphClient(token: () async => 't')..isCancelled = () => stop;
+
+      final f = c.pageHtml('p1');
+      // Let it get into the wait, then press Stop.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      stop = true;
+      await expectLater(f, throwsA(isA<GraphCancelled>()));
+    });
+
+    test('the wait counts down instead of sitting on one number', () async {
+      // It was announced only when it got LONGER, so a run of one-second
+      // backoffs showed "1s" and then never changed — which reads as a freeze
+      // rather than as waiting.
+      final seen = <Duration>[];
+      void note(Duration? d) {
+        if (d != null) seen.add(d);
+      }
+
+      GraphClient.debugFetch = (url) async =>
+          (429, '', <String, String>{'retry-after': '3'});
+      final c = GraphClient(token: () async => 't')
+        ..onThrottle = note
+        ..isCancelled = () => seen.length >= 4;
+
+      await expectLater(c.pageHtml('p1'), throwsA(isA<GraphCancelled>()));
+      expect(seen.length, greaterThanOrEqualTo(3));
+      // First against last, not consecutive pairs: the backoff is announced
+      // and the wait's first slice measured in the same clock tick, so those
+      // two can legitimately be equal. What must not happen is the number
+      // staying put across the whole wait.
+      expect(seen.last, lessThan(seen.first),
+          reason: 'the number has to get smaller as the wait passes');
+    });
+
     test('giving up is not mistaken for one bad page', () {
       // `pageHtmlMany` answers a page it cannot read with null and carries on,
       // which is right for one page and catastrophic here: swallowed, a

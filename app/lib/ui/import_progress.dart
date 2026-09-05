@@ -127,7 +127,17 @@ class _Card extends StatelessWidget {
               // line above the buttons already says what is happening, and
               // this row keeps the one escape hatch visible throughout.
               const Spacer(),
-              if (running)
+              if (running && job.isStopping)
+                // **Always a way out.** A user pressed Cancel, watched it say
+                // "Stopping…", and then had nothing else to press — the card
+                // sat there for good. Stopping is prompt now, but a card with
+                // no escape is how a bug like that becomes unrecoverable, so
+                // there is always a second press available.
+                TextButton(
+                  onPressed: job.dismiss,
+                  child: const Text('Hide this'),
+                )
+              else if (running)
                 TextButton(
                   onPressed: job.cancel,
                   child: const Text('Cancel'),
