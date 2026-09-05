@@ -33,6 +33,11 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- **Writing on a picture or a PDF actually shows up.** Handwriting was painted
+  underneath everything on the page, so a stroke over a photo disappeared
+  behind it and looked as though the pen had not worked at all. Ink is drawn on
+  top now, the way a pen on paper is.
+
 - **A page that could not be read now says so, and comes back for.** One page
   in a 332-page notebook went missing without a word — the count simply said
   331, which looks like success. It is counted, named on the finished card,

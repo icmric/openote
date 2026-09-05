@@ -971,30 +971,6 @@ class _PageCanvasState extends State<PageCanvas> {
                       child: Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        Positioned(
-                          left: 0,
-                          top: 0,
-                          child: IgnorePointer(
-                            child: RepaintBoundary(
-                              child: CustomPaint(
-                                size: Size.zero,
-                                painter: InkPainter(visibleStrokes,
-                                    wet: _wet,
-                                    // Per-point repaint without widget rebuild.
-                                    repaint: _wetTick,
-                                    // Theme default for "auto" strokes: dark
-                                    // ink on light pages, light ink on dark.
-                                    autoColor: dark
-                                        ? OnoteColors.moon100
-                                        : OnoteColors.graphite900,
-                                    // …except where the page is not what is
-                                    // underneath. See [InkPainter.overDocument].
-                                    documentRects: _documentRects,
-                                    overDocument: OnoteColors.graphite900),
-                              ),
-                            ),
-                          ),
-                        ),
                         // In-page title band (OneNote-style)
                         Positioned(
                           left: AppState.pageLeftMargin,
@@ -1039,6 +1015,54 @@ class _PageCanvasState extends State<PageCanvas> {
                             app: app,
                             controller: controller,
                           ),
+                        // **Handwriting on top, and this layer is last
+                        // for that reason alone.**
+                        //
+                        // Reported: *"I can't reliably write over
+                        // imported images/PDFs. They should stay fixed
+                        // while drawing, with handwriting appearing above
+                        // them."*
+                        //
+                        // The first half was already true — blocks are
+                        // inert while an ink tool is held, so the picture
+                        // does stay put. The second half was not, and the
+                        // cause was paint order: this was the FIRST child
+                        // of the stack, so every block painted over it.
+                        //
+                        // Invisible for text boxes, which are
+                        // transparent, and total for anything opaque: a
+                        // picture or a PDF page swallowed the ink
+                        // completely, so writing on a photo looked like
+                        // the pen had simply not worked.
+                        //
+                        // Above everything rather than only above
+                        // pictures — that is what a pen on paper does,
+                        // what OneNote does, and one rule rather than a
+                        // z-order negotiation between kinds of content.
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          child: IgnorePointer(
+                            child: RepaintBoundary(
+                              child: CustomPaint(
+                                size: Size.zero,
+                                painter: InkPainter(visibleStrokes,
+                                    wet: _wet,
+                                    // Per-point repaint without widget rebuild.
+                                    repaint: _wetTick,
+                                    // Theme default for "auto" strokes: dark
+                                    // ink on light pages, light ink on dark.
+                                    autoColor: dark
+                                        ? OnoteColors.moon100
+                                        : OnoteColors.graphite900,
+                                    // …except where the page is not what is
+                                    // underneath. See [InkPainter.overDocument].
+                                    documentRects: _documentRects,
+                                    overDocument: OnoteColors.graphite900),
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                     ),
