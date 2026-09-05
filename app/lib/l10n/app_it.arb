@@ -386,5 +386,6 @@
   "oneNoteFileTitle": "Usa un file esportato",
   "oneNoteFileBody": "Senza accedere, e viene importata anche la scrittura a mano. Ti servirà OneNote su Windows per esportare prima il blocco appunti.",
   "oneNoteSignInBody": "Scegli un blocco appunti e arriva direttamente, senza esportare nulla prima. Funziona su qualsiasi computer.",
-  "oneNotePickTitle": "Quale blocco appunti?"
+  "oneNotePickTitle": "Quale blocco appunti?",
+  "oneNoteCloudContinue": "Continua con Microsoft"
 }

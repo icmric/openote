@@ -386,5 +386,6 @@
   "oneNoteFileTitle": "Eine exportierte Datei verwenden",
   "oneNoteFileBody": "Ohne Anmeldung, und die Handschrift kommt mit. Sie brauchen OneNote unter Windows, um das Notizbuch zuerst zu exportieren.",
   "oneNoteSignInBody": "Ein Notizbuch auswählen, und es kommt direkt herüber — nichts vorher exportieren. Funktioniert auf jedem Computer.",
-  "oneNotePickTitle": "Welches Notizbuch?"
+  "oneNotePickTitle": "Welches Notizbuch?",
+  "oneNoteCloudContinue": "Mit Microsoft fortfahren"
 }

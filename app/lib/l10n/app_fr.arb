@@ -386,5 +386,6 @@
   "oneNoteFileTitle": "Utiliser un fichier exporté",
   "oneNoteFileBody": "Sans connexion, et l'écriture manuscrite est conservée. Il vous faudra OneNote sous Windows pour exporter le carnet au préalable.",
   "oneNoteSignInBody": "Choisissez un carnet et il arrive directement, sans rien exporter. Fonctionne sur n'importe quel ordinateur.",
-  "oneNotePickTitle": "Quel carnet ?"
+  "oneNotePickTitle": "Quel carnet ?",
+  "oneNoteCloudContinue": "Continuer avec Microsoft"
 }

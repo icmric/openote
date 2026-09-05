@@ -284,12 +284,23 @@ void _readContainer(
         flushText();
         final cells = _readTable(node);
         if (cells.isNotEmpty && cells.first.isNotEmpty) {
+          // **The widths OneNote chose, not a guess per column.** Without
+          // them the importer falls back to 140 px a column clamped to
+          // 240–900, which is wider than most real tables and the reason
+          // *"they all default to larger when they should be smaller"* and
+          // *"overlap horizontally"*: the box is right vertically, because
+          // the rows are, and wrong across because every column was given
+          // the same invented share of an invented total.
+          final colW = _columnWidths(node, cells.first.length);
           boxes.add({
             'kind': 'table',
             'flow': flow,
             'x': left,
             'y': top,
             'cells': cells,
+            if (colW != null) 'col_w': colW,
+            if (colW != null)
+              'w': colW.reduce((a, b) => a + b),
           });
         }
       case 'img':
@@ -478,6 +489,30 @@ String _collapseSpaces(String s) => s
     .split('\n')
     .map((line) => line.replaceAll(RegExp(r'[ \t]+'), ' '))
     .join('\n');
+
+/// The width of each column, in canvas space, or null when OneNote did not
+/// say.
+///
+/// Read from the first row, because that is where OneNote puts them and a
+/// later row's spanned cell would measure the wrong thing. Returned only when
+/// there is one width per column and all of them are sane — a partial or
+/// nonsense array would stretch the wrong columns, which is worse than the
+/// fallback it replaces.
+List<double>? _columnWidths(dom.Element table, int columns) {
+  final firstRow = table.querySelector('tr');
+  if (firstRow == null) return null;
+  final widths = <double>[];
+  for (final cell in firstRow.children) {
+    if (cell.localName != 'td' && cell.localName != 'th') continue;
+    final style = cell.attributes['style'] ?? '';
+    final m = RegExp(r'(?:^|[;{\s])width\s*:\s*([0-9.]+)\s*px')
+        .firstMatch(style);
+    final raw = m == null ? null : double.tryParse(m.group(1)!);
+    if (raw == null || raw <= 1) return null;
+    widths.add(raw * kGraphPxToCanvas);
+  }
+  return widths.length == columns ? widths : null;
+}
 
 /// A table as the rectangular grid of per-cell Markdown the importer stores.
 List<List<String>> _readTable(dom.Element table) {

@@ -386,5 +386,6 @@
   "oneNoteFileTitle": "Usar un archivo exportado",
   "oneNoteFileBody": "Sin iniciar sesión, y la escritura a mano también se copia. Necesitarás OneNote en Windows para exportar el cuaderno antes.",
   "oneNoteSignInBody": "Elige un cuaderno y pasa directamente, sin exportar nada antes. Funciona en cualquier ordenador.",
-  "oneNotePickTitle": "¿Qué cuaderno?"
+  "oneNotePickTitle": "¿Qué cuaderno?",
+  "oneNoteCloudContinue": "Continuar con Microsoft"
 }

@@ -74,14 +74,13 @@ class GraphImportResult {
   final bool cancelled;
 }
 
-/// How many pages are fetched and written before yielding.
+/// How many pages are fetched and written at a time.
 ///
-/// Matched to [kGraphConcurrency], because the pages of a batch are now
-/// fetched **together** rather than one after another: a batch smaller than
-/// the pool leaves connections idle, and one much larger delays both the write
-/// and the cancel check for no gain. Twelve is two full waves, which keeps the
-/// pool busy while still writing to the page twice a batch.
-const int kGraphBatchPages = 12;
+/// Matched to [kGraphBatchRequests], because a batch of pages is now ONE round
+/// trip rather than a wave of them: asking for fewer than twenty wastes the
+/// request, and asking for more just splits into a second one while delaying
+/// the write and the cancel check.
+const int kGraphBatchPages = kGraphBatchRequests;
 
 /// Pull [notebookId] into the notebook behind [sink], writing as it goes.
 ///
@@ -97,6 +96,19 @@ Future<GraphImportResult> importNotebookFromGraph({
 }) async {
   final loss = GraphPageLoss();
   final sections = await client.sections(notebookId);
+  // **Every section's page list up front, together.** Asked for one at a time
+  // inside the loop, each was a round trip the student waited through with
+  // nothing happening — *"it also seems to take a while when changing
+  // sections"*. Fetching them all at once also makes the total known, so the
+  // progress can say how far through it is rather than only how far it has
+  // got.
+  final pageLists = await graphPool<List<GraphPageRef>>([
+    for (final section in sections) () => client.pages(section.id),
+  ]);
+  var pagesTotal = 0;
+  for (final list in pageLists) {
+    pagesTotal += list.length;
+  }
   // The starter section `createNotebook` seeds, remembered so it can go once
   // real content has landed — and only then, so a cancelled import does not
   // leave an empty notebook with nothing in it at all.
@@ -113,12 +125,13 @@ Future<GraphImportResult> importNotebookFromGraph({
   String? firstPageId;
   var cancelled = false;
 
-  for (final section in sections) {
+  for (var si = 0; si < sections.length; si++) {
+    final section = sections[si];
     if (shouldCancel?.call() ?? false) {
       cancelled = true;
       break;
     }
-    final pageRefs = await client.pages(section.id);
+    final pageRefs = pageLists[si];
     if (pageRefs.isEmpty) continue;
 
     // The section node first, so it appears in the navigator immediately and
@@ -151,19 +164,49 @@ Future<GraphImportResult> importNotebookFromGraph({
       // Fetched OUTSIDE the transaction: these are network round trips, and
       // holding a write transaction open across them would lock the notebook
       // for the duration of somebody's internet connection.
-      // **Together, not one after another.** Every page is a round trip and
-      // almost none of the time is spent computing, so fetching them in
-      // sequence left the connection idle for the whole of each wait. This is
-      // the difference between about five seconds a page and about five
-      // seconds for a dozen.
-      final fetched = await graphPool<Map<String, dynamic>?>([
-        for (var i = start; i < end; i++)
-          () => _fetchOnePage(client, pageRefs[i], loss),
-      ]);
-      final ready = [
-        for (final page in fetched)
-          if (page != null) page
+      // **One round trip for the whole batch.** Every page used to be its own
+      // request; twenty at a time through `\$batch` is what takes a
+      // three-hundred-page notebook from fifty waves of latency to fifteen.
+      final slice = pageRefs.sublist(start, end);
+      final htmls = await client.pageHtmlMany([for (final r in slice) r.id]);
+      final ready = <Map<String, dynamic>>[];
+      // Images are still per-picture requests, so they go out together across
+      // the whole batch rather than page by page.
+      final reads = <GraphPage>[];
+      for (var i = 0; i < slice.length; i++) {
+        final html = htmls[i];
+        if (html == null) continue;
+        try {
+          reads.add(readGraphPage(
+            html,
+            title: slice[i].title,
+            level: slice[i].level,
+            createdIso: slice[i].createdIso,
+          ));
+        } catch (_) {
+          // One page that will not parse costs that page, never the import.
+        }
+      }
+      final wanted = <(GraphPage, GraphImageRef)>[
+        for (final r in reads)
+          for (final img in r.images) (r, img),
       ];
+      final bytes = await graphPool<Uint8List?>([
+        for (final (_, img) in wanted) () => client.resource(img.url),
+      ]);
+      var at = 0;
+      for (final r in reads) {
+        final mine = <Uint8List?>[];
+        for (var k = 0; k < r.images.length; k++) {
+          mine.add(bytes[at++]);
+        }
+        attachImageBytes(r.page, r.images, mine, r.loss);
+        loss
+          ..images += r.loss.images
+          ..attachments += r.loss.attachments
+          ..inkPages += r.loss.inkPages;
+        ready.add(r.page);
+      }
       if (ready.isEmpty) continue;
 
       sink.batch(() {
@@ -179,7 +222,7 @@ Future<GraphImportResult> importNotebookFromGraph({
       onProgress?.call(GraphImportProgress(
         sectionName: section.name,
         pagesDone: pagesWritten,
-        pagesTotal: 0,
+        pagesTotal: pagesTotal,
         sectionsDone: sectionsWritten,
         sectionsTotal: sections.length,
       ));
@@ -205,37 +248,4 @@ Future<GraphImportResult> importNotebookFromGraph({
     firstPageId: firstPageId,
     cancelled: cancelled,
   );
-}
-
-/// Fetch and convert one page, or null when it could not be read.
-///
-/// A page that fails costs that page and nothing else: one unreadable page in
-/// a five-year notebook must not end the import that has already brought in
-/// four hundred others.
-Future<Map<String, dynamic>?> _fetchOnePage(
-    GraphClient client, GraphPageRef ref, GraphPageLoss loss) async {
-  try {
-    final html = await client.pageHtml(ref.id);
-    final read = readGraphPage(
-      html,
-      title: ref.title,
-      level: ref.level,
-      createdIso: ref.createdIso,
-    );
-    // Images are separate authenticated fetches, one per picture — so a page
-    // of six diagrams was seven sequential round trips on its own.
-    final bytes = await graphPool<Uint8List?>([
-      for (final img in read.images) () => client.resource(img.url),
-    ]);
-    attachImageBytes(read.page, read.images, bytes, read.loss);
-    loss
-      ..images += read.loss.images
-      ..attachments += read.loss.attachments
-      ..inkPages += read.loss.inkPages;
-    return read.page;
-  } on GraphException {
-    return null;
-  } catch (_) {
-    return null;
-  }
 }

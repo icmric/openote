@@ -79,7 +79,10 @@ String pageHtml(String body) =>
     '</body></html>';
 
 void main() {
-  tearDown(() => GraphClient.debugFetch = null);
+  tearDown(() {
+    GraphClient.debugFetch = null;
+    GraphClient.debugBatch = null;
+  });
 
   group('listing', () {
     test('notebooks come back named', () async {
@@ -183,6 +186,162 @@ void main() {
           c.notebooks(),
           throwsA(isA<GraphException>().having((e) => e.message, 'message',
               contains('sign-in has expired'))));
+    });
+  });
+
+  group('one round trip for many pages', () {
+    test('a batch fetches every page it was given, in order', () async {
+      // A page is one round trip and a notebook is hundreds of pages. Twenty
+      // at a time is the difference between fifty waves of latency and
+      // fifteen — the whole of "importing my full notebook would take >10
+      // minutes".
+      var batches = 0;
+      GraphClient.debugFetch = (url) async => (404, '', <String, String>{});
+      GraphClient.debugBatch = (body) async {
+        batches++;
+        final req = (jsonDecode(body) as Map)['requests'] as List;
+        return (
+          200,
+          jsonEncode({
+            'responses': [
+              for (final r in req)
+                {
+                  'id': (r as Map)['id'],
+                  'status': 200,
+                  'body': '<html><body><p>page ${r['id']}</p></body></html>',
+                }
+            ]
+          })
+        );
+      };
+      final c = GraphClient(token: () async => 'T');
+      final got = await c.pageHtmlMany(['a', 'b', 'c']);
+      expect(batches, 1, reason: 'three pages is one round trip, not three');
+      expect(got, hasLength(3));
+      expect(got[0], contains('page 0'));
+      expect(got[2], contains('page 2'));
+    });
+
+    test('a batch never carries more than Microsoft allows', () async {
+      final sizes = <int>[];
+      GraphClient.debugFetch = (url) async => (404, '', <String, String>{});
+      GraphClient.debugBatch = (body) async {
+        final req = (jsonDecode(body) as Map)['requests'] as List;
+        sizes.add(req.length);
+        return (
+          200,
+          jsonEncode({
+            'responses': [
+              for (final r in req)
+                {'id': (r as Map)['id'], 'status': 200, 'body': '<p>x</p>'}
+            ]
+          })
+        );
+      };
+      final c = GraphClient(token: () async => 'T');
+      await c.pageHtmlMany([for (var i = 0; i < 45; i++) 'p$i']);
+      expect(sizes.every((n) => n <= kGraphBatchRequests), isTrue);
+      expect(sizes.reduce((a, b) => a + b), 45);
+    });
+
+    test('a base64 body is decoded', () async {
+      // Graph returns a JSON body as an object and anything else — HTML
+      // included — as base64, so both spellings have to be understood.
+      GraphClient.debugFetch = (url) async => (404, '', <String, String>{});
+      GraphClient.debugBatch = (body) async => (
+            200,
+            jsonEncode({
+              'responses': [
+                {
+                  'id': '0',
+                  'status': 200,
+                  'body': base64.encode(utf8.encode('<p>hello</p>')),
+                }
+              ]
+            })
+          );
+      final c = GraphClient(token: () async => 'T');
+      expect((await c.pageHtmlMany(['a'])).single, contains('hello'));
+    });
+
+    test('a batch that fails falls back to one request per page', () async {
+      // `\$batch` has more ways to disappoint than a plain GET and none of
+      // them are worth failing an import over.
+      var singles = 0;
+      GraphClient.debugBatch = (body) async => (503, 'service unavailable');
+      GraphClient.debugFetch = (url) async {
+        singles++;
+        return (200, '<html><body><p>solo</p></body></html>',
+            <String, String>{});
+      };
+      final c = GraphClient(token: () async => 'T');
+      final got = await c.pageHtmlMany(['a', 'b']);
+      expect(singles, 2);
+      expect(got.every((h) => h != null && h.contains('solo')), isTrue);
+    });
+
+    test('one bad entry inside a good batch is fetched singly', () async {
+      var singles = 0;
+      GraphClient.debugBatch = (body) async => (
+            200,
+            jsonEncode({
+              'responses': [
+                {'id': '0', 'status': 200, 'body': '<p>ok</p>'},
+                {'id': '1', 'status': 500, 'body': ''},
+              ]
+            })
+          );
+      GraphClient.debugFetch = (url) async {
+        singles++;
+        return (200, '<p>recovered</p>', <String, String>{});
+      };
+      final c = GraphClient(token: () async => 'T');
+      final got = await c.pageHtmlMany(['a', 'b']);
+      expect(singles, 1, reason: 'only the one that failed');
+      expect(got[0], contains('ok'));
+      expect(got[1], contains('recovered'));
+    });
+  });
+
+  group('hierarchy', () {
+    test('a subpage stays a subpage', () async {
+      // OneNote's `level` is what makes a subpage a subpage, and the .onepkg
+      // route keeps it. Asking for it by name with `\$select` did not: the
+      // pages endpoint did not reliably return the field, so every page
+      // arrived at level 0 and a notebook came in flat.
+      final sink = RecordingSink();
+      await importNotebookFromGraph(
+        client: fakeGraph({
+          '/notebooks/nb1/sections?': listOf([
+            {'id': 's1', 'displayName': 'Week 1'}
+          ]),
+          '/notebooks/nb1/sectionGroups?': listOf([]),
+          '/sections/s1/pages': listOf([
+            {'id': 'p1', 'title': 'Parent', 'level': 0},
+            {'id': 'p2', 'title': 'Child', 'level': 1},
+            {'id': 'p3', 'title': 'Grandchild', 'level': 2},
+          ]),
+          '/pages/p1/content': pageHtml('<p>a</p>'),
+          '/pages/p2/content': pageHtml('<p>b</p>'),
+          '/pages/p3/content': pageHtml('<p>c</p>'),
+        }),
+        notebookId: 'nb1',
+        sink: sink,
+      );
+      final pages =
+          sink.written.where((n) => n.kind == NodeKind.page).toList();
+      expect(pages.map((n) => n.title), ['Parent', 'Child', 'Grandchild']);
+      expect(pages.map((n) => n.level), [0, 1, 2]);
+    });
+
+    test('the page list is not asked for a field by name', () async {
+      // The regression itself: a `\$select` that omits or mis-names `level`
+      // loses the hierarchy silently, with every page still importing.
+      final urls = <String>[];
+      final c = fakeGraph({'/sections/s1/pages': listOf([])},
+          requestLog: urls);
+      await c.pages('s1');
+      expect(urls.single, isNot(contains(r'$select')));
     });
   });
 

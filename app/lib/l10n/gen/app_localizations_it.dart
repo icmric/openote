@@ -1410,4 +1410,7 @@ class LIt extends L {
 
   @override
   String get oneNotePickTitle => 'Quale blocco appunti?';
+
+  @override
+  String get oneNoteCloudContinue => 'Continua con Microsoft';
 }

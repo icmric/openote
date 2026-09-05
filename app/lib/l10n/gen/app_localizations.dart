@@ -2428,6 +2428,12 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Which notebook?'**
   String get oneNotePickTitle;
+
+  /// Button reusing a remembered Microsoft sign-in, so no browser is needed.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue with Microsoft'**
+  String get oneNoteCloudContinue;
 }
 
 class _LDelegate extends LocalizationsDelegate<L> {

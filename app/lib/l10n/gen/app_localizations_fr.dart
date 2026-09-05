@@ -1409,4 +1409,7 @@ class LFr extends L {
 
   @override
   String get oneNotePickTitle => 'Quel carnet ?';
+
+  @override
+  String get oneNoteCloudContinue => 'Continuer avec Microsoft';
 }

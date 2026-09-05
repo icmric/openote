@@ -1394,4 +1394,7 @@ class LEn extends L {
 
   @override
   String get oneNotePickTitle => 'Which notebook?';
+
+  @override
+  String get oneNoteCloudContinue => 'Continue with Microsoft';
 }

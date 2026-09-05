@@ -19,6 +19,7 @@
 ///    understands from `.one` files.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -80,8 +81,16 @@ class GraphException implements Exception {
 /// save because every one of them is a wasted round trip AND a wait.
 const int kGraphConcurrency = 6;
 
-/// Run [jobs] with at most [kGraphConcurrency] outstanding, keeping order.
-Future<List<T>> graphPool<T>(List<Future<T> Function()> jobs) async {
+/// Run [jobs] with at most [limit] outstanding, keeping the order of results.
+///
+/// The limit is a **local** one. What actually bounds requests is the gate
+/// inside [GraphClient], because these pools nest — a pool over pages whose
+/// jobs each open a pool over that page's images multiplied six by six and
+/// put thirty-six requests in flight, which OneNote answers with 429s. A 429
+/// costs a round trip AND the wait after it, so the throttling was slower than
+/// the sequential code it replaced.
+Future<List<T>> graphPool<T>(List<Future<T> Function()> jobs,
+    {int limit = kGraphConcurrency}) async {
   final results = List<T?>.filled(jobs.length, null);
   var next = 0;
   Future<void> worker() async {
@@ -92,10 +101,13 @@ Future<List<T>> graphPool<T>(List<Future<T> Function()> jobs) async {
     }
   }
 
-  final n = jobs.length < kGraphConcurrency ? jobs.length : kGraphConcurrency;
+  final n = jobs.length < limit ? jobs.length : limit;
   await Future.wait([for (var i = 0; i < n; i++) worker()]);
   return results.cast<T>();
 }
+
+/// How many pages one `\$batch` carries. Twenty is Microsoft's maximum.
+const int kGraphBatchRequests = 20;
 
 /// Talks to Graph on behalf of a signed-in student.
 class GraphClient {
@@ -118,7 +130,32 @@ class GraphClient {
 
   final HttpClient _client;
 
-  static const String _base = 'https://graph.microsoft.com/v1.0/me/onenote';
+  /// **The one gate every request passes through.**
+  ///
+  /// Counts requests actually in flight, wherever they were started from, so
+  /// nesting a pool inside a pool cannot exceed it. Without this the limit was
+  /// per call site and multiplied.
+  int _inFlight = 0;
+  final List<Completer<void>> _waiting = [];
+
+  Future<void> _acquire() async {
+    if (_inFlight < kGraphConcurrency) {
+      _inFlight++;
+      return;
+    }
+    final c = Completer<void>();
+    _waiting.add(c);
+    await c.future;
+    _inFlight++;
+  }
+
+  void _release() {
+    _inFlight--;
+    if (_waiting.isNotEmpty) _waiting.removeAt(0).complete();
+  }
+
+  static const String _root = 'https://graph.microsoft.com/v1.0';
+  static const String _base = '$_root/me/onenote';
 
   /// Test seam: answers requests without a network.
   @visibleForTesting
@@ -207,9 +244,13 @@ class GraphClient {
 
   /// A section's pages, oldest first so the imported order matches OneNote's.
   Future<List<GraphPageRef>> pages(String sectionId) async {
+    // **No `\$select`.** It used to ask for `level` by name and OneNote's
+    // pages endpoint did not reliably return it, so every page arrived at
+    // level 0 and a notebook's subpages all became top-level pages — the
+    // hierarchy the `.onepkg` route keeps. Asking for the whole object costs
+    // a few hundred bytes per page and cannot lose a field.
     final rows = await _all('$_base/sections/$sectionId/pages'
-        '?\$select=id,title,level,order,createdDateTime'
-        '&\$orderby=order&\$top=100');
+        '?\$orderby=order&\$top=100');
     return [
       for (final r in rows)
         GraphPageRef(
@@ -238,11 +279,143 @@ class GraphClient {
     return body;
   }
 
+  /// Several pages' HTML at once, in the order asked for.
+  ///
+  /// **The difference between minutes and tens of minutes.** A page is one
+  /// round trip, and a notebook is hundreds of pages; even six at a time, a
+  /// three-hundred-page notebook is fifty waves of network latency. Graph's
+  /// `\$batch` carries twenty requests in a single round trip, so the same
+  /// notebook is fifteen.
+  ///
+  /// Falls back to individual requests whenever the batch does not work — a
+  /// bad status, a malformed envelope, an exception. `\$batch` has more ways to
+  /// disappoint than a plain GET and none of them are worth failing an import
+  /// over, so this is an optimisation that can always be skipped.
+  Future<List<String?>> pageHtmlMany(List<String> pageIds) async {
+    if (pageIds.isEmpty) return const [];
+    final out = List<String?>.filled(pageIds.length, null);
+    var allFailed = true;
+    for (var start = 0; start < pageIds.length; start += kGraphBatchRequests) {
+      final end = (start + kGraphBatchRequests).clamp(0, pageIds.length);
+      final slice = pageIds.sublist(start, end);
+      final got = await _batchPageHtml(slice);
+      if (got == null) continue;
+      allFailed = false;
+      for (var i = 0; i < slice.length; i++) {
+        out[start + i] = got[i];
+      }
+    }
+    // Anything the batch could not supply — a failed envelope, or one entry
+    // inside a good one — is fetched the ordinary way rather than lost.
+    final missing = <int>[
+      for (var i = 0; i < pageIds.length; i++)
+        if (out[i] == null) i
+    ];
+    if (missing.isNotEmpty) {
+      final fetched = await graphPool<String?>([
+        for (final i in missing)
+          () async {
+            try {
+              return await pageHtml(pageIds[i]);
+            } on GraphException {
+              return null;
+            }
+          },
+      ]);
+      for (var k = 0; k < missing.length; k++) {
+        out[missing[k]] = fetched[k];
+      }
+    }
+    if (allFailed && pageIds.length > 1) {
+      // Worth knowing in a debug run: the fast path is off and everything is
+      // going one at a time.
+      debugPrint('[openote/onenote] \$batch unavailable; fetching singly');
+    }
+    return out;
+  }
+
+  /// One `\$batch` POST, or null when it could not be used at all.
+  Future<List<String?>?> _batchPageHtml(List<String> ids) async {
+    final body = jsonEncode({
+      'requests': [
+        for (var i = 0; i < ids.length; i++)
+          {
+            'id': '$i',
+            'method': 'GET',
+            'url': '/me/onenote/pages/${ids[i]}/content?includeIDs=true',
+          }
+      ]
+    });
+    final fake = debugBatch;
+    // A test that stubs the ordinary fetch but not the batch must not reach
+    // the real internet to discover the batch is unavailable.
+    if (fake == null && debugFetch != null) return null;
+    late int status;
+    late String text;
+    try {
+      if (fake != null) {
+        (status, text) = await fake(body);
+      } else {
+        await _acquire();
+        try {
+          final t = await token();
+          final req = await _client.postUrl(Uri.parse('$_root/\$batch'));
+          req.headers
+            ..set(HttpHeaders.authorizationHeader, 'Bearer $t')
+            ..contentType = ContentType.json;
+          req.write(body);
+          final res = await req.close();
+          text = await res.transform(utf8.decoder).join();
+          status = res.statusCode;
+        } finally {
+          _release();
+        }
+      }
+      if (status != 200) return null;
+      final json = jsonDecode(text) as Map<String, dynamic>;
+      final responses = json['responses'] as List?;
+      if (responses == null) return null;
+      final out = List<String?>.filled(ids.length, null);
+      for (final r in responses) {
+        final m = (r as Map).cast<String, dynamic>();
+        final at = int.tryParse('${m['id']}');
+        if (at == null || at < 0 || at >= ids.length) continue;
+        if ((m['status'] as num?)?.toInt() != 200) continue;
+        out[at] = _decodeBatchBody(m['body']);
+      }
+      return out;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// A `\$batch` entry's body as text.
+  ///
+  /// Graph returns a JSON body as an object and anything else — HTML included
+  /// — as a base64 string, so both spellings are accepted and a string that
+  /// is not base64 is taken at face value rather than thrown away.
+  static String? _decodeBatchBody(Object? body) {
+    if (body == null) return null;
+    if (body is Map || body is List) return jsonEncode(body);
+    final text = '$body';
+    if (text.startsWith('<')) return text;
+    try {
+      return utf8.decode(base64.decode(text));
+    } catch (_) {
+      return text;
+    }
+  }
+
+  /// Test seam for the batch endpoint. Returns `(status, body)`.
+  @visibleForTesting
+  static Future<(int, String)> Function(String requestBody)? debugBatch;
+
   /// An image or attachment's bytes, or null when it cannot be had.
   ///
   /// Null rather than throwing: one unreadable picture must cost that picture
   /// and nothing else, and the page around it is still worth importing.
   Future<Uint8List?> resource(String url) async {
+    await _acquire();
     try {
       final t = await token();
       final req = await _client.getUrl(Uri.parse(url));
@@ -256,6 +429,8 @@ class GraphClient {
       return Uint8List.fromList(chunks);
     } catch (_) {
       return null;
+    } finally {
+      _release();
     }
   }
 
@@ -306,6 +481,7 @@ class GraphClient {
   }
 
   Future<(int, String, Map<String, String>)> _realFetch(String url) async {
+    await _acquire();
     try {
       final t = await token();
       final req = await _client.getUrl(Uri.parse(url));
@@ -320,6 +496,8 @@ class GraphClient {
           'Openote lost its connection to Microsoft. Check your internet and '
           'try again — nothing already imported has been lost.',
           details: '$e');
+    } finally {
+      _release();
     }
   }
 

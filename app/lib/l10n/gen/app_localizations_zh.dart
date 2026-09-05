@@ -1353,4 +1353,7 @@ class LZh extends L {
 
   @override
   String get oneNotePickTitle => '选择哪个笔记本？';
+
+  @override
+  String get oneNoteCloudContinue => '继续使用 Microsoft';
 }

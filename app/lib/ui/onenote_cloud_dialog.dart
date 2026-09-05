@@ -66,13 +66,16 @@ class _OneNoteDialogState extends State<_OneNoteDialog> {
   /// moved on to its second screen.
   List<GraphNotebook>? _notebooks;
 
-  @override
-  void initState() {
-    super.initState();
-    // A remembered sign-in should not make somebody press "sign in" again for
-    // no reason — a refresh token is exactly the thing that avoids it.
-    if (_auth.hasStoredSignIn) _load();
-  }
+  // **The route choice is always shown first.**
+  //
+  // This used to jump straight to the notebook list whenever a sign-in was
+  // remembered, on the reasoning that pressing "sign in" again is a wasted
+  // click. It cost more than it saved: the file route became unreachable —
+  // *"brings up my notebook list rather than letting me manually import"* —
+  // and so did changing account, because both live on the screen it skipped.
+  //
+  // The remembered sign-in is not wasted. It means the Continue button needs
+  // no browser at all: press it and the list is simply there.
 
   Future<void> _signIn() async {
     setState(() {
@@ -120,6 +123,19 @@ class _OneNoteDialogState extends State<_OneNoteDialog> {
     });
   }
 
+  /// Sign in, or go straight to the list when there is a sign-in to reuse.
+  Future<void> _continue() async {
+    if (_auth.hasStoredSignIn) {
+      await _load();
+      // A refresh token that has expired drops us back here rather than into
+      // a dead end; the card will now say "sign in" because the stored one is
+      // gone.
+      if (mounted && _notebooks == null && _error != null) setState(() {});
+      return;
+    }
+    await _signIn();
+  }
+
   void _useAnotherAccount() {
     _auth.signOut();
     setState(() {
@@ -157,13 +173,27 @@ class _OneNoteDialogState extends State<_OneNoteDialog> {
         ),
       ),
       actions: [
-        if (picking && _auth.hasStoredSignIn)
+        // On BOTH screens when there is a sign-in to change. It used to be on
+        // the list only, so somebody who landed there with the wrong account
+        // could see the wrong notebooks and somebody who never got that far
+        // had no way to switch at all.
+        if (_auth.hasStoredSignIn)
           TextButton(
             onPressed: _busy ? null : _useAnotherAccount,
             // What replaces showing the signed-in email address. Openote
             // deliberately never learns who anybody is, so the answer to
             // "wrong account" is to change it rather than to read it back.
             child: Text(l.oneNoteCloudOther),
+          ),
+        if (picking)
+          TextButton(
+            onPressed: _busy
+                ? null
+                : () => setState(() {
+                      _notebooks = null;
+                      _error = null;
+                    }),
+            child: Text(l.commonBack),
           ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -179,14 +209,16 @@ class _OneNoteDialogState extends State<_OneNoteDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _RouteCard(
-            title: l.oneNoteCloudSignIn,
+            title: _auth.hasStoredSignIn
+                ? l.oneNoteCloudContinue
+                : l.oneNoteCloudSignIn,
             body: l.oneNoteSignInBody,
             // The reassurance belongs on the card you press, at the moment
             // you are deciding — not in a paragraph above both of them.
             note: '${l.oneNoteCloudIntro} ${l.oneNoteCloudNoInk}',
             icon: Icons.cloud_outlined,
             enabled: !_busy,
-            onTap: _signIn,
+            onTap: _continue,
           ),
           const SizedBox(height: OnoteSpace.x3),
           _RouteCard(

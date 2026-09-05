@@ -54,6 +54,15 @@ void main() {
     GraphClient.debugFetch = null;
   });
 
+  /// Press the sign-in card and let the list arrive.
+  Future<void> goToList(WidgetTester tester) async {
+    // Always through the route screen, never around it. A remembered sign-in
+    // makes this button need no browser; it does NOT make the screen with the
+    // file route and the change-account button worth skipping.
+    await tester.tap(find.text('Continue with Microsoft'));
+    await tester.pumpAndSettle();
+  }
+
   Future<void> open(WidgetTester tester) async {
     final app = await newApp(tester);
     await tester.pumpWidget(testApp(Builder(
@@ -112,7 +121,7 @@ void main() {
         );
 
     await open(tester);
-    await tester.pumpAndSettle();
+    await goToList(tester);
 
     expect(find.text('Physics'), findsOneWidget);
     expect(find.text('History'), findsOneWidget);
@@ -140,6 +149,41 @@ void main() {
     expect(find.text('Use a different account'), findsOneWidget);
   });
 
+  testWidgets('a remembered sign-in still shows the other way in',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    SecretStore.debugBackend!['onenote.graph.refresh'] = 'GOOD';
+    await open(tester);
+
+    // The regression: it used to jump straight to the notebook list, which
+    // took the file route and the change-account button off screen entirely.
+    // "brings up my notebook list rather than letting me manually import".
+    expect(find.text('Use a file you exported'), findsOneWidget);
+    expect(find.text('Use a different account'), findsOneWidget);
+    // And the sign-in card says it needs no browser this time.
+    expect(find.text('Continue with Microsoft'), findsOneWidget);
+  });
+
+  testWidgets('the list can be left again', (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    SecretStore.debugBackend!['onenote.graph.refresh'] = 'GOOD';
+    GraphAuth.debugTokenEndpoint =
+        (body) async => (200, {'access_token': 'AT', 'expires_in': 3600});
+    GraphClient.debugFetch = (url) async =>
+        (200, '{"value":[{"id":"nb1","displayName":"Physics"}]}',
+            <String, String>{});
+
+    await open(tester);
+    await goToList(tester);
+    expect(find.text('Physics'), findsOneWidget);
+
+    await tester.tap(find.text('Back'));
+    await tester.pumpAndSettle();
+    // Somebody who signed in and then thought better of it can still take the
+    // file route without closing the dialog.
+    expect(find.text('Use a file you exported'), findsOneWidget);
+  });
+
   testWidgets('an account with no notebooks says so plainly', (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     SecretStore.debugBackend!['onenote.graph.refresh'] = 'GOOD';
@@ -149,7 +193,7 @@ void main() {
         (url) async => (200, '{"value":[]}', <String, String>{});
 
     await open(tester);
-    await tester.pumpAndSettle();
+    await goToList(tester);
 
     expect(find.textContaining('No notebooks were found'), findsOneWidget);
   });
@@ -163,7 +207,7 @@ void main() {
     GraphClient.debugFetch = (url) async => (403, '', <String, String>{});
 
     await open(tester);
-    await tester.pumpAndSettle();
+    await goToList(tester);
 
     expect(find.textContaining('would not allow Openote'), findsOneWidget);
     // The status code is present but subordinate — never the headline.

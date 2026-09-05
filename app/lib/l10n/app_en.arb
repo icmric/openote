@@ -1910,5 +1910,9 @@
   "oneNotePickTitle": "Which notebook?",
   "@oneNotePickTitle": {
     "description": "Heading above the list of notebooks found in the signed-in account."
+  },
+  "oneNoteCloudContinue": "Continue with Microsoft",
+  "@oneNoteCloudContinue": {
+    "description": "Button reusing a remembered Microsoft sign-in, so no browser is needed."
   }
 }

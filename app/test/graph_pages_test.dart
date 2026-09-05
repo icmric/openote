@@ -175,6 +175,46 @@ void main() {
       expect(boxes.last['markdown'], 'after');
     });
 
+    test('columns keep the widths OneNote gave them', () {
+      // Without them the importer falls back to 140 px a column clamped to
+      // 240-900, which is wider than most real tables: "they all default to
+      // larger when they should be smaller ... overlap horizontally".
+      final r = readGraphPage(
+          wrap('<table><tr>'
+              '<td style="width:80px">a</td>'
+              '<td style="width:220px">b</td>'
+              '</tr></table>'),
+          title: 'Page');
+      final table = (r.page['boxes'] as List)
+          .firstWhere((b) => b['kind'] == 'table');
+      expect(table['col_w'],
+          [80.0 * kGraphPxToCanvas, 220.0 * kGraphPxToCanvas]);
+      expect(table['w'], 300.0 * kGraphPxToCanvas);
+    });
+
+    test('a table that says nothing about widths keeps the old fallback', () {
+      final r = readGraphPage(
+          wrap('<table><tr><td>a</td><td>b</td></tr></table>'),
+          title: 'Page');
+      final table = (r.page['boxes'] as List)
+          .firstWhere((b) => b['kind'] == 'table');
+      expect(table.containsKey('col_w'), isFalse);
+    });
+
+    test('a partial set of widths is refused rather than stretching some', () {
+      // One width per column or none: a partial array would size two columns
+      // from the source and invent the rest, which is worse than inventing
+      // all of them consistently.
+      final r = readGraphPage(
+          wrap('<table><tr>'
+              '<td style="width:80px">a</td><td>b</td>'
+              '</tr></table>'),
+          title: 'Page');
+      final table = (r.page['boxes'] as List)
+          .firstWhere((b) => b['kind'] == 'table');
+      expect(table.containsKey('col_w'), isFalse);
+    });
+
     test('cell formatting is kept', () {
       final r = readGraphPage(
           wrap('<table><tr><td><b>x</b></td></tr></table>'), title: 'Page');

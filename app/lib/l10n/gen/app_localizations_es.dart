@@ -1401,4 +1401,7 @@ class LEs extends L {
 
   @override
   String get oneNotePickTitle => '¿Qué cuaderno?';
+
+  @override
+  String get oneNoteCloudContinue => 'Continuar con Microsoft';
 }

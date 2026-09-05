@@ -1408,4 +1408,7 @@ class LDe extends L {
 
   @override
   String get oneNotePickTitle => 'Welches Notizbuch?';
+
+  @override
+  String get oneNoteCloudContinue => 'Mit Microsoft fortfahren';
 }

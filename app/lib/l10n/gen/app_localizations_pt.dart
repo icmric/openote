@@ -1403,4 +1403,7 @@ class LPt extends L {
 
   @override
   String get oneNotePickTitle => 'Qual bloco de notas?';
+
+  @override
+  String get oneNoteCloudContinue => 'Continuar com a Microsoft';
 }
