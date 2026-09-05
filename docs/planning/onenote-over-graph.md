@@ -274,8 +274,10 @@ real transport only, so it held for nothing else and could not be tested
 without unplugging a router — the same mistake the request deadline had made,
 and it is now at the `_fetch` level for the same reason.
 
-**A third run, after the fix: 332 pages, 189 s, `lost: ink 0, images 0,
-attachments 0`.** Nothing lost at all.
+**Three clean runs after the fixes — 133 s, 189 s and 168 s for the same 332
+pages, every one of them `lost: ink 0, images 0, attachments 0`.** Nothing lost
+at all, and the spread between them is the honest measure of how much
+Microsoft's throttling, not the code, decides how long an import takes.
 
 ## Parity with the `.onepkg` route
 

@@ -44,8 +44,10 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   however much was in it.
 - **Pictures you had moved stay where you put them** instead of jumping back
   into the middle of a paragraph.
-- **A big notebook imports in about two minutes** rather than the ten or more
-  it used to take, and when Microsoft asks Openote to slow down it says so and
+- **A big notebook imports in about three minutes** rather than the ten or
+  more it used to take — a real five-year notebook of 332 pages, 64,000 pen
+  strokes and 548 equations came over three times running with nothing
+  missing — and when Microsoft asks Openote to slow down it says so and
   waits, instead of going quiet or giving up.
 - **An import that goes wrong keeps the pages it already brought you.** If
   something failed halfway, Openote used to delete the whole notebook — every
