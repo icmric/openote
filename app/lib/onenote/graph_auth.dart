@@ -253,6 +253,20 @@ class GraphAuth {
         onTimeout: () => throw GraphAuthException(
             'The sign-in was not finished, so nothing was imported.'),
       );
+      // **Before the exchange, and this is worth thirty seconds.**
+      //
+      // Leaving `await for` by returning cancels its subscription, and
+      // cancelling an `HttpServer` subscription closes the server *gracefully*
+      // — which waits for open connections to finish. The browser holds the
+      // redirect connection open with keep-alive, so the close blocked until
+      // the browser's own idle timeout, roughly half a minute, and it blocked
+      // BEFORE the token request could be made. That was the whole of "it
+      // takes about another 30s to auth after doing the sign in".
+      //
+      // Forcing it here rather than relying on the `finally` below, because
+      // the `finally` runs after the exchange and the point is to get the
+      // exchange started.
+      await server.close(force: true);
       final session = await _exchange(
         body: {
           'client_id': clientId,
@@ -306,6 +320,11 @@ class GraphAuth {
       request.response
         ..statusCode = HttpStatus.ok
         ..headers.contentType = ContentType.html
+        // Tell the browser not to keep the connection alive. Half of the fix
+        // above: a connection the browser is entitled to reuse is one the
+        // server has to wait on.
+        ..headers.set(HttpHeaders.connectionHeader, 'close')
+        ..persistentConnection = false
         ..write(body);
       await request.response.close();
 

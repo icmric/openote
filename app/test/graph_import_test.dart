@@ -254,8 +254,13 @@ void main() {
         () async {
       final sink = RecordingSink();
       final seen = <int>[];
+      // Sized from the constant, not from a number that happened to be
+      // bigger than it: when the batch grew from 3 to 12 for concurrency, a
+      // hard-coded 7 quietly became a SINGLE batch and this stopped testing
+      // anything.
+      const count = kGraphBatchPages * 2 + 1;
       final many = [
-        for (var i = 0; i < 7; i++) {'id': 'p$i', 'title': 'Page $i'}
+        for (var i = 0; i < count; i++) {'id': 'p$i', 'title': 'Page $i'}
       ];
       final routes = <String, String>{
         '/notebooks/nb1/sections?': listOf([
@@ -263,7 +268,7 @@ void main() {
         ]),
         '/notebooks/nb1/sectionGroups?': listOf([]),
         '/sections/s1/pages': listOf(many),
-        for (var i = 0; i < 7; i++)
+        for (var i = 0; i < count; i++)
           '/pages/p$i/content': pageHtml('<p>page $i</p>'),
       };
       await importNotebookFromGraph(
@@ -275,7 +280,51 @@ void main() {
       // Seven pages at three per batch: the student sees the count climb
       // rather than jumping from nothing to done.
       expect(seen.length, greaterThan(1));
-      expect(seen.last, 7);
+      expect(seen.last, count);
+    });
+
+    test('sections keep the order OneNote gave them, however the '
+        'network answers',
+        () async {
+      // The requests go out together now, so the order they come BACK in is
+      // whatever the network decides. Appending to one shared list as replies
+      // landed would shuffle a student's sections differently on every import
+      // and never match OneNote.
+      final sink = RecordingSink();
+      await importNotebookFromGraph(
+        client: fakeGraph({
+          '/notebooks/nb1/sections?': listOf([
+            {'id': 's1', 'displayName': 'Loose'}
+          ]),
+          '/notebooks/nb1/sectionGroups?': listOf([
+            {'id': 'g1', 'displayName': 'Y1'}
+          ]),
+          '/sectionGroups/g1/sections?': listOf([
+            {'id': 's2', 'displayName': 'Term 1'},
+            {'id': 's3', 'displayName': 'Term 2'},
+          ]),
+          '/sectionGroups/g1/sectionGroups?': listOf([]),
+          '/sections/s1/pages': listOf([
+            {'id': 'p1', 'title': 'A'}
+          ]),
+          '/sections/s2/pages': listOf([
+            {'id': 'p2', 'title': 'B'}
+          ]),
+          '/sections/s3/pages': listOf([
+            {'id': 'p3', 'title': 'C'}
+          ]),
+          '/pages/p1/content': pageHtml('<p>a</p>'),
+          '/pages/p2/content': pageHtml('<p>b</p>'),
+          '/pages/p3/content': pageHtml('<p>c</p>'),
+        }),
+        notebookId: 'nb1',
+        sink: sink,
+      );
+      expect(
+          sink.written
+              .where((n) => n.kind == NodeKind.section)
+              .map((n) => n.title),
+          ['Loose', 'Term 1', 'Term 2']);
     });
 
     test('one unreadable page does not end the import', () async {

@@ -114,12 +114,35 @@ class GraphPage {
   final GraphPageLoss loss;
 }
 
-/// OneNote's HTML default when a page carries no explicit position, in the
-/// 120-dpi space the rest of the importer works in. Matches the left margin an
-/// exported `.one` page lands on, so a mixed notebook does not have two
-/// different ideas of where the text starts.
-const double kGraphDefaultLeft = 48;
-const double kGraphDefaultTop = 90;
+/// **CSS pixels into the canvas's own space.**
+///
+/// Graph writes geometry as CSS px, which are 96 to the inch. The canvas works
+/// at 120 — the `.one` importer beside this converts type as `sizePt * 120/72`
+/// and every coordinate the Rust parser emits is in that space. Placing boxes
+/// at 96-dpi coordinates while their text is laid out at 120 makes every line
+/// a quarter wider than the box holding it, which is most of "many things are
+/// just generally off": text overflows its box, wraps early, and a narrow one
+/// wraps to a word or a letter a line.
+const double kGraphPxToCanvas = 120.0 / 96.0;
+
+/// Where a page's content starts when it says nothing, already in canvas
+/// space. OneNote's own default outline sits half an inch in.
+const double kGraphDefaultLeft = 48 * kGraphPxToCanvas;
+const double kGraphDefaultTop = 90 * kGraphPxToCanvas;
+
+/// Tag names that belong to a LINE rather than starting one.
+///
+/// This distinction is the whole of "some text new lines after every char".
+/// OneNote does not always wrap a run in a `<p>` — a positioned outline can
+/// hold `<span>`s, links and `<b>`s as direct children — and treating every
+/// child element as a block put each of those runs on a line of its own. A
+/// sentence broken into four styled spans came out as four lines, and one
+/// broken per character came out per character.
+const Set<String> kInlineTags = {
+  'a', 'abbr', 'b', 'big', 'cite', 'code', 'del', 'em', 'font', 'i', 'kbd',
+  'mark', 'q', 's', 'samp', 'small', 'span', 'strike', 'strong', 'sub',
+  'sup', 'time', 'tt', 'u', 'var',
+};
 
 /// Read one page of Graph HTML.
 ///
@@ -149,6 +172,18 @@ GraphPage readGraphPage(
         .toList();
     final roots = positioned.isNotEmpty ? positioned : [body];
 
+    // **One flow per outline, and this is not optional.**
+    //
+    // Every box an outline produces starts at that outline's origin, because
+    // HTML says where the OUTLINE is and nothing about where the third
+    // paragraph inside it ends up. `restackFlows` is what turns those
+    // coincident boxes into a column, measuring each one's real height with a
+    // TextPainter — but it only groups boxes that carry a `flow`, and skips
+    // everything else. Emitting no flow meant nothing was ever restacked, so a
+    // heading, its paragraph and its table were all written at the same point
+    // and drawn on top of one another. That was "some tables are all over the
+    // place".
+    var flow = 0;
     for (final root in roots) {
       final at = _positionOf(root);
       _readContainer(
@@ -156,6 +191,7 @@ GraphPage readGraphPage(
         left: at.$1,
         top: at.$2,
         width: at.$3,
+        flow: ++flow,
         boxes: boxes,
         images: images,
         imageMaps: imageMaps,
@@ -183,12 +219,31 @@ void _readContainer(
   required double left,
   required double top,
   required double? width,
+  required int flow,
   required List<Map<String, dynamic>> boxes,
   required List<GraphImageRef> images,
   required List<Map<String, dynamic>> imageMaps,
   required GraphPageLoss loss,
 }) {
   final markdown = StringBuffer();
+
+  /// Append to the line being built. Inline runs and loose text use this.
+  void writeInline(String text) {
+    if (text.isEmpty) return;
+    markdown.write(text);
+  }
+
+  /// Start a new line for a block. Never doubles a newline that is there.
+  void writeBlock(String md) {
+    if (md.isEmpty) return;
+    final soFar = markdown.toString();
+    if (soFar.isNotEmpty && !soFar.endsWith('\n')) {
+      markdown.write('\n');
+    }
+    markdown
+      ..write(md)
+      ..write('\n');
+  }
 
   void flushText() {
     final text = markdown.toString().trimRight();
@@ -198,6 +253,7 @@ void _readContainer(
     }
     boxes.add({
       'kind': 'text',
+      'flow': flow,
       'x': left,
       'y': top,
       if (width != null) 'w': width,
@@ -209,9 +265,18 @@ void _readContainer(
   for (final node in root.nodes) {
     if (node is! dom.Element) {
       // Loose text directly under the container — rare, but a page whose body
-      // is a bare sentence is not worth losing.
-      final text = node.text?.trim() ?? '';
-      if (text.isNotEmpty) markdown.writeln(text);
+      // is a bare sentence is not worth losing. Appended, not given a line:
+      // it is part of whatever run surrounds it.
+      final text = node.text ?? '';
+      if (text.trim().isNotEmpty) {
+        writeInline(text.replaceAll('\u00A0', ' '));
+      }
+      continue;
+    }
+    // A styled run, a link, a bit of bold: part of the current line, and
+    // carrying its OWN mark rather than only its children's.
+    if (kInlineTags.contains(node.localName)) {
+      writeInline(inlineElement(node));
       continue;
     }
     switch (node.localName) {
@@ -221,6 +286,7 @@ void _readContainer(
         if (cells.isNotEmpty && cells.first.isNotEmpty) {
           boxes.add({
             'kind': 'table',
+            'flow': flow,
             'x': left,
             'y': top,
             'cells': cells,
@@ -240,29 +306,33 @@ void _readContainer(
         final size = ref.width != null && ref.height != null
             ? ' =${ref.width!.round()}x${ref.height!.round()}'
             : '';
-        markdown.writeln('![image](onote-img://${ref.index}$size)');
+        writeBlock('![image](onote-img://${ref.index}$size)');
       case 'object':
         // An attachment. Graph gives a URL, but a file is not something the
         // page translation has a box for, so it is counted and reported
         // rather than silently dropped.
         loss.attachments++;
       case 'div':
-        // A nested positioned div: its own box, at its own coordinates.
         flushText();
+        // A nested div that positions ITSELF is a separate outline and gets a
+        // flow of its own; one that does not is part of this one and must keep
+        // both the position and the flow, or the restacker treats it as an
+        // unrelated anchor and leaves it sitting on its parent.
+        final nested = _hasPosition(node);
         final at = _positionOf(node);
         _readContainer(
           node,
-          left: at.$1 == kGraphDefaultLeft ? left : at.$1,
-          top: at.$2 == kGraphDefaultTop ? top : at.$2,
-          width: at.$3 ?? width,
+          left: nested ? at.$1 : left,
+          top: nested ? at.$2 : top,
+          width: (nested ? at.$3 : null) ?? width,
+          flow: nested ? flow * 1000 + 1 : flow,
           boxes: boxes,
           images: images,
           imageMaps: imageMaps,
           loss: loss,
         );
       default:
-        final md = _blockToMarkdown(node);
-        if (md.isNotEmpty) markdown.writeln(md);
+        writeBlock(_blockToMarkdown(node));
     }
   }
   flushText();
@@ -272,15 +342,15 @@ void _readContainer(
 String _blockToMarkdown(dom.Element el, {int depth = 0}) {
   switch (el.localName) {
     case 'h1':
-      return '# ${_inline(el)}';
+      return '# ${_inline(el).trim()}';
     case 'h2':
-      return '## ${_inline(el)}';
+      return '## ${_inline(el).trim()}';
     case 'h3':
-      return '### ${_inline(el)}';
+      return '### ${_inline(el).trim()}';
     case 'h4':
     case 'h5':
     case 'h6':
-      return '#### ${_inline(el)}';
+      return '#### ${_inline(el).trim()}';
     case 'ul':
     case 'ol':
       final out = <String>[];
@@ -293,7 +363,8 @@ String _blockToMarkdown(dom.Element el, {int depth = 0}) {
         final box = tag.startsWith('to-do')
             ? (tag.contains('completed') ? '[x] ' : '[ ] ')
             : '';
-        out.add('$pad$marker $box${_inlineExcludingLists(li)}'.trimRight());
+        out.add('$pad$marker $box${_inlineExcludingLists(li).trim()}'
+            .trimRight());
         // Nested lists live inside the <li>.
         for (final sub in li.children
             .where((c) => c.localName == 'ul' || c.localName == 'ol')) {
@@ -304,7 +375,7 @@ String _blockToMarkdown(dom.Element el, {int depth = 0}) {
       return out.join('\n');
     case 'p':
       final tag = el.attributes['data-tag'] ?? '';
-      final text = _inline(el);
+      final text = _inline(el).trim();
       if (text.isEmpty) return '';
       if (tag.startsWith('to-do')) {
         return '- ${tag.contains('completed') ? '[x]' : '[ ]'} $text';
@@ -313,7 +384,7 @@ String _blockToMarkdown(dom.Element el, {int depth = 0}) {
     case 'br':
       return '';
     default:
-      return _inline(el);
+      return _inline(el).trim();
   }
 }
 
@@ -331,58 +402,82 @@ String _inlineExcludingLists(dom.Element li) {
   return _inline(shallow);
 }
 
-/// Inline content as Markdown: the marks OneNote actually emits.
+/// Inline content as Markdown: the children of [node], with their own marks.
+///
+/// **Does not trim.** A fragment's leading and trailing spaces are what hold
+/// it apart from the run beside it — trimming here glued `<span>Hello</span>`
+/// to `<b> there</b>` and produced "Hellothere". Trimming happens once, where
+/// a block or a whole box is finished.
 String _inline(dom.Node node) {
   final out = StringBuffer();
   for (final child in node.nodes) {
     if (child is dom.Text) {
       // `&nbsp;` arrives as U+00A0 and behaves like a space everywhere except
       // in a word count, where a run of them would read as one long word.
-      out.write(child.data.replaceAll(' ', ' '));
+      out.write(child.data.replaceAll('\u00A0', ' '));
       continue;
     }
     if (child is! dom.Element) continue;
-    final inner = _inline(child);
-    switch (child.localName) {
-      case 'b':
-      case 'strong':
-        if (inner.trim().isNotEmpty) out.write('**$inner**');
-      case 'i':
-      case 'em':
-        if (inner.trim().isNotEmpty) out.write('*$inner*');
-      case 'u':
-        if (inner.trim().isNotEmpty) out.write('<u>$inner</u>');
-      case 'del':
-      case 's':
-      case 'strike':
-        if (inner.trim().isNotEmpty) out.write('~~$inner~~');
-      case 'code':
-        if (inner.trim().isNotEmpty) out.write('`$inner`');
-      case 'br':
-        out.write('\n');
-      case 'a':
-        final href = child.attributes['href'];
-        if (href == null || href.isEmpty) {
-          out.write(inner);
-        } else {
-          out.write('[${inner.isEmpty ? href : inner}]($href)');
-        }
-      case 'span':
-      case 'font':
-        out.write(inner);
-      default:
-        out.write(inner);
-    }
+    out.write(inlineElement(child));
   }
-  // Collapse the runs of whitespace HTML treats as one, but keep the explicit
-  // line breaks `<br>` produced.
-  return out
-      .toString()
-      .split('\n')
-      .map((line) => line.replaceAll(RegExp(r'[ \t]+'), ' ').trim())
-      .join('\n')
-      .trim();
+  return _collapseSpaces(out.toString());
 }
+
+/// One inline element **including the markup for its own tag**.
+///
+/// Separated from [_inline] because both callers need it and only one of them
+/// used to have it: `_inline` applied a tag's marks while walking a parent's
+/// children, so an element reached directly — a `<b>` sitting as a direct
+/// child of a positioned outline, which OneNote emits freely — had its
+/// contents read and its bold silently dropped.
+String inlineElement(dom.Element el) {
+  if (el.localName == 'br') return '\n';
+  final inner = _inline(el);
+  switch (el.localName) {
+    case 'b':
+    case 'strong':
+      return _mark(inner, '**');
+    case 'i':
+    case 'em':
+      return _mark(inner, '*');
+    case 'del':
+    case 's':
+    case 'strike':
+      return _mark(inner, '~~');
+    case 'code':
+      return _mark(inner, '`');
+    case 'u':
+      return _mark(inner, '<u>', close: '</u>');
+    case 'a':
+      final href = el.attributes['href'];
+      if (href == null || href.isEmpty) return inner;
+      final label = inner.trim();
+      return label.isEmpty ? '[$href]($href)' : '[$label]($href)';
+    default:
+      return inner;
+  }
+}
+
+/// Wrap [inner] in [marker], leaving its outer whitespace OUTSIDE the marks.
+///
+/// `** there**` is not bold in any Markdown renderer — emphasis cannot open on
+/// a space — so the spaces are hoisted out and the words wrapped, giving
+/// ` **there**`. Whitespace-only content is returned untouched rather than
+/// wrapped around nothing.
+String _mark(String inner, String marker, {String? close}) {
+  final lead = RegExp(r'^\s*').firstMatch(inner)!.group(0)!;
+  final tail = RegExp(r'\s*$').firstMatch(inner)!.group(0)!;
+  if (lead.length + tail.length >= inner.length) return inner;
+  final core = inner.substring(lead.length, inner.length - tail.length);
+  return '$lead$marker$core${close ?? marker}$tail';
+}
+
+/// Runs of spaces and tabs collapse the way HTML lays them out, per line.
+/// Explicit breaks from `<br>` survive.
+String _collapseSpaces(String s) => s
+    .split('\n')
+    .map((line) => line.replaceAll(RegExp(r'[ \t]+'), ' '))
+    .join('\n');
 
 /// A table as the rectangular grid of per-cell Markdown the importer stores.
 List<List<String>> _readTable(dom.Element table) {
@@ -393,7 +488,7 @@ List<List<String>> _readTable(dom.Element table) {
     final cells = <String>[];
     for (final td in tr.children) {
       if (td.localName != 'td' && td.localName != 'th') continue;
-      cells.add(_inline(td));
+      cells.add(_inline(td).trim());
     }
     if (cells.isNotEmpty) rows.add(cells);
   }
@@ -428,14 +523,20 @@ GraphImageRef? _readImage(dom.Element img, int index, {bool inFlow = false}) {
 bool _hasPosition(dom.Element el) =>
     (el.attributes['style'] ?? '').contains('position:absolute');
 
-/// `(left, top, width)` from an element's inline style, in the importer's
-/// coordinate space. OneNote writes them in px at 96 dpi.
+/// `(left, top, width)` from an element's inline style, in the CANVAS's
+/// coordinate space — Graph writes CSS px, which are 96 to the inch.
 (double, double, double?) _positionOf(dom.Element el) {
   final style = el.attributes['style'] ?? '';
   double? read(String name) {
-    final m = RegExp('$name\\s*:\\s*(-?[0-9.]+)\\s*px').firstMatch(style);
+    // The property must START a declaration. Without the boundary, `left`
+    // also matches `margin-left` and `padding-left` — and OneNote puts
+    // `margin-left` on indented paragraphs, so an indented bullet dragged its
+    // whole box to x=0 and left the rest of the outline behind it.
+    final m = RegExp('(?:^|[;{\\s])$name\\s*:\\s*(-?[0-9.]+)\\s*px')
+        .firstMatch(style);
     if (m == null) return null;
-    return double.tryParse(m.group(1)!);
+    final v = double.tryParse(m.group(1)!);
+    return v == null ? null : v * kGraphPxToCanvas;
   }
 
   return (

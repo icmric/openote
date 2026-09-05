@@ -76,10 +76,12 @@ class GraphImportResult {
 
 /// How many pages are fetched and written before yielding.
 ///
-/// Small on purpose. Each page is a network round trip, so a big batch buys
-/// nothing in throughput and costs the responsiveness this whole file exists
-/// for — and a smaller batch means a cancel is honoured sooner.
-const int kGraphBatchPages = 3;
+/// Matched to [kGraphConcurrency], because the pages of a batch are now
+/// fetched **together** rather than one after another: a batch smaller than
+/// the pool leaves connections idle, and one much larger delays both the write
+/// and the cancel check for no gain. Twelve is two full waves, which keeps the
+/// pool busy while still writing to the page twice a batch.
+const int kGraphBatchPages = 12;
 
 /// Pull [notebookId] into the notebook behind [sink], writing as it goes.
 ///
@@ -149,11 +151,19 @@ Future<GraphImportResult> importNotebookFromGraph({
       // Fetched OUTSIDE the transaction: these are network round trips, and
       // holding a write transaction open across them would lock the notebook
       // for the duration of somebody's internet connection.
-      final ready = <Map<String, dynamic>>[];
-      for (var i = start; i < end; i++) {
-        final page = await _fetchOnePage(client, pageRefs[i], loss);
-        if (page != null) ready.add(page);
-      }
+      // **Together, not one after another.** Every page is a round trip and
+      // almost none of the time is spent computing, so fetching them in
+      // sequence left the connection idle for the whole of each wait. This is
+      // the difference between about five seconds a page and about five
+      // seconds for a dozen.
+      final fetched = await graphPool<Map<String, dynamic>?>([
+        for (var i = start; i < end; i++)
+          () => _fetchOnePage(client, pageRefs[i], loss),
+      ]);
+      final ready = [
+        for (final page in fetched)
+          if (page != null) page
+      ];
       if (ready.isEmpty) continue;
 
       sink.batch(() {
@@ -212,11 +222,11 @@ Future<Map<String, dynamic>?> _fetchOnePage(
       level: ref.level,
       createdIso: ref.createdIso,
     );
-    // Images are separate authenticated fetches, one per picture.
-    final bytes = <Uint8List?>[];
-    for (final img in read.images) {
-      bytes.add(await client.resource(img.url));
-    }
+    // Images are separate authenticated fetches, one per picture — so a page
+    // of six diagrams was seven sequential round trips on its own.
+    final bytes = await graphPool<Uint8List?>([
+      for (final img in read.images) () => client.resource(img.url),
+    ]);
     attachImageBytes(read.page, read.images, bytes, read.loss);
     loss
       ..images += read.loss.images

@@ -23,9 +23,15 @@ void main() {
       expect(boxes, hasLength(1));
       expect(boxes.first['kind'], 'text');
       expect(boxes.first['markdown'], 'Hello there');
-      expect(boxes.first['x'], 48.0);
-      expect(boxes.first['y'], 90.0);
-      expect(boxes.first['w'], 624.0);
+      // CSS px scaled into the canvas's 120-dpi space: the `.one` importer
+      // beside this converts type as `pt * 120/72`, so geometry placed at 96
+      // would be a quarter narrow for the text laid into it.
+      expect(boxes.first['x'], 48.0 * kGraphPxToCanvas);
+      expect(boxes.first['y'], 90.0 * kGraphPxToCanvas);
+      expect(boxes.first['w'], 624.0 * kGraphPxToCanvas);
+      // A flow id, or `restackFlows` skips the box entirely and every box in
+      // the outline stays piled on the outline's origin.
+      expect(boxes.first['flow'], isNotNull);
     });
 
     test('several paragraphs stay in ONE box, not one box each', () {
@@ -58,6 +64,27 @@ void main() {
       // to the word count.
       final r = readGraphPage(wrap('<p>one&nbsp;two</p>'), title: 'Page');
       expect((r.page['boxes'] as List).first['markdown'], 'one two');
+    });
+
+    test('styled runs stay on ONE line, not a line each', () {
+      // "some text new lines after every char". OneNote does not always wrap a
+      // run in a <p>: a positioned outline can hold spans, links and bolds as
+      // DIRECT children, and treating every child element as a block put each
+      // run on a line of its own. A sentence split into four styled spans came
+      // out as four lines; one split per character came out per character.
+      final r = readGraphPage(
+          wrap('<span>Hel</span><span>lo</span><b> there</b>'),
+          title: 'Page');
+      expect((r.page['boxes'] as List).first['markdown'],
+          'Hello **there**');
+    });
+
+    test('a run beside a paragraph does not glue onto it', () {
+      // The other half: inline content appends, but a block still has to start
+      // its own line or the two run together.
+      final r = readGraphPage(
+          wrap('<span>lead</span><p>para</p>'), title: 'Page');
+      expect((r.page['boxes'] as List).first['markdown'], 'lead\npara');
     });
 
     test('an empty page produces no boxes rather than an empty one', () {
@@ -244,6 +271,29 @@ void main() {
       expect(r.page['level'], 2);
     });
 
+    test('an indented paragraph does not drag the box to the left edge', () {
+      // `margin-left` contains the substring `left`, and the position regex
+      // had no boundary — so OneNote's indented paragraphs re-read the
+      // outline's x as their own margin and moved the box to x=0.
+      final r = readGraphPage(
+          wrap('<p style="margin-left:36px;margin-top:0pt">indented</p>'),
+          title: 'Page');
+      final boxes = r.page['boxes'] as List;
+      expect(boxes.first['x'], 48.0 * kGraphPxToCanvas,
+          reason: 'the OUTLINE decides x, not a paragraph margin inside it');
+    });
+
+    test('a nested unpositioned div keeps its parent flow and origin', () {
+      // Given its own flow it becomes an independent anchor, and the restacker
+      // then leaves it sitting exactly on top of the content above it.
+      final r = readGraphPage(
+          wrap('<p>one</p><div><p>two</p></div>'), title: 'Page');
+      final boxes = (r.page['boxes'] as List).cast<Map>();
+      expect(boxes.length, greaterThanOrEqualTo(2));
+      expect(boxes[0]['flow'], boxes[1]['flow']);
+      expect(boxes[0]['x'], boxes[1]['x']);
+    });
+
     test('a page with no positioned div still reads', () {
       // Not every page uses absolute layout; one that does not is a single
       // flow and becomes one box at the default margin.
@@ -263,10 +313,13 @@ void main() {
       final r = readGraphPage(html, title: 'P');
       final boxes = (r.page['boxes'] as List).cast<Map>();
       expect(boxes, hasLength(2));
-      expect(boxes[0]['x'], 48.0);
-      expect(boxes[1]['x'], 400.0);
-      expect(boxes[1]['y'], 200.0);
+      expect(boxes[0]['x'], 48.0 * kGraphPxToCanvas);
+      expect(boxes[1]['x'], 400.0 * kGraphPxToCanvas);
+      expect(boxes[1]['y'], 200.0 * kGraphPxToCanvas);
       expect(boxes[1]['markdown'], 'right');
+      // Separate outlines are separate flows, so the restacker never runs one
+      // into the other.
+      expect(boxes[0]['flow'], isNot(boxes[1]['flow']));
     });
   });
 

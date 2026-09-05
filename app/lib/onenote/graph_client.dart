@@ -70,10 +70,46 @@ class GraphException implements Exception {
   String toString() => details == null ? message : '$message ($details)';
 }
 
+/// How many requests are allowed to be in flight at once.
+///
+/// The import is almost entirely **waiting**: a page is one round trip, and
+/// doing them one after another made a large notebook take about five seconds
+/// per page. Six at a time is the whole speed-up, and the number is a
+/// compromise rather than a maximum — the OneNote endpoints throttle freely,
+/// and a wider pipe just converts latency into 429s, which cost more than they
+/// save because every one of them is a wasted round trip AND a wait.
+const int kGraphConcurrency = 6;
+
+/// Run [jobs] with at most [kGraphConcurrency] outstanding, keeping order.
+Future<List<T>> graphPool<T>(List<Future<T> Function()> jobs) async {
+  final results = List<T?>.filled(jobs.length, null);
+  var next = 0;
+  Future<void> worker() async {
+    while (true) {
+      final i = next++;
+      if (i >= jobs.length) return;
+      results[i] = await jobs[i]();
+    }
+  }
+
+  final n = jobs.length < kGraphConcurrency ? jobs.length : kGraphConcurrency;
+  await Future.wait([for (var i = 0; i < n; i++) worker()]);
+  return results.cast<T>();
+}
+
 /// Talks to Graph on behalf of a signed-in student.
 class GraphClient {
   GraphClient({required this.token, HttpClient? client})
-      : _client = client ?? HttpClient();
+      : _client = client ?? HttpClient() {
+    // Dart pools connections per host, but only six by default. Every request
+    // here goes to one host, so six is also the ceiling on how much good
+    // [kGraphConcurrency] can do — and a seventh request would queue behind a
+    // finished one rather than opening its own.
+    _client.maxConnectionsPerHost = kGraphConcurrency + 2;
+    // Long enough that a whole notebook reuses the same handful of sockets
+    // rather than paying a TLS handshake every few pages.
+    _client.idleTimeout = const Duration(seconds: 60);
+  }
 
   /// How the client gets a live access token. A callback rather than a string
   /// because an import can outlast the one-hour token, and asking for it per
@@ -117,40 +153,56 @@ class GraphClient {
   /// rather than a tree — the same shape the `.one` parser produces from a
   /// folder hierarchy.
   Future<List<GraphSectionRef>> sections(String notebookId) async {
-    final out = <GraphSectionRef>[];
-    await _collectSections(
-        '$_base/notebooks/$notebookId/sections', '', out);
-    await _collectGroups(
-        '$_base/notebooks/$notebookId/sectionGroups', '', out);
-    return out;
+    // Both arms at once. A notebook organised by year and semester has a dozen
+    // groups, each needing its own request, and walking them in sequence was
+    // most of the wait between choosing a notebook and seeing anything.
+    //
+    // **Fetched in parallel, assembled in order.** Appending to one shared
+    // list as the replies arrived would have put the student's sections in
+    // whatever order the network happened to answer in — a different order
+    // every import, and never OneNote's. So each call returns its own list and
+    // the results are concatenated afterwards, which is deterministic no
+    // matter who answers first.
+    final results = await Future.wait([
+      _sectionsAt('$_base/notebooks/$notebookId/sections', ''),
+      _groupsAt('$_base/notebooks/$notebookId/sectionGroups', ''),
+    ]);
+    return [for (final list in results) ...list];
   }
 
-  Future<void> _collectSections(
-      String url, String groupPath, List<GraphSectionRef> out) async {
-    for (final r in await _all('$url?\$select=id,displayName')) {
-      out.add(GraphSectionRef(
-        id: r['id'] as String,
-        name: (r['displayName'] as String?)?.trim().isNotEmpty == true
-            ? (r['displayName'] as String).trim()
-            : 'Untitled section',
-        groupPath: groupPath,
-      ));
-    }
+  Future<List<GraphSectionRef>> _sectionsAt(
+      String url, String groupPath) async {
+    final rows = await _all('$url?\$select=id,displayName');
+    return [
+      for (final r in rows)
+        GraphSectionRef(
+          id: r['id'] as String,
+          name: (r['displayName'] as String?)?.trim().isNotEmpty == true
+              ? (r['displayName'] as String).trim()
+              : 'Untitled section',
+          groupPath: groupPath,
+        ),
+    ];
   }
 
   /// Section groups nest, so this recurses and joins the names with `/`.
-  Future<void> _collectGroups(
-      String url, String parentPath, List<GraphSectionRef> out) async {
-    for (final g in await _all('$url?\$select=id,displayName')) {
-      final id = g['id'] as String;
-      final name = (g['displayName'] as String?)?.trim() ?? '';
-      final path = parentPath.isEmpty
-          ? name
-          : '$parentPath/$name';
-      await _collectSections('$_base/sectionGroups/$id/sections', path, out);
-      await _collectGroups(
-          '$_base/sectionGroups/$id/sectionGroups', path, out);
-    }
+  Future<List<GraphSectionRef>> _groupsAt(
+      String url, String parentPath) async {
+    final groups = await _all('$url?\$select=id,displayName');
+    final perGroup = await Future.wait([
+      for (final g in groups)
+        () async {
+          final id = g['id'] as String;
+          final name = (g['displayName'] as String?)?.trim() ?? '';
+          final path = parentPath.isEmpty ? name : '$parentPath/$name';
+          final inner = await Future.wait([
+            _sectionsAt('$_base/sectionGroups/$id/sections', path),
+            _groupsAt('$_base/sectionGroups/$id/sectionGroups', path),
+          ]);
+          return [for (final list in inner) ...list];
+        }(),
+    ]);
+    return [for (final list in perGroup) ...list];
   }
 
   /// A section's pages, oldest first so the imported order matches OneNote's.
