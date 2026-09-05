@@ -328,9 +328,13 @@ Future<List<ReadyPage>> _readSection(
     final fileBytes = await graphPool<Uint8List?>([
       for (final f in wantedFiles) () => client.resource(f.url),
     ]);
+    // Walked by index, because the OneNote id for each page lives in a
+    // parallel list. `indexOf` would have found it by identity, which works
+    // and is quadratic and breaks silently the day GraphPage gains an `==`.
     var at = 0;
     var fileAt = 0;
-    for (final r in reads) {
+    for (var i = 0; i < reads.length; i++) {
+      final r = reads[i];
       final mine = <Uint8List?>[];
       for (var k = 0; k < r.images.length; k++) {
         mine.add(bytes[at++]);
@@ -341,12 +345,11 @@ Future<List<ReadyPage>> _readSection(
       }
       attachFileBytes(r.page, r.files, myFiles, r.loss);
       attachImageBytes(r.page, r.images, mine, r.loss);
-      final which = reads.indexOf(r);
       loss
         ..images += r.loss.images
         ..attachments += r.loss.attachments
         ..inkPages += r.loss.inkPages;
-      out.add(ReadyPage(r.page, which < ids.length ? ids[which] : null));
+      out.add(ReadyPage(r.page, i < ids.length ? ids[i] : null));
     }
   }
   return out;
