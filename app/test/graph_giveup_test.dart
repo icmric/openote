@@ -22,6 +22,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/export/import_job.dart';
+import 'package:openote/export/import_status.dart';
 import 'package:openote/export/onenote_import.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/onenote/graph_client.dart';
@@ -394,6 +395,57 @@ void main() {
       // The bar has a denominator before the first page rather than appearing
       // partway through.
       expect(job.pagesTotal, 332);
+    });
+
+    test('a failure says WHY, not what it was doing before it failed',
+        () async {
+      // Reported: "the message is the same, 'import failed', the body text
+      // still says found 25 sections like it did before."
+      //
+      // The card renders `status`, and the failing paths set only `message` —
+      // so a terminal state left the last PROGRESS line on screen while the
+      // actual reason sat in a field nothing displayed. The title said the
+      // import had failed and the body said it was still listing sections.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (_, app) = await fixture('onote_failure_reason_');
+
+      final job = ImportJob.startFromCloud(app, 'Computing Science',
+          (sink, onProgress, shouldCancel) async {
+        // Get as far as the listing, exactly as the real one did…
+        onProgress(const GraphImportProgress(
+          sectionName: '',
+          pagesDone: 0,
+          pagesTotal: 0,
+          sectionsDone: 0,
+          sectionsTotal: 25,
+          preparing: true,
+        ));
+        // …then fail with something worth reading.
+        throw GraphException('Microsoft would not answer for that notebook.',
+            details: 'HTTP 404');
+      });
+      await settle(job!);
+
+      expect(job.state, ImportJobState.failed);
+      expect(job.status.stage, isNot(ImportStage.foundSections),
+          reason: 'finishing must not leave a progress stage on screen');
+      expect(job.status.stage, ImportStage.raw);
+    });
+
+    test('the reason survives into the card body', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (_, app) = await fixture('onote_failure_body_');
+
+      final job = ImportJob.startFromCloud(app, 'Computing Science',
+          (sink, onProgress, shouldCancel) async {
+        throw GraphException('Microsoft would not answer for that notebook.',
+            details: 'HTTP 404');
+      });
+      await settle(job!);
+
+      expect(job.status.stage, ImportStage.raw);
+      expect(job.status.detail, contains('would not answer'));
+      expect(job.message, contains('would not answer'));
     });
 
     test('a notebook that got nothing at all is still cleaned up', () async {

@@ -732,10 +732,30 @@ class ImportJob extends ChangeNotifier {
   void _finish(ImportJobState s, {String? message, ImportStatus? status}) {
     state = s;
     if (message != null) this.message = message;
-    if (status != null) this.status = status;
+    if (status != null) {
+      this.status = status;
+    } else if (message != null) {
+      // **Never finish in a stage that has stopped being true.**
+      //
+      // The card renders `status`, so a terminal state that set only
+      // `message` left the last PROGRESS line on screen: "Import failed" over
+      // a body still reading "Found 25 sections…", with the actual reason
+      // sitting in a field nothing displayed. Carrying the sentence through
+      // as [ImportStage.raw] means a new failure path cannot reintroduce
+      // that by forgetting an argument.
+      this.status = ImportStatus(ImportStage.raw, detail: message);
+    }
     if (s == ImportJobState.cancelled) {
       this.message = 'Import cancelled.';
       this.status = const ImportStatus(ImportStage.cancelled);
+    }
+    // **Said out loud when it goes wrong.** An import that fails leaves one
+    // line on a card, which is the right amount for the person and nowhere
+    // near enough for whoever has to work out why. `error` carries the
+    // service's own words and, for a `GraphException`, the status code behind
+    // them.
+    if (s == ImportJobState.failed) {
+      debugPrint('[openote/import] failed: ${error ?? message}');
     }
     notifyListeners();
     // The card is watching this job, not AppState — but whether a card should

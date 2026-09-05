@@ -76,6 +76,21 @@ enum ImportStage {
 
   /// The `.onepkg` writer, naming a section.
   writingSection,
+
+  /// **Whatever sentence the caller already had.**
+  ///
+  /// Not everything an import can say is one of the stages above: the service
+  /// has its own words for its own failures, and inventing a translation for a
+  /// sentence this app did not write would be pretending to an accuracy it
+  /// does not have. [ImportStatus.detail] carries it through verbatim.
+  ///
+  /// It also exists so that [ImportJob] cannot finish in a stage that is no
+  /// longer true. Reported: an import that failed showed "Import failed" over
+  /// a body still reading "Found 25 sections…", because the failing paths set
+  /// `message` and left `status` at whatever it last was — so the reason was
+  /// held in a field the card had stopped reading. A fallback is what stops
+  /// that being possible rather than merely fixed once.
+  raw,
 }
 
 /// One reading of the import's state: a stage, plus whatever numbers that

@@ -75,5 +75,6 @@ extension ImportStatusLabel on ImportStatus {
         ImportStage.failed => l.importFailedGeneric,
         ImportStage.writingPages => l.importWritingPages(count),
         ImportStage.writingSection => l.importWritingSection(name),
+        ImportStage.raw => detail,
       };
 }
