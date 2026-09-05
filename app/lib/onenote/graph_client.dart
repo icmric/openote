@@ -139,6 +139,7 @@ class GraphClient {
     // Long enough that a whole notebook reuses the same handful of sockets
     // rather than paying a TLS handshake every few pages.
     _client.idleTimeout = const Duration(seconds: 60);
+    _client.connectionTimeout = const Duration(seconds: 30);
   }
 
   /// How the client gets a live access token. A callback rather than a string
@@ -223,6 +224,32 @@ class GraphClient {
   @visibleForTesting
   static Future<(int, String, Map<String, String>)> Function(String url)?
       debugFetch;
+
+  /// **How long any one request may take before it is abandoned.**
+  ///
+  /// Found by importing a real notebook twice: both runs stopped at exactly
+  /// page 152 of 332 and then sat there for over ten minutes. Not throttling —
+  /// throttling is not deterministic, and the second run had the whole
+  /// adaptive rate control the first did not. It was a request that never came
+  /// back.
+  ///
+  /// Every request holds one of [kGraphConcurrency] slots while it runs, and
+  /// with no deadline it holds one **for ever**. Six of those and the import
+  /// is stopped permanently, with no error, no progress and nothing to say why
+  /// — the exact shape of what was seen.
+  ///
+  /// Ninety seconds is generous on purpose: a page carrying three hundred ink
+  /// strokes was 292 KB, and an attachment can be far larger. This is the
+  /// deadline for a request that has *stopped*, not a budget for a slow one.
+  /// Not `const`: a test cannot wait ninety seconds to prove a deadline
+  /// works, and this is exactly the property worth proving.
+  @visibleForTesting
+  static Duration kRequestTimeout = const Duration(seconds: 90);
+
+  /// A request that ran out of time. Not a real HTTP status — 408 is the
+  /// nearest thing — and deliberately distinguished from throttling, because a
+  /// stalled connection is not the service asking anyone to slow down.
+  static const int _timedOut = 408;
 
   /// How many times a throttled request is retried before giving up.
   ///
@@ -485,8 +512,11 @@ class GraphClient {
             ..set(HttpHeaders.authorizationHeader, 'Bearer $t')
             ..contentType = ContentType.json;
           req.write(body);
-          final res = await req.close();
-          text = await res.transform(utf8.decoder).join();
+          final res = await req.close().timeout(kRequestTimeout);
+          text = await res
+              .transform(utf8.decoder)
+              .join()
+              .timeout(kRequestTimeout);
           status = res.statusCode;
         } finally {
           _release();
@@ -584,13 +614,15 @@ class GraphClient {
       final t = await token();
       final req = await _client.getUrl(Uri.parse(url));
       req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
-      final res = await req.close();
+      final res = await req.close().timeout(kRequestTimeout);
       if (res.statusCode != 200) return null;
-      final chunks = <int>[];
-      await for (final c in res) {
-        chunks.addAll(c);
-      }
-      return Uint8List.fromList(chunks);
+      // Bounded by the same deadline as everything else. A picture that stops
+      // arriving halfway costs that picture; before this it cost the import,
+      // by holding a slot until the process was killed.
+      final bytes = await res
+          .fold<List<int>>(<int>[], (a, c) => a..addAll(c))
+          .timeout(kRequestTimeout);
+      return Uint8List.fromList(bytes);
     } catch (_) {
       return null;
     } finally {
@@ -625,15 +657,26 @@ class GraphClient {
     final fake = debugFetch;
     for (var attempt = 0;; attempt++) {
       await _waitOutThrottle();
-      final (status, body, headers) = fake != null
-          ? await fake(url)
-          : await _realFetch(url);
+      // The deadline sits HERE as well as inside the transport, so it holds
+      // for the test transport too — and the property being defended (one
+      // dead request must not wedge the whole import) is one that has to be
+      // testable, having already cost two full import runs to find.
+      final (status, body, headers) = await (fake != null
+              ? fake(url)
+              : _realFetch(url))
+          .timeout(kRequestTimeout,
+              onTimeout: () => (_timedOut, '', <String, String>{}));
       // 429 is throttling and 503 is "busy, come back"; both carry
       // Retry-After, and both are normal on a large notebook rather than
       // exceptional. A five-year notebook is hundreds of requests and OneNote
       // throttles by request COUNT, so batching reduces round trips but not
       // this — being asked to slow down is the expected path, not a failure.
       if (status == 200) _sawSuccess();
+      // A request that ran out of time is retried, but WITHOUT narrowing the
+      // pipe: nothing has asked us to slow down, one connection simply
+      // stopped answering, and treating that as throttling would punish the
+      // whole import for it.
+      if (status == _timedOut && attempt < 2) continue;
       if ((status == 429 || status == 503) && attempt < _maxRetries) {
         _sawRefusal();
         final after = int.tryParse(headers['retry-after'] ?? '') ?? 0;
@@ -678,11 +721,14 @@ class GraphClient {
       final t = await token();
       final req = await _client.getUrl(Uri.parse(url));
       req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
-      final res = await req.close();
-      final body = await res.transform(utf8.decoder).join();
+      final res = await req.close().timeout(kRequestTimeout);
+      final body =
+          await res.transform(utf8.decoder).join().timeout(kRequestTimeout);
       final headers = <String, String>{};
       res.headers.forEach((k, v) => headers[k.toLowerCase()] = v.join(','));
       return (res.statusCode, body, headers);
+    } on TimeoutException {
+      return (_timedOut, '', <String, String>{});
     } on SocketException catch (e) {
       throw GraphException(
           'Openote lost its connection to Microsoft. Check your internet and '
@@ -694,6 +740,8 @@ class GraphClient {
   }
 
   static String _friendly(int status) => switch (status) {
+        _timedOut => 'Microsoft stopped responding partway through. Check your '
+            'internet and try again — nothing already imported has been lost.',
         401 => 'Your Microsoft sign-in has expired. Sign in again to carry on.',
         403 => 'Microsoft would not allow Openote to read that notebook.',
         404 => 'That notebook is no longer in OneNote.',

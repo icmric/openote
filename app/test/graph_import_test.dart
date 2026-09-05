@@ -5,6 +5,7 @@
 // half: the owner's requirement was that a large notebook must not be thirty
 // seconds of a frozen screen, so these pin that pages are written as sections
 // land rather than all at once at the end.
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -235,6 +236,62 @@ void main() {
         await c.notebooks();
       }
       expect(c.concurrencyLimit, greaterThanOrEqualTo(1));
+    });
+
+    test('ONE DEAD REQUEST DOES NOT WEDGE THE IMPORT', () async {
+      // Found by importing a real notebook twice: both runs stopped at exactly
+      // page 152 of 332 and sat there for over ten minutes. Not throttling —
+      // throttling is not deterministic, and the second run had rate control
+      // the first did not. It was a request that never came back.
+      //
+      // Every request holds one of the concurrency slots while it runs, and
+      // with no deadline it holds one FOR EVER. Six of those and the import is
+      // stopped permanently, with no error and no progress: exactly what was
+      // seen, and invisible to every test until this one.
+      GraphClient.kRequestTimeout = const Duration(milliseconds: 120);
+      addTearDown(
+          () => GraphClient.kRequestTimeout = const Duration(seconds: 90));
+
+      var served = 0;
+      GraphClient.debugFetch = (url) async {
+        served++;
+        if (served <= 2) {
+          // Never answers. Two of them, because a request that has stalled
+          // three times running is genuinely dead and giving up on it is the
+          // right answer -- what must not happen is waiting for ever.
+          return Completer<(int, String, Map<String, String>)>().future;
+        }
+        return (200, listOf([
+          {'id': 'nb1', 'displayName': 'Physics'}
+        ]), <String, String>{});
+      };
+      final c = GraphClient(token: () async => 'T');
+      // Without a deadline this never returns at all.
+      final got = await c.notebooks().timeout(const Duration(seconds: 10));
+      expect(got.single.name, 'Physics');
+      expect(served, greaterThan(2),
+          reason: 'the dead attempts were abandoned and retried');
+    });
+
+    test('a timeout does not narrow the pipe', () async {
+      // A stalled connection is not the service asking anyone to slow down,
+      // and treating it as throttling would punish the whole import for one
+      // bad socket.
+      GraphClient.kRequestTimeout = const Duration(milliseconds: 80);
+      addTearDown(
+          () => GraphClient.kRequestTimeout = const Duration(seconds: 90));
+      var served = 0;
+      GraphClient.debugFetch = (url) async {
+        served++;
+        if (served == 1) {
+          return Completer<(int, String, Map<String, String>)>().future;
+        }
+        return (200, listOf(const []), <String, String>{});
+      };
+      final c = GraphClient(token: () async => 'T');
+      final before = c.concurrencyLimit;
+      await c.notebooks().timeout(const Duration(seconds: 10));
+      expect(c.concurrencyLimit, before);
     });
 
     test('a hard failure is a sentence, not a status code', () async {
