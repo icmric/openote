@@ -411,7 +411,7 @@ class ImportJob extends ChangeNotifier {
       // looked like success. Such a page was never written, so it is not in
       // the resume list and is still owed — which means the machinery for
       // finishing an interrupted import already knows how to go back for it.
-      if (result.loss.pages > 0) {
+      if (result.loss.pages > 0 || result.loss.sections > 0) {
         _rememberUnfinished(nb, UnfinishedReason.interrupted, pagesTotal);
       } else {
         app.clearUnfinishedImport(nb);
@@ -423,6 +423,10 @@ class ImportJob extends ChangeNotifier {
       // Ink and attachments DO come across now, so the old blanket apology
       // would be a lie. Only real losses are named, and named specifically.
       final gone = <String>[
+        if (lost.sections > 0)
+          '${lost.sections} section${lost.sections == 1 ? '' : 's'} '
+              '(Openote will go back for '
+              '${lost.sections == 1 ? 'it' : 'them'})',
         if (lost.pages > 0)
           '${lost.pages} page${lost.pages == 1 ? '' : 's'} '
               '(Openote will go back for '

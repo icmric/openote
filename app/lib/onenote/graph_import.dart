@@ -197,8 +197,29 @@ Future<GraphImportResult> importNotebookFromGraph({
   // nothing happening — *"it also seems to take a while when changing
   // sections"*. It also makes the total known, so progress can say how far
   // through it is rather than only how far it has got.
+    // **One section that will not list costs that section, not the import.**
+    //
+    // These twenty-five requests went out together and any one of them
+    // throwing took the whole notebook down with it, before a single page had
+    // been written — so a transient fault on one section returned nothing at
+    // all. The same reasoning already applied to a page that will not parse;
+    // it applies harder here, because the cost is a whole section.
+    //
+    // A section that fails is counted and left empty. Its pages are therefore
+    // never written, never recorded as done, and picked up by the machinery
+    // that finishes an unfinished import.
     pageLists = await graphPool<List<GraphPageRef>>([
-      for (final section in sections) () => client.pages(section.id),
+      for (final section in sections)
+        () async {
+          try {
+            return await client.pages(section.id);
+          } on GraphCancelled {
+            rethrow;
+          } on GraphException {
+            loss.sections++;
+            return <GraphPageRef>[];
+          }
+        },
     ]);
   } on GraphCancelled {
     // Stop pressed while it was still looking around. Nothing has been

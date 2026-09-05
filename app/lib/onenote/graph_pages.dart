@@ -70,6 +70,13 @@ class GraphPageLoss {
   /// Images whose bytes could not be fetched.
   int images = 0;
 
+  /// Sections whose page list could not be fetched at all.
+  ///
+  /// A whole section's worth of pages, missing for a reason that had nothing
+  /// to do with them. Counted so the import can say so and go back for it,
+  /// rather than quietly returning a notebook with a hole in it.
+  int sections = 0;
+
   /// **Pages that could not be read at all.**
   ///
   /// Found by importing the same notebook four times: three brought 332 pages
@@ -84,13 +91,18 @@ class GraphPageLoss {
   int pages = 0;
 
   bool get any =>
-      inkPages > 0 || attachments > 0 || images > 0 || pages > 0;
+      inkPages > 0 ||
+      attachments > 0 ||
+      images > 0 ||
+      pages > 0 ||
+      sections > 0;
 
   GraphPageLoss operator +(GraphPageLoss other) => GraphPageLoss()
     ..inkPages = inkPages + other.inkPages
     ..attachments = attachments + other.attachments
     ..images = images + other.images
-    ..pages = pages + other.pages;
+    ..pages = pages + other.pages
+    ..sections = sections + other.sections;
 }
 
 /// One image the page referenced, ready to be fetched.

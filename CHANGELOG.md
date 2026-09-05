@@ -33,6 +33,12 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- **A hiccup at Microsoft's end no longer ends the whole import.** If one of
+  their servers stumbled — even for a moment, even on one section out of
+  twenty-five — the import stopped there and then with nothing brought over.
+  It waits a moment and asks again, and a section that really cannot be read
+  costs that section rather than the notebook.
+
 - **A failed import no longer breaks the sidebar.** It deleted the notebook it
   had just opened for you and left the app pointing at it, which turned the
   whole left-hand panel into a red error box.

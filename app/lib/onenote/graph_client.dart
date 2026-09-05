@@ -317,6 +317,22 @@ class GraphClient {
   /// stalled connection is not the service asking anyone to slow down.
   static const int _timedOut = 408;
 
+  /// **A server fault, which is not the same as being told to slow down.**
+  ///
+  /// 429 and 503 mean *too much, wait* — they carry `Retry-After`, they are
+  /// the account's own limit, and the right answer is to narrow the pipe. 500,
+  /// 502 and 504 mean the service broke on this one request. Retrying is right
+  /// and narrowing is not: nothing has asked us to go slower, and punishing
+  /// the whole import for one bad response would be reading an apology as an
+  /// instruction.
+  ///
+  /// Only 429 and 503 were retried before. So a single 500 on any one of
+  /// twenty-five section requests ended the whole import at once, with nothing
+  /// kept — reported as an import that failed almost instantly saying
+  /// "Microsoft is having trouble at the moment". The trouble was real; giving
+  /// up on the first one was ours.
+  static bool _serverFault(int s) => s == 500 || s == 502 || s == 504;
+
   /// The network was not there at all. Not a real HTTP status either.
   static const int _noNetwork = 499;
 
@@ -697,6 +713,13 @@ class GraphClient {
           _release();
         }
       }
+      if (_serverFault(status) && attempt < 3) {
+        // Same distinction as in [_fetch]: the service broke, it did not ask
+        // for room. Retried without holding everyone else back.
+        await Future<void>.delayed(
+            Duration(milliseconds: 400 * (1 << attempt)));
+        return _retryBatch;
+      }
       if (status == 429 || status == 503) {
         // **Backed off and retried as a batch, never split up.**
         //
@@ -946,6 +969,13 @@ class GraphClient {
       // stopped answering, and treating that as throttling would punish the
       // whole import for it.
       if (status == _timedOut && attempt < 2) continue;
+      // A server fault is retried like a timeout — a few times, quickly, and
+      // WITHOUT narrowing the pipe.
+      if (_serverFault(status) && attempt < 3) {
+        await Future<void>.delayed(
+            Duration(milliseconds: 400 * (1 << attempt)));
+        continue;
+      }
       if (status == _noNetwork) {
         // Retried, but the pipe is NOT narrowed and nobody else is held back:
         // a missing network is not the service asking anyone to slow down,

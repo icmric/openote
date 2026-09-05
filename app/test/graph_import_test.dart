@@ -718,6 +718,42 @@ void main() {
           ['Loose', 'Term 1', 'Term 2']);
     });
 
+    test('one section that will not list costs that section, not the import',
+        () async {
+      // Reported as an import that failed almost instantly on "Microsoft is
+      // having trouble at the moment". The 5xx was theirs; ending the whole
+      // notebook on it was ours. All the section listings go out together, so
+      // any one of them throwing killed the import before a single page had
+      // been written.
+      final sink = RecordingSink();
+      final result = await importNotebookFromGraph(
+        client: fakeGraph({
+          '/notebooks/nb1/sections?': listOf([
+            {'id': 's1', 'displayName': 'Fine'},
+            {'id': 's2', 'displayName': 'Broken'},
+          ]),
+          '/notebooks/nb1/sectionGroups?': listOf([]),
+          '/sections/s1/pages': listOf([
+            {'id': 'p1', 'title': 'Kept'}
+          ]),
+          '/sections/s2/pages': listOf(const []),
+          '/pages/p1/content': pageHtml('<p>one</p>'),
+        }, statuses: {'/sections/s2/pages': 500}),
+        notebookId: 'nb1',
+        sink: sink,
+      );
+
+      // The good section came over…
+      expect(result.pages, 1);
+      final pages =
+          sink.written.where((n) => n.kind == NodeKind.page).toList();
+      expect(pages.single.title, 'Kept');
+      // …and the bad one is on the record rather than silently absent, so the
+      // card can say so and the resume can go back for it.
+      expect(result.loss.sections, 1);
+      expect(result.loss.any, isTrue);
+    });
+
     test('a page that could not be read is COUNTED, not shrugged off',
         () async {
       // Found by importing the same real notebook four times: three brought
