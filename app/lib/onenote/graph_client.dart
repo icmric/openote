@@ -278,6 +278,26 @@ class GraphClient {
   /// stalled connection is not the service asking anyone to slow down.
   static const int _timedOut = 408;
 
+  /// The network was not there at all. Not a real HTTP status either.
+  static const int _noNetwork = 499;
+
+  /// **How many times a vanished network is retried before believing it.**
+  ///
+  /// Watched happen: a confirmation import died at seven minutes on
+  /// `Failed host lookup: 'graph.microsoft.com'`, and the same lookup
+  /// succeeded from the same machine seconds later. A momentary DNS drop — a
+  /// laptop changing wifi, a router blinking — was ending a two-minute import
+  /// outright, on the first blip, with no second try.
+  ///
+  /// Three quick attempts covers a blip in about three seconds. Deliberately
+  /// no more than that: if the connection is genuinely gone, saying so
+  /// promptly is more useful than a long silence, and the student is told
+  /// plainly that nothing already brought over was lost.
+  static const int _networkRetries = 3;
+
+  /// The last real socket failure, kept so the honest message can carry it.
+  String? _lastNetworkError;
+
   /// How many times a throttled request is retried before giving up.
   ///
   /// Raised from five after a measured run: reading three pages from each of
@@ -690,6 +710,11 @@ class GraphClient {
         _sawSuccess();
         return bytes;
       }
+      if (status == _noNetwork && attempt < _networkRetries) {
+        await Future<void>.delayed(
+            Duration(milliseconds: 400 * (1 << attempt)));
+        continue;
+      }
       // Anything that is not the service asking us to wait is a real failure:
       // a 404, a body that stopped arriving, a token that will not mint.
       if (status != 429 && status != 503) return null;
@@ -734,6 +759,10 @@ class GraphClient {
           .fold<List<int>>(<int>[], (a, c) => a..addAll(c))
           .timeout(kRequestTimeout);
       return (200, Uint8List.fromList(bytes), headers);
+    } on SocketException catch (e) {
+      // Same blip, same answer: retried a few times, then believed.
+      _lastNetworkError = '$e';
+      return (_noNetwork, null, const <String, String>{});
     } catch (_) {
       // Deliberately not 429: a broken socket is not the service asking for
       // patience, and retrying it as though it were would spend the whole
@@ -775,11 +804,26 @@ class GraphClient {
       // for the test transport too — and the property being defended (one
       // dead request must not wedge the whole import) is one that has to be
       // testable, having already cost two full import runs to find.
-      final (status, body, headers) = await (fake != null
-              ? fake(url)
-              : _realFetch(url))
-          .timeout(kRequestTimeout,
-              onTimeout: () => (_timedOut, '', <String, String>{}));
+      // The SocketException handling sits HERE as well as inside the real
+      // transport, for the same reason the deadline above does: the property
+      // being defended — one blink of the network must not end an import —
+      // has to hold whatever the transport is, and has to be testable without
+      // unplugging a router.
+      int status;
+      String body;
+      Map<String, String> headers;
+      try {
+        (status, body, headers) = await (fake != null
+                ? fake(url)
+                : _realFetch(url))
+            .timeout(kRequestTimeout,
+                onTimeout: () => (_timedOut, '', <String, String>{}));
+      } on SocketException catch (e) {
+        _lastNetworkError = '$e';
+        status = _noNetwork;
+        body = '';
+        headers = const <String, String>{};
+      }
       // 429 is throttling and 503 is "busy, come back"; both carry
       // Retry-After, and both are normal on a large notebook rather than
       // exceptional. A five-year notebook is hundreds of requests and OneNote
@@ -791,6 +835,21 @@ class GraphClient {
       // stopped answering, and treating that as throttling would punish the
       // whole import for it.
       if (status == _timedOut && attempt < 2) continue;
+      if (status == _noNetwork) {
+        // Retried, but the pipe is NOT narrowed and nobody else is held back:
+        // a missing network is not the service asking anyone to slow down,
+        // and punishing the whole import for one blink would be the wrong
+        // lesson to draw from it.
+        if (attempt < _networkRetries) {
+          await Future<void>.delayed(
+              Duration(milliseconds: 400 * (1 << attempt)));
+          continue;
+        }
+        throw GraphException(
+            'Openote lost its connection to Microsoft. Check your internet '
+            'and try again — nothing already imported has been lost.',
+            details: _lastNetworkError);
+      }
       if ((status == 429 || status == 503) && attempt < _maxRetries) {
         _sawRefusal();
         _stopIfHopeless();
@@ -845,10 +904,11 @@ class GraphClient {
     } on TimeoutException {
       return (_timedOut, '', <String, String>{});
     } on SocketException catch (e) {
-      throw GraphException(
-          'Openote lost its connection to Microsoft. Check your internet and '
-          'try again — nothing already imported has been lost.',
-          details: '$e');
+      // NOT thrown from here any more. Throwing on the first failed lookup
+      // ended a whole import for a drop that had already healed by the time
+      // anybody read the message. [_fetch] decides whether to believe it.
+      _lastNetworkError = '$e';
+      return (_noNetwork, '', <String, String>{});
     } finally {
       _release();
     }

@@ -61,6 +61,10 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   Bringing a five-year notebook over, four pictures went missing and nothing
   else did: a "come back shortly" on a picture was being read as "this picture
   does not exist". It waits and asks again now.
+- **A moment of bad wifi no longer costs the whole import.** One failed
+  lookup — a laptop changing network, a router blinking — used to end it
+  outright. It waits a moment and carries on; if the connection really has
+  gone it says so quickly, and says that your imported pages are safe.
 - **The wait before the first page now says what it is doing.** Finding out
   what is in a big notebook takes half a minute or so before anything can
   appear, and the card sat on "Signing in to OneNote…" for all of it. It now

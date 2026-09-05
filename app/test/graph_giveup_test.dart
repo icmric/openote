@@ -142,6 +142,73 @@ void main() {
       expect(n, 1);
     });
 
+    test('a moment of bad wifi does not end the whole import', () async {
+      // Watched happen: a confirmation import died at seven minutes on
+      // "Failed host lookup: graph.microsoft.com", and the same lookup
+      // succeeded from the same machine seconds later. One blink of DNS was
+      // ending a two-minute import on the first failure, with no second try.
+      var n = 0;
+      GraphClient.debugFetch = (url) async {
+        n++;
+        if (n == 1) throw const SocketException('Failed host lookup');
+        return (200, '<html><body></body></html>', <String, String>{});
+      };
+      final c = GraphClient(token: () async => 't');
+
+      await c.pageHtml('p1');
+      expect(n, 2, reason: 'it asked again once the blip had passed');
+    });
+
+    test('a connection that is really gone is reported, not retried for ever',
+        () async {
+      // The other half of the same decision. If the wifi is off, saying so
+      // promptly is more useful than a long silence — and the sentence has to
+      // tell them their imported pages are safe, because that is the thing
+      // they will worry about.
+      var n = 0;
+      // Written out with its return type rather than as a closure: an `async`
+      // closure whose body only ever throws is inferred as `Future<Never>`,
+      // which `.timeout()` will not accept — a quirk of the stub, not of the
+      // code under test.
+      Future<(int, String, Map<String, String>)> gone(String url) async {
+        n++;
+        throw const SocketException('Failed host lookup');
+      }
+
+      GraphClient.debugFetch = gone;
+      final c = GraphClient(token: () async => 't');
+
+      await expectLater(
+        c.pageHtml('p1'),
+        throwsA(isA<GraphException>().having((e) => e.message, 'message',
+            allOf(contains('lost its connection'), contains('nothing already '
+                'imported has been lost')))),
+      );
+      expect(n, lessThanOrEqualTo(5),
+          reason: 'a few quick tries, not a long silence');
+      // Not the give-up type: this is the network, not Microsoft refusing.
+      await expectLater(c.pageHtml('p2'), throwsA(isNot(isA<GraphGaveUp>())));
+    });
+
+    test('a blip does not narrow the pipe', () async {
+      // A missing network is not the service asking anyone to slow down.
+      // Halving concurrency for it would punish the whole import for one
+      // blink of the router.
+      var n = 0;
+      GraphClient.debugFetch = (url) async {
+        n++;
+        if (n == 1) throw const SocketException('Failed host lookup');
+        return (200, '<html><body></body></html>', <String, String>{});
+      };
+      final c = GraphClient(token: () async => 't');
+      final before = c.concurrencyLimit;
+
+      await c.pageHtml('p1');
+      expect(c.concurrencyLimit, before);
+      expect(c.refusedFor, Duration.zero,
+          reason: 'a blip is not a refusal, so it starts no give-up clock');
+    });
+
     test('giving up is not mistaken for one bad page', () {
       // `pageHtmlMany` answers a page it cannot read with null and carries on,
       // which is right for one page and catastrophic here: swallowed, a

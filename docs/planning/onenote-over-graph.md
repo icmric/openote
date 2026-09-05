@@ -255,6 +255,28 @@ thing, with no loss of any other kind, points at the code path unique to that
 kind.** The pages, ink, maths and attachments all shared the throttle-aware
 path. The pictures did not.
 
+### And one blink of the network
+
+The confirmation run never finished: it died at seven minutes on
+`Failed host lookup: 'graph.microsoft.com'`, and the same lookup succeeded from
+the same machine seconds later. **A single `SocketException` was ending the
+whole import on the first failure**, with no second try — a laptop changing
+wifi or a router blinking was enough.
+
+Three quick retries (about three seconds in total) now cover a blip, and the
+pipe is *not* narrowed for one: a missing network is not the service asking
+anyone to slow down. Past that it says so promptly, because if the connection
+is genuinely gone a long silence helps nobody, and the sentence says plainly
+that nothing already brought over was lost.
+
+The placement mattered as much as the retry. The handling had been inside the
+real transport only, so it held for nothing else and could not be tested
+without unplugging a router — the same mistake the request deadline had made,
+and it is now at the `_fetch` level for the same reason.
+
+**A third run, after the fix: 332 pages, 189 s, `lost: ink 0, images 0,
+attachments 0`.** Nothing lost at all.
+
 ## Parity with the `.onepkg` route
 
 | | `.onepkg` | Over Graph |
