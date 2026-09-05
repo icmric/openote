@@ -514,6 +514,86 @@ void main() {
           '/pages/p4/content': pageHtml('<p>four</p>'),
         }, requestLog: log);
 
+    test('subpages arrive nested, which this route was thought unable to do',
+        () async {
+      // The whole of question 1. `level` is never returned by Graph, so this
+      // was written down as settled: subpages become top-level pages. It is
+      // not settled — the service will FILTER on `level` even though it never
+      // projects it, so asking "which pages are at level 1" gets the same
+      // answer from the other side. Verified against the live service: a real
+      // 80-page section reported 68 pages at level 1, and an impossible
+      // `level eq 99` reported none, which is what proves the filter is
+      // actually being applied.
+      //
+      // The `$filter` routes are listed FIRST because the fake matches on
+      // `url.contains`, and `/sections/s1/pages` is a prefix of the filter URL
+      // too.
+      final sink = RecordingSink();
+      await importNotebookFromGraph(
+        client: fakeGraph({
+          '/sections/s1/pages?\$filter=level%20eq%201':
+              listOf([{'id': 'p2'}]),
+          '/sections/s1/pages?\$filter=level%20eq%202':
+              listOf([{'id': 'p3'}]),
+          '/sections/s1/pages?\$filter=level%20eq%203': listOf(const []),
+          '/notebooks/nb1/sections?': listOf([
+            {'id': 's1', 'displayName': 'Week 1'}
+          ]),
+          '/notebooks/nb1/sectionGroups?': listOf([]),
+          '/sections/s1/pages': listOf([
+            {'id': 'p1', 'title': 'Chapter'},
+            {'id': 'p2', 'title': 'A subpage'},
+            {'id': 'p3', 'title': 'A sub-subpage'},
+          ]),
+          '/pages/p1/content': pageHtml('<p>one</p>'),
+          '/pages/p2/content': pageHtml('<p>two</p>'),
+          '/pages/p3/content': pageHtml('<p>three</p>'),
+        }),
+        notebookId: 'nb1',
+        sink: sink,
+      );
+
+      final pages =
+          sink.written.where((n) => n.kind == NodeKind.page).toList();
+      expect(pages.map((n) => n.title),
+          ['Chapter', 'A subpage', 'A sub-subpage']);
+      // A subpage is NOT reparented under its page — Openote spells it the
+      // way OneNote does, with the section still the parent and `level`
+      // carrying the indent. (Measuring the parent instead is how an import
+      // that worked was first reported as doing nothing.)
+      expect(pages.map((n) => n.level), [0, 1, 2]);
+      expect(pages.every((n) => n.parentId != null), isTrue);
+    });
+
+    test('a section with no subpages is not charged for asking twice',
+        () async {
+      // Every level costs a round trip on a service that throttles by request
+      // count, so the common case has to stay cheap.
+      final log = <String>[];
+      final sink = RecordingSink();
+      await importNotebookFromGraph(
+        client: fakeGraph({
+          '/sections/s1/pages?\$filter': listOf(const []),
+          '/notebooks/nb1/sections?': listOf([
+            {'id': 's1', 'displayName': 'Week 1'}
+          ]),
+          '/notebooks/nb1/sectionGroups?': listOf([]),
+          '/sections/s1/pages': listOf([
+            {'id': 'p1', 'title': 'Flat'}
+          ]),
+          '/pages/p1/content': pageHtml('<p>one</p>'),
+        }, requestLog: log),
+        notebookId: 'nb1',
+        sink: sink,
+      );
+
+      expect(log.where((u) => u.contains(r'$filter=level')), hasLength(1),
+          reason: 'level 1 came back empty, so nothing deeper is asked for');
+      final pages =
+          sink.written.where((n) => n.kind == NodeKind.page).toList();
+      expect(pages.single.level, 0);
+    });
+
     test('every page lands, under the right section', () async {
       final sink = RecordingSink();
       final result = await importNotebookFromGraph(

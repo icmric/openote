@@ -83,6 +83,14 @@ void main() {
           app.nodes.where((n) => n.kind == NodeKind.page).toList();
       final sections =
           app.nodes.where((n) => n.kind == NodeKind.section).length;
+      // **Nesting, which this route was long thought unable to carry.**
+      //
+      // A subpage is NOT a page whose parent is another page — that was the
+      // first guess here and it counted zero on an import that had worked.
+      // Openote spells a subpage the way OneNote does: the parent stays the
+      // section, and `level` carries the indent (0..2).
+      final nested = pages.where((p) => p.level > 0).length;
+      final deep = pages.where((p) => p.level > 1).length;
       final groups =
           app.nodes.where((n) => n.kind == NodeKind.sectionGroup).length;
 
@@ -115,6 +123,7 @@ void main() {
           'time            ${sw.elapsed.inSeconds}s\n'
           'pages           ${result.pages} (${pages.length} nodes)\n'
           'sections        $sections, groups $groups\n'
+          'subpages        $nested (of which $deep two deep)\n'
           'text boxes      $textBoxes\n'
           'tables          $tables\n'
           'images          $images\n'

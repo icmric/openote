@@ -187,6 +187,29 @@ Future<GraphImportResult> importNotebookFromGraph({
     pageLists = await graphPool<List<GraphPageRef>>([
       for (final section in sections) () => client.pages(section.id),
     ]);
+    // **The nesting, fetched alongside.** `level` is never in a page row, but
+    // the service will filter on it — see [GraphClient.pageLevels]. One extra
+    // round trip per level per section buys the subpage structure, which was
+    // for a long time written off as impossible over this route.
+    final levelMaps = await graphPool<Map<String, int>>([
+      for (final section in sections) () => client.pageLevels(section.id),
+    ]);
+    for (var i = 0; i < pageLists.length; i++) {
+      final levels = levelMaps[i];
+      if (levels.isEmpty) continue;
+      final list = pageLists[i];
+      for (var k = 0; k < list.length; k++) {
+        final lv = levels[list[k].id];
+        if (lv == null || lv == list[k].level) continue;
+        list[k] = GraphPageRef(
+          id: list[k].id,
+          title: list[k].title,
+          level: lv,
+          createdIso: list[k].createdIso,
+          oneNoteId: list[k].oneNoteId,
+        );
+      }
+    }
   } on GraphCancelled {
     // Stop pressed while it was still looking around. Nothing has been
     // written, so there is nothing to keep and nothing to apologise for.

@@ -27,9 +27,8 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   on the same screen, described side by side, because not wanting to sign in to
   a Microsoft account is a perfectly good reason not to.
 
-  One honest limit: **subpages arrive as ordinary pages.** Microsoft does not
-  send how pages were nested, so there is nothing to read. If that matters to
-  you, the exported-file route still keeps them.
+- **Subpages stay subpages.** They arrive indented under the page they belong
+  to, exactly as in OneNote — including a subpage of a subpage.
 
 ### Fixed
 

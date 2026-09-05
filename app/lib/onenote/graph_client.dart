@@ -468,6 +468,69 @@ class GraphClient {
   }
 
   /// A section's pages, oldest first so the imported order matches OneNote's.
+  /// **How deep each page is nested, by asking the question backwards.**
+  ///
+  /// `level` is never returned. `$select=id,title,level` comes back as
+  /// `[id,title]` with the field silently dropped, on v1.0 and on beta, on a
+  /// collection and on a single page — all four checked against the live
+  /// service. For a long time this was written down here as settled: subpages
+  /// cannot be nested over Graph, and the `.onepkg` route is the only one that
+  /// keeps them.
+  ///
+  /// That was wrong, and the clue was sitting in the same paragraph.
+  /// `$orderby=order` **works**, which means the fields exist server-side and
+  /// are merely never projected into the response. A field the server can sort
+  /// by is a field it may also FILTER by — and a filter turns *"tell me this
+  /// page's level"* into *"tell me which pages have this level"*. Same
+  /// information, asked the other way round, and no guessing from anybody's
+  /// title.
+  ///
+  /// It works. Measured on a real section of 80 pages:
+  ///
+  /// ```
+  /// $filter=level eq 0  -> Week 12, Week 11: Power Series, Week 10: …
+  /// $filter=level eq 1  -> Test Notes, Taylor Series, Maclaurin Series, …
+  /// $filter=level eq 2  -> none
+  /// $filter=level eq 99 -> none        <- the control
+  /// ```
+  ///
+  /// The control is the part that makes it evidence rather than coincidence:
+  /// a filter that is being IGNORED returns everything, so an impossible value
+  /// returning nothing proves the server is really applying it.
+  ///
+  /// Costs one extra request per level per section, so [maxLevel] stops at
+  /// OneNote's own limit — its UI offers two levels of indent and no more.
+  /// Only `id` is asked for, because the levels are joined back onto the page
+  /// list by id and nothing else is needed.
+  Future<Map<String, int>> pageLevels(String sectionId,
+      {int maxLevel = 2}) async {
+    final out = <String, int>{};
+    for (var level = 1; level <= maxLevel; level++) {
+      final rows = await _all('$_base/sections/$sectionId/pages'
+          '?\$filter=level%20eq%20$level&\$select=id&\$top=100');
+      // An empty level means there is nothing deeper either: OneNote cannot
+      // make a sub-subpage without a subpage above it.
+      if (rows.isEmpty) break;
+      for (final r in rows) {
+        final id = r['id'] as String?;
+        if (id == null) continue;
+        // **A page cannot be at two depths at once.**
+        //
+        // The whole method rests on the service actually applying a filter it
+        // never echoes back, and the failure mode if it ever stopped is nasty
+        // and silent: every query returns every page, and the notebook comes
+        // in with all of its pages indented to the deepest level asked for.
+        //
+        // An overlap is proof that happened, costs nothing to check, and the
+        // safe answer is the one that was true before any of this — flat.
+        // Better a notebook with no nesting than one with invented nesting.
+        if (out.containsKey(id)) return const {};
+        out[id] = level;
+      }
+    }
+    return out;
+  }
+
   Future<List<GraphPageRef>> pages(String sectionId) async {
     // **No `\$select`.** It used to ask for `level` by name and OneNote's
     // pages endpoint did not reliably return it, so every page arrived at
@@ -483,6 +546,7 @@ class GraphClient {
           title: (r['title'] as String?)?.trim().isNotEmpty == true
               ? (r['title'] as String).trim()
               : 'Untitled page',
+          // Filled in from [pageLevels]; the field is never in the row.
           level: (r['level'] as num?)?.toInt() ?? 0,
           createdIso: r['createdDateTime'] as String?,
           oneNoteId: oneNotePageIdIn(
