@@ -437,6 +437,11 @@ class GraphClient {
   }
 
   /// One `\$batch` POST, or null when it could not be used at all.
+  ///
+  /// Null means *this endpoint is no good* — a malformed envelope, an
+  /// exception, a status that is not going to improve — and the caller then
+  /// fetches the pages one at a time. Throttling is NOT that: it is handled
+  /// here, by waiting and asking again, for the reason in the loop below.
   Future<List<String?>?> _batchPageHtml(List<String> ids) async {
     final body = jsonEncode({
       'requests': [
@@ -449,6 +454,18 @@ class GraphClient {
           }
       ]
     });
+    for (var attempt = 0;; attempt++) {
+      final got = await _batchOnce(body, ids, attempt);
+      if (got != _retryBatch) return got;
+    }
+  }
+
+  /// The sentinel [_batchPageHtml] loops on. A distinct object rather than
+  /// null, because null already means something else here.
+  static final List<String?> _retryBatch = List<String?>.unmodifiable(const []);
+
+  Future<List<String?>?> _batchOnce(
+      String body, List<String> ids, int attempt) async {
     final fake = debugBatch;
     // A test that stubs the ordinary fetch but not the batch must not reach
     // the real internet to discover the batch is unavailable.
@@ -476,11 +493,17 @@ class GraphClient {
         }
       }
       if (status == 429 || status == 503) {
-        // Falling straight through to twenty individual requests would be
-        // twenty more 429s. Back off first, then let the caller retry them
-        // one at a time through the same gate.
+        // **Backed off and retried as a batch, never split up.**
+        //
+        // The obvious thing is to give up on the batch and fetch the twenty
+        // pages individually. That is precisely wrong: throttling counts
+        // REQUESTS, so falling back turns one refusal into twenty more at the
+        // exact moment the service has said it is overloaded — and each of
+        // those carries its own wait. Retrying the batch keeps the cost at
+        // twenty requests per attempt instead of forty.
         _sawRefusal();
         _holdEveryoneBack(batchThrottleHold);
+        if (attempt < _maxRetries) return _retryBatch;
         return null;
       }
       if (status == 200) _sawSuccess();

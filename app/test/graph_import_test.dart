@@ -323,6 +323,37 @@ void main() {
       expect((await c.pageHtmlMany(['a'])).single, contains('hello'));
     });
 
+    test('a THROTTLED batch is retried whole, never split up', () async {
+      // The obvious thing -- give up on the batch and fetch the pages
+      // individually -- is precisely wrong: throttling counts REQUESTS, so
+      // falling back turns one refusal into twenty more at the exact moment
+      // the service has said it is overloaded, each carrying its own wait.
+      var batchCalls = 0;
+      var singles = 0;
+      GraphClient.debugBatch = (body) async {
+        batchCalls++;
+        if (batchCalls == 1) return (429, 'slow down');
+        return (
+          200,
+          jsonEncode({
+            'responses': [
+              for (var i = 0; i < 3; i++)
+                {'id': '$i', 'status': 200, 'body': '<p>page $i</p>'}
+            ]
+          })
+        );
+      };
+      GraphClient.debugFetch = (url) async {
+        singles++;
+        return (200, '<p>solo</p>', <String, String>{});
+      };
+      final c = GraphClient(token: () async => 'T');
+      final got = await c.pageHtmlMany(['a', 'b', 'c']);
+      expect(batchCalls, 2, reason: 'asked again as a batch');
+      expect(singles, 0, reason: 'and never split into individual requests');
+      expect(got.every((h) => h != null && h.contains('page')), isTrue);
+    });
+
     test('a batch that fails falls back to one request per page', () async {
       // `\$batch` has more ways to disappoint than a plain GET and none of
       // them are worth failing an import over.
