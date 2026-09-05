@@ -233,3 +233,36 @@ General text editing
     keeps structure from Word or a web page, and replacing the private
     {{#hex text}} colour syntax with portable HTML.
     Ontenote page links arent imported correctly. Start with onenote:https://ONEDRIVELINK, would be nice if we could attempt to convert this link to a page link within openote - Given page name (which may not be unique), section ID, and page ID. If a matching page cannot be found (as it could be linking to a notebook that hasnt been imported, a deleted page, etc) please allow it to continue linking to onenote (which the onenote: prefix automatically allows AFAIK)
+    → DONE for the over-the-internet import. A notebook's own
+      cross-references are rewritten to real page links once every page has
+      landed — after the import, not during it, because a link on the first
+      page routinely points at the last one. A link whose target was not
+      imported keeps its `onenote:` address exactly, as asked, which still
+      opens OneNote. Counted on a real notebook: 142 of them in sixty pages.
+      The `.onepkg` route does not do this yet; the mapping there would have
+      to come out of the binary format rather than out of `links
+      .oneNoteClientUrl`.
+
+Bringing a notebook over from OneNote
+    → The whole of this changed. There is now a route that needs no export at
+      all: sign in, pick a notebook, and it arrives — which is the ONLY route
+      on macOS and Linux, since OneNote for Mac cannot export a notebook and
+      there is no OneNote for Linux.
+
+      It imports text and formatting, positioned outlines, lists and OneNote's
+      to-do tags, tables, images (floating and in-flow), equations, ATTACHMENTS
+      (which the `.onepkg` route has never imported at all), and — the piece
+      thought impossible — HANDWRITING, via `includeinkML=true`, which returns
+      the ink in a second part of a multipart body.
+
+      One thing it cannot do, and this is settled rather than pending:
+      **page nesting**. Graph's page object carries neither `level` nor
+      `order`, and asking for them by name returns neither — `$select=id,title,
+      level` comes back as `[id,title]`. So subpages arrive as ordinary pages,
+      and the `.onepkg` route stays the only way to keep them. The dialog says
+      so beside the file route, in all seven languages.
+
+      What the wire actually looks like — and it is nothing like the
+      documentation suggests — is written down in
+      docs/planning/onenote-over-graph.md, with the measurements behind every
+      decision.

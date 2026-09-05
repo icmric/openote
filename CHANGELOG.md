@@ -2,6 +2,52 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
+## [Unreleased]
+
+### Added — bring your notes over from OneNote without exporting anything
+
+- **Sign in to Microsoft, pick a notebook, and it arrives.** No exporting, no
+  files, no leaving the app. On a Mac or on Linux this is not merely the easier
+  way, it is the **only** way: OneNote for Mac cannot export a notebook at all,
+  and there is no OneNote for Linux.
+- **Your notebook fills in while you watch.** Each section is written as it
+  arrives, so you can open and read the parts already in while the rest is
+  still coming, and keep typing the whole time. It says how far through it is.
+- **Handwriting comes too.** So do equations, pictures, tables, lists, your
+  to-do ticks, and **attachments** — which the file import has never managed.
+- **Your notebook's own links work.** A contents page that pointed at other
+  pages still points at them, now inside Openote. A link to something you did
+  not import still opens OneNote, exactly as before.
+- **Openote learns nothing about you.** It asks to read your notebooks and
+  nothing else — no name, no email, no address book, no files, no calendar —
+  and it cannot change anything in OneNote even if it wanted to. There is no
+  Openote server, so your notes go from Microsoft to your own machine and
+  nowhere else.
+- **You do not have to sign in at all.** The exported-file route is still there
+  on the same screen, described side by side, because not wanting to sign in to
+  a Microsoft account is a perfectly good reason not to.
+
+  One honest limit: **subpages arrive as ordinary pages.** Microsoft does not
+  send how pages were nested, so there is nothing to read. If that matters to
+  you, the exported-file route still keeps them.
+
+### Fixed
+
+- **Handwriting is no longer lost** when bringing a notebook over the internet.
+- **Equations arrive as equations**, not as one letter per line.
+- **Blank lines between paragraphs survive.** They were being dropped, so
+  paragraphs ran together however many returns you had typed.
+- **Bold and italic survive.** OneNote does not use the tags anyone would
+  expect, so all of it was being quietly discarded.
+- **Tables fit where they were.** They were coming in far too wide and
+  overlapping whatever sat beside them, with every column the same width
+  however much was in it.
+- **Pictures you had moved stay where you put them** instead of jumping back
+  into the middle of a paragraph.
+- **A big notebook imports in about two minutes** rather than the ten or more
+  it used to take, and when Microsoft asks Openote to slow down it says so and
+  waits, instead of going quiet or giving up.
+
 ## [0.9.0] — 2026-09-03
 
 ### Added — Openote speaks six more languages, and picks one without asking (2026-09-03)
