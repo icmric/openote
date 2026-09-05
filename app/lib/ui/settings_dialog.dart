@@ -193,8 +193,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               _section(l.settingsWriting),
               _row(l.settingsSpellCheck,
                   _toggle(app.spellCheckEnabled, app.setSpellCheck)),
-              _row(l.settingsPenProximity,
-                  _toggle(app.penProximitySwitch, app.setPenProximitySwitch)),
               _section(l.settingsConnections),
               _door(Icons.sync, l.settingsSync, l.settingsSyncHint,
                   () => showSyncDialog(context, app)),

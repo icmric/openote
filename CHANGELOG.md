@@ -33,6 +33,16 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- **The pen's side button erases while you hold it.** It only ever worked if
+  the button was already down at the exact moment the pen touched the page,
+  and only for one of the three ways a pen can report that button — so on many
+  pens it did nothing at all. Press it while the pen is hovering and the
+  pointer changes to the eraser before you touch down.
+- **The lasso outline is visible again.** It was a thin, half-transparent line
+  that disappeared over handwriting, over pictures and on a dark page.
+- **The pen no longer needs telling that it is a pen.** The setting for
+  "switch to inking when the pen comes near" is gone; it always does.
+
 - **A first import now explains itself.** Bringing your first notebook over
   created it empty and opened it, with only a small card in a corner — so the
   natural reading was that nothing had happened. It now says what it is doing

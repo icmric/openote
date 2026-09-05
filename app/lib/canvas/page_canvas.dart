@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import '../theme/tokens.dart';
 import '../ui/context_menus.dart';
 import 'block_view.dart';
 import 'align_guides.dart';
@@ -103,6 +104,10 @@ class _PageCanvasState extends State<PageCanvas> {
     return t != null && DateTime.now().difference(t) < _stylusGrace;
   }
 
+  /// The button is only believed while the pen is in range. Out of range there
+  /// are no events to tell us it was let go.
+  bool get _penErasing => _penButtonHeld && _stylusActive;
+
   /// Whether this touch should draw rather than pan.
   ///
   /// Single finger only: a second finger always means pan/zoom, which is what
@@ -135,10 +140,37 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     final approaching = !_stylusActive;
     _lastStylus = DateTime.now();
-    if (approaching && app.penProximitySwitch && app.tool == Tool.select) {
+    // **Watched while the pen hovers, not only when it lands.**
+    //
+    // Reported by an S Pen user: *"Holding the side button should temporarily
+    // activate the eraser, then return to writing when released. This doesn't
+    // work for me."* The button was read once, at the instant of contact, and
+    // never again — so pressing it while the pen floated over the page did
+    // nothing at all, and there was no way to tell whether the pen was about
+    // to write or to erase until it had already done one of them.
+    final held = _erasingButtons(e);
+    if (held != _penButtonHeld) {
+      setState(() => _penButtonHeld = held);
+    }
+    if (approaching && app.tool == Tool.select) {
       app.setTool(Tool.pen);
     }
   }
+
+  /// Whether this event carries a pen button that means "erase".
+  ///
+  /// The bit arithmetic lives in `ink_ops.dart` where it can be tested without
+  /// a digitiser — which matters here more than usual, since the report came
+  /// from hardware nobody working on this owns.
+  bool _erasingButtons(PointerEvent e) =>
+      penGestureErases(kind: e.kind, buttons: e.buttons);
+
+  /// True while the pen's button is down, whether or not it is touching.
+  ///
+  /// Drives the cursor and the tool indicator, so holding the button LOOKS
+  /// like an eraser before it acts like one — which is the difference between
+  /// a feature and a surprise.
+  bool _penButtonHeld = false;
 
   /// True while the CURRENT ink gesture erases regardless of the selected
   /// tool: the pen's tail (invertedStylus — that end IS an eraser), or its
@@ -215,9 +247,11 @@ class _PageCanvasState extends State<PageCanvas> {
     // button held at contact. (kPrimaryStylusButton shares its bit with
     // kSecondaryButton, which is exactly how Windows reports a barrel press —
     // the kind guard is what keeps a right-click mouse drag from erasing.)
-    _gestureErase = e.kind == PointerDeviceKind.invertedStylus ||
-        ((e.kind == PointerDeviceKind.stylus) &&
-            (e.buttons & kPrimaryStylusButton) != 0);
+    // The tail end IS an eraser; so is the barrel button, whether it was
+    // pressed before the pen landed or as it landed. `_penButtonHeld` carries
+    // the former, which is how somebody actually uses it: press, then touch.
+    _gestureErase = penGestureErases(
+        kind: e.kind, buttons: e.buttons, heldWhileHovering: _penErasing);
     final pt = _clampToPagePoint(controller.screenToPage(e.localPosition));
     if (app.tool == Tool.eraser || _gestureErase) {
       _eraseAt(pt);
@@ -269,6 +303,11 @@ class _PageCanvasState extends State<PageCanvas> {
   void _inkUp(PointerUpEvent e) {
     _eraseUndoPushed = false;
     _gestureErase = false;
+    // **Never left stale.** A pen lifted (or carried out of range) while the
+    // button was down would otherwise keep the canvas in erase mode, and the
+    // next unmodified touch would rub work out instead of writing. The button
+    // state is only ever believed while the pen is actually reporting it.
+    if (_penButtonHeld) setState(() => _penButtonHeld = false);
     final w = _wet;
     if (w == null || w.x.length < 2) {
       setState(() => _wet = null);
@@ -1015,6 +1054,7 @@ class _PageCanvasState extends State<PageCanvas> {
                         inkSelections: selectedInkRects,
                         lasso: _lasso,
                         color: Theme.of(context).colorScheme.primary,
+                        halo: context.surfaces.canvas,
                       ),
                     ),
                   ),
@@ -1227,6 +1267,8 @@ class _PageCanvasState extends State<PageCanvas> {
       },
       child: MouseRegion(
         cursor: switch (app.tool) {
+          // The button held means erase, whatever tool is selected.
+          _ when _penErasing => SystemMouseCursors.cell,
           Tool.text => SystemMouseCursors.text,
           Tool.pen || Tool.highlighter => SystemMouseCursors.precise,
           Tool.eraser => SystemMouseCursors.cell,
@@ -1398,12 +1440,17 @@ class _OverlayPainter extends CustomPainter {
     required this.inkSelections,
     required this.lasso,
     required this.color,
+    required this.halo,
   });
   final CanvasController controller;
   final Rect? marquee;
   final List<Rect> inkSelections;
   final List<Offset>? lasso;
   final Color color;
+
+  /// Drawn under the outline so it reads on any background. The page's own
+  /// colour, so it is white on a light page and near-black on a dark one.
+  final Color halo;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1418,13 +1465,31 @@ class _OverlayPainter extends CustomPainter {
         path.lineTo(sp.dx, sp.dy);
       }
       path.close();
-      canvas.drawPath(path, Paint()..color = color.withValues(alpha: .08));
+      canvas.drawPath(path, Paint()..color = color.withValues(alpha: .10));
+      // **Two strokes, not one.** Reported as *"the lasso outline is mostly
+      // invisible while drawing it"*: a single 1.5px line at 70% of the accent
+      // colour disappears against handwriting, against an imported image, and
+      // against a dark page — which is to say against most of what anybody
+      // lassoes.
+      //
+      // A wider contrasting halo underneath fixes that for every background at
+      // once, and is what every other selection outline in every other tool
+      // does. The halo is drawn from the canvas colour rather than plain white
+      // so it stays right in dark mode.
       canvas.drawPath(
           path,
           Paint()
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5
-            ..color = color.withValues(alpha: .7));
+            ..strokeWidth = 4
+            ..strokeJoin = StrokeJoin.round
+            ..color = halo.withValues(alpha: .85));
+      canvas.drawPath(
+          path,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..strokeJoin = StrokeJoin.round
+            ..color = color);
     }
     if (marquee != null) {
       final r = Rect.fromPoints(controller.pageToScreen(marquee!.topLeft),

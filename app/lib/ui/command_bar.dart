@@ -88,7 +88,6 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         app.lastColor,
         app.penColor,
         app.penSize,
-        app.penProximitySwitch,
         app.touchDrawing,
         app.eraserMode,
         app.hasInkSelection,
@@ -974,16 +973,6 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
             ),
           ),
         ]),
-      ),
-      const _Div(),
-      // Pen proximity → pen tool. On by default because it is what a pen
-      // means; the toggle exists for people who use the pen as a pointer.
-      IconButton(
-        icon: const Icon(Icons.draw_outlined, size: 18),
-        tooltip: l.barPenProximity,
-        visualDensity: VisualDensity.compact,
-        isSelected: app.penProximitySwitch,
-        onPressed: () => app.setPenProximitySwitch(!app.penProximitySwitch),
       ),
       const SizedBox(width: 4),
     ]);

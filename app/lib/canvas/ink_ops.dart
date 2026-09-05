@@ -5,7 +5,43 @@
 /// This file is where they move as they are touched.
 library;
 
+import 'package:flutter/gestures.dart';
+
 import '../state/app_state.dart';
+
+/// **Which pen buttons mean "erase".**
+///
+/// Three bits rather than one, because drivers disagree. `kPrimaryStylusButton`
+/// shares its value with `kSecondaryButton` — that is how Windows Ink reports a
+/// barrel press — and some pens report the same press as
+/// `kSecondaryStylusButton`. Accepting all three costs nothing, because what
+/// keeps a right-click mouse drag from erasing is the device KIND, never the
+/// bit.
+const int kPenEraseButtons =
+    kPrimaryStylusButton | kSecondaryStylusButton | kSecondaryButton;
+
+/// Does this pen event mean erase, whatever tool is selected?
+///
+/// Reported by a Galaxy Book / S Pen user: *"Holding the side button should
+/// temporarily activate the eraser, then return to writing when released. This
+/// doesn't work for me."*
+///
+/// Two things were wrong. Only one bit was checked, and the button was read
+/// **once, at the instant of contact** — so pressing it while the pen floated
+/// above the page did nothing, which is exactly how somebody uses it: press
+/// first, then touch down. [heldWhileHovering] carries what the hover events
+/// saw.
+///
+/// The pen's tail is unconditional: that end of a pen IS an eraser.
+bool penGestureErases({
+  required PointerDeviceKind kind,
+  required int buttons,
+  bool heldWhileHovering = false,
+}) {
+  if (kind == PointerDeviceKind.invertedStylus) return true;
+  if (kind != PointerDeviceKind.stylus) return false;
+  return (buttons & kPenEraseButtons) != 0 || heldWhileHovering;
+}
 
 /// Whether a touch pointer should draw rather than pan (INK-1 / INK-4).
 ///

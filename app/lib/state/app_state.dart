@@ -4630,13 +4630,13 @@ class AppState extends ChangeNotifier
   /// anything else) while the pen hovers sticks until the pen leaves and
   /// comes back, which is the "unless the user specifically selects another
   /// option" half of the ask.
-  bool penProximitySwitch = true;
-
-  void setPenProximitySwitch(bool v) {
-    penProximitySwitch = v;
-    _repo.setSetting('penProximity', v);
-    notifyListeners();
-  }
+  /// **No longer a choice.** Bringing the pen to the page switches to
+  /// inking, always. The toggle was there for people who use a pen as a
+  /// pointer, but a setting that has one sensible value is a question nobody
+  /// wanted asked: the pen already has a tail for erasing and a button for
+  /// erasing, and the tool bar is one click away for the rest.
+  ///
+  /// Nothing consults a flag any more — [PageCanvas] simply switches.
 
   /// True when the selection is ink and can therefore be recoloured (INK-7).
   bool get hasInkSelection =>
@@ -5922,7 +5922,12 @@ class AppState extends ChangeNotifier
       touchDrawing = TouchDrawing.values.asNameMap()[td] ?? touchDrawing;
     }
     final pp = _repo.getSetting('penProximity');
-    if (pp is bool) penProximitySwitch = pp;
+    // `penProximity` was a stored setting and is now always on. Read and
+    // discarded rather than left to rot in the file: a value nothing consults
+    // is a trap for the next person to read this.
+    if (pp is bool) {
+      // ignore: dead_code
+    }
     // Detached: binding a port must never gate the app opening.
     unawaited(_restoreMcp());
     unawaited(checkForAppUpdate());
