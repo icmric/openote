@@ -34,7 +34,7 @@ Counted over sixty real pages unless stated otherwise.
 | Attachments | `<object data-attachment="name.pdf" type="application/pdf" data="…/resources/…/$value" />`. One page in 60. |
 | Handwriting | **Available**, but only with `includeinkML=true`, which changes the response into MIME multipart with an `application/inkml+xml` part. |
 | Page nesting | **Not available at all.** See below. |
-| Internal links | 142 `<a href="onenote:…">` with `page-id` and `section-id` attributes. Not yet converted to Openote page links. |
+| Internal links | 142 `<a href="onenote:…">` with `page-id` and `section-id`. Converted to real page links after the import. |
 
 ### Ink, in detail
 
@@ -134,6 +134,7 @@ What got it there, in order of how much each was worth:
 | Equations | yes (OMML → LaTeX in the Rust core) | yes (MathML → LaTeX) |
 | Handwriting | yes | yes |
 | **Attachments** | **no — never implemented** | **yes** |
+| **Internal page links** | **no** | **yes, rewritten after the import** |
 | Page nesting | yes | **no, and cannot be** |
 | Works on macOS or Linux | no | yes |
 
@@ -144,10 +145,6 @@ that must be kept in step.
 
 ## Still open
 
-- **Internal links.** 142 `onenote:` links carry `page-id` and `section-id`.
-  Converting them to Openote page links needs a second pass: the mapping from
-  OneNote's id to the imported page's id is not known until every page is
-  written, and the import writes progressively on purpose.
 - **Superscript and subscript** (`<sup>`, `<sub>`) keep their text and lose
   their position. Seen in real content — `[b]<sub>d</sub>`.
 - **`list-style-type`** on `<li>` and `value` on ordered items are ignored, so
