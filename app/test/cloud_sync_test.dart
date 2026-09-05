@@ -702,11 +702,69 @@ void _deletingASharedNotebook(bool Function() haveSqlite) {
       // released until it completes, and the still-live watch delivered one
       // more event — a pull — between the two photographs. That is what this
       // test was failing on, on windows-latest only, roughly one run in two.
+      //
+      // **AND SETTLING IS STILL NOT THE SAME AS BEING QUIET.**
+      // `settleBackgroundWork()` drains the jobs that are in flight at the
+      // moment it looks; a job that starts a millisecond later is not in that
+      // set. Two real holes were found and closed by chasing this failure
+      // (the watcher's stop, then the pull that watch had already fired), and
+      // it came back a third time — so the baseline no longer *assumes* the
+      // folder went quiet. It waits until two consecutive reads agree, which
+      // is the thing the next line actually needs to be true. It does not
+      // weaken anything: the assertion after the purge is still byte-exact,
+      // so a purge that writes is still caught, and now named.
       await a.app.setAutoSync(false);
       await appB.setAutoSync(false);
-      await a.app.settleBackgroundWork();
-      await appB.settleBackgroundWork();
-      final before = photograph();
+
+      /// How the folder changed, or null when it did not.
+      ///
+      /// `expect(after, before)` on two maps of byte lists prints two walls of
+      /// integers and says which file changed only by luck. This failure
+      /// happens on windows-latest and nowhere else, where nobody can attach a
+      /// debugger and the job log is not always reachable — it has now been
+      /// diagnosed twice from the test's NAME alone. It will not have to be a
+      /// third time: the failure carries its own evidence.
+      String? changed(Map<String, List<int>> a, Map<String, List<int>> b) {
+        final notes = <String>[];
+        for (final k in ({...a.keys, ...b.keys}.toList()..sort())) {
+          final was = a[k], now = b[k];
+          if (was == null) {
+            notes.add('ADDED     $k (${now!.length} B)');
+          } else if (now == null) {
+            notes.add('REMOVED   $k (was ${was.length} B)');
+          } else if (was.length != now.length) {
+            notes.add('${now.length > was.length ? 'GREW     ' : 'SHRANK   '} '
+                '$k  ${was.length} → ${now.length} B');
+          } else {
+            for (var i = 0; i < now.length; i++) {
+              if (now[i] != was[i]) {
+                notes.add('REWRITTEN $k at byte $i of ${now.length}');
+                break;
+              }
+            }
+          }
+        }
+        return notes.isEmpty ? null : notes.join('\n');
+      }
+
+      /// Read the folder once it has actually stopped moving.
+      Future<Map<String, List<int>>> whenQuiet() async {
+        var last = photograph();
+        for (var round = 0; round < 40; round++) {
+          await a.app.settleBackgroundWork();
+          await appB.settleBackgroundWork();
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          final next = photograph();
+          if (changed(last, next) == null) return next;
+          last = next;
+        }
+        fail('the shared folder never stopped changing by itself, so this '
+            'test could not establish what the purge is being compared '
+            'against. Last two seconds of movement:\n'
+            '${changed(last, photograph())}');
+      }
+
+      final before = await whenQuiet();
       expect(before, isNotEmpty);
       // What the confirmation dialog says, asked when it asks — before the
       // click. Afterwards there is no registry entry left to ask about.
@@ -721,8 +779,10 @@ void _deletingASharedNotebook(bool Function() haveSqlite) {
       // asked this workspace, which cannot see another computer.
       expect(sharedLogs.existsSync(), isTrue,
           reason: "device B deleting its copy must not remove device A's ops");
-      expect(photograph(), before,
-          reason: 'not one byte of the shared folder changed');
+      expect(changed(before, photograph()), isNull,
+          reason: 'not one byte of the shared folder may change — a purge '
+              'that appended so much as one op here would replicate the '
+              'deletion to every other device');
       expect(File(a.repo.notebooks.firstWhere((n) => n.id == a.id).file)
               .existsSync(),
           isTrue,
