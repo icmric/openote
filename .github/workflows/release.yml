@@ -719,6 +719,7 @@ jobs:
             - **Write on a PDF or a photo**, and the ink stays readable on any theme.
             - **Make your own pen colours**, or take one off the page with the eyedropper.
             - **A Page tab, and undo and redo you can always reach.**
+            - **A shared notebook's history stops repeating itself as you type.**
 
             ## All of it, in more detail
 
@@ -799,8 +800,13 @@ jobs:
               a pen works, and so does the eraser tool. Hold the button near the screen:
               if the eraser on the Draw tab does not light up, Openote is not being told
               about the button at all.
-            - **macOS and Linux build in CI and are shipped, and no one has yet sat down
-              in front of either.** macOS is the least-tested platform by far.
+            - **A notebook that 1.0 has typed into is read-only on Openote 0.9 and
+              earlier.** Those versions will open it and show you everything, but
+              will not let you add to it — 1.0 records an edit as the characters
+              that changed rather than the whole paragraph, and a version that
+              cannot read that must not write on top of it. Update the other
+              devices that share a notebook and it never comes up.
+            - **macOS and Linux are the least-tested platforms by far.**
             - Openote is still in active development. Updates are worth taking, but a
               major update may occasionally break a feature.
             - On Linux, whether double-clicking a notebook *folder* opens Openote depends
@@ -820,7 +826,17 @@ jobs:
             are different failures and were being treated as one. Everything a page
             carries is converted rather than screenshotted: InkML into the same stroke
             format the pen writes, MathML into LaTeX, HTML into the live-Markdown model.
-            Over the cycle the test suite grew from 2,764 to 3,071, and the app carries a
+            Editing a paragraph now appends a splice — `at`, `del`, `ins`, in UTF-16
+            code units snapped to whole runes — instead of the whole block, which
+            was 52.6% of a real workspace's op log; forty autosaves of a
+            thousand-character paragraph fell from about 60 KB to 12 KB, and the
+            per-save cost stopped growing with the paragraph. It carries a
+            fingerprint of the text it was computed against and a reader refuses a
+            patch that does not match, so two devices' logs still merge
+            last-writer-wins rather than interleaving into prose neither person
+            wrote. That is the `v: 2` envelope, and the reason it was spent before
+            1.0 rather than after.
+            Over the cycle the test suite grew from 2,764 to 3,094, and the app carries a
             [manual pre-release checklist](https://github.com/icmric/openote/blob/master/docs/pre-release-checklist.md)
             for the failures a headless suite cannot see.
 

@@ -31,6 +31,24 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   to, exactly as in OneNote — including a subpage of a subpage. Measured on a
   real notebook: 212 of 331 pages came over nested, two of them two deep.
 
+### Changed — a paragraph's history stops repeating itself
+
+- **Editing a paragraph no longer records the whole paragraph.** Openote saves
+  a few hundred milliseconds after you stop typing, and every one of those
+  saves used to write the entire paragraph again into the notebook's history —
+  so a shared notebook's history grew with the length of what you were writing
+  rather than with what you changed. It records the characters that actually
+  moved now. Measured on forty saves of a one-thousand-character paragraph:
+  **12 KB instead of 60 KB**, and unlike before, the cost no longer grows as
+  the paragraph does.
+- **What this costs, plainly:** a notebook that 1.0 has typed into is
+  **read-only on Openote 0.9 and earlier**. They will open it and show you
+  everything; they will not let you add to it, because they cannot read part
+  of its history and writing on top of a history you have half-read is how
+  notes get lost. Update every device that shares a notebook and it never
+  comes up. This is why it was done now rather than later: it gets more
+  disruptive with every week of installs.
+
 ### Changed — one band of toolbar fewer, and the pen puts itself away
 
 - **The page's own settings are a tab.** Ruling, sheet or canvas, paper size,
@@ -240,10 +258,6 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   in the Windows part of the app rather than in Openote itself.
 - **macOS and Linux have never been opened by a human.** Both build in CI and
   both are shipped, and no one has yet sat down in front of either.
-- **Every autosave of a paragraph writes the whole paragraph to the sync log.**
-  Correct, and larger than it needs to be — a per-edit diff is designed and
-  measured (`docs/planning/v0.24-road-to-1.0.md`) and not yet built. It costs
-  disk in a shared notebook's history; it costs nothing in correctness.
 - **Spell check is English only.**
 - **OneNote tags are not imported**, and the `.onepkg` file route cannot
   convert links between pages — the sign-in route can.
