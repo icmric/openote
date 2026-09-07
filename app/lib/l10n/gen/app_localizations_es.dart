@@ -322,6 +322,9 @@ class LEs extends L {
   }
 
   @override
+  String get canvasDeleteSelection => 'Eliminar  (Supr)';
+
+  @override
   String get commonBack => 'Atrás';
 
   @override

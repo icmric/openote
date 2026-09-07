@@ -432,6 +432,10 @@
       }
     }
   },
+  "canvasDeleteSelection": "Delete  (Del)",
+  "@canvasDeleteSelection": {
+    "description": "Tooltip on the button that appears above a selection. Keep the key name in brackets as the local keyboard spells it."
+  },
   "commonBack": "Back",
   "@commonBack": {
     "description": "Button: return to the previous step of a multi-step flow."

@@ -194,8 +194,11 @@ void main() {
 
       expect(identical(bar(tester), before), isFalse,
           reason: 'picking up the pen must rebuild the bar');
-      expect(find.text('Done'), findsOneWidget,
-          reason: 'and the escape hatch out of the tool must appear');
+      // There is no longer a "Done" chip in the trailing cluster to check for:
+      // the pen puts itself down when the mouse comes back, and Escape steps
+      // out of a tool somebody chose. Which tool is in hand shows on Draw's
+      // own tool buttons — see `ink_colour_test.dart` — and picking up a tool
+      // deliberately does not move anybody to that tab.
       app.cancelPendingSave();
     });
 

@@ -312,6 +312,9 @@ class LZh extends L {
   }
 
   @override
+  String get canvasDeleteSelection => '删除  (Del)';
+
+  @override
   String get commonBack => '上一步';
 
   @override

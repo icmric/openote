@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/l10n.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -128,21 +129,32 @@ class _PageCanvasState extends State<PageCanvas> {
     }
   }
 
-  /// Pen proximity → inking. Hover events are how a pen announces itself
-  /// before it touches — Windows Ink and most drivers report the pen floating
-  /// over the digitiser — and OneNote's behaviour on that signal is the one
-  /// people's hands already know: the pen means ink, immediately, no toolbar
-  /// trip. Switches only FROM Select and only on the pen's APPROACH (the
-  /// first stylus signal after the grace window), so picking Select — or any
-  /// tool — while the pen hovers sticks until the pen leaves and comes back.
+  /// **The pen picks the tool up; the mouse puts it back down.**
+  ///
+  /// Hover events are how a pen announces itself before it touches — Windows
+  /// Ink and most drivers report the pen floating over the digitiser — and
+  /// OneNote's behaviour on that signal is the one people's hands already
+  /// know: the pen means ink, immediately, no toolbar trip.
+  ///
+  /// The owner, on the Done button that used to be the only way back:
+  /// *"this makes no sense to me, we shouldnt have defined drawing and other
+  /// modes that the user has to manually switch between … automatically
+  /// switch to inking when a pen comes close to the screen, but then switch
+  /// back for other inputs and whatnot."* Quite so — a mode you have to leave
+  /// by hand is a mode, and the pen was only ever half of a switch.
+  ///
+  /// Both directions are guarded by [AppState.toolWasAutomatic], so a tool
+  /// somebody CHOSE is never taken off them: picking Select — or the pen, or
+  /// the highlighter — sticks through a pen coming and going, and drawing
+  /// with a mouse stays possible for anybody without one.
   void _stylusProximity(PointerHoverEvent e) {
     final isPen = e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus;
-    // A hover from anything else is only interesting while a pen is in range:
-    // Windows promotes a barrel press to a mouse right-button, so the button
-    // can arrive as a `mouse` event at the pen's own position. See
-    // [penGestureErases].
-    if (!isPen && !_stylusActive) return;
+    // A hover from anything else matters for two reasons: Windows promotes a
+    // barrel press to a mouse right-button, so the button can arrive as a
+    // `mouse` event at the pen's own position (see [penGestureErases]); and a
+    // mouse arriving with the pen gone is the signal to put the pen down.
+    if (!isPen && !_stylusActive && !app.toolWasAutomatic) return;
     final approaching = !_stylusActive;
     if (isPen) _lastStylus = DateTime.now();
     // **Watched while the pen hovers, not only when it lands.**
@@ -161,8 +173,16 @@ class _PageCanvasState extends State<PageCanvas> {
       setState(() => _penButtonHeld = held);
       app.setPenErasing(_penErasing);
     }
-    if (isPen && approaching && app.tool == Tool.select) {
-      app.setTool(Tool.pen);
+    if (isPen) {
+      if (approaching && app.tool == Tool.select) {
+        app.setTool(Tool.pen, automatic: true);
+      }
+    } else if (app.toolWasAutomatic && !_stylusActive) {
+      // A mouse, with the pen out of range: put back what the pen picked up.
+      // On HOVER rather than on the click, so the click itself already lands
+      // in the tool it is going to be handled in — a revert on the down event
+      // would be one gesture late, every time.
+      app.setTool(Tool.select);
     }
   }
 
@@ -835,6 +855,79 @@ class _PageCanvasState extends State<PageCanvas> {
   /// Screen-space vertical scroll bar, present only when the page is taller
   /// than the viewport at the current zoom. Built inside the canvas's
   /// AnimatedBuilder, so it tracks every pan and zoom without its own state.
+  /// **What is selected, as one rectangle in page space.**
+  Rect? _selectionRect() {
+    Rect? out;
+    for (final b in app.blocks) {
+      if (!app.selectedIds.contains(b.id)) continue;
+      final r = _blockRect(b);
+      out = out == null ? r : out.expandToInclude(r);
+    }
+    return out;
+  }
+
+  /// **A way to delete what is selected that is not a key on a keyboard.**
+  ///
+  /// The owner: *"With selected ink, there should be a button that comes up
+  /// to delete the selected ink/text/items, currently it only lets us move
+  /// them and it feels like a no brainer to have this as an option."* Quite
+  /// so, and lassoed ink was the worst case of it: a picture-frame selection
+  /// with handles to move and scale it, and no way at all to get rid of it
+  /// except the Delete key — which is not on a tablet somebody is holding in
+  /// one hand with a pen in the other, who is exactly who the lasso is for.
+  ///
+  /// In SCREEN space rather than page space, so it is the same size at every
+  /// zoom: a control that shrank with the drawing would be unpressable on the
+  /// very selection somebody had zoomed out to make. Above the selection and
+  /// clamped into the viewport, so it never covers what it is about and never
+  /// leaves the window.
+  List<Widget> _selectionActions(BuildContext context) {
+    if (app.selectedIds.isEmpty) return const [];
+    // Not while the selection is being dragged or marqueed out, and not while
+    // the eyedropper owns the next click.
+    if (_mode != _DragMode.none || app.pickingInkColor) return const [];
+    final rect = _selectionRect();
+    if (rect == null) return const [];
+    final vp = controller.viewport;
+    if (vp == Size.zero) return const [];
+    final at = controller.pageToScreen(rect.topLeft);
+    const w = 36.0, h = 30.0, gap = 6.0;
+    final top = (at.dy - h - gap)
+        .clamp(2.0, math.max(2.0, vp.height - h - 2))
+        .toDouble();
+    final left = at.dx.clamp(2.0, math.max(2.0, vp.width - w - 2)).toDouble();
+    final l = L.of(context);
+    return [
+      Positioned(
+        left: left,
+        top: top,
+        // The canvas's own select handler runs on the SAME pointer — it is a
+        // translucent `Listener` above everything — and its click-on-empty
+        // rule deselects. Without the claim the selection was already gone by
+        // the time the button's press fired, and delete had nothing to delete.
+        child: Listener(
+          onPointerDown: (e) => app.claimedPointers.add(e.pointer),
+          child: Material(
+            elevation: 2,
+            borderRadius: BorderRadius.circular(OnoteRadius.sm),
+            color: context.surfaces.chrome,
+            child: SizedBox(
+              width: w,
+              height: h,
+              child: IconButton(
+                icon: const Icon(Icons.delete_outline, size: OnoteIcon.md),
+                tooltip: l.canvasDeleteSelection,
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                onPressed: app.removeSelected,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+
   List<Widget> _scrollBar(BuildContext context, bool dark) {
     final vp = controller.viewport;
     final ps = controller.pageSize;
@@ -1182,6 +1275,7 @@ class _PageCanvasState extends State<PageCanvas> {
                 // instrument for POSITION: see where you are in a long page,
                 // and cover all of it in one drag.
                 ..._scrollBar(context, dark),
+                ..._selectionActions(context),
               ],
             ),
           ),

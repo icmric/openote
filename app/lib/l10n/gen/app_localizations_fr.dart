@@ -321,6 +321,9 @@ class LFr extends L {
   }
 
   @override
+  String get canvasDeleteSelection => 'Supprimer  (Suppr)';
+
+  @override
   String get commonBack => 'Retour';
 
   @override

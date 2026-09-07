@@ -322,6 +322,9 @@ class LIt extends L {
   }
 
   @override
+  String get canvasDeleteSelection => 'Elimina  (Canc)';
+
+  @override
   String get commonBack => 'Indietro';
 
   @override

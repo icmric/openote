@@ -320,6 +320,9 @@ class LPt extends L {
   }
 
   @override
+  String get canvasDeleteSelection => 'Eliminar  (Del)';
+
+  @override
   String get commonBack => 'Voltar';
 
   @override

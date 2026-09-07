@@ -88,6 +88,7 @@
   "barUnderline": "Subrayado  (Ctrl+U)",
   "barUndo": "Deshacer  (Ctrl+Z)",
   "barUpdateTo": "Actualizar a {version}…",
+  "canvasDeleteSelection": "Eliminar  (Supr)",
   "commonBack": "Atrás",
   "commonCancel": "Cancelar",
   "commonClose": "Cerrar",

@@ -641,6 +641,12 @@ abstract class L {
   /// **'Update to {version}…'**
   String barUpdateTo(String version);
 
+  /// Tooltip on the button that appears above a selection. Keep the key name in brackets as the local keyboard spells it.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete  (Del)'**
+  String get canvasDeleteSelection;
+
   /// Button: return to the previous step of a multi-step flow.
   ///
   /// In en, this message translates to:

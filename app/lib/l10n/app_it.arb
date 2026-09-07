@@ -88,6 +88,7 @@
   "barUnderline": "Sottolineato  (Ctrl+U)",
   "barUndo": "Annulla  (Ctrl+Z)",
   "barUpdateTo": "Aggiorna alla {version}…",
+  "canvasDeleteSelection": "Elimina  (Canc)",
   "commonBack": "Indietro",
   "commonCancel": "Annulla",
   "commonClose": "Chiudi",

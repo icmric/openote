@@ -319,6 +319,9 @@ class LEn extends L {
   }
 
   @override
+  String get canvasDeleteSelection => 'Delete  (Del)';
+
+  @override
   String get commonBack => 'Back';
 
   @override

@@ -8674,8 +8674,24 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  void setTool(Tool t) {
+  /// **Whether the tool in hand was picked up by the app or by the person.**
+  ///
+  /// The owner: *"we shouldnt have defined drawing and other modes that the
+  /// user has to manually switch between, always take all inputs other than
+  /// pen as they already are, but automatically switch to inking when a pen
+  /// comes close to the screen … but then switch back for other inputs."*
+  ///
+  /// So the switch has to work both ways, and the flag is what makes that
+  /// safe. A tool the app reached for on seeing a pen is the app's to put
+  /// back down when the pen goes away; a tool somebody CHOSE from the
+  /// toolbar is theirs, and is not taken off them because they reached for
+  /// the mouse — which is the only thing that keeps drawing with a mouse
+  /// possible for anyone without a pen.
+  bool toolWasAutomatic = false;
+
+  void setTool(Tool t, {bool automatic = false}) {
     tool = t;
+    toolWasAutomatic = automatic && t != Tool.select;
     if (t != Tool.select) select(null);
     notifyListeners();
   }

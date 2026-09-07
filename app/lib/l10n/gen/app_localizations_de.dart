@@ -321,6 +321,9 @@ class LDe extends L {
   }
 
   @override
+  String get canvasDeleteSelection => 'Löschen  (Entf)';
+
+  @override
   String get commonBack => 'Zurück';
 
   @override

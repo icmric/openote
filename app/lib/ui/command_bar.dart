@@ -194,24 +194,16 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                             onPressed: () => showUpdateDialog(context, app),
                           ),
                         ),
-                      // Current-tool escape hatch: visible whenever not in Select.
-                      if (app.tool != Tool.select)
-                        ToolbarControl(
-                          width: 98,
-                          icon: _toolIcon(app.tool),
-                          label: l.barDone,
-                          onPressed: () => app.setTool(Tool.select),
-                          inline: Padding(
-                            padding: const EdgeInsets.only(right: 4),
-                            child: ActionChip(
-                              avatar: Icon(_toolIcon(app.tool), size: 16),
-                              label: Text(l.barDone,
-                                  style: const TextStyle(fontSize: 11)),
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () => app.setTool(Tool.select),
-                            ),
-                          ),
-                        ),
+                      // **No "Done" chip.** It used to sit here whenever a
+                      // tool was in hand, and the owner was right about it:
+                      // *"we shouldnt have defined drawing and other modes
+                      // that the user has to manually switch between."* The
+                      // pen now puts itself down when the mouse comes back
+                      // (see `PageCanvas._stylusProximity`), Escape steps out
+                      // of a tool somebody chose, and Draw's own Select
+                      // button is where a tool is put down on purpose. A chip
+                      // that appeared and disappeared in the middle of the
+                      // trailing cluster also moved everything beside it.
                       // Study: the due count is the whole nudge, so it's on the
                       // badge rather than hidden behind the panel.
                       ToolbarControl(
@@ -443,14 +435,6 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       ),
     );
   }
-
-  static IconData _toolIcon(Tool t) => switch (t) {
-        Tool.pen => Icons.edit_outlined,
-        Tool.highlighter => Icons.border_color_outlined,
-        Tool.eraser => Icons.cleaning_services_outlined,
-        Tool.text => Icons.text_fields,
-        _ => Icons.near_me_outlined,
-      };
 
   /// Every item in the Export menu comes through here.
   ///

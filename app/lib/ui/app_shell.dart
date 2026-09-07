@@ -381,6 +381,16 @@ class _AppShellState extends State<AppShell> {
         _canvasFocus.requestFocus();
         return true;
       }
+      // **Last rung: put the tool down.** With the Done chip gone, a tool
+      // somebody chose from the Draw tab needs a way out that is not a trip
+      // back to that tab — and Escape already means "step back out of the
+      // thing you are in" everywhere above. The pen's own tool puts itself
+      // down when the mouse comes back, so this rung is only ever reached by
+      // a tool that was picked on purpose.
+      if (app.tool != Tool.select) {
+        app.setTool(Tool.select);
+        return true;
+      }
       // Deliberately NOT a rung for the reminder cards, though they were the
       // one popup with no keyboard route at all (phase-3 audit). Dismissing a
       // reminder writes through to the store — `PlannerState.dismissAlert`

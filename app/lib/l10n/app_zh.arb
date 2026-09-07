@@ -88,6 +88,7 @@
   "barUnderline": "下划线  (Ctrl+U)",
   "barUndo": "撤销  (Ctrl+Z)",
   "barUpdateTo": "更新到 {version}…",
+  "canvasDeleteSelection": "删除  (Del)",
   "commonBack": "上一步",
   "commonCancel": "取消",
   "commonClose": "关闭",
