@@ -31,14 +31,62 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   to, exactly as in OneNote — including a subpage of a subpage. Measured on a
   real notebook: 212 of 331 pages came over nested, two of them two deep.
 
+### Changed — one band of toolbar fewer, and the pen puts itself away
+
+- **The page's own settings are a tab.** Ruling, sheet or canvas, paper size,
+  the grid and the zoom used to sit on a third strip under the toolbar. They
+  are on a **Page** tab now, next to Home, Insert and Draw, which is where you
+  would have looked for them first.
+- **Undo and redo are always there.** They used to be at the start of the Home
+  row, so they were missing from every other tab. They are above the tabs now,
+  where nothing hides them.
+- **The word count is up top**, beside the other things you glance at rather
+  than at the end of a strip. Click it for characters and reading time, as
+  before.
+- **Outline, tags and links are one button.** They are the same question asked
+  three ways — what is on this page, and what is it attached to — so one
+  **Page overview** button opens the last one you looked at, and you move
+  between them inside the panel.
+- **No more "Done".** Bringing a pen near the screen still switches to
+  handwriting on its own; reaching for the mouse now switches back. A tool you
+  picked yourself stays picked, so drawing with a mouse still works, and Escape
+  puts it down.
+
+### Added — colours you choose, and a way to take one off the page
+
+- **Make your own ink colours.** The pen and highlighter swatches now have a
+  **+** that opens the full colour picker — a palette, a colour wheel and a hex
+  box — and the colours you mix appear beside the ready-made ones next time.
+  They are the same colours you have used for text, so a colour is only ever
+  mixed once.
+- **An eyedropper.** Take the colour of anything on the page — a photograph, a
+  PDF, a diagram, someone else's handwriting — and write in it.
+- **The pen and the highlighter keep separate colours**, instead of sharing
+  one, so picking a highlighter colour no longer changes your pen.
+- **A delete button on whatever is selected.** Lassoed handwriting could be
+  moved, resized and recoloured but only deleted with a key — which a tablet
+  in your hand does not have.
+
 ### Fixed
 
+- **Handwriting on a picture or a PDF is dark again.** Automatic ink is meant
+  to contrast with what it is written ON, and a slide has no height stored
+  until it has been drawn once — so anything written below the top of one
+  counted as being on the page, and went white on a dark theme over a white
+  scan.
+- **You can resize a table column without opening the table.** The handle used
+  to appear only on a table you were already editing, and it was half the
+  width it looked.
+- **The pen's side button reaches the eraser more often.** Windows does not
+  always hand a barrel press over as a pen button — it often turns it into a
+  right-click at the pen's position instead, which Openote was throwing away.
+  While the app can see the button held, the eraser in the Draw tab lights up.
 - **Table columns fit what is in them**, instead of every column taking the
   same room whatever it held — which is why a column of ticks used to be as
   wide as a column of sentences.
-- **You can drag a column to the width you want.** Grab the edge of any column
-  in the top row while the table is selected. A width you set is kept exactly,
-  including wider than the automatic maximum.
+- **You can drag a column to the width you want.** Grab the edge of any
+  column in the top row — no need to open the table first. A width you set is
+  kept exactly, including wider than the automatic maximum.
 
 - **You can see an import happening without hunting for it.** A line above the
   page says what is arriving and how far through it is, so the minutes before
