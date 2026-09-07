@@ -8,6 +8,25 @@ import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import 'wrap_selection.dart';
 
+/// **How wide a column gets before somebody says otherwise.**
+///
+/// The owner: *"ensure it still obeys a max width so we dont end up with crazy
+/// long cells by default, although if i drag the cell out there is no reason it
+/// should stop at that max width, its like the boxes where they have a default
+/// max width they will grow to, but it can be overriden manually."*
+///
+/// So this caps the AUTOMATIC width only. A width somebody dragged, or one
+/// OneNote sent, is used exactly and is not clamped by this at all.
+///
+/// 320 is a little under half the usual page width: wide enough for a sentence
+/// of prose without wrapping every few words, narrow enough that one long cell
+/// cannot push the rest of the table off the page.
+const double kTableColumnCap = 320;
+
+/// The narrowest a column can be dragged. Below this the text is unreadable
+/// and the handle itself becomes hard to grab back.
+const double kTableColumnMin = 36;
+
 /// Table block (MEDIA-3). content: { cells: [[String,…],…] }.
 /// In edit mode each cell is a field with spreadsheet-style navigation:
 /// Tab/Shift+Tab move between cells, arrows move (caret-aware on left/right),
@@ -84,6 +103,96 @@ class _TableBlockViewState extends State<TableBlockView> {
     widget.block.content['cells'] = cells;
     widget.block.updatedAt = nowMs();
     widget.app.markDirty();
+  }
+
+  /// **How wide a column wants to be, measured from what is in it.**
+  ///
+  /// `IntrinsicColumnWidth` is the obvious answer and it does not work here:
+  /// a cell holds a rich-text renderer in read mode and a `TextField` in edit
+  /// mode, neither of which reports a usable intrinsic width, and the table
+  /// fails to lay out at all — `RenderTable was not laid out`. Measuring the
+  /// text is also the cheaper answer, since intrinsics cost extra layout
+  /// passes over every cell.
+  ///
+  /// Approximate on purpose. It measures the raw cell source, so a `**bold**`
+  /// column is reckoned a few pixels wider than it renders and a `$x^2$` one
+  /// wider still. That is the right kind of wrong for a DEFAULT: a column
+  /// slightly too wide is readable, and anybody who minds can drag it.
+  double _autoWidth(List<List<String>> cells, int col, bool dark) {
+    var widest = 0.0;
+    for (var r = 0; r < cells.length; r++) {
+      if (col >= cells[r].length) continue;
+      final text = cells[r][col];
+      if (text.isEmpty) continue;
+      final tp = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(
+            fontSize: 13,
+            // The header row is bold, so it measures wider — using one style
+            // for the whole column would let the header clip.
+            fontWeight: r == 0 ? FontWeight.w600 : FontWeight.w400,
+          ),
+        ),
+        maxLines: 1,
+        textDirection: TextDirection.ltr,
+      )..layout();
+      if (tp.width > widest) widest = tp.width;
+    }
+    // The cell's own horizontal padding, both sides, plus the border.
+    const chrome = 8.0 * 2 + 2;
+    return (widest + chrome).clamp(kTableColumnMin, kTableColumnCap);
+  }
+
+  /// The per-column widths somebody has set, `null` where they have not.
+  ///
+  /// Tolerant of a stored list that no longer matches the table: a column
+  /// added since is simply unset, which is right — nobody chose a width for a
+  /// column that did not exist.
+  List<double?> _storedWidths(int cols) {
+    final raw = widget.block.content['colWidths'];
+    final out = List<double?>.filled(cols, null);
+    if (raw is! List) return out;
+    for (var c = 0; c < cols && c < raw.length; c++) {
+      final v = raw[c];
+      if (v is num && v > 1) out[c] = v.toDouble();
+    }
+    return out;
+  }
+
+  /// Remember one column's width.
+  ///
+  /// Written as a full list rather than a sparse map because that is the shape
+  /// the `.one` importer already writes and every exporter already reads;
+  /// inventing a second representation for the same fact would mean four
+  /// places to keep in step. Columns nobody has sized are stored as 0, which
+  /// [_storedWidths] reads back as "unset".
+  void _setColumnWidth(int col, double width, int cols) {
+    final w = _storedWidths(cols);
+    w[col] = width.clamp(kTableColumnMin, 4000).toDouble();
+    widget.app.pushUndo();
+    widget.block.content['colWidths'] = [for (final v in w) v ?? 0];
+    widget.block.updatedAt = nowMs();
+    widget.app.markDirty();
+    setState(() {});
+  }
+
+  /// The rendered width of a cell, for the moment a drag begins on a column
+  /// that has never been sized.
+  final Map<int, GlobalKey> _headerKeys = {};
+
+  /// The width being dragged towards, kept across pointer samples.
+  ///
+  /// Accumulated from the drag's own deltas rather than re-read from the block
+  /// each frame: a column whose width is clamped at the minimum would
+  /// otherwise stop tracking the pointer, and dragging back out would do
+  /// nothing until the mouse had returned to the edge.
+  double? _dragFrom;
+
+  double? _measuredWidth(int col) {
+    final box =
+        _headerKeys[col]?.currentContext?.findRenderObject() as RenderBox?;
+    return box?.hasSize == true ? box!.size.width : null;
   }
 
   void _disposeGrid() {
@@ -198,6 +307,10 @@ class _TableBlockViewState extends State<TableBlockView> {
     final rows = cells.length;
     final cols = cells.isEmpty ? 0 : cells[0].length;
     final border = dark ? OnoteColors.night300 : OnoteColors.paper300;
+    // Handles appear when the table is being worked on — edited, or selected
+    // on the canvas — and never while it is merely being read.
+    final interactive =
+        editing || widget.app.selectedIds.contains(widget.block.id);
     final headerFill = dark ? OnoteColors.night100 : OnoteColors.paper100;
 
     if (editing) {
@@ -282,24 +395,84 @@ class _TableBlockViewState extends State<TableBlockView> {
       );
     }
 
-    // Imported tables carry OneNote's own per-column widths; honour them
-    // exactly. A flex share each (the default) made every column equal, so an
-    // imported table was the wrong shape and ran into its neighbours.
-    final stored = widget.block.content['colWidths'];
+    // **What decides a column's width**, in the order the rules apply.
+    //
+    // 1. A width somebody SET — dragged here, or carried in from OneNote's own
+    //    `col_w` — is used exactly, with no cap. If you drag a column out to
+    //    six hundred pixels you meant it, and an app that springs it back is
+    //    arguing with you.
+    // 2. Otherwise the column is as wide as its contents need, up to
+    //    [kTableColumnCap]. That is the behaviour asked for: fit the content,
+    //    but do not let one long sentence turn a table into a ribbon.
+    //
+    // Every column used to get an equal flex share, which is why they "all
+    // default to larger when they should be smaller" — a two-character column
+    // took the same room as a paragraph.
+    final stored = _storedWidths(cols);
     final colWidths = <int, TableColumnWidth>{
-      if (stored is List && stored.length == cols)
-        for (var c = 0; c < cols; c++)
-          if ((stored[c] as num?) != null && (stored[c] as num) > 1)
-            c: FixedColumnWidth((stored[c] as num).toDouble()),
+      for (var c = 0; c < cols; c++)
+        c: FixedColumnWidth(
+            stored[c] ?? _autoWidth(cells, c, dark)),
     };
+    // **The handle sits on the column's right edge, on the top row.**
+    //
+    // Reported: *"there isnt any way for me to manually resize the cells, at
+    // least by dragging which is how it should be done"*. Quite so — there was
+    // no way at all, which is also part of why the widths looked wrong: when
+    // the automatic answer is off there was nothing to do about it.
+    //
+    // On the top row only, because a table has one width per column and
+    // offering the same handle on every row would suggest otherwise. Six
+    // pixels wide with a resize cursor, drawn only faintly and only when the
+    // block is in play, so a table being read is a table and not a control
+    // panel.
+    Widget withHandle(int c, Widget cell) {
+      if (!interactive || c >= cols) return cell;
+      return Stack(clipBehavior: Clip.none, children: [
+        cell,
+        Positioned(
+          top: 0,
+          bottom: 0,
+          right: -3,
+          width: 6,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.resizeColumn,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragStart: (_) {
+                _dragFrom = _storedWidths(cols)[c] ?? _measuredWidth(c);
+              },
+              onHorizontalDragUpdate: (d) {
+                final from = _dragFrom;
+                if (from == null) return;
+                _dragFrom = from + d.delta.dx;
+                // No cap here on purpose: the cap is for the width nobody
+                // chose. This one is chosen.
+                _setColumnWidth(c, _dragFrom!, cols);
+              },
+              onHorizontalDragEnd: (_) => _dragFrom = null,
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ),
+      ]);
+    }
+
     final table = Table(
       border: TableBorder.all(color: border, width: 1),
-      columnWidths: colWidths.isEmpty ? null : colWidths,
+      columnWidths: colWidths,
       defaultColumnWidth: const FlexColumnWidth(),
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
       children: [
         for (var r = 0; r < rows; r++)
-          TableRow(children: [for (var c = 0; c < cols; c++) cellWidget(r, c)]),
+          TableRow(children: [
+            for (var c = 0; c < cols; c++)
+              r == 0
+                  ? KeyedSubtree(
+                      key: _headerKeys.putIfAbsent(c, GlobalKey.new),
+                      child: withHandle(c, cellWidget(r, c)))
+                  : cellWidget(r, c)
+          ]),
       ],
     );
 

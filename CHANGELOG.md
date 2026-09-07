@@ -33,6 +33,13 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- **Table columns fit what is in them**, instead of every column taking the
+  same room whatever it held — which is why a column of ticks used to be as
+  wide as a column of sentences.
+- **You can drag a column to the width you want.** Grab the edge of any column
+  in the top row while the table is selected. A width you set is kept exactly,
+  including wider than the automatic maximum.
+
 - **You can see an import happening without hunting for it.** A line above the
   page says what is arriving and how far through it is, so the minutes before
   the first pages land no longer look like nothing happening.
