@@ -71,8 +71,8 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
   /// Tapping a tab mid-equation is the way out, for the rare case of wanting
   /// Home's formatting while an equation is open.
   Widget _face(BuildContext context) {
-    final equation =
-        objectFaceOf(app) == ObjectFace.equation && !_tabbedAwayFromEquation;
+    final equation = objectFaceOf(app) == ObjectFace.equation &&
+        !identical(_tabbedAwayFrom, app.activeMath);
     final m = app.activeMath;
     if (equation && m != null) {
       return KeyedSubtree(
@@ -133,10 +133,15 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
   static const _tabCount = 4;
   static const _tabPage = 3;
 
-  /// True once somebody has tapped a tab while an equation was open — the one
-  /// way to look at Home's formatting mid-equation. Cleared when the equation
-  /// closes, so the palette is there again the next time one is opened.
-  bool _tabbedAwayFromEquation = false;
+  /// **The equation somebody tabbed away from**, if any — the one way to look
+  /// at Home's formatting without closing the equation first.
+  ///
+  /// The open editor's identity rather than a flag, because a flag is never
+  /// cleared by the equation CLOSING: nothing runs at that moment that could
+  /// clear it, so the SECOND equation of a sitting silently got no palette.
+  /// Comparing against the editor that is open answers "is this the one they
+  /// tabbed away from" with nothing to remember to reset.
+  Object? _tabbedAwayFrom;
 
   AppState get app => widget.app;
 
@@ -191,7 +196,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         // Not an `app.` read, so the guard test cannot see it: the badge in
         // the tab row appears only while an equation is open.
         objectFaceOf(app),
-        _tabbedAwayFromEquation,
+        _tabbedAwayFrom,
         // Everything the two borrowed faces render. They are stateless
         // widgets built from this one, so a change none of these names would
         // paint on a row that did not rebuild — which is exactly the bug the
@@ -836,9 +841,10 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       // which is the whole of the answer to "don't force any navigation".
       onTap: () => setState(() {
         _tab = i;
-        // Chosen deliberately, so it beats the equation's loan of the row
-        // until the equation is closed.
-        _tabbedAwayFromEquation = objectFaceOf(app) == ObjectFace.equation;
+        // Chosen deliberately, so it beats the equation's loan of the row —
+        // for THIS equation, and no other.
+        _tabbedAwayFrom =
+            objectFaceOf(app) == ObjectFace.equation ? app.activeMath : null;
       }),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12),

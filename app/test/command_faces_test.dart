@@ -286,6 +286,57 @@ void main() {
     });
   });
 
+  group('tabbing away from an equation', () {
+    Future<void> chrome(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(2600, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        home: Scaffold(
+          body: ListenableBuilder(
+            listenable: app,
+            builder: (_, __) => CommandBar(app: app),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('shows that tab, and gives the palette back to the next one',
+        (tester) async {
+      // Found reviewing the branch, not reported. Tapping a tab mid-equation
+      // is the way to reach Home's formatting without closing the equation,
+      // and it was remembered in a plain flag — which nothing ever cleared,
+      // because closing an equation does not run any code that could. So the
+      // SECOND equation opened in a sitting silently got no palette at all.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await chrome(tester);
+
+      app.insertEquation(at: const Offset(10, 10));
+      app.setActiveMath(standIn());
+      await tester.pumpAndSettle();
+      expect(find.byType(MathBar), findsOneWidget);
+
+      await tester.tap(find.text('Home'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MathBar), findsNothing,
+          reason: 'the way out, for the rare case of wanting Home mid-equation');
+
+      app.clearActiveMath('test');
+      app.editingBlockId = null;
+      await tester.pumpAndSettle();
+
+      app.insertEquation(at: const Offset(10, 200));
+      app.setActiveMath(standIn());
+      await tester.pumpAndSettle();
+      expect(find.byType(MathBar), findsOneWidget,
+          reason: 'a new equation is not the one they tabbed away from');
+      app.cancelPendingSave();
+    });
+  });
+
   group('what is above the tabs', () {
     testWidgets('undo and redo are there whatever tab you are on',
         (tester) async {

@@ -2,7 +2,7 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
-## [Unreleased]
+## [1.0.0] — 2026-09-07
 
 ### Added — bring your notes over from OneNote without exporting anything
 
@@ -88,10 +88,12 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **The box grows to hold the table.** A column dragged wider than the box it
   is in used to spill out of it. The box only ever grows, so one you widened
   by hand is never taken back.
-- **The pen's side button reaches the eraser more often.** Windows does not
-  always hand a barrel press over as a pen button — it often turns it into a
-  right-click at the pen's position instead, which Openote was throwing away.
-  While the app can see the button held, the eraser in the Draw tab lights up.
+- **More of the ways a pen's side button can arrive now count as "erase"** —
+  including a barrel press that Windows has turned into a right-click at the
+  pen's own position, which Openote used to throw away. On some pens the
+  button still does not reach Openote at all; see Known limitations. While the
+  app can see the button held, the eraser on the Draw tab lights up, which is
+  how to tell which of the two is happening.
 - **Table columns fit what is in them**, instead of every column taking the
   same room whatever it held — which is why a column of ticks used to be as
   wide as a column of sentences.
@@ -227,6 +229,24 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   appear, and the card sat on "Signing in to OneNote…" for all of it. It now
   tells you how many sections and pages it found, and **Stop works during it**
   instead of waiting until the first section had already been brought over.
+
+### Known limitations
+
+- **A pen's side button may not reach Openote on Windows.** The eraser end of
+  a pen works, and so does the eraser tool; a side button mapped to "erase" in
+  a pen's own driver is reported to Windows in a way that does not always
+  arrive. Hold the button near the screen: if the eraser on the Draw tab does
+  not light up, Openote is not being told about it, and the remaining work is
+  in the Windows part of the app rather than in Openote itself.
+- **macOS and Linux have never been opened by a human.** Both build in CI and
+  both are shipped, and no one has yet sat down in front of either.
+- **Every autosave of a paragraph writes the whole paragraph to the sync log.**
+  Correct, and larger than it needs to be — a per-edit diff is designed and
+  measured (`docs/planning/v0.24-road-to-1.0.md`) and not yet built. It costs
+  disk in a shared notebook's history; it costs nothing in correctness.
+- **Spell check is English only.**
+- **OneNote tags are not imported**, and the `.onepkg` file route cannot
+  convert links between pages — the sign-in route can.
 
 ## [0.9.0] — 2026-09-03
 

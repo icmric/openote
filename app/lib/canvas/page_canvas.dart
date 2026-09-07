@@ -31,6 +31,16 @@ import 'page_title_view.dart';
 ///   · middle-drag                          → pan · Ctrl+scroll → zoom
 ///   · trackpad pan/pinch                   → pan/zoom · two-finger touch → pinch
 class PageCanvas extends StatefulWidget {
+  /// **How long after its last signal a pen still counts as in range.**
+  ///
+  /// A palm rests *while* writing, so the window only has to outlive the gap
+  /// between strokes, not a pause for thought. It is also what stops the
+  /// toolbar flickering as a hand moves between the pen and the mouse.
+  ///
+  /// Settable so a test can check what happens once a pen has gone without
+  /// spending two real seconds waiting for it.
+  static Duration stylusGrace = const Duration(seconds: 2);
+
   const PageCanvas({super.key, required this.state});
   final AppState state;
 
@@ -98,13 +108,10 @@ class _PageCanvasState extends State<PageCanvas> {
   /// True while a file drag hovers the page, for the drop affordance.
   bool _dragOver = false;
 
-  /// A palm rests *while* writing, so the window only has to outlive the gap
-  /// between strokes, not a pause for thought.
-  static const _stylusGrace = Duration(seconds: 2);
-
   bool get _stylusActive {
     final t = _lastStylus;
-    return t != null && DateTime.now().difference(t) < _stylusGrace;
+    return t != null &&
+        DateTime.now().difference(t) < PageCanvas.stylusGrace;
   }
 
   /// The button is only believed while the pen is in range. Out of range there
@@ -150,6 +157,19 @@ class _PageCanvasState extends State<PageCanvas> {
   void _stylusProximity(PointerHoverEvent e) {
     final isPen = e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus;
+    // **A pen carried off with its button still down.**
+    //
+    // The button is only ever reported while the pen is in range, so once the
+    // pen has been put down there is no event left to say it was let go — and
+    // the toolbar went on showing an eraser nobody was holding, for ever. The
+    // cursor recovered on its own because it asks whether a pen is in range
+    // every time it is read; the toolbar is TOLD, once, when the answer
+    // changes, so it needed telling. Cleared by the first pointer movement of
+    // any kind after the pen has gone.
+    if (_penButtonHeld && !isPen && !_stylusActive) {
+      setState(() => _penButtonHeld = false);
+      app.setPenErasing(false);
+    }
     // A hover from anything else matters for two reasons: Windows promotes a
     // barrel press to a mouse right-button, so the button can arrive as a
     // `mouse` event at the pen's own position (see [penGestureErases]); and a
