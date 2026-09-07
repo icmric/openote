@@ -307,10 +307,6 @@ class _TableBlockViewState extends State<TableBlockView> {
     final rows = cells.length;
     final cols = cells.isEmpty ? 0 : cells[0].length;
     final border = dark ? OnoteColors.night300 : OnoteColors.paper300;
-    // Handles appear when the table is being worked on — edited, or selected
-    // on the canvas — and never while it is merely being read.
-    final interactive =
-        editing || widget.app.selectedIds.contains(widget.block.id);
     final headerFill = dark ? OnoteColors.night100 : OnoteColors.paper100;
 
     if (editing) {
@@ -422,19 +418,31 @@ class _TableBlockViewState extends State<TableBlockView> {
     // the automatic answer is off there was nothing to do about it.
     //
     // On the top row only, because a table has one width per column and
-    // offering the same handle on every row would suggest otherwise. Six
-    // pixels wide with a resize cursor, drawn only faintly and only when the
-    // block is in play, so a table being read is a table and not a control
-    // panel.
+    // offering the same handle on every row would suggest otherwise.
+    //
+    // **Always, not only while the table is open.** The first version showed
+    // handles only on a table being edited or selected, so that a table being
+    // read was a table and not a control panel — and the owner reported it
+    // straight back: *"it only works while editing the table, id love to be
+    // able to resize cells without having to go into edit mode."* Right, and
+    // the reasoning was wrong on its own terms: the handle has no appearance
+    // to keep off the page. It is six invisible pixels and a cursor, and the
+    // gate cost the one gesture everybody already knows from every
+    // spreadsheet they have ever used.
     Widget withHandle(int c, Widget cell) {
-      if (!interactive || c >= cols) return cell;
+      if (c >= cols) return cell;
       return Stack(clipBehavior: Clip.none, children: [
         cell,
+        // **Wholly inside the cell.** Centred on the border (`right: -3`) it
+        // looked symmetrical and behaved as three pixels, not six: a
+        // `RenderBox` rejects a hit outside its own bounds before it ever
+        // reaches its children, so the outer half of the strip was dead and
+        // the grab zone was whatever was left.
         Positioned(
           top: 0,
           bottom: 0,
-          right: -3,
-          width: 6,
+          right: 0,
+          width: 8,
           child: MouseRegion(
             cursor: SystemMouseCursors.resizeColumn,
             child: GestureDetector(

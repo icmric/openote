@@ -142,6 +142,54 @@ void main() {
     }
   });
 
+  testWidgets('the drag handle is there without going into the table first',
+      (tester) async {
+    // The owner, after the first version shipped: *"table resizing works
+    // which is great, however it only works while editing the table, id love
+    // to be able to resize cells without having to go into edit mode."*
+    //
+    // Quite right, and the original gate was too clever: handles appeared
+    // only while the block was edited or selected, on the theory that a table
+    // being read should not look like a control panel. But the handle has no
+    // appearance — it is six invisible pixels and a cursor — so there was
+    // nothing to keep off the page, and the gate cost the one gesture
+    // everybody already knows from every spreadsheet they have ever used.
+    final b = table([
+      ['a', 'b'],
+      ['c', 'd'],
+    ]);
+    await render(tester, b);
+
+    final handles = find.byWidgetPredicate((w) =>
+        w is MouseRegion && w.cursor == SystemMouseCursors.resizeColumn);
+    expect(handles, findsNWidgets(2),
+        reason: 'one per column, on a table nobody has selected or opened');
+  });
+
+  testWidgets('dragging one sets that column and leaves the rest alone',
+      (tester) async {
+    final b = table([
+      ['a', 'b'],
+      ['c', 'd'],
+    ]);
+    await render(tester, b);
+
+    final handles = find.byWidgetPredicate((w) =>
+        w is MouseRegion && w.cursor == SystemMouseCursors.resizeColumn);
+    await tester.drag(handles.first, const Offset(120, 0));
+    await tester.pump();
+
+    final stored = (b.content['colWidths'] as List).cast<num>();
+    expect(stored[0], greaterThan(kTableColumnMin + 100),
+        reason: 'the column follows the pointer');
+    expect(stored[1], 0, reason: 'a column nobody dragged stays unset');
+
+    // Setting a width arms the debounced save; drain it or the test ends
+    // holding a timer and fails on that instead.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(milliseconds: 900));
+  });
+
   testWidgets('a zero or nonsense width reads as unset, not as a zero column',
       (tester) async {
     // Unset columns are stored as 0, because the list has to stay a full list

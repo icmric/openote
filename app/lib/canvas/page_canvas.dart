@@ -601,12 +601,23 @@ class _PageCanvasState extends State<PageCanvas> {
   /// stays legible on a dark page, which was the reported failure.
   ///
   /// A PDF is a `file` block carrying the mime type, not a type of its own.
+  ///
+  /// Sized through [aspectHeight] rather than [_blockRect], because a slide
+  /// carries no height of its own and the measured one arrives a frame late —
+  /// see that function for what that cost.
   List<Rect> get _documentRects => [
         for (final b in app.blocks)
           if (b.type == BlockType.image ||
               (b.type == BlockType.file &&
                   b.content['mime'] == 'application/pdf'))
-            _blockRect(b),
+            Rect.fromLTWH(
+                b.x,
+                b.y,
+                b.w,
+                b.h ??
+                    aspectHeight(b) ??
+                    app.renderSizes[b.id]?.height ??
+                    60),
       ];
 
   String? _hitInk(Offset pagePt) {
