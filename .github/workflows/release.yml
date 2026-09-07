@@ -800,12 +800,16 @@ jobs:
               a pen works, and so does the eraser tool. Hold the button near the screen:
               if the eraser on the Draw tab does not light up, Openote is not being told
               about the button at all.
-            - **A notebook that 1.0 has typed into is read-only on Openote 0.9 and
-              earlier.** Those versions will open it and show you everything, but
-              will not let you add to it — 1.0 records an edit as the characters
-              that changed rather than the whole paragraph, and a version that
-              cannot read that must not write on top of it. Update the other
-              devices that share a notebook and it never comes up.
+            - **Notebooks you already have open and edit normally.** There is nothing
+              to convert, nothing to import again, and no history is lost — 1.0
+              reads everything every earlier version wrote.
+            - **It is the other direction that has a catch.** Once 1.0 has typed
+              into a notebook, Openote 0.9 and earlier will open it and show you
+              everything but will not let you add to it: 1.0 records an edit as
+              the characters that changed rather than the whole paragraph, and a
+              version that cannot read that must not write on top of it. It says
+              so plainly and it is undone by updating that device. If only one
+              machine of yours runs Openote, this never comes up at all.
             - **macOS and Linux are the least-tested platforms by far.**
             - Openote is still in active development. Updates are worth taking, but a
               major update may occasionally break a feature.

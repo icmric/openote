@@ -41,6 +41,9 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   moved now. Measured on forty saves of a one-thousand-character paragraph:
   **12 KB instead of 60 KB**, and unlike before, the cost no longer grows as
   the paragraph does.
+- **Nothing you already have needs converting.** Every notebook written by
+  every earlier version opens in 1.0 and stays fully editable, with its whole
+  history — the compatibility gate only ever points forwards.
 - **What this costs, plainly:** a notebook that 1.0 has typed into is
   **read-only on Openote 0.9 and earlier**. They will open it and show you
   everything; they will not let you add to it, because they cannot read part

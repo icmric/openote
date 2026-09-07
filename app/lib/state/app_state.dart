@@ -8970,8 +8970,8 @@ class AppState extends ChangeNotifier
           'Updating Openote to the latest version lets you edit it again.',
       details: 'the log holds ${ahead.length} operation(s) this build cannot '
           'apply\n'
-          'envelope version(s): ${versions.join(', ')} — this build writes and '
-          'understands $opFormatVersion\n'
+          'envelope version(s): ${versions.join(', ')} — this build writes '
+          '$opWriteVersion and understands up to $opFormatVersion\n'
           'payload encryption: ${encs.isEmpty ? 'none' : encs.join(', ')}',
     );
     if (!_disposed) notifyListeners();
