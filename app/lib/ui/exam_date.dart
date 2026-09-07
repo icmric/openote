@@ -221,6 +221,7 @@ class _Field extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = context.surfaces;
     return InkWell(
+      mouseCursor: WidgetStateMouseCursor.clickable,
       borderRadius: OnoteRadius.mdAll,
       onTap: onTap,
       child: Container(

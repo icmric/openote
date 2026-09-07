@@ -105,6 +105,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
   @override
   Widget build(BuildContext context) {
     Widget swatch(Color c, {double size = 24}) => InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
           onTap: () => _setColor(c),
           borderRadius: BorderRadius.circular(4),
           child: Container(

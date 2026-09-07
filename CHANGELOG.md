@@ -33,6 +33,14 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- **The pointer changes over everything you can click**, not just most of it.
+  Sidebar rows, toolbar swatches, the notebook picker and the OneNote screens
+  were all still showing the plain arrow.
+- **Settings rows that open something are now the button.** The title and the
+  line under it are what you press, instead of a small "Open…" beside them.
+- **The language list is in a sensible order**, sorted by the English name of
+  each language while still showing each in its own.
+
 - **A hiccup at Microsoft's end no longer ends the whole import.** If one of
   their servers stumbled — even for a moment, even on one section out of
   twenty-five — the import stopped there and then with nothing brought over.

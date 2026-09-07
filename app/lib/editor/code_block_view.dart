@@ -186,6 +186,7 @@ class _CodeBlockViewState extends State<CodeBlockView> {
             child: Row(
               children: [
                 InkWell(
+                  mouseCursor: WidgetStateMouseCursor.clickable,
                   onTap: editing ? _pickLanguage : null,
                   borderRadius: BorderRadius.circular(4),
                   child: Row(

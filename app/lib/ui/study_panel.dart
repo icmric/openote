@@ -486,6 +486,7 @@ class _StudyPanelState extends State<StudyPanel> {
         color: tint.withValues(alpha: dark ? .14 : .10),
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
           onTap: onTap,
           borderRadius: BorderRadius.circular(8),
           child: Padding(

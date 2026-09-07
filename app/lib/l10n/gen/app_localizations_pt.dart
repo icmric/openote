@@ -1314,7 +1314,7 @@ class LPt extends L {
 
   @override
   String get settingsLanguageHelp =>
-      'O Openote é traduzido por quem o usa. Se o seu falta ou está errado, é um arquivo só — o link explica como.';
+      'O Openote é traduzido por quem o usa. Se o seu faltar ou estiver errado, é um único ficheiro.';
 
   @override
   String get settingsPenProximity => 'Caneta perto da página muda para traço';

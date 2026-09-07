@@ -673,6 +673,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       Tooltip(
         message: l.barTextColour,
         child: InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
           borderRadius: BorderRadius.circular(6),
           onTap: canFormat ? () => app.applyTextColor(app.lastColor) : null,
           child: Padding(
@@ -690,6 +691,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         ),
       ),
       InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         borderRadius: BorderRadius.circular(4),
         onTap: canFormat
             ? () async {
@@ -746,6 +748,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
   Widget _tabButton(ColorScheme scheme, int i, String label) {
     final on = _tab == i;
     return InkWell(
+      mouseCursor: WidgetStateMouseCursor.clickable,
       borderRadius: BorderRadius.circular(6),
       // **The one thing that writes `_tab`.** Nothing else in the app may,
       // which is the whole of the answer to "don't force any navigation".
@@ -884,6 +887,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2),
             child: InkWell(
+              mouseCursor: WidgetStateMouseCursor.clickable,
               borderRadius: BorderRadius.circular(99),
               onTap: () {
                 app.penColor = i;
@@ -1071,6 +1075,7 @@ class _FontSizeField extends StatelessWidget {
           : l.barTextSizeDisabled,
       child: MenuAnchor(
         builder: (context, controller, _) => InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
           borderRadius: BorderRadius.circular(6),
           onTap: enabled
               ? () => controller.isOpen ? controller.close() : controller.open()
@@ -1143,6 +1148,7 @@ class _TagButton extends StatelessWidget {
             ? l.barTagLine
             : l.barTagged(active.map((k) => k.label(l)).join(', ')),
         child: InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
           borderRadius: BorderRadius.circular(6),
           onTap: enabled
               ? () => controller.isOpen ? controller.close() : controller.open()
@@ -1296,6 +1302,7 @@ class _MakeCardButton extends StatelessWidget {
                 ? l.barMakeCardFromLine
                 : l.barNewCard,
             child: InkWell(
+              mouseCursor: WidgetStateMouseCursor.clickable,
               borderRadius: BorderRadius.circular(6),
               onTap: () {
                 if (onLine) {
@@ -1311,6 +1318,7 @@ class _MakeCardButton extends StatelessWidget {
             ),
           ),
           InkWell(
+            mouseCursor: WidgetStateMouseCursor.clickable,
             borderRadius: BorderRadius.circular(6),
             onTap: () =>
                 controller.isOpen ? controller.close() : controller.open(),
@@ -1623,6 +1631,7 @@ class _InsertButton extends StatelessWidget {
           children: [
             _main(context, controller),
             InkWell(
+              mouseCursor: WidgetStateMouseCursor.clickable,
               borderRadius: BorderRadius.circular(6),
               onTap: () =>
                   controller.isOpen ? controller.close() : controller.open(),

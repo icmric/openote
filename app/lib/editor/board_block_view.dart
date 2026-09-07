@@ -329,6 +329,7 @@ class _BoardBlockViewState extends State<BoardBlockView> {
               child: Tooltip(
                 message: 'Add a column',
                 child: InkWell(
+                  mouseCursor: WidgetStateMouseCursor.clickable,
                   borderRadius: BorderRadius.circular(6),
                   onTap: () => _mutate((cols) =>
                       cols.add({'title': 'New column', 'cards': <String>[]})),
@@ -366,6 +367,7 @@ class _BoardBlockViewState extends State<BoardBlockView> {
               child: _editingTitle == i
                   ? _inlineEditor()
                   : InkWell(
+                      mouseCursor: WidgetStateMouseCursor.clickable,
                       onTap: () {
                         _commitEditor();
                         setState(() {
@@ -392,6 +394,7 @@ class _BoardBlockViewState extends State<BoardBlockView> {
                 // per card.
                 message: 'Remove this empty column',
                 child: InkWell(
+                  mouseCursor: WidgetStateMouseCursor.clickable,
                   onTap: () => _mutate((cols) => cols.removeAt(i)),
                   child: const Padding(
                     padding: EdgeInsets.all(2),
@@ -427,6 +430,7 @@ class _BoardBlockViewState extends State<BoardBlockView> {
                               borderRadius: BorderRadius.circular(6))
                           : const BoxDecoration(),
                       child: InkWell(
+                        mouseCursor: WidgetStateMouseCursor.clickable,
                       borderRadius: BorderRadius.circular(6),
                       onTap: () {
                         _commitEditor();
@@ -490,6 +494,7 @@ class _BoardBlockViewState extends State<BoardBlockView> {
       ),
       elevation: 1,
       child: InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         borderRadius: BorderRadius.circular(6),
         onTap: () {
           _commitEditor();

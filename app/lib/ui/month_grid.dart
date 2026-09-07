@@ -125,6 +125,7 @@ class _MonthGridState extends State<MonthGrid> {
     final kinds = marks[_key(day)] ?? const <DatedKind>{};
 
     return InkWell(
+      mouseCursor: WidgetStateMouseCursor.clickable,
       onTap: () => widget.onPick(day),
       borderRadius: BorderRadius.circular(6),
       child: Container(

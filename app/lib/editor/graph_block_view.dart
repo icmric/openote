@@ -468,6 +468,7 @@ class _ResetButton extends StatelessWidget {
         shape: const CircleBorder(),
         elevation: 1,
         child: InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
           customBorder: const CircleBorder(),
           onTap: onPressed,
           child: Padding(

@@ -344,7 +344,7 @@
   "settingsLanguage": "Idioma",
   "settingsLanguageAuto": "El mismo que mi ordenador",
   "settingsLanguageContribute": "Cómo añadir o corregir un idioma",
-  "settingsLanguageHelp": "Openote lo traduce quien lo usa. Si falta el tuyo o algo está mal, es un solo archivo — el enlace explica cómo.",
+  "settingsLanguageHelp": "Openote lo traducen las personas que lo usan. Si falta el tuyo o está mal, es un solo archivo.",
   "settingsPenProximity": "Acercar el lápiz a la página cambia a tinta",
   "settingsShortcuts": "Atajos de teclado",
   "settingsShortcutsHint": "Todo tiene una tecla — la lista completa.  (Ctrl+/)",

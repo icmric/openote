@@ -393,6 +393,7 @@ class _BlockViewState extends State<BlockView> {
       Tooltip(
         message: tip,
         child: InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
           onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 3),

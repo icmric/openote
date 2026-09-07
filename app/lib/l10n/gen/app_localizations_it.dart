@@ -1320,7 +1320,7 @@ class LIt extends L {
 
   @override
   String get settingsLanguageHelp =>
-      'Openote è tradotto da chi lo usa. Se la tua manca o è sbagliata, è un file solo — il collegamento spiega come.';
+      'Openote è tradotto dalle persone che lo usano. Se la tua manca o è sbagliata, è un solo file.';
 
   @override
   String get settingsPenProximity =>

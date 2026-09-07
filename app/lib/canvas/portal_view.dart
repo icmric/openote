@@ -537,6 +537,7 @@ class _Badge extends StatelessWidget {
     return Tooltip(
       message: live ? 'Open "$title"' : 'This page is in the recycle bin',
       child: InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         onTap: live ? onOpen : null,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),

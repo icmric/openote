@@ -311,6 +311,7 @@ class _Tile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         borderRadius: BorderRadius.circular(OnoteRadius.sm),
         onTap: () => Navigator.of(context).pop(item.id),
         child: SizedBox(

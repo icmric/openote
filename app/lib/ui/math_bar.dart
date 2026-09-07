@@ -687,6 +687,7 @@ class _DoorButton extends StatelessWidget {
       child: Tooltip(
         message: tooltip,
         child: InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
           borderRadius: BorderRadius.circular(5),
           onTap: onTap,
           child: Container(
@@ -762,6 +763,7 @@ class _GraphButton extends StatelessWidget {
           child: SizedBox(
             height: OnoteSize.button,
             child: InkWell(
+              mouseCursor: WidgetStateMouseCursor.clickable,
               borderRadius: BorderRadius.circular(5),
               onTap: onDrawGraph,
               child: DecoratedBox(
@@ -815,6 +817,7 @@ class _AngleSwitch extends StatelessWidget {
         child: SizedBox(
           height: OnoteSize.button,
           child: InkWell(
+            mouseCursor: WidgetStateMouseCursor.clickable,
             borderRadius: BorderRadius.circular(5),
             onTap: onToggle,
             child: DecoratedBox(
@@ -934,6 +937,7 @@ class MathChip extends StatelessWidget {
           width: size,
           height: OnoteSize.button,
           child: InkWell(
+            mouseCursor: WidgetStateMouseCursor.clickable,
             borderRadius: BorderRadius.circular(5),
             onTap: () => onTap(item),
             child: DecoratedBox(

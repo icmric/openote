@@ -1320,7 +1320,7 @@ class LDe extends L {
 
   @override
   String get settingsLanguageHelp =>
-      'Openote wird von denen übersetzt, die es benutzen. Fehlt deine oder stimmt etwas nicht, ist es eine einzige Datei — der Link erklärt es.';
+      'Openote wird von den Menschen übersetzt, die es benutzen. Fehlt Ihre Sprache oder ist sie falsch, ist es eine einzige Datei.';
 
   @override
   String get settingsPenProximity => 'Stift in der Nähe schaltet auf Tinte um';

@@ -79,6 +79,41 @@ const Map<String, String> kLanguageNames = {
   'zh': '中文',
 };
 
+/// The English name of each language, used ONLY for ordering the picker.
+///
+/// The list is shown in each language's own name — somebody looking for their
+/// language recognises "Deutsch", not "German" — but a list sorted by those
+/// names is sorted by an alphabet that changes per row, which reads as no
+/// order at all. Sorting by a single language's names gives one consistent
+/// sequence, and English is the one this project is written in.
+const Map<String, String> kLanguageNamesInEnglish = {
+  'en': 'English',
+  'de': 'German',
+  'es': 'Spanish',
+  'fr': 'French',
+  'it': 'Italian',
+  'pt': 'Portuguese',
+  'zh': 'Chinese',
+};
+
+/// [kOnoteLocales], in the order a picker should show them.
+///
+/// `supportedLocales` comes out in whatever order the `.arb` files happened to
+/// generate in, which is alphabetical by language TAG — so the sequence a
+/// reader sees is decided by two-letter codes they never see.
+List<Locale> get kOnoteLocalesInOrder {
+  final out = [...kOnoteLocales];
+  out.sort((a, b) => englishLanguageNameOf(a)
+      .toLowerCase()
+      .compareTo(englishLanguageNameOf(b).toLowerCase()));
+  return out;
+}
+
+String englishLanguageNameOf(Locale locale) =>
+    kLanguageNamesInEnglish[locale.toLanguageTag()] ??
+    kLanguageNamesInEnglish[locale.languageCode] ??
+    locale.toLanguageTag();
+
 /// The name to show for [locale] in the language picker.
 String languageNameOf(Locale locale) =>
     kLanguageNames[locale.toLanguageTag()] ??

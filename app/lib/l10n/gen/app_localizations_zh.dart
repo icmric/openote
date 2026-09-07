@@ -1262,8 +1262,7 @@ class LZh extends L {
   String get settingsLanguageContribute => '如何添加或修正一种语言';
 
   @override
-  String get settingsLanguageHelp =>
-      'Openote 由使用者自己翻译。如果缺少你的语言或哪里译得不好，只需要改一个文件 — 链接里有说明。';
+  String get settingsLanguageHelp => 'Openote 由使用它的人翻译。如果缺少您的语言或翻译有误，只需一个文件即可。';
 
   @override
   String get settingsPenProximity => '触控笔靠近页面时切换到手写';

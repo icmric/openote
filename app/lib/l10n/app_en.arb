@@ -1768,7 +1768,7 @@
   "@settingsLanguageContribute": {
     "description": "Link opening the contributing guide in a browser."
   },
-  "settingsLanguageHelp": "Openote is translated by the people who use it. If yours is missing or wrong, it is one file — the link says how.",
+  "settingsLanguageHelp": "Openote is translated by the people who use it. If yours is missing or wrong, it is one file.",
   "@settingsLanguageHelp": {
     "description": "Supporting line under the language picker, inviting corrections. 'one file' means one .arb translation file."
   },

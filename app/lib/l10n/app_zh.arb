@@ -344,7 +344,7 @@
   "settingsLanguage": "语言",
   "settingsLanguageAuto": "与电脑一致",
   "settingsLanguageContribute": "如何添加或修正一种语言",
-  "settingsLanguageHelp": "Openote 由使用者自己翻译。如果缺少你的语言或哪里译得不好，只需要改一个文件 — 链接里有说明。",
+  "settingsLanguageHelp": "Openote 由使用它的人翻译。如果缺少您的语言或翻译有误，只需一个文件即可。",
   "settingsPenProximity": "触控笔靠近页面时切换到手写",
   "settingsShortcuts": "键盘快捷键",
   "settingsShortcutsHint": "每个功能都有快捷键 — 这是完整列表。  (Ctrl+/)",

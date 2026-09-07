@@ -259,6 +259,7 @@ class _Chip extends StatelessWidget {
     final chip = Padding(
       padding: const EdgeInsets.only(right: 4),
       child: InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         borderRadius: BorderRadius.circular(OnoteRadius.sm),
         onTap: onTap,
         child: Container(

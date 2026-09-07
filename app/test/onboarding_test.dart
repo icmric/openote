@@ -141,7 +141,7 @@ void main() {
     // scrolls, but a choice you have to discover by scrolling is a choice
     // most people never see, which was the owner's complaint about starting
     // fresh in the first place.
-    for (final label in ['Start fresh', 'Sign in']) {
+    for (final label in ['Start fresh', 'Choose file…']) {
       final button = find.text(label);
       expect(button, findsOneWidget, reason: '"$label" should be offered');
       await tester.ensureVisible(button);
@@ -175,7 +175,7 @@ void main() {
   // and OneNote for Mac cannot export a notebook however well the steps are
   // explained. The file route survives as the quiet second action, because a
   // `.onepkg` still carries handwriting that Graph's HTML cannot.
-  testWidgets('both ways into OneNote are offered, signing in first',
+  testWidgets('both ways into OneNote are offered, the proven one first',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final app = await newApp(tester);
@@ -187,10 +187,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Bring notes over from OneNote'), findsOneWidget);
-    expect(find.text('Sign in'), findsOneWidget,
-        reason: 'the route that works on every platform is the main one');
+    // **The file route leads while signing in is new.** It is not the better
+    // route — signing in needs no export and is the only one that works at
+    // all on a Mac — but it has years of use behind it, and the new one leans
+    // on a service that throttles. Temporary, and the reason it says BETA.
     expect(find.text('Choose file…'), findsOneWidget,
-        reason: 'and the higher-fidelity file route is still reachable');
+        reason: 'the route with years behind it is the main action for now');
+    expect(find.textContaining('(BETA)'), findsOneWidget,
+        reason: 'and signing in is offered, marked as new rather than hidden');
     expect(tester.takeException(), isNull);
   });
 
@@ -207,9 +211,10 @@ void main() {
         reason: 'a door back in is what makes "Skip" a fair offer');
     // By its own icon: Settings stacks several identical "Open…" buttons,
     // and the first of them is Sync.
-    await tester.tap(find.ancestor(
-        of: find.byIcon(Icons.school_outlined),
-        matching: find.byType(TextButton)));
+    // **Tapping the words works**, because the whole settings row is the
+    // button now rather than a label sitting beside a small "Open…". That is
+    // the behaviour, so it is what the test presses.
+    await tester.tap(find.text('Welcome tour'));
     await tester.pumpAndSettle();
     expect(find.text('The page is a canvas'), findsOneWidget,
         reason: 'the tour really reopens, seen or not');

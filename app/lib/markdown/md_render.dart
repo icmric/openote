@@ -229,6 +229,7 @@ class _MarkdownViewState extends State<MarkdownView> {
             for (final t in tags)
               if (t.kind == TagKind.todo)
                 InkWell(
+                  mouseCursor: WidgetStateMouseCursor.clickable,
                   onTap: widget.onToggleTag == null
                       ? null
                       : () => widget.onToggleTag!(lineIndex, !(t.checked ?? false)),

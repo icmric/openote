@@ -1311,7 +1311,7 @@ class LEs extends L {
 
   @override
   String get settingsLanguageHelp =>
-      'Openote lo traduce quien lo usa. Si falta el tuyo o algo está mal, es un solo archivo — el enlace explica cómo.';
+      'Openote lo traducen las personas que lo usan. Si falta el tuyo o está mal, es un solo archivo.';
 
   @override
   String get settingsPenProximity =>

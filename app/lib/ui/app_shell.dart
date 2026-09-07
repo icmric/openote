@@ -1570,6 +1570,7 @@ class _TagsPanel extends StatelessWidget {
                         ),
                         for (final e in byKind[kind]!)
                           InkWell(
+                            mouseCursor: WidgetStateMouseCursor.clickable,
                             onTap: () => app.selectPage(e.pageId),
                             child: Padding(
                               padding:
@@ -1635,6 +1636,7 @@ class _TocPanel extends StatelessWidget {
                 itemBuilder: (_, i) {
                   final it = items[i];
                   return InkWell(
+                    mouseCursor: WidgetStateMouseCursor.clickable,
                     onTap: () => app.jumpToBlock(it.blockId),
                     child: Padding(
                       padding: EdgeInsets.fromLTRB(
@@ -1701,6 +1703,7 @@ class _LinksPanel extends StatelessWidget {
           else
             for (final p in pages)
               InkWell(
+                mouseCursor: WidgetStateMouseCursor.clickable,
                 onTap: () => app.selectPage(p.id),
                 child: Padding(
                   padding:
@@ -1996,6 +1999,7 @@ class _SyncChip extends StatelessWidget {
     return Tooltip(
       message: syncChipTooltip(s),
       child: InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         onTap: () => showSyncDialog(context, app),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -2011,6 +2015,7 @@ class _SyncChip extends StatelessWidget {
             if (s.isSynced) ...[
               const SizedBox(width: 6),
               InkWell(
+                mouseCursor: WidgetStateMouseCursor.clickable,
                 onTap: app.gitBusy
                     ? null
                     : () async {

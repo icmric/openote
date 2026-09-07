@@ -117,6 +117,7 @@ class FileBlockView extends StatelessWidget {
     final pages = (block.content['pages'] as num?)?.toInt();
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
+      mouseCursor: WidgetStateMouseCursor.clickable,
       // growFrom: the card's own centre — the viewer reads as the
       // thumbnail opening rather than a dialog appearing over it.
       onTap: () {
@@ -210,6 +211,7 @@ class FileBlockView extends StatelessWidget {
     final host = Uri.tryParse(url)?.host ?? '';
 
     return InkWell(
+      mouseCursor: WidgetStateMouseCursor.clickable,
       // Only wire the tap when the scheme is one we will actually hand to the
       // OS. A card that looks clickable and silently does nothing is worse
       // than one that plainly is not.

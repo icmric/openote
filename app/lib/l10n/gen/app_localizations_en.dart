@@ -1309,7 +1309,7 @@ class LEn extends L {
 
   @override
   String get settingsLanguageHelp =>
-      'Openote is translated by the people who use it. If yours is missing or wrong, it is one file — the link says how.';
+      'Openote is translated by the people who use it. If yours is missing or wrong, it is one file.';
 
   @override
   String get settingsPenProximity => 'Pen near the page switches to inking';

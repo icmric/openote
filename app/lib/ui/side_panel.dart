@@ -224,6 +224,7 @@ class PanelAction extends StatelessWidget {
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
     return InkWell(
+      mouseCursor: WidgetStateMouseCursor.clickable,
       onTap: onTap,
       borderRadius: OnoteRadius.mdAll,
       child: Padding(

@@ -208,10 +208,32 @@ class _OneNoteDialogState extends State<_OneNoteDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // **The file route first, for now.**
+          //
+          // Signing in is the better answer for most people and on two of the
+          // three platforms it is the ONLY answer — but it is new, it depends
+          // on a service that throttles, and the owner has watched it stumble.
+          // Until it has been in more hands than one, the route with years of
+          // use behind it goes first and the new one is marked as new.
+          //
+          // This is a temporary ordering, not a verdict. Everything the
+          // sign-in route does better — no export, subpage nesting,
+          // attachments, internal links, working at all on a Mac — is still
+          // true, and the day the throttling behaviour is understood well
+          // enough to promise, these two swap back.
           _RouteCard(
-            title: _auth.hasStoredSignIn
-                ? l.oneNoteCloudContinue
-                : l.oneNoteCloudSignIn,
+            title: l.oneNoteFileTitle,
+            body: l.oneNoteFileBody,
+            icon: Icons.folder_open_outlined,
+            enabled: !_busy,
+            onTap: _chooseFile,
+          ),
+          const SizedBox(height: OnoteSpace.x3),
+          _RouteCard(
+            // Untranslated on purpose: "BETA" is not a word anybody
+            // translates, and a made-up local equivalent would be less clear
+            // than the English one everybody already knows.
+            title: '${_auth.hasStoredSignIn ? l.oneNoteCloudContinue : l.oneNoteCloudSignIn} (BETA)',
             body: l.oneNoteSignInBody,
             // The reassurance belongs on the card you press, at the moment
             // you are deciding — not in a paragraph above both of them.
@@ -219,14 +241,6 @@ class _OneNoteDialogState extends State<_OneNoteDialog> {
             icon: Icons.cloud_outlined,
             enabled: !_busy,
             onTap: _continue,
-          ),
-          const SizedBox(height: OnoteSpace.x3),
-          _RouteCard(
-            title: l.oneNoteFileTitle,
-            body: l.oneNoteFileBody,
-            icon: Icons.folder_open_outlined,
-            enabled: !_busy,
-            onTap: _chooseFile,
           ),
           if (_busy) _working(l.oneNoteCloudSigningIn),
           if (_error != null) _problem(),
@@ -325,6 +339,7 @@ class _RouteCard extends StatelessWidget {
     return Opacity(
       opacity: enabled ? 1 : OnoteAlpha.disabled,
       child: InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         borderRadius: OnoteRadius.mdAll,
         onTap: enabled ? onTap : null,
         child: Container(
@@ -375,6 +390,7 @@ class _NotebookRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: OnoteSpace.x2),
       child: InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         borderRadius: OnoteRadius.mdAll,
         onTap: onTap,
         child: Container(

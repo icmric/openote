@@ -227,6 +227,7 @@ class _SidebarState extends State<Sidebar> {
                   suffixIcon: _query.isEmpty
                       ? null
                       : InkWell(
+                          mouseCursor: WidgetStateMouseCursor.clickable,
                           onTap: _clearSearch,
                           child: const Icon(Icons.close, size: 16),
                         ),
@@ -615,6 +616,7 @@ class _GroupHeaderState extends State<_GroupHeader> {
             fontStyle: target ? FontStyle.italic : FontStyle.normal,
             color: target ? scheme.primary : null);
         return InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
           focusNode: _rowFocus,
           onFocusChange: (has) {
             if (has) _keyboardEnteredRow(app);
@@ -719,6 +721,7 @@ class _HomeTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
       child: InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         borderRadius: BorderRadius.circular(6),
         onTap: app.openHome,
         child: Container(
@@ -771,6 +774,7 @@ class _HomePane extends StatelessWidget {
         );
 
     Widget row(TreeNode page, IconData icon, {Color? iconColor}) => InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
           onTap: () => app.selectPage(page.id),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -878,6 +882,7 @@ class _ComingUp extends StatelessWidget {
                     color: context.surfaces.textSecondary)),
             const Spacer(),
             InkWell(
+              mouseCursor: WidgetStateMouseCursor.clickable,
               onTap: app.openPlanner,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -889,6 +894,7 @@ class _ComingUp extends StatelessWidget {
         ),
         if (alerts > 0)
           InkWell(
+            mouseCursor: WidgetStateMouseCursor.clickable,
             onTap: app.openPlanner,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 3, 12, 3),
@@ -910,6 +916,7 @@ class _ComingUp extends StatelessWidget {
           ),
         for (final it in rows)
           InkWell(
+            mouseCursor: WidgetStateMouseCursor.clickable,
             onTap: () {
               if (it.pageId != null) {
                 app.selectPage(it.pageId!);
@@ -992,6 +999,7 @@ class _NavRail extends StatelessWidget {
           Tooltip(
             message: current.title,
             child: InkWell(
+              mouseCursor: WidgetStateMouseCursor.clickable,
               borderRadius: BorderRadius.circular(12),
               onTap: () => showNotebookManager(context, app),
               child: Container(
@@ -1041,6 +1049,7 @@ class _NavRail extends StatelessWidget {
                       child: Tooltip(
                         message: s.title,
                         child: InkWell(
+                          mouseCursor: WidgetStateMouseCursor.clickable,
                           borderRadius: BorderRadius.circular(6),
                           onTap: () {
                             app.toggleNavCollapsed();
@@ -1122,6 +1131,7 @@ class _NotebookHeader extends StatelessWidget {
         message: l.navNotebooksTip,
         waitDuration: const Duration(milliseconds: 600),
         child: InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
           borderRadius: BorderRadius.circular(8),
           onTap: () => showNotebookManager(context, app),
           onSecondaryTapUp: (_) =>
@@ -1239,6 +1249,7 @@ class _SectionHeaderState extends State<_SectionHeader> {
                 ? OnoteColors.moon100
                 : OnoteColors.graphite700);
     return InkWell(
+      mouseCursor: WidgetStateMouseCursor.clickable,
       focusNode: _rowFocus,
       onFocusChange: (has) {
         if (has) _keyboardEnteredRow(app);
@@ -1730,6 +1741,7 @@ class _PageTileState extends State<_PageTile> {
       color:
           selected ? scheme.primary.withValues(alpha: .10) : Colors.transparent,
       child: InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
         focusNode: _rowFocus,
         onFocusChange: (has) {
           if (has) _keyboardEnteredRow(app);
@@ -1768,6 +1780,7 @@ class _PageTileState extends State<_PageTile> {
                 width: 16,
                 child: widget.hasChildren
                     ? InkWell(
+                        mouseCursor: WidgetStateMouseCursor.clickable,
                         onTap: () => app.togglePageCollapsed(page.id),
                         child: Icon(
                             widget.collapsed
@@ -2241,6 +2254,7 @@ class _SectionColorRowState extends State<_SectionColorRow> {
           child: Tooltip(
             message: token ?? l.navColourDefault,
             child: InkWell(
+              mouseCursor: WidgetStateMouseCursor.clickable,
               borderRadius: BorderRadius.circular(12),
               onTap: () {
                 widget.app.setNodeColor(widget.section.id, token);

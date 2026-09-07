@@ -59,7 +59,7 @@ void main() {
     // Always through the route screen, never around it. A remembered sign-in
     // makes this button need no browser; it does NOT make the screen with the
     // file route and the change-account button worth skipping.
-    await tester.tap(find.text('Continue with Microsoft'));
+    await tester.tap(find.textContaining('Continue with Microsoft'));
     await tester.pumpAndSettle();
   }
 
@@ -86,7 +86,7 @@ void main() {
     // Neither is behind a fold, a menu, or the word "advanced". Somebody who
     // will not sign in must be able to see, without hunting, that they do not
     // have to.
-    expect(find.text('Sign in to Microsoft'), findsOneWidget);
+    expect(find.textContaining('Sign in to Microsoft'), findsOneWidget);
     expect(find.text('Use a file you exported'), findsOneWidget);
   });
 
@@ -137,7 +137,7 @@ void main() {
     // The second screen replaces the first rather than stacking under it —
     // the whole of "I dont want it cluttered".
     expect(find.text('Use a file you exported'), findsNothing);
-    expect(find.text('Sign in to Microsoft'), findsNothing);
+    expect(find.textContaining('Sign in to Microsoft'), findsNothing);
   });
 
   testWidgets('a wrong account is fixed by changing it, not by reading it',
@@ -170,7 +170,7 @@ void main() {
     expect(find.text('Use a file you exported'), findsOneWidget);
     expect(find.text('Use a different account'), findsOneWidget);
     // And the sign-in card says it needs no browser this time.
-    expect(find.text('Continue with Microsoft'), findsOneWidget);
+    expect(find.textContaining('Continue with Microsoft'), findsOneWidget);
   });
 
   testWidgets('the list can be left again', (tester) async {

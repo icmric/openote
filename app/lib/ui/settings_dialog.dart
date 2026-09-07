@@ -4,6 +4,7 @@ import '../core/platform_open.dart';
 import '../l10n/l10n.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import '../theme/tokens.dart';
 import '../update/app_update.dart';
 import 'mcp_dialog.dart';
 import 'onboarding.dart';
@@ -91,25 +92,43 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         onSelectionChanged: (s) => onChanged(s.first),
       );
 
+  /// A settings row that opens something else.
+  ///
+  /// **The whole row is the button.** It used to be a label and a hint sitting
+  /// beside a small "Open…" button, which made the hit target a fraction of
+  /// the row it belonged to and gave every one of these entries two visual
+  /// weights to read — the owner: *"the link buttons arent exactly the
+  /// clearest things, given they are all to open things i dont see any reason
+  /// why we shouldnt just turn that whole block into a button"*.
+  ///
+  /// Quite so. The words already say what pressing does, so the word "Open"
+  /// beside them was saying it twice. What is left is the title, the sentence
+  /// under it, and a chevron — the shape everybody already reads as "this
+  /// leads somewhere".
   Widget _door(IconData icon, String label, String hint, VoidCallback open) =>
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(children: [
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(label, style: const TextStyle(fontSize: 13)),
-              Text(hint,
-                  style: const TextStyle(
-                      fontSize: 11, color: OnoteColors.graphite400)),
-            ]),
-          ),
-          TextButton.icon(
-            icon: Icon(icon, size: 15),
-            label: Text(L.of(context).commonOpenEllipsis,
-                style: const TextStyle(fontSize: 12)),
-            onPressed: open,
-          ),
-        ]),
+      InkWell(
+        mouseCursor: WidgetStateMouseCursor.clickable,
+        onTap: open,
+        borderRadius: OnoteRadius.smAll,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+          child: Row(children: [
+            Icon(icon, size: 16, color: context.surfaces.textSecondary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: const TextStyle(fontSize: 13)),
+                    Text(hint,
+                        style: const TextStyle(
+                            fontSize: 11, color: OnoteColors.graphite400)),
+                  ]),
+            ),
+            Icon(Icons.chevron_right,
+                size: 18, color: context.surfaces.textSecondary),
+          ]),
+        ),
       );
 
   @override
@@ -164,7 +183,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                           value: '',
                           child: Text(l.settingsLanguageAuto,
                               style: const TextStyle(fontSize: 12))),
-                      for (final loc in kOnoteLocales)
+                      for (final loc in kOnoteLocalesInOrder)
                         DropdownMenuItem(
                             value: loc.toLanguageTag(),
                             child: Text(languageNameOf(loc),

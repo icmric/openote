@@ -122,6 +122,7 @@ class _FlipCardState extends State<FlipCard>
       child: Material(
         color: Colors.transparent,
         child: InkWell(
+          mouseCursor: WidgetStateMouseCursor.clickable,
           onTap: _toggle,
           child: Stack(
             children: [

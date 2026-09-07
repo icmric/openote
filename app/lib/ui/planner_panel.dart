@@ -228,6 +228,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
             child: InkWell(
+              mouseCursor: WidgetStateMouseCursor.clickable,
               onTap: _showWarnings,
               child: Text(
                   '${planner.calendarWarnings.length} note'
@@ -258,6 +259,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
                     color: context.surfaces.textSecondary)),
             const Spacer(),
             InkWell(
+              mouseCursor: WidgetStateMouseCursor.clickable,
               onTap: () => setState(() => _pickedDay = null),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -308,6 +310,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
     final scheme = Theme.of(context).colorScheme;
     final overdue = bucketFor(it, now) == AgendaBucket.overdue;
     return InkWell(
+      mouseCursor: WidgetStateMouseCursor.clickable,
       onTap: () => _open(it),
       onSecondaryTapDown: (d) => _rowMenu(it, d.globalPosition, now),
       child: Padding(

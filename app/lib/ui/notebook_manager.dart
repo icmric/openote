@@ -396,6 +396,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
     final highlight = _highlightId == nb.id;
 
     return InkWell(
+      mouseCursor: WidgetStateMouseCursor.clickable,
       // Clicking the row opens that notebook — the switching the dropdown did.
       borderRadius: BorderRadius.circular(8),
       onTap: current || renaming || confirming

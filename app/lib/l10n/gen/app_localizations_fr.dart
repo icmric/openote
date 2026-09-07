@@ -1319,7 +1319,7 @@ class LFr extends L {
 
   @override
   String get settingsLanguageHelp =>
-      'Openote est traduit par ceux qui l\'utilisent. Si la vôtre manque ou est fausse, c\'est un seul fichier — le lien explique comment.';
+      'Openote est traduit par les gens qui l\'utilisent. Si la vôtre manque ou est incorrecte, c\'est un seul fichier.';
 
   @override
   String get settingsPenProximity =>

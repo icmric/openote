@@ -388,17 +388,27 @@ class _OnboardingState extends State<_Onboarding>
         if (_importing)
           _importRow(s, l)
         else
+          // **The file route leads, for now.** Signing in is the better
+          // answer for most people and the only one on a Mac, but it is new
+          // and it leans on a service that throttles. Until it has been in
+          // more hands than one, the primary action is the route with years
+          // of use behind it, and the new one says it is new.
+          //
+          // Temporary, and worth swapping back the day the throttling is
+          // understood well enough to promise.
           _row(
             s,
             title: l.onboardingCloudTitle,
             body: l.onboardingCloudBody,
-            action: l.onboardingCloudAction,
-            onTap: () async {
+            action: l.onboardingOneNoteAction,
+            onTap: _startImport,
+            // "BETA" is deliberately untranslated: nobody translates it, and
+            // a local invention would be less clear than the English.
+            secondary: '${l.onboardingCloudAction} (BETA)',
+            onSecondary: () async {
               Navigator.of(context).pop();
               await showOneNoteCloudDialog(context, app);
             },
-            secondary: l.onboardingOneNoteAction,
-            onSecondary: _startImport,
           ),
         // Last when there ARE notebooks to open, because then it is the least
         // likely thing somebody came here to do — but still present, still

@@ -2174,7 +2174,7 @@ abstract class L {
   /// Supporting line under the language picker, inviting corrections. 'one file' means one .arb translation file.
   ///
   /// In en, this message translates to:
-  /// **'Openote is translated by the people who use it. If yours is missing or wrong, it is one file — the link says how.'**
+  /// **'Openote is translated by the people who use it. If yours is missing or wrong, it is one file.'**
   String get settingsLanguageHelp;
 
   /// Row label: bringing a stylus close to the screen picks the pen tool.
