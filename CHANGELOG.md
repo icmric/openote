@@ -33,6 +33,13 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Fixed
 
+- **You can see an import happening without hunting for it.** A line above the
+  page says what is arriving and how far through it is, so the minutes before
+  the first pages land no longer look like nothing happening.
+- **A picture is no longer lost to a momentary fault at Microsoft's end.** The
+  path that fetches pictures and attachments was the one place that still gave
+  up on the first try.
+
 - **The pointer changes over everything you can click**, not just most of it.
   Sidebar rows, toolbar swatches, the notebook picker and the OneNote screens
   were all still showing the plain arrow.

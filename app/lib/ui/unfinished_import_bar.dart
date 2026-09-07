@@ -31,6 +31,8 @@ library;
 import 'package:flutter/material.dart';
 
 import '../export/import_job.dart';
+import '../l10n/l10n.dart';
+import '../l10n/labels.dart';
 import '../onenote/graph_auth.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
@@ -44,10 +46,27 @@ class UnfinishedImportBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final nb = app.notebookId;
     if (nb == null) return const SizedBox.shrink();
-    // Never while an import is actually running: the progress card is already
-    // saying a better version of this, and two of them is the noise the owner
-    // was worried about.
+
+    // **A running import says so here too, not only in the corner.**
+    //
+    // Reported: *"please make that import popup a bit clearer since its so
+    // easy to miss at the moment and people might think nothing is
+    // happening."*
+    //
+    // The card is bottom-left and 360px wide; somebody watching the middle of
+    // a large screen for their notes to appear can miss it entirely, and what
+    // they conclude is that nothing is happening. The fix is not a louder
+    // card — it is putting the news where they are already looking.
+    //
+    // This is the same one-line strip that already says a notebook is
+    // unfinished, which is the point: one place, one shape, two things it can
+    // say. It steals no focus, covers nothing, and takes one row of height.
+    // The card stays, because the card is where the buttons live — this says
+    // WHAT is happening, the card is what you press.
     final job = ImportJob.current;
+    if (job != null && !job.isFinished && job.notebookId == nb) {
+      return _Running(job: job);
+    }
     if (job != null && !job.isFinished) return const SizedBox.shrink();
 
     final u = app.unfinishedImportFor(nb);
@@ -100,5 +119,68 @@ class UnfinishedImportBar extends StatelessWidget {
   Future<void> _finishNow(BuildContext context, String nb) async {
     final auth = GraphAuth();
     await app.resumeOneNoteImport(auth: auth, nb: nb);
+  }
+}
+
+/// The same strip, while an import is actually running.
+///
+/// Deliberately quiet: the accent is spent on the progress bar, which is the
+/// part carrying information, and not on the row itself. Nothing here is
+/// pressable — every action for a running import lives on the card, and two
+/// places offering the same Stop is how somebody ends up pressing the wrong
+/// one.
+class _Running extends StatelessWidget {
+  const _Running({required this.job});
+
+  final ImportJob job;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.surfaces;
+    final total = job.pagesTotal;
+    final done = job.pagesDone;
+    return ListenableBuilder(
+      listenable: job,
+      builder: (context, _) => Material(
+        color: s.chrome2,
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: OnoteSpace.x5, vertical: OnoteSpace.x3),
+            child: Row(children: [
+              const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+              const SizedBox(width: OnoteSpace.x3),
+              Expanded(
+                child: Text(
+                  job.status.describe(L.of(context)),
+                  style: OnoteType.small.copyWith(color: s.textSecondary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (total > 0) ...[
+                const SizedBox(width: OnoteSpace.x3),
+                Text('$done / $total',
+                    style: OnoteType.caption.copyWith(color: s.textSecondary)),
+              ],
+            ]),
+          ),
+          // A hairline, so the eye catches movement without the row shouting.
+          // An indeterminate bar while the total is unknown says "working"
+          // rather than "nothing yet", which is the whole complaint.
+          SizedBox(
+            height: 2,
+            child: LinearProgressIndicator(
+              value: total > 0 ? done / total : null,
+              minHeight: 2,
+              backgroundColor: s.chrome2,
+            ),
+          ),
+        ]),
+      ),
+    );
   }
 }

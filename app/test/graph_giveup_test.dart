@@ -127,6 +127,24 @@ void main() {
       expect(n, 3, reason: 'refused twice, then asked a third time');
     });
 
+    test('a picture lost to a server fault is asked for again', () async {
+      // Four images went missing on a real import, on a day Graph was
+      // handing back 5xx. `resource` has its own retry loop and so missed
+      // the fix that taught the rest of the client to retry a server fault —
+      // and an image whose fetch is not retried is simply gone from the page.
+      var n = 0;
+      GraphClient.debugResource = (url) async {
+        n++;
+        if (n <= 2) return (500, null, <String, String>{});
+        return (200, Uint8List.fromList([9, 9]), <String, String>{});
+      };
+      addTearDown(() => GraphClient.debugResource = null);
+      final c = GraphClient(token: () async => 't');
+
+      expect(await c.resource('https://example/pic'), [9, 9]);
+      expect(n, 3);
+    });
+
     test('a picture that really is not there is not retried for ever',
         () async {
       // Null still has to mean null. Retrying a 404 ten times would spend the

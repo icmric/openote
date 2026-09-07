@@ -848,6 +848,18 @@ class GraphClient {
             Duration(milliseconds: 400 * (1 << attempt)));
         continue;
       }
+      // **A server fault costs a moment, not the picture.**
+      //
+      // This path has its own retry loop, so it missed the fix that taught
+      // the rest of the client to retry a 500/502/504 — and a picture is
+      // exactly where that shows: a real import reported four images lost
+      // where an earlier one lost one, on a day Graph was returning 5xx. An
+      // image whose fetch is not retried is simply gone from the page.
+      if (_serverFault(status) && attempt < 3) {
+        await Future<void>.delayed(
+            Duration(milliseconds: 400 * (1 << attempt)));
+        continue;
+      }
       // Anything that is not the service asking us to wait is a real failure:
       // a 404, a body that stopped arriving, a token that will not mint.
       if (status != 429 && status != 503) return null;
