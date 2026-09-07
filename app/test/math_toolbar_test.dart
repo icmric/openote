@@ -24,7 +24,6 @@ import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/ui/command_bar.dart';
 import 'package:openote/ui/math_bar.dart';
-import 'package:openote/ui/object_row.dart';
 
 import 'support/sqlite.dart';
 
@@ -73,9 +72,9 @@ void main() {
   /// it fails the test as a leaked timer.
   void settle() => app.cancelPendingSave();
 
-  /// The chrome as the app builds it: the bar, then the object row under it.
-  /// Both, because the whole design is that the second one changes without
-  /// the first one moving.
+  /// The chrome as the app builds it. There is one band now: the equation
+  /// palette borrows the command row rather than sitting on a strip of its
+  /// own, and the whole design is that borrowing it moves nobody's tab.
   Future<void> pump(WidgetTester tester) async {
     widen(tester);
     await tester.pumpWidget(MaterialApp(
@@ -86,7 +85,6 @@ void main() {
           listenable: app,
           builder: (_, __) => Column(children: [
             CommandBar(app: app),
-            ObjectRow(app: app),
           ]),
         ),
       ),
@@ -178,8 +176,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(MathBar), findsNothing,
         reason: 'buttons that act on nothing are worse than no buttons');
-    expect(find.byType(PageFace), findsOneWidget,
-        reason: 'the row is the page\'s again, not blank');
+    // The row goes back to the tab the student chose - Home, here - rather
+    // than to a page face of its own: the equation borrows the command row
+    // now that the band below it is gone, and gives it straight back.
+    expect(find.byIcon(Icons.format_bold), findsOneWidget,
+        reason: 'the row is the chosen tab, not blank');
     settle();
   });
 

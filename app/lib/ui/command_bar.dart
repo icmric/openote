@@ -12,6 +12,7 @@ import '../export/pdf_vector_export.dart';
 import '../export/print_page.dart';
 import '../editor/list_editing.dart';
 import '../markdown/md_syntax.dart';
+import '../math/evaluate.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
 import '../l10n/l10n.dart';
@@ -20,6 +21,7 @@ import '../state/app_state.dart';
 import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'color_picker.dart';
+import 'command_faces.dart';
 import 'command_button.dart';
 import 'compacting_toolbar.dart';
 import 'memo.dart';
@@ -46,17 +48,95 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
   /// The tab the user last chose among the permanent ones.
   int _tab = 0;
 
-  /// **Three, forever.** Home is write and format, Insert is add, Draw is
-  /// ink; nothing is ever appended, and nothing but a tap on one of them ever
-  /// changes which is showing.
+  /// **Four.** Home is write and format, Insert is add, Draw is ink, Page is
+  /// the sheet itself — its ruling, its size, the grid and the zoom.
   ///
-  /// There used to be a fourth, View, and a fifth that appeared while an
-  /// equation was open and dragged the student onto it. The equation's
-  /// palette is on the object row now, where it arrives without moving
-  /// anybody; View's page controls are on the same row, and the four
-  /// preferences it also held were already in Settings.
-  static List<String> _tabNames(L l) => [l.barTabHome, l.barTabInsert, l.barTabDraw];
-  static const _tabCount = 3;
+  /// Page is the old View tab coming back, by the shortest route: the owner
+  /// asked for *"this extra bar of options under the existing menu bar … its
+  /// own tab called 'Page'"*, and a tab is where somebody looking for "how do
+  /// I make this page ruled" would have looked first each time. What is NOT
+  /// coming back is a tab that switches itself: an equation borrows the
+  /// command row without touching which tab is chosen, and gives it straight
+  /// back. See [_face].
+  /// **What the command row is showing, and why it is not always the tab.**
+  ///
+  /// An equation borrows the row while it is being written — the same loan the
+  /// old object row made from the band below, moved up one now that the band
+  /// is gone. Nobody's tab moves: the badge in the row above says what the row
+  /// is about, and closing the equation gives the row straight back. That is
+  /// the whole of the owner's original objection to the contextual Maths tab:
+  /// *"moving the user to a new menu up there … is jarring and its best to not
+  /// force any navigation."*
+  ///
+  /// Tapping a tab mid-equation is the way out, for the rare case of wanting
+  /// Home's formatting while an equation is open.
+  Widget _face(BuildContext context) {
+    final equation =
+        objectFaceOf(app) == ObjectFace.equation && !_tabbedAwayFromEquation;
+    final m = app.activeMath;
+    if (equation && m != null) {
+      return KeyedSubtree(
+        key: const ValueKey('equation'),
+        child: ScrollConfiguration(
+          behavior: const _ToolbarScroll(),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: EquationFace(
+              math: m,
+              onDrawGraph: m.drawGraph,
+              onEvaluateAtValue: m.evaluateAtValue,
+              angleMode: app.angleMode,
+              // The open equation and its neighbours are worked out by
+              // `setAngleMode` itself — every route to it behaves the same,
+              // and only it knows which mode the page was written in.
+              onToggleAngleMode: () => app.setAngleMode(
+                  app.angleMode == AngleMode.degrees
+                      ? AngleMode.radians
+                      : AngleMode.degrees),
+              recentIds: app.recentMathIds,
+            ),
+          ),
+        ),
+      );
+    }
+    // Insert COMPACTS (`CompactingToolbar` needs the real, bounded window
+    // width to decide what folds, which a `Scrollable` never offers its child
+    // — that axis is unbounded on purpose, it's what lets content wider than
+    // the viewport scroll). The rest still scroll: they mix dividers, split
+    // buttons and live text fields with no single "this control folds into a
+    // menu item" shape the way Insert's uniform ribbon of commands does.
+    //
+    // A horizontal `Scrollable` reads `scrollDelta.dx`, which a mouse wheel
+    // does not produce, and there was no scrollbar anywhere in the subtree —
+    // so a row wider than the window was simply unreachable. Measured on
+    // Insert too (1217 px against 965) before it compacted instead.
+    if (_tab == 1) {
+      return KeyedSubtree(
+          key: const ValueKey(1), child: _insertRow(context));
+    }
+    return ScrollConfiguration(
+      behavior: const _ToolbarScroll(),
+      child: SingleChildScrollView(
+        key: ValueKey(_tab),
+        scrollDirection: Axis.horizontal,
+        child: switch (_tab) {
+          2 => _drawRow(context),
+          _tabPage => PageFace(app: app),
+          _ => _homeRow(context),
+        },
+      ),
+    );
+  }
+
+  static List<String> _tabNames(L l) =>
+      [l.barTabHome, l.barTabInsert, l.barTabDraw, l.barTabPage];
+  static const _tabCount = 4;
+  static const _tabPage = 3;
+
+  /// True once somebody has tapped a tab while an equation was open — the one
+  /// way to look at Home's formatting mid-equation. Cleared when the equation
+  /// closes, so the palette is there again the next time one is opened.
+  bool _tabbedAwayFromEquation = false;
 
   AppState get app => widget.app;
 
@@ -111,6 +191,23 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         // Not an `app.` read, so the guard test cannot see it: the badge in
         // the tab row appears only while an equation is open.
         objectFaceOf(app),
+        _tabbedAwayFromEquation,
+        // Everything the two borrowed faces render. They are stateless
+        // widgets built from this one, so a change none of these names would
+        // paint on a row that did not rebuild — which is exactly the bug the
+        // guard test in `chrome_memo_test.dart` exists to stop, and it cannot
+        // see through a child widget to find them.
+        app.showPageOverview,
+        app.activeMath,
+        app.angleMode,
+        // A `List` compares by identity; the ids themselves are what the
+        // recents strip renders.
+        app.recentMathIds.join(','),
+        app.snapToGrid,
+        app.pageProps.background,
+        app.pageProps.layout,
+        app.pageProps.paperSize,
+        app.pageProps.landscape,
       ];
 
   static int _mask<T>(Set<T> on, List<T> all) {
@@ -139,6 +236,25 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
             height: 32,
             child: Row(
               children: [
+                // **Undo and redo, above the tabs rather than on one of
+                // them.** Reported: *"We are also lacking an undo and redo
+                // button at the moment, these are pretty important to have."*
+                // They existed — at the head of the Home row — which is to
+                // say they were missing from three quarters of the app. They
+                // are not a Home command; they are what you press when
+                // something has gone wrong, whatever you were doing when it
+                // did, so they belong where nothing hides them.
+                _MiniIcon(
+                  icon: Icons.undo,
+                  tooltip: l.barUndo,
+                  onPressed: app.canUndo ? app.undo : null,
+                ),
+                _MiniIcon(
+                  icon: Icons.redo,
+                  tooltip: l.barRedo,
+                  onPressed: app.canRedo ? app.redo : null,
+                ),
+                const SizedBox(width: 6),
                 // **No leading gutter.** A fixed chrome region runs to the edge
                 // of the region it owns (§7d); the first control's own padding
                 // is the optical margin. An extra 6px here made the toolbar
@@ -204,6 +320,20 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                       // button is where a tool is put down on purpose. A chip
                       // that appeared and disappeared in the middle of the
                       // trailing cluster also moved everything beside it.
+                      // **How much have I written**, where it can be read
+                      // without going anywhere. The owner: *"move the word
+                      // count to the bar next to all the other options up
+                      // top, i think that makes the most sense for
+                      // placement."* It is the one thing that was on the old
+                      // band which is not a setting — you do not change it,
+                      // you glance at it — and a number checked twenty times
+                      // an hour has no business behind a tab.
+                      ToolbarControl(
+                        width: 96,
+                        icon: Icons.numbers,
+                        label: l.objectRowWordCount,
+                        inline: WordCount(app: app, width: 96),
+                      ),
                       // Study: the due count is the whole nudge, so it's on the
                       // badge rather than hidden behind the panel.
                       ToolbarControl(
@@ -226,46 +356,28 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                         onPressed: app.togglePlannerPanel,
                         inline: _PlannerButton(app: app),
                       ),
-                      ToolbarControl(
-                        width: 40,
-                        icon: Icons.label_outline,
-                        label: l.barFindTags,
-                        selected: app.showTagsPanel,
-                        onPressed: app.toggleTagsPanel,
-                        inline: IconButton(
-                          icon: const Icon(Icons.label_outline, size: 18),
-                          tooltip: l.barFindTags,
-                          isSelected: app.showTagsPanel,
-                          visualDensity: VisualDensity.compact,
-                          onPressed: app.toggleTagsPanel,
-                        ),
-                      ),
+                      // **One button for the three views of this page.**
+                      // The owner: *"I think we can probably combine page
+                      // tags, outline, and linked to/from into a single
+                      // button up there to reduce clutter. Some sort of page
+                      // overview thing."* They are one question asked three
+                      // ways — what is on this page, and what is it attached
+                      // to — and three toggles made you answer it before you
+                      // had asked. This opens the last one you looked at; the
+                      // panel's own header moves between them, which is a
+                      // step taken having already seen something.
                       ToolbarControl(
                         width: 40,
                         icon: Icons.toc,
-                        label: l.barPageOutline,
-                        selected: app.showTocPanel,
-                        onPressed: app.toggleTocPanel,
+                        label: l.barPageOverview,
+                        selected: app.showPageOverview,
+                        onPressed: app.togglePageOverview,
                         inline: IconButton(
                           icon: const Icon(Icons.toc, size: 18),
-                          tooltip: l.barPageOutline,
-                          isSelected: app.showTocPanel,
+                          tooltip: l.barPageOverview,
+                          isSelected: app.showPageOverview,
                           visualDensity: VisualDensity.compact,
-                          onPressed: app.toggleTocPanel,
-                        ),
-                      ),
-                      ToolbarControl(
-                        width: 40,
-                        icon: Icons.account_tree_outlined,
-                        label: l.barLinks,
-                        selected: app.showLinksPanel,
-                        onPressed: app.toggleLinksPanel,
-                        inline: IconButton(
-                          icon: const Icon(Icons.account_tree_outlined, size: 18),
-                          tooltip: l.barLinks,
-                          isSelected: app.showLinksPanel,
-                          visualDensity: VisualDensity.compact,
-                          onPressed: app.toggleLinksPanel,
+                          onPressed: app.togglePageOverview,
                         ),
                       ),
                       ToolbarControl(
@@ -417,18 +529,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
               // anywhere in the subtree — so a row wider than the window was
               // simply unreachable. Measured on Insert too (1217 px against
               // 965) before it compacted instead.
-              child: _tab == 1
-                  ? KeyedSubtree(
-                      key: const ValueKey(1), child: _insertRow(context))
-                  : ScrollConfiguration(
-                      behavior: const _ToolbarScroll(),
-                      child: SingleChildScrollView(
-                        key: ValueKey(_tab),
-                        scrollDirection: Axis.horizontal,
-                        child:
-                            _tab == 2 ? _drawRow(context) : _homeRow(context),
-                      ),
-                    ),
+              child: _face(context),
             ),
           ),
         ],
@@ -602,19 +703,9 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         ? Color(((lcv & 0xFF) << 24) | (lcv >> 8))
         : Color(0xFF000000 | lcv);
     return Row(children: [
-      IconButton(
-        icon: const Icon(Icons.undo, size: 18),
-        tooltip: l.barUndo,
-        visualDensity: VisualDensity.compact,
-        onPressed: app.canUndo ? app.undo : null,
-      ),
-      IconButton(
-        icon: const Icon(Icons.redo, size: 18),
-        tooltip: l.barRedo,
-        visualDensity: VisualDensity.compact,
-        onPressed: app.canRedo ? app.redo : null,
-      ),
-      const _Div(),
+      // Undo and redo used to lead this row, which meant they were missing
+      // from every other tab. They are in the tab row above now.
+      const SizedBox(width: 4),
       // **The row never changes shape.** An earlier revision collapsed the
       // formatting commands to three group heads when nothing was focused, on
       // the reasoning that a wall of greyed glyphs reads as broken. That traded
@@ -743,7 +834,12 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       borderRadius: BorderRadius.circular(6),
       // **The one thing that writes `_tab`.** Nothing else in the app may,
       // which is the whole of the answer to "don't force any navigation".
-      onTap: () => setState(() => _tab = i),
+      onTap: () => setState(() {
+        _tab = i;
+        // Chosen deliberately, so it beats the equation's loan of the row
+        // until the equation is closed.
+        _tabbedAwayFromEquation = objectFaceOf(app) == ObjectFace.equation;
+      }),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         alignment: Alignment.center,
@@ -1048,6 +1144,32 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
     ]);
   }
 
+}
+
+/// An icon button that fits the 32 px tab row.
+///
+/// `IconButton` reserves a 40 px hit target, which is right everywhere else in
+/// the app and eight pixels too tall here — enough to push the whole row and
+/// break the "the chrome never changes height" invariant.
+class _MiniIcon extends StatelessWidget {
+  const _MiniIcon(
+      {required this.icon, required this.tooltip, required this.onPressed});
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: 30,
+        height: 28,
+        child: IconButton(
+          icon: Icon(icon, size: 16),
+          tooltip: tooltip,
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+          onPressed: onPressed,
+        ),
+      );
 }
 
 /// `H2` / `H3` on the Home row.

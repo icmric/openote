@@ -1,5 +1,5 @@
-/// **The object row** — the band of chrome that belongs to what you are
-/// touching (plan: v0.23, "the object row").
+/// **The command row's two faces** — the band of chrome that belongs to what
+/// you are touching.
 ///
 /// The owner, on the old contextual Maths tab: *"moving the user to a new menu
 /// up there when entering maths mode without them doing anything is jarring
@@ -7,26 +7,24 @@
 ///
 /// The whole answer, in one sentence:
 ///
-/// > The tab row and the command row belong to the student. This row belongs
-/// > to the page — and the page lends it to an equation while the student is
-/// > writing one.
+/// > The tab row belongs to the student. The command row belongs to the tab
+/// > they chose — and lends itself to an equation while they are writing one.
 ///
-/// ## The invariant
+/// ## The band that used to be here
 ///
-/// **The chrome is 32 + 44 + 36 = 112 px, in every state of the app.** Nothing
-/// in it grows, shrinks, moves or re-points; only this row's *contents*
-/// change, and they cross-fade in place. The canvas's box therefore never
-/// changes size or position, so there is no compensating pan to write and no
-/// promise to keep by hand.
+/// These lived on a third strip of their own, 36 px under the command row,
+/// permanent so that the chrome was 32 + 44 + 36 px in every state and the
+/// canvas box never moved. The owner, once the app had been used for a while:
+/// *"We still have this extra bar of options under the existing menu bar (the
+/// one with page rule options, fitting, zoom, etc). Lets move all of that into
+/// its own tab called 'Page'."*
 ///
-/// That is why the row is permanent rather than appearing with the equation.
-/// A row that slid in would push the page down 36 px, and putting the page
-/// back means panning it up 36 px — which `CanvasController.panBy` discards
-/// whenever the content is shorter than the viewport (`clampToPage`'s `axis()`
-/// returns 0 there). On a short page, or a zoomed-out one — exactly where a
-/// student is when they press Alt+= for their first equation — the page would
-/// jump. A conditional band cannot honour "don't move the user". A permanent
-/// one honours it by construction.
+/// Right — and the reasoning that put the band there survives the move
+/// unharmed, because the invariant was never "there are three strips", it was
+/// **the chrome does not change height**. It is 32 + 44 in every state now.
+/// The page controls are a tab like any other, and the equation palette
+/// borrows the command row without moving anybody's tab, exactly as it used to
+/// borrow the row below.
 ///
 /// ## Hard rules for anything added here
 ///
@@ -37,11 +35,8 @@
 ///  * **Nothing may reach through `FocusManager`.** Every control here acts on
 ///    something the student is in the middle of writing; taking the caret
 ///    away to run a command is the bug this release opened with.
-///  * **Opacity only when the face changes.** A slide says "a new thing
-///    arrived from elsewhere"; a fade says "this row is now about that".
 library;
 
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 
 import '../math/active_math.dart';
@@ -52,113 +47,6 @@ import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
 import 'math_bar.dart';
-import 'memo.dart';
-import 'object_face.dart';
-
-/// The row's height, everywhere. `OnoteSize.button` plus two above and below.
-const double kObjectRowHeight = 36;
-
-class ObjectRow extends StatefulWidget {
-  const ObjectRow({super.key, required this.app});
-
-  final AppState app;
-
-  @override
-  State<ObjectRow> createState() => _ObjectRowState();
-}
-
-class _ObjectRowState extends State<ObjectRow> with MemoBuild<ObjectRow> {
-  AppState get app => widget.app;
-
-  /// Everything this row RENDERS. `AppState.markDirty()` fires on every
-  /// keystroke and the shell rebuilds from the top, but none of the values
-  /// below can change because a character was typed — so the row is built
-  /// once and reused until one of them actually moves. See `memo.dart` for
-  /// the measurements and the guard test.
-  ///
-  /// Two things here are live and are deliberately NOT on this list, because
-  /// each already listens on its own account: the zoom percentage, which sits
-  /// under an `AnimatedBuilder` on `app.canvas`, and the word count, which is
-  /// the one thing in this row that really does change with every keystroke.
-  @override
-  List<Object?> memoInputs() => [
-        app,
-        objectFaceOf(app),
-        app.activeMath,
-        app.angleMode,
-        // A `List` compares by identity; the ids themselves are what the
-        // recents strip renders.
-        app.recentMathIds.join(','),
-        app.snapToGrid,
-        app.pageProps.background,
-        app.pageProps.layout,
-        app.pageProps.paperSize,
-        app.pageProps.landscape,
-      ];
-
-  @override
-  Widget buildMemo(BuildContext context) {
-    final s = context.surfaces;
-    final face = objectFaceOf(app);
-    return Container(
-      height: kObjectRowHeight,
-      decoration: BoxDecoration(
-        // `chrome2` — the "insets within chrome" role — so the row reads as a
-        // different layer and is never mistaken for a second command row.
-        color: s.chrome2,
-        border: Border(top: BorderSide(color: s.border)),
-      ),
-      child: ScrollConfiguration(
-        behavior: const _RowScroll(),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: AnimatedSwitcher(
-            duration: kMathMenuFade,
-            // Keyed on the FACE, not on the widget, so moving between two
-            // equations does not re-animate a row that is about to be
-            // identical.
-            switchInCurve: Curves.easeOut,
-            transitionBuilder: (child, anim) =>
-                FadeTransition(opacity: anim, child: child),
-            child: KeyedSubtree(
-              key: ValueKey(face),
-              child: _face(context, face),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _face(BuildContext context, ObjectFace face) {
-    switch (face) {
-      case ObjectFace.equation:
-        final m = app.activeMath;
-        // One frame at most: the face is derived from `editingBlockId`, which
-        // is true before the equation editor has built and registered itself.
-        // Empty, NEVER the page face — falling back would flash the page
-        // controls for a frame every time an equation opened.
-        if (m == null) return const SizedBox(height: kObjectRowHeight);
-        return EquationFace(
-          math: m,
-          onDrawGraph: m.drawGraph,
-          onEvaluateAtValue: m.evaluateAtValue,
-          angleMode: app.angleMode,
-          onToggleAngleMode: () {
-            // The open equation and its neighbours are worked out by
-            // `setAngleMode` itself — every route to it behaves the same,
-            // and only it knows which mode the page was written in.
-            app.setAngleMode(app.angleMode == AngleMode.degrees
-                ? AngleMode.radians
-                : AngleMode.degrees);
-          },
-          recentIds: app.recentMathIds,
-        );
-      case ObjectFace.page:
-        return PageFace(app: app);
-    }
-  }
-}
 
 /// The palette, while an equation is being written.
 ///
@@ -209,12 +97,13 @@ class EquationFace extends StatelessWidget {
       );
 }
 
-/// The page's own controls, when nothing else is being written.
+/// The page's own controls: ruling, sheet or canvas, paper, snap and zoom.
 ///
-/// These are the page half of what used to be the View tab. They belong here
-/// because "when nothing is selected, the thing you are touching is the page"
-/// — and once they live here, the View tab holds nothing but four preferences
-/// that Settings already carries, so the tab goes.
+/// These were the View tab, then the page half of the object row, and are now
+/// the Page tab — which is where somebody looking for "how do I make this page
+/// ruled" would have looked first each time. The trip back is not an
+/// admission that the band was wrong: the band existed to keep the chrome one
+/// height, and it still is one height.
 class PageFace extends StatelessWidget {
   const PageFace({super.key, required this.app});
 
@@ -234,7 +123,6 @@ class PageFace extends StatelessWidget {
         );
     final paged = app.pageProps.isPaged;
     return Row(mainAxisSize: MainAxisSize.min, children: [
-      const SizedBox(width: 2),
       bg('blank', Icons.crop_din, l.objectRowBackgroundBlank),
       bg('grid', Icons.grid_4x4, l.objectRowBackgroundGrid),
       bg('dotted', Icons.apps, l.objectRowBackgroundDotted),
@@ -324,8 +212,6 @@ class PageFace extends StatelessWidget {
         visualDensity: VisualDensity.compact,
         onPressed: () => app.canvas.fitTo(app.contentBounds().inflate(24)),
       ),
-      const _Sep(),
-      _WordCount(app: app),
       const SizedBox(width: 4),
     ]);
   }
@@ -337,20 +223,31 @@ class PageFace extends StatelessWidget {
 /// essay has a word limit on it, and until now the only way to find out was
 /// to export the page and paste it somewhere else.
 ///
-/// The count is on the row, because that is where things about the PAGE live
-/// and a word limit is a thing about the page. The other two are one click
-/// behind it: a bare number is what a student checks twenty times an hour,
-/// and characters and reading time are not.
-class _WordCount extends StatefulWidget {
-  const _WordCount({required this.app});
+/// **In the tab row, not on the Page tab.** The owner: *"move the word count
+/// to the bar next to all the other options up top, i think that makes the
+/// most sense for placement."* It is the one thing here that is not a
+/// setting — you do not change it, you read it — and a number you check
+/// twenty times an hour has no business behind a tab. Characters and reading
+/// time stay one click behind it, because those are not.
+class WordCount extends StatefulWidget {
+  const WordCount({super.key, required this.app, this.width});
 
   final AppState app;
 
+  /// **Fixed width, when it sits in the tab row.**
+  ///
+  /// `CompactingToolbar` decides what folds from each control's DECLARED
+  /// width, so a control that renders wider than it declared overflows the
+  /// row it is in — and this one's width follows the number in it, which
+  /// grows as the page does. Constrained here so the declared width is the
+  /// truth. Null anywhere else, where it takes the room it needs.
+  final double? width;
+
   @override
-  State<_WordCount> createState() => _WordCountState();
+  State<WordCount> createState() => _WordCountState();
 }
 
-class _WordCountState extends State<_WordCount> {
+class _WordCountState extends State<WordCount> {
   /// **Stateful only for this.** Counting the whole page from scratch is 68 ms
   /// on a page of eight hundred blocks — four dropped frames — and this row
   /// rebuilds on every keystroke. The cache re-counts only the block that
@@ -413,13 +310,19 @@ class _WordCountState extends State<_WordCount> {
         ],
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: Text(
-            // Through a plural message, not an `== 1` in Dart: "1 words" is
-            // the sort of thing that makes a student trust nothing else the
-            // app tells them, and every language draws that line somewhere
-            // different — several have a form for two, and for a few.
-            l.objectRowWordTally(stats.words, _n(stats.words)),
-            style: OnoteType.small.copyWith(color: s.textSecondary),
+          child: SizedBox(
+            width: widget.width == null ? null : widget.width! - 16,
+            child: Text(
+              // Through a plural message, not an `== 1` in Dart: "1 words" is
+              // the sort of thing that makes a student trust nothing else the
+              // app tells them, and every language draws that line somewhere
+              // different — several have a form for two, and for a few.
+              l.objectRowWordTally(stats.words, _n(stats.words)),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: OnoteType.small.copyWith(color: s.textSecondary),
+            ),
           ),
         ),
       ),
@@ -461,20 +364,4 @@ class _Sep extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 6),
         color: context.surfaces.border,
       );
-}
-
-/// A row wider than the window must SCROLL, not clip: clipped pixels do not
-/// hit-test, so on a narrow window the rightmost controls simply stop
-/// responding with no visible reason. Mouse and trackpad are added to the drag
-/// devices for the same reason the toolbar's own scroller adds them.
-class _RowScroll extends MaterialScrollBehavior {
-  const _RowScroll();
-
-  @override
-  Set<PointerDeviceKind> get dragDevices => const {
-        PointerDeviceKind.touch,
-        PointerDeviceKind.mouse,
-        PointerDeviceKind.trackpad,
-        PointerDeviceKind.stylus,
-      };
 }

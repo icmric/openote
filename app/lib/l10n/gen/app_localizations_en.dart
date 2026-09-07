@@ -36,9 +36,6 @@ class LEn extends L {
   String get barDefinitionCard => 'Definition card';
 
   @override
-  String get barDone => 'Done';
-
-  @override
   String get barDueDateChange => 'Change due date…';
 
   @override
@@ -113,9 +110,6 @@ class LEn extends L {
   String get barFindOnPageTip => 'Find on page  (Ctrl+F)';
 
   @override
-  String get barFindTags => 'Find tags';
-
-  @override
   String get barFontSizeDefault => 'Default';
 
   @override
@@ -159,9 +153,6 @@ class LEn extends L {
       'Draw a loop around ink to select it — then drag or delete';
 
   @override
-  String get barLinks => 'Links & backlinks';
-
-  @override
   String get barMakeCardFromLine => 'Make this line a flashcard';
 
   @override
@@ -174,7 +165,7 @@ class LEn extends L {
   String get barOpenStudyPanel => 'Open study panel';
 
   @override
-  String get barPageOutline => 'Page outline';
+  String get barPageOverview => 'Page overview';
 
   @override
   String get barPenProximity =>
@@ -264,6 +255,9 @@ class LEn extends L {
 
   @override
   String get barTabInsert => 'Insert';
+
+  @override
+  String get barTabPage => 'Page';
 
   @override
   String get barTagLine => 'Tag this line (To Do, Important, Question…)';

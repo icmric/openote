@@ -155,12 +155,6 @@ abstract class L {
   /// **'Definition card'**
   String get barDefinitionCard;
 
-  /// Button that puts the pen or eraser down and goes back to selecting.
-  ///
-  /// In en, this message translates to:
-  /// **'Done'**
-  String get barDone;
-
   /// Menu item: alter the deadline this line already has.
   ///
   /// In en, this message translates to:
@@ -299,12 +293,6 @@ abstract class L {
   /// **'Find on page  (Ctrl+F)'**
   String get barFindOnPageTip;
 
-  /// Opens the panel that lists lines marked To Do, Important and so on.
-  ///
-  /// In en, this message translates to:
-  /// **'Find tags'**
-  String get barFindTags;
-
   /// Menu item: go back to whatever size the page normally uses.
   ///
   /// In en, this message translates to:
@@ -383,12 +371,6 @@ abstract class L {
   /// **'Draw a loop around ink to select it — then drag or delete'**
   String get barLassoHint;
 
-  /// Opens the panel showing what this page links to and what links to it.
-  ///
-  /// In en, this message translates to:
-  /// **'Links & backlinks'**
-  String get barLinks;
-
   /// Tooltip: turn the line the caret is on into a revision card.
   ///
   /// In en, this message translates to:
@@ -413,11 +395,11 @@ abstract class L {
   /// **'Open study panel'**
   String get barOpenStudyPanel;
 
-  /// Opens the panel listing the headings on this page.
+  /// Tooltip on the one button that opens the outline, tags and links views of the current page.
   ///
   /// In en, this message translates to:
-  /// **'Page outline'**
-  String get barPageOutline;
+  /// **'Page overview'**
+  String get barPageOverview;
 
   /// Tooltip on the pen-proximity setting. 'tail' is the blunt end of a stylus; 'barrel button' the button on its side. Keep the line breaks.
   ///
@@ -544,6 +526,12 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Insert'**
   String get barTabInsert;
+
+  /// Name of the fourth command-bar tab: ruling, sheet size, snap and zoom.
+  ///
+  /// In en, this message translates to:
+  /// **'Page'**
+  String get barTabPage;
 
   /// Tooltip on the tag button when the line carries no tag yet. The three words in brackets are examples of tags.
   ///

@@ -36,9 +36,6 @@ class LDe extends L {
   String get barDefinitionCard => 'Definitions-Karte';
 
   @override
-  String get barDone => 'Fertig';
-
-  @override
   String get barDueDateChange => 'Fälligkeitsdatum ändern…';
 
   @override
@@ -113,9 +110,6 @@ class LDe extends L {
   String get barFindOnPageTip => 'Auf der Seite suchen  (Strg+F)';
 
   @override
-  String get barFindTags => 'Markierungen finden';
-
-  @override
   String get barFontSizeDefault => 'Standard';
 
   @override
@@ -159,9 +153,6 @@ class LDe extends L {
       'Ziehe eine Schlinge um die Handschrift — dann verschieben oder löschen';
 
   @override
-  String get barLinks => 'Links und Rückverweise';
-
-  @override
   String get barMakeCardFromLine => 'Aus dieser Zeile eine Karteikarte machen';
 
   @override
@@ -174,7 +165,7 @@ class LDe extends L {
   String get barOpenStudyPanel => 'Lernbereich öffnen';
 
   @override
-  String get barPageOutline => 'Seitenübersicht';
+  String get barPageOverview => 'Seitenübersicht';
 
   @override
   String get barPenProximity =>
@@ -265,6 +256,9 @@ class LDe extends L {
 
   @override
   String get barTabInsert => 'Einfügen';
+
+  @override
+  String get barTabPage => 'Seite';
 
   @override
   String get barTagLine => 'Diese Zeile markieren (Aufgabe, Wichtig, Frage…)';

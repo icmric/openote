@@ -4507,6 +4507,46 @@ class AppState extends ChangeNotifier
   void togglePanel(SidePanelKind kind) =>
       openPanel == kind ? closePanel() : showPanel(kind);
 
+  /// **The three views of the page you are on, behind one button.**
+  ///
+  /// The owner: *"I think we can probably combine page tags, outline, and
+  /// linked to/from into a single button up there to reduce clutter. Some sort
+  /// of page overview thing."*
+  ///
+  /// They are one question asked three ways — *what is on this page, and what
+  /// is it attached to* — and three separate toggles in the toolbar made you
+  /// choose the answer before you had asked the question. One button opens the
+  /// last one you looked at; the panel's own header switches between them,
+  /// which is a step you take having already seen something.
+  static const pageOverviewKinds = [
+    SidePanelKind.outline,
+    SidePanelKind.tags,
+    SidePanelKind.links,
+  ];
+
+  /// Which of the three the button opens. Not persisted: it is a "carry on
+  /// from where you were" within a sitting, and the outline is the right thing
+  /// to land on the first time — it is the only one of the three that is never
+  /// empty on a page with anything written on it.
+  SidePanelKind pageOverviewKind = SidePanelKind.outline;
+
+  bool get showPageOverview =>
+      openPanel != null && pageOverviewKinds.contains(openPanel);
+
+  void showPageOverviewAs(SidePanelKind kind) {
+    assert(pageOverviewKinds.contains(kind));
+    pageOverviewKind = kind;
+    showPanel(kind);
+  }
+
+  void togglePageOverview() {
+    if (showPageOverview) {
+      closePanel();
+    } else {
+      showPanel(pageOverviewKind);
+    }
+  }
+
   bool get showPlannerPanel => openPanel == SidePanelKind.planner;
   void togglePlannerPanel() => togglePanel(SidePanelKind.planner);
 

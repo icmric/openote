@@ -36,9 +36,6 @@ class LPt extends L {
   String get barDefinitionCard => 'Cartão de definição';
 
   @override
-  String get barDone => 'Pronto';
-
-  @override
   String get barDueDateChange => 'Mudar o prazo…';
 
   @override
@@ -113,9 +110,6 @@ class LPt extends L {
   String get barFindOnPageTip => 'Procurar na página  (Ctrl+F)';
 
   @override
-  String get barFindTags => 'Procurar marcadores';
-
-  @override
   String get barFontSizeDefault => 'Padrão';
 
   @override
@@ -159,9 +153,6 @@ class LPt extends L {
       'Contorne o traço para selecioná-lo — depois arraste ou apague';
 
   @override
-  String get barLinks => 'Links e referências';
-
-  @override
   String get barMakeCardFromLine => 'Transformar esta linha num cartão';
 
   @override
@@ -174,7 +165,7 @@ class LPt extends L {
   String get barOpenStudyPanel => 'Abrir o painel de estudo';
 
   @override
-  String get barPageOutline => 'Estrutura da página';
+  String get barPageOverview => 'Vista geral da página';
 
   @override
   String get barPenProximity =>
@@ -264,6 +255,9 @@ class LPt extends L {
 
   @override
   String get barTabInsert => 'Inserir';
+
+  @override
+  String get barTabPage => 'Página';
 
   @override
   String get barTagLine => 'Marcar esta linha (A fazer, Importante, Pergunta…)';

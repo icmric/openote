@@ -25,7 +25,6 @@ import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/ui/command_bar.dart';
 import 'package:openote/ui/math_bar.dart';
-import 'package:openote/ui/object_row.dart';
 
 import 'support/sqlite.dart';
 
@@ -74,9 +73,9 @@ void main() {
         body: ListenableBuilder(
           listenable: app,
           builder: (_, __) => Column(children: [
+            // DEG/RAD is on the command row, which the equation borrows
+            // while one is being written.
             CommandBar(app: app),
-            // DEG/RAD lives on the object row now, not on the bar.
-            ObjectRow(app: app),
             Expanded(child: PageCanvas(state: app)),
           ]),
         ),
@@ -181,9 +180,9 @@ void main() {
         body: ListenableBuilder(
           listenable: app,
           builder: (_, __) => Column(children: [
+            // DEG/RAD is on the command row, which the equation borrows
+            // while one is being written.
             CommandBar(app: app),
-            // DEG/RAD lives on the object row now, not on the bar.
-            ObjectRow(app: app),
             Expanded(child: PageCanvas(state: app)),
           ]),
         ),

@@ -1,11 +1,18 @@
-// The object row (owner, v0.23).
+// The command row's two faces (owner, v0.23; moved off their own band later).
 //
 // *"moving the user to a new menu up there when entering maths mode without
 // them doing anything is jarring and its best to not force any navigation."*
 //
 // The design answers that structurally rather than politely: there is no tab
-// to be moved to, and the band that changes is always there and always the
-// same height. These tests are the invariants that keep it that way.
+// to be moved to, and the chrome is the same height whatever is showing.
+//
+// These invariants survived the band being removed — the owner: *"We still
+// have this extra bar of options under the existing menu bar … Lets move all
+// of that into its own tab called 'Page'."* The equation palette borrows the
+// command row instead of a strip of its own, which is the same loan one row
+// higher, and the page controls are a tab. What must not change is that
+// nobody is navigated and nothing moves under them, so these tests now
+// measure the whole chrome rather than one band of it.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -20,7 +27,7 @@ import 'package:openote/store/repository.dart';
 import 'package:openote/ui/command_bar.dart';
 import 'package:openote/ui/math_bar.dart';
 import 'package:openote/ui/object_face.dart';
-import 'package:openote/ui/object_row.dart';
+import 'package:openote/ui/command_faces.dart';
 
 import 'support/sqlite.dart';
 
@@ -155,7 +162,7 @@ void main() {
           home: Scaffold(
             body: ListenableBuilder(
               listenable: app,
-              builder: (_, __) => ObjectRow(app: app),
+              builder: (_, __) => CommandBar(app: app),
             ),
           ),
         ));
@@ -197,10 +204,7 @@ void main() {
           body: Column(children: [
             ListenableBuilder(
               listenable: app,
-              builder: (_, __) => Column(children: [
-                CommandBar(app: app),
-                ObjectRow(app: app),
-              ]),
+              builder: (_, __) => CommandBar(app: app),
             ),
             const Expanded(child: ColoredBox(color: Color(0xFFEEEEEE))),
           ]),
@@ -209,7 +213,7 @@ void main() {
       await tester.pumpAndSettle();
 
       Map<String, double> tabXs() => {
-            for (final t in ['Home', 'Insert', 'Draw'])
+            for (final t in ['Home', 'Insert', 'Draw', 'Page'])
               t: tester.getRect(find.text(t)).left,
           };
       double pageTop() =>
@@ -237,44 +241,140 @@ void main() {
       app.cancelPendingSave();
     });
 
-    testWidgets('the row is exactly its stated height', (tester) async {
+    testWidgets('the chrome is one height, whatever it is showing',
+        (tester) async {
+      // The number itself is not the property — 32 for the tabs and 44 for
+      // the command row is a design choice and may change. The property is
+      // that it is the SAME number in every state, because that is what means
+      // the canvas box never moves and there is no compensating pan to write.
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       tester.view.physicalSize = const Size(2600, 900);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: kOnoteLocalizations,
-      supportedLocales: kOnoteLocales,
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
         home: Scaffold(
-          body: ListenableBuilder(
-            listenable: app,
-            builder: (_, __) => ObjectRow(app: app),
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: ListenableBuilder(
+              listenable: app,
+              builder: (_, __) => CommandBar(app: app),
+            ),
           ),
         ),
       ));
       await tester.pumpAndSettle();
-      expect(tester.getSize(find.byType(ObjectRow)).height, kObjectRowHeight);
-      expect(kObjectRowHeight, 36);
+      final resting = tester.getSize(find.byType(CommandBar)).height;
+
+      for (final go in [
+        () => tester.tap(find.text('Draw')),
+        () => tester.tap(find.text('Page')),
+        () => tester.tap(find.text('Insert')),
+      ]) {
+        await go();
+        await tester.pumpAndSettle();
+        expect(tester.getSize(find.byType(CommandBar)).height, resting);
+      }
+
+      app.insertEquation(at: const Offset(10, 10));
+      app.setActiveMath(standIn());
+      await tester.pumpAndSettle();
+      expect(tester.getSize(find.byType(CommandBar)).height, resting,
+          reason: 'an equation borrows the row; it does not add one');
+      app.cancelPendingSave();
+    });
+  });
+
+  group('what is above the tabs', () {
+    testWidgets('undo and redo are there whatever tab you are on',
+        (tester) async {
+      // Reported: *"We are also lacking an undo and redo button at the moment,
+      // these are pretty important to have."* They existed — at the head of
+      // the Home row — which is to say they were missing from three quarters
+      // of the app. They are not a Home command: they are what you press when
+      // something has gone wrong, whatever you were doing when it did.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      tester.view.physicalSize = const Size(2600, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        home: Scaffold(
+          body: ListenableBuilder(
+            listenable: app,
+            builder: (_, __) => CommandBar(app: app),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      for (final tab in ['Insert', 'Draw', 'Page', 'Home']) {
+        await tester.tap(find.text(tab));
+        await tester.pumpAndSettle();
+        expect(find.byIcon(Icons.undo), findsOneWidget, reason: tab);
+        expect(find.byIcon(Icons.redo), findsOneWidget, reason: tab);
+      }
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and the word count is too', (tester) async {
+      // The owner: *"move the word count to the bar next to all the other
+      // options up top."* It is the one thing off the old band that is not a
+      // setting — you do not change it, you glance at it.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      tester.view.physicalSize = const Size(2600, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      app.blocks.add(Block(
+          type: BlockType.text,
+          x: 0,
+          y: 0,
+          w: 300,
+          content: {'text': 'one two three'}));
+      await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        home: Scaffold(
+          body: ListenableBuilder(
+            listenable: app,
+            builder: (_, __) => CommandBar(app: app),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('3 words'), findsOneWidget);
+      await tester.tap(find.text('Draw'));
+      await tester.pumpAndSettle();
+      expect(find.text('3 words'), findsOneWidget,
+          reason: 'a number checked twenty times an hour is not behind a tab');
+      app.cancelPendingSave();
     });
   });
 
   group('the page face', () {
-    testWidgets('carries the page controls the View tab used to',
+    testWidgets('is the Page tab, and carries what the View tab used to',
         (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       tester.view.physicalSize = const Size(2600, 900);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: kOnoteLocalizations,
-      supportedLocales: kOnoteLocales,
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
-            builder: (_, __) => ObjectRow(app: app),
+            builder: (_, __) => CommandBar(app: app),
           ),
         ),
       ));
+      await tester.pumpAndSettle();
+      expect(find.byType(PageFace), findsNothing,
+          reason: 'not until somebody asks for it');
+      await tester.tap(find.text('Page'));
       await tester.pumpAndSettle();
       expect(find.byType(PageFace), findsOneWidget);
       for (final tip in [

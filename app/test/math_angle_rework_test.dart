@@ -22,7 +22,6 @@ import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/ui/command_bar.dart';
-import 'package:openote/ui/object_row.dart';
 
 import 'support/sqlite.dart';
 
@@ -162,7 +161,6 @@ void main() {
             listenable: app,
             builder: (_, __) => Column(children: [
               CommandBar(app: app),
-              ObjectRow(app: app),
               Expanded(child: PageCanvas(state: app)),
             ]),
           ),
@@ -302,7 +300,6 @@ void main() {
             listenable: app,
             builder: (_, __) => Column(children: [
               CommandBar(app: app),
-              ObjectRow(app: app),
               Expanded(child: PageCanvas(state: app)),
             ]),
           ),
@@ -358,7 +355,6 @@ void main() {
             listenable: app,
             builder: (_, __) => Column(children: [
               CommandBar(app: app),
-              ObjectRow(app: app),
               Expanded(child: PageCanvas(state: app)),
             ]),
           ),

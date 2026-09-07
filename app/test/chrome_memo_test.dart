@@ -37,7 +37,6 @@ import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/ui/command_bar.dart';
 import 'package:openote/ui/compacting_toolbar.dart';
-import 'package:openote/ui/object_row.dart';
 
 import 'support/app.dart';
 import 'support/sqlite.dart';
@@ -52,6 +51,7 @@ const _actionsOnly = {
   'setActiveBlockFont',
   'setActiveBlockFontSize', 'setAngleMode', 'setBackground', 'setEraserMode',
   'setInkColor', 'setPageLayout', 'setPickingInkColor', 'setTagDue', 'setTool',
+  'togglePageOverview',
   'setTouchDrawing', 'toggleFind', 'toggleLinePrefix', 'toggleLinksPanel',
   'toggleList', 'togglePlannerPanel', 'toggleSnap', 'toggleStudyPanel',
   'toggleTagOnSelection', 'toggleTagsPanel', 'toggleTocPanel', 'undo',
@@ -100,7 +100,11 @@ void main() {
     }
 
     test('the command bar', () => check('lib/ui/command_bar.dart', '_CommandBarState'));
-    test('the object row', () => check('lib/ui/object_row.dart', '_ObjectRowState'));
+    // The object row's own state class is gone with the band: its two faces
+    // are stateless children of the command bar now, so what they render has
+    // to be keyed on by the bar itself — which is what the check above
+    // covers, and why `memoInputs()` names the page properties.
+
   });
 
   group('the memo, through the real widgets', () {
@@ -151,10 +155,7 @@ void main() {
         body: Column(children: [
           ListenableBuilder(
             listenable: app,
-            builder: (_, __) => Column(children: [
-              CommandBar(app: app),
-              ObjectRow(app: app),
-            ]),
+            builder: (_, __) => CommandBar(app: app),
           ),
         ]),
       )));
@@ -234,16 +235,13 @@ void main() {
       await pump(tester);
       final before = bar(tester);
 
-      // Nothing on either row's key list has moved — only the theme.
+      // Nothing on the bar's key list has moved — only the theme.
       await tester.pumpWidget(testApp(
         Scaffold(
           body: Column(children: [
             ListenableBuilder(
               listenable: app,
-              builder: (_, __) => Column(children: [
-                CommandBar(app: app),
-                ObjectRow(app: app),
-              ]),
+              builder: (_, __) => CommandBar(app: app),
             ),
           ]),
         ),

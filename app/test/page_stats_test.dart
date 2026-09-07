@@ -13,7 +13,7 @@ import 'package:openote/model/models.dart';
 import 'package:openote/model/page_stats.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
-import 'package:openote/ui/object_row.dart';
+import 'package:openote/ui/command_faces.dart';
 
 import 'support/sqlite.dart';
 
@@ -222,9 +222,12 @@ void main() {
       await tester.pumpWidget(MaterialApp(
       localizationsDelegates: kOnoteLocalizations,
       supportedLocales: kOnoteLocales,
+        // The count used to be at the end of the page controls; it is in the
+        // tab row now, where it can be read from any tab. Mounted on its own
+        // here, which is all these tests were ever about.
         home: Scaffold(
             body: Align(
-                alignment: Alignment.topLeft, child: PageFace(app: app))),
+                alignment: Alignment.topLeft, child: WordCount(app: app))),
       ));
       await tester.pump();
     }

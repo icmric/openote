@@ -36,9 +36,6 @@ class LFr extends L {
   String get barDefinitionCard => 'Fiche définition';
 
   @override
-  String get barDone => 'Terminé';
-
-  @override
   String get barDueDateChange => 'Changer l\'échéance…';
 
   @override
@@ -113,9 +110,6 @@ class LFr extends L {
   String get barFindOnPageTip => 'Chercher dans la page  (Ctrl+F)';
 
   @override
-  String get barFindTags => 'Chercher les étiquettes';
-
-  @override
   String get barFontSizeDefault => 'Par défaut';
 
   @override
@@ -159,9 +153,6 @@ class LFr extends L {
       'Entourez l\'encre pour la sélectionner — puis déplacez-la ou supprimez-la';
 
   @override
-  String get barLinks => 'Liens et rétroliens';
-
-  @override
   String get barMakeCardFromLine => 'Faire une fiche de cette ligne';
 
   @override
@@ -174,7 +165,7 @@ class LFr extends L {
   String get barOpenStudyPanel => 'Ouvrir le panneau de révisions';
 
   @override
-  String get barPageOutline => 'Plan de la page';
+  String get barPageOverview => 'Aperçu de la page';
 
   @override
   String get barPenProximity =>
@@ -264,6 +255,9 @@ class LFr extends L {
 
   @override
   String get barTabInsert => 'Insérer';
+
+  @override
+  String get barTabPage => 'Page';
 
   @override
   String get barTagLine =>

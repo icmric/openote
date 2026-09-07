@@ -35,9 +35,6 @@ class LZh extends L {
   String get barDefinitionCard => '定义卡';
 
   @override
-  String get barDone => '完成';
-
-  @override
   String get barDueDateChange => '修改截止日期…';
 
   @override
@@ -111,9 +108,6 @@ class LZh extends L {
   String get barFindOnPageTip => '在页面中查找  (Ctrl+F)';
 
   @override
-  String get barFindTags => '查找标记';
-
-  @override
   String get barFontSizeDefault => '默认';
 
   @override
@@ -155,9 +149,6 @@ class LZh extends L {
   String get barLassoHint => '圈住手写内容即可选中 — 然后拖动或删除';
 
   @override
-  String get barLinks => '链接与反向链接';
-
-  @override
   String get barMakeCardFromLine => '把这一行做成记忆卡';
 
   @override
@@ -170,7 +161,7 @@ class LZh extends L {
   String get barOpenStudyPanel => '打开复习面板';
 
   @override
-  String get barPageOutline => '页面大纲';
+  String get barPageOverview => '页面总览';
 
   @override
   String get barPenProximity =>
@@ -257,6 +248,9 @@ class LZh extends L {
 
   @override
   String get barTabInsert => '插入';
+
+  @override
+  String get barTabPage => '页面';
 
   @override
   String get barTagLine => '标记这一行（待办、重要、问题…）';

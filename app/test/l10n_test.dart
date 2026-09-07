@@ -37,7 +37,7 @@ import 'support/app.dart';
 /// here the moment you convert it — that is what arms (c) for it.
 const _converted = [
   'lib/ui/onboarding.dart',
-  'lib/ui/object_row.dart',
+  'lib/ui/command_faces.dart',
   'lib/ui/command_bar.dart',
   'lib/ui/sidebar.dart',
   'lib/ui/settings_dialog.dart',

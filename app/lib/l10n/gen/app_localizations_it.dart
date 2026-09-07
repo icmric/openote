@@ -36,9 +36,6 @@ class LIt extends L {
   String get barDefinitionCard => 'Scheda definizione';
 
   @override
-  String get barDone => 'Fatto';
-
-  @override
   String get barDueDateChange => 'Cambia la scadenza…';
 
   @override
@@ -113,9 +110,6 @@ class LIt extends L {
   String get barFindOnPageTip => 'Cerca nella pagina  (Ctrl+F)';
 
   @override
-  String get barFindTags => 'Cerca etichette';
-
-  @override
   String get barFontSizeDefault => 'Predefinito';
 
   @override
@@ -159,9 +153,6 @@ class LIt extends L {
       'Cerchia l\'inchiostro per selezionarlo — poi trascinalo o cancellalo';
 
   @override
-  String get barLinks => 'Collegamenti e rimandi';
-
-  @override
   String get barMakeCardFromLine => 'Trasforma questa riga in una scheda';
 
   @override
@@ -174,7 +165,7 @@ class LIt extends L {
   String get barOpenStudyPanel => 'Apri il pannello di studio';
 
   @override
-  String get barPageOutline => 'Struttura della pagina';
+  String get barPageOverview => 'Panoramica della pagina';
 
   @override
   String get barPenProximity =>
@@ -265,6 +256,9 @@ class LIt extends L {
 
   @override
   String get barTabInsert => 'Inserisci';
+
+  @override
+  String get barTabPage => 'Pagina';
 
   @override
   String get barTagLine =>

@@ -36,9 +36,6 @@ class LEs extends L {
   String get barDefinitionCard => 'Ficha de definición';
 
   @override
-  String get barDone => 'Listo';
-
-  @override
   String get barDueDateChange => 'Cambiar la fecha límite…';
 
   @override
@@ -113,9 +110,6 @@ class LEs extends L {
   String get barFindOnPageTip => 'Buscar en la página  (Ctrl+F)';
 
   @override
-  String get barFindTags => 'Buscar etiquetas';
-
-  @override
   String get barFontSizeDefault => 'Predeterminado';
 
   @override
@@ -160,9 +154,6 @@ class LEs extends L {
       'Rodea la tinta con un lazo para seleccionarla — luego arrástrala o bórrala';
 
   @override
-  String get barLinks => 'Enlaces y retroenlaces';
-
-  @override
   String get barMakeCardFromLine => 'Convertir esta línea en una ficha';
 
   @override
@@ -175,7 +166,7 @@ class LEs extends L {
   String get barOpenStudyPanel => 'Abrir el panel de estudio';
 
   @override
-  String get barPageOutline => 'Esquema de la página';
+  String get barPageOverview => 'Resumen de la página';
 
   @override
   String get barPenProximity =>
@@ -265,6 +256,9 @@ class LEs extends L {
 
   @override
   String get barTabInsert => 'Insertar';
+
+  @override
+  String get barTabPage => 'Página';
 
   @override
   String get barTagLine =>

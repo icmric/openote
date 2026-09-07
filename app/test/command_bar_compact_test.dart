@@ -77,9 +77,10 @@ void main() {
     expect(find.byIcon(Icons.event_note_outlined), findsOneWidget,
         reason: 'Planner');
     for (final tip in const [
-      'Find tags',
-      'Page outline',
-      'Links & backlinks',
+      // The outline, the tags and the links are one button now — they are one
+      // question asked three ways, and the panel's own header moves between
+      // them. See `page_overview_test.dart`.
+      'Page overview',
       'Export page…',
       'Settings…',
     ]) {

@@ -37,10 +37,6 @@
   "@barDefinitionCard": {
     "description": "Menu item: a card whose front is a term to define."
   },
-  "barDone": "Done",
-  "@barDone": {
-    "description": "Button that puts the pen or eraser down and goes back to selecting."
-  },
   "barDueDateChange": "Change due date…",
   "@barDueDateChange": {
     "description": "Menu item: alter the deadline this line already has."
@@ -147,10 +143,6 @@
   "@barFindOnPageTip": {
     "description": "Tooltip. Keep the shortcut in brackets as typed; the two spaces separate it from the words."
   },
-  "barFindTags": "Find tags",
-  "@barFindTags": {
-    "description": "Opens the panel that lists lines marked To Do, Important and so on."
-  },
   "barFontSizeDefault": "Default",
   "@barFontSizeDefault": {
     "description": "Menu item: go back to whatever size the page normally uses."
@@ -209,10 +201,6 @@
   "@barLassoHint": {
     "description": "Hint shown in the Draw row while the lasso tool is picked."
   },
-  "barLinks": "Links & backlinks",
-  "@barLinks": {
-    "description": "Opens the panel showing what this page links to and what links to it."
-  },
   "barMakeCardFromLine": "Make this line a flashcard",
   "@barMakeCardFromLine": {
     "description": "Tooltip: turn the line the caret is on into a revision card."
@@ -229,9 +217,9 @@
   "@barOpenStudyPanel": {
     "description": "Menu item."
   },
-  "barPageOutline": "Page outline",
-  "@barPageOutline": {
-    "description": "Opens the panel listing the headings on this page."
+  "barPageOverview": "Page overview",
+  "@barPageOverview": {
+    "description": "Tooltip on the one button that opens the outline, tags and links views of the current page."
   },
   "barPenProximity": "Bringing the pen near the page switches to inking.\nPick another tool while the pen hovers and it sticks until the\npen leaves and comes back. The pen's tail (or its barrel\nbutton, held while drawing) erases.",
   "@barPenProximity": {
@@ -355,6 +343,10 @@
   "barTabInsert": "Insert",
   "@barTabInsert": {
     "description": "Toolbar tab: adding things to the page."
+  },
+  "barTabPage": "Page",
+  "@barTabPage": {
+    "description": "Name of the fourth command-bar tab: ruling, sheet size, snap and zoom."
   },
   "barTagLine": "Tag this line (To Do, Important, Question…)",
   "@barTagLine": {

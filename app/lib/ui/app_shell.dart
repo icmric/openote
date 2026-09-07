@@ -19,7 +19,6 @@ import 'import_progress.dart';
 import 'unfinished_import_bar.dart';
 import 'command_bar.dart';
 import 'context_menus.dart';
-import 'object_row.dart';
 import 'onboarding.dart';
 import 'open_notice_dialog.dart';
 import 'planner_panel.dart';
@@ -73,7 +72,6 @@ class _AppShellState extends State<AppShell> {
       _canvasFocus,
       _sidebarRegion,
       _toolbarRegion,
-      _objectRegion,
       _panelRegion,
       _alertRegion
     ]) {
@@ -155,7 +153,6 @@ class _AppShellState extends State<AppShell> {
       _canvasFocus,
       _sidebarRegion,
       _toolbarRegion,
-      _objectRegion,
       _panelRegion,
       _alertRegion
     ]) {
@@ -779,11 +776,6 @@ class _AppShellState extends State<AppShell> {
       FocusNode(debugLabel: 'region-sidebar', skipTraversal: true);
   final FocusNode _toolbarRegion =
       FocusNode(debugLabel: 'region-toolbar', skipTraversal: true);
-  /// The object row. **Unconditional** — unlike the panel it is always
-  /// built, so it is always a stop, and from the page one Shift+F6 lands on
-  /// the maths palette.
-  final FocusNode _objectRegion =
-      FocusNode(debugLabel: 'region-object', skipTraversal: true);
   final FocusNode _panelRegion =
       FocusNode(debugLabel: 'region-panel', skipTraversal: true);
 
@@ -804,7 +796,6 @@ class _AppShellState extends State<AppShell> {
   List<_Region> _regions() => [
         _Region.sidebar,
         _Region.toolbar,
-        _Region.object,
         _Region.page,
         // Asked of the focus tree rather than re-derived from the build's
         // conditions: a panel that is open but not currently BUILT (outline
@@ -818,7 +809,6 @@ class _AppShellState extends State<AppShell> {
   FocusNode _regionNode(_Region r) => switch (r) {
         _Region.sidebar => _sidebarRegion,
         _Region.toolbar => _toolbarRegion,
-        _Region.object => _objectRegion,
         _Region.page => _canvasFocus,
         _Region.panel => _panelRegion,
         _Region.alerts => _alertRegion,
@@ -1259,16 +1249,12 @@ class _AppShellState extends State<AppShell> {
                 child: Column(
                   children: [
                     _regionWrap(_Region.toolbar, CommandBar(app: app)),
-                    // **The object row**, permanent and always 36 px.
-                    //
-                    // Permanent because a band that appeared with the
-                    // equation would push the page down and putting the page
-                    // back is a pan the canvas controller discards on a short
-                    // or zoomed-out page — so the page would jump exactly
-                    // where a student most often starts an equation. See
-                    // `object_row.dart`; the chrome is 112 px in every state
-                    // of the app and the canvas box never moves.
-                    _regionWrap(_Region.object, ObjectRow(app: app)),
+                    // **No third band.** The page controls it carried are
+                    // the Page tab now, and the equation palette borrows the
+                    // command row — see `command_faces.dart`. What that band
+                    // existed to protect is untouched: the chrome is ONE
+                    // height in every state of the app, so the canvas box
+                    // never moves and there is no compensating pan to write.
                     if (app.findOpen) _FindBar(app: app),
                     // The breadcrumb is CONTEXT, not a second navigator
                     // (§7d). With the navigator expanded it repeats what is
@@ -1546,6 +1532,7 @@ class _TagsPanel extends StatelessWidget {
     return SidePanel(
       title: SidePanelKind.tags.label,
       icon: Icons.label_outline,
+      actions: _overviewSwitch(app),
       onClose: app.closePanel,
       child: all.isEmpty
           ? PanelEmpty(
@@ -1619,6 +1606,34 @@ class _TagsPanel extends StatelessWidget {
   }
 }
 
+/// **The three views of this page, in the panel's own header.**
+///
+/// The owner: *"I think we can probably combine page tags, outline, and linked
+/// to/from into a single button up there to reduce clutter. Some sort of page
+/// overview thing."*
+///
+/// One toolbar button opens the last of the three you looked at, and this is
+/// how you get to the other two. In the header's ACTIONS rather than as a
+/// segmented strip below it: the panel already has one row of chrome and a
+/// second would eat the height the content is short of, and three small icons
+/// beside a title is the same shape every other panel's actions already take.
+List<Widget> _overviewSwitch(AppState app) => [
+      for (final kind in AppState.pageOverviewKinds)
+        IconButton(
+          icon: Icon(_overviewIcon(kind), size: OnoteIcon.md),
+          tooltip: kind.label,
+          isSelected: app.openPanel == kind,
+          visualDensity: VisualDensity.compact,
+          onPressed: () => app.showPageOverviewAs(kind),
+        ),
+    ];
+
+IconData _overviewIcon(SidePanelKind kind) => switch (kind) {
+      SidePanelKind.tags => Icons.label_outline,
+      SidePanelKind.links => Icons.account_tree_outlined,
+      _ => Icons.toc,
+    };
+
 /// Page outline (TEXT-10): the current page's headings, click to jump.
 ///
 /// Deliberately derived from the Markdown rather than stored: a heading IS
@@ -1634,6 +1649,7 @@ class _TocPanel extends StatelessWidget {
     return SidePanel(
       title: SidePanelKind.outline.label,
       icon: Icons.toc,
+      actions: _overviewSwitch(app),
       onClose: app.closePanel,
       child: items.isEmpty
           ? PanelEmpty(
@@ -1736,6 +1752,7 @@ class _LinksPanel extends StatelessWidget {
     return SidePanel(
       title: SidePanelKind.links.label,
       icon: Icons.account_tree_outlined,
+      actions: _overviewSwitch(app),
       onClose: app.closePanel,
       child: ListView(
         children: [
@@ -2109,7 +2126,7 @@ class _LockedPage extends StatelessWidget {
 
 /// The window's big areas, in the order F6 walks them — which is the order
 /// they are read on screen: left, top, middle, right.
-enum _Region { sidebar, toolbar, object, page, panel, alerts }
+enum _Region { sidebar, toolbar, page, panel, alerts }
 
 /// An action that exists only while the canvas node itself is focused —
 /// the moment focus moves into any editor (or anywhere else), it reports
