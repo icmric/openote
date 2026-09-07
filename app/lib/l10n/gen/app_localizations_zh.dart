@@ -168,9 +168,6 @@ class LZh extends L {
       '触控笔靠近页面时自动切换到手写。\n笔悬停时若改选其他工具，会一直保持，直到笔离开\n再回来。笔的尾端（或绘制时按住的笔杆按键）用来擦除。';
 
   @override
-  String get barPickPenHint => '选择钢笔或荧光笔开始绘制';
-
-  @override
   String get barPlanner => '日程';
 
   @override

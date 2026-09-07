@@ -172,9 +172,6 @@ class LFr extends L {
       'Approcher le stylet de la page passe à l\'encre.\nSi vous choisissez un autre outil pendant que le stylet est là, il\nreste jusqu\'à ce que le stylet s\'éloigne et revienne. Le bout\narrière du stylet (ou son bouton, maintenu) efface.';
 
   @override
-  String get barPickPenHint => 'Prenez le stylo ou le surligneur pour dessiner';
-
-  @override
   String get barPlanner => 'Agenda';
 
   @override

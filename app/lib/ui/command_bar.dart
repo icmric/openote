@@ -951,11 +951,18 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         onPressed: () => app.setTool(t),
       );
     }
-    // The swatches also appear with ink selected, so a lassoed diagram can be
-    // recoloured without first re-picking the pen.
-    final inkActive = app.tool == Tool.pen ||
-        app.tool == Tool.highlighter ||
-        app.hasInkSelection;
+    // **The colours are always here.** They used to appear only while a pen,
+    // a highlighter or some ink was in hand, and the owner reported what that
+    // costs: *"i want it to always be there, not just when im drawing. This
+    // also means that the eyedropper is unusable and i cant confirm if it even
+    // works or not as when i attempt to select it and move my cursor it then
+    // moves away from inking and therefore that disappears."*
+    //
+    // Exactly, and the eyedropper made it unarguable. Reaching for the mouse
+    // is how a toolbar button is pressed, and reaching for the mouse is also
+    // what puts the pen back down — so the control was gone before the pointer
+    // ever arrived at it. A control that disappears as you aim at it cannot be
+    // used, and one that appears and disappears moves everything beside it.
     final highlighting = app.tool == Tool.highlighter;
     final colors =
         highlighting ? OnoteColors.highlighterColors : OnoteColors.penColors;
@@ -982,7 +989,16 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       // With ink selected (typically just lassoed), a colour click recolours
       // it rather than only arming the next stroke - recolouring after the
       // fact is most of why you lasso a diagram (INK-7).
-      if (app.hasInkSelection) app.recolorSelectedInk(ink);
+      if (app.hasInkSelection) {
+        app.recolorSelectedInk(ink);
+      } else if (app.tool != Tool.pen && app.tool != Tool.highlighter) {
+        // Choosing an ink colour is choosing to draw, so this saves the click
+        // that the swatches being always-visible would otherwise have added.
+        // DELIBERATELY, not automatically, so reaching for the mouse does not
+        // put it straight back down - see `AppState.setTool`. (`setTool`
+        // clears the selection, which is why this is the branch with none.)
+        app.setTool(Tool.pen);
+      }
     }
 
     Widget swatch(String ink, Color shown, String tip) => Padding(
@@ -1032,56 +1048,58 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       toolButton(Tool.eraser, Icons.cleaning_services_outlined, l.barToolEraser),
       toolButton(Tool.lasso, Icons.gesture_outlined, l.barToolLasso),
       const _Div(),
-      if (inkActive) ...[
-        for (final (i, c) in colors.indexed)
-          swatch(inkOf(i, c), swatchColor(c),
-              (!highlighting && i == 0) ? l.barInkDefaultColour : inkOf(i, c)),
-        for (final hex in recents)
-          swatch('#${hex.replaceFirst('#', '')}', onoteColorFromHex(hex) ?? scheme.onSurface, '#$hex'),
-        // The full picker - a palette grid, a hue/saturation field and a hex
-        // box - is the one that already exists for text colour. One picker,
-        // one set of recents, whatever is being coloured.
-        IconButton(
-          icon: const Icon(Icons.add_circle_outline, size: 18),
-          tooltip: l.barInkMoreColours,
-          visualDensity: VisualDensity.compact,
-          onPressed: () async {
-            final picked = await showOnoteColorPicker(context, app,
-                initial: app.inkColor,
-                title: highlighting
-                    ? l.barInkHighlighterColourTitle
-                    : l.barInkColourTitle);
-            if (picked == null) return;
-            app.rememberCustomColor(picked);
-            useInk('#${picked.replaceFirst('#', '')}');
-          },
-        ),
-        IconButton(
-          icon: const Icon(Icons.colorize_outlined, size: 18),
-          tooltip: l.barInkPickColour,
-          isSelected: app.pickingInkColor,
-          visualDensity: VisualDensity.compact,
-          onPressed: () => app.setPickingInkColor(!app.pickingInkColor),
-        ),
-        const SizedBox(width: 6),
-        if (app.pickingInkColor)
-          Text(l.barInkPickingHint,
-              style: TextStyle(
-                  fontSize: 11, color: context.surfaces.textSecondary))
-        else
-          SizedBox(
-            width: 110,
-            child: Slider(
-              value: app.penSize,
-              min: 1,
-              max: 10,
-              onChanged: (v) {
-                app.penSize = v;
-                app.refresh();
-              },
-            ),
+      for (final (i, c) in colors.indexed)
+        swatch(inkOf(i, c), swatchColor(c),
+            (!highlighting && i == 0) ? l.barInkDefaultColour : inkOf(i, c)),
+      for (final hex in recents)
+        swatch('#${hex.replaceFirst('#', '')}', onoteColorFromHex(hex) ?? scheme.onSurface, '#$hex'),
+      // The full picker - a palette grid, a hue/saturation field and a hex
+      // box - is the one that already exists for text colour. One picker, one
+      // set of recents, whatever is being coloured.
+      IconButton(
+        icon: const Icon(Icons.add_circle_outline, size: 18),
+        tooltip: l.barInkMoreColours,
+        visualDensity: VisualDensity.compact,
+        onPressed: () async {
+          final picked = await showOnoteColorPicker(context, app,
+              initial: app.inkColor,
+              title: highlighting
+                  ? l.barInkHighlighterColourTitle
+                  : l.barInkColourTitle);
+          if (picked == null) return;
+          app.rememberCustomColor(picked);
+          useInk('#${picked.replaceFirst('#', '')}');
+        },
+      ),
+      IconButton(
+        icon: const Icon(Icons.colorize_outlined, size: 18),
+        tooltip: l.barInkPickColour,
+        isSelected: app.pickingInkColor,
+        visualDensity: VisualDensity.compact,
+        onPressed: () => app.setPickingInkColor(!app.pickingInkColor),
+      ),
+      const SizedBox(width: 6),
+      if (app.pickingInkColor)
+        Text(l.barInkPickingHint,
+            style:
+                TextStyle(fontSize: 11, color: context.surfaces.textSecondary))
+      else
+        SizedBox(
+          width: 110,
+          child: Slider(
+            value: app.penSize,
+            min: 1,
+            max: 10,
+            onChanged: (v) {
+              app.penSize = v;
+              app.refresh();
+            },
           ),
-      ] else if (app.tool == Tool.eraser) ...[
+        ),
+      // What is left really is about ONE tool, and says nothing at all when
+      // that tool is not the one in hand.
+      if (app.tool == Tool.eraser) ...[
+        const _Div(),
         SegmentedButton<EraserMode>(
           segments: [
             for (final m in EraserMode.values)
@@ -1101,13 +1119,15 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
             app.eraserMode == EraserMode.area
                 ? l.barEraserSplit
                 : l.barEraserWhole,
-            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
-      ] else if (app.tool == Tool.lasso)
+            style:
+                TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
+      ],
+      if (app.tool == Tool.lasso) ...[
+        const _Div(),
         Text(l.barLassoHint,
-            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary))
-      else
-        Text(l.barPickPenHint,
-            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
+            style:
+                TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
+      ],
       // NO `Spacer` here, and none in any command row. Every row is built
       // inside a horizontal `SingleChildScrollView`, which offers unbounded
       // width — and a flex child (`Spacer` is `Expanded`) under an unbounded

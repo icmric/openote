@@ -407,12 +407,6 @@ abstract class L {
   /// **'Bringing the pen near the page switches to inking.\nPick another tool while the pen hovers and it sticks until the\npen leaves and comes back. The pen\'s tail (or its barrel\nbutton, held while drawing) erases.'**
   String get barPenProximity;
 
-  /// Hint shown in the Draw row when no drawing tool is picked.
-  ///
-  /// In en, this message translates to:
-  /// **'Pick the pen or highlighter to draw'**
-  String get barPickPenHint;
-
   /// Opens the panel listing every date in the notebook.
   ///
   /// In en, this message translates to:

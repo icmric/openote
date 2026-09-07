@@ -49,7 +49,6 @@
   "barOpenStudyPanel": "Apri il pannello di studio",
   "barPageOverview": "Panoramica della pagina",
   "barPenProximity": "Avvicinare la penna alla pagina passa all'inchiostro.\nSe scegli un altro strumento mentre la penna è vicina, resta\nfinché la penna non si allontana e torna. La coda della penna\n(o il suo tasto, tenuto premuto) cancella.",
-  "barPickPenHint": "Scegli la penna o l'evidenziatore per disegnare",
   "barPlanner": "Agenda",
   "barPlannerEmpty": "Agenda — tutte le tue date in un posto solo",
   "barPlannerOverdue": "Agenda — {count} per oggi o in ritardo",

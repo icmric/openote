@@ -49,7 +49,6 @@
   "barOpenStudyPanel": "Abrir el panel de estudio",
   "barPageOverview": "Resumen de la página",
   "barPenProximity": "Acercar el lápiz a la página cambia a tinta.\nSi eliges otra herramienta con el lápiz cerca, se mantiene hasta\nque el lápiz se aleja y vuelve. La punta trasera del lápiz (o su\nbotón lateral, pulsado al dibujar) borra.",
-  "barPickPenHint": "Elige el bolígrafo o el marcador para dibujar",
   "barPlanner": "Agenda",
   "barPlannerEmpty": "Agenda — todas tus fechas en un mismo sitio",
   "barPlannerOverdue": "Agenda — {count} para hoy o atrasadas",

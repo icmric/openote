@@ -150,6 +150,46 @@ void main() {
           reason: 'a mode with no visible state is a mode nobody can leave');
     });
 
+    testWidgets('the colours are there whatever tool is in hand',
+        (tester) async {
+      // Reported: *"i want it to always be there, not just when im drawing.
+      // This also means that the eyedropper is unusable … when i attempt to
+      // select it and move my cursor it then moves away from inking and
+      // therefore that disappears."*
+      //
+      // Reaching for the mouse is how a toolbar button is pressed, and it is
+      // also what puts the pen back down — so a control gated on the pen was
+      // gone before the pointer arrived at it.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await fixture(tester, 'onote_ink_always_');
+      await drawTab(tester, app);
+
+      for (final tool in Tool.values) {
+        app.setTool(tool);
+        await tester.pump();
+        expect(find.byIcon(Icons.colorize_outlined), findsOneWidget,
+            reason: '$tool');
+        expect(find.byIcon(Icons.add_circle_outline), findsOneWidget,
+            reason: '$tool');
+      }
+    });
+
+    testWidgets('picking a colour picks up the pen', (tester) async {
+      // The click that being always-visible would otherwise have added:
+      // choosing an ink colour is choosing to draw.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await fixture(tester, 'onote_ink_picksup_');
+      app.setTool(Tool.select);
+      await drawTab(tester, app);
+
+      await tester.tap(find.byTooltip('#2F6FB3'));
+      await tester.pump();
+      expect(app.tool, Tool.pen);
+      expect(app.inkColor, '#2F6FB3');
+      expect(app.toolWasAutomatic, isFalse,
+          reason: 'chosen, so the mouse does not put it straight back down');
+    });
+
     testWidgets('the eraser lights up while the pen button is held',
         (tester) async {
       // The reported fault was "the button does nothing", which covers both

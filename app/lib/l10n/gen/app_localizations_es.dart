@@ -173,9 +173,6 @@ class LEs extends L {
       'Acercar el lápiz a la página cambia a tinta.\nSi eliges otra herramienta con el lápiz cerca, se mantiene hasta\nque el lápiz se aleja y vuelve. La punta trasera del lápiz (o su\nbotón lateral, pulsado al dibujar) borra.';
 
   @override
-  String get barPickPenHint => 'Elige el bolígrafo o el marcador para dibujar';
-
-  @override
   String get barPlanner => 'Agenda';
 
   @override

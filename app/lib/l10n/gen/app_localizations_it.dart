@@ -172,10 +172,6 @@ class LIt extends L {
       'Avvicinare la penna alla pagina passa all\'inchiostro.\nSe scegli un altro strumento mentre la penna è vicina, resta\nfinché la penna non si allontana e torna. La coda della penna\n(o il suo tasto, tenuto premuto) cancella.';
 
   @override
-  String get barPickPenHint =>
-      'Scegli la penna o l\'evidenziatore per disegnare';
-
-  @override
   String get barPlanner => 'Agenda';
 
   @override

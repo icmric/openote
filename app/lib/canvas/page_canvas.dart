@@ -177,8 +177,12 @@ class _PageCanvasState extends State<PageCanvas> {
       if (approaching && app.tool == Tool.select) {
         app.setTool(Tool.pen, automatic: true);
       }
-    } else if (app.toolWasAutomatic && !_stylusActive) {
+    } else if (app.toolWasAutomatic &&
+        !_stylusActive &&
+        !app.pickingInkColor) {
       // A mouse, with the pen out of range: put back what the pen picked up.
+      // Not while the eyedropper is armed: reaching for the mouse is how it
+      // is aimed, and the pen is coming straight back after.
       // On HOVER rather than on the click, so the click itself already lands
       // in the tool it is going to be handled in — a revert on the down event
       // would be one gesture late, every time.
@@ -357,7 +361,13 @@ class _PageCanvasState extends State<PageCanvas> {
       if (b[i + 3] == 0) return;
       app.setInkColor(inkHexOf(Color.fromARGB(255, b[i], b[i + 1], b[i + 2])));
       app.rememberCustomColor(app.inkColor.replaceFirst('#', ''));
-      if (app.hasInkSelection) app.recolorSelectedInk(app.inkColor);
+      if (app.hasInkSelection) {
+        app.recolorSelectedInk(app.inkColor);
+      } else if (app.tool != Tool.pen && app.tool != Tool.highlighter) {
+        // Taking a colour off the page is choosing to draw with it. Chosen,
+        // not automatic, so the mouse does not put it straight back down.
+        app.setTool(Tool.pen);
+      }
     } catch (_) {
       // A surface that cannot be read back (no raster yet, or a platform that
       // refuses) leaves the pen exactly as it was, which is the harmless end.

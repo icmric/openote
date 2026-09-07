@@ -172,9 +172,6 @@ class LPt extends L {
       'Aproximar a caneta da página muda para traço.\nSe escolher outra ferramenta com a caneta por perto, ela fica\naté a caneta se afastar e voltar. A ponta traseira da caneta (ou\no botão dela, mantido apertado) apaga.';
 
   @override
-  String get barPickPenHint => 'Pegue a caneta ou o marca-texto para desenhar';
-
-  @override
   String get barPlanner => 'Agenda';
 
   @override

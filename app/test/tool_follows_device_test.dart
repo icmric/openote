@@ -53,7 +53,16 @@ void main() {
       await app.selectPage(
           app.nodes.where((n) => n.kind == NodeKind.page).first.id);
     });
-    await tester.pumpWidget(testApp(Scaffold(body: PageCanvas(state: app))));
+    // Through a `ListenableBuilder`, because that is what the shell is: the
+    // canvas does not listen to `AppState` for itself, so mounted bare it
+    // never sees a flag set from outside it — the eyedropper's overlay among
+    // them.
+    await tester.pumpWidget(testApp(Scaffold(
+      body: ListenableBuilder(
+        listenable: app,
+        builder: (_, __) => PageCanvas(state: app),
+      ),
+    )));
     await tester.pump();
     return app;
   }
@@ -117,6 +126,54 @@ void main() {
     await hover(tester, PointerDeviceKind.mouse, pointer: 3);
 
     expect(app.tool, Tool.pen);
+    await drain(tester);
+  });
+
+  testWidgets('the pen stays out while the eyedropper is being aimed',
+      (tester) async {
+    // Reported: the eyedropper could not be used at all. Arming it needs the
+    // mouse, and reaching for the mouse put the pen down — which took the
+    // whole ink row, eyedropper included, off the toolbar mid-reach.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await canvas(tester, 'onote_tool_dropper_');
+    app.setTool(Tool.pen, automatic: true);
+    app.setPickingInkColor(true);
+    await tester.pump();
+
+    await hover(tester, PointerDeviceKind.mouse, pointer: 4);
+
+    expect(app.tool, Tool.pen,
+        reason: 'the mouse is here to aim the eyedropper, not to stop drawing');
+    await drain(tester);
+  });
+
+  testWidgets('the eyedropper really does take the colour under the pointer',
+      (tester) async {
+    // The owner could not confirm it worked, because the button vanished as
+    // they reached for it. This runs the whole path the button arms: capture
+    // the canvas's own repaint boundary, read the pixel back, set the ink.
+    //
+    // Inside `runAsync` because `toImage` is a real asynchronous rasterise —
+    // the fake clock never completes it.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await canvas(tester, 'onote_tool_pick_');
+    app.setPickingInkColor(true);
+    await tester.pump();
+
+    await tester.runAsync(() async {
+      await tester.tapAt(const Offset(400, 300));
+      // Two frames and a beat: the rasterise, then the setState it lands in.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await tester.pump();
+
+    expect(app.pickingInkColor, isFalse,
+        reason: 'one click, one colour — it is not a mode you have to leave');
+    expect(app.inkColor, matches(RegExp(r'^#[0-9A-F]{6}$')),
+        reason: 'a real colour off the page, not the `auto` it started as');
+    expect(app.customColors.first, app.inkColor.replaceFirst('#', ''),
+        reason: 'and it is remembered, so it is one click next time');
+    app.cancelPendingSave();
     await drain(tester);
   });
 

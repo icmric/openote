@@ -49,7 +49,6 @@
   "barOpenStudyPanel": "Ouvrir le panneau de révisions",
   "barPageOverview": "Aperçu de la page",
   "barPenProximity": "Approcher le stylet de la page passe à l'encre.\nSi vous choisissez un autre outil pendant que le stylet est là, il\nreste jusqu'à ce que le stylet s'éloigne et revienne. Le bout\narrière du stylet (ou son bouton, maintenu) efface.",
-  "barPickPenHint": "Prenez le stylo ou le surligneur pour dessiner",
   "barPlanner": "Agenda",
   "barPlannerEmpty": "Agenda — toutes vos dates au même endroit",
   "barPlannerOverdue": "Agenda — {count} pour aujourd'hui ou en retard",

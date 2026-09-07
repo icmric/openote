@@ -172,9 +172,6 @@ class LEn extends L {
       'Bringing the pen near the page switches to inking.\nPick another tool while the pen hovers and it sticks until the\npen leaves and comes back. The pen\'s tail (or its barrel\nbutton, held while drawing) erases.';
 
   @override
-  String get barPickPenHint => 'Pick the pen or highlighter to draw';
-
-  @override
   String get barPlanner => 'Planner';
 
   @override

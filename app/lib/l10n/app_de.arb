@@ -49,7 +49,6 @@
   "barOpenStudyPanel": "Lernbereich öffnen",
   "barPageOverview": "Seitenübersicht",
   "barPenProximity": "Den Stift an die Seite halten schaltet auf Tinte um.\nWählst du ein anderes Werkzeug, während der Stift in der Nähe\nist, bleibt es, bis der Stift weggeht und wiederkommt. Das\nhintere Ende des Stifts (oder seine Taste) radiert.",
-  "barPickPenHint": "Nimm den Stift oder den Textmarker zum Zeichnen",
   "barPlanner": "Planer",
   "barPlannerEmpty": "Planer — alle deine Termine an einem Ort",
   "barPlannerOverdue": "Planer — {count} für heute oder überfällig",

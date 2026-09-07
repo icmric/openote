@@ -172,10 +172,6 @@ class LDe extends L {
       'Den Stift an die Seite halten schaltet auf Tinte um.\nWählst du ein anderes Werkzeug, während der Stift in der Nähe\nist, bleibt es, bis der Stift weggeht und wiederkommt. Das\nhintere Ende des Stifts (oder seine Taste) radiert.';
 
   @override
-  String get barPickPenHint =>
-      'Nimm den Stift oder den Textmarker zum Zeichnen';
-
-  @override
   String get barPlanner => 'Planer';
 
   @override

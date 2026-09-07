@@ -27,6 +27,13 @@ const double kTableColumnCap = 320;
 /// and the handle itself becomes hard to grab back.
 const double kTableColumnMin = 36;
 
+/// The padding a block reserves around its content, per side.
+///
+/// `_kChromePad` in `block_view.dart`, which is private to it. Named here so
+/// the arithmetic that makes a table fit its box says what the number is
+/// rather than carrying an 8 nobody can trace.
+const double _kBlockContentInset = 8;
+
 /// Table block (MEDIA-3). content: { cells: [[String,…],…] }.
 /// In edit mode each cell is a field with spreadsheet-style navigation:
 /// Tab/Shift+Tab move between cells, arrows move (caret-aware on left/right),
@@ -170,16 +177,47 @@ class _TableBlockViewState extends State<TableBlockView> {
   void _setColumnWidth(int col, double width, int cols) {
     final w = _storedWidths(cols);
     w[col] = width.clamp(kTableColumnMin, 4000).toDouble();
-    widget.app.pushUndo();
     widget.block.content['colWidths'] = [for (final v in w) v ?? 0];
+    _growToFit(w);
     widget.block.updatedAt = nowMs();
     widget.app.markDirty();
     setState(() {});
   }
 
+  /// **The box grows to hold the table.**
+  ///
+  /// Reported: *"if the table overflows the box, it doesnt seem to auto expand
+  /// the box with it."* Quite so — the block carries its own width and nothing
+  /// was moving it, so a column dragged past the edge of the box simply spilled
+  /// out of it.
+  ///
+  /// It only ever GROWS. A box somebody widened by hand must not snap back
+  /// because a column was narrowed afterwards, and a table that has just been
+  /// made to fit is not a reason to take room away from the block around it.
+  void _growToFit(List<double?> widths) {
+    var total = 0.0;
+    for (var c = 0; c < widths.length; c++) {
+      total += widths[c] ?? _measuredWidth(c) ?? kTableColumnMin;
+    }
+    // The table's own outer borders, and the padding the block reserves around
+    // its content on each side.
+    final needed = total + 2 + _kBlockContentInset * 2;
+    if (needed > widget.block.w) widget.block.w = needed;
+  }
+
   /// The rendered width of a cell, for the moment a drag begins on a column
   /// that has never been sized.
   final Map<int, GlobalKey> _headerKeys = {};
+
+  /// **One undo step for a whole drag, not one per pointer sample.**
+  ///
+  /// An undo step is `jsonEncode` of every block on the page, so pushing one
+  /// per sample re-encoded the entire page a hundred times a second and kept a
+  /// hundred of the results. On a page carrying handwriting that is megabytes
+  /// a sample: the app froze and then ran out of memory, which is the crash
+  /// that was reported. The same one-flag-per-gesture shape the block's own
+  /// move and resize handles already use.
+  bool _dragUndoPushed = false;
 
   /// The width being dragged towards, kept across pointer samples.
   ///
@@ -449,16 +487,24 @@ class _TableBlockViewState extends State<TableBlockView> {
               behavior: HitTestBehavior.opaque,
               onHorizontalDragStart: (_) {
                 _dragFrom = _storedWidths(cols)[c] ?? _measuredWidth(c);
+                _dragUndoPushed = false;
               },
               onHorizontalDragUpdate: (d) {
                 final from = _dragFrom;
                 if (from == null) return;
+                if (!_dragUndoPushed) {
+                  _dragUndoPushed = true;
+                  widget.app.pushUndo();
+                }
                 _dragFrom = from + d.delta.dx;
                 // No cap here on purpose: the cap is for the width nobody
                 // chose. This one is chosen.
                 _setColumnWidth(c, _dragFrom!, cols);
               },
-              onHorizontalDragEnd: (_) => _dragFrom = null,
+              onHorizontalDragEnd: (_) {
+                _dragFrom = null;
+                _dragUndoPushed = false;
+              },
               child: const SizedBox.expand(),
             ),
           ),

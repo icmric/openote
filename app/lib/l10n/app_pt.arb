@@ -49,7 +49,6 @@
   "barOpenStudyPanel": "Abrir o painel de estudo",
   "barPageOverview": "Vista geral da página",
   "barPenProximity": "Aproximar a caneta da página muda para traço.\nSe escolher outra ferramenta com a caneta por perto, ela fica\naté a caneta se afastar e voltar. A ponta traseira da caneta (ou\no botão dela, mantido apertado) apaga.",
-  "barPickPenHint": "Pegue a caneta ou o marca-texto para desenhar",
   "barPlanner": "Agenda",
   "barPlannerEmpty": "Agenda — todas as suas datas num lugar só",
   "barPlannerOverdue": "Agenda — {count} para hoje ou atrasados",

@@ -54,6 +54,9 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Added — colours you choose, and a way to take one off the page
 
+- **The ink colours are always on the Draw tab**, instead of appearing only
+  while a pen was in hand — which meant they vanished as you reached for the
+  mouse to click one. Picking a colour picks up the pen.
 - **Make your own ink colours.** The pen and highlighter swatches now have a
   **+** that opens the full colour picker — a palette, a colour wheel and a hex
   box — and the colours you mix appear beside the ready-made ones next time.
@@ -77,6 +80,14 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **You can resize a table column without opening the table.** The handle used
   to appear only on a table you were already editing, and it was half the
   width it looked.
+- **Dragging a table column no longer freezes the app.** Every pixel of the
+  drag was being recorded as its own undo step, and an undo step is a copy of
+  the whole page — so on a page with handwriting on it, a single drag copied
+  megabytes a hundred times a second until the app ran out of memory. One drag
+  is one undo now.
+- **The box grows to hold the table.** A column dragged wider than the box it
+  is in used to spill out of it. The box only ever grows, so one you widened
+  by hand is never taken back.
 - **The pen's side button reaches the eraser more often.** Windows does not
   always hand a barrel press over as a pen button — it often turns it into a
   right-click at the pen's position instead, which Openote was throwing away.

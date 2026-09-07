@@ -56,6 +56,11 @@ void main() {
       );
 
   Future<Table> render(WidgetTester tester, Block b) async {
+    // On the page, not only in the widget: a column drag pushes an undo step,
+    // and an undo step is a snapshot of `app.blocks`.
+    app.blocks
+      ..clear()
+      ..add(b);
     await tester.pumpWidget(testApp(Scaffold(
       body: SizedBox(
         width: 900,
@@ -186,6 +191,71 @@ void main() {
 
     // Setting a width arms the debounced save; drain it or the test ends
     // holding a timer and fails on that instead.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(milliseconds: 900));
+  });
+
+  testWidgets('a whole drag is ONE undo step, not one per pixel',
+      (tester) async {
+    // Reported: *"if the table overflows the box, it doesnt seem to auto
+    // expand the box with it, the app will freeze and crash."*
+    //
+    // The freeze is this, and it has nothing to do with overflowing. Every
+    // pointer sample called `pushUndo`, and an undo step is `jsonEncode` of
+    // every block on the page — so a drag on a page carrying handwriting was
+    // re-encoding megabytes a hundred times a second, and keeping a hundred
+    // of them. Freeze, then out of memory.
+    //
+    // Asserted through behaviour rather than by counting the stack: one
+    // Ctrl+Z should put the column back where it started, which is also the
+    // thing somebody actually wants.
+    final b = table([
+      ['a', 'b'],
+      ['c', 'd'],
+    ], widths: [140, 90]);
+    await render(tester, b);
+
+    final handles = find.byWidgetPredicate((w) =>
+        w is MouseRegion && w.cursor == SystemMouseCursors.resizeColumn);
+    await tester.drag(handles.first, const Offset(160, 0));
+    await tester.pump();
+    expect((b.content['colWidths'] as List)[0], greaterThan(200.0));
+
+    app.undo();
+    expect((app.blocks.single.content['colWidths'] as List)[0], 140,
+        reason: 'one drag, one undo');
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(milliseconds: 900));
+  });
+
+  testWidgets('the box grows to hold the table it is given', (tester) async {
+    // The other half of the report. A table dragged wider than its box used
+    // to spill out of it — the box has a stored width and nothing was moving
+    // it. It only ever grows: a box somebody made wide by hand must not
+    // snap back because a column was narrowed.
+    final b = table([
+      ['a', 'b'],
+      ['c', 'd'],
+    ], widths: [200, 200]);
+    await render(tester, b);
+
+    final handles = find.byWidgetPredicate((w) =>
+        w is MouseRegion && w.cursor == SystemMouseCursors.resizeColumn);
+    await tester.drag(handles.first, const Offset(400, 0));
+    await tester.pump();
+
+    final total = (b.content['colWidths'] as List)
+        .cast<num>()
+        .fold<double>(0, (a, w) => a + w);
+    expect(b.w, greaterThanOrEqualTo(total),
+        reason: 'the table has to fit inside the box that holds it');
+
+    final wide = b.w;
+    await tester.drag(handles.first, const Offset(-300, 0));
+    await tester.pump();
+    expect(b.w, wide, reason: 'and the box does not shrink back on its own');
+
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 900));
   });

@@ -225,10 +225,6 @@
   "@barPenProximity": {
     "description": "Tooltip on the pen-proximity setting. 'tail' is the blunt end of a stylus; 'barrel button' the button on its side. Keep the line breaks."
   },
-  "barPickPenHint": "Pick the pen or highlighter to draw",
-  "@barPickPenHint": {
-    "description": "Hint shown in the Draw row when no drawing tool is picked."
-  },
   "barPlanner": "Planner",
   "@barPlanner": {
     "description": "Opens the panel listing every date in the notebook."
