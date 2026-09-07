@@ -709,129 +709,118 @@ jobs:
           # docs/RELEASING.md §"Writing the notes".
           body: |
             <!-- Draft: review — the What's new below was written with the
-                 tag, from CHANGELOG.md's 0.9.0 section — then publish. -->
+                 tag, from CHANGELOG.md's 1.0.0 section — then publish. -->
 
             ## What's new
 
-            - **Write maths by looking at it** — type 1/2, get a fraction. No LaTeX.
-            - **Draw the graph of any equation**, beside it, redrawn as you type.
-            - **Type = and a space** and it works the answer out, in degrees.
-            - **Openote speaks six more languages**, and picks yours by itself.
-            - **A welcome tour that teaches the canvas** — in pictures, not paragraphs.
-            - **Typing is smoother** — the toolbars stopped rebuilding for every key.
-            - **A word count**, with reading time, on the page's own row.
+            - **Bring a OneNote notebook over by signing in** — no exporting, no files.
+            - **Handwriting, equations, pictures, tables and attachments all come too.**
+            - **Subpages stay subpages**, and your notebook's own page links still work.
+            - **Write on a PDF or a photo**, and the ink stays readable on any theme.
+            - **Make your own pen colours**, or take one off the page with the eyedropper.
+            - **A Page tab, and undo and redo you can always reach.**
 
             ## All of it, in more detail
 
-            **Maths, rebuilt.** This is most of the release.
+            **Your notes, out of OneNote, without exporting anything.** This is most of
+            the release.
 
-            - **You write an equation by looking at it now.** Press Alt+= and
-              type `1/2` — the moment you press space it *becomes* a fraction,
-              where you were typing. A square root gives you a √ with a dotted
-              box under it and the cursor already inside. Tab hops to the next
-              box. The old panel of backslashes with a preview underneath is
-              gone.
-            - **A row of shapes appears while you write one** — fraction,
-              powers, roots, Σ, ∫, lim, brackets, piecewise, matrix, accents —
-              with symbols by category behind it and a search box that speaks
-              plain English: type "square root", "not equal" or "theta". Type
-              names instead if you prefer: `sqrt`, `theta`, `pi` become their
-              symbols on space, and `<=` `>=` `!=` `->` change as you type.
-            - **Backspace never eats what you wrote.** At the edge of a
-              fraction it takes the fraction apart back into `1/2`. The wrapper
-              goes; your numbers stay. That holds for every shape.
-            - **Maths inside a sentence is edited inside the sentence**, at
-              full size, sitting properly on the line — no floating card, no
-              characters landing in the wrong order.
-            - **Type `=` then a space and the answer appears.** It works in
-              degrees like the calculator on your desk, gives ten significant
-              figures, and right-clicking an answer offers decimal or fraction,
-              how many figures, and work it out again.
-            - **Draw the graph of an equation** and it sits beside it, tied to
-              it: change `y = 3x+10` to `y = 2x+6` and the curve follows as you
-              type. Drag to move around, scroll to zoom, double-click to fit.
-              `1/x` and `tan x` break at their asymptotes instead of drawing a
-              line through them, and `2y = 6x + 4` is rearranged for you rather
-              than silently drawn with twice the gradient. It prints and
-              exports as a real graph, not a picture of one.
-            - **Plug a value into an equation** and see the result without
-              retyping it.
-            - **A pile of wrong answers are right now.** `sin 30` is a half
-              (it was working in radians); `sin⁻¹(0.5)` is 30°; `sin(x)²` is
-              the square of sin x, not sin of x²; the cube root of a negative
-              number is a number; `17 mod 5` is 2; `log₂ 8` works; and maths
-              finally renders in tables, on flashcards and in study review,
-              which all drew raw backslashes before.
+            - **Sign in to Microsoft, pick a notebook, and it arrives.** No exporting, no
+              files, no leaving the app. On a Mac or on Linux this is not merely the
+              easier way, it is the **only** way: OneNote for Mac cannot export a notebook
+              at all, and there is no OneNote for Linux.
+            - **The notebook fills in while you watch.** Each section is written as it
+              arrives, so you can read the parts already in while the rest is still
+              coming, and keep typing the whole time. A line above the page says how far
+              through it is.
+            - **Handwriting comes too.** So do equations, pictures, tables, lists, your
+              to-do ticks, and **attachments** — which the file import has never managed.
+              A real five-year notebook of 332 pages, 64,000 pen strokes and 548 equations
+              came over three times running with nothing missing, in about three minutes.
+            - **Subpages stay subpages**, indented under the page they belong to, a
+              subpage of a subpage included.
+            - **Your notebook's own links work.** A contents page that pointed at other
+              pages still points at them, now inside Openote. A link to something you did
+              not import still opens OneNote, exactly as before.
+            - **An import that goes wrong keeps the pages it already brought you**, tells
+              you how many are in, and offers to finish the rest later. It survives
+              closing the app. If you stopped it yourself, it never restarts on its own.
+            - **Openote learns nothing about you.** It asks to read your notebooks and
+              nothing else — no name, no email, no address book, no files, no calendar —
+              and it cannot change anything in OneNote even if it wanted to. There is no
+              Openote server, so your notes go from Microsoft to your own machine and
+              nowhere else.
+            - **You do not have to sign in at all.** The exported-file route is still
+              there on the same screen, described side by side, because not wanting to
+              sign in to a Microsoft account is a perfectly good reason not to.
 
-            **Everything else.**
+            **Writing and drawing.**
 
-            - **Openote is translated.** German, Spanish, French, Italian,
-              Portuguese and Simplified Chinese, chosen from your computer's
-              own language settings without asking — so a machine set to
-              Chinese sees Chinese on its very first run. Settings ▸ Appearance
-              ▸ Language changes it if you would rather read something else.
-            - **The welcome tour teaches the app.** It used to offer three
-              ways to get notes *in* and never mention the canvas — which is
-              the one thing nothing else tells you. Three short steps now, led
-              by drawings rather than paragraphs, and it can be reopened from
-              Settings ▸ Help.
-            - **Typing is smoother.** Every keystroke was rebuilding the whole
-              window, toolbars included, neither of which can look any
-              different because you typed a letter mid-paragraph. On a page of
-              forty blocks that frame went from 63 ms to 19 ms.
-            - **A word count on the page's own row** — words, characters, and
-              reading time. It counts what you wrote the way a marker would:
-              a word in bold is one word and not three, a link is the words
-              you can see rather than its address, and an equation is one
-              word.
-            - **The toolbars fold instead of scrolling off the edge.** On a
-              narrow window the trailing buttons — Study, Planner, tags,
-              outline, links, find, export, settings — used to hide past a
-              horizontal scrollbar. They fold into a More menu now and unfold
-              when there is room.
-            - **The keyboard reaches the page list.** Del and Backspace delete
-              the page or section you clicked, and the whole list navigates by
-              keyboard. Shift+F10 opens the page menu.
-            - **A screen reader can hear an equation.** Maths is drawn as
-              glyph boxes, which say nothing at all; it now carries what you
-              typed.
-            - **Fixes from real use**, each root-caused rather than patched:
-              a picture missing from a notebook's folder now heals itself from
-              the notebook's own container, clicking at the end of a line that
-              ends in an equation puts you in it, an empty equation looks like
-              one, and turning sync off now waits for the folder watcher to
-              actually let go before it reports done.
+            - **Ink over a picture or a PDF stays readable.** Default ink works out its
+              colour when it is drawn: dark on a light page, light on a dark one, and dark
+              again over a scan or a slide, which brings its own background.
+            - **Make your own pen colours.** The pen and highlighter swatches have a **+**
+              that opens the full picker — a palette, a colour wheel and a hex box — and
+              the colours you mix are there beside the ready-made ones next time. There is
+              an **eyedropper** too: take the colour of a photograph, a PDF, a diagram or
+              someone else's handwriting and write in it.
+            - **A delete button on whatever is selected**, so lassoed handwriting can be
+              got rid of without a keyboard.
+            - **The pen puts itself away.** Bringing a pen near the screen switches to
+              handwriting on its own, and reaching for the mouse switches back — so there
+              is no "Done" button and no mode to leave. A tool you picked yourself stays
+              picked.
+            - **Table columns fit what is in them**, and you can drag any column's edge to
+              the width you want.
+
+            **Finding your way around.**
+
+            - **The page's own settings are a tab.** Ruling, sheet or canvas, paper size,
+              the grid and the zoom are on a **Page** tab now instead of a third strip of
+              toolbar.
+            - **Undo and redo are always there**, above the tabs, instead of only on Home.
+            - **The word count is up top**, beside the other things you glance at.
+            - **Outline, tags and links are one button** — the same question asked three
+              ways — and you move between them inside the panel.
+            - **Openote speaks six more languages** and picks yours by itself, with the
+              language list sorted so you can find yours.
+            - **The pointer changes over everything you can click**, not just most of it.
 
             ## The fine print
 
-            - **The six translations have not been read by a native speaker
-              yet.** They are seeds, and they are there so that fixing them is
-              possible; Settings ▸ Appearance ▸ Language links straight to how.
-              If a word is wrong in your language, that is the contribution the
-              project most wants.
-            - Openote is still in active development. Updates are worth
-              taking, but a major update may occasionally break a feature —
-              and macOS is the least-tested platform by far.
-            - On Linux, whether double-clicking a notebook *folder* opens
-              Openote depends on your file manager; the **Open this
-              notebook** file inside the folder works either way.
+            - **1.0 is a promise about your notes, not a claim of completeness.** The file
+              format is documented and stable, Openote never sends your notes anywhere,
+              and nothing it does to them is reversible only by hand.
+            - **The six translations have not been read by a native speaker yet.** They
+              are seeds, and they are there so that fixing them is possible; Settings ▸
+              Appearance ▸ Language links straight to how. If a word is wrong in your
+              language, that is the contribution the project most wants.
+            - **A pen's side button may not reach Openote on Windows.** The eraser end of
+              a pen works, and so does the eraser tool. Hold the button near the screen:
+              if the eraser on the Draw tab does not light up, Openote is not being told
+              about the button at all.
+            - **macOS and Linux build in CI and are shipped, and no one has yet sat down
+              in front of either.** macOS is the least-tested platform by far.
+            - Openote is still in active development. Updates are worth taking, but a
+              major update may occasionally break a feature.
+            - On Linux, whether double-clicking a notebook *folder* opens Openote depends
+              on your file manager; the **Open this notebook** file inside the folder
+              works either way.
 
             ## For the technically curious
 
-            The maths work replaced a LaTeX-string-with-preview editor with a
-            real structural one: a tree, a caret that walks it, and a linear
-            input grammar that builds the tree as you type — the same idea
-            OneNote uses, specified in `docs/specs/12-math-input-spec.md`.
-            Graphs plot from that tree rather than from a re-parsed string,
-            which is why a curve can follow an equation being edited. The
-            localisation is `flutter_localizations` over ARB with the
-            generated class checked in, so adding a language is one file and a
-            codegen run and no Dart at all. The per-keystroke rebuild was
-            fixed with a small memoisation mixin rather than by splitting
-            state: `notifyListeners` still fires on every character — a text
-            box has to measure itself to grow — but a widget whose inputs did
-            not change no longer rebuilds its subtree. Over the cycle the test
-            suite grew from 1,564 to 2,764, and the app now carries a
+            The import talks to the Microsoft Graph API directly — sign-in is the device
+            code flow, so nothing is stored but a refresh token in the OS keychain, and
+            the app registration asks for `Notes.Read` and nothing else. OneNote never
+            tells you a page's depth in the hierarchy, but it will *filter* on it, so
+            subpages are recovered by asking which pages are at each level and comparing
+            the answers. Throttling is honoured rather than fought: `Retry-After` is
+            obeyed, a throttled batch is retried whole instead of exploded into twenty
+            requests, and a server fault is retried without narrowing the pipe — which
+            are different failures and were being treated as one. Everything a page
+            carries is converted rather than screenshotted: InkML into the same stroke
+            format the pen writes, MathML into LaTeX, HTML into the live-Markdown model.
+            Over the cycle the test suite grew from 2,764 to 3,071, and the app carries a
             [manual pre-release checklist](https://github.com/icmric/openote/blob/master/docs/pre-release-checklist.md)
             for the failures a headless suite cannot see.
 
