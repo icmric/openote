@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../model/models.dart';
@@ -134,12 +136,15 @@ class _PageCanvasState extends State<PageCanvas> {
   /// first stylus signal after the grace window), so picking Select — or any
   /// tool — while the pen hovers sticks until the pen leaves and comes back.
   void _stylusProximity(PointerHoverEvent e) {
-    if (e.kind != PointerDeviceKind.stylus &&
-        e.kind != PointerDeviceKind.invertedStylus) {
-      return;
-    }
+    final isPen = e.kind == PointerDeviceKind.stylus ||
+        e.kind == PointerDeviceKind.invertedStylus;
+    // A hover from anything else is only interesting while a pen is in range:
+    // Windows promotes a barrel press to a mouse right-button, so the button
+    // can arrive as a `mouse` event at the pen's own position. See
+    // [penGestureErases].
+    if (!isPen && !_stylusActive) return;
     final approaching = !_stylusActive;
-    _lastStylus = DateTime.now();
+    if (isPen) _lastStylus = DateTime.now();
     // **Watched while the pen hovers, not only when it lands.**
     //
     // Reported by an S Pen user: *"Holding the side button should temporarily
@@ -148,11 +153,15 @@ class _PageCanvasState extends State<PageCanvas> {
     // never again — so pressing it while the pen floated over the page did
     // nothing at all, and there was no way to tell whether the pen was about
     // to write or to erase until it had already done one of them.
+    // A pen event is authoritative both ways; anything else may only ADD the
+    // signal. Otherwise a promoted mouse move carrying no buttons would
+    // cancel the button the pen itself had just reported.
     final held = _erasingButtons(e);
-    if (held != _penButtonHeld) {
+    if (held ? !_penButtonHeld : (isPen && _penButtonHeld)) {
       setState(() => _penButtonHeld = held);
+      app.setPenErasing(_penErasing);
     }
-    if (approaching && app.tool == Tool.select) {
+    if (isPen && approaching && app.tool == Tool.select) {
       app.setTool(Tool.pen);
     }
   }
@@ -162,8 +171,8 @@ class _PageCanvasState extends State<PageCanvas> {
   /// The bit arithmetic lives in `ink_ops.dart` where it can be tested without
   /// a digitiser — which matters here more than usual, since the report came
   /// from hardware nobody working on this owns.
-  bool _erasingButtons(PointerEvent e) =>
-      penGestureErases(kind: e.kind, buttons: e.buttons);
+  bool _erasingButtons(PointerEvent e) => penGestureErases(
+      kind: e.kind, buttons: e.buttons, penInRange: _stylusActive);
 
   /// True while the pen's button is down, whether or not it is touching.
   ///
@@ -251,17 +260,16 @@ class _PageCanvasState extends State<PageCanvas> {
     // pressed before the pen landed or as it landed. `_penButtonHeld` carries
     // the former, which is how somebody actually uses it: press, then touch.
     _gestureErase = penGestureErases(
-        kind: e.kind, buttons: e.buttons, heldWhileHovering: _penErasing);
+        kind: e.kind,
+        buttons: e.buttons,
+        heldWhileHovering: _penErasing,
+        penInRange: _stylusActive);
     final pt = _clampToPagePoint(controller.screenToPage(e.localPosition));
     if (app.tool == Tool.eraser || _gestureErase) {
       _eraseAt(pt);
       return;
     }
-    final colors = app.tool == Tool.highlighter
-        ? OnoteColors.highlighterColors
-        : OnoteColors.penColors;
-    final color = colors[app.penColor % colors.length];
-    // **The default pen stores `auto`, not a colour.**
+    // **The colour is whatever the toolbar says, including `auto`.**
     //
     // Reported: *"Existing default black/white handwriting should adapt when
     // switching themes so it stays readable. Other colors should remain
@@ -270,16 +278,13 @@ class _PageCanvasState extends State<PageCanvas> {
     // page stayed black and vanished the moment the page went dark. (The
     // painter has understood `auto` all along; nothing ever wrote it.)
     //
-    // Only the default swatch becomes `auto`. A colour somebody actually
-    // chose is theirs, and is stored exactly as picked.
-    final isDefaultInk = app.tool != Tool.highlighter &&
-        color == OnoteColors.graphite900;
+    // `auto` now travels the whole way from the swatch as itself, rather than
+    // being re-derived here from "is this colour the same object as the
+    // default one" — which is also what made a custom colour impossible.
     setState(() {
       _wet = Stroke(
         tool: app.tool == Tool.highlighter ? 'highlighter' : 'pen',
-        colorHex: isDefaultInk
-            ? 'auto'
-            : '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
+        colorHex: app.inkColor,
         size: app.penSize,
         opacity: app.tool == Tool.highlighter ? 0.4 : 1.0,
       );
@@ -297,6 +302,48 @@ class _PageCanvasState extends State<PageCanvas> {
     // rebuilding every visible block per point made inking sluggish.
     _addPoint(e, _clampToPagePoint(controller.screenToPage(e.localPosition)));
     _wetTick.value++;
+  }
+
+  /// **Take the colour that is actually on screen at [globalPos].**
+  ///
+  /// From issue #7's colour ask: *"something like an eyedropper too as an
+  /// option to select a colour"*. Read back from the canvas's own repaint
+  /// boundary rather than reasoned about, so it picks up exactly what the
+  /// person is pointing at — a photograph, a PDF, someone else's ink, the
+  /// page's own ruling — none of which the app could work out from the model.
+  ///
+  /// `pixelRatio: 1` keeps the captured image in logical pixels, so the
+  /// local offset indexes it directly with no display-scale arithmetic to get
+  /// wrong on a 150% monitor.
+  Future<void> _pickColourAt(Offset globalPos) async {
+    app.setPickingInkColor(false);
+    final boundary =
+        app.canvasKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+    if (boundary == null) return;
+    final local = boundary.globalToLocal(globalPos);
+    ui.Image? shot;
+    try {
+      final image = await boundary.toImage(pixelRatio: 1);
+      shot = image;
+      final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (data == null) return;
+      final x = local.dx.round(), y = local.dy.round();
+      if (x < 0 || y < 0 || x >= image.width || y >= image.height) return;
+      final i = (y * image.width + x) * 4;
+      if (i + 3 >= data.lengthInBytes) return;
+      final b = data.buffer.asUint8List();
+      // Fully transparent means nothing was painted there; taking it would
+      // set the pen to a colour that draws nothing at all.
+      if (b[i + 3] == 0) return;
+      app.setInkColor(inkHexOf(Color.fromARGB(255, b[i], b[i + 1], b[i + 2])));
+      app.rememberCustomColor(app.inkColor.replaceFirst('#', ''));
+      if (app.hasInkSelection) app.recolorSelectedInk(app.inkColor);
+    } catch (_) {
+      // A surface that cannot be read back (no raster yet, or a platform that
+      // refuses) leaves the pen exactly as it was, which is the harmless end.
+    } finally {
+      shot?.dispose();
+    }
   }
 
   Offset _clampToPagePoint(Offset p) =>
@@ -319,7 +366,10 @@ class _PageCanvasState extends State<PageCanvas> {
     // button was down would otherwise keep the canvas in erase mode, and the
     // next unmodified touch would rub work out instead of writing. The button
     // state is only ever believed while the pen is actually reporting it.
-    if (_penButtonHeld) setState(() => _penButtonHeld = false);
+    if (_penButtonHeld) {
+      setState(() => _penButtonHeld = false);
+      app.setPenErasing(false);
+    }
     final w = _wet;
     if (w == null || w.x.length < 2) {
       setState(() => _wet = null);
@@ -1261,6 +1311,24 @@ class _PageCanvasState extends State<PageCanvas> {
       },
       child: Stack(children: [
         canvas,
+        // **The eyedropper.** While it is armed, one transparent sheet sits
+        // over the whole page and takes the next click — so nothing else on
+        // the page has to know the mode exists, and nothing can be drawn on,
+        // dragged or opened by the click that was meant to pick a colour.
+        //
+        // Outside `app.canvasKey`, deliberately: that is the boundary the
+        // pixels are read back from, and a sheet inside it would be sampling
+        // itself.
+        if (app.pickingInkColor)
+          Positioned.fill(
+            child: MouseRegion(
+              cursor: SystemMouseCursors.precise,
+              child: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: (e) => _pickColourAt(e.position),
+              ),
+            ),
+          ),
         if (_dragOver)
           Positioned.fill(
             child: IgnorePointer(

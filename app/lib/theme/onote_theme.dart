@@ -122,6 +122,8 @@ abstract final class OnoteColors {
     Color(0xFF6A4BC0),
     brass500,
   ];
+  /// Also the swatch order. The first pen colour is the DEFAULT ink, which is
+  /// stored as `auto` rather than as this hex — see `AppState.penInk`.
   static const highlighterColors = <Color>[
     Color(0xFFF7E27A),
     Color(0xFFB6E39A),
@@ -129,6 +131,15 @@ abstract final class OnoteColors {
     Color(0xFFA8CCF0),
   ];
 }
+
+/// **One spelling of a colour, everywhere it is stored.**
+///
+/// `#RRGGBB`, upper case, opaque. Ink, the swatches, the picker and the
+/// eyedropper all write colours through here, because a second spelling is a
+/// colour that compares unequal to itself and a swatch that never looks
+/// selected.
+String inkHexOf(Color c) =>
+    '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
 
 /// Desktop apps do not ripple.
 ///

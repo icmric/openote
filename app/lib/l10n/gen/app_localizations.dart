@@ -329,6 +329,42 @@ abstract class L {
   /// **'Highlight'**
   String get barHighlight;
 
+  /// Heading of the colour picker when it was opened from the pen swatches.
+  ///
+  /// In en, this message translates to:
+  /// **'Pen colour'**
+  String get barInkColourTitle;
+
+  /// Tooltip on the first pen swatch, the one that adapts to a light or dark page.
+  ///
+  /// In en, this message translates to:
+  /// **'Default ink — follows the page'**
+  String get barInkDefaultColour;
+
+  /// Heading of the colour picker when it was opened from the highlighter swatches.
+  ///
+  /// In en, this message translates to:
+  /// **'Highlighter colour'**
+  String get barInkHighlighterColourTitle;
+
+  /// Tooltip on the button that opens the full colour picker for the pen.
+  ///
+  /// In en, this message translates to:
+  /// **'More colours…'**
+  String get barInkMoreColours;
+
+  /// Tooltip on the eyedropper button.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a colour off the page'**
+  String get barInkPickColour;
+
+  /// Shown while the eyedropper is armed, in place of the pen size slider.
+  ///
+  /// In en, this message translates to:
+  /// **'Click anything on the page to use its colour'**
+  String get barInkPickingHint;
+
   /// Tooltip: format the selected words as computer code, in a monospaced face.
   ///
   /// In en, this message translates to:

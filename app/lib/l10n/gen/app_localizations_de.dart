@@ -130,6 +130,25 @@ class LDe extends L {
   String get barHighlight => 'Markieren';
 
   @override
+  String get barInkColourTitle => 'Stiftfarbe';
+
+  @override
+  String get barInkDefaultColour => 'Standardtinte — passt sich der Seite an';
+
+  @override
+  String get barInkHighlighterColourTitle => 'Markerfarbe';
+
+  @override
+  String get barInkMoreColours => 'Weitere Farben…';
+
+  @override
+  String get barInkPickColour => 'Farbe von der Seite aufnehmen';
+
+  @override
+  String get barInkPickingHint =>
+      'Auf etwas auf der Seite klicken, um dessen Farbe zu übernehmen';
+
+  @override
   String get barInlineCode => 'Code im Text';
 
   @override

@@ -130,6 +130,25 @@ class LPt extends L {
   String get barHighlight => 'Destaque';
 
   @override
+  String get barInkColourTitle => 'Cor da caneta';
+
+  @override
+  String get barInkDefaultColour => 'Tinta predefinida — acompanha a página';
+
+  @override
+  String get barInkHighlighterColourTitle => 'Cor do marcador';
+
+  @override
+  String get barInkMoreColours => 'Mais cores…';
+
+  @override
+  String get barInkPickColour => 'Obter uma cor da página';
+
+  @override
+  String get barInkPickingHint =>
+      'Clique em algo na página para usar a sua cor';
+
+  @override
   String get barInlineCode => 'Código no texto';
 
   @override

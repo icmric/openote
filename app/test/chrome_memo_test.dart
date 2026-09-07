@@ -48,9 +48,10 @@ import 'support/sqlite.dart';
 /// you add one.
 const _actionsOnly = {
   'applyTextColor', 'blankOutSelection', 'insertFlashcard', 'makeCardAtCaret',
-  'recolorSelectedInk', 'redo', 'refresh', 'setActiveBlockFont',
+  'recolorSelectedInk', 'redo', 'refresh', 'rememberCustomColor',
+  'setActiveBlockFont',
   'setActiveBlockFontSize', 'setAngleMode', 'setBackground', 'setEraserMode',
-  'setPageLayout', 'setPenProximitySwitch', 'setTagDue', 'setTool',
+  'setInkColor', 'setPageLayout', 'setPickingInkColor', 'setTagDue', 'setTool',
   'setTouchDrawing', 'toggleFind', 'toggleLinePrefix', 'toggleLinksPanel',
   'toggleList', 'togglePlannerPanel', 'toggleSnap', 'toggleStudyPanel',
   'toggleTagOnSelection', 'toggleTagsPanel', 'toggleTocPanel', 'undo',

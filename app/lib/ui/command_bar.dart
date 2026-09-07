@@ -86,7 +86,14 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         app.canUndo,
         app.canRedo,
         app.lastColor,
-        app.penColor,
+        app.penInk,
+        app.highlighterInk,
+        // Derived from the two above and the tool, but it is what the swatch
+        // ring is drawn from, so the guard test is right to want it named.
+        app.inkColor,
+        app.customColors.join(','),
+        app.penErasing,
+        app.pickingInkColor,
         app.penSize,
         app.touchDrawing,
         app.eraserMode,
@@ -842,26 +849,36 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
   Widget _drawRow(BuildContext context) {
     final l = L.of(context);
     final scheme = Theme.of(context).colorScheme;
-    Widget toolButton(Tool t, IconData icon, String tip) => IconButton(
-          icon: Icon(icon, size: 18),
-          tooltip: tip,
-          isSelected: app.tool == t,
-          visualDensity: VisualDensity.compact,
-          style: IconButton.styleFrom(
-            backgroundColor:
-                app.tool == t ? scheme.primary.withValues(alpha: .14) : null,
-            foregroundColor: app.tool == t ? scheme.primary : null,
-          ),
-          onPressed: () => app.setTool(t),
-        );
+    // **The eraser lights up while the pen's button is held.**
+    //
+    // Reported: *"pressing the button on my pen i have defined to be the
+    // eraser does not change it."* "Nothing happens" covers two very
+    // different faults - the app never being told about the button, and the
+    // app being told and doing nothing about it - and until the toolbar said
+    // which, neither end could be worked on. It is also simply the right
+    // feedback: hold the button, and the tool it is about to become is lit.
+    Widget toolButton(Tool t, IconData icon, String tip) {
+      final on = app.tool == t || (t == Tool.eraser && app.penErasing);
+      return IconButton(
+        icon: Icon(icon, size: 18),
+        tooltip: tip,
+        isSelected: on,
+        visualDensity: VisualDensity.compact,
+        style: IconButton.styleFrom(
+          backgroundColor: on ? scheme.primary.withValues(alpha: .14) : null,
+          foregroundColor: on ? scheme.primary : null,
+        ),
+        onPressed: () => app.setTool(t),
+      );
+    }
     // The swatches also appear with ink selected, so a lassoed diagram can be
     // recoloured without first re-picking the pen.
     final inkActive = app.tool == Tool.pen ||
         app.tool == Tool.highlighter ||
         app.hasInkSelection;
-    final colors = app.tool == Tool.highlighter
-        ? OnoteColors.highlighterColors
-        : OnoteColors.penColors;
+    final highlighting = app.tool == Tool.highlighter;
+    final colors =
+        highlighting ? OnoteColors.highlighterColors : OnoteColors.penColors;
     // **The default swatch shows what the pen will actually draw.**
     //
     // Reported: *"The default color swatch should also match the actual ink
@@ -870,9 +887,62 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
     // the toolbar advertised black and the pen wrote white.
     final dark = Theme.of(context).brightness == Brightness.dark;
     Color swatchColor(Color c) =>
-        (app.tool != Tool.highlighter && c == OnoteColors.graphite900 && dark)
+        (!highlighting && c == OnoteColors.graphite900 && dark)
             ? OnoteColors.moon100
             : c;
+
+    // What a preset swatch SETS. The pen's first swatch is the default ink,
+    // which is `auto` — a colour that resolves when it is drawn — and not the
+    // near-black it happens to look like on a light page.
+    String inkOf(int i, Color c) =>
+        (!highlighting && i == 0) ? 'auto' : inkHexOf(c);
+
+    void useInk(String ink) {
+      app.setInkColor(ink);
+      // With ink selected (typically just lassoed), a colour click recolours
+      // it rather than only arming the next stroke - recolouring after the
+      // fact is most of why you lasso a diagram (INK-7).
+      if (app.hasInkSelection) app.recolorSelectedInk(ink);
+    }
+
+    Widget swatch(String ink, Color shown, String tip) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Tooltip(
+            message: tip,
+            child: InkWell(
+              mouseCursor: WidgetStateMouseCursor.clickable,
+              borderRadius: BorderRadius.circular(99),
+              onTap: () => useInk(ink),
+              child: Container(
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(
+                  color: shown,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    width: 2,
+                    color: app.inkColor == ink
+                        ? scheme.primary
+                        : Colors.transparent,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+    // **Colours somebody made, beside the ones we chose for them.**
+    //
+    // From issue #7: the palette was six fixed colours with no way to add a
+    // seventh. The recents are the same list the text-colour picker keeps, on
+    // purpose - a colour is a colour, and somebody who mixed one for a
+    // heading should find it under the pen without mixing it again. Presets
+    // are filtered out so no colour appears twice in the row.
+    final presets = {for (final (i, c) in colors.indexed) inkOf(i, c)};
+    final recents = [
+      for (final hex in app.customColors)
+        if (!presets.contains('#${hex.replaceFirst('#', '')}')) hex,
+    ].take(4).toList();
     return Row(children: [
       toolButton(Tool.select, Icons.near_me_outlined, l.barToolSelect),
       toolButton(Tool.text, Icons.text_fields, l.barToolText),
@@ -884,52 +954,53 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       const _Div(),
       if (inkActive) ...[
         for (final (i, c) in colors.indexed)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: InkWell(
-              mouseCursor: WidgetStateMouseCursor.clickable,
-              borderRadius: BorderRadius.circular(99),
-              onTap: () {
-                app.penColor = i;
-                // With ink selected (typically just lassoed), a colour click
-                // recolours it rather than only arming the next stroke —
-                // recolouring after the fact is most of why you lasso a
-                // diagram (INK-7).
-                if (app.hasInkSelection) {
-                  app.recolorSelectedInk('#'
-                      '${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}');
-                } else {
-                  app.refresh();
-                }
+          swatch(inkOf(i, c), swatchColor(c),
+              (!highlighting && i == 0) ? l.barInkDefaultColour : inkOf(i, c)),
+        for (final hex in recents)
+          swatch('#${hex.replaceFirst('#', '')}', onoteColorFromHex(hex) ?? scheme.onSurface, '#$hex'),
+        // The full picker - a palette grid, a hue/saturation field and a hex
+        // box - is the one that already exists for text colour. One picker,
+        // one set of recents, whatever is being coloured.
+        IconButton(
+          icon: const Icon(Icons.add_circle_outline, size: 18),
+          tooltip: l.barInkMoreColours,
+          visualDensity: VisualDensity.compact,
+          onPressed: () async {
+            final picked = await showOnoteColorPicker(context, app,
+                initial: app.inkColor,
+                title: highlighting
+                    ? l.barInkHighlighterColourTitle
+                    : l.barInkColourTitle);
+            if (picked == null) return;
+            app.rememberCustomColor(picked);
+            useInk('#${picked.replaceFirst('#', '')}');
+          },
+        ),
+        IconButton(
+          icon: const Icon(Icons.colorize_outlined, size: 18),
+          tooltip: l.barInkPickColour,
+          isSelected: app.pickingInkColor,
+          visualDensity: VisualDensity.compact,
+          onPressed: () => app.setPickingInkColor(!app.pickingInkColor),
+        ),
+        const SizedBox(width: 6),
+        if (app.pickingInkColor)
+          Text(l.barInkPickingHint,
+              style: TextStyle(
+                  fontSize: 11, color: context.surfaces.textSecondary))
+        else
+          SizedBox(
+            width: 110,
+            child: Slider(
+              value: app.penSize,
+              min: 1,
+              max: 10,
+              onChanged: (v) {
+                app.penSize = v;
+                app.refresh();
               },
-              child: Container(
-                width: 18,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: swatchColor(c),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    width: 2,
-                    color:
-                        app.penColor == i ? scheme.primary : Colors.transparent,
-                  ),
-                ),
-              ),
             ),
           ),
-        const SizedBox(width: 6),
-        SizedBox(
-          width: 110,
-          child: Slider(
-            value: app.penSize,
-            min: 1,
-            max: 10,
-            onChanged: (v) {
-              app.penSize = v;
-              app.refresh();
-            },
-          ),
-        ),
       ] else if (app.tool == Tool.eraser) ...[
         SegmentedButton<EraserMode>(
           segments: [

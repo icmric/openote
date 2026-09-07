@@ -130,6 +130,25 @@ class LIt extends L {
   String get barHighlight => 'Evidenzia';
 
   @override
+  String get barInkColourTitle => 'Colore della penna';
+
+  @override
+  String get barInkDefaultColour => 'Inchiostro predefinito — segue la pagina';
+
+  @override
+  String get barInkHighlighterColourTitle => 'Colore dell’evidenziatore';
+
+  @override
+  String get barInkMoreColours => 'Altri colori…';
+
+  @override
+  String get barInkPickColour => 'Preleva un colore dalla pagina';
+
+  @override
+  String get barInkPickingHint =>
+      'Fai clic su qualcosa nella pagina per usarne il colore';
+
+  @override
   String get barInlineCode => 'Codice nel testo';
 
   @override

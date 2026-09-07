@@ -130,6 +130,26 @@ class LEs extends L {
   String get barHighlight => 'Resaltado';
 
   @override
+  String get barInkColourTitle => 'Color del lápiz';
+
+  @override
+  String get barInkDefaultColour =>
+      'Tinta predeterminada: se adapta a la página';
+
+  @override
+  String get barInkHighlighterColourTitle => 'Color del marcador';
+
+  @override
+  String get barInkMoreColours => 'Más colores…';
+
+  @override
+  String get barInkPickColour => 'Tomar un color de la página';
+
+  @override
+  String get barInkPickingHint =>
+      'Haz clic en algo de la página para usar su color';
+
+  @override
   String get barInlineCode => 'Código en línea';
 
   @override

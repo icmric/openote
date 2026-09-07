@@ -128,6 +128,24 @@ class LZh extends L {
   String get barHighlight => '高亮';
 
   @override
+  String get barInkColourTitle => '笔的颜色';
+
+  @override
+  String get barInkDefaultColour => '默认墨迹 — 跟随页面';
+
+  @override
+  String get barInkHighlighterColourTitle => '荧光笔的颜色';
+
+  @override
+  String get barInkMoreColours => '更多颜色…';
+
+  @override
+  String get barInkPickColour => '从页面上拾取颜色';
+
+  @override
+  String get barInkPickingHint => '点击页面上的任意内容以使用它的颜色';
+
+  @override
   String get barInlineCode => '行内代码';
 
   @override

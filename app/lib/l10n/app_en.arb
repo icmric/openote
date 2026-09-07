@@ -173,6 +173,30 @@
   "@barHighlight": {
     "description": "Tooltip: mark the words as if with a highlighter pen."
   },
+  "barInkColourTitle": "Pen colour",
+  "@barInkColourTitle": {
+    "description": "Heading of the colour picker when it was opened from the pen swatches."
+  },
+  "barInkDefaultColour": "Default ink — follows the page",
+  "@barInkDefaultColour": {
+    "description": "Tooltip on the first pen swatch, the one that adapts to a light or dark page."
+  },
+  "barInkHighlighterColourTitle": "Highlighter colour",
+  "@barInkHighlighterColourTitle": {
+    "description": "Heading of the colour picker when it was opened from the highlighter swatches."
+  },
+  "barInkMoreColours": "More colours…",
+  "@barInkMoreColours": {
+    "description": "Tooltip on the button that opens the full colour picker for the pen."
+  },
+  "barInkPickColour": "Pick a colour off the page",
+  "@barInkPickColour": {
+    "description": "Tooltip on the eyedropper button."
+  },
+  "barInkPickingHint": "Click anything on the page to use its colour",
+  "@barInkPickingHint": {
+    "description": "Shown while the eyedropper is armed, in place of the pen size slider."
+  },
   "barInlineCode": "Inline code",
   "@barInlineCode": {
     "description": "Tooltip: format the selected words as computer code, in a monospaced face."

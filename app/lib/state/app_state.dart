@@ -4100,8 +4100,63 @@ class AppState extends ChangeNotifier
   /// Whether placement snaps right now — the mode plus any live override.
   /// Every drag-time decision reads THIS, never [snapToGrid] directly.
   bool get effectiveSnap => snapOverride ? !snapToGrid : snapToGrid;
-  int penColor = 0;
+  /// **The pen's colour, stored as the colour and not as a place in a list.**
+  ///
+  /// It was an index into a fixed palette, which is exactly why there was no
+  /// way to add a colour: `2` means nothing without the list it counts into,
+  /// and a list somebody can extend makes every stored index a guess. A hex
+  /// string means the same thing wherever it is read, which is what lets the
+  /// swatches, the full picker and the eyedropper all set the same field.
+  ///
+  /// `auto` is a real value, not a missing one: it is the default ink, which
+  /// resolves when it is DRAWN — dark on a light page, light on a dark one,
+  /// and dark again over a picture that brings its own background. See
+  /// `InkPainter.autoFor`.
+  String penInk = 'auto';
+
+  /// The highlighter keeps its own, because they are not interchangeable: a
+  /// highlighter colour used as ink is unreadable and ink used as a
+  /// highlighter is a blackout.
+  String highlighterInk = '#F7E27A';
+
+  /// What the tool in hand will draw with.
+  String get inkColor => tool == Tool.highlighter ? highlighterInk : penInk;
+
+  void setInkColor(String hex) {
+    if (tool == Tool.highlighter) {
+      highlighterInk = hex;
+    } else {
+      penInk = hex;
+    }
+    notifyListeners();
+  }
+
   double penSize = 2.5;
+
+  /// True while the pen's button is held and the app can see it.
+  ///
+  /// On [AppState] rather than inside the canvas so the toolbar can SAY so.
+  /// The owner's report was that the button did nothing, and "nothing" covers
+  /// two very different faults — the app not seeing the button, and the app
+  /// seeing it and not acting. The eraser lighting up while the button is
+  /// down tells those apart without anybody reading a log.
+  bool penErasing = false;
+
+  void setPenErasing(bool v) {
+    if (penErasing == v) return;
+    penErasing = v;
+    notifyListeners();
+  }
+
+  /// True while the next click on the page picks a colour off it rather than
+  /// doing what it usually would.
+  bool pickingInkColor = false;
+
+  void setPickingInkColor(bool v) {
+    if (pickingInkColor == v) return;
+    pickingInkColor = v;
+    notifyListeners();
+  }
 
   // ── Tags (TEXT-5) ────────────────────────────────────────────────────
 

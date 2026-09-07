@@ -130,6 +130,25 @@ class LFr extends L {
   String get barHighlight => 'Surlignage';
 
   @override
+  String get barInkColourTitle => 'Couleur du stylo';
+
+  @override
+  String get barInkDefaultColour => 'Encre par défaut — s’adapte à la page';
+
+  @override
+  String get barInkHighlighterColourTitle => 'Couleur du surligneur';
+
+  @override
+  String get barInkMoreColours => 'Plus de couleurs…';
+
+  @override
+  String get barInkPickColour => 'Prélever une couleur sur la page';
+
+  @override
+  String get barInkPickingHint =>
+      'Cliquez sur un élément de la page pour reprendre sa couleur';
+
+  @override
   String get barInlineCode => 'Code en ligne';
 
   @override

@@ -34,13 +34,37 @@ const int kPenEraseButtons =
 /// saw.
 ///
 /// The pen's tail is unconditional: that end of a pen IS an eraser.
+///
+/// [penInRange] widens the KIND that is believed, and is the second half of
+/// the same report coming back: *"pressing the button on my pen i have
+/// defined to be the eraser does not change it … I have 2 buttons on my
+/// pen, pressing one of them does cause a circle to come around the pointer
+/// on screen but this may be a windows thing."*
+///
+/// That circle is Windows' own right-click indicator, which is the giveaway:
+/// on Windows a barrel press is often not delivered as a stylus button at
+/// all. It is **promoted to a mouse right-button**, so the app is handed a
+/// `mouse` event at the pen's position while the pen itself is reporting
+/// separately as a stylus. Requiring `kind == stylus` threw exactly that
+/// away.
+///
+/// The guard against a real mouse is not the kind but the pen: [penInRange]
+/// is only true while a stylus has reported itself in the last couple of
+/// seconds, which somebody working with a mouse alone never satisfies.
 bool penGestureErases({
   required PointerDeviceKind kind,
   required int buttons,
   bool heldWhileHovering = false,
+  bool penInRange = false,
 }) {
   if (kind == PointerDeviceKind.invertedStylus) return true;
-  if (kind != PointerDeviceKind.stylus) return false;
+  final fromAPen = kind == PointerDeviceKind.stylus ||
+      // Some drivers report a pen with no kind at all rather than lying about
+      // it; a pen in range is what makes that believable.
+      (penInRange &&
+          (kind == PointerDeviceKind.mouse ||
+              kind == PointerDeviceKind.unknown));
+  if (!fromAPen) return false;
   return (buttons & kPenEraseButtons) != 0 || heldWhileHovering;
 }
 

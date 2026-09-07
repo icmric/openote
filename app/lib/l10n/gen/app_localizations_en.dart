@@ -130,6 +130,25 @@ class LEn extends L {
   String get barHighlight => 'Highlight';
 
   @override
+  String get barInkColourTitle => 'Pen colour';
+
+  @override
+  String get barInkDefaultColour => 'Default ink — follows the page';
+
+  @override
+  String get barInkHighlighterColourTitle => 'Highlighter colour';
+
+  @override
+  String get barInkMoreColours => 'More colours…';
+
+  @override
+  String get barInkPickColour => 'Pick a colour off the page';
+
+  @override
+  String get barInkPickingHint =>
+      'Click anything on the page to use its colour';
+
+  @override
   String get barInlineCode => 'Inline code';
 
   @override
