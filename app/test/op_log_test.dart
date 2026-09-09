@@ -34,7 +34,11 @@ void main() {
       expect(back.lamport, 42);
       expect(back.timestamp, op.timestamp);
       expect(back.kind, OpKind.blockSet);
-      expect(back.version, opFormatVersion);
+      // What this build WRITES, which is not the newest envelope it can read
+      // — see `opWriteVersion`. Writing the newer one by default would make
+      // every notebook unopenable on the release before this one.
+      expect(back.version, opWriteVersion);
+      expect(opWriteVersion, lessThan(opFormatVersion));
       expect(back.map['pageId'], 'p1');
     });
 

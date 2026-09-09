@@ -14,9 +14,38 @@ library;
 
 import 'dart:convert';
 
-/// Envelope format version. Bump only for a change a v1 reader cannot skip;
-/// new *operations* do not need it (see [OpKind.unknown]).
-const int opFormatVersion = 1;
+import 'package:crypto/crypto.dart';
+
+/// **The newest envelope this build can APPLY.**
+///
+/// Not the same number as the one it writes, and conflating the two is how a
+/// format bump takes every older install offline at once. Reading is a
+/// capability — "I understand v2 records" — while writing is a *choice* about
+/// who else will still be able to open the notebook afterwards. See
+/// [opWriteVersion].
+const int opFormatVersion = 2;
+
+/// **The envelope this build writes for ops every released build understands.**
+///
+/// Almost everything. An op kind an older build does not know is skipped
+/// harmlessly (see [OpKind.unknown]); what an older build must NOT do is
+/// half-read a log and then write on top of it, which is what the envelope
+/// version guards.
+const int opWriteVersion = 1;
+
+/// **The envelope for an op only a v2 reader can be trusted with.**
+///
+/// [OpKind.blockPatch] alone, today. A v1 build meeting one of these does the
+/// safe thing already, and has since v0.17: `Materializer.apply` files it under
+/// `unsupported`, and `SyncRecorder.logIsAhead` turns that into a read-only
+/// notebook — because every op that recorder would write is a diff against a
+/// history it has only half read.
+///
+/// So the cost of writing one is precise and worth stating: **the first text
+/// patch written into a notebook makes that notebook read-only on every
+/// Openote older than 1.0.** That is why it is spent now, when the oldest
+/// build in the world is four days old, rather than later.
+const int opPatchVersion = 2;
 
 /// What an operation does.
 ///
@@ -37,6 +66,34 @@ enum OpKind {
   nodePurge('node.purge'),
   blockSet('block.set'),
   blockRemove('block.remove'),
+
+  /// **The characters that changed in one string, rather than the block.**
+  ///
+  /// `{'pageId', 'blockId', 'k': contentKey, 'base': fingerprint,
+  /// 'at': index, 'del': count, 'ins': text, 'rect': {x,y,w,h}?, 'updatedAt'}`
+  ///
+  /// Exists for the same reason [inkStrokes] does, measured the same way. A
+  /// `block.set` carries the ENTIRE block, and an autosave fires at every
+  /// pause in a sentence — so one character added to a 2,000-character
+  /// paragraph cost ~2.5 KB of permanent, replicated log, and paid it again a
+  /// moment later. On the author's own notebooks, text `block.set` was **52.6%
+  /// of the whole log** (`test/oplog_composition_test.dart` measures this; do
+  /// not take the number on faith, re-run it).
+  ///
+  /// `at`/`del`/`ins` is a single splice in UTF-16 code units, computed from
+  /// the common prefix and suffix and **snapped to whole runes**, so a
+  /// boundary never lands between the halves of a surrogate pair.
+  ///
+  /// **`base` is what makes it safe to merge.** A patch is meaningless against
+  /// text it was not computed from, and logs from two devices merge as the
+  /// union in a total order — so a patch really can arrive to be applied on
+  /// top of some other device's `block.set`. Applied blind that is silent
+  /// corruption; today the same collision resolves last-writer-wins and gives
+  /// you a coherent block. So the op carries a fingerprint of the string it
+  /// was computed against, and a reader that does not match it **drops the
+  /// patch**, which lands exactly on the last-writer-wins behaviour that was
+  /// there before. Written at [opPatchVersion]; see there for the cost.
+  blockPatch('block.patch'),
 
   /// Per-stroke ink edit: `{'pageId', 'blockId', 'del': [strokeId…],
   /// 'put': [{'i': index, 's': strokeJson}…], 'rect': {x,y,w,h}?, 'updatedAt'}`.
@@ -68,6 +125,98 @@ enum OpKind {
       OpKind.values.firstWhere((k) => k.tag == s, orElse: () => OpKind.unknown);
 }
 
+/// One change to a string: replace [del] code units at [at] with [ins].
+class TextSplice {
+  const TextSplice(this.at, this.del, this.ins);
+  final int at;
+  final int del;
+  final String ins;
+}
+
+bool _isHigh(int u) => u >= 0xD800 && u <= 0xDBFF;
+bool _isLow(int u) => u >= 0xDC00 && u <= 0xDFFF;
+
+/// Would cutting [s] at [i] land between the halves of one character?
+bool _splitsPair(String s, int i) =>
+    i > 0 && i < s.length && _isLow(s.codeUnitAt(i)) && _isHigh(s.codeUnitAt(i - 1));
+
+/// **The one splice that turns [old] into [now]**, from their common prefix
+/// and suffix. Null when they are already equal.
+///
+/// Dart strings are UTF-16, so the obvious loop over code units will happily
+/// cut an emoji, a musical symbol or a rarer CJK character in half — and each
+/// half is not a character at all, it is an unpaired surrogate. Both ends back
+/// off to a whole-character boundary, and both strings are checked at each:
+/// the prefix is shared, but which side runs out first is not.
+///
+/// Deliberately one splice rather than a real diff. An autosave records what
+/// changed since the last pause in a sentence, which is almost always one
+/// insertion, one deletion, or a typed-over selection; anything more
+/// scattered simply produces a bigger splice, and the caller falls back to
+/// recording the whole block when it stops paying.
+TextSplice? spliceBetween(String old, String now) {
+  if (old == now) return null;
+  final limit = old.length < now.length ? old.length : now.length;
+  var at = 0;
+  while (at < limit && old.codeUnitAt(at) == now.codeUnitAt(at)) {
+    at++;
+  }
+  while (at > 0 && (_splitsPair(old, at) || _splitsPair(now, at))) {
+    at--;
+  }
+
+  final maxSuffix =
+      (old.length - at) < (now.length - at) ? old.length - at : now.length - at;
+  var suffix = 0;
+  while (suffix < maxSuffix &&
+      old.codeUnitAt(old.length - 1 - suffix) ==
+          now.codeUnitAt(now.length - 1 - suffix)) {
+    suffix++;
+  }
+  while (suffix > 0 &&
+      (_splitsPair(old, old.length - suffix) ||
+          _splitsPair(now, now.length - suffix))) {
+    suffix--;
+  }
+
+  return TextSplice(
+      at, old.length - at - suffix, now.substring(at, now.length - suffix));
+}
+
+/// **Apply one [OpKind.blockPatch] payload to [old]**, or null to refuse.
+///
+/// One function, called by both the materialiser and anything else that
+/// replays a log, so there is exactly one reading of the guard. Null means
+/// "leave the text alone", which lands on the last-writer-wins behaviour that
+/// was there before patches existed:
+///
+///  * **the fingerprint does not match** — this patch was computed against a
+///    different string, so another device's `block.set` is ordered between the
+///    two halves of this edit. Applying it anyway is silent corruption; that
+///    is the whole reason `base` is on the wire;
+///  * the payload is malformed, or its range does not fit the string.
+String? applyTextPatch(String old, Map<String, dynamic> d) {
+  if (d['base'] != textFingerprint(old)) return null;
+  final at = (d['at'] as num?)?.toInt();
+  final del = (d['del'] as num?)?.toInt();
+  final ins = d['ins'];
+  if (at == null || del == null || ins is! String) return null;
+  if (at < 0 || del < 0 || at + del > old.length) return null;
+  return old.substring(0, at) + ins + old.substring(at + del);
+}
+
+/// **The fingerprint of the string a [OpKind.blockPatch] was computed from.**
+///
+/// Here rather than beside either user of it, because a writer and a reader
+/// that disagree about this function do not fail loudly — the reader simply
+/// drops every patch and the log quietly grows the way it used to.
+///
+/// Truncated to sixteen hex characters: this guards against applying a splice
+/// to the wrong text, not against an adversary, and a collision would have to
+/// be between two strings one of which somebody actually wrote.
+String textFingerprint(String s) =>
+    sha256.convert(utf8.encode(s)).toString().substring(0, 16);
+
 /// One record in a device's log.
 class Op {
   Op({
@@ -77,7 +226,7 @@ class Op {
     required this.timestamp,
     required this.kind,
     required this.data,
-    this.version = opFormatVersion,
+    this.version = opWriteVersion,
     this.encryption = 'none',
     this.rawTag,
   });
@@ -174,7 +323,7 @@ class Op {
       final tag = j['op'] as String? ?? '?';
       final kind = OpKind.parse(tag);
       return Op(
-        version: j['v'] as int? ?? opFormatVersion,
+        version: j['v'] as int? ?? 1,
         device: dev,
         seq: seq,
         lamport: lc,

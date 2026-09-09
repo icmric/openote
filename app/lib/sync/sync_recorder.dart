@@ -271,13 +271,16 @@ class SyncRecorder {
     });
   }
 
-  Op _op(OpKind kind, Map<String, dynamic> data) => Op(
+  Op _op(OpKind kind, Map<String, dynamic> data,
+          {int version = opWriteVersion}) =>
+      Op(
         device: device.id,
         seq: ++_seq,
         lamport: ++_lamport,
         timestamp: nowMs(),
         kind: kind,
         data: data,
+        version: version,
       );
 
   /// Ops in this notebook's log that this build cannot apply because their
@@ -720,6 +723,7 @@ class SyncRecorder {
         case OpKind.blockRemove:
         case OpKind.pageProps:
         case OpKind.inkStrokes:
+        case OpKind.blockPatch:
           final pid = op.map['pageId'];
           if (pid is String) pages.add(pid);
         case OpKind.nodeUpsert:
@@ -876,6 +880,16 @@ class SyncRecorder {
           continue;
         }
       }
+      // And text gets a per-edit splice, for the same reason and with the same
+      // fallback. This is the big one by volume: on a real workspace, text
+      // `block.set` was 52.6% of the entire log.
+      if (before != null) {
+        final textOp = _diffText(pageId, before, json);
+        if (textOp != null) {
+          ops.add(textOp);
+          continue;
+        }
+      }
       ops.add(_op(OpKind.blockSet, {'pageId': pageId, 'block': json}));
     }
     for (final goneId in (prev?.blocks.keys.toList() ?? const <String>[])) {
@@ -892,6 +906,99 @@ class SyncRecorder {
     }
     _commit(ops);
   }
+
+  /// **Diff two versions of a block into one [OpKind.blockPatch], or null.**
+  ///
+  /// Null — meaning "record the whole block" — in every case this cannot
+  /// express exactly, and the list is deliberately long. A patch that is
+  /// nearly right is worse than a `block.set` that is simply large.
+  ///
+  ///  * anything outside `content` changed beyond geometry;
+  ///  * `content` gained or lost a key;
+  ///  * more than one value in `content` changed;
+  ///  * the one that changed is not a string on both sides;
+  ///  * the resulting op would not actually be smaller — a rewritten
+  ///    paragraph has no useful common prefix, and half a block plus an
+  ///    envelope is bigger than the block.
+  ///
+  /// One changed string covers a paragraph, a code block and an equation's
+  /// source without naming any of them, which is why it tests the shape rather
+  /// than the block's `type`.
+  Op? _diffText(
+      String pageId, Map<String, dynamic> before, Map<String, dynamic> after) {
+    final blockId = after['id'] as String?;
+    if (blockId == null) return null;
+
+    // The envelope, apart from what the op can carry itself.
+    const carried = {'content', 'x', 'y', 'w', 'h', 'rotation', 'updatedAt'};
+    Map<String, dynamic> envelope(Map<String, dynamic> b) => {
+          for (final e in b.entries)
+            if (!carried.contains(e.key)) e.key: e.value,
+        };
+    if (canonicalJson(envelope(before)) != canonicalJson(envelope(after))) {
+      return null;
+    }
+
+    final beforeContent = (before['content'] as Map?)?.cast<String, dynamic>();
+    final afterContent = (after['content'] as Map?)?.cast<String, dynamic>();
+    if (beforeContent == null || afterContent == null) return null;
+    if (beforeContent.length != afterContent.length) return null;
+
+    String? key;
+    for (final e in afterContent.entries) {
+      if (!beforeContent.containsKey(e.key)) return null;
+      if (canonicalJson(beforeContent[e.key]) == canonicalJson(e.value)) {
+        continue;
+      }
+      if (key != null) return null; // two changed values: not one splice
+      key = e.key;
+    }
+    if (key == null) return null; // nothing in content moved; geometry only
+    final old = beforeContent[key];
+    final now = afterContent[key];
+    if (old is! String || now is! String) return null;
+
+    final splice = spliceBetween(old, now);
+    if (splice == null) return null;
+
+    final op = _op(
+      OpKind.blockPatch,
+      {
+        'pageId': pageId,
+        'blockId': blockId,
+        'k': key,
+        'base': textFingerprint(old),
+        'at': splice.at,
+        'del': splice.del,
+        'ins': splice.ins,
+        if (after['updatedAt'] != null) 'updatedAt': after['updatedAt'],
+        if (_geometryMoved(before, after))
+          'rect': {
+            for (final g in const ['x', 'y', 'w', 'h'])
+              if (after[g] != null) g: after[g],
+          },
+      },
+      version: opPatchVersion,
+    );
+    // **Only when it pays, and it has to pay properly.** Both candidates are
+    // encoded and compared rather than estimated from lengths.
+    //
+    // The margin is not arbitrary and it is not tuning. A patch is not simply
+    // a smaller `block.set`: it is a smaller one that can be REFUSED, because
+    // a patch whose base no longer matches is dropped and the edit resolves to
+    // the other device's text. `block.set` always wins its merge. So the
+    // fragility is a real cost, and it is only worth paying for a real saving
+    // — half the bytes or better, which is what a paragraph edited at one
+    // point looks like and what a paragraph rewritten wholesale does not.
+    final asBlock =
+        _op(OpKind.blockSet, {'pageId': pageId, 'block': after}).encode().length;
+    if (op.encode().length * 2 > asBlock) return null;
+    return op;
+  }
+
+  static bool _geometryMoved(
+          Map<String, dynamic> before, Map<String, dynamic> after) =>
+      const ['x', 'y', 'w', 'h'].any((g) => before[g] != after[g]);
 
   /// Diff two versions of an ink block into one [OpKind.inkStrokes] op, or
   /// null when a whole `block.set` is the better record.

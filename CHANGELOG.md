@@ -2,7 +2,7 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
-## [Unreleased]
+## [1.0.0] — 2026-09-07
 
 ### Added — bring your notes over from OneNote without exporting anything
 
@@ -30,6 +30,27 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **Subpages stay subpages.** They arrive indented under the page they belong
   to, exactly as in OneNote — including a subpage of a subpage. Measured on a
   real notebook: 212 of 331 pages came over nested, two of them two deep.
+
+### Changed — a paragraph's history stops repeating itself
+
+- **Editing a paragraph no longer records the whole paragraph.** Openote saves
+  a few hundred milliseconds after you stop typing, and every one of those
+  saves used to write the entire paragraph again into the notebook's history —
+  so a shared notebook's history grew with the length of what you were writing
+  rather than with what you changed. It records the characters that actually
+  moved now. Measured on forty saves of a one-thousand-character paragraph:
+  **12 KB instead of 60 KB**, and unlike before, the cost no longer grows as
+  the paragraph does.
+- **Nothing you already have needs converting.** Every notebook written by
+  every earlier version opens in 1.0 and stays fully editable, with its whole
+  history — the compatibility gate only ever points forwards.
+- **What this costs, plainly:** a notebook that 1.0 has typed into is
+  **read-only on Openote 0.9 and earlier**. They will open it and show you
+  everything; they will not let you add to it, because they cannot read part
+  of its history and writing on top of a history you have half-read is how
+  notes get lost. Update every device that shares a notebook and it never
+  comes up. This is why it was done now rather than later: it gets more
+  disruptive with every week of installs.
 
 ### Changed — one band of toolbar fewer, and the pen puts itself away
 
@@ -127,10 +148,12 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **The box grows to hold the table.** A column dragged wider than the box it
   is in used to spill out of it. The box only ever grows, so one you widened
   by hand is never taken back.
-- **The pen's side button reaches the eraser more often.** Windows does not
-  always hand a barrel press over as a pen button — it often turns it into a
-  right-click at the pen's position instead, which Openote was throwing away.
-  While the app can see the button held, the eraser in the Draw tab lights up.
+- **More of the ways a pen's side button can arrive now count as "erase"** —
+  including a barrel press that Windows has turned into a right-click at the
+  pen's own position, which Openote used to throw away. On some pens the
+  button still does not reach Openote at all; see Known limitations. While the
+  app can see the button held, the eraser on the Draw tab lights up, which is
+  how to tell which of the two is happening.
 - **Table columns fit what is in them**, instead of every column taking the
   same room whatever it held — which is why a column of ticks used to be as
   wide as a column of sentences.
@@ -266,6 +289,20 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   appear, and the card sat on "Signing in to OneNote…" for all of it. It now
   tells you how many sections and pages it found, and **Stop works during it**
   instead of waiting until the first section had already been brought over.
+
+### Known limitations
+
+- **A pen's side button may not reach Openote on Windows.** The eraser end of
+  a pen works, and so does the eraser tool; a side button mapped to "erase" in
+  a pen's own driver is reported to Windows in a way that does not always
+  arrive. Hold the button near the screen: if the eraser on the Draw tab does
+  not light up, Openote is not being told about it, and the remaining work is
+  in the Windows part of the app rather than in Openote itself.
+- **macOS and Linux have never been opened by a human.** Both build in CI and
+  both are shipped, and no one has yet sat down in front of either.
+- **Spell check is English only.**
+- **OneNote tags are not imported**, and the `.onepkg` file route cannot
+  convert links between pages — the sign-in route can.
 
 ## [0.9.0] — 2026-09-03
 

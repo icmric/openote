@@ -177,6 +177,43 @@ void main() {
     await drain(tester);
   });
 
+  testWidgets('a pen carried off with its button down does not stay erasing',
+      (tester) async {
+    // Found reviewing the branch, not reported. The button is only ever
+    // reported while the pen is in range, so there is no event at all to say
+    // it was let go once the pen has been put down — and the toolbar went on
+    // showing an eraser nobody was holding, indefinitely.
+    //
+    // The cursor recovered on its own (it asks whether a pen is in range every
+    // time it is read); the toolbar did not, because it is told once, when the
+    // answer changes.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await canvas(tester, 'onote_tool_stuck_');
+    PageCanvas.stylusGrace = const Duration(milliseconds: 1);
+    addTearDown(() => PageCanvas.stylusGrace = const Duration(seconds: 2));
+
+    // Sent raw: `TestGesture.moveTo` builds its hover events without any
+    // buttons at all, whatever the gesture was created with, so the one thing
+    // this test is about cannot be expressed through it.
+    await tester.sendEventToBinding(const PointerHoverEvent(
+      kind: PointerDeviceKind.stylus,
+      pointer: 7,
+      position: Offset(400, 300),
+      buttons: kSecondaryButton,
+    ));
+    await tester.pump();
+    expect(app.penErasing, isTrue, reason: 'the button is down and in range');
+
+    // The pen goes away without ever touching down, so nothing else clears it.
+    await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await hover(tester, PointerDeviceKind.mouse, pointer: 8);
+
+    expect(app.penErasing, isFalse,
+        reason: 'no pen in range means no pen button held');
+    await drain(tester);
+  });
+
   test('picking Select clears the claim, so nothing is put back twice', () {
     // `setTool(Tool.select, automatic: true)` would otherwise leave the app
     // believing it still had a tool out on loan.

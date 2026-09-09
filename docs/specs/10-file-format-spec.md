@@ -303,12 +303,33 @@ What "frozen" binds:
 | `nodes`, `blobs`, `blob_refs`, `refs` columns | ✅ | Columns may be ADDED; existing ones keep their meaning. `page_versions` was on this list until v0.17 withdrew the table (§3). |
 | `application_id` / `user_version` | ✅ | `0x4F4E4F54` / **`1` for a notebook file**. **`2` means Openote's own local working copy**, not a notebook: its `blobs` table may be empty and its only guarantee is that it can be rebuilt from the log beside it. A reader that does not understand `2` MUST refuse the file rather than open it — which every release before v0.17 already does, since its gate is `user_version > 1`. |
 | `notebook_meta` required keys | ✅ | Readers MUST ignore unknown keys. |
-| Op-log envelope (`v`, `dev`, `seq`, `lc`, `ts`, `enc`, `op`, `d`) and the total order | ✅ | New **op kinds** are additive and do not bump `v`; a reader that meets an unknown kind MUST preserve it verbatim and MAY skip applying it. |
+| Op-log envelope (`v`, `dev`, `seq`, `lc`, `ts`, `enc`, `op`, `d`) and the total order | ✅ | New **op kinds** are additive and do not bump `v`, **provided skipping one is harmless**; a reader that meets an unknown kind MUST preserve it verbatim and MAY skip applying it. A kind whose omission would silently produce the wrong content — one that is a *delta* rather than a whole value — MUST ride a higher `v`, so that a reader which cannot apply it goes read-only instead of quietly diverging. `block.patch` is the first, and `v: 2` means only that a log may contain one. An op with no `v` at all is `v: 1` by definition. |
 | `.onotebook` directory layout (`manifest.json`, `ops/`, `blobs/`) | ✅ | |
 | `fts_pages` | ❌ optional | Not created by default; declare it in `notebook_meta.features` if populated. |
 
 ### Changelog
 
+- **v1.0.0 (op-log `v: 2`; container still v1)** — adds the `block.patch` op
+  kind: a single splice (`at`, `del`, `ins`, in UTF-16 code units snapped to
+  whole runes) against one string-valued key of a block's `content`, replacing
+  a whole-block `block.set` when it is at most half the size. It exists because
+  `block.set` carries the entire block and an autosave fires at every pause in
+  a sentence — measured at **52.6% of a real workspace's op log**.
+
+  It carries `base`, the first 16 hex characters of the SHA-256 of the string
+  it was computed against, and **a reader MUST refuse to apply a patch whose
+  `base` does not match**, leaving the value as it found it. That is what keeps
+  two devices' logs mergeable: the same collision resolves last-writer-wins,
+  exactly as it did before this kind existed.
+
+  Written at `v: 2` because skipping it is NOT harmless — a skipped delta is
+  silently stale content, where a skipped whole value is merely an older one.
+  A reader that only understands `v: 1` therefore treats such a log as ahead of
+  it and holds the notebook **read-only**, which every release since v0.17
+  already does. **The container is untouched and remains `user_version` 1**: a
+  notebook file that has never been written by 1.0 opens everywhere it always
+  did, and the promise above is unbroken — this is the documented bump it
+  provides for.
 - **v0.17 (container `user_version` 2 for working copies; `workspace.json` format 2)** — the container is demoted to a local, rebuildable working copy at `<workspace>/.cache/<notebook-id>/cache.onote` (§11). A notebook file is still v1 and still opens everywhere; **v2 is only ever a working copy**, and the migration that produces one is opt-in per notebook and reversible from inside the app, except that `page_versions` is dropped and cannot be restored (§3). `workspace.json` is stamped `format.major = 2` only once a workspace actually contains a demoted notebook, so an older build keeps full use of a registry it can still write safely; when it meets a 2 it loads the list read-only rather than rewriting it. The registry's `file` field is now a path **relative to the workspace**, which for every notebook in the classic layout is byte-identical to the basename it has always been.
 - **v0.2.0 (format v1, spec v0.2)** — first frozen release. Corrected from spec v0.1: the CRDT layer (`page_docs`, `page_updates`) is not part of the format and never was implemented; `page_mirror` is authoritative; `dirty_mirror` retired; `fts_pages` optional. Added: the `.onotebook` operation log (§11) with the `ink.strokes`, `node.*`, `block.*`, `page.props`, `blob.put` and `notebook.meta` op kinds.
 

@@ -158,6 +158,37 @@ class Materializer {
         pages.putIfAbsent(pid, MatPage.new).blocks[bid] =
             b.cast<String, dynamic>();
 
+      case OpKind.blockPatch:
+        final pid = d['pageId'] as String?;
+        final bid = d['blockId'] as String?;
+        final key = d['k'] as String?;
+        if (pid == null || bid == null || key == null) return;
+        final block = pages[pid]?.blocks[bid];
+        // Absent page or block → drop it, for the same reasons as the ink op
+        // below: a concurrent `block.remove` ordered earlier, or an op from a
+        // device that never saw the creation.
+        if (block == null) return;
+        final content = <String, dynamic>{
+          ...?(block['content'] as Map?)?.cast<String, dynamic>()
+        };
+        final old = content[key];
+        if (old is! String) return;
+        // **A patch against text this is not.** See [applyTextPatch]: refusing
+        // is not a lost edit so much as the last-writer-wins resolution this
+        // collision has always had.
+        final next = applyTextPatch(old, d);
+        if (next == null) return;
+        content[key] = next;
+        final patched = <String, dynamic>{...block, 'content': content};
+        final movedTo = (d['rect'] as Map?)?.cast<String, dynamic>();
+        if (movedTo != null) {
+          for (final g in const ['x', 'y', 'w', 'h']) {
+            if (movedTo[g] != null) patched[g] = movedTo[g];
+          }
+        }
+        if (d['updatedAt'] != null) patched['updatedAt'] = d['updatedAt'];
+        pages[pid]!.blocks[bid] = patched;
+
       case OpKind.inkStrokes:
         final pid = d['pageId'] as String?;
         final bid = d['blockId'] as String?;

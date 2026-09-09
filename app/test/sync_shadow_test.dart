@@ -148,8 +148,19 @@ void main() {
 
     final added = store.readAll().skip(before).toList();
     expect(added, hasLength(1));
-    expect(added.single.kind, OpKind.blockSet);
-    expect((added.single.map['block'] as Map)['id'], b.id);
+    // Either shape is right and this test is about neither: what it asserts is
+    // that ONE block moving costs one op naming that block, not the page. A
+    // long paragraph edited at one point records a `block.patch`; this one is
+    // nine characters, where a patch would not be half the size of simply
+    // saying so, and the recorder correctly declines it. See
+    // `block_patch_test.dart` for that rule and why it has a margin.
+    final op = added.single;
+    expect(op.kind, anyOf(OpKind.blockSet, OpKind.blockPatch));
+    expect(
+        op.kind == OpKind.blockSet
+            ? (op.map['block'] as Map)['id']
+            : op.map['blockId'],
+        b.id);
   });
 
   test('blob bytes land in blobs/, content-addressed and deduplicated',

@@ -303,6 +303,33 @@ class NotebookHistory {
         if (bid == null) return;
         _record(op, _digest(op, pid, bid, b.cast<String, dynamic>()));
 
+      case OpKind.blockPatch:
+        // Exactly like a stroke edit: it changes who last touched the block
+        // and nothing else this index knows, and it is never a deletion.
+        final pid = d['pageId'] as String?;
+        final bid = d['blockId'] as String?;
+        if (pid == null || bid == null) return;
+        final was = _authors[keyFor(pid, bid)];
+        if (was == null) return; // a patch to a block we never saw set
+        // The one thing this index knows that a splice really does move: the
+        // character count, which the splice states exactly rather than
+        // estimates — it removed `del` and added `ins`.
+        final grew = ((d['ins'] as String?)?.length ?? 0) -
+            ((d['del'] as num?)?.toInt() ?? 0);
+        _record(
+            op,
+            BlockAuthor(
+              pageId: pid,
+              blockId: bid,
+              device: op.device,
+              lamport: op.lamport,
+              seq: op.seq,
+              changedAt: op.timestamp,
+              blockKind: was.blockKind,
+              chars: (was.chars + grew).clamp(0, 1 << 30),
+              pins: was.pins,
+            ));
+
       case OpKind.inkStrokes:
         // A per-stroke edit changes who last touched the block and nothing
         // else this index knows. **It is never a deletion, however large its

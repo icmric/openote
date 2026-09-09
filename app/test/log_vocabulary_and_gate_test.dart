@@ -140,10 +140,10 @@ void main() {
     });
 
     test('a NEWER envelope version is skipped, not applied', () {
-      final m = Materializer()..apply(_nodeUpsert('n1', 'page', version: 2));
+      final m = Materializer()..apply(_nodeUpsert('n1', 'page', version: 3));
       // Measured before the gate existed: applied, with `skipped=0`.
-      expect(m.nodes['n1'], isNull, reason: 'a v2 payload is not a v1 payload');
-      expect(m.unsupported.single.version, 2);
+      expect(m.nodes['n1'], isNull, reason: 'a v3 payload is not one this build can read');
+      expect(m.unsupported.single.version, 3);
       expect(m.skipped, hasLength(1),
           reason: "verifyPage's 'inconclusive' escape hatch keys off this");
     });
@@ -160,7 +160,7 @@ void main() {
     test('the gate stops at the envelope — the ops around it still apply', () {
       final m = Materializer()
         ..apply(_nodeUpsert('a', 'section'))
-        ..apply(_nodeUpsert('b', 'page', version: 2, seq: 2))
+        ..apply(_nodeUpsert('b', 'page', version: 3, seq: 2))
         ..apply(_nodeUpsert('c', 'page', seq: 3));
       expect(m.nodes.keys, containsAll(['a', 'c']));
       expect(m.nodes['b'], isNull);
@@ -191,10 +191,10 @@ void main() {
       return (repo, app, nb.id);
     }
 
-    test('a v2 op locks it, and the sentence has no jargon in it', () async {
+    test('an unreadable op locks it, and the sentence has no jargon in it', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (_, app, nb) =
-          await withPlantedOps('onote_gate_v2_', [_nodeUpsert('x', 'page', version: 2)]);
+          await withPlantedOps('onote_gate_v3_', [_nodeUpsert('x', 'page', version: 3)]);
 
       expect(app.notebookIsReadOnly(nb), isTrue);
       final problem = app.saveError;
@@ -233,7 +233,7 @@ void main() {
     test('READ-ONLY MEANS NO NEW OPS AND NO CONTAINER WRITE', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, app, nb) = await withPlantedOps(
-          'onote_gate_write_', [_nodeUpsert('x', 'page', version: 2)]);
+          'onote_gate_write_', [_nodeUpsert('x', 'page', version: 3)]);
 
       final store = OpLogStore.forNotebook(repo.notebooks.single.file);
       final before = store.readAll().length;
@@ -281,7 +281,7 @@ void main() {
       });
       final store = OpLogStore.forNotebook(p.join(ws.path, 'Locked.onote'));
       store.ensureInitialised(notebookId: 'nb-1', title: 'Locked');
-      store.append('another-device', [_nodeUpsert('x', 'page', version: 2)]);
+      store.append('another-device', [_nodeUpsert('x', 'page', version: 3)]);
 
       final settings = <String, Object?>{};
       final rec = SyncRecorder.open(
