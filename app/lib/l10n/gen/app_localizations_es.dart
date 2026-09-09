@@ -644,9 +644,22 @@ class LEs extends L {
   String get navDeletePermanently => 'Borrar definitivamente';
 
   @override
-  String navDeletedRestorable(String title) {
-    return '«$title» borrada — puedes restaurarla desde la papelera.';
+  String navDeletedPage(String title) {
+    return 'Página “$title” borrada';
   }
+
+  @override
+  String navDeletedSection(String title) {
+    return 'Sección “$title” borrada';
+  }
+
+  @override
+  String navDeletedGroup(String title) {
+    return 'Grupo “$title” borrado';
+  }
+
+  @override
+  String get navUndo => 'Deshacer';
 
   @override
   String navDeletesInDays(int days) {

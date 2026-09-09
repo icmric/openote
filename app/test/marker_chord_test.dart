@@ -1,5 +1,6 @@
-// Ctrl + a Markdown marker character wraps the word at the caret in it, and
-// pressing it again adds a layer until the grammar stops accepting one.
+// Ctrl + a Markdown marker character styles what you type next, and pressing
+// it again adds a layer until the grammar stops accepting one. With a
+// selection it wraps the selection instead, where it always did.
 //
 // Everything about "which characters" and "how far" is asserted against
 // AppState.markerChordLadders, which is MEASURED from markdown/md_syntax.dart
@@ -163,56 +164,67 @@ void main() {
       );
     }
 
-    test('at the END of a word it wraps that word', () {
+    /// What the queued style would make of a word typed at the caret. The
+    /// wrap itself happens in the field's input formatter; this is the rule
+    /// it applies, which is what these tests are about.
+    String typed([String s = 'word']) => app.applyPendingMarks(s)?.text ?? s;
+
+    test('at a bare caret it queues the first rung, writing nothing', () {
       if (!haveSqlite) return;
       edit('hello| world');
       expect(app.cycleMarker('*'), isTrue);
-      expect(c.text, '*hello* world');
-      // The word stays under the selection, exactly as Ctrl+B leaves it, so
-      // the next press has something to climb.
-      expect(c.text.substring(c.selection.start, c.selection.end), 'hello');
+      expect(c.text, 'hello world',
+          reason: 'it used to reach back and italicise `hello` — the word '
+              'you had just finished, never the one you were about to type');
+      expect(typed(), '*word*');
     });
 
-    test('INSIDE a word it wraps the same whole word', () {
+    test('INSIDE a word it leaves that word alone too', () {
       if (!haveSqlite) return;
       edit('hel|lo world');
       app.cycleMarker('*');
-      expect(c.text, '*hello* world');
+      expect(c.text, 'hello world');
+      expect(typed(), '*word*');
     });
 
     test('press again for bold, again for both, and then nothing', () {
       if (!haveSqlite) return;
       edit('hello| world');
       app.cycleMarker('*');
-      expect(c.text, '*hello* world');
+      expect(typed(), '*word*');
       app.cycleMarker('*');
-      expect(c.text, '**hello** world');
+      expect(typed(), '**word**');
       app.cycleMarker('*');
-      expect(c.text, '***hello*** world');
+      expect(typed(), '***word***');
       // The product owner's own example: `****this****` is refused. Note it
       // is refused SILENTLY — writing the markers anyway would leave four
       // asterisks the reader can see and no renderer can match.
       expect(app.cycleMarker('*'), isTrue, reason: 'the chord is still ours');
-      expect(c.text, '***hello*** world', reason: 'a fourth layer is refused');
+      expect(typed(), '***word***', reason: 'a fourth layer is refused');
     });
 
-    test('the caret keeps its own character on every rung', () {
+    test('the caret does not move while the ladder is climbed', () {
+      if (!haveSqlite) return;
+      edit('say hell|o');
+      for (var i = 0; i < 3; i++) {
+        app.cycleMarker('*');
+        expect(c.selection, const TextSelection.collapsed(offset: 8),
+            reason: 'rung ${i + 1} moved the caret');
+        expect(c.text, 'say hello');
+      }
+    });
+
+    test('and the toolbar says which rung it is on', () {
       if (!haveSqlite) return;
       edit('say hell|o');
       app.cycleMarker('*');
-      // wrapSelection leaves the word selected; the offsets below track that
-      // selection through each widening of the opening marker.
-      expect(c.selection.start, 5, reason: 'past the one new asterisk');
-      expect(c.selection.end, 10);
+      expect(app.marksAtCaret(), contains(MdInline.italic));
       app.cycleMarker('*');
-      expect(c.text, 'say **hello**');
-      expect(c.selection.start, 6, reason: 'the opening marker grew by one');
-      expect(c.selection.end, 11);
+      expect(app.marksAtCaret(), contains(MdInline.bold));
       app.cycleMarker('*');
-      expect(c.text, 'say ***hello***');
-      expect(c.selection.start, 7);
-      expect(c.selection.end, 12);
-      expect(c.text.substring(c.selection.start, c.selection.end), 'hello');
+      expect(app.marksAtCaret(),
+          containsAll([MdInline.bold, MdInline.italic]),
+          reason: '`***` is both, and both buttons must say so');
     });
 
     test('with a real selection it wraps the selection, not the word', () {
@@ -240,24 +252,25 @@ void main() {
       if (!haveSqlite) return;
       edit('CO2 is not CO|2 yet');
       app.cycleMarker('~');
-      expect(c.text, 'CO2 is not ~CO2~ yet');
-      expect(scanKinds(c.text), contains(MdInline.subscript));
+      expect(typed('CO2'), '~CO2~');
+      expect(scanKinds(typed('CO2')), contains(MdInline.subscript));
       app.cycleMarker('~');
-      expect(c.text, 'CO2 is not ~~CO2~~ yet',
+      expect(typed('CO2'), '~~CO2~~',
           reason: 'one more tilde a side IS strikethrough');
-      expect(scanKinds(c.text), contains(MdInline.strike));
+      expect(scanKinds(typed('CO2')), contains(MdInline.strike));
       app.cycleMarker('~');
-      expect(c.text, 'CO2 is not ~~CO2~~ yet', reason: 'three is not a mark');
+      expect(typed('CO2'), '~~CO2~~', reason: 'three is not a mark');
     });
 
-    test('one-rung ladders wrap once and refuse the second press', () {
+    test('one-rung ladders queue once and refuse the second press', () {
       if (!haveSqlite) return;
       for (final ch in ['`', '^']) {
+        app.clearPendingMarks();
         edit('a wo|rd');
         app.cycleMarker(ch);
-        expect(c.text, 'a ${ch}word$ch', reason: '$ch wrapped the word');
+        expect(typed(), '${ch}word$ch', reason: '$ch queued its one rung');
         app.cycleMarker(ch);
-        expect(c.text, 'a ${ch}word$ch',
+        expect(typed(), '${ch}word$ch',
             reason: '$ch has one rung and must stay on it');
       }
     });
@@ -268,11 +281,11 @@ void main() {
       // the third press has nowhere to go and must change nothing.
       edit('a wo|rd');
       app.cycleMarker(r'$');
-      expect(c.text, r'a $word$', reason: 'first press: an inline equation');
+      expect(typed(), r'$word$', reason: 'first press: an inline equation');
       app.cycleMarker(r'$');
-      expect(c.text, r'a $$word$$', reason: 'second press: display maths');
+      expect(typed(), r'$$word$$', reason: 'second press: display maths');
       app.cycleMarker(r'$');
-      expect(c.text, r'a $$word$$',
+      expect(typed(), r'$$word$$',
           reason: 'no third rung exists, so nothing may change');
     });
 
@@ -280,21 +293,21 @@ void main() {
       if (!haveSqlite) return;
       edit('a wo|rd');
       app.cycleMarker('=');
-      expect(c.text, 'a ==word==');
-      expect(scanKinds(c.text), contains(MdInline.highlight));
+      expect(typed(), '==word==');
+      expect(scanKinds(typed()), contains(MdInline.highlight));
       app.cycleMarker('=');
-      expect(c.text, 'a ==word==');
+      expect(typed(), '==word==');
     });
 
     test('underscores climb italic then bold and stop at two', () {
       if (!haveSqlite) return;
       edit('a wo|rd');
       app.cycleMarker('_');
-      expect(c.text, 'a _word_');
+      expect(typed(), '_word_');
       app.cycleMarker('_');
-      expect(c.text, 'a __word__');
+      expect(typed(), '__word__');
       app.cycleMarker('_');
-      expect(c.text, 'a __word__');
+      expect(typed(), '__word__');
     });
 
     test('a character the grammar does not use is not ours at all', () {
@@ -330,17 +343,19 @@ void main() {
       expect(c.text, 'x ***a *b* c*** y');
     });
 
-    test('a nested run climbs on its own, not the one around it', () {
+    test('inside another run the ladder is still the asterisks own', () {
       if (!haveSqlite) return;
+      // The caret is inside a highlight, which has no asterisks in it — so
+      // the chord starts its own ladder rather than climbing the highlight.
       edit('==hi wo|rd there==');
       app.cycleMarker('*');
-      expect(c.text, '==hi *word* there==');
+      expect(c.text, '==hi word there==', reason: 'the highlight is untouched');
+      expect(typed(), '*word*');
       app.cycleMarker('*');
-      expect(c.text, '==hi **word** there==',
-          reason: 'the asterisks climbed; the highlight was left alone');
+      expect(typed(), '**word**');
     });
 
-    test('nothing to wrap writes nothing', () {
+    test('a press writes nothing on its own, wherever the caret is', () {
       if (!haveSqlite) return;
       edit('a | b');
       app.cycleMarker('*');
@@ -360,13 +375,17 @@ void main() {
       expect(cc.text, 'a = b');
     });
 
-    test('a rung records an undo step; a refused press records nothing', () {
+    test('climbing a run records an undo step; a refused press records none',
+        () {
       if (!haveSqlite) return;
-      edit('a wo|rd');
+      // A queued rung writes nothing, so there is nothing to undo — pressing
+      // again or moving the caret is what takes it back. Climbing an
+      // EXISTING run is a real edit, and that is the one that must be one
+      // Ctrl+Z away.
+      edit('a *wo|rd*');
       app.cycleMarker('*');
-      expect(c.text, 'a *word*');
-      expect(app.canUndo, isTrue, reason: 'a chord pressed by accident is one '
-          'Ctrl+Z away, exactly as Ctrl+B is');
+      expect(c.text, 'a **word**');
+      expect(app.canUndo, isTrue);
       app.undo(); // moves that step onto the redo stack
       expect(app.canRedo, isTrue);
 
@@ -488,28 +507,31 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final ctl = await editing(tester);
 
+      String queued() => app.applyPendingMarks('x')?.text ?? 'x';
+
       // digit8 + the character `*`: a US keyboard's Shift+8. Binding the KEY
       // would tie this chord to one layout and break it on every other.
       expect(
           await press(tester, LogicalKeyboardKey.digit8,
               character: '*', ctrl: true, shift: true),
           isTrue);
-      expect(ctl.text, '*hello* world');
-      expect(ctl.selection.start, 1);
-      expect(ctl.selection.end, 6);
+      expect(ctl.text, 'hello world',
+          reason: 'the chord sets the style for what is typed NEXT');
+      expect(queued(), '*x*');
+      expect(ctl.selection, const TextSelection.collapsed(offset: 5));
 
       await press(tester, LogicalKeyboardKey.digit8,
           character: '*', ctrl: true, shift: true);
-      expect(ctl.text, '**hello** world');
-      expect(ctl.selection.start, 2, reason: 'the caret rode the wider marker');
+      expect(queued(), '**x**');
 
       await press(tester, LogicalKeyboardKey.digit8,
           character: '*', ctrl: true, shift: true);
-      expect(ctl.text, '***hello*** world');
+      expect(queued(), '***x***');
 
       await press(tester, LogicalKeyboardKey.digit8,
           character: '*', ctrl: true, shift: true);
-      expect(ctl.text, '***hello*** world', reason: 'no fourth layer');
+      expect(queued(), '***x***', reason: 'no fourth layer');
+      expect(ctl.text, 'hello world');
       expect(app.editingBlockId, a.id, reason: 'still writing in the box');
       await flush(tester);
     });
@@ -518,12 +540,14 @@ void main() {
         (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final ctl = await editing(tester);
+      String queued() => app.applyPendingMarks('x')?.text ?? 'x';
       await press(tester, LogicalKeyboardKey.backquote,
           character: '~', ctrl: true, shift: true);
-      expect(ctl.text, '~hello~ world');
+      expect(queued(), '~x~');
       await press(tester, LogicalKeyboardKey.backquote,
           character: '~', ctrl: true, shift: true);
-      expect(ctl.text, '~~hello~~ world');
+      expect(queued(), '~~x~~');
+      expect(ctl.text, 'hello world');
       await flush(tester);
     });
 
@@ -571,6 +595,10 @@ void main() {
         (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final ctl = await editing(tester);
+      // With a SELECTION these chords still format what is highlighted —
+      // only the bare-caret case became "style what I type next".
+      ctl.selection = const TextSelection(baseOffset: 0, extentOffset: 5);
+      await tester.pump();
 
       await press(tester, LogicalKeyboardKey.keyB, character: 'b', ctrl: true);
       expect(ctl.text, '**hello** world', reason: 'Ctrl+B is still bold');
@@ -580,13 +608,13 @@ void main() {
 
       // Ctrl+= keeps subscript even though `=` has a ladder of its own — the
       // named accelerators are checked first, so nothing was taken away.
-      ctl.selection = const TextSelection.collapsed(offset: 5);
+      ctl.selection = const TextSelection(baseOffset: 0, extentOffset: 5);
       await press(tester, LogicalKeyboardKey.equal,
           character: '=', ctrl: true);
       expect(ctl.text, '~hello~ world');
       expect(ctl.text.contains('=='), isFalse);
 
-      ctl.selection = const TextSelection.collapsed(offset: 3);
+      ctl.selection = const TextSelection(baseOffset: 1, extentOffset: 6);
       await press(tester, LogicalKeyboardKey.equal,
           character: '+', ctrl: true, shift: true);
       expect(ctl.text, '^hello^ world', reason: 'Ctrl+Shift+= is superscript');
@@ -600,6 +628,9 @@ void main() {
       // `_producedCharacter` a raw code point could collide with a marker, so
       // the undo chord is pressed with the character Windows really sends.
       final ctl = await editing(tester);
+      // A selection, so Ctrl+B makes a real edit for Ctrl+Z to take back.
+      ctl.selection = const TextSelection(baseOffset: 0, extentOffset: 5);
+      await tester.pump();
       await press(tester, LogicalKeyboardKey.keyB, character: 'b', ctrl: true);
       expect(ctl.text, '**hello** world');
       await press(tester, LogicalKeyboardKey.keyZ,

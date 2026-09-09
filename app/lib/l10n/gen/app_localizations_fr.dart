@@ -644,9 +644,22 @@ class LFr extends L {
   String get navDeletePermanently => 'Supprimer définitivement';
 
   @override
-  String navDeletedRestorable(String title) {
-    return '« $title » supprimée — vous pouvez la restaurer depuis la corbeille.';
+  String navDeletedPage(String title) {
+    return 'Page « $title » supprimée';
   }
+
+  @override
+  String navDeletedSection(String title) {
+    return 'Section « $title » supprimée';
+  }
+
+  @override
+  String navDeletedGroup(String title) {
+    return 'Groupe « $title » supprimé';
+  }
+
+  @override
+  String get navUndo => 'Annuler';
 
   @override
   String navDeletesInDays(int days) {

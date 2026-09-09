@@ -850,14 +850,36 @@
   "@navDeletePermanently": {
     "description": "Tooltip on the button that removes something for good."
   },
-  "navDeletedRestorable": "Deleted “{title}” — restore it from the recycle bin.",
-  "@navDeletedRestorable": {
-    "description": "Confirmation after deleting a page.",
+  "navDeletedPage": "Deleted page “{title}”",
+  "@navDeletedPage": {
+    "description": "Snackbar after deleting a page. Kept short because it carries an Undo button beside it.",
     "placeholders": {
       "title": {
         "type": "String"
       }
     }
+  },
+  "navDeletedSection": "Deleted section “{title}”",
+  "@navDeletedSection": {
+    "description": "Snackbar after deleting a section, with an Undo button beside it.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedGroup": "Deleted group “{title}”",
+  "@navDeletedGroup": {
+    "description": "Snackbar after deleting a section group, with an Undo button beside it.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navUndo": "Undo",
+  "@navUndo": {
+    "description": "Button on the deleted-something snackbar that puts it straight back."
   },
   "navDeletesInDays": "{days, plural, =1{Deletes in 1 day} other{Deletes in {days} days}}",
   "@navDeletesInDays": {

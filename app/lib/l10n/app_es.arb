@@ -166,7 +166,31 @@
   "navDeleteForeverBody": "«{title}» y todas sus páginas se borrarán para siempre. Esto no se puede deshacer.{caveat}",
   "navDeleteForeverTitle": "¿Borrar definitivamente?",
   "navDeletePermanently": "Borrar definitivamente",
-  "navDeletedRestorable": "«{title}» borrada — puedes restaurarla desde la papelera.",
+  "navDeletedPage": "Página “{title}” borrada",
+  "@navDeletedPage": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedSection": "Sección “{title}” borrada",
+  "@navDeletedSection": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedGroup": "Grupo “{title}” borrado",
+  "@navDeletedGroup": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navUndo": "Deshacer",
   "navDeletesInDays": "{days, plural, =1{Se borra en 1 día} other{Se borra en {days} días}}",
   "navDeletesSoon": "Se borra pronto",
   "navExamCountdown": "Examen {when} · {countdown}…",

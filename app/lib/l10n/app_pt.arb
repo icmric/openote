@@ -166,7 +166,31 @@
   "navDeleteForeverBody": "“{title}” e todas as suas páginas serão removidas para sempre. Não dá para desfazer.{caveat}",
   "navDeleteForeverTitle": "Apagar de vez?",
   "navDeletePermanently": "Apagar de vez",
-  "navDeletedRestorable": "“{title}” apagada — dá para restaurar pela lixeira.",
+  "navDeletedPage": "Página “{title}” apagada",
+  "@navDeletedPage": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedSection": "Seção “{title}” apagada",
+  "@navDeletedSection": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedGroup": "Grupo “{title}” apagado",
+  "@navDeletedGroup": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navUndo": "Desfazer",
   "navDeletesInDays": "{days, plural, =1{Apaga em 1 dia} other{Apaga em {days} dias}}",
   "navDeletesSoon": "Apaga em breve",
   "navExamCountdown": "Prova {when} · {countdown}…",

@@ -402,11 +402,8 @@ void main() {
       // This is the ONLY way out now, so it is load-bearing rather than a
       // convenience: there are no visible asterisks left to delete.
       c.value = const TextEditingValue(
-          text: 'make this bold please',
-          selection: TextSelection.collapsed(offset: 13));
-      app.wrapSelection('**');
-      expect(c.text, 'make this **bold** please');
-      c.selection = const TextSelection.collapsed(offset: 14);
+          text: 'make this **bold** please',
+          selection: TextSelection.collapsed(offset: 14));
       app.wrapSelection('**');
       expect(c.text, 'make this bold please');
     });

@@ -166,7 +166,31 @@
   "navDeleteForeverBody": "«{title}» e tutte le sue pagine saranno rimosse per sempre. Non si può annullare.{caveat}",
   "navDeleteForeverTitle": "Eliminare per sempre?",
   "navDeletePermanently": "Elimina per sempre",
-  "navDeletedRestorable": "«{title}» eliminata — puoi ripristinarla dal cestino.",
+  "navDeletedPage": "Pagina “{title}” eliminata",
+  "@navDeletedPage": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedSection": "Sezione “{title}” eliminata",
+  "@navDeletedSection": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedGroup": "Gruppo “{title}” eliminato",
+  "@navDeletedGroup": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navUndo": "Annulla",
   "navDeletesInDays": "{days, plural, =1{Eliminato fra 1 giorno} other{Eliminato fra {days} giorni}}",
   "navDeletesSoon": "Sta per essere eliminato",
   "navExamCountdown": "Esame {when} · {countdown}…",

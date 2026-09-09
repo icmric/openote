@@ -166,7 +166,31 @@
   "navDeleteForeverBody": "„{title}“ und alle Seiten darin werden für immer entfernt. Das lässt sich nicht rückgängig machen.{caveat}",
   "navDeleteForeverTitle": "Endgültig löschen?",
   "navDeletePermanently": "Endgültig löschen",
-  "navDeletedRestorable": "„{title}“ gelöscht — du kannst sie im Papierkorb wiederherstellen.",
+  "navDeletedPage": "Seite „{title}“ gelöscht",
+  "@navDeletedPage": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedSection": "Abschnitt „{title}“ gelöscht",
+  "@navDeletedSection": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedGroup": "Gruppe „{title}“ gelöscht",
+  "@navDeletedGroup": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navUndo": "Rückgängig",
   "navDeletesInDays": "{days, plural, =1{Wird in 1 Tag gelöscht} other{Wird in {days} Tagen gelöscht}}",
   "navDeletesSoon": "Wird bald gelöscht",
   "navExamCountdown": "Prüfung {when} · {countdown}…",

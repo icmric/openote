@@ -178,9 +178,12 @@ class _SidebarState extends State<Sidebar> {
               _searchRow(context),
               const Divider(height: 1),
               Expanded(
-                child: searching
-                    ? _searchResults(context)
-                    : _twoColumnBody(context),
+                child: _NavPaneKeys(
+                  app: app,
+                  child: searching
+                      ? _searchResults(context)
+                      : _twoColumnBody(context),
+                ),
               ),
               const Divider(height: 1),
               _footer(context),
@@ -559,8 +562,15 @@ class _SidebarState extends State<Sidebar> {
               tooltip: l.navNewSectionGroup,
               onPressed: app.addSectionGroup,
             ),
+            // **Restore-from-bin, not a bin.** A plain `delete_outline` next
+            // to two "make a new thing" buttons reads as the button that
+            // deletes the thing you are on — the owner's words: "it looks
+            // like a delete button at the moment rather than a place to
+            // restore things from". The arrow coming back out of the bin is
+            // the whole difference, and it is the icon every desktop uses for
+            // exactly this.
             IconButton(
-              icon: const Icon(Icons.delete_outline, size: 16),
+              icon: const Icon(Icons.restore_from_trash_outlined, size: 16),
               tooltip: l.navRecycleBin,
               onPressed: () => showRecycleBin(context, app),
             ),
@@ -586,7 +596,7 @@ class _GroupHeaderState extends State<_GroupHeader> {
 
   /// This row's place in the keyboard, handed to its `InkWell` so there is one
   /// focus node rather than two — see [_nodeDeleteKey].
-  late final FocusNode _rowFocus = FocusNode(
+  late final NavRowFocus _rowFocus = NavRowFocus(
       debugLabel: 'nav-group',
       onKeyEvent: (n, e) => _nodeDeleteKey(context, app, group, n, e));
 
@@ -1196,7 +1206,7 @@ class _SectionHeaderState extends State<_SectionHeader> {
 
   /// This row's place in the keyboard, handed to its `InkWell` so there is one
   /// focus node rather than two — see [_nodeDeleteKey].
-  late final FocusNode _rowFocus = FocusNode(
+  late final NavRowFocus _rowFocus = NavRowFocus(
       debugLabel: 'nav-section',
       onKeyEvent: (n, e) => _nodeDeleteKey(context, app, section, n, e));
 
@@ -1642,7 +1652,7 @@ class _PageTileState extends State<_PageTile> {
 
   /// This row's place in the keyboard, handed to its `InkWell` so there is one
   /// focus node rather than two — see [_nodeDeleteKey].
-  late final FocusNode _rowFocus = FocusNode(
+  late final NavRowFocus _rowFocus = NavRowFocus(
       debugLabel: 'nav-page',
       onKeyEvent: (n, e) => _nodeDeleteKey(context, app, page, n, e));
 
@@ -1878,6 +1888,94 @@ PopupMenuItem<String> _nodeItem(String v, IconData icon, String label,
 // [showNodeMenu] on purpose: these are two routes to one soft delete, and
 // they drift apart the moment they stop being read together.
 
+/// A focus node belonging to the navigator: a row, or the pane behind the
+/// rows.
+///
+/// The type IS the signal. The shell needs to know "is the keyboard aimed at
+/// the tree right now" so that clicking the toolbar can stand a section row
+/// down without standing a TEXT FIELD down — and standing text fields down is
+/// not survivable, because a toolbar button that took focus from the
+/// paragraph would close the editor it was about to format. Asking the type
+/// answers exactly that question, where a name or a flag on AppState would be
+/// a second thing to keep true.
+class NavRowFocus extends FocusNode {
+  NavRowFocus({super.debugLabel, super.onKeyEvent, super.skipTraversal});
+}
+
+/// The navigator's background: clicking it aims a bare Delete at THE PAGE YOU
+/// ARE ON, and — the half that matters — takes the aim off whichever row had
+/// it.
+///
+/// Reported: *"if i click a page it deletes that page, but if i click
+/// elsewhere (i.e. in the bar not on a page ...) it will delete the section,
+/// it should delete the page here and only delete a section if i manually
+/// click on it then press delete"*. Clicking a row focuses it
+/// ([_nodeDeleteKey]) and nothing ever took that focus back, so a click on
+/// empty space left the keyboard still pointed at a section the user had
+/// stopped thinking about — and focus is invisible here, so there was nothing
+/// on screen to say which row was armed. A whole section went on one keypress.
+///
+/// The pointer-down is what re-aims: a row's own `InkWell` claims focus on
+/// TAP, which lands after this, so clicking a row still wins and a section is
+/// still deleted by clicking that section and pressing Delete. Only clicks
+/// that hit no row end up here.
+class _NavPaneKeys extends StatefulWidget {
+  const _NavPaneKeys({required this.app, required this.child});
+  final AppState app;
+  final Widget child;
+
+  @override
+  State<_NavPaneKeys> createState() => _NavPaneKeysState();
+}
+
+class _NavPaneKeysState extends State<_NavPaneKeys> {
+  late final NavRowFocus _pane = NavRowFocus(
+      debugLabel: 'nav-pane', skipTraversal: true, onKeyEvent: _onKey);
+
+  AppState get app => widget.app;
+
+  @override
+  void dispose() {
+    _pane.dispose();
+    super.dispose();
+  }
+
+  KeyEventResult _onKey(FocusNode n, KeyEvent e) {
+    if (e is! KeyDownEvent) return KeyEventResult.ignored;
+    if (e.logicalKey != LogicalKeyboardKey.delete &&
+        e.logicalKey != LogicalKeyboardKey.backspace) {
+      return KeyEventResult.ignored;
+    }
+    // The search field lives in this subtree, and a row sits above its own
+    // rename field — the same trap [_textFieldHasKeyboard] was written for.
+    if (_textFieldHasKeyboard()) return KeyEventResult.ignored;
+    final page = app.node(app.pageId);
+    if (page == null) return KeyEventResult.ignored;
+    if (app.protectionFor(page.id) != null || app.isLocked(page.id)) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(L.of(context).navLockedCannotDelete(page.title))));
+      return KeyEventResult.handled;
+    }
+    _deleteFromPane(page);
+    return KeyEventResult.handled;
+  }
+
+  Future<void> _deleteFromPane(TreeNode page) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final l = L.of(context);
+    await app.deleteNode(page.id);
+    if (app.node(page.id) != null) return;
+    showDeletedSnackBar(messenger, l, app, page);
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => _pane.requestFocus(),
+        child: Focus(focusNode: _pane, child: widget.child),
+      );
+}
+
 /// The keyboard's answer to right-click ▸ Delete, for the row that holds focus.
 ///
 /// **Why focus, and not a `selectedNodeId` on [AppState].** The navigator had
@@ -1922,13 +2020,36 @@ KeyEventResult _nodeDeleteKey(BuildContext context, AppState app, TreeNode node,
   return KeyEventResult.handled;
 }
 
+/// "Deleted section X" with an **Undo** beside it, for every route that
+/// deletes a node.
+///
+/// Short on purpose. It used to read "Deleted “X” — restore it from the
+/// recycle bin", which is a sentence asking you to go and find something at
+/// the moment you have just realised you did not mean to do it. The button
+/// puts it straight back, and Ctrl+Z now does the same
+/// ([AppState.pushNodeUndo]), so the sentence has nothing left to explain.
+void showDeletedSnackBar(
+    ScaffoldMessengerState messenger, L l, AppState app, TreeNode node) {
+  final title = node.title;
+  final text = switch (node.kind) {
+    NodeKind.page => l.navDeletedPage(title),
+    NodeKind.section => l.navDeletedSection(title),
+    NodeKind.sectionGroup => l.navDeletedGroup(title),
+  };
+  messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(SnackBar(
+    content: Text(text),
+    action: SnackBarAction(
+        label: l.navUndo, onPressed: () => app.undoNodeDelete(node.id)),
+  ));
+}
+
 Future<void> _deleteNodeFromKey(BuildContext context, AppState app,
     TreeNode node, FocusNode row) async {
   final messenger = ScaffoldMessenger.of(context);
   // Taken BEFORE the await below: by the time the delete returns, this row's
   // element may be gone and its context no good for a lookup.
   final deleted = L.of(context);
-  final title = node.title;
   // Hand the keyboard on BEFORE this row is destroyed, and before the await:
   // once the tile leaves the tree its focus node is detached and focus falls
   // back to the root scope, leaving the navigator keyboard-dead until the next
@@ -1941,8 +2062,7 @@ Future<void> _deleteNodeFromKey(BuildContext context, AppState app,
   // notebook (see [AppState.notebookIsReadOnly]), and "Deleted X" while X is
   // still sitting in the list is worse than saying nothing at all.
   if (app.node(node.id) != null) return;
-  messenger.showSnackBar(SnackBar(
-      content: Text(deleted.navDeletedRestorable(title))));
+  showDeletedSnackBar(messenger, deleted, app, node);
 }
 
 /// Is a TEXT FIELD holding the keyboard?
@@ -2186,7 +2306,14 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       if (app.pageId != node.id) await app.selectPage(node.id);
       if (context.mounted) await promptApplyTemplate(context, app);
     case 'delete':
+      final messenger = ScaffoldMessenger.of(context);
+      final l = L.of(context);
       await app.deleteNode(node.id);
+      // The menu route said nothing at all before, so the ONE route with a
+      // confirmation was the keyboard's. Same acknowledgement, same Undo.
+      if (app.node(node.id) == null) {
+        showDeletedSnackBar(messenger, l, app, node);
+      }
   }
 }
 

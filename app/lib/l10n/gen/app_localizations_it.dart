@@ -645,9 +645,22 @@ class LIt extends L {
   String get navDeletePermanently => 'Elimina per sempre';
 
   @override
-  String navDeletedRestorable(String title) {
-    return '«$title» eliminata — puoi ripristinarla dal cestino.';
+  String navDeletedPage(String title) {
+    return 'Pagina “$title” eliminata';
   }
+
+  @override
+  String navDeletedSection(String title) {
+    return 'Sezione “$title” eliminata';
+  }
+
+  @override
+  String navDeletedGroup(String title) {
+    return 'Gruppo “$title” eliminato';
+  }
+
+  @override
+  String get navUndo => 'Annulla';
 
   @override
   String navDeletesInDays(int days) {

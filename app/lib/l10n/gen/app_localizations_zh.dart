@@ -623,9 +623,22 @@ class LZh extends L {
   String get navDeletePermanently => '彻底删除';
 
   @override
-  String navDeletedRestorable(String title) {
-    return '已删除“$title” — 可以从回收站还原。';
+  String navDeletedPage(String title) {
+    return '已删除页面“$title”';
   }
+
+  @override
+  String navDeletedSection(String title) {
+    return '已删除分区“$title”';
+  }
+
+  @override
+  String navDeletedGroup(String title) {
+    return '已删除分区组“$title”';
+  }
+
+  @override
+  String get navUndo => '撤销';
 
   @override
   String navDeletesInDays(int days) {

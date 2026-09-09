@@ -642,9 +642,22 @@ class LPt extends L {
   String get navDeletePermanently => 'Apagar de vez';
 
   @override
-  String navDeletedRestorable(String title) {
-    return '“$title” apagada — dá para restaurar pela lixeira.';
+  String navDeletedPage(String title) {
+    return 'Página “$title” apagada';
   }
+
+  @override
+  String navDeletedSection(String title) {
+    return 'Seção “$title” apagada';
+  }
+
+  @override
+  String navDeletedGroup(String title) {
+    return 'Grupo “$title” apagado';
+  }
+
+  @override
+  String get navUndo => 'Desfazer';
 
   @override
   String navDeletesInDays(int days) {

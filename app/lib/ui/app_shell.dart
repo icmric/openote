@@ -877,9 +877,31 @@ class _AppShellState extends State<AppShell> {
   /// cleared by the next click — the rule the web's `:focus-visible` follows,
   /// because a permanent outline around whatever you last clicked is noise.
   Widget _regionWrap(_Region r, Widget child) {
-    final marked = r == _Region.page
+    var marked = r == _Region.page
         ? child // the canvas already owns _canvasFocus, one node one Focus
         : Focus(focusNode: _regionNode(r), skipTraversal: true, child: child);
+    if (r == _Region.toolbar) {
+      // **Clicking the toolbar takes the keyboard off a navigator row** — and
+      // off NOTHING ELSE, which is the whole reason for the type test.
+      //
+      // A toolbar button is an `InkWell` and does not claim focus on tap, so
+      // reaching up to press Bold left a section row still holding the
+      // keyboard and the next bare Delete took that whole section (the same
+      // defect as in the navigator's own background — see `_NavPaneKeys`).
+      // But that not-claiming-focus is also exactly why Bold can act on the
+      // paragraph you are typing in: steal focus unconditionally and every
+      // formatting button would close the editor it was meant to format.
+      // So only a navigator row is stood down, never a text field.
+      marked = Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) {
+          if (FocusManager.instance.primaryFocus is NavRowFocus) {
+            _toolbarRegion.requestFocus();
+          }
+        },
+        child: marked,
+      );
+    }
     return Stack(
       // `passthrough`, so wrapping a region cannot change its size. The
       // default `loose` would hand the canvas — which arrives with TIGHT

@@ -645,9 +645,22 @@ class LEn extends L {
   String get navDeletePermanently => 'Delete permanently';
 
   @override
-  String navDeletedRestorable(String title) {
-    return 'Deleted “$title” — restore it from the recycle bin.';
+  String navDeletedPage(String title) {
+    return 'Deleted page “$title”';
   }
+
+  @override
+  String navDeletedSection(String title) {
+    return 'Deleted section “$title”';
+  }
+
+  @override
+  String navDeletedGroup(String title) {
+    return 'Deleted group “$title”';
+  }
+
+  @override
+  String get navUndo => 'Undo';
 
   @override
   String navDeletesInDays(int days) {

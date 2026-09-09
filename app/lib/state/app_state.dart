@@ -5285,34 +5285,76 @@ class AppState extends ChangeNotifier
     select(b.id, edit: true);
   }
 
-  /// The word surrounding [at], or null when the caret is not in one.
+  /// Queued by a style chord (Ctrl+B/I, command bar) pressed with a
+  /// collapsed caret and nothing to toggle off — see [wrapSelection]. Nothing
+  /// is written to the buffer for this: the NEXT thing typed at
+  /// [pendingMarkAt] in [pendingMarkBlockId] is wrapped in these marks in one
+  /// step (`_PendingStyleFormatter` in live_markdown_engine.dart), becoming a
+  /// real run the existing hidden-marker machinery already knows how to
+  /// extend. Kept here rather than on the controller because the chord is
+  /// engine-agnostic (ADR-0004) even though only the live-markdown engine
+  /// currently acts on it.
+  Set<String> pendingMarks = {};
+  int? pendingMarkAt;
+  String? pendingMarkBlockId;
+
+  /// Where the caret is expected to be while the queue waits, which is the
+  /// anchor until something is typed.
   ///
-  /// "Word" is deliberately generous — letters, digits, apostrophes and
-  /// hyphens — so `don't` and `well-known` bold whole rather than in pieces.
-  static ({int start, int end})? _wordAt(String t, int at) {
-    // Apostrophes are in (so `don't` bolds whole) but hyphens are NOT: with
-    // the caret at the start of `- item`, a hyphen-inclusive word would
-    // reach back and bold the bullet marker itself.
-    bool isWord(int i) =>
-        i >= 0 && i < t.length && RegExp(r"[\w']").hasMatch(t[i]);
-    var s = at, e = at;
-    while (isWord(s - 1)) {
-      s--;
+  /// It is not always the anchor, because an IME composes IN the buffer: a
+  /// student typing Japanese has `ん` in the text and the caret past it before
+  /// any of it is committed. Without somewhere to record that, the "the caret
+  /// left, so the queue is stale" rule would fire on the first keystroke of
+  /// every composed word and the style would silently never apply.
+  int? pendingMarkCaret;
+
+  static bool _allSame(String m, String ch) =>
+      m.isNotEmpty && m.split('').every((x) => x == ch);
+
+  /// How many of [ch] the queue is already holding — the rung [cycleMarker]
+  /// is standing on when there is no text to read one from.
+  int _queuedWidth(String ch) {
+    var n = 0;
+    for (final m in pendingMarks) {
+      if (_allSame(m, ch)) n += m.length;
     }
-    while (isWord(e)) {
-      e++;
-    }
-    return s == e ? null : (start: s, end: e);
+    return n;
+  }
+
+  /// What a queued mark will BE once something is typed inside it.
+  ///
+  /// Asked of the grammar with a one-character probe rather than looked up in
+  /// a table, which is the same measurement [markerChordLadders] is built
+  /// from — so `_x_` and `*x*` answer alike, and `***` answers bold-italic
+  /// rather than nothing. A table here would need its own entry for every
+  /// spelling of every mark, and `_` has none.
+  static MdInline? _kindOfMark(String m) {
+    final probe = '${m}x$m';
+    final hit = mdInlineRe.firstMatch(probe);
+    if (hit == null || hit.start != 0 || hit.end != probe.length) return null;
+    return classifyInline(hit).kind;
+  }
+
+  /// Cancel a queued style: the caret moved, or something other than a plain
+  /// insertion happened at the queued spot.
+  void clearPendingMarks() {
+    if (pendingMarks.isEmpty && pendingMarkAt == null) return;
+    pendingMarks = {};
+    pendingMarkAt = null;
+    pendingMarkCaret = null;
+    pendingMarkBlockId = null;
+    notifyListeners();
   }
 
   /// Toggle-wrap the live selection with markers (Ctrl+B/I, command bar).
   ///
-  /// Three behaviours, and the first two are the reported bug:
+  /// Three behaviours:
   ///
-  /// * **A caret with no selection formats the WORD it sits in.** It used to
-  ///   insert a bare `****` at the caret — which no renderer matches, so the
-  ///   asterisks stayed visible in the note forever, and one Backspace ate a
-  ///   single marker and left `***` behind.
+  /// * **A caret with no selection sets the style for what you TYPE NEXT**,
+  ///   like a word processor's Bold button — it used to format the WORD the
+  ///   caret sat in instead, which meant Ctrl+B while finishing a sentence
+  ///   bolded the word you'd just typed rather than the one you were about
+  ///   to. See [pendingMarks].
   /// * **Toggling off works from INSIDE a run**, not only when the selection
   ///   exactly equals it. Before, a caret inside bold text and Ctrl+B nested
   ///   a second empty pair and everything typed after came out un-bold.
@@ -5352,12 +5394,32 @@ class AppState extends ChangeNotifier
         notifyListeners();
         return;
       }
-      final w = _wordAt(t, s);
-      // Nothing to format and nothing to un-format: better to do nothing
-      // than to write markers into the file and hope the user types.
-      if (w == null) return;
-      s = w.start;
-      e = w.end;
+      // A caret standing inside the OPPOSITE mark swaps that run rather than
+      // queueing anything: `~^x^~` reads as neither, and "no, make it the
+      // other one" is what the press means from in there. Falls through to
+      // the shared swap below rather than repeating it.
+      final opp = _oppositeMark[mark];
+      if (opp == null || _runAround(t, s, s, opp) == null) {
+        // Nothing to un-format and nothing selected: don't touch existing
+        // text. Queue the mark so the next insertion right here gets wrapped
+        // in it — pressing the SAME chord again before typing anything
+        // cancels the queue, like toggling the button back off.
+        if (pendingMarkBlockId != ae.block.id || pendingMarkAt != s) {
+          pendingMarks = {};
+          pendingMarkAt = s;
+          pendingMarkBlockId = ae.block.id;
+        }
+        pendingMarkCaret = s;
+        if (opp != null) pendingMarks.remove(opp);
+        if (!pendingMarks.remove(mark)) pendingMarks.add(mark);
+        if (pendingMarks.isEmpty) {
+          pendingMarkAt = null;
+          pendingMarkCaret = null;
+          pendingMarkBlockId = null;
+        }
+        notifyListeners();
+        return;
+      }
     } else {
       // Shrink the selection off its own whitespace and newlines. A marker
       // may not sit against a space (that is the flanking rule that keeps
@@ -5494,6 +5556,44 @@ class AppState extends ChangeNotifier
           ? s.replaceAllMapped(
               RegExp(r'\S+'), (m) => '$mark${m.group(0)}$close')
           : '$mark$s$close';
+
+  /// [pendingMarks] applied to a freshly typed [s], with where the caret then
+  /// belongs — the one-shot half of the WYSIWYG toggle.
+  ///
+  /// It lives here beside [_wrapRun] rather than in the input formatter that
+  /// calls it, because every rule about where a marker may legally sit is
+  /// here: a run opens and closes on ONE line, a marker may not sit against
+  /// whitespace, and `~`/`^` take one pair per word. A second copy of those
+  /// in the formatter is how the two would drift apart.
+  ///
+  /// Returns null when there is nothing the grammar can wrap, which is the
+  /// formatter's signal to drop the queue and let the keystroke through.
+  ({String text, int caret})? applyPendingMarks(String s) {
+    if (pendingMarks.isEmpty || s.isEmpty || s.contains('\n')) return null;
+    final lead = s.length - s.trimLeft().length;
+    final trail = s.length - s.trimRight().length;
+    // Whitespace alone: `** **` matches nothing, so there is no wrap to make.
+    if (lead + trail >= s.length) return null;
+    final core = s.substring(lead, s.length - trail);
+    // Pasted text can arrive with its own spaces around it. They stay OUTSIDE
+    // the markers — that is the flanking rule, and `** hi **` is the same
+    // permanently-visible-asterisks bug by another route.
+    var wrapped = core;
+    var open = 0;
+    for (final m in pendingMarks) {
+      wrapped = _wrapRun(wrapped, m, m);
+      open += m.length;
+    }
+    // One pair per word leaves every run already closed, so the caret goes
+    // after the lot; a single run is still open, so it goes INSIDE, which is
+    // what makes the next keystroke extend the run rather than follow it.
+    final perWord = pendingMarks.any(_noSpaceMarks.contains) &&
+        RegExp(r'\s').hasMatch(core);
+    return (
+      text: s.substring(0, lead) + wrapped + s.substring(s.length - trail),
+      caret: lead + (perWord ? wrapped.length : open + core.length),
+    );
+  }
 
   /// The run of [mark]'s kind enclosing [s]..[e], with how many characters to
   /// strip from each end to remove exactly that mark.
@@ -5686,8 +5786,10 @@ class AppState extends ChangeNotifier
     );
   }
 
-  /// Ctrl + a Markdown marker character: wrap the word at the caret in that
+  /// Ctrl + a Markdown marker character: style what gets typed next in that
   /// marker, and press it again to add a layer, as far as the grammar goes.
+  /// With a selection it wraps the selection, and with the caret inside a run
+  /// it widens that run — both where they always were.
   ///
   /// Returns **false** when [ch] is not a marker character the grammar uses,
   /// which is how the shell knows to leave that keystroke completely alone.
@@ -5711,7 +5813,15 @@ class AppState extends ChangeNotifier
     if (!sel.isValid) return true;
     final t = c.text;
     final run = _markerRunAround(t, sel.start, sel.end, ch);
-    final have = run?.total ?? 0;
+    // Nothing selected and no run to climb: the ladder is climbed in the
+    // QUEUE rather than in the text, so this chord means "what I type next"
+    // exactly as Ctrl+B now does ([pendingMarks]). The rung it is standing
+    // on is however many of this character are already queued.
+    final onQueue = run == null &&
+        sel.isCollapsed &&
+        pendingMarkBlockId == ae.block.id &&
+        pendingMarkAt == sel.start;
+    final have = run?.total ?? (onQueue ? _queuedWidth(ch) : 0);
     var next = -1;
     for (final w in ladder) {
       if (w > have) {
@@ -5725,12 +5835,25 @@ class AppState extends ChangeNotifier
     // wrapSelection was rewritten to stop producing.
     if (next < 0) return true;
     if (run == null) {
-      // Nothing on yet. Hand it to wrapSelection, which already owns
-      // word-at-caret (apostrophes in, hyphens out), selection trimming, the
-      // multi-line case, the per-word wrap for marks that cannot span a space
-      // and the sub/superscript swap. A second copy of "which word is the
-      // caret in" is precisely how this chord would drift away from Ctrl+B.
-      wrapSelection(ch * next);
+      // A real selection is wrapped where it sits. Handed to wrapSelection,
+      // which already owns selection trimming, the multi-line case, the
+      // per-word wrap for marks that cannot span a space and the
+      // sub/superscript swap — a second copy of any of that is precisely how
+      // this chord would drift away from Ctrl+B.
+      if (!sel.isCollapsed) {
+        wrapSelection(ch * next);
+        return true;
+      }
+      // A bare caret climbs the queue instead, one rung per press.
+      if (pendingMarkBlockId != ae.block.id || pendingMarkAt != sel.start) {
+        pendingMarks = {};
+        pendingMarkAt = sel.start;
+        pendingMarkBlockId = ae.block.id;
+      }
+      pendingMarkCaret = sel.start;
+      pendingMarks.removeWhere((m) => _allSame(m, ch));
+      pendingMarks.add(ch * next);
+      notifyListeners();
       return true;
     }
     pushUndo();
@@ -5796,6 +5919,22 @@ class AppState extends ChangeNotifier
     // Ctrl+B on it expects the bold to come off.
     if (out.contains(MdInline.boldItalic)) {
       out..add(MdInline.bold)..add(MdInline.italic);
+    }
+    // A queued style (nothing typed since Ctrl+B) lights the button too —
+    // otherwise the one moment this exists to serve, right after pressing
+    // it, is the one moment the toolbar shows nothing changed.
+    if (pendingMarkBlockId == ae.block.id &&
+        pendingMarkAt == sel.start &&
+        sel.isCollapsed) {
+      for (final m in pendingMarks) {
+        final kind = _kindOfMark(m);
+        if (kind == null) continue;
+        out.add(kind);
+        // Same rule as above: queued `***` is both, and both buttons say so.
+        if (kind == MdInline.boldItalic) {
+          out..add(MdInline.bold)..add(MdInline.italic);
+        }
+      }
     }
     return out;
   }
@@ -8128,6 +8267,10 @@ class AppState extends ChangeNotifier
       await selectPage(
           nodes.where((n) => n.kind == NodeKind.page).firstOrNull?.id);
     }
+    // AFTER the page switch, and it has to be: [selectPage] clears the undo
+    // stack, so a step pushed before this line is the one thing Ctrl+Z would
+    // never find — which is precisely the bug this exists to close.
+    pushNodeUndo(id);
     notifyListeners();
   }
 
@@ -8172,17 +8315,91 @@ class AppState extends ChangeNotifier
     _redo.clear();
   }
 
+  /// An undo step for something that happened to the TREE rather than to the
+  /// page — deleting a section or a page.
+  ///
+  /// Undo was page-scoped: [_snapshot] captures this page's props and blocks
+  /// and nothing else, and [selectPage] clears the stack outright. So the one
+  /// action in the whole app that takes a section away had no undo at all, and
+  /// Ctrl+Z after it did nothing — reported as "the whole section at the
+  /// moment appears to be gone", which is exactly how a recoverable delete
+  /// feels when the key everybody reaches for first says nothing happened.
+  ///
+  /// Pushed as an entry the stack already knows how to carry (a JSON string),
+  /// so the two kinds of step keep their order relative to each other.
+  void pushNodeUndo(String nodeId) {
+    _undo.add(jsonEncode({_kRestoreNode: nodeId}));
+    if (_undo.length > 100) _undo.removeAt(0);
+    _redo.clear();
+  }
+
+  /// Marks an undo entry as "put this node back" rather than "restore this
+  /// page". A page snapshot has no such key, so the two never collide.
+  static const _kRestoreNode = 'restoreNode';
+
   void undo() {
     if (_undo.isEmpty) return;
+    final entry = _undo.removeLast();
+    final node = _nodeOf(entry);
+    if (node != null) {
+      _redo.add(entry);
+      unawaited(restoreDeleted(node));
+      return;
+    }
     _redo.add(_snapshot());
-    _restore(_undo.removeLast());
+    _restore(entry);
   }
 
   void redo() {
     if (_redo.isEmpty) return;
+    final entry = _redo.removeLast();
+    final node = _nodeOf(entry);
+    if (node != null) {
+      // Let [deleteNode] record the undo step itself: it is the only thing
+      // that knows when the page switch it may do has finished clearing the
+      // stack, and a step pushed before that is a step Ctrl+Z never sees.
+      // It also clears the REDO stack on the way through, as a fresh action
+      // should — but this is not a fresh action, so whatever was still
+      // redoable stays redoable.
+      final rest = [..._redo];
+      unawaited(deleteNode(node).then((_) {
+        _redo
+          ..clear()
+          ..addAll(rest);
+        notifyListeners();
+      }));
+      return;
+    }
     _undo.add(_snapshot());
-    _restore(_redo.removeLast());
+    _restore(entry);
   }
+
+  /// Take back one node's deletion — what the "Deleted section X" snackbar's
+  /// **Undo** presses.
+  ///
+  /// Routed through the undo stack whenever that delete is still the top of
+  /// it, so the button and Ctrl+Z are the SAME action rather than two that
+  /// disagree afterwards about what is left to take back. It falls back to a
+  /// plain restore when the stack has moved on, because the button is still
+  /// on screen and must still work.
+  void undoNodeDelete(String id) {
+    if (_undo.isNotEmpty && _nodeOf(_undo.last) == id) {
+      undo();
+      return;
+    }
+    unawaited(restoreDeleted(id));
+  }
+
+  /// The node a tree-step entry names, or null when it is a page snapshot.
+  static String? _nodeOf(String entry) {
+    // Cheap enough to guard the decode: every page snapshot starts `{"page":`.
+    if (!entry.startsWith('{"$_kRestoreNode"')) return null;
+    return (jsonDecode(entry) as Map<String, dynamic>)[_kRestoreNode] as String?;
+  }
+
+  /// Whether Ctrl+Z has anything to take back — including a deleted section,
+  /// which the toolbar could not see before.
+  bool get canUndoTree => _undo.any((e) => _nodeOf(e) != null);
 
   // ── Selection & block ops ──────────────────────────────────────────────
 

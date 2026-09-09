@@ -107,6 +107,86 @@ class LiveMarkdownEngine extends OnoteTextEditor {
   }
 }
 
+/// Wraps the next thing typed after a style chord (Ctrl+B and friends)
+/// pressed with a collapsed caret and nothing to toggle off — see
+/// [AppState.wrapSelection] and [AppState.pendingMarks].
+///
+/// It wraps the whole span from the queued spot to the caret rather than
+/// whatever this one edit added, which is what makes it work with an IME:
+/// a composed word is in the buffer for several keystrokes before it is
+/// committed, and only the finished word should end up inside the markers.
+/// Nothing is wrapped while composing is still in progress, because the
+/// preview is about to be replaced by the next one.
+///
+/// One shot: once the wrap is made the queue clears, and what it leaves
+/// behind is a real (now non-empty) run that the ordinary hidden-marker
+/// machinery in [LiveMarkdownController] already extends on the next
+/// keystroke — this never has to run twice for the same word. Anything that
+/// says the queue no longer describes where the caret is — a deletion back
+/// past the anchor, an edit before it — clears it and passes the edit
+/// through untouched.
+class _PendingStyleFormatter extends TextInputFormatter {
+  _PendingStyleFormatter(this.app, this.blockId);
+  final AppState app;
+  final String blockId;
+
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final at = app.pendingMarkAt;
+    if (at == null ||
+        app.pendingMarks.isEmpty ||
+        app.pendingMarkBlockId != blockId) {
+      return newValue;
+    }
+    void cancel() => app.clearPendingMarks();
+
+    final sel = newValue.selection;
+    // The caret must still be at or past the queued spot, and everything
+    // before that spot untouched. Backspacing back over it, or an edit
+    // somewhere else entirely, means the queue is describing a place that no
+    // longer exists.
+    if (!sel.isValid ||
+        !sel.isCollapsed ||
+        sel.baseOffset < at ||
+        at > newValue.text.length ||
+        at > oldValue.text.length ||
+        newValue.text.substring(0, at) != oldValue.text.substring(0, at)) {
+      cancel();
+      return newValue;
+    }
+    if (newValue.composing.isValid && !newValue.composing.isCollapsed) {
+      // Mid-composition: hold the queue open and follow the caret, so the
+      // "the caret left" rule does not fire on a word that is still arriving.
+      app.pendingMarkCaret = sel.baseOffset;
+      return newValue;
+    }
+    final end = sel.baseOffset;
+    // Nothing typed yet at all (a forward delete at the caret, say): the
+    // queue is still good, there is simply nothing to wrap.
+    if (end == at) {
+      app.pendingMarkCaret = end;
+      return newValue;
+    }
+    final run = newValue.text.substring(at, end);
+    // A space before the first real character keeps the queue and moves it
+    // along: Ctrl+B, space, word should still bold the word.
+    if (!run.contains('\n') && run.trim().isEmpty) {
+      app.pendingMarkAt = end;
+      app.pendingMarkCaret = end;
+      return newValue;
+    }
+    final wrap = app.applyPendingMarks(run);
+    cancel();
+    if (wrap == null) return newValue;
+    return TextEditingValue(
+      text: newValue.text.replaceRange(at, end, wrap.text),
+      selection: TextSelection.collapsed(offset: at + wrap.caret),
+      composing: TextRange.empty,
+    );
+  }
+}
+
 class _LiveMarkdownSession extends OnoteEditSession {
   _LiveMarkdownSession({
     required this.app,
@@ -132,6 +212,26 @@ class _LiveMarkdownSession extends OnoteEditSession {
     // has left it - the host caret is parked inside the run while editing,
     // so any selection outside [start, end] means "close" (v0.20 B.2.5).
     controller.addListener(_maybeCloseOnCaretExit);
+    controller.addListener(_maybeCancelPendingStyle);
+  }
+
+  /// A queued style belongs to the spot the caret was at when the chord was
+  /// pressed. Move off it with an arrow key or a click and the queue is stale
+  /// - and unlike an EDIT, which [_PendingStyleFormatter] sees, a pure caret
+  /// move never reaches a formatter at all, so it has to be caught here.
+  void _maybeCancelPendingStyle() {
+    if (app.pendingMarks.isEmpty ||
+        app.pendingMarkBlockId != app.editingBlockId) {
+      return;
+    }
+    final sel = controller.selection;
+    // Against the EXPECTED caret, not the anchor: a word still being composed
+    // by an IME has legitimately moved the caret past the anchor already.
+    if (!sel.isValid ||
+        !sel.isCollapsed ||
+        sel.baseOffset != app.pendingMarkCaret) {
+      app.clearPendingMarks();
+    }
   }
 
   /// Alt+= in a paragraph: an empty equation AT THE CARET, opened for editing.
@@ -1020,11 +1120,15 @@ class _LiveMarkdownSession extends OnoteEditSession {
       strutStyle:
           StrutStyle.fromTextStyle(s.baseStyle, forceStrutHeight: false),
       cursorColor: Theme.of(context).colorScheme.primary,
-      inputFormatters: const [
-        WrapSelectionFormatter(),
+      inputFormatters: [
+        const WrapSelectionFormatter(),
         // Maths pasted into a paragraph arrives as maths. See the file
         // header for why this is a formatter and not a key handler.
-        MathPasteFormatter(),
+        const MathPasteFormatter(),
+        // Ctrl+B et al with nothing selected queue a style rather than
+        // touching existing text (AppState.wrapSelection) — this is what
+        // makes the queue real: it wraps the very next thing typed.
+        _PendingStyleFormatter(app, s.block.id),
       ],
       decoration: InputDecoration(
         isDense: true,
@@ -1134,6 +1238,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
     _lastContext = null;
     _spellDebounce?.cancel();
     controller.removeListener(_maybeCloseOnCaretExit);
+    controller.removeListener(_maybeCancelPendingStyle);
     controller.dispose();
     _focus.dispose();
     _mathFocus.dispose();

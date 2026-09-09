@@ -346,11 +346,12 @@ void main() {
       );
     }
 
-    test('with nothing selected it formats the word at the caret', () {
+    test('with nothing selected it styles what is typed next', () {
       if (!haveSqlite) return;
       edit('CO2 is not CO|2 yet');
       app.wrapSelection('~');
-      expect(c.text, 'CO2 is not ~CO2~ yet');
+      expect(c.text, 'CO2 is not CO2 yet', reason: 'nothing is written yet');
+      expect(app.applyPendingMarks('2')!.text, '~2~');
     });
 
     test('with a selection it wraps and keeps the words selected', () {
@@ -413,7 +414,7 @@ void main() {
       // `~` and `~~` are now separate entries in the same mark table, which
       // is exactly the shape that made Ctrl+I inside `**word**` produce
       // `*word*` before the command started asking the grammar.
-      edit('a wo|rd b');
+      edit('a «word» b');
       app.wrapSelection('~~');
       expect(c.text, 'a ~~word~~ b');
       expect(scan(c.text), ['strike:word']);

@@ -143,10 +143,11 @@ void main() {
       expect(find.text('Chapter 3'), findsNothing);
 
       // A whole page leaving the tree on one keystroke with nothing said is
-      // the failure mode the snackbar exists for.
-      expect(find.textContaining('Deleted “Chapter 3”'), findsOneWidget);
-      expect(find.textContaining('recycle bin'), findsOneWidget,
-          reason: 'it is a 30-day soft delete, so say where it went');
+      // the failure mode the snackbar exists for. It says what went and
+      // offers to put it back — it used to spend its words sending you to
+      // the recycle bin instead, which is a errand, not an answer.
+      expect(find.text('Deleted page “Chapter 3”'), findsOneWidget);
+      expect(find.text('Undo'), findsOneWidget);
       await quiesce(tester);
     });
 
@@ -161,6 +162,139 @@ void main() {
       await press(tester, LogicalKeyboardKey.delete);
       expect(app.node(term2.id), isNull);
       expect(find.text('Term 2'), findsNothing);
+      await quiesce(tester);
+    });
+
+    testWidgets('clicking the bar background takes the aim off a section',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The reported bug: "if i click a page it deletes that page, but if i
+      // click elsewhere (i.e. in the bar not on a page ...) it will delete the
+      // section". Clicking a row focused it and nothing ever took that focus
+      // back, so a click on empty space left the keyboard pointed at a section
+      // the user had stopped thinking about — with no highlight to say so.
+      await tester.pumpWidget(host(app));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Term 2'));
+      await tester.pumpAndSettle();
+      await app.selectPage(chapter3.id);
+      await tester.pumpAndSettle();
+
+      // Empty space in the navigator, below the last row.
+      final bar = tester.getRect(find.byType(Sidebar));
+      await tester.tapAt(Offset(bar.center.dx, bar.bottom - 60));
+      await tester.pumpAndSettle();
+
+      await press(tester, LogicalKeyboardKey.delete);
+      expect(app.node(term2.id), isNotNull,
+          reason: 'a section goes only when its own row was clicked');
+      expect(app.node(chapter3.id), isNull,
+          reason: 'the page you are on is what a bare Del means here');
+      await quiesce(tester);
+    });
+
+    testWidgets('a focused navigator row is recognisable as one', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The shell stands a navigator row down when you click the toolbar, so
+      // that reaching up for Bold cannot leave a section armed for the next
+      // Del. It must recognise a row WITHOUT recognising a text field: a
+      // toolbar button that took focus from the paragraph would close the
+      // editor it was about to format. [NavRowFocus] is that discriminator,
+      // so it is worth one test that it is really what holds the keyboard.
+      await tester.pumpWidget(host(app));
+      await tester.pumpAndSettle();
+      expect(FocusManager.instance.primaryFocus, isNot(isA<NavRowFocus>()),
+          reason: 'nothing is armed before a row is clicked');
+
+      await tester.tap(find.text('Term 2'));
+      await tester.pumpAndSettle();
+      expect(FocusManager.instance.primaryFocus, isA<NavRowFocus>());
+      await quiesce(tester);
+    });
+
+    testWidgets('and a section still goes when its own row IS the one clicked',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await tester.pumpWidget(host(app));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Term 2'));
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.delete);
+      expect(app.node(term2.id), isNull);
+      await quiesce(tester);
+    });
+
+    testWidgets('the snackbar Undo button puts it straight back', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await tester.pumpWidget(host(app));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Term 2'));
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.delete);
+      expect(app.node(term2.id), isNull);
+      expect(find.text('Deleted section “Term 2”'), findsOneWidget);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(app.node(term2.id), isNotNull,
+          reason: 'one click, no trip to the recycle bin');
+      await quiesce(tester);
+    });
+
+    testWidgets('Ctrl+Z restores it too, which is the key people reach for',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // "ctrl + z did not undo it and the whole section at the moment appears
+      // to be gone." Undo was page-scoped — it snapshots the open page's
+      // blocks — so the one action that takes a whole section away was the
+      // one action outside it.
+      await tester.pumpWidget(host(app));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Term 2'));
+      await tester.pumpAndSettle();
+      await press(tester, LogicalKeyboardKey.delete);
+      expect(app.node(term2.id), isNull);
+
+      app.undo();
+      await tester.pumpAndSettle();
+      expect(app.node(term2.id), isNotNull);
+
+      // And redo takes it away again, so the pair stays symmetric — then
+      // undo AGAIN, because deleting switches page and switching page used to
+      // clear the very step redo had just pushed.
+      app.redo();
+      await tester.pumpAndSettle();
+      expect(app.node(term2.id), isNull);
+
+      app.undo();
+      await tester.pumpAndSettle();
+      expect(app.node(term2.id), isNotNull,
+          reason: 'undo/redo has to survive being used more than once');
+      await quiesce(tester);
+    });
+
+    testWidgets('a deleted section brings its pages back with it',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await tester.pumpWidget(host(app));
+      await tester.pumpAndSettle();
+      final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+      final pages = app.nodes
+          .where((n) => n.parentId == section.id)
+          .map((n) => n.id)
+          .toList();
+      expect(pages, isNotEmpty, reason: 'precondition');
+
+      await app.deleteNode(section.id);
+      await tester.pumpAndSettle();
+      expect(pages.every((p) => app.node(p) == null), isTrue);
+
+      app.undo();
+      await tester.pumpAndSettle();
+      expect(app.node(section.id), isNotNull);
+      expect(pages.every((p) => app.node(p) != null), isTrue,
+          reason: 'a section without its pages is not a restore');
       await quiesce(tester);
     });
 

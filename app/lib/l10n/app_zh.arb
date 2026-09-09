@@ -166,7 +166,31 @@
   "navDeleteForeverBody": "“{title}”及其所有页面都将被永久删除，无法撤销。{caveat}",
   "navDeleteForeverTitle": "彻底删除？",
   "navDeletePermanently": "彻底删除",
-  "navDeletedRestorable": "已删除“{title}” — 可以从回收站还原。",
+  "navDeletedPage": "已删除页面“{title}”",
+  "@navDeletedPage": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedSection": "已删除分区“{title}”",
+  "@navDeletedSection": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedGroup": "已删除分区组“{title}”",
+  "@navDeletedGroup": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navUndo": "撤销",
   "navDeletesInDays": "{days, plural, other{{days} 天后删除}}",
   "navDeletesSoon": "即将删除",
   "navExamCountdown": "考试 {when} · {countdown}…",

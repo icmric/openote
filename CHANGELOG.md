@@ -52,6 +52,45 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   picked yourself stays picked, so drawing with a mouse still works, and Escape
   puts it down.
 
+### Changed — Ctrl+B now bolds what you type next, not the word behind you
+
+- **A formatting shortcut sets the style for what comes NEXT.** Press Ctrl+B in
+  the middle of a sentence and carry on typing: the new words come out bold,
+  and they stop being bold when you press it again. It used to reach back and
+  bold the word the cursor happened to be touching — so finishing a word and
+  pressing Ctrl+B changed the word you had just written instead of the one you
+  were about to. Ctrl+I, Ctrl+U, the toolbar buttons and the Ctrl+marker chords
+  all work the same way.
+- **The toolbar button lights up while you wait.** Nothing is written to the
+  page until you type, so the button going on is what tells you the next word
+  will be bold.
+- **With text selected, nothing has changed** — it formats what you highlighted,
+  exactly as before.
+- **Backspace still takes the letter.** The `**` around a bold word are
+  invisible while you write, and Backspace goes on deleting the letter you can
+  see rather than a marker you cannot.
+
+### Fixed — a deleted section is one Ctrl+Z away, and Del stops taking the wrong thing
+
+- **Del took the whole section when you had not aimed at one.** Clicking a row
+  in the navigator pointed the keyboard at it, and nothing ever pointed it
+  somewhere else — so clicking a blank patch of the navigator, or reaching up
+  to the toolbar, left Del still aimed at a section you had stopped thinking
+  about, with nothing on screen to say so. Now: clicking a page deletes that
+  page, clicking a blank patch means the page you are on, and a **section goes
+  only when you click that section and press Del**.
+- **Ctrl+Z brings a deleted page or section back**, with all its pages. It
+  could not before — undo only ever covered the page you had open, so the one
+  action that takes a whole section away was the one action outside it, and
+  Ctrl+Z quietly did nothing. Ctrl+Y puts it back.
+- **The message now offers to undo it**, and says less: "Deleted section “X”"
+  with an **Undo** button, instead of a sentence sending you off to the recycle
+  bin. Deleting from the right-click menu says it too — that route used to say
+  nothing at all.
+- **The recycle bin looks like somewhere things come back from.** Its button
+  was a plain wastebasket sitting between two "make a new thing" buttons, which
+  reads as "delete this"; it is now the bin with an arrow coming out of it.
+
 ### Added — colours you choose, and a way to take one off the page
 
 - **The ink colours are always on the Draw tab**, instead of appearing only

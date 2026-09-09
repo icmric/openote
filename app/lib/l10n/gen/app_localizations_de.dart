@@ -644,9 +644,22 @@ class LDe extends L {
   String get navDeletePermanently => 'Endgültig löschen';
 
   @override
-  String navDeletedRestorable(String title) {
-    return '„$title“ gelöscht — du kannst sie im Papierkorb wiederherstellen.';
+  String navDeletedPage(String title) {
+    return 'Seite „$title“ gelöscht';
   }
+
+  @override
+  String navDeletedSection(String title) {
+    return 'Abschnitt „$title“ gelöscht';
+  }
+
+  @override
+  String navDeletedGroup(String title) {
+    return 'Gruppe „$title“ gelöscht';
+  }
+
+  @override
+  String get navUndo => 'Rückgängig';
 
   @override
   String navDeletesInDays(int days) {

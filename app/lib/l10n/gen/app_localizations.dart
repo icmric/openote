@@ -1103,11 +1103,29 @@ abstract class L {
   /// **'Delete permanently'**
   String get navDeletePermanently;
 
-  /// Confirmation after deleting a page.
+  /// Snackbar after deleting a page. Kept short because it carries an Undo button beside it.
   ///
   /// In en, this message translates to:
-  /// **'Deleted “{title}” — restore it from the recycle bin.'**
-  String navDeletedRestorable(String title);
+  /// **'Deleted page “{title}”'**
+  String navDeletedPage(String title);
+
+  /// Snackbar after deleting a section, with an Undo button beside it.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted section “{title}”'**
+  String navDeletedSection(String title);
+
+  /// Snackbar after deleting a section group, with an Undo button beside it.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted group “{title}”'**
+  String navDeletedGroup(String title);
+
+  /// Button on the deleted-something snackbar that puts it straight back.
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get navUndo;
 
   /// How long a deleted thing has left in the recycle bin.
   ///
