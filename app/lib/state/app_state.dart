@@ -5380,6 +5380,23 @@ class AppState extends ChangeNotifier
       // so the toggle missed and wrapped it again as `**__bold__**`.
       final atCaret = _runAround(t, s, s, mark);
       if (atCaret != null) {
+        // **At the END of the run this means "stop", not "undo".** Typing a
+        // bold word leaves the caret against the closing marker, and pressing
+        // the chord again there is how everybody turns bold OFF for what
+        // comes next — reported as "pressing the hotkey again after typing
+        // out the text will unbold it, which is wrong". So step over the
+        // markers instead of removing them: the word keeps its bold, the
+        // caret lands outside the run, and the next letter is plain.
+        //
+        // Anywhere strictly INSIDE the run still un-formats it, which is the
+        // only way to take formatting off without selecting it first — the
+        // markers cannot be seen, so there is nothing to delete by hand.
+        if (s == atCaret.close) {
+          c.selection =
+              TextSelection.collapsed(offset: atCaret.close + atCaret.strip);
+          notifyListeners();
+          return;
+        }
         pushUndo();
         final inner =
             t.substring(atCaret.open + atCaret.strip, atCaret.close);

@@ -602,7 +602,10 @@ void main() {
 
       await press(tester, LogicalKeyboardKey.keyB, character: 'b', ctrl: true);
       expect(ctl.text, '**hello** world', reason: 'Ctrl+B is still bold');
-      ctl.selection = const TextSelection.collapsed(offset: 7);
+      // INSIDE the word, not against its closing marker: at the trailing edge
+      // the chord now means "stop bolding what I type next" and leaves the
+      // word alone, which is its own test in type_ahead_formatting_test.dart.
+      ctl.selection = const TextSelection.collapsed(offset: 5);
       await press(tester, LogicalKeyboardKey.keyB, character: 'b', ctrl: true);
       expect(ctl.text, 'hello world', reason: 'and still toggles off');
 

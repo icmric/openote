@@ -185,6 +185,37 @@ void main() {
       app.cancelPendingSave();
     });
 
+    testWidgets('a QUEUED style lights the Bold button', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // Ctrl+B with nothing selected writes nothing to the page — it styles
+      // what you type next — so the button going on is the only thing that
+      // can say so. Reported as "if i press ctrl + b, nothing visibly changes
+      // or highlights", which turned out to be the button being selected and
+      // not LOOKING it; the fill for a selected icon button lives in
+      // `onote_theme.dart`. This pins the half that is logic: the bar really
+      // does rebuild and really does mark the button.
+      await pump(tester);
+      final block = app.blocks.firstWhere((b) => b.type == BlockType.text);
+      final c = TextEditingController(text: 'one two three')
+        ..selection = const TextSelection.collapsed(offset: 3);
+      app.editingBlockId = block.id;
+      app.setActiveEditor(c, block, 'text');
+      app.refresh();
+      await tester.pumpAndSettle();
+
+      bool boldOn() => tester.widgetList<IconButton>(find.byType(IconButton)).any(
+          (b) =>
+              b.icon is Icon &&
+              (b.icon as Icon).icon == Icons.format_bold &&
+              (b.isSelected ?? false));
+
+      expect(boldOn(), isFalse, reason: 'nothing is on yet');
+      app.wrapSelection('**');
+      await tester.pumpAndSettle();
+      expect(boldOn(), isTrue);
+      app.cancelPendingSave();
+    });
+
     testWidgets('a change to a keyed value does rebuild it', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await pump(tester);

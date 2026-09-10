@@ -22,6 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/canvas/block_view.dart';
 import 'package:openote/l10n/l10n.dart';
+import 'package:openote/markdown/md_syntax.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -214,6 +215,64 @@ void main() {
     await t.pump();
     expect(c.text, 'note **今日は**',
         reason: 'the finished word is wrapped, all of it, once');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('the chord again at the end STOPS bolding, it does not unbold',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // Reported: "pressing the hotkey again after typing out the text will
+    // unbold it, which is wrong." Typing a bold word leaves the caret against
+    // the closing marker, and pressing the chord there is how everybody turns
+    // bold off for what comes NEXT.
+    final c = await open(t, 5);
+    app.wrapSelection('**');
+    await t.pump();
+    for (final ch in ['b', 'i', 'g']) {
+      await type(t, c, ch);
+    }
+    expect(c.text, 'note **big**');
+
+    app.wrapSelection('**');
+    await t.pump();
+    expect(c.text, 'note **big**', reason: 'the word keeps its bold');
+    expect(app.marksAtCaret(), isNot(contains(MdInline.bold)),
+        reason: 'and the toolbar says bold is off now');
+
+    // What comes next is plain, and lands after the word rather than in it.
+    await type(t, c, '!');
+    expect(c.text, 'note **big**!');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('but inside the word it still takes the bold off', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // The markers cannot be seen, so this is the only way to un-format
+    // without selecting first. It must survive the fix above.
+    final c = await open(t, 5);
+    app.wrapSelection('**');
+    await t.pump();
+    for (final ch in ['b', 'i', 'g']) {
+      await type(t, c, ch);
+    }
+    c.selection = const TextSelection.collapsed(offset: 8); // inside "big"
+    await t.pump();
+    app.wrapSelection('**');
+    await t.pump();
+    expect(c.text, 'note big');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('the toolbar lights up the moment the chord is pressed',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // Nothing is written until you type, so the button going on is the only
+    // thing that can say the next word will be bold.
+    await open(t, 5);
+    expect(app.marksAtCaret(), isEmpty);
+    app.wrapSelection('**');
+    await t.pump();
+    expect(app.marksAtCaret(), contains(MdInline.bold));
     app.cancelPendingSave();
   });
 

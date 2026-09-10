@@ -85,6 +85,15 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **The toolbar button lights up while you wait.** Nothing is written to the
   page until you type, so the button going on is what tells you the next word
   will be bold.
+- **Pressing it again at the end of the word stops bolding** rather than
+  un-bolding what you just wrote. Inside the word it still takes the
+  formatting off, which is the only way to remove it without selecting it
+  first.
+- **A toggle that is on now looks on.** A selected toolbar button used to
+  change only the colour of its glyph, which among a row of grey glyphs is a
+  change you had to be looking for — so pressing Ctrl+B appeared to do
+  nothing at all until you typed. Selected buttons are filled now, everywhere
+  in the app.
 - **With text selected, nothing has changed** — it formats what you highlighted,
   exactly as before.
 - **Backspace still takes the letter.** The `**` around a bold word are

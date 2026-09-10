@@ -297,14 +297,28 @@ ThemeData onoteTheme(Brightness brightness) {
         side: WidgetStatePropertyAll(BorderSide(color: surfaces.border)),
       ),
     ),
-    iconButtonTheme: const IconButtonThemeData(
+    iconButtonTheme: IconButtonThemeData(
       style: ButtonStyle(
         mouseCursor: clickable,
-        iconSize: WidgetStatePropertyAll(OnoteIcon.sm),
+        iconSize: const WidgetStatePropertyAll(OnoteIcon.sm),
         splashFactory: NoSplash.splashFactory,
-        shape: WidgetStatePropertyAll(
+        shape: const WidgetStatePropertyAll(
             RoundedRectangleBorder(borderRadius: OnoteRadius.mdAll)),
         visualDensity: VisualDensity.compact,
+        // **A toggle that is ON says so with a shape, not just a tint.**
+        //
+        // Material's default for a selected icon button is to recolour the
+        // glyph and nothing else. Among a row of grey glyphs that is a change
+        // you have to already be looking for — reported of the one moment it
+        // matters most, a formatting chord pressed before typing: "if i press
+        // ctrl + b, nothing visibly changes or highlights". The button WAS
+        // being selected; it just did not look it. A filled pill reads at a
+        // glance and costs nothing when nothing is on, because an unselected
+        // button resolves to no background at all.
+        backgroundColor: WidgetStateProperty.resolveWith((states) =>
+            states.contains(WidgetState.selected)
+                ? primary.withValues(alpha: dark ? .28 : .14)
+                : null),
       ),
     ),
 
