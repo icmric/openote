@@ -1506,8 +1506,7 @@ class AppState extends ChangeNotifier
       // `blobs/` and re-hashing it.
       if (_disposed) return copied;
       try {
-        _noteBlobProof(
-            nb, await r.proveBlobs(read: (h) => _repo.containerBlob(nb, h)));
+        await proveBlobsPatiently(nb);
       } catch (e) {
         // This proof half had no handler of its own, and the chain is awaited
         // by nobody unless a mirror is waiting on it — so a throw here was an
@@ -1558,7 +1557,36 @@ class AppState extends ChangeNotifier
   /// Per notebook, like [_logAhead] rather than like [_logError]: a clean proof
   /// of one notebook must not clear a hole reported in another, and the user
   /// can only act on the one they are looking at.
-  void _noteBlobProof(String nb, BlobProof proof) {
+  /// How long to keep quiet, and for how many more tries, before telling
+  /// somebody a picture is missing.
+  ///
+  /// **A hole found on the first pass is usually not a hole.** Every cheap
+  /// cause is transient and fixes itself: a cloud client that has not
+  /// downloaded the file yet, a files-on-demand placeholder that has not
+  /// hydrated, a file locked for the second the client is writing it. The
+  /// expensive cause — bytes that are genuinely gone — is the only one worth
+  /// a sentence as alarming as the one below, and it is the only one that
+  /// survives being asked again.
+  ///
+  /// Each retry is a full repair pass, not just a second look: it re-reads
+  /// the container, re-scans for a file a cloud client renamed, and sees
+  /// whatever has arrived in the folder since. So this is "run the repairs
+  /// again before frightening anybody", spread over about twenty seconds.
+  @visibleForTesting
+  static List<Duration> blobProofPatience = const [
+    Duration(seconds: 3),
+    Duration(seconds: 15),
+  ];
+
+  final Map<String, Timer> _blobRetries = {};
+  final Map<String, int> _blobAttempts = {};
+
+  void _cancelBlobRetry(String nb) {
+    _blobRetries.remove(nb)?.cancel();
+    _blobAttempts.remove(nb);
+  }
+
+  void _noteBlobProof(String nb, BlobProof proof, {bool mayRetry = false}) {
     if (proof.repaired.isNotEmpty) {
       // Worth a line even though nothing is wrong any more: Openote's own
       // writes are temp+rename and cannot tear, so a wrong-bytes or missing
@@ -1571,8 +1599,33 @@ class AppState extends ChangeNotifier
           'a cloud client had renamed, the rest from the notebook file');
     }
     if (proof.ok) {
+      _cancelBlobRetry(nb);
       _blobHole.remove(nb);
     } else {
+      // Not a word yet. Ask again, with every repair the first pass had —
+      // most of what looks like a hole at open is a cloud client that has not
+      // finished, and saying so is worse than saying nothing.
+      final attempt = _blobAttempts[nb] ?? 0;
+      if (mayRetry && attempt < blobProofPatience.length) {
+        _blobAttempts[nb] = attempt + 1;
+        _blobRetries.remove(nb)?.cancel();
+        _blobRetries[nb] = Timer(blobProofPatience[attempt], () async {
+          _blobRetries.remove(nb);
+          if (_disposed || notebookId == null) return;
+          final r = _recorders[nb];
+          if (r == null) return;
+          try {
+            _noteBlobProof(
+                nb, await r.proveBlobs(read: (h) => _repo.containerBlob(nb, h)),
+                mayRetry: true);
+          } catch (_) {
+            // The notebook left mid-retry, the folder went away. Nothing to
+            // report and nothing to fix — the next open asks again.
+          }
+        });
+        return;
+      }
+      _cancelBlobRetry(nb);
       // **Not "still fine on this computer."** That reassurance used to be
       // unconditional, but by the time either set here is non-empty, the
       // container has ALREADY been asked for good bytes and could not
@@ -1618,6 +1671,21 @@ class AppState extends ChangeNotifier
   /// content really is what the name claims**, repairing from the container
   /// where it can.
   ///
+  /// The proof the app runs by itself, which says nothing about a hole until
+  /// it has run the repairs again a couple of times — see [blobProofPatience].
+  ///
+  /// [proveBlobBytes] is the impatient twin, for a caller that asked a direct
+  /// question and is owed a direct answer: a migration deciding whether it may
+  /// proceed cannot wait twenty seconds, and nobody is reading a sentence on
+  /// its behalf.
+  Future<void> proveBlobsPatiently(String nb) async {
+    final r = _recorders[nb];
+    if (r == null) return;
+    _noteBlobProof(
+        nb, await r.proveBlobs(read: (h) => _repo.containerBlob(nb, h)),
+        mayRetry: true);
+  }
+
   /// The gate for the rest of the v0.17 storage work, exposed so a migration —
   /// and the tests that stand in for one — can refuse rather than proceed.
   /// Forces a synchronous log replay if no recorder is open; see
@@ -2450,6 +2518,17 @@ class AppState extends ChangeNotifier
   /// a log line at shutdown in the app, and in tests a failure charged to
   /// whichever test runs next.
   Future<void> settleBackgroundWork() async {
+    // **A blob retry is dropped, not waited for.** It is a timer that has not
+    // fired: nothing is in flight, so there is nothing to be consistent with,
+    // and whoever is about to purge or move this folder should not wait
+    // twenty seconds to find that out. Dropping it costs nothing — the next
+    // open proves the notebook again — while keeping it would let a repair
+    // write a blob, and `writeBlob` recreate `blobs/`, inside a directory
+    // that is in the middle of being deleted. That is the recreated-husk
+    // hazard `discardImportedNotebook` already warns about, by another door.
+    for (final nb in _blobRetries.keys.toList()) {
+      _cancelBlobRetry(nb);
+    }
     // Each pass can start more work (a warm installs, which starts a
     // backfill), so drain until a pass finds nothing.
     for (var pass = 0; pass < 8; pass++) {
@@ -2630,10 +2709,24 @@ class AppState extends ChangeNotifier
         // touching the folder (purge and move), and it is what failed the
         // purge test on windows-latest even after the watcher stop itself
         // was already being awaited.
-        final Future<void> f = syncPull(nb).then<void>((n) {
+        final Future<void> f = syncPull(nb).then<void>((n) async {
           lastPullAt = DateTime.now();
           debugPrint('[openote/sync] auto-pull folded $n op(s)');
           notifyListeners();
+          // A pull is how the missing bytes ARRIVE. Without this, a notebook
+          // that was told a picture was missing went on saying so until it
+          // was closed and opened again, long after the file had landed.
+          // Gated on there being something to clear, because the proof
+          // re-hashes every blob in the notebook and no pull should pay that
+          // when nothing is wrong.
+          if (!_disposed && _blobHole.containsKey(nb)) {
+            try {
+              await proveBlobsPatiently(nb);
+            } catch (_) {
+              // The notebook left, the folder went away. The next pull or the
+              // next open asks again.
+            }
+          }
         }).catchError((Object e) {
           debugPrint('[openote/sync] auto-pull failed: $e');
         });
@@ -9465,6 +9558,10 @@ class AppState extends ChangeNotifier
     _watchedEditor?.removeListener(_onEditorChanged);
     _watchedEditor = null;
     _stopWatching();
+    for (final t in _blobRetries.values) {
+      t.cancel();
+    }
+    _blobRetries.clear();
     unawaited(_mcpServer?.stop());
     _housekeepingTimer?.cancel();
     _housekeepingNoteClear?.cancel();

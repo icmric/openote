@@ -361,6 +361,63 @@ void main() {
   });
 
   group('what the student is told, and how long the app is frozen for', () {
+    test('a hole that fixes itself is never mentioned at all', () async {
+      // The commonest "hole" of all: a cloud client that has not finished
+      // downloading. Telling somebody their pictures are missing while the
+      // file is on its way is the scary-for-no-reason case this patience
+      // exists for.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, app, nb) = await fixture('onote_blob_patient_');
+      AppState.blobProofPatience = const [
+        Duration(milliseconds: 5),
+        Duration(milliseconds: 5),
+      ];
+      addTearDown(() => AppState.blobProofPatience =
+          const [Duration(seconds: 3), Duration(seconds: 15)]);
+
+      final r = (await app.warmRecorder(nb))!;
+      final bytes = picture(23, size: 96);
+      final hash = sha256Hex(bytes);
+      r.blob(hash, 'image/png', bytes.length, bytes);
+      final f = logOf(repo, nb).blobFile(hash);
+      f.deleteSync();
+
+      await app.proveBlobsPatiently(nb);
+      expect(app.saveError, isNull,
+          reason: 'not a word on the first pass — it is usually not a hole');
+
+      // The file turns up, exactly as a finished download would deliver it.
+      f.writeAsBytesSync(bytes, flush: true);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(app.saveError, isNull,
+          reason: 'and nothing is ever said, because nothing was ever wrong');
+    });
+
+    test('a hole that survives the repairs is reported in the end', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, app, nb) = await fixture('onote_blob_impatient_');
+      AppState.blobProofPatience = const [
+        Duration(milliseconds: 5),
+        Duration(milliseconds: 5),
+      ];
+      addTearDown(() => AppState.blobProofPatience =
+          const [Duration(seconds: 3), Duration(seconds: 15)]);
+
+      final r = (await app.warmRecorder(nb))!;
+      final bytes = picture(29, size: 96);
+      final hash = sha256Hex(bytes);
+      r.blob(hash, 'image/png', bytes.length, bytes);
+      logOf(repo, nb).blobFile(hash).deleteSync();
+
+      await app.proveBlobsPatiently(nb);
+      expect(app.saveError, isNull, reason: 'quiet while it tries again');
+
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(app.saveError, isNotNull,
+          reason: 'bytes that are really gone still have to be reported — '
+              'silence here is how 378 blobs went missing unnoticed');
+    });
+
     test('the sentence is plain words, with the technical half folded away',
         () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');

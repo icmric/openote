@@ -136,6 +136,17 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   half-downloaded file or an interrupted write is never mistaken for a repair.
 - **Nothing is deleted.** The renamed copy is left exactly where it is; only
   the missing name is put back.
+- **Openote no longer says a picture is missing on its first look.** Most of
+  what looks like a missing picture at the moment a notebook opens is a cloud
+  client that has not finished downloading it, and being told your pictures
+  are missing while the file is on its way is alarming for no reason. It now
+  tries the repairs again, twice, over about twenty seconds, and only says
+  something if the picture is still not there afterwards. A picture that
+  turns up in the meantime is never mentioned at all.
+- **And when the missing picture does arrive, the warning goes away by
+  itself.** Bytes arrive with a sync; until now the notebook went on saying a
+  picture was missing until you closed and reopened it, long after the file
+  had landed.
 
 ### Fixed — deleting a page leaves you next door, not in another section
 
