@@ -4830,6 +4830,26 @@ class AppState extends ChangeNotifier
   /// Nothing consults a flag any more — [PageCanvas] simply switches.
 
   /// True when the selection is ink and can therefore be recoloured (INK-7).
+  /// Whether the canvas should float a Delete above what is selected.
+  ///
+  /// **Only for more than one thing.** A selected block puts a cross on its
+  /// own move bar, so a single selection was offering two ways to delete one
+  /// thing a few pixels apart — reported of the commonest case there is:
+  /// "when im editing a text box we have a bin button and the cross button,
+  /// and the bin button makes it feel messy".
+  ///
+  /// A multiple selection keeps it, and needs it: the cross belongs to the
+  /// PRIMARY block alone and says nothing about the others, so the floating
+  /// button is the only control that means "all of this".
+  ///
+  /// The case this button was built for is not lost by that. It was for ink
+  /// on a tablet, where there is no Delete key — but a lasso leaves the lasso
+  /// tool in hand, not a pen, and a lassoed block shows its bar and its cross
+  /// like any other. A pen cannot be in hand with something selected at all,
+  /// because [setTool] clears the selection on the way to any tool that
+  /// draws.
+  bool get showSelectionDelete => selectedIds.length > 1;
+
   bool get hasInkSelection =>
       blocks.any((b) => selectedIds.contains(b.id) && b.type == BlockType.ink);
 
@@ -9074,6 +9094,28 @@ class AppState extends ChangeNotifier
       setFindQuery(findQuery);
     }
     return count;
+  }
+
+  /// Keep the caret in sight while somebody writes.
+  ///
+  /// Called on every keystroke and every caret move, so it does as little as
+  /// possible: the decision of whether anything is needed at all belongs to
+  /// [CanvasController.revealGlobalRect], and is one rectangle comparison.
+  ///
+  /// **Deferred to the end of the frame**, and coalesced to one check per
+  /// frame however many notifications arrive. The caret's rectangle is asked
+  /// of a render object, and at the moment a keystroke lands the field is
+  /// still holding the layout from BEFORE it — a check run there would chase
+  /// the previous line for ever, always one keystroke behind.
+  bool _caretRevealScheduled = false;
+  void ensureCaretVisible() {
+    if (_caretRevealScheduled) return;
+    _caretRevealScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _caretRevealScheduled = false;
+      final r = activeSession?.caretRectGlobal();
+      if (r != null) canvas.revealGlobalRect(r);
+    });
   }
 
   /// Select a block and centre the view on it. Shared by find and the page

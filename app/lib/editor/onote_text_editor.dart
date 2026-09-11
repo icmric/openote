@@ -157,6 +157,19 @@ abstract class OnoteEditSession {
   /// selection model of its own.
   void setSelection(int base, int extent) {}
 
+  /// Where the caret is on screen, or null when the engine cannot say.
+  ///
+  /// The mirror of [offsetAtGlobal]: that one turns a point into a position in
+  /// the text, this one turns the position in the text back into a point. The
+  /// canvas uses it to keep the caret in sight while somebody writes, and it
+  /// is on the seam rather than in the engine because "where is the caret"
+  /// is a question any text engine can answer and the canvas must not have to
+  /// know which one it is asking.
+  ///
+  /// Null is a supported answer, exactly as it is for [offsetAtGlobal]: no
+  /// layout yet, no caret, or no Flutter text layer at all.
+  Rect? caretRectGlobal() => null;
+
   /// True while an inline equation INSIDE this session holds the keyboard.
   ///
   /// The one flag every gate reads (v0.20 §B.2.6): the session's own key

@@ -213,6 +213,10 @@ class _LiveMarkdownSession extends OnoteEditSession {
     // so any selection outside [start, end] means "close" (v0.20 B.2.5).
     controller.addListener(_maybeCloseOnCaretExit);
     controller.addListener(_maybeCancelPendingStyle);
+    // Every keystroke and every caret move, which is exactly when the caret
+    // can have gone out of sight. The work behind this is one rectangle
+    // comparison unless it actually needs to scroll.
+    controller.addListener(app.ensureCaretVisible);
   }
 
   /// A queued style belongs to the spot the caret was at when the chord was
@@ -1024,6 +1028,25 @@ class _LiveMarkdownSession extends OnoteEditSession {
   }
 
   @override
+  Rect? caretRectGlobal() {
+    final st = _editableState();
+    if (st == null) return null;
+    try {
+      final r = st.renderEditable;
+      if (!r.hasSize) return null;
+      final sel = controller.selection;
+      if (!sel.isValid) return null;
+      final local = r.getLocalRectForCaret(
+          TextPosition(offset: sel.extentOffset, affinity: sel.affinity));
+      return local.shift(r.localToGlobal(Offset.zero));
+    } catch (_) {
+      // No layout yet, or the field went away between frames — the same
+      // degradation offsetAtGlobal makes, for the same reasons.
+      return null;
+    }
+  }
+
+  @override
   void setSelection(int base, int extent) {
     final n = controller.text.length;
     controller.selection = TextSelection(
@@ -1239,6 +1262,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
     _spellDebounce?.cancel();
     controller.removeListener(_maybeCloseOnCaretExit);
     controller.removeListener(_maybeCancelPendingStyle);
+    controller.removeListener(app.ensureCaretVisible);
     controller.dispose();
     _focus.dispose();
     _mathFocus.dispose();

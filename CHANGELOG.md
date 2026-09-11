@@ -121,6 +121,32 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   was a plain wastebasket sitting between two "make a new thing" buttons, which
   reads as "delete this"; it is now the bin with an arrow coming out of it.
 
+### Changed — one delete button per thing, not two
+
+- **The floating bin only appears for a selection of more than one.** A
+  selected box already carries a cross on its own bar, so a single selection
+  was offering two ways to delete one thing a few pixels apart — most visible
+  while writing in a text box, where the bin and the cross sat either side of
+  it and made the box look busy. Select several things and the bin is back,
+  because there the cross belongs to one of them and says nothing about the
+  rest.
+
+### Changed — the page follows you down as you write
+
+- **Typing past the bottom of the window brings the window with you.** The
+  paragraph grew downwards and the view stayed where it was, so writing
+  anything long meant stopping to scroll mid-sentence. Now the page eases down
+  just enough to keep the line you are on in sight, and stops as soon as it
+  is.
+- **It only moves when it has to.** While the caret is anywhere comfortable —
+  which is almost always — nothing happens at all. There is no drift, and no
+  motion while you read.
+- **It keeps up.** The movement is a glide rather than a jump, and typing
+  faster does not leave it behind: each keystroke moves where it is heading
+  instead of starting it over.
+- **Reaching for the mouse wins.** Scrolling or zooming while the page is
+  easing stops it dead, so it never fights you for the view.
+
 ### Added — colours you choose, and a way to take one off the page
 
 - **The ink colours are always on the Draw tab**, instead of appearing only

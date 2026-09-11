@@ -912,7 +912,10 @@ class _PageCanvasState extends State<PageCanvas> {
   /// clamped into the viewport, so it never covers what it is about and never
   /// leaves the window.
   List<Widget> _selectionActions(BuildContext context) {
-    if (app.selectedIds.isEmpty) return const [];
+    // Whether this is wanted at all is [AppState.showSelectionDelete] — a
+    // lone block already has a cross on its own bar, and two delete buttons
+    // for one thing is the mess that was reported.
+    if (!app.showSelectionDelete) return const [];
     // Not while the selection is being dragged or marqueed out, and not while
     // the eyedropper owns the next click.
     if (_mode != _DragMode.none || app.pickingInkColor) return const [];
@@ -1088,6 +1091,14 @@ class _PageCanvasState extends State<PageCanvas> {
 
     Widget canvas = LayoutBuilder(builder: (context, constraints) {
       controller.viewport = Size(constraints.maxWidth, constraints.maxHeight);
+      // Asked for when something needs it rather than measured now: layout
+      // knows the SIZE of the viewport, but where it lands on screen is not
+      // settled until this frame is painted. See
+      // `CanvasController.revealGlobalRect`.
+      controller.viewportOrigin = () {
+        final box = context.findRenderObject() as RenderBox?;
+        return box != null && box.hasSize ? box.localToGlobal(Offset.zero) : null;
+      };
       return AnimatedBuilder(
         animation: controller,
         builder: (context, _) {
