@@ -130,7 +130,11 @@ class _OpenoteBootState extends State<OpenoteBoot> {
       // SQLite handles never got a clean close (no WAL checkpoint).
       _lifecycle = AppLifecycleListener(
         onExitRequested: () async {
-          await app.shutdown();
+          try {
+            await app.shutdown();
+          } catch (_) {
+            return AppExitResponse.cancel;
+          }
           await widget.instance?.dispose();
           return AppExitResponse.exit;
         },
