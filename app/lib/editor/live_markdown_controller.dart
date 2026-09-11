@@ -1368,6 +1368,11 @@ class LiveMarkdownController extends TextEditingController {
       var openLen = c.openLen, closeLen = c.closeLen;
       final TextStyle inner;
       switch (c.kind) {
+        case MdInline.atom:
+          // As in the read renderer: the alt text until Step 2 mounts the
+          // widget. Markers zeroed so the whole reference is the run.
+          openLen = closeLen = 0;
+          inner = cBase;
         case MdInline.mathEmpty:
         case MdInline.mathDisplay:
         case MdInline.mathPadded:

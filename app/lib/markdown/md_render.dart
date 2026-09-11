@@ -668,6 +668,12 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
     // so reading and writing can never disagree about what a run of text is.
     final c = classifyInline(m);
     switch (c.kind) {
+      case MdInline.atom:
+        // Step 1 has the grammar and the storage; the widget arrives in
+        // Step 2. Until then an atom reads as its alt text, which is what a
+        // renderer that does not know this id should show anyway — an older
+        // build, an export, somebody else's Markdown viewer.
+        spans.add(TextSpan(text: c.inner, style: base));
       case MdInline.mathEmpty:
         // An equation started and never written into. It should not survive to
         // a saved note at all — the editor sweeps it on the way out — but if

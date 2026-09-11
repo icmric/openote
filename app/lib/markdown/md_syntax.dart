@@ -17,6 +17,10 @@ library;
 
 /// What an inline match turned out to be.
 enum MdInline {
+  /// `![alt](onote://atom/<id>)` — a table, and later anything else that is
+  /// not text, living inside a sentence. The payload is in the host block's
+  /// `content.atoms`; this is only the reference. See [_atom].
+  atom,
   wikiLink,
   extLink,
   bareUrl,
@@ -160,6 +164,31 @@ const String _mathPadded =
 const String _colour =
     r'(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})';
 const String _wiki = r'(\[\[([^\]|]+)(?:\|([^\]]+))?\]\])';
+
+/// **An inline atom: a thing that is not text, living in a sentence.**
+///
+/// `![2x3 table](onote://atom/<uuid>)`, with the payload in the host block's
+/// own `content.atoms` (v0.19 §B). Deliberately the `![…](…)` shape the image
+/// dialect already uses and deliberately CommonMark, so a foreign reader
+/// shows the alt text rather than a syntax error, and so the two renderers
+/// share one branch instead of drifting apart the way bold and italic once
+/// did.
+///
+/// `onote://` is already ours — `md_common.markdownInline` exports wiki-links
+/// as `[title](onote://page/id)` — and `_link` below matches only `https?:`
+/// and `mailto:`, so nothing else can claim this.
+final String _atom =
+    r'(!\[([^\]]*)\]\(onote://atom/(' + atomIdPattern + r')\))';
+
+/// What an atom id may look like, in ONE place.
+///
+/// Openote's own ids are UUIDv7 and would be satisfied by hex and hyphens
+/// alone, but an id that came from somewhere else must still round-trip
+/// rather than have its reference read as literal text, so this is as wide as
+/// it can be while still ending at the closing bracket. Shared with
+/// `InlineAtom`, which builds the same reference: two copies of this drifting
+/// apart is how the editor and the renderer once disagreed about bold.
+const String atomIdPattern = r'[A-Za-z0-9_.\-]{1,64}';
 const String _link = r'(\[([^\]\[]+)\]\((https?://[^)\s]+|mailto:[^)\s]+)\))';
 // Last: an explicit `[label](url)` must win at the same position, and the
 // lookbehind keeps a bare URL from firing mid-word or on the `(url)` half of
@@ -169,6 +198,9 @@ const String _bare = r'((?:^|(?<=[\s(<]))(https?://[^\s)\]<]+))';
 /// Group numbers, derived once from the order above rather than counted by
 /// hand — miscounting them is what made the two old copies so fragile.
 const _order = <MapEntry<MdInline, int>>[
+  // FIRST, and it costs nothing: an atom opens with `!` and nothing else in
+  // this grammar does, so it can never be in contention at the same offset.
+  MapEntry(MdInline.atom, 3), // outer, alt, id
   MapEntry(MdInline.wikiLink, 3), // outer, label, id
   MapEntry(MdInline.extLink, 3), // outer, label, url
   MapEntry(MdInline.colour, 3), // outer, hex, text
@@ -193,6 +225,7 @@ const _order = <MapEntry<MdInline, int>>[
 ];
 
 String _patternFor(MdInline k) => switch (k) {
+      MdInline.atom => _atom,
       MdInline.wikiLink => _wiki,
       MdInline.extLink => _link,
       MdInline.colour => _colour,
@@ -263,6 +296,17 @@ MdMatch classifyInline(RegExpMatch m) {
       final base = g + alt * e.value;
       if (m.group(base) == null) continue;
       switch (e.key) {
+        case MdInline.atom:
+          // `inner` is the ALT TEXT, because that is what a renderer with no
+          // atom of that id — an older build, an export, a foreign reader —
+          // should show. `target` is the id the payload is under.
+          return MdMatch(
+              kind: e.key,
+              openLen: 2, // '!['
+              closeLen: 0,
+              inner: m.group(base + 1)!,
+              label: m.group(base + 1),
+              target: m.group(base + 2));
         case MdInline.wikiLink:
           return MdMatch(
               kind: e.key,

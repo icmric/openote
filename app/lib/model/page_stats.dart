@@ -277,6 +277,10 @@ String _inlineText(String line) {
     if (m.start > last) out.write(line.substring(last, m.start));
     final c = classifyInline(m);
     switch (c.kind) {
+      case MdInline.atom:
+        // Its alt text, which is the one thing about an atom that is words.
+        // The payload's own words are counted where the payload lives.
+        out.write(c.inner);
       case MdInline.math:
       case MdInline.mathDisplay:
       case MdInline.mathPadded:
