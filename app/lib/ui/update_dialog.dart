@@ -179,6 +179,18 @@ class _UpdateDialogState extends State<_UpdateDialog> {
       return;
     }
     try {
+      // Downloading yields to the editor. Flush again immediately before the
+      // installer can close this process, and refuse to exit on save failure.
+      await widget.app.shutdown();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = '${widget.app.saveError ?? e}';
+      });
+      return;
+    }
+    try {
       // Silent install: replaces the files and relaunches Openote itself.
       // This process must be gone before the installer touches the exe.
       await Process.start(file.path, ['/SILENT', '/NOCANCEL'],
