@@ -121,6 +121,17 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   was a plain wastebasket sitting between two "make a new thing" buttons, which
   reads as "delete this"; it is now the bin with an arrow coming out of it.
 
+### Changed — typing in a page full of maths is no longer slow
+
+- **A picture, card or equation inside a paragraph is now drawn once, not
+  again on every keystroke.** Measured per keystroke in one block: twenty
+  equations went from 129.6 ms to 16.3 ms, forty from 227.0 ms to 17.9 ms,
+  and a hundred from 561.7 ms to 25.6 ms — against 16.5 ms for a block with
+  none. Forty equations is an ordinary page of maths notes, and a fifth of a
+  second per character is not typing.
+- **A drag or a selection inside one of them survives a keystroke elsewhere.**
+  Resizing a picture used to forget the drag if a word was typed above it.
+
 ### Fixed — a picture Google Drive renamed is found and put back
 
 - **Openote now recovers a blob a cloud client renamed.** Pictures, drawings

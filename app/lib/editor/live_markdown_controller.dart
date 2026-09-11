@@ -55,8 +55,22 @@ const double kEditorCaretMargin = 3.0;
 /// text verbatim, it falls back to an unstyled span, so editing can never
 /// corrupt or desync.
 class LiveMarkdownController extends TextEditingController {
-  LiveMarkdownController({super.text, required this.dark});
-  bool dark;
+  LiveMarkdownController({super.text, required bool dark}) : _dark = dark;
+
+  /// Light or dark, set by the engine on every build.
+  ///
+  /// A setter rather than a field because the atom cache keys on what an atom
+  /// was built FROM, and an atom is built from a style this decides. Without
+  /// the clear, switching theme left every picture, card and equation drawn
+  /// in the old one until its text happened to move.
+  bool get dark => _dark;
+  set dark(bool v) {
+    if (_dark == v) return;
+    _dark = v;
+    _atomCache.clear();
+  }
+
+  bool _dark;
 
   /// Resolves an in-flow image reference (`sha256:<hash>`) to bytes, so the
   /// picture is shown WHILE the block is being edited and not only after the
@@ -997,6 +1011,48 @@ class LiveMarkdownController extends TextEditingController {
   /// That was the picture "sitting about 1 char width from the left edge", and
   /// the same phantom width is what pushed a full-width picture onto the next
   /// line. Both have to be zeroed, not just the size.
+  /// **An atom widget is built once per identity, never once per keystroke.**
+  ///
+  /// Rebuilding the paragraph is cheap — `buildTextSpan` itself is under a
+  /// millisecond — but rebuilding the WIDGETS inside it is not, and every
+  /// keystroke rebuilds the whole span tree. Measured on this machine before
+  /// this cache existed, per keystroke in one block: 20 equations 129.6 ms,
+  /// 40 equations 227.0 ms, 100 equations 561.7 ms, against 16.5 ms for the
+  /// same block with none. Forty equations is an ordinary page of maths
+  /// notes, and a fifth of a second per character is not typing.
+  ///
+  /// Handing back the SAME widget instance does two things: the subtree is
+  /// not constructed, and Flutter's own `Element.update` sees an identical
+  /// widget and skips rebuilding beneath it. It also keeps the atom's State
+  /// alive, so a drag in progress or a player's position survives a keystroke
+  /// elsewhere in the block.
+  ///
+  /// **The key must name everything the widget was built from — including
+  /// any offset its callbacks captured.** A cached atom whose `onEdit` closed
+  /// over a stale `lineStart` would write to the wrong place, which is a
+  /// corrupted note rather than a slow one. That is why the offsets are in
+  /// every key below, and it is also the limit of this cache: typing BEFORE
+  /// an atom moves it and rebuilds it, while typing after it does not. The
+  /// common case — writing at the end of a block — keeps every atom above the
+  /// caret. Stable ids (v0.19 Step 1) are what lift that limit, by letting
+  /// the callbacks stop capturing offsets at all.
+  Widget _atom(String key, Widget Function() build) {
+    final hit = _atomCache[key];
+    if (hit != null) return hit;
+    // Bounded rather than cleared on every edit: an entry is only garbage
+    // once its key can never recur, and the key moves with the text, so a
+    // long editing session in a picture-heavy block would otherwise grow it
+    // without limit. 256 is far more atoms than a block has.
+    if (_atomCache.length > 256) _atomCache.clear();
+    return _atomCache[key] = build();
+  }
+
+  final Map<String, Widget> _atomCache = {};
+
+  /// How many atoms are held, for the test that pins the bound.
+  @visibleForTesting
+  int get debugAtomCacheSize => _atomCache.length;
+
   TextStyle _hidden(TextStyle base) => base.copyWith(
         color: const Color(0x00000000),
         fontSize: 0.01,
@@ -1037,14 +1093,16 @@ class LiveMarkdownController extends TextEditingController {
         out.add(_SourceSpan(
           source: line.substring(0, 1),
           alignment: PlaceholderAlignment.top,
-          child: _InlineCard(
-            key: ValueKey('card@$lineStart'),
-            front: card.group(1) ?? '',
-            back: card.group(2) ?? '',
-            selected: onLine,
-            onEdit: (f, b) => replaceCardLine(
-                lineStart, lineStart + line.length, line, f, b),
-          ),
+          child: _atom(
+              'card|$lineStart|${line.length}|$onLine|$line',
+              () => _InlineCard(
+                    key: ValueKey('card@$lineStart'),
+                    front: card.group(1) ?? '',
+                    back: card.group(2) ?? '',
+                    selected: onLine,
+                    onEdit: (f, b) => replaceCardLine(
+                        lineStart, lineStart + line.length, line, f, b),
+                  )),
         ));
         out.add(TextSpan(text: line.substring(1), style: _hidden(base)));
         return;
@@ -1086,20 +1144,27 @@ class LiveMarkdownController extends TextEditingController {
         out.add(_SourceSpan(
           source: line.substring(0, 1),
           alignment: PlaceholderAlignment.top,
-          child: _EditImage(
-            // Keyed by line so the drag state belongs to THIS picture, and is
-            // dropped if the text above it moves and the offsets go stale.
-            key: ValueKey('${img.group(3)}@$lineStart'),
-            bytes: bytes,
-            width: double.tryParse(img.group(4) ?? ''),
-            height: double.tryParse(img.group(5) ?? ''),
-            indent: indentPx(img.group(1)!.length, base.fontSize),
-            selected: onLine,
-            onNeedWidth: requestExtraWidth,
-            label: line,
-            labelStyle: refStyle,
-            onResize: (w, h) => resizeImageLine(lineStart, lineEnd, line, w, h),
-          ),
+          // `bytes.length` in the key, not the bytes: a blob that arrives
+          // after a first draw has to replace the placeholder, and comparing
+          // the buffers themselves would cost more than rebuilding.
+          child: _atom(
+              'img|$lineStart|$lineEnd|$onLine|${bytes.length}|$line',
+              () => _EditImage(
+                    // Keyed by line so the drag state belongs to THIS
+                    // picture, and is dropped if the text above it moves and
+                    // the offsets go stale.
+                    key: ValueKey('${img.group(3)}@$lineStart'),
+                    bytes: bytes,
+                    width: double.tryParse(img.group(4) ?? ''),
+                    height: double.tryParse(img.group(5) ?? ''),
+                    indent: indentPx(img.group(1)!.length, base.fontSize),
+                    selected: onLine,
+                    onNeedWidth: requestExtraWidth,
+                    label: line,
+                    labelStyle: refStyle,
+                    onResize: (w, h) =>
+                        resizeImageLine(lineStart, lineEnd, line, w, h),
+                  )),
         ));
         out.add(TextSpan(text: line.substring(1), style: _hidden(base)));
         return;
@@ -1278,17 +1343,22 @@ class LiveMarkdownController extends TextEditingController {
           // the text jumps on click-in.
           alignment: PlaceholderAlignment.baseline,
           baseline: TextBaseline.alphabetic,
+          // The live editor is never cached: it owns the keyboard and its
+          // own state, and handing back a stale one would be handing back a
+          // stale equation.
           child: editingHere
               ? mathEditorBuilder!(c.inner, mBase)
-              : InlineMathAtom(
-                  latex: c.inner,
-                  style: mBase,
-                  linkTint: graphLinkTint?.call(c.inner),
-                  onTap: tap == null
-                      ? null
-                      : (rect, tapGlobal) =>
-                          tap(from, to, c.inner, rect, tapGlobal),
-                ),
+              : _atom(
+                  'math|$from|$to|${c.inner}|${graphLinkTint?.call(c.inner)}',
+                  () => InlineMathAtom(
+                        latex: c.inner,
+                        style: mBase,
+                        linkTint: graphLinkTint?.call(c.inner),
+                        onTap: tap == null
+                            ? null
+                            : (rect, tapGlobal) =>
+                                tap(from, to, c.inner, rect, tapGlobal),
+                      )),
         ));
         out.add(TextSpan(text: full.substring(1), style: _hidden(cBase)));
         last = m.end;
