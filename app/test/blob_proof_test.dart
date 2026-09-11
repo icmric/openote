@@ -264,6 +264,86 @@ void main() {
       expect(proof.holes, 1);
     });
 
+    test('a blob a cloud client RENAMED is found and put back', () async {
+      // The real one, from a real notebook on Google Drive. A blob is named
+      // by its hash and nothing else; Drive decided an extensionless file
+      // needed an extension, renamed an 861 KB PDF to `<hash>.pdf` and left
+      // `<hash> (1).pdf` beside it. Openote looked for `<hash>`, found
+      // nothing, could not get the bytes from the container either, and told
+      // its owner a picture was missing everywhere on the computer — while
+      // the bytes sat in the same folder, perfect, one filename away.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, app, nb) = await fixture('onote_blob_renamed_');
+
+      final r = (await app.warmRecorder(nb))!;
+      final bytes = picture(13, size: 192);
+      final hash = sha256Hex(bytes);
+      r.blob(hash, 'application/pdf', bytes.length, bytes);
+      final f = logOf(repo, nb).blobFile(hash);
+      expect(f.existsSync(), isTrue, reason: 'precondition');
+      // Exactly what Drive did: renamed, plus a duplicate.
+      f.renameSync('${f.path}.pdf');
+      File('${f.path} (1).pdf').writeAsBytesSync(bytes, flush: true);
+      expect(f.existsSync(), isFalse, reason: 'the name Openote looks for');
+
+      final proof = await app.proveBlobBytes(nb);
+      expect(proof.ok, isTrue,
+          reason: 'the bytes were there the whole time');
+      expect(proof.missing, isEmpty);
+      expect(proof.salvaged, {hash});
+      expect(proof.repaired, contains(hash));
+      expect(f.existsSync(), isTrue,
+          reason: 'and the name it looks for is back');
+      expect(sha256Hex(f.readAsBytesSync()), hash);
+      expect(File('${f.path}.pdf').existsSync(), isTrue,
+          reason: 'the renamed copy is left alone — deleting a file nobody '
+              'asked us to delete is how a repair becomes the next incident');
+    });
+
+    test('a renamed file with the WRONG bytes is not believed', () async {
+      // The name is a claim; only the bytes are proof. A half-downloaded
+      // file, an interrupted write, or anything else that happens to start
+      // with the right 64 characters must not be adopted.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, app, nb) = await fixture('onote_blob_liar_');
+
+      final r = (await app.warmRecorder(nb))!;
+      final bytes = picture(17, size: 128);
+      final hash = sha256Hex(bytes);
+      r.blob(hash, 'image/png', bytes.length, bytes);
+      final f = logOf(repo, nb).blobFile(hash);
+      f.deleteSync();
+      File('${f.path}.pdf').writeAsBytesSync(Uint8List(bytes.length));
+
+      final proof = await app.proveBlobBytes(nb);
+      expect(proof.missing, {hash},
+          reason: 'still missing, because those bytes are not that hash');
+      expect(proof.salvaged, isEmpty);
+      expect(f.existsSync(), isFalse,
+          reason: 'and nothing was written under the real name');
+    });
+
+    test('a renamed copy repairs a file holding the wrong bytes too',
+        () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, app, nb) = await fixture('onote_blob_renamed2_');
+
+      final r = (await app.warmRecorder(nb))!;
+      final bytes = picture(19, size: 160);
+      final hash = sha256Hex(bytes);
+      r.blob(hash, 'image/png', bytes.length, bytes);
+      final f = logOf(repo, nb).blobFile(hash);
+      // Present, but its bytes are a lie; the good copy is the renamed one.
+      File('${f.path}.png').writeAsBytesSync(bytes, flush: true);
+      f.writeAsBytesSync(Uint8List(bytes.length), flush: true);
+
+      final proof = await app.proveBlobBytes(nb);
+      expect(proof.ok, isTrue);
+      expect(proof.damaged, isEmpty);
+      expect(proof.salvaged, {hash});
+      expect(sha256Hex(f.readAsBytesSync()), hash);
+    });
+
     test('bytes that are gone entirely are reported too', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, app, nb) = await fixture('onote_blob_gone_');

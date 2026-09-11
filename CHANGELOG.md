@@ -121,6 +121,22 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   was a plain wastebasket sitting between two "make a new thing" buttons, which
   reads as "delete this"; it is now the bin with an arrow coming out of it.
 
+### Fixed — a picture Google Drive renamed is found and put back
+
+- **Openote now recovers a blob a cloud client renamed.** Pictures, drawings
+  and attachments are stored under a name that is their own fingerprint and
+  nothing else. Google Drive treats a file with no extension as a file whose
+  extension it should work out, so it renamed one — an 861 KB PDF became
+  `<fingerprint>.pdf`, with a duplicate beside it. Openote looked for the name
+  it wrote, found nothing, and said the picture was missing everywhere on the
+  computer, while the bytes sat in the same folder, perfect, one filename
+  away.
+- **It checks the bytes before believing the file.** A renamed copy is only
+  adopted when its contents really are what the name claims, so a
+  half-downloaded file or an interrupted write is never mistaken for a repair.
+- **Nothing is deleted.** The renamed copy is left exactly where it is; only
+  the missing name is put back.
+
 ### Fixed — deleting a page leaves you next door, not in another section
 
 - **You stay in the section you were in.** Deleting a page used to drop you on

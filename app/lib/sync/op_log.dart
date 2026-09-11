@@ -109,6 +109,50 @@ class OpLogStore {
     tmp.renameSync(target.path);
   }
 
+  /// Files in `blobs/` whose name BEGINS with a blob hash but is not exactly
+  /// it — keyed by that hash.
+  ///
+  /// **What a cloud client leaves behind when it renames one of these.** A
+  /// blob is named by its hash and nothing else, because the hash IS the
+  /// name; that is what makes two devices agree on a file without any merge
+  /// logic. Google Drive treats a file with no extension as a file whose
+  /// extension it should work out, and renames it: a real 861 KB PDF in a
+  /// real notebook became `<hash>.pdf`, with `<hash> (1).pdf` beside it.
+  /// Openote then looked for `<hash>`, found nothing, and told its owner that
+  /// a picture could not be found anywhere on the computer — while the bytes
+  /// sat in the same folder, perfect, one filename away.
+  ///
+  /// ONE directory listing, handed back whole, because the caller is
+  /// repairing a whole notebook and a scan per missing hash would be a scan
+  /// per not-yet-synced blob on every open. Candidates are only that:
+  /// [SyncRecorder.proveBlobs] hashes the bytes before believing any of them,
+  /// so a half-downloaded file, a `.tmp` from an interrupted write, or a file
+  /// somebody named to look like a blob is rejected on its contents.
+  Map<String, File> renamedBlobCandidates() {
+    final out = <String, File>{};
+    if (!blobsDir.existsSync()) return out;
+    try {
+      for (final e in blobsDir.listSync(followLinks: false)) {
+        if (e is! File) continue;
+        final name = p.basename(e.path);
+        if (name.length <= 64) continue; // exactly-the-hash, or not one
+        final head = name.substring(0, 64);
+        if (!_hex64.hasMatch(head)) continue;
+        // First one wins. `<hash>.pdf` and `<hash> (1).pdf` hold the same
+        // bytes by construction — they are copies of one file — so there is
+        // nothing to choose between them.
+        out.putIfAbsent(head, () => e);
+      }
+    } catch (_) {
+      // A folder we cannot list is a folder with no candidates in it. The
+      // caller's answer is already "this blob is missing"; saying it louder
+      // by throwing from a repair would take the notebook down.
+    }
+    return out;
+  }
+
+  static final RegExp _hex64 = RegExp(r'^[0-9a-f]{64}$');
+
   /// Whether [hash]'s file exists **and its bytes really are [hash]**.
   ///
   /// [hasBlob] is an `existsSync` and nothing more. Counting files, or checking

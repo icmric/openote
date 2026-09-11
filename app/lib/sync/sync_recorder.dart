@@ -36,6 +36,7 @@ class BlobProof {
     required this.missing,
     required this.repaired,
     required this.damaged,
+    this.salvaged = const {},
   });
 
   /// Blob files whose bytes were re-hashed. Not "files seen" — the number that
@@ -59,6 +60,14 @@ class BlobProof {
   /// its own doc comment for why that distinction still earns a name.
   final Set<String> damaged;
 
+  /// Blobs whose bytes were found in a file a cloud client had RENAMED, and
+  /// put back under the name they belong under. A subset of [repaired], named
+  /// separately because the two say different things about the folder: a
+  /// repair from the container means a blob file was lost or damaged, while
+  /// this means the file is fine and something outside Openote moved the
+  /// goalposts — see [OpLogStore.renamedBlobCandidates].
+  final Set<String> salvaged;
+
   /// True when a rebuild from this log could reconstruct every picture, drawing
   /// and attachment byte for byte. **This is the Step 7 gate.**
   bool get ok => missing.isEmpty && damaged.isEmpty;
@@ -68,7 +77,8 @@ class BlobProof {
 
   @override
   String toString() => 'checked $checked, missing ${missing.length}, '
-      'wrong bytes repaired ${repaired.length}, '
+      'wrong bytes repaired ${repaired.length} '
+      '(${salvaged.length} from renamed files), '
       'wrong bytes unrepairable ${damaged.length}';
 }
 
@@ -495,7 +505,25 @@ class SyncRecorder {
     final missing = <String>{};
     final repaired = <String>{};
     final damaged = <String>{};
+    final salvaged = <String>{};
     final present = <String>[];
+
+    // Built at most once, and only if something actually goes wrong: a
+    // notebook whose blobs are all present never lists the directory at all.
+    Map<String, File>? renamed;
+    Uint8List? salvage(String hash) {
+      renamed ??= store.renamedBlobCandidates();
+      final f = renamed![hash];
+      if (f == null) return null;
+      try {
+        final bytes = f.readAsBytesSync();
+        // The name is the claim; the bytes are the proof. Anything that does
+        // not hash to what it says it is stays where it is.
+        return sha256Hex(bytes) == hash ? bytes : null;
+      } catch (_) {
+        return null;
+      }
+    }
     for (final ref in state.blobs) {
       final hash = ref.replaceFirst('sha256:', '');
       if (store.hasBlob(hash)) {
@@ -505,11 +533,17 @@ class SyncRecorder {
       // No bytes at all — but not necessarily nowhere: try the container
       // before reporting a hole a fresh copy would have closed for free,
       // the same chance a merely-CORRUPTED file gets below.
-      final fresh = read?.call(hash);
-      if (fresh != null && sha256Hex(fresh) == hash) {
+      // The container first, unchanged; then a file a cloud client renamed,
+      // which is the last place good bytes can still be hiding.
+      final fromContainer = read?.call(hash);
+      final fresh = (fromContainer != null && sha256Hex(fromContainer) == hash)
+          ? fromContainer
+          : salvage(hash);
+      if (fresh != null) {
         try {
           store.writeBlob(hash, fresh);
           repaired.add(hash);
+          if (fromContainer == null) salvaged.add(hash);
           continue;
         } catch (_) {
           // A read-only folder, a full disk — fall through to missing.
@@ -529,12 +563,19 @@ class SyncRecorder {
         if (actual[j] == hash) continue;
         // Wrong bytes, or unreadable. Either way the name is a lie, and
         // `writeBlob` would skip it for ever, so the file goes first.
-        final fresh = read?.call(hash);
-        if (fresh != null && sha256Hex(fresh) == hash) {
+        // Same ladder as above: the container, then a renamed copy. A file
+        // holding the wrong bytes is exactly as repairable from a sibling as
+        // an absent one, and a cloud client that renames also copies.
+        final fromContainer = read?.call(hash);
+        final fresh = (fromContainer != null && sha256Hex(fromContainer) == hash)
+            ? fromContainer
+            : salvage(hash);
+        if (fresh != null) {
           try {
             store.discardBlob(hash);
             store.writeBlob(hash, fresh);
             repaired.add(hash);
+            if (fromContainer == null) salvaged.add(hash);
           } catch (_) {
             // A read-only folder, a full disk. The wrong file may now be gone,
             // and that is deliberate: a hash with no bytes is honestly reported
@@ -556,7 +597,8 @@ class SyncRecorder {
         checked: checked,
         missing: missing,
         repaired: repaired,
-        damaged: damaged);
+        damaged: damaged,
+        salvaged: salvaged);
   }
 
   /// How many blob files one background hash costs. Big enough that isolate
