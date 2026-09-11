@@ -274,6 +274,78 @@ void main() {
       await quiesce(tester);
     });
 
+    testWidgets('deleting a page keeps you in the section, one page up',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // Reported: "if it is the last one in a section ... rather than keeping
+      // me within the section and just bumping me up one, it instead bumps me
+      // out of the section group entirely". It was landing on the first page
+      // of the whole notebook, which is only the right answer by accident.
+      final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+      final other = app.nodes.firstWhere(
+          (n) => n.kind == NodeKind.section && n.id != section.id);
+      // A second section EARLIER in the tree, so "the first page in the
+      // notebook" and "a page in my section" are different answers.
+      final stray = app.importNode(
+          app.notebookId!,
+          TreeNode(
+              kind: NodeKind.page,
+              parentId: other.id,
+              title: 'Somewhere else',
+              position: 'a0'));
+      app.reloadNodes();
+
+      await app.addPage(sectionId: section.id);
+      await app.addPage(sectionId: section.id);
+      app.reloadNodes();
+      final pages = app.pagesOf(section.id);
+      expect(pages.length, greaterThanOrEqualTo(3), reason: 'precondition');
+      final last = pages.last;
+      final above = pages[pages.length - 2];
+      await app.selectPage(last.id);
+
+      await app.deleteNode(last.id);
+      expect(app.pageId, above.id,
+          reason: 'the page above, in the same section');
+      expect(app.sectionOf(app.pageId), section.id);
+      expect(app.pageId, isNot(stray.id),
+          reason: 'and specifically not the first page in the notebook');
+      await quiesce(tester);
+    });
+
+    testWidgets('deleting the TOP page of a section moves down, not away',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+      await app.addPage(sectionId: section.id);
+      app.reloadNodes();
+      final pages = app.pagesOf(section.id);
+      expect(pages.length, greaterThanOrEqualTo(2), reason: 'precondition');
+      final first = pages.first;
+      final next = pages[1];
+      await app.selectPage(first.id);
+
+      await app.deleteNode(first.id);
+      expect(app.pageId, next.id);
+      expect(app.sectionOf(app.pageId), section.id);
+      await quiesce(tester);
+    });
+
+    testWidgets('deleting a page you are NOT on leaves you where you are',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
+      await app.addPage(sectionId: section.id);
+      app.reloadNodes();
+      final pages = app.pagesOf(section.id);
+      await app.selectPage(pages.first.id);
+
+      await app.deleteNode(pages.last.id);
+      expect(app.pageId, pages.first.id,
+          reason: 'nothing about the open page changed');
+      await quiesce(tester);
+    });
+
     testWidgets('a deleted section brings its pages back with it',
         (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');

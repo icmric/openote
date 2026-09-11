@@ -8297,11 +8297,14 @@ class AppState extends ChangeNotifier
     // recycle bin. It also gave the thirty-day retention promise two different
     // start instants for the same deletion.
     final at = nowMs();
+    // Asked BEFORE the delete, because afterwards the node is out of the tree
+    // and nothing left can say which section it belonged to.
+    final neighbour = _pageToLandOnAfterDeleting(id);
     _repo.softDeleteNode(notebookId!, id, at: at);
     _recorderFor(notebookId!)?.nodeDeleted(id, at: at);
     reloadNodes();
     if (pageId == id || !nodes.any((n) => n.id == pageId)) {
-      await selectPage(
+      await selectPage(neighbour ??
           nodes.where((n) => n.kind == NodeKind.page).firstOrNull?.id);
     }
     // AFTER the page switch, and it has to be: [selectPage] clears the undo
@@ -8309,6 +8312,38 @@ class AppState extends ChangeNotifier
     // never find — which is precisely the bug this exists to close.
     pushNodeUndo(id);
     notifyListeners();
+  }
+
+  /// Where to go once [id] is deleted: its neighbour in the SAME section.
+  ///
+  /// Deleting a page used to drop you on the first page of the notebook,
+  /// wherever that was — reported as "rather than keeping me within the
+  /// section and just bumping me up one, it instead bumps me out of the
+  /// section group entirely ... i assume its just going to section 0 as a
+  /// default". It was: the fallback took the first page in the whole tree,
+  /// which is only ever the right answer by accident.
+  ///
+  /// Upwards first, because the page above is the one that slides into the
+  /// place the deleted one had, and looking up is what deleting the bottom of
+  /// a list means everywhere else. Downwards when there is nothing above.
+  ///
+  /// Null when the section is about to have no pages left at all, and for a
+  /// section or a group, where landing somewhere else is the only option —
+  /// the caller's old fallback still covers both.
+  String? _pageToLandOnAfterDeleting(String id) {
+    final going = nodes.where((n) => n.id == id).firstOrNull;
+    if (going == null || going.kind != NodeKind.page) return null;
+    final section = going.parentId;
+    if (section == null) return null;
+    // Pages carry their nesting as a LEVEL and are all parented to the
+    // section, so a subpage of the deleted page is not deleted with it and is
+    // a perfectly good place to land.
+    final siblings = pagesOf(section);
+    final at = siblings.indexWhere((p) => p.id == id);
+    if (at < 0) return null;
+    if (at > 0) return siblings[at - 1].id;
+    if (at + 1 < siblings.length) return siblings[at + 1].id;
+    return null;
   }
 
   String? sectionOf(String? page) =>

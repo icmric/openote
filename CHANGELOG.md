@@ -121,6 +121,15 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   was a plain wastebasket sitting between two "make a new thing" buttons, which
   reads as "delete this"; it is now the bin with an arrow coming out of it.
 
+### Fixed — deleting a page leaves you next door, not in another section
+
+- **You stay in the section you were in.** Deleting a page used to drop you on
+  the first page of the whole notebook, which was only ever the right place by
+  accident — delete the bottom page of a section and you were thrown out of it
+  entirely. Now you land on the page above, or the one below when there is
+  nothing above, in the same section. A section with nothing left in it still
+  sends you elsewhere, because there is nothing of its own to show.
+
 ### Changed — one delete button per thing, not two
 
 - **The floating bin only appears for a selection of more than one.** A
