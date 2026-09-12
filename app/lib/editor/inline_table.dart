@@ -292,7 +292,11 @@ class _InlineTableState extends State<InlineTable> {
     if (next.rows != _rows || next.cols != _cols) {
       setState(() {
         _data = next;
-        _build(next);
+        // Only while somebody can type in it: a shape change on a table being
+        // READ (an undo, or a second view of the same note) has no cells to
+        // rebuild, and building them would only have them retired again on
+        // the very next build.
+        if (widget.editable) _build(next);
       });
       return;
     }

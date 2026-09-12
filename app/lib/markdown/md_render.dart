@@ -696,12 +696,23 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
         // whole piece of work exists to remove.
         spans.add(WidgetSpan(
           alignment: PlaceholderAlignment.middle,
-          child: inlineAtomWidget(
-            host: atomHost,
-            id: c.target!,
-            alt: c.inner,
-            style: base,
-            dark: dark,
+          // **Through a LayoutBuilder, because an atom has to know its room.**
+          // A table's columns are fixed widths, and a `RenderTable` given
+          // less room than they add up to does not complain and does not
+          // clip: it draws its cells where they would have gone, straight
+          // over whatever is beside the box. Measured before this line
+          // existed — three 400px columns in a 300px box drew cells at x=8,
+          // 408 and 808. The live editor passes its own known width in; this
+          // is the read path's answer to the same question.
+          child: LayoutBuilder(
+            builder: (context, cons) => inlineAtomWidget(
+              host: atomHost,
+              id: c.target!,
+              alt: c.inner,
+              style: base,
+              dark: dark,
+              maxWidth: cons.maxWidth.isFinite ? cons.maxWidth : null,
+            ),
           ),
         ));
       case MdInline.mathEmpty:

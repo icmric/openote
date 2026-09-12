@@ -679,6 +679,52 @@ void main() {
               'grow and give it back');
     });
 
+    testWidgets('in a box too narrow for it while READ, which is worse',
+        (t) async {
+      // Worse because it is silent. A `RenderTable` given less room than its
+      // fixed columns add up to does not complain and does not clip — it
+      // draws the cells where they would have gone, over whatever is beside
+      // the box. Measured before the read path knew its own width: three
+      // 400px columns in a 300px box put cells at x=8, 408 and 808.
+      (content['atoms'] as Map)['t1'] = {
+        'id': 't1',
+        'type': 'table',
+        'content': {
+          'cells': [
+            ['a', 'b', 'c']
+          ],
+          'colWidths': [400, 400, 400],
+        }
+      };
+      content['text'] = '![1x3 table](onote://atom/t1)';
+      await t.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        theme: onoteTheme(Brightness.light),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 300,
+              child: MarkdownView(
+                text: content['text'] as String,
+                baseStyle: const TextStyle(fontSize: 14),
+                atomHost: host(editable: false),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await t.pumpAndSettle();
+
+      expect(t.takeException(), isNull);
+      final cells = find.byType(Text);
+      for (var i = 0; i < cells.evaluate().length; i++) {
+        expect(t.getTopLeft(cells.at(i)).dx, lessThan(300),
+            reason: 'every cell inside the box it is drawn in');
+      }
+    });
+
     testWidgets('in the dark, drawn dark', (t) async {
       final c = await editor(t);
       final light = t.widget<Table>(find.byType(Table));

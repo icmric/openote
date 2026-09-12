@@ -1877,7 +1877,11 @@ class AppState extends ChangeNotifier
         return;
       }
 
-      if (tablePages > 0) {
+      // Not on a notebook this build may only READ. The pass would refuse
+      // anyway — but it would refuse as a DEFERRAL, so the note would flash
+      // up and the whole visit would be rescheduled every three minutes for
+      // as long as the app stayed open on it.
+      if (tablePages > 0 && !notebookIsReadOnly(nb)) {
         // Announced, like the ink job: a notebook quietly rewriting itself is
         // alarming if you happen to notice.
         housekeepingNote = 'Updating tables on $tablePages pages…';

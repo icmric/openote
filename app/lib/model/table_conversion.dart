@@ -39,6 +39,18 @@ Block? tableBlockAsText(
   String Function()? atomId,
 }) {
   if (b.type != BlockType.table) return null;
+  // **Refuse a shape this cannot carry across.** `TableData.from` reads a
+  // `cells` that is not a list as "no table", and drawing it as an empty 2x2
+  // grid is what the editor has always done — but the original value is still
+  // IN the file, and converting would write the empty grid over it. Whatever
+  // that value is, it is somebody's, and a converter that runs on its own
+  // while nobody is watching does not get to decide it was worthless.
+  final cells = b.content['cells'];
+  final widths = b.content['colWidths'];
+  if ((cells != null && cells is! List) ||
+      (widths != null && widths is! List)) {
+    return null;
+  }
   final before = TableData.from(b.content);
   final id = (atomId ?? newId)();
   final atom = InlineAtom(

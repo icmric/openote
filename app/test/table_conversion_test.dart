@@ -208,6 +208,21 @@ void main() {
       expect(tablesIn(out.content), hasLength(1));
     });
 
+    test('a cells value that is not a grid at all is REFUSED', () {
+      // The editor reads this as "no table" and draws an empty 2x2 grid, and
+      // always has. But the value is still in the file, and converting would
+      // write the empty grid over it. A converter running on its own while
+      // nobody watches does not get to decide somebody's data was worthless.
+      expect(tableBlockAsText(tableBlock('a,b/c,d'), madeIn: '1.1.0'), isNull);
+      expect(
+          tableBlockAsText(
+              tableBlock([
+                ['a']
+              ], extra: {'colWidths': 'wide'}),
+              madeIn: '1.1.0'),
+          isNull);
+    });
+
     test('a table with nothing in it converts to the empty table it drew', () {
       final out = tableBlockAsText(tableBlock(null), madeIn: '1.1.0')!;
       expect(tablesIn(out.content).single.cells, [
