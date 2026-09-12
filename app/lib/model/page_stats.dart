@@ -15,6 +15,7 @@
 library;
 
 import '../markdown/md_syntax.dart';
+import 'inline_atom.dart';
 import 'models.dart';
 
 /// What a page adds up to.
@@ -148,7 +149,20 @@ class _Counted {
 List<String> _sourceOf(Block b) {
   switch (b.type) {
     case BlockType.text:
-      return [b.content['text'] as String? ?? ''];
+      final text = b.content['text'] as String? ?? '';
+      final tables = tablesIn(b.content);
+      if (tables.isEmpty) return [text];
+      // A table inside a paragraph is words on the page, and it used to
+      // vanish from the count the moment it stopped being a block of its
+      // own. ONE part, not one per cell: [_statsOf] counts a part as a thing
+      // you wrote, and a paragraph with a table in it is still one paragraph.
+      return [
+        [
+          text,
+          for (final t in tables)
+            for (final row in t.cells) row.join(' ')
+        ].join('\n')
+      ];
     case BlockType.table:
       final cells = b.content['cells'];
       if (cells is! List) return const [];
@@ -278,9 +292,11 @@ String _inlineText(String line) {
     final c = classifyInline(m);
     switch (c.kind) {
       case MdInline.atom:
-        // Its alt text, which is the one thing about an atom that is words.
-        // The payload's own words are counted where the payload lives.
-        out.write(c.inner);
+        // NOTHING. The alt text is a description this build wrote ("3x2
+        // table"), not something anybody typed, and the payload's own words
+        // are counted from the payload — see [_sourceOf]. Counting the alt
+        // text as well would add two words per table to every page.
+        break;
       case MdInline.math:
       case MdInline.mathDisplay:
       case MdInline.mathPadded:

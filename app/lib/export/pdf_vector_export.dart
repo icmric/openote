@@ -37,6 +37,7 @@ import '../math/latex_compat.dart';
 import '../media/pdf_pages.dart';
 import '../math/graph_plot.dart';
 import '../model/models.dart';
+import '../model/inline_atom.dart';
 import '../state/app_state.dart';
 import 'md_common.dart';
 import 'pdf_export.dart' show buildPageRasterPdf;
@@ -456,7 +457,34 @@ pw.Widget? _mixedFlow(AppState app, Block b,
     run.clear();
   }
 
+  // The tables this block carries, in the order their references appear.
+  final atoms = InlineAtom.allIn(b.content);
+
   for (final line in lines) {
+    // **A table in the flow, printed where it sits.** Without this branch the
+    // reference prints as literal text — forty characters of URL where the
+    // table should be — which is exactly the hole a new atom type leaves in
+    // an old surface.
+    final refs = InlineAtom.referencesIn(line).toList();
+    if (refs.any((r) => atoms[r.id]?.type == 'table')) {
+      var at = 0;
+      for (final r in refs) {
+        final table = atoms[r.id];
+        if (table?.type != 'table') continue;
+        final before = line.substring(at, r.start);
+        at = r.end;
+        if (before.trim().isNotEmpty) run.add(before);
+        flushRun();
+        final grid = _tableGrid(TableData.from(table!.content));
+        if (grid != null) {
+          children.add(pw.Padding(
+              padding: const pw.EdgeInsets.only(bottom: 3), child: grid));
+        }
+      }
+      final after = line.substring(at);
+      if (after.trim().isNotEmpty) run.add(after);
+      continue;
+    }
     final img = _imageLineRe.firstMatch(line);
     if (img != null) {
       final bytes = app.blob(img.group(1)!);
@@ -856,19 +884,22 @@ String _stripInline(String s) {
   return out;
 }
 
-pw.Widget? _tableWidget(Block b) {
-  final rows = (b.content['cells'] as List?) ?? const [];
-  if (rows.isEmpty) return null;
+pw.Widget? _tableWidget(Block b) => _tableGrid(TableData.from(b.content));
+
+/// One grid, whether the table was a block of its own or an atom inside a
+/// paragraph — printing must not be able to tell the two apart.
+pw.Widget? _tableGrid(TableData t) {
+  if (t.cells.isEmpty) return null;
   return pw.Table(
     border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey600),
     children: [
-      for (final r in rows)
+      for (final r in t.cells)
         pw.TableRow(children: [
-          for (final c in (r as List? ?? const []))
+          for (final c in r)
             pw.Padding(
               padding: const pw.EdgeInsets.all(3),
-              child: pw.Text(_stripInline(c?.toString() ?? ''),
-                  style: const pw.TextStyle(fontSize: 8)),
+              child:
+                  pw.Text(_stripInline(c), style: const pw.TextStyle(fontSize: 8)),
             ),
         ]),
     ],

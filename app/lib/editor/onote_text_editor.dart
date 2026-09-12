@@ -178,6 +178,17 @@ abstract class OnoteEditSession {
   /// alternative was three copies of "is a MathField focused?" drifting apart.
   bool get inlineMathFocused => false;
 
+  /// True while ANY inline child inside this session holds the keyboard — an
+  /// equation being written, a cell of a table being typed into.
+  ///
+  /// [inlineMathFocused] is the equation half of this and stays, because
+  /// "is the maths open" is a different question from "is the paragraph's own
+  /// keyboard handling standing down" and the maths one has its own callers.
+  /// The GATES read this one: the session's key handler, the caret it draws
+  /// and the menu it offers all belong to whoever has the keyboard, and there
+  /// is now more than one thing that can have it.
+  bool get inlineChildFocused => inlineMathFocused;
+
   /// Start an equation AT THE CARET, inside this paragraph.
   ///
   /// Alt+= used to drop a separate equation block below the text, because the

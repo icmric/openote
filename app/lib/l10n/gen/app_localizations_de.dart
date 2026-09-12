@@ -9,6 +9,18 @@ class LDe extends L {
   LDe([String locale = 'de']) : super(locale);
 
   @override
+  String atomNewerVersion(String version) {
+    return 'Erstellt mit Openote $version';
+  }
+
+  @override
+  String get atomNewerVersionUnknown =>
+      'Mit einer neueren Openote-Version erstellt';
+
+  @override
+  String get atomUpdateToView => 'Openote aktualisieren, um es anzuzeigen';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -1532,6 +1544,24 @@ class LDe extends L {
 
   @override
   String get shellUnlock => 'Entsperren';
+
+  @override
+  String get tableColumnLeft => 'Spalte links einfügen';
+
+  @override
+  String get tableColumnRight => 'Spalte rechts einfügen';
+
+  @override
+  String get tableDeleteColumn => 'Spalte löschen';
+
+  @override
+  String get tableDeleteRow => 'Zeile löschen';
+
+  @override
+  String get tableRowAbove => 'Zeile oberhalb einfügen';
+
+  @override
+  String get tableRowBelow => 'Zeile unterhalb einfügen';
 
   @override
   String get tagContact => 'Kontakt';

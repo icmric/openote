@@ -107,6 +107,24 @@ abstract class L {
     Locale('zh')
   ];
 
+  /// Shown inside a box where a table or similar should be, on a device whose Openote is too old to draw it. {version} is the version it was made in, e.g. "1.1.0".
+  ///
+  /// In en, this message translates to:
+  /// **'Made in Openote {version}'**
+  String atomNewerVersion(String version);
+
+  /// Shown inside a box where a table or similar should be, when the version that made it was not recorded.
+  ///
+  /// In en, this message translates to:
+  /// **'Made in a newer version of Openote'**
+  String get atomNewerVersionUnknown;
+
+  /// Second line of that box: what to do about it. Kept short — it sits inside a box the size of the missing table.
+  ///
+  /// In en, this message translates to:
+  /// **'Update Openote to view it'**
+  String get atomUpdateToView;
+
   /// A small number printed on a toolbar badge — cards due, or reminders waiting. Its own message so the digits are grouped and shaped for this language rather than printed as raw ASCII.
   ///
   /// In en, this message translates to:
@@ -2518,6 +2536,42 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Unlock'**
   String get shellUnlock;
+
+  /// Right-click menu on a table cell: add an empty column to the left of the cell that was clicked.
+  ///
+  /// In en, this message translates to:
+  /// **'Insert column left'**
+  String get tableColumnLeft;
+
+  /// Right-click menu on a table cell: add an empty column to the right of the cell that was clicked.
+  ///
+  /// In en, this message translates to:
+  /// **'Insert column right'**
+  String get tableColumnRight;
+
+  /// Right-click menu on a table cell: remove the column the cell is in. Disabled when only one column is left.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete column'**
+  String get tableDeleteColumn;
+
+  /// Right-click menu on a table cell: remove the row the cell is in. Disabled when only one row is left.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete row'**
+  String get tableDeleteRow;
+
+  /// Right-click menu on a table cell: add an empty row above the cell that was clicked.
+  ///
+  /// In en, this message translates to:
+  /// **'Insert row above'**
+  String get tableRowAbove;
+
+  /// Right-click menu on a table cell: add an empty row below the cell that was clicked.
+  ///
+  /// In en, this message translates to:
+  /// **'Insert row below'**
+  String get tableRowBelow;
 
   /// Tag name: a person to get in touch with.
   ///

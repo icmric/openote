@@ -18,6 +18,7 @@ import 'package:openote/l10n/l10n.dart';
 
 import 'support/app.dart';
 
+import 'package:openote/model/inline_atom.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -185,8 +186,12 @@ void main() {
       await table.run(ctx, app, const Offset(400, 500));
       expect(app.blocks.length, 2);
       final a = app.blocks[0], b = app.blocks[1];
-      expect(a.type, BlockType.table);
-      expect(a.content['cells'], b.content['cells'],
+      // A table is a paragraph carrying a table now, not a box of its own —
+      // and both surfaces still make the identical thing, which is what this
+      // test has always been for.
+      expect(a.type, BlockType.text);
+      expect(tablesIn(a.content).single.cells,
+          tablesIn(b.content).single.cells,
           reason: 'the literal header row lived in TWO places before this, '
               'which is exactly how the two menus drifted');
       expect(a.w, b.w);

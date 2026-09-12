@@ -3670,6 +3670,20 @@ class Repository {
   /// narrower than `"strokes"` — it excludes an empty array and excludes an
   /// already-converted page, so the conversion is re-runnable and a second run
   /// finds nothing.
+  /// Pages holding a table BLOCK — the shape a table had before it could
+  /// live inside a paragraph.
+  ///
+  /// A string scan of the page mirror, exactly like [pageIdsWithInlineInk] and
+  /// for the same reason: materialising three hundred pages to discover that
+  /// two of them have a table is most of the work for none of the answer.
+  /// `Block.toJson` writes the type as exactly `"type":"table"`.
+  List<String> pageIdsWithTableBlocks(String notebookId) => [
+        for (final r in _db(notebookId).select(
+            'SELECT page_id FROM page_mirror WHERE json LIKE ?',
+            const [r'%"type":"table"%']))
+          r['page_id'] as String
+      ];
+
   List<String> pageIdsWithInlineInk(String notebookId) => [
         for (final r in _db(notebookId).select(
             'SELECT page_id FROM page_mirror WHERE json LIKE ?',

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../markdown/md_render.dart' show indentPx, kBulletGutter, subSupStyle;
 import '../math/math_view.dart' show mathStyleIn;
 import '../markdown/md_syntax.dart';
+import 'inline_atom_view.dart';
 import 'inline_math_editor.dart';
 import '../theme/onote_theme.dart';
 import '../study/flashcards.dart' show inlineCardRe;
@@ -91,6 +92,13 @@ class LiveMarkdownController extends TextEditingController {
   /// equations as plain drawings, which is what a read-only surface wants.
   void Function(int start, int end, String latex, Rect anchor, Offset tapGlobal)?
       onMathTap;
+
+  /// **What this block's inline atoms are, and what they may do.**
+  ///
+  /// Null on a surface with no note behind it (a preview, a test), and an
+  /// atom then draws as its alt text — which is exactly what a renderer that
+  /// cannot draw it should show.
+  InlineAtomHost? atomHost;
 
   /// **Does this equation have a graph worth pointing at right now?**
   ///
@@ -375,6 +383,21 @@ class LiveMarkdownController extends TextEditingController {
         ));
         continue;
       }
+      // An atom is drawn as ONE object standing on the reference's first
+      // character, so the other forty-odd characters of
+      // `![3x2 table](onote://atom/0198…)` are invisible. The caret crosses
+      // the whole of it in one step, exactly as it does an equation —
+      // otherwise Left inside a sentence gives forty dead keystrokes.
+      if (c.kind == MdInline.atom) {
+        out.add((
+          start: regionStart + m.start + 1,
+          end: regionStart + m.end,
+          openLen: m.end - m.start - 1,
+          closeLen: 0,
+          kind: MdRunKind.atom,
+        ));
+        continue;
+      }
       // Exactly the kinds [_inline] zeroes: their source stays legible, so
       // there is nothing hidden for the caret to trip over.
       switch (c.kind) {
@@ -471,6 +494,17 @@ class LiveMarkdownController extends TextEditingController {
     if (!sel.isValid || !sel.isCollapsed) return null;
     final at = sel.baseOffset;
     final t = v.text;
+    // **An atom is one thing.** Backspace just after a table deletes the
+    // table, not the last character of its id: a half-eaten reference would
+    // spill `![3x2 table](onote://atom/0198…` into the paragraph as literal
+    // text and strand the payload behind it. The run records the HIDDEN
+    // remainder, so the reference itself starts one character earlier.
+    for (final r in _runs(t)) {
+      if (r.kind != MdRunKind.atom) continue;
+      final from = r.start - 1;
+      if (!forward && at == r.end) return _spliced(v, from, r.end);
+      if (forward && at == from) return _spliced(v, from, r.end);
+    }
     for (final r in _runs(t)) {
       final innerStart = r.start + r.openLen;
       final innerEnd = r.end - r.closeLen;
@@ -1308,6 +1342,47 @@ class LiveMarkdownController extends TextEditingController {
       // disagreed about `***both***`, `_italic_` and `snake_case`.
       final c = classifyInline(m);
 
+      // **A table, drawn where it sits.**
+      //
+      // Same placeholder arithmetic as the equation below and the pictures
+      // above: the widget stands for the reference's FIRST character and the
+      // other forty-odd characters of `![3x2 table](onote://atom/0198…)`
+      // trail behind it at a hairline. The paragraph keeps exactly as many
+      // code units as the buffer, so not one caret offset moves, and the
+      // coverage check proves it again on every keystroke.
+      if (c.kind == MdInline.atom) {
+        final full = sub.substring(m.start, m.end);
+        final id = c.target!;
+        final host = atomHost;
+        out.add(_SourceSpan(
+          source: full.substring(0, 1),
+          // MIDDLE, not baseline: a table is an object in the line rather
+          // than a word on it, and a table following half a sentence reads
+          // as centred against that sentence. On its own line — where nearly
+          // every table is — the two are the same thing.
+          alignment: PlaceholderAlignment.middle,
+          // The KEY is what makes a table affordable: it holds the atom's
+          // id, not its contents, so typing in a cell does not rebuild the
+          // table the cell is in, and typing in the paragraph does not
+          // either. Editability and the box's width DO change what is built,
+          // so they are in it.
+          child: _atom(
+            'atom|$id|${host?.editable}|${layoutWidth?.round()}',
+            () => inlineAtomWidget(
+              host: host,
+              id: id,
+              alt: c.inner,
+              style: cBase,
+              dark: dark,
+              maxWidth: layoutWidth,
+            ),
+          ),
+        ));
+        out.add(TextSpan(text: full.substring(1), style: _hidden(cBase)));
+        last = m.end;
+        continue;
+      }
+
       // Maths stays MATHS while the sentence around it is being edited.
       //
       // It used to drop back to `$\frac{1}{2}$` the moment the caret entered
@@ -1369,8 +1444,7 @@ class LiveMarkdownController extends TextEditingController {
       final TextStyle inner;
       switch (c.kind) {
         case MdInline.atom:
-          // As in the read renderer: the alt text until Step 2 mounts the
-          // widget. Markers zeroed so the whole reference is the run.
+          // Handled above, as one object. Listed to keep the switch total.
           openLen = closeLen = 0;
           inner = cBase;
         case MdInline.mathEmpty:
@@ -1545,7 +1619,7 @@ class _SourceSpan extends WidgetSpan {
 /// Backspace at an equation's edge are different operations — one splices
 /// text, the other steps INSIDE the equation (v0.20 §B.5) — and telling them
 /// apart by the shape of the offsets was one refactor away from wrong.
-enum MdRunKind { marker, math }
+enum MdRunKind { marker, math, atom }
 
 /// One inline construct with hidden markers, in source offsets.
 typedef _MdRun = ({int start, int end, int openLen, int closeLen, MdRunKind kind});

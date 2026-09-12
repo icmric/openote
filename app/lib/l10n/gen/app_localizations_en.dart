@@ -9,6 +9,17 @@ class LEn extends L {
   LEn([String locale = 'en']) : super(locale);
 
   @override
+  String atomNewerVersion(String version) {
+    return 'Made in Openote $version';
+  }
+
+  @override
+  String get atomNewerVersionUnknown => 'Made in a newer version of Openote';
+
+  @override
+  String get atomUpdateToView => 'Update Openote to view it';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -1521,6 +1532,24 @@ class LEn extends L {
 
   @override
   String get shellUnlock => 'Unlock';
+
+  @override
+  String get tableColumnLeft => 'Insert column left';
+
+  @override
+  String get tableColumnRight => 'Insert column right';
+
+  @override
+  String get tableDeleteColumn => 'Delete column';
+
+  @override
+  String get tableDeleteRow => 'Delete row';
+
+  @override
+  String get tableRowAbove => 'Insert row above';
+
+  @override
+  String get tableRowBelow => 'Insert row below';
 
   @override
   String get tagContact => 'Contact';

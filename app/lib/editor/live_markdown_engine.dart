@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../markdown/md_render.dart';
 import '../markdown/md_syntax.dart';
+import '../model/inline_atom.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
@@ -14,6 +15,7 @@ import '../math/equation_editor.dart';
 import '../math/evaluate.dart';
 import '../math/math_editor.dart';
 import '../math/math_field.dart';
+import 'block_atom_host.dart';
 import 'inline_math_editor.dart';
 import 'list_editing.dart';
 import 'math_paste_formatter.dart';
@@ -58,6 +60,20 @@ class LiveMarkdownEngine extends OnoteTextEditor {
         // never the one being edited at the moment its graph is picked out —
         // which made "it works both ways" true only for maths blocks.
         mathLinkTint: (latex) => app.inlineGraphTint(block.id, latex),
+        // **A table is a table before you click on it.**
+        //
+        // The read view mounts the same widget the editing session does, so
+        // nothing about a table changes shape when the caret arrives. It is
+        // not editable here — that needs the session — but a click in a cell
+        // opens the box AND says which cell, so one click still lands the
+        // caret where the pointer is.
+        atomHost: blockAtomHost(app, block.id,
+            editable: false,
+            onOpen: (id, row, col) {
+              app.pendingAtomCell =
+                  (blockId: block.id, atomId: id, row: row, col: col);
+              app.select(block.id, edit: true);
+            }),
         // Tag markers (TEXT-5) hang in the line's gutter.
         tagsByLine: NoteTag.byLine(block.content),
         onToggleTag: (line, checked) =>
@@ -76,23 +92,45 @@ class LiveMarkdownEngine extends OnoteTextEditor {
     required Block block,
     required AppState app,
     required ValueChanged<String> onChanged,
-  }) =>
-      _LiveMarkdownSession(
-        app: app,
-        controller: LiveMarkdownController(
-            text: deserialize(block.content), dark: false)
-          // The same resolver the read view gets, so an in-flow image is a
-          // picture in both — see the note in live_markdown_controller.dart on
-          // how it stays there without desyncing a single caret offset.
-          ..imageResolver = (src) {
-            if (app.notebookId == null || !src.startsWith('sha256:')) return null;
-            return app.blob(src);
-          },
-        onChanged: onChanged,
-      )
-        ..spellCheckEnabled = app.spellCheckEnabled
-        // Check once on open so existing text is marked without an edit.
-        ..scheduleInitialSpellCheck();
+  }) {
+    final session = _LiveMarkdownSession(
+      app: app,
+      controller: LiveMarkdownController(
+          text: deserialize(block.content), dark: false)
+        // The same resolver the read view gets, so an in-flow image is a
+        // picture in both — see the note in live_markdown_controller.dart on
+        // how it stays there without desyncing a single caret offset.
+        ..imageResolver = (src) {
+          if (app.notebookId == null || !src.startsWith('sha256:')) return null;
+          return app.blob(src);
+        },
+      // **The payloads follow the text.** Deleting a table's reference drops
+      // its payload; pasting one back brings the payload with it. Both are
+      // one call, made before the text is saved, so what is written is always
+      // a block whose references and payloads agree.
+      onChanged: (text) {
+        reconcileBlockAtoms(app, block.id, text);
+        onChanged(text);
+      },
+    );
+    session.controller.atomHost = blockAtomHost(
+      app,
+      block.id,
+      editable: true,
+      onKeyboard: session._atomTookKeyboard,
+      onExit: session._leaveAtom,
+      onNeedWidth: (total) {
+        final avail = session.controller.layoutWidth;
+        if (avail == null) return;
+        final extra = total + 16 - avail;
+        if (extra > 0) session.requestExtraWidth?.call(extra);
+      },
+    );
+    return session
+      ..spellCheckEnabled = app.spellCheckEnabled
+      // Check once on open so existing text is marked without an edit.
+      ..scheduleInitialSpellCheck();
+  }
 
   @override
   double measureIntrinsicWidth(String text, TextStyle style) {
@@ -320,6 +358,35 @@ class _LiveMarkdownSession extends OnoteEditSession {
 
   @override
   bool get inlineMathFocused => _mathFocus.hasFocus;
+
+  /// A table cell inside this paragraph has the keyboard.
+  ///
+  /// A `ValueNotifier` rather than a bool so the field can be rebuilt on it:
+  /// the host keeps focus while an inline child is typed into (the child is
+  /// its focus DESCENDANT), so without a rebuild the paragraph goes on
+  /// blinking a second caret beside the one in the cell.
+  final ValueNotifier<bool> _atomFocus = ValueNotifier(false);
+
+  void _atomTookKeyboard(bool holding) {
+    if (_atomFocus.value == holding) return;
+    _atomFocus.value = holding;
+  }
+
+  @override
+  bool get inlineChildFocused => _mathFocus.hasFocus || _atomFocus.value;
+
+  /// Escape, or Tab off the end of a table: the keyboard comes back to the
+  /// paragraph with the caret just after the atom.
+  ///
+  /// Found by id rather than by a captured offset — the atom is built once
+  /// and kept, and every character typed in the paragraph moves it.
+  void _leaveAtom(String id) {
+    final at = InlineAtom.rangeIn(controller.text, id);
+    if (at != null) {
+      controller.selection = TextSelection.collapsed(offset: at.end);
+    }
+    _focus.requestFocus();
+  }
 
   Widget _buildInlineEditor(String latex, TextStyle base) {
     final ed = _mathEditor;
@@ -852,7 +919,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
     // the equation and declined - it belongs to nobody else in this session.
     // Above the Alt+X check on purpose: Alt+X would otherwise rewrite the
     // code point at the HOST caret while the student is inside an equation.
-    if (inlineMathFocused) return KeyEventResult.ignored;
+    if (inlineChildFocused) return KeyEventResult.ignored;
     if (isAltXChord(event) && _applyAltX()) return KeyEventResult.handled;
     // A REPEAT counts. Holding Enter on `- item` fires one down event and
     // then repeats, and skipping those let the field insert plain newlines
@@ -1120,7 +1187,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // The host keeps focus while an inline equation is edited (the field is
       // its focus DESCENDANT), so without this the paragraph blinks a second
       // caret right next to the equation's own.
-      listenable: _mathFocus,
+      listenable: Listenable.merge([_mathFocus, _atomFocus]),
       builder: (context, _) => TextField(
       controller: controller,
       focusNode: _focus,
@@ -1128,7 +1195,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // that landed on the equation itself (that one is the atom's own
       // gesture, which wins the arena). See [_enterMathOnTapAtLineEnd].
       onTap: _enterMathOnTapAtLineEnd,
-      showCursor: !_mathFocus.hasFocus,
+      showCursor: !inlineChildFocused,
       maxLines: null,
       style: s.baseStyle,
       // NON-FORCED strut, explicitly. TextField's default when none is
@@ -1182,7 +1249,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
         // top of the answer's own menu, offering actions that act on the
         // SENTENCE. A block equation has no such second menu; this is the
         // same rule, stated the same way as the caret is two lines up.
-        if (_mathFocus.hasFocus) return const SizedBox.shrink();
+        if (inlineChildFocused) return const SizedBox.shrink();
         final items = [...editable.contextMenuButtonItems];
         final extra = _spellMenuItems(editable);
         return AdaptiveTextSelectionToolbar.buttonItems(
@@ -1266,5 +1333,6 @@ class _LiveMarkdownSession extends OnoteEditSession {
     controller.dispose();
     _focus.dispose();
     _mathFocus.dispose();
+    _atomFocus.dispose();
   }
 }

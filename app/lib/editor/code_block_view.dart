@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../code/code_runner.dart';
 import '../model/models.dart';
+import '../model/inline_atom.dart';
 import 'code_languages.dart';
 import 'wrap_selection.dart';
 import '../state/app_state.dart';
@@ -84,21 +85,26 @@ class _CodeBlockViewState extends State<CodeBlockView> {
     final app = widget.app;
     // Page tables in reading order, named by their first header cell — the
     // runner sanitises and also mounts them as t1…tn.
-    final tableBlocks = [...app.blocks.where((x) => x.type == BlockType.table)]
-      ..sort((a, c) => a.y != c.y ? a.y.compareTo(c.y) : a.x.compareTo(c.x));
+    //
+    // **Text blocks too**, not only table blocks: a table now lives inside a
+    // paragraph, and a query over "the tables on this page" that only looked
+    // at table blocks would quietly return fewer tables than the student can
+    // see. Reading order is the block's, then the order the tables appear
+    // within it, so t1…tn still means what it looks like it means.
+    final tableBlocks = [
+      ...app.blocks
+          .where((x) => x.type == BlockType.table || x.type == BlockType.text)
+    ]..sort((a, c) => a.y != c.y ? a.y.compareTo(c.y) : a.x.compareTo(c.x));
     final tables = <CodeTable>[
       for (final t in tableBlocks)
-        if (t.content['cells'] is List)
+        for (final data in t.type == BlockType.table
+            ? [TableData.from(t.content)]
+            : tablesIn(t.content))
           (
-            name: (() {
-              final cells = t.content['cells'] as List;
-              final first = cells.isNotEmpty ? cells.first : null;
-              return first is List && first.isNotEmpty ? '${first.first}' : '';
-            })(),
-            cells: [
-              for (final r in (t.content['cells'] as List))
-                [for (final c in (r as List)) '$c']
-            ]
+            name: data.cells.isNotEmpty && data.cells.first.isNotEmpty
+                ? data.cells.first.first
+                : '',
+            cells: data.cells,
           ),
     ];
     final out = await runCode(

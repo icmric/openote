@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import '../editor/inline_atom_view.dart';
 
 import 'package:flutter/material.dart';
 
@@ -81,6 +82,7 @@ class MarkdownView extends StatefulWidget {
     this.tagsByLine = const {},
     this.onToggleTag,
     this.mathLinkTint,
+    this.atomHost,
   });
 
   final String text;
@@ -104,6 +106,16 @@ class MarkdownView extends StatefulWidget {
   /// notebook's content-addressed blob store. Null → image lines render as
   /// their literal Markdown.
   final Uint8List? Function(String src)? imageResolver;
+
+  /// **What this block's inline atoms are, and what they may do** — a table
+  /// in a paragraph, today. Null on a surface with no note behind it, and an
+  /// atom then reads as its alt text.
+  ///
+  /// The read view supplies a host at all (rather than drawing atoms dead)
+  /// because a table you can resize and click into without first opening the
+  /// box is the behaviour tables already had, and losing it would be a
+  /// regression dressed as a feature.
+  final InlineAtomHost? atomHost;
 
   /// **This equation has a graph, and one of the two is being looked at.**
   ///
@@ -364,7 +376,7 @@ class _MarkdownViewState extends State<MarkdownView> {
       return Padding(
         padding: EdgeInsets.only(top: index == 0 ? 0 : 6, bottom: 2),
         child: Text.rich(
-          TextSpan(children: inlineSpans(h.group(2)!, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
+          TextSpan(children: inlineSpans(h.group(2)!, baseStyle, dark, onWikiLink, widget.mathLinkTint, widget.atomHost)),
           style: baseStyle.copyWith(
             fontSize: sizes[level - 1],
             fontWeight: FontWeight.w600,
@@ -417,7 +429,7 @@ class _MarkdownViewState extends State<MarkdownView> {
             Expanded(
               child: Text.rich(
                 TextSpan(
-                  children: inlineSpans(cb.group(3)!, baseStyle, dark, onWikiLink, widget.mathLinkTint),
+                  children: inlineSpans(cb.group(3)!, baseStyle, dark, onWikiLink, widget.mathLinkTint, widget.atomHost),
                   style: checked
                       ? baseStyle.copyWith(
                           decoration: TextDecoration.lineThrough,
@@ -465,7 +477,7 @@ class _MarkdownViewState extends State<MarkdownView> {
                     style: baseStyle.copyWith(color: OnoteColors.graphite500))),
             Expanded(
                 child: Text.rich(
-                    TextSpan(children: inlineSpans(body, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
+                    TextSpan(children: inlineSpans(body, baseStyle, dark, onWikiLink, widget.mathLinkTint, widget.atomHost)),
                     style: baseStyle)),
           ],
         ),
@@ -550,7 +562,7 @@ class _MarkdownViewState extends State<MarkdownView> {
         decoration: const BoxDecoration(
             border: Border(left: BorderSide(color: OnoteColors.ink300, width: 3))),
         child: Text.rich(
-          TextSpan(children: inlineSpans(quote.group(1)!, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
+          TextSpan(children: inlineSpans(quote.group(1)!, baseStyle, dark, onWikiLink, widget.mathLinkTint, widget.atomHost)),
           style: baseStyle.copyWith(color: OnoteColors.graphite500),
         ),
       );
@@ -597,7 +609,7 @@ class _MarkdownViewState extends State<MarkdownView> {
         child: Text.rich(
           TextSpan(
               children: inlineSpans(
-                  plainIndent.group(2)!, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
+                  plainIndent.group(2)!, baseStyle, dark, onWikiLink, widget.mathLinkTint, widget.atomHost)),
           style: baseStyle,
         ),
       );
@@ -605,7 +617,7 @@ class _MarkdownViewState extends State<MarkdownView> {
 
     // Paragraph (empty lines keep their height)
     return Text.rich(
-      TextSpan(children: inlineSpans(line.isEmpty ? ' ' : line, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
+      TextSpan(children: inlineSpans(line.isEmpty ? ' ' : line, baseStyle, dark, onWikiLink, widget.mathLinkTint, widget.atomHost)),
       style: baseStyle,
     );
   }
@@ -656,7 +668,8 @@ TextStyle subSupStyle(TextStyle base, {required bool sup, required bool dark}) {
 /// and external `[label](https://…)` links (TEXT-1).
 List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
     [void Function(String label, String? id)? onWikiLink,
-    Color? Function(String latex)? mathLinkTint]) {
+    Color? Function(String latex)? mathLinkTint,
+    InlineAtomHost? atomHost]) {
   final spans = <InlineSpan>[];
   final pattern = mdInlineRe;
   var last = 0;
@@ -669,11 +682,20 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
     final c = classifyInline(m);
     switch (c.kind) {
       case MdInline.atom:
-        // Step 1 has the grammar and the storage; the widget arrives in
-        // Step 2. Until then an atom reads as its alt text, which is what a
-        // renderer that does not know this id should show anyway — an older
-        // build, an export, somebody else's Markdown viewer.
-        spans.add(TextSpan(text: c.inner, style: base));
+        // The SAME widget the live editor mounts (`inlineAtomWidget`), so a
+        // table cannot look one way while the caret is in the paragraph and
+        // another way when it is not. That single shape-change is what this
+        // whole piece of work exists to remove.
+        spans.add(WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: inlineAtomWidget(
+            host: atomHost,
+            id: c.target!,
+            alt: c.inner,
+            style: base,
+            dark: dark,
+          ),
+        ));
       case MdInline.mathEmpty:
         // An equation started and never written into. It should not survive to
         // a saved note at all — the editor sweeps it on the way out — but if

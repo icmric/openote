@@ -86,23 +86,29 @@ void main() {
     expect(find.textContaining('**', findRichText: true), findsNothing);
   });
 
-  testWidgets('while a cell is edited, the raw source shows in a TextField',
+  testWidgets('a cell being edited holds the raw source and still DRAWS it',
       (tester) async {
+    // This pinned the opposite until the shared table widget landed, and the
+    // reasoning it carried — "rendering the maths under the caret would make
+    // the delimiters untypeable" — is the same reasoning the paragraph
+    // renderer abandoned in v0.20. A cell is now a live Markdown field like
+    // any other: the buffer keeps every character, and the equation stays an
+    // equation while it is typed. That is what makes clicking into a cell
+    // move nothing on the screen.
     await pump(tester);
-    // Enter editing the way the canvas does: mark this block as the one
-    // being edited, then rebuild.
     app.editingBlockId = table.id;
     await pump(tester);
 
-    expect(find.byType(OnoteMath), findsNothing,
-        reason: 'editing must expose the raw source — rendering the maths '
-            'under the caret would make the delimiters untypeable');
     final fields = tester
         .widgetList<TextField>(find.byType(TextField))
         .map((f) => f.controller!.text)
         .toList();
     expect(fields, contains(r'$x^2$'),
-        reason: 'the editor shows exactly what is stored, dollars included');
+        reason: 'the BUFFER is exactly what is stored, dollars included — '
+            'every delimiter is still there to be typed and deleted');
     expect(fields, contains('**bold**'));
+    expect(find.byType(OnoteMath), findsOneWidget,
+        reason: 'and it is still drawn, so the cell does not change shape '
+            'under the pointer that opened it');
   });
 }

@@ -22,6 +22,7 @@ import 'package:openote/editor/board_block_view.dart';
 import 'package:openote/export/csv_import.dart';
 import 'package:openote/export/xlsx_import.dart';
 import 'package:openote/l10n/l10n.dart';
+import 'package:openote/model/inline_atom.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -127,15 +128,17 @@ void main() {
       } catch (_) {}
     });
 
-    test('an .xlsx becomes the same table block a .csv does', () {
+    test('an .xlsx becomes the same table a .csv does', () {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final r = insertTableFromFile(
           app, 'marks.xlsx', _tinyXlsx(), const Offset(50, 60));
       expect(r.placed, isTrue);
       final table = app.blocks.last;
-      expect(table.type, BlockType.table);
+      expect(table.type, BlockType.text,
+          reason: 'both routes go through AppState.insertTable, which makes '
+              'a paragraph carrying a table');
       // Padded to the WIDEST row (row 2 reaches column C), same as CSV.
-      expect((table.content['cells'] as List).first,
+      expect(tablesIn(table.content).single.cells.first,
           ['unit', 'styled runs', '']);
     });
 

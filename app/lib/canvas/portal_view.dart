@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../editor/board_block_view.dart';
 import '../editor/code_block_view.dart';
+import '../editor/block_atom_host.dart';
 import '../editor/file_block_view.dart';
 import '../editor/flashcard_block_view.dart';
 import '../editor/graph_block_view.dart';
@@ -309,6 +310,10 @@ class PortalContent extends StatelessWidget {
                 if (nb == null || !src.startsWith('sha256:')) return null;
                 return app.blob(src);
               },
+              // A table in the paragraph is drawn, and is not editable
+              // through a window: a window is a view of another page, and
+              // every callback on this one is a read.
+              atomHost: readingAtomHost(b),
               // Tags are shown (they are part of how the page looks) but not
               // toggleable: no onToggleTag, no onToggleCheckbox.
               tagsByLine: NoteTag.byLine(b.content),

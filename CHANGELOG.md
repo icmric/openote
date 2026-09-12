@@ -121,6 +121,34 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   was a plain wastebasket sitting between two "make a new thing" buttons, which
   reads as "delete this"; it is now the bin with an arrow coming out of it.
 
+### Added — a table lives in your writing, and you type in it where it sits
+
+- **A table is part of the paragraph now, not a box beside it.** Write a
+  sentence, put a table in the middle of it, carry on writing underneath —
+  it is all one box, the way an equation already was.
+- **Click a cell and type.** Nothing opens, nothing moves, nothing changes
+  size: the cell you clicked is the cell you are writing in. A table used to
+  turn into rows of `|` pipes the moment the caret arrived.
+- **Right-click in a cell for what a table can do.** Insert a row above or
+  below, a column left or right, delete the row or the column — all relative
+  to the cell you clicked, the way any grown-up editor does it. This replaces
+  the row of buttons that used to sit under every open table and could only
+  ever add and remove at the end.
+- **A cell writes like the rest of the page.** Bold is bold, an equation is an
+  equation, and both stay that way while you type them.
+- **Tab through it, Enter for the next row, Escape to leave.** Tab off the end
+  gives the keyboard back to the paragraph instead of trapping it.
+- **Your existing tables move over on their own.** The page you open converts
+  the moment you open it; the rest of the notebook follows quietly in the
+  background, the section you are in first. Nothing about a table changes when
+  it moves — same cells, same column widths, same everything — and any table
+  the conversion cannot prove identical is left exactly as it is. One Ctrl+Z
+  undoes the page you are looking at.
+- **One thing to know if you use Openote on more than one machine:** a
+  converted table needs this version to draw. An older copy of Openote shows
+  the table's description instead until you update it. Nothing is lost, and it
+  comes back the moment that machine updates.
+
 ### Changed — typing in a page full of maths is no longer slow
 
 - **A picture, card or equation inside a paragraph is now drawn once, not

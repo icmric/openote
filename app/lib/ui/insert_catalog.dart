@@ -291,20 +291,7 @@ final List<InsertGroup> kInsertGroups = [
           run: insertTableFromPickedFile,
         ),
       ],
-      run: (context, app, at) async {
-        final b = app.addBlock(Block(
-            type: BlockType.table,
-            x: at.dx,
-            y: at.dy,
-            w: 360,
-            content: {
-              'cells': [
-                ['Header', 'Header'],
-                ['', ''],
-              ]
-            }));
-        app.select(b.id, edit: true);
-      },
+      run: (context, app, at) async => app.insertTable(at: at),
     ),
     InsertItem(
       id: 'code',

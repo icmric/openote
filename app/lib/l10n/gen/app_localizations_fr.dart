@@ -9,6 +9,18 @@ class LFr extends L {
   LFr([String locale = 'fr']) : super(locale);
 
   @override
+  String atomNewerVersion(String version) {
+    return 'Créé dans Openote $version';
+  }
+
+  @override
+  String get atomNewerVersionUnknown =>
+      'Créé dans une version plus récente d’Openote';
+
+  @override
+  String get atomUpdateToView => 'Mettez Openote à jour pour l’afficher';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -1532,6 +1544,24 @@ class LFr extends L {
 
   @override
   String get shellUnlock => 'Déverrouiller';
+
+  @override
+  String get tableColumnLeft => 'Insérer une colonne à gauche';
+
+  @override
+  String get tableColumnRight => 'Insérer une colonne à droite';
+
+  @override
+  String get tableDeleteColumn => 'Supprimer la colonne';
+
+  @override
+  String get tableDeleteRow => 'Supprimer la ligne';
+
+  @override
+  String get tableRowAbove => 'Insérer une ligne au-dessus';
+
+  @override
+  String get tableRowBelow => 'Insérer une ligne en dessous';
 
   @override
   String get tagContact => 'Contact';

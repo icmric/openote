@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
+import '../model/inline_atom.dart';
+import 'inline_table.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -135,7 +137,7 @@ class TextBlockView extends StatefulWidget {
     // that can see the difference.
     final key = '${b.id}\u0000${b.content['text']}\u0000'
         '${b.content['fontSize']}\u0000${b.content['lineHeight']}\u0000'
-        '${b.content['font']}\u0000$dark';
+        '${b.content['font']}\u0000$dark\u0000${b.content['atoms']}';
     final hit = _autoWidthCache[key];
     if (hit != null) return hit;
     if (_autoWidthCache.length > 512) _autoWidthCache.clear();
@@ -148,7 +150,21 @@ class TextBlockView extends StatefulWidget {
     final source = engine
         .deserialize(b.content)
         .replaceAll(RegExp(r'^\s*!\[[^\]]*\]\([^)]*\)\s*$', multiLine: true), '');
-    final w = engine.measureIntrinsicWidth(source, baseStyle(b, dark: dark));
+    final style = baseStyle(b, dark: dark);
+    var w = engine.measureIntrinsicWidth(source, style);
+    // **A box has to be at least as wide as the table inside it.**
+    //
+    // The reference is stripped above with everything else in `![…](…)` form,
+    // which is right — forty characters of URL would pin the box to its
+    // maximum — but it leaves the measurement blind to the thing the
+    // reference stands for. A table narrower than it needs is drawn squeezed:
+    // the widget scales its columns down to fit rather than overflowing, so
+    // the failure is quiet and permanent rather than loud.
+    final head = style.copyWith(fontWeight: FontWeight.w600);
+    for (final t in tablesIn(b.content)) {
+      final tw = tableNaturalWidth(t, head);
+      if (tw > w) w = tw;
+    }
     return _autoWidthCache[key] =
         (w + chrome + slack).clamp(minAutoW, maxAutoW).toDouble();
   }

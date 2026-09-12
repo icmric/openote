@@ -9,6 +9,18 @@ class LPt extends L {
   LPt([String locale = 'pt']) : super(locale);
 
   @override
+  String atomNewerVersion(String version) {
+    return 'Criado no Openote $version';
+  }
+
+  @override
+  String get atomNewerVersionUnknown =>
+      'Criado numa versão mais recente do Openote';
+
+  @override
+  String get atomUpdateToView => 'Atualize o Openote para o ver';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -1526,6 +1538,24 @@ class LPt extends L {
 
   @override
   String get shellUnlock => 'Desbloquear';
+
+  @override
+  String get tableColumnLeft => 'Inserir coluna à esquerda';
+
+  @override
+  String get tableColumnRight => 'Inserir coluna à direita';
+
+  @override
+  String get tableDeleteColumn => 'Eliminar coluna';
+
+  @override
+  String get tableDeleteRow => 'Eliminar linha';
+
+  @override
+  String get tableRowAbove => 'Inserir linha acima';
+
+  @override
+  String get tableRowBelow => 'Inserir linha abaixo';
 
   @override
   String get tagContact => 'Contato';

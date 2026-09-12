@@ -1,573 +1,93 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
-import '../markdown/md_render.dart';
+import '../model/inline_atom.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
-import '../theme/onote_theme.dart';
-import '../theme/tokens.dart';
-import 'wrap_selection.dart';
+import 'inline_table.dart';
 
-/// **How wide a column gets before somebody says otherwise.**
-///
-/// The owner: *"ensure it still obeys a max width so we dont end up with crazy
-/// long cells by default, although if i drag the cell out there is no reason it
-/// should stop at that max width, its like the boxes where they have a default
-/// max width they will grow to, but it can be overriden manually."*
-///
-/// So this caps the AUTOMATIC width only. A width somebody dragged, or one
-/// OneNote sent, is used exactly and is not clamped by this at all.
-///
-/// 320 is a little under half the usual page width: wide enough for a sentence
-/// of prose without wrapping every few words, narrow enough that one long cell
-/// cannot push the rest of the table off the page.
-const double kTableColumnCap = 320;
+export 'inline_table.dart' show kTableColumnCap, kTableColumnMin;
 
-/// The narrowest a column can be dragged. Below this the text is unreadable
-/// and the handle itself becomes hard to grab back.
-const double kTableColumnMin = 36;
-
-/// The padding a block reserves around its content, per side.
+/// A table in a box of its own (MEDIA-3). `content: { cells: [[String,…],…] }`.
 ///
-/// `_kChromePad` in `block_view.dart`, which is private to it. Named here so
-/// the arithmetic that makes a table fit its box says what the number is
-/// rather than carrying an 8 nobody can trace.
-const double _kBlockContentInset = 8;
-
-/// Table block (MEDIA-3). content: { cells: [[String,…],…] }.
-/// In edit mode each cell is a field with spreadsheet-style navigation:
-/// Tab/Shift+Tab move between cells, arrows move (caret-aware on left/right),
-/// Enter adds/moves to the row below, Ctrl+Enter inserts a line break.
-class TableBlockView extends StatefulWidget {
+/// **Thirty lines, because the table itself is [InlineTable]** — the same
+/// widget a table inside a paragraph is drawn with. This used to be five
+/// hundred lines of grid, column arithmetic, focus traversal and a row of
+/// add/remove buttons, and putting a table into a sentence would have meant a
+/// second copy of every one of them: two answers to what Tab does, two
+/// answers to how wide a column is, two menus drifting apart.
+///
+/// What this file still owns is the BINDING — where a standalone table's data
+/// lives (`content.cells`, straight off the block) and what widening it means
+/// (the box grows). An inline table binds to an atom's payload instead, and
+/// that is the whole of the difference between them.
+///
+/// The button row is gone, and the right-click menu replaced it: the owner,
+/// *"we can remove the menu that was persistantly there on the current one in
+/// favour of a right click menu, allowing me to insert a row/colum above/below
+/// the cell i clicked in"*. Those buttons could only ever add and remove at
+/// the END, which is why inserting a row in the middle meant retyping
+/// everything below it.
+class TableBlockView extends StatelessWidget {
   const TableBlockView({super.key, required this.block, required this.app});
   final Block block;
   final AppState app;
 
-  @override
-  State<TableBlockView> createState() => _TableBlockViewState();
-}
-
-class _CellMove extends Intent {
-  const _CellMove(this.dr, this.dc, {this.caretAware = false, this.wrap = false});
-  final int dr, dc;
-  final bool caretAware;
-  final bool wrap;
-}
-
-class _CellEnter extends Intent {
-  const _CellEnter();
-}
-
-class _CellBreak extends Intent {
-  const _CellBreak();
-}
-
-class _TableBlockViewState extends State<TableBlockView> {
-  List<List<TextEditingController>> _ctls = [];
-  List<List<FocusNode>> _nodes = [];
-  int _rows = 0, _cols = 0;
-
-  bool get editing => widget.app.editingBlockId == widget.block.id;
-
-  List<List<String>> get _cells {
-    final raw = widget.block.content['cells'];
-    if (raw is List && raw.isNotEmpty) {
-      final grid = [
-        for (final row in raw)
-          [for (final c in (row as List)) c?.toString() ?? '']
-      ];
-      // Normalize to a rectangle. Flutter's Table and our per-cell controllers
-      // require a uniform column count; an imported or hand-edited table can be
-      // jagged, and a short row would otherwise crash cellWidget with a
-      // RangeError. Pad short rows to the widest one.
-      final cols = grid.fold(0, (m, r) => r.length > m ? r.length : m);
-      for (final r in grid) {
-        while (r.length < cols) {
-          r.add('');
-        }
-      }
-      return grid;
-    }
-    return [
-      ['', ''],
-      ['', ''],
-    ];
-  }
-
-  /// True once this editing session has pushed an undo snapshot, so a burst of
-  /// cell edits collapses into ONE undo step (matching the text/code/math
-  /// editors) instead of none. Reset when editing ends.
-  bool _undoPushed = false;
-
-  void _write(List<List<String>> cells, {bool structural = false}) {
-    // Regression: table writes used to call `markDirty()` without `pushUndo()`,
-    // so Ctrl+Z jumped past every table edit to whatever preceded the table.
-    // Structural changes (add/remove row or column) always get their own step.
-    if (structural || !_undoPushed) {
-      widget.app.pushUndo();
-      _undoPushed = true;
-    }
-    widget.block.content['cells'] = cells;
-    widget.block.updatedAt = nowMs();
-    widget.app.markDirty();
-  }
-
-  /// **How wide a column wants to be, measured from what is in it.**
+  /// The block as the page holds it NOW.
   ///
-  /// `IntrinsicColumnWidth` is the obvious answer and it does not work here:
-  /// a cell holds a rich-text renderer in read mode and a `TextField` in edit
-  /// mode, neither of which reports a usable intrinsic width, and the table
-  /// fails to lay out at all — `RenderTable was not laid out`. Measuring the
-  /// text is also the cheaper answer, since intrinsics cost extra layout
-  /// passes over every cell.
-  ///
-  /// Approximate on purpose. It measures the raw cell source, so a `**bold**`
-  /// column is reckoned a few pixels wider than it renders and a `$x^2$` one
-  /// wider still. That is the right kind of wrong for a DEFAULT: a column
-  /// slightly too wide is readable, and anybody who minds can drag it.
-  double _autoWidth(List<List<String>> cells, int col, bool dark) {
-    var widest = 0.0;
-    for (var r = 0; r < cells.length; r++) {
-      if (col >= cells[r].length) continue;
-      final text = cells[r][col];
-      if (text.isEmpty) continue;
-      final tp = TextPainter(
-        text: TextSpan(
-          text: text,
-          style: TextStyle(
-            fontSize: 13,
-            // The header row is bold, so it measures wider — using one style
-            // for the whole column would let the header clip.
-            fontWeight: r == 0 ? FontWeight.w600 : FontWeight.w400,
-          ),
-        ),
-        maxLines: 1,
-        textDirection: TextDirection.ltr,
-      )..layout();
-      if (tp.width > widest) widest = tp.width;
-    }
-    // The cell's own horizontal padding, both sides, plus the border.
-    const chrome = 8.0 * 2 + 2;
-    return (widest + chrome).clamp(kTableColumnMin, kTableColumnCap);
-  }
-
-  /// The per-column widths somebody has set, `null` where they have not.
-  ///
-  /// Tolerant of a stored list that no longer matches the table: a column
-  /// added since is simply unset, which is right — nobody chose a width for a
-  /// column that did not exist.
-  List<double?> _storedWidths(int cols) {
-    final raw = widget.block.content['colWidths'];
-    final out = List<double?>.filled(cols, null);
-    if (raw is! List) return out;
-    for (var c = 0; c < cols && c < raw.length; c++) {
-      final v = raw[c];
-      if (v is num && v > 1) out[c] = v.toDouble();
-    }
-    return out;
-  }
-
-  /// Remember one column's width.
-  ///
-  /// Written as a full list rather than a sparse map because that is the shape
-  /// the `.one` importer already writes and every exporter already reads;
-  /// inventing a second representation for the same fact would mean four
-  /// places to keep in step. Columns nobody has sized are stored as 0, which
-  /// [_storedWidths] reads back as "unset".
-  void _setColumnWidth(int col, double width, int cols) {
-    final w = _storedWidths(cols);
-    w[col] = width.clamp(kTableColumnMin, 4000).toDouble();
-    widget.block.content['colWidths'] = [for (final v in w) v ?? 0];
-    _growToFit(w);
-    widget.block.updatedAt = nowMs();
-    widget.app.markDirty();
-    setState(() {});
-  }
-
-  /// **The box grows to hold the table.**
-  ///
-  /// Reported: *"if the table overflows the box, it doesnt seem to auto expand
-  /// the box with it."* Quite so — the block carries its own width and nothing
-  /// was moving it, so a column dragged past the edge of the box simply spilled
-  /// out of it.
-  ///
-  /// It only ever GROWS. A box somebody widened by hand must not snap back
-  /// because a column was narrowed afterwards, and a table that has just been
-  /// made to fit is not a reason to take room away from the block around it.
-  void _growToFit(List<double?> widths) {
-    var total = 0.0;
-    for (var c = 0; c < widths.length; c++) {
-      total += widths[c] ?? _measuredWidth(c) ?? kTableColumnMin;
-    }
-    // The table's own outer borders, and the padding the block reserves around
-    // its content on each side.
-    final needed = total + 2 + _kBlockContentInset * 2;
-    if (needed > widget.block.w) widget.block.w = needed;
-  }
-
-  /// The rendered width of a cell, for the moment a drag begins on a column
-  /// that has never been sized.
-  final Map<int, GlobalKey> _headerKeys = {};
-
-  /// **One undo step for a whole drag, not one per pointer sample.**
-  ///
-  /// An undo step is `jsonEncode` of every block on the page, so pushing one
-  /// per sample re-encoded the entire page a hundred times a second and kept a
-  /// hundred of the results. On a page carrying handwriting that is megabytes
-  /// a sample: the app froze and then ran out of memory, which is the crash
-  /// that was reported. The same one-flag-per-gesture shape the block's own
-  /// move and resize handles already use.
-  bool _dragUndoPushed = false;
-
-  /// The width being dragged towards, kept across pointer samples.
-  ///
-  /// Accumulated from the drag's own deltas rather than re-read from the block
-  /// each frame: a column whose width is clamped at the minimum would
-  /// otherwise stop tracking the pointer, and dragging back out would do
-  /// nothing until the mouse had returned to the edge.
-  double? _dragFrom;
-
-  double? _measuredWidth(int col) {
-    final box =
-        _headerKeys[col]?.currentContext?.findRenderObject() as RenderBox?;
-    return box?.hasSize == true ? box!.size.width : null;
-  }
-
-  void _disposeGrid() {
-    for (final row in _ctls) {
-      for (final c in row) {
-        c.dispose();
-      }
-    }
-    for (final row in _nodes) {
-      for (final n in row) {
-        n.dispose();
-      }
-    }
-    _ctls = [];
-    _nodes = [];
-  }
-
-  void _ensure(List<List<String>> cells) {
-    final rows = cells.length;
-    final cols = cells.isEmpty ? 0 : cells[0].length;
-    if (rows == _rows && cols == _cols && _ctls.isNotEmpty) {
-      for (var r = 0; r < rows; r++) {
-        for (var c = 0; c < cols; c++) {
-          if (!_nodes[r][c].hasFocus && _ctls[r][c].text != cells[r][c]) {
-            _ctls[r][c].text = cells[r][c];
-          }
-        }
-      }
-      return;
-    }
-    _disposeGrid();
-    _ctls = [
-      for (final row in cells) [for (final c in row) TextEditingController(text: c)]
-    ];
-    _nodes = [
-      for (final row in cells) [for (final _ in row) FocusNode()]
-    ];
-    _rows = rows;
-    _cols = cols;
-  }
-
-  @override
-  void dispose() {
-    _disposeGrid();
-    super.dispose();
-  }
-
-  void _focusCell(int r, int c, {bool atEnd = true}) {
-    if (r < 0 || c < 0 || r >= _rows || c >= _cols) return;
-    _nodes[r][c].requestFocus();
-    final ctl = _ctls[r][c];
-    ctl.selection = TextSelection.collapsed(offset: atEnd ? ctl.text.length : 0);
-  }
-
-  Object? _onMove(int r, int c, _CellMove m) {
-    final ctl = _ctls[r][c];
-    // Caret-aware horizontal: move within the cell until the edge.
-    if (m.caretAware) {
-      final off = ctl.selection.baseOffset;
-      if (m.dc < 0 && off > 0) {
-        ctl.selection = TextSelection.collapsed(offset: off - 1);
-        return null;
-      }
-      if (m.dc > 0 && off < ctl.text.length) {
-        ctl.selection = TextSelection.collapsed(offset: off + 1);
-        return null;
-      }
-    }
-    var nr = r + m.dr, nc = c + m.dc;
-    if (m.wrap) {
-      if (nc >= _cols) {
-        nc = 0;
-        nr = r + 1;
-      } else if (nc < 0) {
-        nc = _cols - 1;
-        nr = r - 1;
-      }
-    }
-    _focusCell(nr, nc, atEnd: m.dc <= 0);
-    return null;
-  }
-
-  Object? _onEnter(int r, int c) {
-    if (r == _rows - 1) {
-      final cells = _cells..add(List.filled(_cols, '', growable: true));
-      _write(cells);
-      setState(() {});
-      WidgetsBinding.instance.addPostFrameCallback((_) => _focusCell(r + 1, c));
-    } else {
-      _focusCell(r + 1, c);
-    }
-    return null;
-  }
-
-  Object? _onBreak(int r, int c) {
-    final ctl = _ctls[r][c];
-    final sel = ctl.selection;
-    final at = sel.isValid ? sel.start : ctl.text.length;
-    final end = sel.isValid ? sel.end : ctl.text.length;
-    ctl.text = ctl.text.replaceRange(at, end, '\n');
-    ctl.selection = TextSelection.collapsed(offset: at + 1);
-    final cells = _cells;
-    cells[r][c] = ctl.text;
-    _write(cells);
-    return null;
-  }
+  /// An undo or a sync pull rebuilds the page's blocks from JSON, and a
+  /// widget that kept writing to the object it was constructed with would be
+  /// writing to a detached copy nobody will ever read.
+  Block get _live => app.blockById(block.id) ?? block;
 
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final cells = _cells;
-    final rows = cells.length;
-    final cols = cells.isEmpty ? 0 : cells[0].length;
-    final border = dark ? OnoteColors.night300 : OnoteColors.paper300;
-    final headerFill = dark ? OnoteColors.night100 : OnoteColors.paper100;
-
-    if (editing) {
-      _ensure(cells);
-    } else if (_undoPushed) {
-      // Editing ended: the next session starts a new undo step.
-      _undoPushed = false;
-    }
-
-    Widget cellWidget(int r, int c) {
-      final style = TextStyle(
-          fontSize: 13,
-          fontWeight: r == 0 ? FontWeight.w600 : FontWeight.w400,
-          color: dark ? OnoteColors.moon100 : OnoteColors.graphite700);
-      if (!editing) {
-        // Through the shared inline renderer, not a bare Text (open finding
-        // since v0.18 §13.6): a formula table's $x^2$ used to show its dollar
-        // signs and backslashes literally when read, and **bold** kept its
-        // asterisks — table cells were the one read view that skipped the
-        // Markdown grammar every text block already renders. The raw source
-        // still shows while the cell is being edited, same as text blocks.
-        return Container(
-          constraints: const BoxConstraints(minHeight: 30),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          color: r == 0 ? headerFill : null,
-          child: Text.rich(
-            TextSpan(
-                children: inlineSpans(
-                    cells[r][c].isEmpty ? ' ' : cells[r][c], style, dark)),
-            style: style,
-          ),
-        );
-      }
-      return Container(
-        color: r == 0 ? headerFill : null,
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        child: Shortcuts(
-          shortcuts: const {
-            SingleActivator(LogicalKeyboardKey.tab): _CellMove(0, 1, wrap: true),
-            SingleActivator(LogicalKeyboardKey.tab, shift: true):
-                _CellMove(0, -1, wrap: true),
-            SingleActivator(LogicalKeyboardKey.arrowUp): _CellMove(-1, 0),
-            SingleActivator(LogicalKeyboardKey.arrowDown): _CellMove(1, 0),
-            SingleActivator(LogicalKeyboardKey.arrowLeft):
-                _CellMove(0, -1, caretAware: true),
-            SingleActivator(LogicalKeyboardKey.arrowRight):
-                _CellMove(0, 1, caretAware: true),
-            SingleActivator(LogicalKeyboardKey.enter): _CellEnter(),
-            SingleActivator(LogicalKeyboardKey.enter, control: true):
-                _CellBreak(),
+    return LayoutBuilder(builder: (context, cons) {
+      return InlineTable(
+        binding: TableBinding(
+          read: () => TableData.from(_live.content),
+          write: (next, {required bool pushUndo}) {
+            // Regression this guards: table writes used to mark the page
+            // dirty without pushing an undo step, so Ctrl+Z jumped straight
+            // past every table edit to whatever preceded the table.
+            if (pushUndo) app.pushUndo();
+            final b = _live;
+            b.content['cells'] = next.cells;
+            if (next.colWidths.isEmpty) {
+              b.content.remove('colWidths');
+            } else {
+              b.content['colWidths'] = next.colWidths;
+            }
+            b.updatedAt = nowMs();
+            app.markDirty();
           },
-          child: Actions(
-            actions: {
-              _CellMove: CallbackAction<_CellMove>(
-                  onInvoke: (i) => _onMove(r, c, i)),
-              _CellEnter:
-                  CallbackAction<_CellEnter>(onInvoke: (_) => _onEnter(r, c)),
-              _CellBreak:
-                  CallbackAction<_CellBreak>(onInvoke: (_) => _onBreak(r, c)),
-            },
-            child: TextField(
-              controller: _ctls[r][c],
-              focusNode: _nodes[r][c],
-              style: style,
-              maxLines: null,
-              // Wrap-on-selection, same as every other content field.
-              inputFormatters: const [
-                WrapSelectionFormatter(
-                    pairs: WrapSelectionFormatter.bracketPairs,
-                    autoCloseFences: false)
-              ],
-              decoration: OnoteInput.bare.copyWith(
-                  contentPadding: const EdgeInsets.symmetric(vertical: 6)),
-              onChanged: (v) {
-                final cur = _cells;
-                cur[r][c] = v;
-                _write(cur);
-              },
-            ),
-          ),
+          // **The box grows to hold the table.** Reported: *"if the table
+          // overflows the box, it doesnt seem to auto expand the box with
+          // it."* Quite so — the block carries its own width and nothing was
+          // moving it, so a column dragged past the edge simply spilled out.
+          //
+          // It only ever GROWS: a box somebody widened by hand must not snap
+          // back because a column was narrowed afterwards.
+          onNeedWidth: (total) {
+            final b = _live;
+            final needed = total + _kBlockContentInset * 2;
+            if (needed <= b.w) return;
+            b.w = needed;
+            app.markDirty();
+          },
         ),
+        editable: app.editingBlockId == block.id,
+        style: const TextStyle(fontSize: 13),
+        dark: dark,
+        revision: app,
+        maxWidth: cons.maxWidth.isFinite ? cons.maxWidth : null,
       );
-    }
-
-    // **What decides a column's width**, in the order the rules apply.
-    //
-    // 1. A width somebody SET — dragged here, or carried in from OneNote's own
-    //    `col_w` — is used exactly, with no cap. If you drag a column out to
-    //    six hundred pixels you meant it, and an app that springs it back is
-    //    arguing with you.
-    // 2. Otherwise the column is as wide as its contents need, up to
-    //    [kTableColumnCap]. That is the behaviour asked for: fit the content,
-    //    but do not let one long sentence turn a table into a ribbon.
-    //
-    // Every column used to get an equal flex share, which is why they "all
-    // default to larger when they should be smaller" — a two-character column
-    // took the same room as a paragraph.
-    final stored = _storedWidths(cols);
-    final colWidths = <int, TableColumnWidth>{
-      for (var c = 0; c < cols; c++)
-        c: FixedColumnWidth(
-            stored[c] ?? _autoWidth(cells, c, dark)),
-    };
-    // **The handle sits on the column's right edge, on the top row.**
-    //
-    // Reported: *"there isnt any way for me to manually resize the cells, at
-    // least by dragging which is how it should be done"*. Quite so — there was
-    // no way at all, which is also part of why the widths looked wrong: when
-    // the automatic answer is off there was nothing to do about it.
-    //
-    // On the top row only, because a table has one width per column and
-    // offering the same handle on every row would suggest otherwise.
-    //
-    // **Always, not only while the table is open.** The first version showed
-    // handles only on a table being edited or selected, so that a table being
-    // read was a table and not a control panel — and the owner reported it
-    // straight back: *"it only works while editing the table, id love to be
-    // able to resize cells without having to go into edit mode."* Right, and
-    // the reasoning was wrong on its own terms: the handle has no appearance
-    // to keep off the page. It is six invisible pixels and a cursor, and the
-    // gate cost the one gesture everybody already knows from every
-    // spreadsheet they have ever used.
-    Widget withHandle(int c, Widget cell) {
-      if (c >= cols) return cell;
-      return Stack(clipBehavior: Clip.none, children: [
-        cell,
-        // **Wholly inside the cell.** Centred on the border (`right: -3`) it
-        // looked symmetrical and behaved as three pixels, not six: a
-        // `RenderBox` rejects a hit outside its own bounds before it ever
-        // reaches its children, so the outer half of the strip was dead and
-        // the grab zone was whatever was left.
-        Positioned(
-          top: 0,
-          bottom: 0,
-          right: 0,
-          width: 8,
-          child: MouseRegion(
-            cursor: SystemMouseCursors.resizeColumn,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onHorizontalDragStart: (_) {
-                _dragFrom = _storedWidths(cols)[c] ?? _measuredWidth(c);
-                _dragUndoPushed = false;
-              },
-              onHorizontalDragUpdate: (d) {
-                final from = _dragFrom;
-                if (from == null) return;
-                if (!_dragUndoPushed) {
-                  _dragUndoPushed = true;
-                  widget.app.pushUndo();
-                }
-                _dragFrom = from + d.delta.dx;
-                // No cap here on purpose: the cap is for the width nobody
-                // chose. This one is chosen.
-                _setColumnWidth(c, _dragFrom!, cols);
-              },
-              onHorizontalDragEnd: (_) {
-                _dragFrom = null;
-                _dragUndoPushed = false;
-              },
-              child: const SizedBox.expand(),
-            ),
-          ),
-        ),
-      ]);
-    }
-
-    final table = Table(
-      border: TableBorder.all(color: border, width: 1),
-      columnWidths: colWidths,
-      defaultColumnWidth: const FlexColumnWidth(),
-      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-      children: [
-        for (var r = 0; r < rows; r++)
-          TableRow(children: [
-            for (var c = 0; c < cols; c++)
-              r == 0
-                  ? KeyedSubtree(
-                      key: _headerKeys.putIfAbsent(c, GlobalKey.new),
-                      child: withHandle(c, cellWidget(r, c)))
-                  : cellWidget(r, c)
-          ]),
-      ],
-    );
-
-    if (!editing) return table;
-
-    Widget ctlBtn(IconData icon, String tip, VoidCallback fn) => IconButton(
-          icon: Icon(icon, size: 16),
-          tooltip: tip,
-          visualDensity: VisualDensity.compact,
-          onPressed: fn,
-        );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        table,
-        Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Row(children: [
-            ctlBtn(Icons.add, 'Add row', () {
-              _write(_cells..add(List.filled(cols, '', growable: true)), structural: true);
-              setState(() {});
-            }),
-            ctlBtn(Icons.remove, 'Remove row', () {
-              if (rows <= 1) return;
-              _write(_cells..removeLast(), structural: true);
-              setState(() {});
-            }),
-            const SizedBox(width: 8),
-            ctlBtn(Icons.view_column_outlined, 'Add column', () {
-              _write([for (final row in _cells) row..add('')], structural: true);
-              setState(() {});
-            }),
-            ctlBtn(Icons.view_column, 'Remove column', () {
-              if (cols <= 1) return;
-              _write([for (final row in _cells) row..removeLast()], structural: true);
-              setState(() {});
-            }),
-          ]),
-        ),
-      ],
-    );
+    });
   }
 }
+
+/// The padding a block reserves around its content, per side — `_kChromePad`
+/// in `block_view.dart`, which is private to it. Named here so the arithmetic
+/// that makes a table fit its box says what the number is rather than
+/// carrying an 8 nobody can trace.
+const double _kBlockContentInset = 8;

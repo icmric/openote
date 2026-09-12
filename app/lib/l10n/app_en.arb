@@ -1,4 +1,22 @@
 {
+  "atomNewerVersion": "Made in Openote {version}",
+  "@atomNewerVersion": {
+    "description": "Shown inside a box where a table or similar should be, on a device whose Openote is too old to draw it. {version} is the version it was made in, e.g. \"1.1.0\".",
+    "placeholders": {
+      "version": {
+        "type": "String",
+        "example": "1.1.0"
+      }
+    }
+  },
+  "atomNewerVersionUnknown": "Made in a newer version of Openote",
+  "@atomNewerVersionUnknown": {
+    "description": "Shown inside a box where a table or similar should be, when the version that made it was not recorded."
+  },
+  "atomUpdateToView": "Update Openote to view it",
+  "@atomUpdateToView": {
+    "description": "Second line of that box: what to do about it. Kept short — it sits inside a box the size of the missing table."
+  },
   "barBadgeCount": "{count}",
   "@barBadgeCount": {
     "description": "A small number printed on a toolbar badge — cards due, or reminders waiting. Its own message so the digits are grouped and shaped for this language rather than printed as raw ASCII.",
@@ -2050,6 +2068,30 @@
   "shellUnlock": "Unlock",
   "@shellUnlock": {
     "description": "Button that asks for the passcode on a locked page."
+  },
+  "tableColumnLeft": "Insert column left",
+  "@tableColumnLeft": {
+    "description": "Right-click menu on a table cell: add an empty column to the left of the cell that was clicked."
+  },
+  "tableColumnRight": "Insert column right",
+  "@tableColumnRight": {
+    "description": "Right-click menu on a table cell: add an empty column to the right of the cell that was clicked."
+  },
+  "tableDeleteColumn": "Delete column",
+  "@tableDeleteColumn": {
+    "description": "Right-click menu on a table cell: remove the column the cell is in. Disabled when only one column is left."
+  },
+  "tableDeleteRow": "Delete row",
+  "@tableDeleteRow": {
+    "description": "Right-click menu on a table cell: remove the row the cell is in. Disabled when only one row is left."
+  },
+  "tableRowAbove": "Insert row above",
+  "@tableRowAbove": {
+    "description": "Right-click menu on a table cell: add an empty row above the cell that was clicked."
+  },
+  "tableRowBelow": "Insert row below",
+  "@tableRowBelow": {
+    "description": "Right-click menu on a table cell: add an empty row below the cell that was clicked."
   },
   "tagContact": "Contact",
   "@tagContact": {

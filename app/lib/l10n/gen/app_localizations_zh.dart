@@ -9,6 +9,17 @@ class LZh extends L {
   LZh([String locale = 'zh']) : super(locale);
 
   @override
+  String atomNewerVersion(String version) {
+    return '由 Openote $version 创建';
+  }
+
+  @override
+  String get atomNewerVersionUnknown => '由较新版本的 Openote 创建';
+
+  @override
+  String get atomUpdateToView => '请更新 Openote 以查看';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -1464,6 +1475,24 @@ class LZh extends L {
 
   @override
   String get shellUnlock => '解锁';
+
+  @override
+  String get tableColumnLeft => '在左侧插入列';
+
+  @override
+  String get tableColumnRight => '在右侧插入列';
+
+  @override
+  String get tableDeleteColumn => '删除列';
+
+  @override
+  String get tableDeleteRow => '删除行';
+
+  @override
+  String get tableRowAbove => '在上方插入行';
+
+  @override
+  String get tableRowBelow => '在下方插入行';
 
   @override
   String get tagContact => '联系人';

@@ -21,6 +21,7 @@ import '../editor/onote_text_editor.dart';
 import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/history.dart';
+import '../model/inline_atom.dart';
 import '../math/active_math.dart';
 import '../math/evaluate.dart';
 import '../math/linear_math.dart';
@@ -31,6 +32,7 @@ import '../onenote/graph_import.dart';
 import '../onenote/unfinished_import.dart';
 import '../onenote/graph_links.dart';
 import '../model/models.dart';
+import '../model/table_conversion.dart';
 import '../store/database.dart'
     show NotebookFileMissing, NotebookFileProblem, notebookFileProblem;
 import '../store/notebook_writer.dart' show sha256Hex;
@@ -1861,9 +1863,40 @@ class AppState extends ChangeNotifier
         return;
       }
 
+      // **Two jobs, one visit.** Handwriting that is still JSON, and tables
+      // that are still blocks of their own. They share the schedule because
+      // they share every constraint — rewrite whole pages, must fold first,
+      // must yield the moment the user does anything — and because a second
+      // timer would mean two background passes fighting for the same write
+      // lock on the same notebook.
       final pages = inlineInkPageCount(nb);
-      if (pages == 0) {
+      final tablePages = tableBlockPageCount(nb);
+      if (pages == 0 && tablePages == 0) {
         _repo.setSetting(_housekeepingKey(nb), now);
+        _housekept.add(nb);
+        return;
+      }
+
+      if (tablePages > 0) {
+        // Announced, like the ink job: a notebook quietly rewriting itself is
+        // alarming if you happen to notice.
+        housekeepingNote = 'Updating tables on $tablePages pages…';
+        notifyListeners();
+        final t = await convertTablesToInline(nb, unattended: true);
+        if (_disposed) return;
+        housekeepingNote = null;
+        notifyListeners();
+        if (t.deferred) {
+          // It stepped aside. What it converted is durable; the clock is NOT
+          // stamped and the session slot is NOT consumed, so the rest happens
+          // once things go quiet.
+          _deferHousekeeping(nb);
+          return;
+        }
+      }
+
+      if (pages == 0) {
+        _repo.setSetting(_housekeepingKey(nb), nowMs());
         _housekept.add(nb);
         return;
       }
@@ -2997,6 +3030,182 @@ class AppState extends ChangeNotifier
     } catch (_) {
       return 0;
     }
+  }
+
+  // ── Tables move into the paragraph they belong to ────────────────────
+  //
+  // A table used to be a box of its own beside the writing; it is now a thing
+  // INSIDE the writing, like an equation. Both draw identically — the same
+  // widget, bound to two different places — so the conversion changes nothing
+  // anybody can see, which is what made the owner's decision the right one:
+  // *"lets just automatically update them all on open (or on update) so that
+  // we dont end up with a staggered mess of mix and match table types"*.
+  //
+  // **The one thing it does change is what an OLDER build shows**, and that
+  // cannot be helped from here: a build that has never heard of an atom draws
+  // the reference as text. This build draws a box saying which version made
+  // it (`inline_atom_view.dart`), which is the same courtesy in the direction
+  // we can actually extend it.
+  //
+  // Everything about how this runs is borrowed from the ink conversion below,
+  // because that one has already paid for the lessons: fold first or a pull
+  // undoes the work, stop the watcher, one transaction per page, yield to the
+  // user at the first sign of them doing anything, and never touch the page
+  // they are looking at.
+
+  /// How many pages still hold a table block. One indexed scan.
+  int tableBlockPageCount(String nb) {
+    try {
+      return _repo.pageIdsWithTableBlocks(nb).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// **The open page's tables, converted in memory, now.**
+  ///
+  /// The page somebody is looking at is the one page the background walk must
+  /// not touch (its editor is live and its blocks are held in memory, not read
+  /// from disk), and it is also the one page where converting is free: the
+  /// blocks are already here. So it happens on the way in, from [selectPage],
+  /// and the walk skips it.
+  ///
+  /// Undoable, and deliberately: `selectPage` has just cleared the stack, so
+  /// this becomes its first entry and one Ctrl+Z puts the page back exactly as
+  /// it was on disk. That is the same guarantee the field-code repair gives,
+  /// and for the same reason — this is the one automatic path that rewrites
+  /// something the user already owns.
+  ///
+  /// Returns how many tables moved.
+  int convertOpenPageTables() {
+    final nb = notebookId;
+    if (nb == null || pageId == null) return 0;
+    // Not into a notebook this build may only read, and not across a pull
+    // that is rewriting these very blocks from the log.
+    if (notebookIsReadOnly(nb) || _pulling) return 0;
+    var done = 0;
+    for (var i = 0; i < blocks.length; i++) {
+      if (blocks[i].type != BlockType.table) continue;
+      final out = tableBlockAsText(blocks[i], madeIn: kAppVersion);
+      // Null is a REFUSAL, not a failure: the block stays a table block, which
+      // still draws, still saves and still exports. Nothing is lost by
+      // leaving it alone, and something might be by forcing it.
+      if (out == null) continue;
+      if (done == 0) pushUndo();
+      blocks[i] = out;
+      done++;
+    }
+    if (done > 0) markDirty();
+    return done;
+  }
+
+  /// **The rest of the notebook**, in the order somebody would miss them:
+  /// the section they are in, then everything else in tree order. The page
+  /// they are ON is already done, in memory, by [convertOpenPageTables].
+  ///
+  /// [unattended] is the automatic path, and it behaves like a guest: the
+  /// first sign of the user doing anything — typing, a pull, switching
+  /// notebooks — stops the run where it stands. Every page already converted
+  /// is durable on its own; the remainder is simply still to do.
+  Future<TableConversionResult> convertTablesToInline(
+    String nb, {
+    bool unattended = false,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    if (notebookIsReadOnly(nb)) {
+      return const TableConversionResult(
+          pages: 0, tables: 0, refused: 0, deferred: true);
+    }
+    await flushSave();
+    // **Catch up with the other devices FIRST, or this work is undone.** A
+    // pull rebuilds each changed page from the op log, and the log still holds
+    // the pre-conversion `block.set` ops; recording ours is refused while
+    // `foreignPending` is true, so converting now would be silently reverted
+    // by the very next pull. This is not hypothetical — it is exactly what
+    // happened to the ink conversion, and cost forty-five seconds of work.
+    await syncPull(nb);
+    final rec = await warmRecorder(nb);
+    if (rec != null && rec.foreignPending) {
+      return const TableConversionResult(
+          pages: 0, tables: 0, refused: 0, deferred: true);
+    }
+
+    var candidates = _repo.pageIdsWithTableBlocks(nb);
+    if (notebookId == nb && pageId != null) {
+      candidates = [for (final p in candidates) if (p != pageId) p];
+    }
+    if (candidates.isEmpty) {
+      return const TableConversionResult(pages: 0, tables: 0, refused: 0);
+    }
+    candidates = _tableConversionOrder(candidates);
+
+    // A pull landing mid-run would rewrite pages from the log behind us.
+    await _stopWatching();
+    var pages = 0, tables = 0, refused = 0, aborted = false;
+    try {
+      for (var i = 0; i < candidates.length; i++) {
+        if (unattended &&
+            (_dirty ||
+                _pulling ||
+                notebookId != nb ||
+                (rec?.foreignPending ?? false))) {
+          aborted = true;
+          break;
+        }
+        final id = candidates[i];
+        try {
+          final data = _repo.readPage(nb, id);
+          var moved = 0;
+          for (var k = 0; k < data.blocks.length; k++) {
+            if (data.blocks[k].type != BlockType.table) continue;
+            final out = tableBlockAsText(data.blocks[k], madeIn: kAppVersion);
+            if (out == null) {
+              refused++;
+              continue;
+            }
+            data.blocks[k] = out;
+            moved++;
+          }
+          if (moved == 0) continue;
+          // One transaction per page, so an interrupted run leaves a notebook
+          // that is partly converted and entirely working — both forms draw,
+          // save and export, which is the property that makes stopping safe.
+          importBatch(nb, () => importPage(nb, id, data.blocks, data.props));
+          pages++;
+          tables += moved;
+        } catch (e) {
+          // One page that will not convert must not stop the others. It keeps
+          // its table blocks, which still work in every respect.
+          refused++;
+          debugPrint('[openote/tables] could not convert $id: $e');
+        }
+        onProgress?.call(i + 1, candidates.length);
+        // A REAL delay, not Duration.zero: a zero timer is itself work due
+        // immediately, so the queue never goes idle — and idle is when
+        // Windows lets the mouse and keyboard through.
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+    } finally {
+      _startWatching();
+    }
+    if (pages > 0) {
+      _invalidateSyncStatus();
+      if (!_disposed) notifyListeners();
+    }
+    return TableConversionResult(
+        pages: pages, tables: tables, refused: refused, deferred: aborted);
+  }
+
+  /// Current section first, then everything else in tree order.
+  List<String> _tableConversionOrder(List<String> candidates) {
+    final order = {for (var i = 0; i < nodes.length; i++) nodes[i].id: i};
+    final parents = {for (final n in nodes) n.id: n.parentId};
+    int rank(String id) => parents[id] == activeSectionId ? 0 : 1;
+    return [...candidates]..sort((a, b) {
+        final r = rank(a).compareTo(rank(b));
+        if (r != 0) return r;
+        return (order[a] ?? 1 << 30).compareTo(order[b] ?? 1 << 30);
+      });
   }
 
   /// Convert a notebook's existing ink from JSON to binary blobs.
@@ -4136,6 +4345,53 @@ class AppState extends ChangeNotifier
   @override
   List<Block> blocks = [];
   PageProps pageProps = PageProps();
+
+  /// The block with this id on the open page, or null.
+  ///
+  /// Anything holding a `Block` across frames is holding a stale one the
+  /// moment an undo or a sync pull rebuilds the page from JSON, so the things
+  /// that outlive a build — an inline atom's write path, for one — look the
+  /// block up by id instead of capturing it.
+  Block? blockById(String id) {
+    for (final b in blocks) {
+      if (b.id == id) return b;
+    }
+    return null;
+  }
+
+  /// **Where a cut table's payload waits to be pasted.**
+  ///
+  /// Cutting an atom's reference takes the text and leaves the payload
+  /// behind; pasting it somewhere else arrives with nothing but an id. So a
+  /// payload whose reference has gone is remembered here for the rest of the
+  /// session, and any reference that turns up without one is filled in from
+  /// it. Without this, cut-and-paste of a table would paste an empty box —
+  /// the one outcome a table must never have.
+  ///
+  /// Bounded, and lost when the app closes: this is a clipboard, not storage.
+  /// The payload it holds is a copy of one that was already written to disk,
+  /// so nothing here is the only copy of anything.
+  final Map<String, InlineAtom> _atomMorgue = {};
+
+  void rememberAtom(InlineAtom atom) {
+    if (_atomMorgue.length > 64) _atomMorgue.clear();
+    _atomMorgue[atom.id] = atom;
+  }
+
+  InlineAtom? recallAtom(String id) => _atomMorgue[id];
+
+  /// The cell a click landed in, on a table that was being read rather than
+  /// edited. Consumed once by the table as it opens, so the caret lands where
+  /// the pointer was instead of the box opening and waiting to be clicked a
+  /// second time.
+  ({String blockId, String atomId, int row, int col})? pendingAtomCell;
+
+  ({int row, int col})? takePendingAtomCell(String blockId, String atomId) {
+    final p = pendingAtomCell;
+    if (p == null || p.blockId != blockId || p.atomId != atomId) return null;
+    pendingAtomCell = null;
+    return (row: p.row, col: p.col);
+  }
 
   // Selection (CANVAS-7: single + multi)
   final Set<String> selectedIds = {};
@@ -7080,6 +7336,11 @@ class AppState extends ChangeNotifier
       blocks = data.blocks;
       pageProps = data.props;
       _repairImportedFieldCodes();
+      // A table on the page you just opened becomes a table in the paragraph
+      // it belongs to, here and now. See [convertOpenPageTables]: it is free
+      // (the blocks are in memory), it is undoable, and it is why the
+      // background walk never has to touch the open page.
+      convertOpenPageTables();
       // Heal a page whose content sits under the title band (§7f). Marked
       // dirty only when something actually moved, so merely opening pages
       // does not rewrite the notebook.
@@ -8928,6 +9189,45 @@ class AppState extends ChangeNotifier
     return changed;
   }
 
+  /// **A new table: a paragraph carrying one.**
+  ///
+  /// Every route that makes a table comes through here — the Insert ribbon, a
+  /// dropped CSV, a pasted spreadsheet — so a table made today is already in
+  /// the shape a table made yesterday is being converted INTO. Two creation
+  /// paths would mean the notebook drifting apart faster than the conversion
+  /// puts it together, which is precisely the "staggered mess of mix and match
+  /// table types" this is all meant to avoid.
+  Block insertTable({
+    required Offset at,
+    List<List<String>>? cells,
+    double? width,
+  }) {
+    final data = TableData(
+      cells: cells ??
+          [
+            ['Header', 'Header'],
+            ['', ''],
+          ],
+      colWidths: const [],
+    );
+    final atom = InlineAtom(
+      id: newId(),
+      type: 'table',
+      content: {...data.toContent(), 'madeIn': kAppVersion},
+    );
+    final content = <String, dynamic>{'text': atom.reference(data.altText)};
+    InlineAtom.putIn(content, atom);
+    final b = addBlock(Block(
+      type: BlockType.text,
+      x: at.dx,
+      y: at.dy,
+      w: width ?? 360,
+      content: content,
+    ));
+    select(b.id, edit: true);
+    return b;
+  }
+
   Block insertEquation({required Offset at, String seed = ''}) {
     final b = addBlock(Block(
       type: BlockType.math,
@@ -9346,6 +9646,15 @@ class AppState extends ChangeNotifier
   /// diff against a replay that is missing whatever those operations did.
   bool notebookIsReadOnly(String nb) => _logAhead.containsKey(nb);
 
+  /// Put [nb] into the read-only state a log from a newer build produces,
+  /// without needing one. For the tests that check what this build refuses to
+  /// write while it is only showing a notebook.
+  @visibleForTesting
+  void debugMarkReadOnly(String nb) => _logAhead[nb] = const SaveProblem(
+        short: 'Read-only (test)',
+        message: 'Marked read-only by a test.',
+      );
+
   /// Look at a freshly opened recorder and decide whether its notebook is
   /// readable but not writable.
   ///
@@ -9627,6 +9936,29 @@ class NotebookStorage {
 /// this exists to answer: *"it seemed to do something for about 45s before the
 /// spinner just went away and the button returned back to saying 113 pages. No
 /// error in the console."*
+/// What a pass of [AppState.convertTablesToInline] did.
+class TableConversionResult {
+  const TableConversionResult({
+    required this.pages,
+    required this.tables,
+    required this.refused,
+    this.deferred = false,
+  });
+
+  /// Pages rewritten, and tables moved into the paragraph.
+  final int pages, tables;
+
+  /// Tables left exactly as they were, because the conversion could not prove
+  /// itself identical. Not an error: a table block still works.
+  final int refused;
+
+  /// The run stepped aside — the user typed, a pull was mid-flight, the
+  /// notebook changed. What it converted is durable; the rest is still to do.
+  final bool deferred;
+
+  bool get didNothing => pages == 0 && tables == 0;
+}
+
 class InkConversionResult {
   const InkConversionResult({
     required this.candidates,

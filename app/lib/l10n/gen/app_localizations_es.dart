@@ -9,6 +9,18 @@ class LEs extends L {
   LEs([String locale = 'es']) : super(locale);
 
   @override
+  String atomNewerVersion(String version) {
+    return 'Creado en Openote $version';
+  }
+
+  @override
+  String get atomNewerVersionUnknown =>
+      'Creado en una versión más reciente de Openote';
+
+  @override
+  String get atomUpdateToView => 'Actualiza Openote para verlo';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -1525,6 +1537,24 @@ class LEs extends L {
 
   @override
   String get shellUnlock => 'Desbloquear';
+
+  @override
+  String get tableColumnLeft => 'Insertar columna a la izquierda';
+
+  @override
+  String get tableColumnRight => 'Insertar columna a la derecha';
+
+  @override
+  String get tableDeleteColumn => 'Eliminar columna';
+
+  @override
+  String get tableDeleteRow => 'Eliminar fila';
+
+  @override
+  String get tableRowAbove => 'Insertar fila encima';
+
+  @override
+  String get tableRowBelow => 'Insertar fila debajo';
 
   @override
   String get tagContact => 'Contacto';
