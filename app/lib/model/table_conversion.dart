@@ -53,7 +53,7 @@ Block? tableBlockAsText(
         e.key: e.value,
   };
   final kept = b.content['text'];
-  final ref = atom.reference(before.altText);
+  final ref = atom.reference(before.referenceAlt);
   content['text'] =
       kept is String && kept.isNotEmpty ? '$kept\n$ref' : ref;
   InlineAtom.putIn(content, atom);

@@ -64,7 +64,7 @@ Every block shares this envelope; `content` is per-type (§5–§7):
 | `image` | M | blob ref + sizing |
 | `code` | M | language + source |
 | `file` | M/P2 | blob ref + display metadata |
-| `table` | P2 | rows/cols of rich-text cells |
+| `table` | P2 | rows/cols of rich-text cells — **also an inline atom inside a text container** (§5.2) |
 | `frame` | P2 | named region (§6) |
 | `embed` | P2 | live transclusion (§7) |
 | `shape`, `connector` | P3 | reserved |
@@ -102,6 +102,54 @@ CommonMark + GFM (tables, task lists, strikethrough) plus documented extensions:
 > **In-container image references (interim dialect).** While text storage is the interim Markdown string, an in-flow image (§5.1's `{"t":"image"}` atomic inline) is written `![alt](sha256:<hash>)` — the `src` is the blob-store content address, resolved by the renderer at paint time and rewritten to `assets/<hash>.<ext>` on open-folder export. An image on its own line renders block-level within the text flow (the OneNote "image as a list item" case, which the `.one` importer produces); readers that don't resolve `sha256:` URIs degrade to the literal Markdown. The structured-model migration maps these 1:1 onto `{"t":"image","blob":…}` inlines.
 >
 > **Authoring.** Dropping or pasting a picture onto a text container splices this reference in, on a line of its own (the renderer matches it line-anchored, so one sharing a line with prose would print as source). The picture is therefore ordinary characters in the container's own text, which is what makes it selectable, cuttable and pasteable with no special handling — the blob store is content-addressed and never garbage-collected, so a reference cut and pasted later still resolves. While editing, the reference stays visible as dimmed monospace text rather than being swapped for the picture: the live editor's span tree must reproduce the raw text character-for-character, and a `WidgetSpan` would replace N characters with one `U+FFFC` and desync every selection offset. A drop that hits no text container still creates a standalone image block.
+
+> **In-container atoms (interim dialect).** A thing that is not text, living
+> inside a text container, is written `![alt](onote://atom/<id>)` with its
+> payload beside the text in the same block:
+>
+> ```jsonc
+> "content": {
+>   "text": "Results: ![3x2 table — update Openote to see it](onote://atom/0198…) and it holds.",
+>   "atoms": {
+>     "0198…": {"id": "0198…", "type": "table",
+>               "content": {"cells": [["a","b"]], "colWidths": [0, 120]}}
+>   }
+> }
+> ```
+>
+> `type` is a string rather than a `BlockType` because **an atom of a type
+> this build has never heard of must survive being read and written back** — a
+> newer device's notebook is not a corrupt one, and dropping the payload would
+> delete their work on the next sync. The payload is a block's own `content`
+> shape, so it rides through `Block.toJson`/`fromJson`, the op log's
+> `block.set`, `read_page`, `append_blocks` and the open-folder export with no
+> new schema anywhere.
+>
+> **Payload in the host block, not as a sibling block.** Cut, copy, undo and
+> sync then move the text and its atoms as one thing: there are no orphans to
+> collect, and every path that walks a page's blocks — culling, marquee,
+> z-order, an exporter's y/x sort — needs no "skip the inline ones" clause.
+> An atom whose reference is deleted has its payload dropped, and one whose
+> reference arrives without a payload (a paste) has it recalled from the
+> session's memory of what was cut or copied.
+>
+> **The alt text is load-bearing**, which is unusual for alt text: it is what
+> every renderer that cannot draw the atom shows instead — an older build of
+> Openote, a foreign Markdown viewer, an export. For a table it therefore says
+> both what the thing is and what to do about it.
+>
+> **Markdown projection.** `page.md` writes each atom as its native Markdown
+> (a table becomes a GFM table, §5.2's "everything has a projection");
+> `page.json` keeps the reference, and is the fidelity path. An atom this
+> build cannot project keeps its reference verbatim — valid CommonMark, so a
+> foreign reader shows the alt text rather than a syntax error.
+>
+> **`table` is therefore both a block type and an atom type.** A table on the
+> canvas outside any text flow is still a `table` block; a table inside a
+> paragraph is an atom in that paragraph's `content.atoms`. One widget draws
+> both, and existing table blocks are converted to atoms in the background
+> (verified cell-for-cell before each write, and left alone if that check
+> fails).
 
 ### 5.3 Anchors for embeds
 A `range` embed target uses `(startBlockId, endBlockId)` at block granularity in v1. Sub-block (line-level) anchoring is deliberately deferred: inside a CRDT text block, stable positions require anchoring to CRDT item IDs, which is planned as `range.startOffset/endOffset` opaque anchor tokens in a minor revision (kept out of v1 for simplicity; the field names are reserved).

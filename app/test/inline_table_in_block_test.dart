@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/editor/block_atom_host.dart';
 import 'package:openote/editor/text_block_view.dart';
 import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/inline_atom.dart';
@@ -72,6 +73,20 @@ void main() {
     await t.pumpAndSettle();
   }
 
+  testWidgets('a new table opens with the caret in its first cell', (t) async {
+    // You asked for a table because you are about to fill one in. The click
+    // that made it says which cell, and the table consumes that once as it
+    // opens — so it does not jump back there a quarter of an hour later.
+    final made = app.insertTable(at: const Offset(0, 0));
+    block = made;
+    await pump(t);
+    final cells = t.widgetList<TextField>(find.byType(TextField)).toList();
+    expect(cells, hasLength(5), reason: 'the paragraph, and four cells');
+    expect(cells[1].focusNode?.hasFocus, isTrue,
+        reason: 'the first cell, not the paragraph beside it');
+    app.cancelPendingSave();
+  });
+
   testWidgets('a table in a paragraph is drawn when the block is read',
       (t) async {
     await pump(t);
@@ -88,6 +103,42 @@ void main() {
     expect(find.byType(Table), findsOneWidget,
         reason: 'the session builds its own host; a table that drew only in '
             'read mode would turn into a URL under the caret');
+  });
+
+  test('a COPIED table pastes with its cells, not as an empty box', () {
+    // Cutting leaves a payload behind for the paste to find. Copying does
+    // not — the original stays exactly where it was, so nothing was ever
+    // orphaned — and the clipboard carries the reference text and nothing
+    // else. The paste has to find the payload on the page.
+    final pasted = Block(
+      type: BlockType.text,
+      x: 0,
+      y: 200,
+      content: {'text': 'a copy: ${block.content['text']}'},
+    );
+    app.blocks = [block, pasted];
+
+    reconcileBlockAtoms(app, pasted.id, pasted.content['text'] as String);
+
+    expect(tablesIn(pasted.content).single.cells, [
+      ['Element', 'Symbol'],
+      ['Sodium', 'Na'],
+    ]);
+    expect(tablesIn(block.content), hasLength(1),
+        reason: 'and the one it was copied FROM is untouched');
+  });
+
+  test('a reference to nothing at all stays a reference to nothing', () {
+    final orphan = Block(
+        type: BlockType.text,
+        x: 0,
+        y: 0,
+        content: {'text': '![2x2 table](onote://atom/never-existed)'});
+    app.blocks = [orphan];
+    reconcileBlockAtoms(app, orphan.id, orphan.content['text'] as String);
+    expect(tablesIn(orphan.content), isEmpty);
+    expect(orphan.content.containsKey('atoms'), isFalse,
+        reason: 'inventing an empty table would be inventing data');
   });
 
   testWidgets('typing in a cell writes to the block it is in', (t) async {

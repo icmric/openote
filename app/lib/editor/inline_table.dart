@@ -220,32 +220,51 @@ class _InlineTableState extends State<InlineTable> {
   @override
   void dispose() {
     widget.revision?.removeListener(_external);
-    _disposeGrid();
+    _retireGrid();
+    _drainRetired();
     super.dispose();
   }
 
-  void _disposeGrid() {
+  /// **Let go of the grid now; dispose it when the frame is over.**
+  ///
+  /// The grid is torn down from inside `build` — a table leaving edit mode
+  /// hands its cells back, a row inserted rebuilds them all — and disposing a
+  /// `FocusNode` that still HAS the focus asks the focus manager to find the
+  /// next one, mid-build. Detaching is synchronous (nothing reads `_ctls`
+  /// while the table is not editable), and the disposal waits for the frame
+  /// it would otherwise have reached into.
+  void _retireGrid() {
     for (final row in _ctls) {
-      for (final c in row) {
-        c.dispose();
-      }
+      _retired.addAll(row);
     }
     for (final row in _nodes) {
-      for (final n in row) {
-        n
+      _retired.addAll(row);
+    }
+    _ctls = const [];
+    _nodes = const [];
+    if (_retired.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _drainRetired());
+  }
+
+  final List<Object> _retired = [];
+
+  void _drainRetired() {
+    for (final o in _retired) {
+      if (o is TextEditingController) o.dispose();
+      if (o is FocusNode) {
+        o
           ..removeListener(_focusChanged)
           ..dispose();
       }
     }
-    _ctls = const [];
-    _nodes = const [];
+    _retired.clear();
   }
 
   /// The controllers and focus nodes, one per cell — built only while the
   /// table is EDITABLE. A page of tables being read would otherwise carry a
   /// text controller and a focus node per cell for nobody to type into.
   void _build(TableData d) {
-    _disposeGrid();
+    _retireGrid();
     _ctls = [
       for (final row in d.cells)
         [
@@ -545,7 +564,7 @@ class _InlineTableState extends State<InlineTable> {
     if (widget.editable && (shapeChanged || _ctls.isEmpty)) {
       _build(_data);
     } else if (!widget.editable && _ctls.isNotEmpty) {
-      _disposeGrid();
+      _retireGrid();
     }
 
     if (widget.editable && !_placedInitial) {

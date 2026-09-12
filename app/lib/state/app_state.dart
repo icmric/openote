@@ -3153,6 +3153,14 @@ class AppState extends ChangeNotifier
           break;
         }
         final id = candidates[i];
+        // **Re-checked, not just filtered once.** The page somebody is
+        // looking at may have changed since the candidates were listed — they
+        // opened one while the walk was working through the section. Its
+        // blocks are held in memory by a live editor; rewriting the file
+        // underneath them would be overwritten again by their next save, and
+        // the page would flip between the two forms. [convertOpenPageTables]
+        // has it covered anyway, on the way in.
+        if (notebookId == nb && id == pageId) continue;
         try {
           final data = _repo.readPage(nb, id);
           var moved = 0;
@@ -4378,7 +4386,28 @@ class AppState extends ChangeNotifier
     _atomMorgue[atom.id] = atom;
   }
 
-  InlineAtom? recallAtom(String id) => _atomMorgue[id];
+  /// The payload for [id], for a reference that turned up without one.
+  ///
+  /// Two places to look, and both are needed:
+  ///
+  /// * what was CUT — a payload left behind when its reference was taken away;
+  /// * what is still on the PAGE — because copy-and-paste leaves the original
+  ///   exactly where it was, so nothing was ever cut and the morgue is empty.
+  ///   Without this, copying a table and pasting it two lines down gave a
+  ///   reference to nothing.
+  ///
+  /// The same id then appears in two blocks, which is harmless: a payload is
+  /// stored per block, so the two copies are separate tables from the moment
+  /// either is edited.
+  InlineAtom? recallAtom(String id) {
+    final kept = _atomMorgue[id];
+    if (kept != null) return kept;
+    for (final b in blocks) {
+      final found = InlineAtom.allIn(b.content)[id];
+      if (found != null) return found;
+    }
+    return null;
+  }
 
   /// The cell a click landed in, on a table that was being read rather than
   /// edited. Consumed once by the table as it opens, so the caret lands where
@@ -9215,7 +9244,9 @@ class AppState extends ChangeNotifier
       type: 'table',
       content: {...data.toContent(), 'madeIn': kAppVersion},
     );
-    final content = <String, dynamic>{'text': atom.reference(data.altText)};
+    final content = <String, dynamic>{
+      'text': atom.reference(data.referenceAlt)
+    };
     InlineAtom.putIn(content, atom);
     final b = addBlock(Block(
       type: BlockType.text,
@@ -9224,6 +9255,10 @@ class AppState extends ChangeNotifier
       w: width ?? 360,
       content: content,
     ));
+    // The caret goes in the first cell, not in the paragraph beside it: you
+    // asked for a table because you are about to fill one in.
+    pendingAtomCell =
+        (blockId: b.id, atomId: atom.id, row: 0, col: 0);
     select(b.id, edit: true);
     return b;
   }

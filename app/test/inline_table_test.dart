@@ -196,6 +196,56 @@ void main() {
     });
   });
 
+  group('a table on a line of its own', () {
+    // **The shape every converted table actually has**, and the one that was
+    // broken: `![2x2 table](onote://atom/t1)` alone on a line is matched by
+    // the LINE grammar's picture pattern as well as by the inline atom
+    // pattern, because the two dialects share a shape and only the scheme
+    // tells them apart. The picture branch won, found no blob, and drew the
+    // reference as dim text — so every table the converter produced would
+    // have rendered as a line of punctuation.
+    setUp(() => content['text'] = '![2x2 table](onote://atom/t1)');
+
+    testWidgets('draws as a table in the live editor', (t) async {
+      await editor(t);
+      expect(find.byType(Table), findsOneWidget);
+      expect(find.byType(TextField), findsNWidgets(5),
+          reason: 'the paragraph, and one field per cell');
+    });
+
+    testWidgets('and as a table in the read view', (t) async {
+      await reader(t);
+      expect(find.byType(Table), findsOneWidget);
+      expect(find.text('Meaning', findRichText: true), findsOneWidget);
+    });
+
+    testWidgets('and the caret still crosses it in one step', (t) async {
+      // The hidden run has to be registered for a line-anchored atom too, or
+      // Left inside the paragraph gives thirty dead keystrokes.
+      final c = await editor(t);
+      c.value = TextEditingValue(
+        text: c.text,
+        selection: TextSelection.collapsed(offset: c.text.length),
+      );
+      c.value = c.value.copyWith(
+          selection: TextSelection.collapsed(offset: c.text.length - 1));
+      expect(c.selection.baseOffset, 1);
+    });
+
+    testWidgets('and text typed after it stays on the line after it',
+        (t) async {
+      final c = await editor(t);
+      c.value = TextEditingValue(
+        text: '${c.text}\nand then some words',
+        selection: const TextSelection.collapsed(offset: 0),
+      );
+      await t.pumpAndSettle();
+      expect(find.byType(Table), findsOneWidget);
+      expect(find.textContaining('and then some words', findRichText: true),
+          findsOneWidget);
+    });
+  });
+
   group('the paragraph underneath is untouched', () {
     testWidgets('every code unit of the reference is still in the buffer',
         (t) async {

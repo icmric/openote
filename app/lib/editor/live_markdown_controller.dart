@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../markdown/md_render.dart' show indentPx, kBulletGutter, subSupStyle;
 import '../math/math_view.dart' show mathStyleIn;
 import '../markdown/md_syntax.dart';
+import '../model/inline_atom.dart';
 import 'inline_atom_view.dart';
 import 'inline_math_editor.dart';
 import '../theme/onote_theme.dart';
@@ -286,6 +287,19 @@ class LiveMarkdownController extends TextEditingController {
   static final _checkboxLineRe = RegExp(r'^([ 	]*)[-*+] \[( |x|X)\]');
   static final _quoteLineRe = RegExp(r'^>\s?');
 
+  /// **The two dialects share a shape, and only the scheme tells them apart.**
+  ///
+  /// `![alt](sha256:…)` is a picture and `![alt](onote://atom/…)` is a table,
+  /// and [_imageLineRe] matches BOTH. A table on a line of its own — which is
+  /// where a converted table and a newly inserted one both are — was therefore
+  /// being taken for a picture whose blob could not be found, and drawn as its
+  /// own dim reference text.
+  ///
+  /// The inline grammar has always drawn this distinction (`md_syntax.dart`,
+  /// and `inline_atom_test.dart` pins it); this is the LINE grammar, which has
+  /// its own copy, and the copy did not know.
+  static bool _isAtomRef(String src) => src.startsWith(InlineAtom.scheme);
+
   /// A whole line that is nothing but an image reference — the in-flow form
   /// (Data Model §5.1). Line-anchored to match the renderer exactly, so what
   /// the editor draws is precisely what read mode turns into a picture.
@@ -352,7 +366,8 @@ class LiveMarkdownController extends TextEditingController {
     // Whole-line constructs are drawn as one object with the rest of the
     // source trailing hidden; they have no inline runs of their own.
     if (inlineCardRe.hasMatch(line)) return;
-    if (_imageLineRe.hasMatch(line)) return;
+    final imgLine = _imageLineRe.firstMatch(line);
+    if (imgLine != null && !_isAtomRef(imgLine.group(3)!)) return;
     var from = 0;
     final h = _headingRe.firstMatch(line);
     if (h != null) {
@@ -1158,7 +1173,7 @@ class LiveMarkdownController extends TextEditingController {
     // into it breaks the reference and the source reappears, which is its own
     // explanation of what just happened.
     final img = _imageLineRe.firstMatch(line);
-    if (img != null) {
+    if (img != null && !_isAtomRef(img.group(3)!)) {
       // Dim and monospace, so a reference standing in for a picture reads as a
       // placeholder rather than as writing. Used both when there are no bytes
       // and when the bytes turn out not to be an image.

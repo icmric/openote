@@ -211,9 +211,24 @@ class TableData {
   int get rows => cells.length;
   int get cols => cells.isEmpty ? 0 : cells.first.length;
 
-  /// What a renderer that cannot draw this shows instead, and what a screen
-  /// reader says. Small, factual, and never empty.
+  /// What this is, in words. Small, factual, and never empty — what a screen
+  /// reader says, and what is shown where the payload itself has gone.
   String get altText => '${rows}x$cols table';
+
+  /// **The alt text the reference is WRITTEN with**, which is what a reader
+  /// that cannot draw the table shows in its place.
+  ///
+  /// It carries the instruction as well as the description, and the audience
+  /// for that is specific: the owner's other machines. A build that has never
+  /// heard of an inline atom draws this line as plain text, and nothing this
+  /// build does can change that — so the one channel to those machines is the
+  /// alt text itself, and "2x2 table" alone leaves somebody staring at a line
+  /// of punctuation wondering what broke.
+  ///
+  /// No version number in it on purpose: the version that can read this is
+  /// whichever one wrote it, and a number baked into the note now would be
+  /// wrong for every later one.
+  String get referenceAlt => '$altText — update Openote to see it';
 
   // ── Structure ────────────────────────────────────────────────────────────
   //

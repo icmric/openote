@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import '../editor/inline_atom_view.dart';
+import '../model/inline_atom.dart';
 
 import 'package:flutter/material.dart';
 
@@ -508,7 +509,14 @@ class _MarkdownViewState extends State<MarkdownView> {
     // its resized dimensions, not natural pixels). Without a size, natural
     // size capped to the box width.
     final img = _reImage.firstMatch(line);
-    if (img != null && widget.imageResolver != null) {
+    // An atom reference has the same SHAPE as a picture and only the scheme
+    // tells them apart — see `_isAtomRef` in live_markdown_controller.dart.
+    // It reaches the paragraph below, where the shared inline grammar draws
+    // it. (It fell through here anyway, because no resolver can resolve it;
+    // depending on that would be depending on an accident.)
+    if (img != null &&
+        widget.imageResolver != null &&
+        !img.group(3)!.startsWith(InlineAtom.scheme)) {
       final src = img.group(3)!;
       var bytes = _imgCache[src];
       if (bytes == null) {

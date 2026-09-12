@@ -83,6 +83,22 @@ void main() {
               'showing a hole');
     });
 
+    test('and tells an older build what to do about it', () {
+      // The one channel to the owner's other machines. A build that has never
+      // heard of an inline atom draws the reference as plain text, and
+      // nothing here can change that — so the alt text has to carry the
+      // instruction, not just the description.
+      final out = tableBlockAsText(
+          tableBlock([
+            ['a', 'b']
+          ]),
+          madeIn: '1.1.0')!;
+      expect(out.content['text'], contains('update Openote'));
+      expect(out.content['text'], contains('1x2 table'),
+          reason: 'and still says what the thing IS, for a screen reader and '
+              'for any Markdown viewer that is not Openote at all');
+    });
+
     test('a block that is not a table is not touched', () {
       final text = Block(
           type: BlockType.text, x: 0, y: 0, content: {'text': 'hello'});
