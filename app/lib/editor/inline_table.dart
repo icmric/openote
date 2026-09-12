@@ -726,6 +726,14 @@ class _InlineTableState extends State<InlineTable> {
         // grows its own line instead of having the extra height measured and
         // then discarded.
         strutStyle: StrutStyle.fromTextStyle(style, forceStrutHeight: false),
+        // Type a bracket over a selection and it WRAPS the selection, as in
+        // every other content field in the app. Fences are off: a cell is one
+        // line of prose, not a place to open a code block.
+        inputFormatters: const [
+          WrapSelectionFormatter(
+              pairs: WrapSelectionFormatter.bracketPairs,
+              autoCloseFences: false)
+        ],
         // Collapsed and unpadded, because the cell's own padding IS the
         // padding. An InputDecorator's dense default would add 8px the read
         // half does not have, and every row would grow on click-in.

@@ -506,7 +506,14 @@ class _AppShellState extends State<AppShell> {
           return true;
         }
       }
-      if (ctrl && app.activeEditor != null && !_mathFieldFocused()) {
+      // `canFormatText` is the same gate the command bar's own buttons
+      // read, and it is what stands these chords down while an equation or a
+      // table cell inside the paragraph has the keyboard — otherwise Ctrl+B
+      // in a cell silently queues a style on the sentence outside it.
+      if (ctrl &&
+          app.activeEditor != null &&
+          !_mathFieldFocused() &&
+          app.canFormatText) {
         if (k == LogicalKeyboardKey.keyB) {
           app.wrapSelection('**');
           return true;

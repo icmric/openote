@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/block_atom_host.dart';
+import 'package:openote/editor/inline_table.dart';
 import 'package:openote/editor/text_block_view.dart';
 import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/inline_atom.dart';
@@ -87,6 +88,26 @@ void main() {
     app.cancelPendingSave();
   });
 
+  test('the box is at least as wide as the table inside it', () {
+    // The reference is stripped before the paragraph is measured — forty
+    // characters of URL would pin the box to its maximum — which leaves the
+    // measurement blind to the thing the reference stands for unless it asks.
+    // A box too narrow does not overflow; the table quietly scales down, so
+    // the failure would have been permanent and silent.
+    final wide = Block(
+      type: BlockType.text,
+      x: 0,
+      y: 0,
+      w: 200,
+      content: block.content,
+    );
+    final style = TextBlockView.baseStyle(wide, dark: false);
+    final want = tableNaturalWidth(tablesIn(wide.content).single,
+        style.copyWith(fontWeight: FontWeight.w600));
+    expect(TextBlockView.autoWidth(wide, dark: false),
+        greaterThanOrEqualTo(want));
+  });
+
   testWidgets('a table in a paragraph is drawn when the block is read',
       (t) async {
     await pump(t);
@@ -139,6 +160,51 @@ void main() {
     expect(tablesIn(orphan.content), isEmpty);
     expect(orphan.content.containsKey('atoms'), isFalse,
         reason: 'inventing an empty table would be inventing data');
+  });
+
+  testWidgets('one click on a cell opens the box AND lands in that cell',
+      (t) async {
+    // The headline interaction, end to end through the real block view: the
+    // click asks the host to open, the host remembers which cell, and the
+    // table consumes that as it mounts. Anything less is "click, then click
+    // again", which is the thing that was asked not to happen.
+    await pump(t);
+    expect(app.editingBlockId, isNull, reason: 'precondition: being read');
+
+    // Row 1, column 1 — "Na", the cell furthest from where a default caret
+    // would land.
+    final cells = find.byType(TextField);
+    expect(cells, findsNothing, reason: 'a cell being read is not a field');
+    await t.tap(find.text('Na', findRichText: true));
+    await t.pumpAndSettle();
+
+    expect(app.editingBlockId, block.id);
+    await pump(t);
+    final fields = t.widgetList<TextField>(find.byType(TextField)).toList();
+    expect(fields, hasLength(5));
+    expect(fields[4].focusNode?.hasFocus, isTrue,
+        reason: 'the LAST cell — the one under the pointer — not the first');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('Bold belongs to whoever has the keyboard', (t) async {
+    // With the caret in a cell, Ctrl+B and the toolbar's B must not reach
+    // past it and style the sentence the table is sitting in. A table used to
+    // be a block of its own, where `canFormatText` was false on the block
+    // type alone; a table inside a paragraph made the paragraph the answer.
+    await pump(t);
+    app.editingBlockId = block.id;
+    await pump(t);
+    expect(app.canFormatText, isTrue, reason: 'precondition: a text block');
+
+    await t.tap(find.byType(TextField).at(1));
+    await t.pumpAndSettle();
+    expect(app.canFormatText, isFalse,
+        reason: 'the caret they can see is in the cell; Bold on the '
+            'paragraph would be invisible and would fire later on a word '
+            'they type somewhere else');
+
+    app.cancelPendingSave();
   });
 
   testWidgets('typing in a cell writes to the block it is in', (t) async {

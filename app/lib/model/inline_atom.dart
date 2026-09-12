@@ -348,6 +348,25 @@ bool reconcileAtoms(
   return changed;
 }
 
+/// **The prose, with the atom references taken out of it.**
+///
+/// A reference is machinery, not writing: nobody typed
+/// `![2x2 table](onote://atom/0198…)` and nobody should be able to find it by
+/// searching for "table", or edit it by replacing "o" with "0". Anything that
+/// treats a block's text as WORDS — find, replace, a word count — wants this
+/// rather than the raw buffer.
+String withoutAtomRefs(String text) {
+  if (!text.contains(InlineAtom.scheme)) return text;
+  final buf = StringBuffer();
+  var last = 0;
+  for (final r in InlineAtom.referencesIn(text)) {
+    buf.write(text.substring(last, r.start));
+    last = r.end;
+  }
+  buf.write(text.substring(last));
+  return buf.toString();
+}
+
 /// **Every table a block carries, in reading order.**
 ///
 /// A table used to be a block, so a surface that wanted the page's tables

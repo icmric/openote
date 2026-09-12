@@ -137,7 +137,14 @@ class TextBlockView extends StatefulWidget {
     // that can see the difference.
     final key = '${b.id}\u0000${b.content['text']}\u0000'
         '${b.content['fontSize']}\u0000${b.content['lineHeight']}\u0000'
-        '${b.content['font']}\u0000$dark\u0000${b.content['atoms']}';
+        '${b.content['font']}\u0000$dark'
+        // The atoms, by IDENTITY rather than by value: this key is built on
+        // every frame for every visible block, and a table's payload printed
+        // into it would be a kilobyte of garbage per block per frame. Every
+        // write to an atom REPLACES the map (`InlineAtom.putIn`), so the
+        // identity changes exactly when the content does — while a block
+        // merely being dragged keeps the same map, and the same measurement.
+        '\u0000${identityHashCode(b.content['atoms'])}';
     final hit = _autoWidthCache[key];
     if (hit != null) return hit;
     if (_autoWidthCache.length > 512) _autoWidthCache.clear();

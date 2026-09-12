@@ -5495,8 +5495,23 @@ class AppState extends ChangeNotifier
   bool get canFormatText {
     final id = editingBlockId;
     if (id == null) return false;
+    // **Not while something inside the paragraph has the keyboard.** An
+    // equation being written, or a cell of a table being typed into: the
+    // caret the user can see is in there, and [wrapSelection] would act on
+    // the paragraph's own — invisible, somewhere else, and leaving a queued
+    // style to fire on the next word they type OUT here.
+    //
+    // A table used to be a block of its own, so this returned false for it on
+    // the block type alone; a table inside a paragraph made the paragraph the
+    // answer, and this is what keeps it honest.
+    if (activeSession?.inlineChildFocused ?? false) return false;
     return blocks.where((b) => b.id == id).firstOrNull?.type == BlockType.text;
   }
+
+  /// Redraw the chrome — the command bar, the block handles — because
+  /// something changed that only they read. Not a document change: nothing
+  /// here marks the page dirty or touches the undo stack.
+  void refreshChrome() => notifyListeners();
 
   /// Insert text at the caret of the active editor (e.g. a page link inline).
   void insertTextAtActiveCursor(String s) {
@@ -6412,6 +6427,12 @@ class AppState extends ChangeNotifier
   // ── Block clipboard (internal, Ctrl+C/X/V when not typing) ────────────
 
   String? _blockClipboard;
+
+  /// What a block copy put on the clipboard, as JSON. For the test that
+  /// checks an inline table travels WITH its block — the payload lives in the
+  /// block's own content, so it either rides along or it is lost.
+  @visibleForTesting
+  String? get debugBlockClipboard => _blockClipboard;
   bool get canPasteBlocks => _blockClipboard != null;
 
   /// When the block clipboard was filled (ms since epoch), and what the
@@ -9523,18 +9544,12 @@ class AppState extends ChangeNotifier
     pushUndo();
     final needle = find.toLowerCase();
     var count = 0;
-    for (final id in targets) {
-      final b = blocks.where((x) => x.id == id).firstOrNull;
-      if (b == null) continue;
-      final key = switch (b.type) {
-        BlockType.text => 'text',
-        BlockType.code => 'source',
-        _ => null,
-      };
-      if (key == null) continue;
-      final src = b.content[key] as String? ?? '';
+
+    /// One pass over one piece of text. Returns the text and how many times
+    /// the needle was in it.
+    (String, int) swap(String src) {
       final out = StringBuffer();
-      var i = 0;
+      var i = 0, n = 0;
       while (i < src.length) {
         final at = src.toLowerCase().indexOf(needle, i);
         if (at < 0) {
@@ -9545,9 +9560,26 @@ class AppState extends ChangeNotifier
           ..write(src.substring(i, at))
           ..write(replacement);
         i = at + find.length;
-        count++;
+        n++;
       }
-      if (count > 0) b.content[key] = out.toString();
+      return (out.toString(), n);
+    }
+
+    for (final id in targets) {
+      final b = blocks.where((x) => x.id == id).firstOrNull;
+      if (b == null) continue;
+      if (b.type == BlockType.text) {
+        count += _replaceInParagraph(b, swap);
+        continue;
+      }
+      final key = switch (b.type) {
+        BlockType.code => 'source',
+        _ => null,
+      };
+      if (key == null) continue;
+      final (out, n) = swap(b.content[key] as String? ?? '');
+      count += n;
+      if (n > 0) b.content[key] = out;
     }
     if (count > 0) {
       markDirty();
@@ -9556,6 +9588,65 @@ class AppState extends ChangeNotifier
       // stale matches would let a second Replace All hit blocks that no longer
       // contain the needle.
       setFindQuery(findQuery);
+    }
+    return count;
+  }
+
+  /// **Replace inside a paragraph without touching its machinery.**
+  ///
+  /// An atom reference is left exactly as it is, and the reason is not
+  /// tidiness: replacing "o" with "0" across a page would otherwise rewrite
+  /// `onote://atom/<id>` in every paragraph that carries a table, breaking
+  /// every reference and stranding every payload behind it. Find and Replace
+  /// is a page-wide, one-click, undo-once operation — precisely the shape of
+  /// thing that must not be able to do that.
+  ///
+  /// The table's CELLS are replaced in, which they never were before: a table
+  /// was a block of its own and this method skipped those entirely.
+  int _replaceInParagraph(Block b, (String, int) Function(String) swap) {
+    var count = 0;
+    final src = b.content['text'] as String? ?? '';
+    final out = StringBuffer();
+    var last = 0;
+    for (final r in InlineAtom.referencesIn(src)) {
+      final (text, n) = swap(src.substring(last, r.start));
+      out.write(text);
+      count += n;
+      out.write(src.substring(r.start, r.end)); // verbatim, always
+      last = r.end;
+    }
+    final (tail, n) = swap(src.substring(last));
+    out.write(tail);
+    count += n;
+    if (count > 0) b.content['text'] = out.toString();
+
+    for (final atom in InlineAtom.allIn(b.content).values) {
+      if (atom.type != 'table') continue;
+      final table = TableData.from(atom.content);
+      var touched = 0;
+      final cells = [
+        for (final row in table.cells)
+          [
+            for (final cell in row)
+              () {
+                final (text, n) = swap(cell);
+                touched += n;
+                return text;
+              }()
+          ]
+      ];
+      if (touched == 0) continue;
+      count += touched;
+      InlineAtom.putIn(
+          b.content,
+          InlineAtom(
+              id: atom.id,
+              type: atom.type,
+              content: {
+                ...atom.content,
+                ...TableData(cells: cells, colWidths: table.colWidths)
+                    .toContent(),
+              }));
     }
     return count;
   }
@@ -9597,8 +9688,23 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// What a block SAYS, for find to match against.
+  ///
+  /// For a paragraph that carries a table: the prose without the atom
+  /// reference in it, and the table's cells with it. A table's words were
+  /// never findable while a table was a block of its own (this returned the
+  /// empty string for one), and the reference was never words at all.
   String _blockText(Block b) => switch (b.type) {
-        BlockType.text => b.content['text'] as String? ?? '',
+        BlockType.text => () {
+            final text = withoutAtomRefs(b.content['text'] as String? ?? '');
+            final tables = tablesIn(b.content);
+            if (tables.isEmpty) return text;
+            return [
+              text,
+              for (final t in tables)
+                for (final row in t.cells) row.join(' ')
+            ].join('\n');
+          }(),
         BlockType.code => b.content['source'] as String? ?? '',
         BlockType.math =>
           '${b.content['latex'] ?? ''} ${b.content['linearSource'] ?? ''}',

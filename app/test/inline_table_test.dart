@@ -628,6 +628,73 @@ void main() {
     });
   });
 
+  group('the awkward places it can sit', () {
+    testWidgets('on a list line, where the bullet hangs', (t) async {
+      content['text'] = '- ![2x2 table](onote://atom/t1)';
+      await editor(t);
+      expect(find.byType(Table), findsOneWidget,
+          reason: 'a list line hands its body to the same inline builder; a '
+              'table in a bulleted list is an ordinary thing to write');
+    });
+
+    testWidgets('in a box too narrow for it, without overflowing', (t) async {
+      // A table wider than its box used to paint a debug stripe across the
+      // note and clip its last column. It scales to fit instead, and asks
+      // the box to grow.
+      (content['atoms'] as Map)['t1'] = {
+        'id': 't1',
+        'type': 'table',
+        'content': {
+          'cells': [
+            ['a', 'b', 'c']
+          ],
+          'colWidths': [400, 400, 400],
+        }
+      };
+      var asked = 0.0;
+      final c = LiveMarkdownController(
+          text: content['text'] as String, dark: false)
+        ..atomHost = InlineAtomHost(
+          atoms: () => InlineAtom.allIn(content),
+          write: (id, v, {required bool pushUndo}) {},
+          editable: true,
+          revision: revision,
+          onNeedWidth: (w) => asked = w,
+        )
+        ..layoutWidth = 300;
+      addTearDown(c.dispose);
+      await t.pumpWidget(frame(TextField(
+          controller: c,
+          maxLines: null,
+          style: const TextStyle(fontSize: 14),
+          strutStyle: StrutStyle.fromTextStyle(const TextStyle(fontSize: 14),
+              forceStrutHeight: false))));
+      await t.pumpAndSettle();
+
+      expect(t.takeException(), isNull);
+      expect(t.getSize(find.byType(Table)).width, lessThanOrEqualTo(300),
+          reason: 'it fits the room it has');
+      expect(asked, greaterThan(1000),
+          reason: 'and says how much room it actually wanted, so the box can '
+              'grow and give it back');
+    });
+
+    testWidgets('in the dark, drawn dark', (t) async {
+      final c = await editor(t);
+      final light = t.widget<Table>(find.byType(Table));
+      // What a theme change does: the engine sets this on every build
+      // (live_markdown_engine.dart:1127) and the field rebuilds around it.
+      c.dark = true;
+      c.refreshSpans();
+      await t.pumpAndSettle();
+      final dark = t.widget<Table>(find.byType(Table));
+      expect(dark.border, isNot(light.border),
+          reason: 'the style an atom is drawn in is not in the text, so the '
+              'cache has to be cleared when the theme changes — without it '
+              'every table stayed light until its line happened to move');
+    });
+  });
+
   group('column widths', () {
     testWidgets('a stored width is used exactly, uncapped', (t) async {
       (content['atoms'] as Map)['t1'] = {

@@ -370,6 +370,10 @@ class _LiveMarkdownSession extends OnoteEditSession {
   void _atomTookKeyboard(bool holding) {
     if (_atomFocus.value == holding) return;
     _atomFocus.value = holding;
+    // The command bar asks [AppState.canFormatText], and the answer has just
+    // changed: Bold belongs to whoever has the keyboard, and while that is a
+    // cell it belongs to nobody the bar can reach.
+    app.refreshChrome();
   }
 
   @override

@@ -17,6 +17,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/export/markdown_export.dart';
+import 'package:openote/export/open_export.dart';
+import 'package:openote/export/pdf_vector_export.dart';
 import 'package:openote/export/md_common.dart';
 import 'package:openote/model/inline_atom.dart';
 import 'package:openote/model/models.dart';
@@ -187,6 +189,8 @@ void main() {
       final nb = await repo.createNotebook('T');
       app = AppState(repo)..notebookId = nb.id;
       app.reloadNodes();
+      await app.selectPage(
+          app.nodes.firstWhere((n) => n.kind == NodeKind.page).id);
     });
 
     tearDown(() {
@@ -211,6 +215,56 @@ void main() {
       ]);
       expect(md, contains('| Element | Symbol |'));
       expect(md, contains('| Sodium | Na |'));
+      expect(md, isNot(contains('onote://atom')));
+    });
+
+    test('the printed page draws the table where it sits', () async {
+      if (!haveSqlite) return;
+      // The PDF decomposes a paragraph into runs of text, pictures and cards;
+      // a table had to become a fourth kind or it would have printed as the
+      // URL that stands for it. `debugFlowKinds` is the seam, because once a
+      // font is embedded the content stream carries glyph indices rather than
+      // words and no test can search the finished file for a cell.
+      final b = Block(
+          type: BlockType.text,
+          x: 0,
+          y: 0,
+          w: 400,
+          content: paragraphWithTable(before: 'Before\n', after: '\nAfter'));
+      expect(debugFlowKinds(app, b), ['text', 'table', 'text'],
+          reason: 'the words before it, the table, the words after it');
+    });
+
+    test('and a page holding one still builds a PDF', () async {
+      if (!haveSqlite) return;
+      app.blocks = [
+        Block(
+            type: BlockType.text,
+            x: 0,
+            y: 0,
+            w: 400,
+            content: paragraphWithTable())
+      ];
+      final bytes = await buildPagePdf(app, app.pageId!, title: 'Chemistry');
+      expect(bytes.length, greaterThan(1000),
+          reason: 'a table that threw would take the whole export with it, '
+              'and the words on the page with that');
+    });
+
+    test('the open-folder export carries it too', () {
+      if (!haveSqlite) return;
+      // A second exporter, a second switch, and the same hole if it were
+      // missed: page.md is what somebody reads when they open the folder
+      // outside Openote.
+      final md = openPageMarkdownOf('Chemistry', [
+        Block(
+            type: BlockType.text,
+            x: 0,
+            y: 0,
+            w: 400,
+            content: paragraphWithTable()),
+      ]);
+      expect(md, contains('| Element | Symbol |'));
       expect(md, isNot(contains('onote://atom')));
     });
 

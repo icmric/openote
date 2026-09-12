@@ -240,9 +240,22 @@ Future<void> _addPageSheets(
 @visibleForTesting
 List<String> debugFlowKinds(AppState app, Block b) {
   final text = b.content['text'] as String? ?? '';
+  final atoms = InlineAtom.allIn(b.content);
   final out = <String>[];
   var pendingText = false;
   for (final line in text.split('\n')) {
+    // A table in the flow. Mirrors the branch in [_mixedFlow]; a debug seam
+    // that did not would report a hole where the printed page has a table,
+    // which is worse than having no seam.
+    if (InlineAtom.referencesIn(line)
+        .any((r) => atoms[r.id]?.type == 'table')) {
+      if (pendingText) {
+        out.add('text');
+        pendingText = false;
+      }
+      out.add('table');
+      continue;
+    }
     final img = _imageLineRe.firstMatch(line);
     if (img != null && app.blob(img.group(1)!) != null) {
       if (pendingText) {
