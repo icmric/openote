@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 
 import '../markdown/md_render.dart';
 import '../markdown/md_syntax.dart';
+import '../core/ids.dart';
+import '../update/app_update.dart' show kAppVersion;
 import '../model/inline_atom.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
@@ -95,6 +97,7 @@ class LiveMarkdownEngine extends OnoteTextEditor {
   }) {
     final session = _LiveMarkdownSession(
       app: app,
+      blockId: block.id,
       controller: LiveMarkdownController(
           text: deserialize(block.content), dark: false)
         // The same resolver the read view gets, so an in-flow image is a
@@ -229,6 +232,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
   _LiveMarkdownSession({
     required this.app,
     required this.controller,
+    required this.blockId,
     required this.onChanged,
   }) {
     // Resizing a picture rewrites the buffer from inside the controller, and a
@@ -356,8 +360,81 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// never override that.
   Offset? _mathInitialTapGlobal;
 
+  /// The block this session is editing. Held because an atom's payload lives
+  /// in that block's content, and starting a table has to put one there
+  /// before the reference to it reaches the buffer.
+  final String blockId;
+
   @override
   bool get inlineMathFocused => _mathFocus.hasFocus;
+
+  /// **Tab after something you typed: the line becomes a table's first cell.**
+  ///
+  /// OneNote's gesture, and the one the owner reached for: *"i pressed tab
+  /// like is the case in onenote and others and it didnt work"*. It did not,
+  /// because Tab already meant indent-this-line, and the list engine takes a
+  /// plain line as one to indent.
+  ///
+  /// So the rule is OneNote's own, and it is narrow on purpose:
+  ///
+  ///  * **something typed on this line before the caret** → a table, with
+  ///    what you typed as its first cell;
+  ///  * **the start of a line** → the indent it has always been, which is how
+  ///    an outline is built and is not a thing to take away;
+  ///  * **a list line** → nesting, which Tab has meant for as long as lists
+  ///    have.
+  ///
+  /// The payload goes into the block BEFORE the reference reaches the text:
+  /// the save path reconciles the two, and a reference that arrived first
+  /// would be a reference to nothing for as long as that took.
+  @override
+  bool startInlineTable({bool onlyAfterText = false}) {
+    final b = app.blockById(blockId);
+    if (b == null) return false;
+    final v = controller.value;
+    final t = v.text;
+    if (!v.selection.isValid || !v.selection.isCollapsed) return false;
+    final at = v.selection.baseOffset.clamp(0, t.length);
+    final start = at <= 0 ? 0 : t.lastIndexOf('\n', at - 1) + 1;
+    // Nothing before the caret on this line: Tab is the indent it always
+    // was. An explicit Insert → Table has no such qualm — it was asked for.
+    if (onlyAfterText && at == start) return false;
+    final lineEnd = t.indexOf('\n', at);
+    final end = lineEnd < 0 ? t.length : lineEnd;
+    final line = t.substring(start, end);
+    // A list nests. A line already holding an atom is left alone: a table
+    // whose first cell is another table's reference is not a nested table,
+    // it is a lost table.
+    if (parseListLine(line) != null) return false;
+    if (line.contains(InlineAtom.scheme)) return false;
+
+    final head = line.trim();
+    final table = TableData(cells: [
+      [head, '']
+    ], colWidths: const []);
+    final atom = InlineAtom(
+      id: newId(),
+      type: 'table',
+      content: {...table.toContent(), 'madeIn': kAppVersion},
+    );
+    InlineAtom.putIn(b.content, atom);
+    // An empty line means you are starting from scratch, so the caret goes
+    // in the FIRST cell; a line with writing on it has just become that
+    // cell, so the caret goes to the next one.
+    app.pendingAtomCell = (
+      blockId: blockId,
+      atomId: atom.id,
+      row: 0,
+      col: head.isEmpty ? 0 : 1,
+    );
+    final ref = atom.reference(table.referenceAlt);
+    _applyEdit(TextEditingValue(
+      text: t.replaceRange(start, end, ref),
+      selection: TextSelection.collapsed(offset: start + ref.length),
+      composing: TextRange.empty,
+    ));
+    return true;
+  }
 
   /// A table cell inside this paragraph has the keyboard.
   ///
@@ -982,6 +1059,13 @@ class _LiveMarkdownSession extends OnoteEditSession {
           ? handleListShiftEnter(controller.value)
           : handleListEnter(controller.value);
     } else if (k == LogicalKeyboardKey.tab) {
+      // **Before the list engine**, which takes any line as one to indent —
+      // so asking it first would mean never asking this at all. It declines
+      // for a list line, for the start of a line and for a line that already
+      // holds a table, which is exactly where indent and nesting belong.
+      if (!hw.isShiftPressed && startInlineTable(onlyAfterText: true)) {
+        return KeyEventResult.handled;
+      }
       next = handleListTab(controller.value, outdent: hw.isShiftPressed);
       // Tab is ALWAYS consumed inside a text box, even when the engine
       // declines to change anything — Shift+Tab at the left margin, or Tab

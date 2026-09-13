@@ -401,10 +401,21 @@ class _InlineTableState extends State<InlineTable> {
         nr = r - 1;
       }
     }
-    // Off the end of the table: the keyboard goes back to the paragraph the
-    // table sits in. Tab out of the last cell is how most people leave a
-    // table, and a table you cannot Tab out of is a trap.
-    if (nr < 0 || nr >= _rows) {
+    if (nr >= _rows) {
+      // **Tab in the last cell makes a new row**, as it does in OneNote, in
+      // Word and in every spreadsheet — it is how a table gets filled in:
+      // type, Tab, type, Tab. Only for Tab (`wrap`); an arrow pressed off
+      // the bottom is somebody LEAVING, and gets to.
+      if (m.wrap) {
+        _restructure(_data.insertRow(_rows), focus: (row: _rows, col: 0));
+        return null;
+      }
+      widget.onExit?.call();
+      return null;
+    }
+    if (nr < 0) {
+      // Off the top, or Shift+Tab out of the first cell: the keyboard goes
+      // back to the paragraph the table sits in, rather than nowhere.
       widget.onExit?.call();
       return null;
     }

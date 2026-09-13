@@ -7,6 +7,7 @@
 // (`buildReadOnly` and `openSession`), and a table that draws in one and not
 // the other is the shape-change this whole piece of work exists to remove.
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/block_atom_host.dart';
@@ -73,6 +74,113 @@ void main() {
     ));
     await t.pumpAndSettle();
   }
+
+  group('Tab makes a table, the way OneNote does', () {
+    /// A paragraph with [text] in it, open for editing, focused.
+    Future<Block> typing(WidgetTester t, String text) async {
+      final b = Block(
+          type: BlockType.text, x: 0, y: 0, w: 520, content: {'text': text});
+      app.blocks = [b];
+      block = b;
+      app.editingBlockId = b.id;
+      await pump(t);
+      await t.tap(find.byType(TextField).first);
+      await t.pumpAndSettle();
+      // The caret at the end, which is where it is after typing the line.
+      final field = t.widget<TextField>(find.byType(TextField).first);
+      field.controller!.selection =
+          TextSelection.collapsed(offset: text.length);
+      await t.pumpAndSettle();
+      return b;
+    }
+
+    testWidgets('the line you are on becomes the first cell', (t) async {
+      final b = await typing(t, 'Element');
+      await t.sendKeyEvent(LogicalKeyboardKey.tab);
+      await t.pumpAndSettle();
+
+      expect(tablesIn(b.content).single.cells, [
+        ['Element', '']
+      ], reason: 'what you had typed is the first cell, not lost and not '
+          'left sitting above the table');
+      expect(b.content['text'], contains('onote://atom/'),
+          reason: 'and the line is the reference that stands for it');
+
+      final fields = t.widgetList<TextField>(find.byType(TextField)).toList();
+      expect(fields, hasLength(3), reason: 'the paragraph and two cells');
+      expect(fields[2].focusNode?.hasFocus, isTrue,
+          reason: 'the caret lands in the SECOND cell — the first one is the '
+              'word you just finished typing');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('at the START of a line it still indents, as it always did',
+        (t) async {
+      // The narrow half of OneNote's rule, and the reason it is narrow: Tab
+      // at the start of a line is how an outline is built, and taking that
+      // away to gain a table would be a trade nobody asked for.
+      final b = await typing(t, 'Element');
+      final field = t.widget<TextField>(find.byType(TextField).first);
+      field.controller!.selection = const TextSelection.collapsed(offset: 0);
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.tab);
+      await t.pumpAndSettle();
+
+      expect(tablesIn(b.content), isEmpty);
+      expect(b.content['text'], '  Element',
+          reason: 'indented, which is what Tab at a line start has meant all '
+              'along');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('but Tab still nests a list, which it has always done',
+        (t) async {
+      final b = await typing(t, '- first\n- second');
+      await t.sendKeyEvent(LogicalKeyboardKey.tab);
+      await t.pumpAndSettle();
+
+      expect(tablesIn(b.content), isEmpty,
+          reason: 'Tab inside a list has meant nesting for as long as lists '
+              'have, and that wins');
+      expect(find.byType(Table), findsNothing);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and Insert -> Table puts one in the paragraph you are in',
+        (t) async {
+      // The ribbon is an explicit request, so it does not care where the
+      // caret is — but it goes INLINE while a paragraph is open, the same
+      // rule "insert a page link" already follows.
+      final b = await typing(t, 'Element');
+      final field = t.widget<TextField>(find.byType(TextField).first);
+      field.controller!.selection = const TextSelection.collapsed(offset: 0);
+      await t.pumpAndSettle();
+
+      expect(app.activeSession!.startInlineTable(), isTrue,
+          reason: 'at the very start of the line, where Tab would decline');
+      await t.pumpAndSettle();
+      expect(tablesIn(b.content).single.cells, [
+        ['Element', '']
+      ]);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and never nests a table inside a table', (t) async {
+      // The line already holds a reference. Making it the first cell of a
+      // new table would not be a nested table, it would be a lost one.
+      await pump(t);
+      app.editingBlockId = block.id;
+      await pump(t);
+      await t.tap(find.byType(TextField).first);
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.tab);
+      await t.pumpAndSettle();
+
+      expect(tablesIn(block.content), hasLength(1));
+      expect(find.byType(Table), findsOneWidget);
+      app.cancelPendingSave();
+    });
+  });
 
   testWidgets('a new table opens with the caret in its first cell', (t) async {
     // You asked for a table because you are about to fill one in. The click

@@ -129,6 +129,14 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **Click a cell and type.** Nothing opens, nothing moves, nothing changes
   size: the cell you clicked is the cell you are writing in. A table used to
   turn into rows of `|` pipes the moment the caret arrived.
+- **Press Tab after a word and it becomes a table**, with what you typed as
+  the first cell and the caret in the second — OneNote's own gesture. At the
+  start of a line Tab still indents, and in a list it still nests. Insert →
+  Table does the same thing when you are already writing in a box: the table
+  goes into the paragraph rather than onto the page beside it.
+- **Tab in the last cell adds a row**, so a table fills in the way it does
+  everywhere else: type, Tab, type, Tab. Escape, or ↓ from the last row, takes
+  you back out to the writing.
 - **Right-click in a cell for what a table can do.** Insert a row above or
   below, a column left or right, delete the row or the column — all relative
   to the cell you clicked, the way any grown-up editor does it. This replaces

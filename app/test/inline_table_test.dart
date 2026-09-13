@@ -436,17 +436,51 @@ void main() {
       expect(left, 't1');
     });
 
-    testWidgets('Tab moves to the next cell, and off the end it leaves',
-        (t) async {
+    testWidgets('Tab in the last cell makes a new row', (t) async {
+      // How a table gets filled in: type, Tab, type, Tab. OneNote does this,
+      // Word does this, every spreadsheet does this — and it is the other
+      // half of the gesture that MADE the table in the first place.
       String? left;
       await editor(t, h: host(onExit: (id) => left = id));
-      // Last cell of the last row: Tab wraps forward, finds no row, and
-      // gives the paragraph its keyboard back rather than trapping it.
-      await t.tap(find.byType(TextField).at(4));
+      await t.tap(find.byType(TextField).at(4)); // last cell, last row
       await t.pumpAndSettle();
       await t.sendKeyEvent(LogicalKeyboardKey.tab);
       await t.pumpAndSettle();
-      expect(left, 't1', reason: 'a table you cannot Tab out of is a trap');
+
+      expect(stored().rows, 3);
+      expect(left, isNull, reason: 'Tab fills a table in; it does not leave');
+      final fields = t.widgetList<TextField>(find.byType(TextField)).toList();
+      expect(fields[5].focusNode?.hasFocus, isTrue,
+          reason: 'and the caret is in the first cell of the new row');
+    });
+
+    testWidgets('but an arrow off the bottom leaves, because that is leaving',
+        (t) async {
+      String? left;
+      await editor(t, h: host(onExit: (id) => left = id));
+      await t.tap(find.byType(TextField).at(4));
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await t.pumpAndSettle();
+      expect(left, 't1', reason: 'a table you cannot get out of is a trap');
+      expect(stored().rows, 2, reason: 'and no row was added on the way');
+    });
+
+    testWidgets('and Shift+Tab out of the first cell leaves too', (t) async {
+      String? left;
+      await editor(t, h: host(onExit: (id) => left = id));
+      await t.tap(find.byType(TextField).at(1)); // row 0, col 0
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.tab, character: null);
+      await t.pumpAndSettle();
+      expect(stored().rows, 2, reason: 'precondition: Tab moved, not added');
+      await t.tap(find.byType(TextField).at(1));
+      await t.pumpAndSettle();
+      await t.sendKeyDownEvent(LogicalKeyboardKey.shift);
+      await t.sendKeyEvent(LogicalKeyboardKey.tab);
+      await t.sendKeyUpEvent(LogicalKeyboardKey.shift);
+      await t.pumpAndSettle();
+      expect(left, 't1');
     });
   });
 

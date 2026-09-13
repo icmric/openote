@@ -291,7 +291,16 @@ final List<InsertGroup> kInsertGroups = [
           run: insertTableFromPickedFile,
         ),
       ],
-      run: (context, app, at) async => app.insertTable(at: at),
+      // Inline when a text box is being edited, a block of its own
+      // otherwise — the same rule "insert a page link" already follows, and
+      // the one §5.1 states for every type that can be both.
+      run: (context, app, at) async {
+        if (app.canFormatText &&
+            (app.activeSession?.startInlineTable() ?? false)) {
+          return;
+        }
+        app.insertTable(at: at);
+      },
     ),
     InsertItem(
       id: 'code',

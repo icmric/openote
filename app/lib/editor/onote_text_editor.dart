@@ -199,6 +199,20 @@ abstract class OnoteEditSession {
   /// to a block.
   bool startInlineMath() => false;
 
+  /// **Start a TABLE at the caret, inside this paragraph.**
+  ///
+  /// Tab, the way OneNote has always done it: the line you are on becomes the
+  /// first cell and the caret lands in the second. Returns false when the
+  /// engine has no inline tables of its own, or when the line cannot become
+  /// one, and the caller then falls back to a block of its own — the same
+  /// shape as [startInlineMath], and the same reason: "insert a table" means
+  /// something different depending on whether you are writing at the time.
+  /// [onlyAfterText] is what makes Tab safe to use for this: it declines at
+  /// the start of a line, where Tab has always meant indent. An explicit
+  /// "insert a table" from the ribbon passes false and gets one wherever the
+  /// caret is.
+  bool startInlineTable({bool onlyAfterText = false}) => false;
+
   void dispose();
 }
 
