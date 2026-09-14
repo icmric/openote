@@ -705,7 +705,55 @@ class _InlineTableState extends State<InlineTable> {
     // and an `Align` around it is worse still: inside a paragraph the
     // placeholder would then take the whole line, pushing the sentence off
     // it and putting the table's own hit box over the words.
-    return SizedBox(width: total, child: table);
+    final sized = SizedBox(width: total, child: table);
+    if (!widget.editable) return sized;
+    // **A tap on the table belongs to the table**, including the parts of it
+    // that are not a cell: the borders, the gap between two columns, the
+    // strip a column is dragged by. Those fell straight through to the
+    // paragraph underneath, whose own tap handler then put the caret at the
+    // nearest offset it could find — which is inside the reference, because
+    // every offset from the object's first character to the end of it is
+    // drawn in the same place. The owner saw the visible half of that: *"if i
+    // click into the last box it will put my cursor in it, but then kick it
+    // out to after the table"*.
+    //
+    // The cells are deeper than this, so a tap that lands on one still goes
+    // to that cell and this never sees it. What arrives here is only what
+    // would otherwise have left the table altogether.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapUp: (d) => _focusNearestCell(d.globalPosition),
+      child: sized,
+    );
+  }
+
+  /// The cell closest to a point, for a tap that landed between them.
+  ///
+  /// By distance to the cell's BOX rather than to its centre, so the answer
+  /// for a tap on a border is the cell it is touching rather than whichever
+  /// one happens to be smallest.
+  void _focusNearestCell(Offset global) {
+    var best = (row: -1, col: -1);
+    var nearest = double.infinity;
+    for (var r = 0; r < _nodes.length; r++) {
+      for (var c = 0; c < _nodes[r].length; c++) {
+        final box = _nodes[r][c].context?.findRenderObject() as RenderBox?;
+        if (box == null || !box.hasSize) continue;
+        final rect = box.localToGlobal(Offset.zero) & box.size;
+        final dx = global.dx < rect.left
+            ? rect.left - global.dx
+            : (global.dx > rect.right ? global.dx - rect.right : 0.0);
+        final dy = global.dy < rect.top
+            ? rect.top - global.dy
+            : (global.dy > rect.bottom ? global.dy - rect.bottom : 0.0);
+        final d = dx * dx + dy * dy;
+        if (d < nearest) {
+          nearest = d;
+          best = (row: r, col: c);
+        }
+      }
+    }
+    if (best.row >= 0) _focusCell(best.row, best.col);
   }
 
   Widget _cell(int r, int c, double rowMin) {

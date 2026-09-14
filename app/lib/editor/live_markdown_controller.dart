@@ -435,7 +435,162 @@ class LiveMarkdownController extends TextEditingController {
 
   @override
   set value(TextEditingValue newValue) {
-    super.value = _snapOutOfHiddenMarkers(newValue);
+    super.value = _snapOutOfHiddenMarkers(_guardObjects(newValue));
+  }
+
+  String? _objectsFor;
+  List<({int start, int end})>? _objectsCache;
+
+  /// **The spans that are drawn as ONE object**, in source offsets.
+  ///
+  /// A table, an inline equation, an in-flow picture and a flashcard are the
+  /// same trick: one widget stands on the construct's FIRST code unit and the
+  /// rest of the source trails behind it at a hairline, so the paragraph keeps
+  /// exactly as many code units as the buffer and not one caret offset moves.
+  ///
+  /// What that costs is this. Every offset from that first character to the
+  /// end of the construct is laid out in the SAME place - hard against the
+  /// object's right edge - so a click beside a table, or Left from just past
+  /// it, lands the caret at `start + 1`, which looks like "after the table"
+  /// and is in fact between the `!` and the `[`. The next keystroke splices a
+  /// character into the reference, it stops matching, and the table is
+  /// replaced by forty characters of its own URL.
+  ///
+  /// So an object has exactly two legal caret positions: before it and after
+  /// it. [_snapOutOfHiddenMarkers] keeps the caret to those two, and
+  /// [_guardObjects] is the floor under that for anything that arrives
+  /// without a caret ever having been there.
+  List<({int start, int end})> _objectRanges([String? of]) {
+    final t = of ?? text;
+    if (_objectsFor == t) return _objectsCache!;
+    final out = <({int start, int end})>[];
+    for (final r in _runs(t)) {
+      // The run records the HIDDEN remainder, so the object itself starts one
+      // character earlier - on the code unit its widget stands on.
+      //
+      // **Equations are deliberately not in here.** They are drawn with the
+      // same trick and they have the same hole, but an equation is OPENED by
+      // putting the caret inside it: the session's own editor writes at
+      // offsets between the dollars, and the click that opens one resolves to
+      // an offset inside the run. Fencing that off does not protect an
+      // equation, it stops anybody editing one. The distinction that matters
+      // is further down in [_guardObjects]: a mangled equation is still all
+      // of its own data, sitting there to be typed back into shape, while a
+      // mangled atom reference is a pointer to a payload nothing can reach.
+      if (r.kind == MdRunKind.atom) {
+        out.add((start: r.start - 1, end: r.end));
+      }
+    }
+    // Pictures and flashcards take a whole line and are not in `_runs` at all
+    // - `_lineRuns` returns before it reaches them. They are drawn with the
+    // same placeholder arithmetic and have exactly the same hole.
+    var pos = 0;
+    for (final line in t.split('\n')) {
+      final img = _imageLineRe.firstMatch(line);
+      if (img != null && !_isAtomRef(img.group(3)!)) {
+        out.add((start: pos + img.start, end: pos + img.end));
+      } else {
+        final card = inlineCardRe.firstMatch(line);
+        if (card != null) {
+          out.add((start: pos + card.start, end: pos + card.end));
+        }
+      }
+      pos += line.length + 1;
+    }
+    _objectsFor = t;
+    return _objectsCache = out;
+  }
+
+  /// **An edit may never land inside an object.**
+  ///
+  /// The owner, on typing beside a table: *"it seems to insert it into the
+  /// thing that renders the table so the hash comes up and the table
+  /// disapears. This is very bad, this should never be able to ever happen"*.
+  /// Quite right, and it is not a display glitch: the reference stops
+  /// matching, so the payload is stranded with nothing pointing at it and the
+  /// URL appears in the sentence. A note has lost its table.
+  ///
+  /// Keeping the caret out (above) is the fix for typing. This is the floor
+  /// under it, because an edit can arrive at an offset no caret ever visited
+  /// - a paste over a selection dragged through half a reference, an IME
+  /// composition, a platform update against a selection one frame stale. It
+  /// sits in `set value` rather than in an input formatter so that there is
+  /// one door to guard rather than one per path.
+  ///
+  /// An insertion inside an object is moved AFTER it, which is where it looked
+  /// like it was going. An edit that would eat PART of one takes the whole
+  /// object instead: half a reference is worse than no reference, and an undo
+  /// brings a table back where a broken URL cannot be turned back into one.
+  ///
+  /// **Atom references only, and that is not timidity.** An equation, a
+  /// picture and a flashcard are written in their own source: the text IS the
+  /// data, their own editors rewrite the inside of it on purpose (an equation
+  /// retyped, a picture dragged to a new `=WxH`, a card's answer changed), and
+  /// a mangled one is visible and can be typed back into shape. An atom
+  /// reference is the opposite — it is a POINTER, its payload lives somewhere
+  /// the text cannot reach, and nothing in the app ever writes inside one. A
+  /// character spliced into it orphans the payload for good. So the caret is
+  /// kept out of all four (above), and this last resort guards the one where
+  /// there is no legitimate interior edit to be told apart from an accident.
+  TextEditingValue _guardObjects(TextEditingValue next) {
+    final a = value.text, b = next.text;
+    if (a == b) return next;
+    if (!a.contains(InlineAtom.scheme)) return next;
+    final objs = InlineAtom.referencesIn(a)
+        .map((r) => (start: r.start, end: r.end))
+        .toList();
+    if (objs.isEmpty) return next;
+    // The edit, as "a[p, ea) became b[p, eb)".
+    final shorter = a.length < b.length ? a.length : b.length;
+    var p = 0;
+    while (p < shorter && a.codeUnitAt(p) == b.codeUnitAt(p)) {
+      p++;
+    }
+    var ea = a.length, eb = b.length;
+    while (ea > p && eb > p && a.codeUnitAt(ea - 1) == b.codeUnitAt(eb - 1)) {
+      ea--;
+      eb--;
+    }
+    for (final o in objs) {
+      if (!(p > o.start && p < o.end) && !(ea > o.start && ea < o.end)) {
+        continue;
+      }
+      final inserted = b.substring(p, eb);
+      if (p == ea) {
+        // **Where the caret says it went beats where the characters say.**
+        // Comparing from both ends is ambiguous when the typed character is
+        // already there: typing an exclamation mark just BEFORE a table reads
+        // as an insertion one place to the right, which is inside it. The
+        // selection knows better, so it gets the casting vote - but only when
+        // it describes an edit that genuinely produces this text.
+        final sel = next.selection;
+        if (sel.isValid && sel.isCollapsed) {
+          final q = sel.baseOffset - inserted.length;
+          if (q >= 0 &&
+              q != p &&
+              q <= a.length &&
+              q + inserted.length <= b.length &&
+              !(q > o.start && q < o.end) &&
+              a.replaceRange(q, q, b.substring(q, q + inserted.length)) == b) {
+            return next;
+          }
+        }
+        final at = o.end;
+        return next.copyWith(
+          text: a.replaceRange(at, at, inserted),
+          selection: TextSelection.collapsed(offset: at + inserted.length),
+          composing: TextRange.empty,
+        );
+      }
+      final from = p < o.start ? p : o.start;
+      final to = ea > o.end ? ea : o.end;
+      return next.copyWith(
+        text: a.replaceRange(from, to, inserted),
+        selection: TextSelection.collapsed(offset: from + inserted.length),
+        composing: TextRange.empty,
+      );
+    }
+    return next;
   }
 
   /// Step a caret that has landed *between* the characters of an invisible
@@ -456,11 +611,23 @@ class LiveMarkdownController extends TextEditingController {
     if (!sel.isValid || !old.selection.isValid) return next;
     if (old.text != next.text) return next;
     final rs = _runs(next.text);
-    if (rs.isEmpty) return next;
+    final objs = _objectRanges(next.text);
+    if (rs.isEmpty && objs.isEmpty) return next;
 
     int fix(int off, int from) {
       if (from == off) return off;
+      // **An object is all or nothing**, and its two ends are the only places
+      // a caret may be. Its own run below records only the HIDDEN remainder -
+      // from `start + 1` - which left `start + 1` itself looking like an edge
+      // when it is in fact the inside of the reference: between the `!` and
+      // the `[`, where one keystroke ends a table. See [_objectRanges].
+      for (final o in objs) {
+        if (off > o.start && off < o.end) {
+          return from < off ? o.end : o.start;
+        }
+      }
       for (final r in rs) {
+        if (r.kind == MdRunKind.atom) continue;
         for (final edge in [
           (r.start, r.start + r.openLen),
           (r.end - r.closeLen, r.end),

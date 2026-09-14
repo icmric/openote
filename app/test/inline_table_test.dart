@@ -229,7 +229,11 @@ void main() {
       );
       c.value = c.value.copyWith(
           selection: TextSelection.collapsed(offset: c.text.length - 1));
-      expect(c.selection.baseOffset, 1);
+      expect(c.selection.baseOffset, 0,
+          reason: 'all the way over, to BEFORE it. This used to answer 1 - '
+              'between the exclamation mark and the bracket - which is the '
+              'one offset in the whole reference that must never hold a '
+              'caret: the next keystroke there ends the table');
     });
 
     testWidgets('and text typed after it stays on the line after it',
@@ -298,9 +302,97 @@ void main() {
       );
       c.value = c.value.copyWith(
           selection: TextSelection.collapsed(offset: at.end - 1));
-      expect(c.selection.baseOffset, at.start + 1,
+      expect(c.selection.baseOffset, at.start,
           reason: 'one step over the whole atom — otherwise Left inside a '
               'sentence gives forty dead keystrokes');
+    });
+  });
+
+  group('you cannot type inside it', () {
+    // **The owner, and it is hard to put better:** *"if my cursor is right
+    // next to the end of the table and i type or press space or anything, it
+    // seems to insert it into the thing that renders the table so the hash
+    // comes up and the table disapears. This is very bad, this should never be
+    // able to ever happen"*.
+    //
+    // Every offset from the reference's first character to its last is drawn
+    // in the SAME place — hard against the table's right edge — because the
+    // table stands on the first one and the other forty trail behind it at a
+    // hairline. So `start + 1` looks exactly like "after the table" and is in
+    // fact between the `!` and the `[`. One space there and the reference
+    // stops matching: the table is gone, its payload is stranded with nothing
+    // pointing at it, and the URL is in the sentence.
+
+    testWidgets('Left from just past it lands BEFORE it, not inside',
+        (t) async {
+      final c = await editor(t);
+      final at = InlineAtom.rangeIn(c.text, 't1')!;
+      c.value = TextEditingValue(
+          text: c.text, selection: TextSelection.collapsed(offset: at.end));
+      c.value = c.value.copyWith(
+          selection: TextSelection.collapsed(offset: at.end - 1));
+      final off = c.selection.baseOffset;
+      expect(off > at.start && off < at.end, isFalse,
+          reason: 'there are two legal places for a caret on an object, and '
+              'both of them are outside it');
+      expect(off, at.start);
+    });
+
+    testWidgets('and a tap on the table lands in a cell, not in the sentence',
+        (t) async {
+      final c = await editor(t);
+      c.value = TextEditingValue(
+          text: c.text, selection: const TextSelection.collapsed(offset: 0));
+      final box = t.getRect(find.byType(Table));
+      // The bottom border: not a cell, not the paragraph — table chrome,
+      // which fell through to the paragraph's own tap handler and put its
+      // caret at the nearest offset going, which is inside the reference.
+      await t.tapAt(Offset(box.center.dx, box.bottom - 1));
+      await t.pumpAndSettle();
+
+      expect(c.selection.baseOffset, 0,
+          reason: 'the paragraph never saw the tap at all');
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'tableCell',
+          reason: 'and clicking a table puts you in the table');
+    });
+
+    testWidgets('an edit aimed straight at the middle of it is moved out',
+        (t) async {
+      final c = await editor(t);
+      final at = InlineAtom.rangeIn(c.text, 't1')!;
+      // No caret ever goes here now, so this is what is left: a paste, an IME
+      // composition, or a platform update against a selection one frame old.
+      c.value = TextEditingValue(
+        text: c.text.replaceRange(at.start + 1, at.start + 1, ' '),
+        selection: TextSelection.collapsed(offset: at.start + 2),
+      );
+      await t.pumpAndSettle();
+
+      expect(InlineAtom.rangeIn(c.text, 't1'), isNotNull,
+          reason: 'the reference is whole');
+      expect(find.byType(Table), findsOneWidget,
+          reason: 'and the table is still a table');
+      expect(c.text, contains(') and it holds.'.replaceFirst(') ', ')  ')),
+          reason: 'the space went after the object, which is where it looked '
+              'like it was going');
+    });
+
+    testWidgets('and an edit that would eat half of it takes all of it',
+        (t) async {
+      final c = await editor(t);
+      final at = InlineAtom.rangeIn(c.text, 't1')!;
+      // A selection dragged from the middle of the reference out into the
+      // sentence, then typed over.
+      c.value = TextEditingValue(
+        text: c.text.replaceRange(at.start + 4, at.end + 4, 'X'),
+        selection: TextSelection.collapsed(offset: at.start + 5),
+      );
+      await t.pumpAndSettle();
+
+      expect(c.text.contains(InlineAtom.scheme), isFalse,
+          reason: 'half a reference is worse than none: forty characters of '
+              'URL in the sentence and a payload nothing points at');
+      expect(c.text, 'Results: X it holds.');
     });
   });
 

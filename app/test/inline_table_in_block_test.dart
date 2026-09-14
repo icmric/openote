@@ -216,6 +216,32 @@ void main() {
         greaterThanOrEqualTo(want));
   });
 
+  test('a sentence beside a table gets room for BOTH', () {
+    // The owner, after the box stopped snapping to its maximum: *"although it
+    // pushed text onto the next line which isnt ideal"*. Quite so — the words
+    // and the table are drawn one after the other, so the room they need is
+    // the two added together. Taking the larger of the two instead is what
+    // pushed the sentence onto the line below its own table.
+    Block withText(String t) => Block(
+        type: BlockType.text,
+        x: 0,
+        y: 0,
+        w: 200,
+        content: Map<String, dynamic>.from(block.content)..['text'] = t);
+
+    final ref = InlineAtom.allIn(block.content)['t1']!.reference('2x2 table');
+    final alone = TextBlockView.autoWidth(withText(ref), dark: false);
+    final beside =
+        TextBlockView.autoWidth(withText('Results: $ref and it holds.'), dark: false);
+
+    expect(beside, greaterThan(alone),
+        reason: 'the sentence needs room of its own, beside the table rather '
+            'than instead of it');
+    expect(beside, lessThan(TextBlockView.maxAutoW),
+        reason: 'and it is the WORDS being measured, not ninety characters of '
+            'the reference they sit next to');
+  });
+
   testWidgets('a table in a paragraph is drawn when the block is read',
       (t) async {
     await pump(t);
