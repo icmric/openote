@@ -121,7 +121,7 @@ class InlineTable extends StatefulWidget {
     this.onKeyboard,
     this.onExit,
     this.onOpen,
-    this.initialCell,
+    this.takeInitialCell,
   });
 
   final TableBinding binding;
@@ -158,8 +158,14 @@ class InlineTable extends StatefulWidget {
   /// click lands the caret where the pointer was.
   final void Function(int row, int col)? onOpen;
 
-  /// Focus this cell once, on the first editable build.
-  final ({int row, int col})? initialCell;
+  /// The cell to put the caret in, asked for ONCE as this table mounts —
+  /// by a click on a cell while the table was being read, or by the Tab that
+  /// made the table in the first place.
+  ///
+  /// A callback rather than a value because the answer is consumed when it is
+  /// asked for: a widget that is built and then discarded must not be able to
+  /// take the request with it.
+  final ({int row, int col})? Function()? takeInitialCell;
 
   @override
   State<InlineTable> createState() => _InlineTableState();
@@ -220,6 +226,17 @@ class _InlineTableState extends State<InlineTable> {
   @override
   void dispose() {
     widget.revision?.removeListener(_external);
+    // **Hand the keyboard back on the way out.** The host stands its own key
+    // handling, caret and text-input connection down while a cell holds the
+    // keyboard; a table torn down while one did — the block closing, a row
+    // rebuilt underneath it — would otherwise leave that true for ever, and
+    // a paragraph that cannot be typed into is a far worse bug than the one
+    // the flag exists to fix. Post-frame because this runs during a build.
+    final tell = widget.onKeyboard;
+    if (_holdingKeyboard && tell != null) {
+      _holdingKeyboard = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) => tell(false));
+    }
     _retireGrid();
     _drainRetired();
     super.dispose();
@@ -584,7 +601,7 @@ class _InlineTableState extends State<InlineTable> {
 
     if (widget.editable && !_placedInitial) {
       _placedInitial = true;
-      final at = widget.initialCell;
+      final at = widget.takeInitialCell?.call();
       if (at != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _focusCell(at.row, at.col);

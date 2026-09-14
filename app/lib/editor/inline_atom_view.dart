@@ -56,8 +56,15 @@ class InlineAtomHost {
   /// Somebody clicked inside an atom that is only being read.
   final void Function(String id, int row, int col)? onOpen;
 
-  /// The cell a click asked for, consumed once — so re-entering the block
-  /// later does not jump to where the pointer was a quarter of an hour ago.
+  /// The cell a click (or Tab) asked for, consumed ONCE — so re-entering the
+  /// block later does not jump to where the pointer was a quarter of an hour
+  /// ago.
+  ///
+  /// Called by the atom that MOUNTS, not by the one that is built: an atom
+  /// widget can be constructed and thrown away without ever reaching the
+  /// tree — the span builder runs whenever the field rebuilds — and a
+  /// discarded widget that had already taken the request would leave the
+  /// real one with nothing to do, and the caret wherever it happened to be.
   final ({int row, int col})? Function(String id)? takeInitialCell;
 
   /// The atom wants more room than the box has.
@@ -128,7 +135,7 @@ Widget inlineAtomWidget({
     onKeyboard: h.onKeyboard,
     onExit: h.onExit == null ? null : () => h.onExit!(id),
     onOpen: h.onOpen == null ? null : (r, c) => h.onOpen!(id, r, c),
-    initialCell: h.takeInitialCell?.call(id),
+    takeInitialCell: () => h.takeInitialCell?.call(id),
   );
 }
 

@@ -396,9 +396,14 @@ class _LiveMarkdownSession extends OnoteEditSession {
     if (!v.selection.isValid || !v.selection.isCollapsed) return false;
     final at = v.selection.baseOffset.clamp(0, t.length);
     final start = at <= 0 ? 0 : t.lastIndexOf('\n', at - 1) + 1;
-    // Nothing before the caret on this line: Tab is the indent it always
-    // was. An explicit Insert → Table has no such qualm — it was asked for.
-    if (onlyAfterText && at == start) return false;
+    // Nothing WRITTEN before the caret on this line: Tab is the indent it
+    // always was, and a second Tab is a second indent. Whitespace counts as
+    // nothing, which is the difference between this and `at == start`: the
+    // owner pressed Tab twice and got "a table with a tab in the first
+    // column", because the indent the first Tab made was enough to convince
+    // the second one that something had been typed. An explicit Insert →
+    // Table has no such qualm — it was asked for.
+    if (onlyAfterText && t.substring(start, at).trim().isEmpty) return false;
     final lineEnd = t.indexOf('\n', at);
     final end = lineEnd < 0 ? t.length : lineEnd;
     final line = t.substring(start, end);
@@ -445,7 +450,10 @@ class _LiveMarkdownSession extends OnoteEditSession {
   final ValueNotifier<bool> _atomFocus = ValueNotifier(false);
 
   void _atomTookKeyboard(bool holding) {
-    if (_atomFocus.value == holding) return;
+    // A table hands the keyboard back as it is torn down, and the session it
+    // is telling may be going down in the same breath — the block closed, the
+    // page changed. Late is fine; late and disposed is an assertion.
+    if (_disposed || _atomFocus.value == holding) return;
     _atomFocus.value = holding;
     // The command bar asks [AppState.canFormatText], and the answer has just
     // changed: Bold belongs to whoever has the keyboard, and while that is a
@@ -1284,6 +1292,22 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // gesture, which wins the arena). See [_enterMathOnTapAtLineEnd].
       onTap: _enterMathOnTapAtLineEnd,
       showCursor: !inlineChildFocused,
+      // **And the keyboard itself, not only the caret.**
+      //
+      // A cell is a real `TextField` nested inside this one, and a nested
+      // `EditableText` does not make its host give anything up: the host's
+      // `FocusNode.hasFocus` stays TRUE while a descendant holds the primary
+      // focus, so as far as the host is concerned it is still the field being
+      // typed into and it holds its platform text-input connection open. Two
+      // clients, one keyboard, and which one the next character reaches is
+      // then a question of attach ORDER — which nothing here controls.
+      //
+      // `readOnly` closes that connection (`_shouldCreateInputConnection` in
+      // EditableText), and reopens it when the cell hands the keyboard back.
+      // This is the third gate, after the key handler and the caret: the
+      // first two decide who ACTS on a keystroke, and this one decides who
+      // receives it at all.
+      readOnly: inlineChildFocused,
       maxLines: null,
       style: s.baseStyle,
       // NON-FORCED strut, explicitly. TextField's default when none is
