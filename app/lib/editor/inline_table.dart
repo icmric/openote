@@ -191,6 +191,80 @@ class _CellEscape extends Intent {
   const _CellEscape();
 }
 
+/// **A cell's own editing keys stay the cell's.**
+///
+/// `EditableText` publishes most of its editing actions through
+/// `Action.overridable`, so that a widget ABOVE a field can change what a key
+/// does inside it. A cell is a field inside another field, which turns that
+/// courtesy into a hijacking: the paragraph is an ancestor, so it is found as
+/// the override, and its action runs against the PARAGRAPH's text and then
+/// posts the result at the cell. The owner found both halves of it —
+///
+///   * *"i am unable to backspace words"*. Ctrl+Backspace resolved to the
+///     paragraph's delete action, which is disabled while a cell holds the
+///     keyboard (the paragraph is read-only then, which is how it stops
+///     taking the keystrokes in the first place), so the key did nothing at
+///     all.
+///   * *"attempting to highlight text by pressing ctrl + arrow keys caused it
+///     to bug out and say to update openote to view the table"*. Ctrl+Shift+←
+///     resolved to the paragraph's word-selection action, which measured the
+///     word boundary in the paragraph and handed the cell the PARAGRAPH's
+///     whole value — reference and all. The cell then held the table's own
+///     reference as text, and a cell has no atom host to draw it with, so all
+///     it could show was the alt text: "update Openote to see it".
+///
+/// Registering this for the same intent above the cell makes the cell's own
+/// action the one that is found first. It then hands straight back to the
+/// action it displaced: `callingAction` is the real default — the framework
+/// sets it before every call — so nothing is reimplemented here, and a cell
+/// gets exactly the behaviour any other text field gets.
+class _CellsOwnAction<T extends Intent> extends ContextAction<T> {
+  @override
+  Object? invoke(T intent, [BuildContext? context]) {
+    final a = callingAction;
+    if (a == null) return null;
+    return a is ContextAction<T> ? a.invoke(intent, context) : a.invoke(intent);
+  }
+
+  /// Null means this was not reached as an override, and there is nothing to
+  /// hand back to. Disabled, so the key goes on to whoever else wants it
+  /// rather than being swallowed here.
+  @override
+  bool get isActionEnabled => callingAction?.isActionEnabled ?? false;
+
+  @override
+  bool consumesKey(T intent) => callingAction?.consumesKey(intent) ?? false;
+}
+
+/// Every editing intent `EditableText` makes overridable, claimed for the
+/// cell. The list is exactly its `_makeOverridable` entries: the others are
+/// registered plainly, so the nearest field — the cell — already wins them.
+final Map<Type, Action<Intent>> _cellsOwnKeys = <Type, Action<Intent>>{
+  DeleteCharacterIntent: _CellsOwnAction<DeleteCharacterIntent>(),
+  DeleteToNextWordBoundaryIntent:
+      _CellsOwnAction<DeleteToNextWordBoundaryIntent>(),
+  DeleteToLineBreakIntent: _CellsOwnAction<DeleteToLineBreakIntent>(),
+  ExtendSelectionByCharacterIntent:
+      _CellsOwnAction<ExtendSelectionByCharacterIntent>(),
+  ExtendSelectionToNextWordBoundaryIntent:
+      _CellsOwnAction<ExtendSelectionToNextWordBoundaryIntent>(),
+  ExtendSelectionToNextWordBoundaryOrCaretLocationIntent:
+      _CellsOwnAction<ExtendSelectionToNextWordBoundaryOrCaretLocationIntent>(),
+  ExtendSelectionToNextParagraphBoundaryIntent:
+      _CellsOwnAction<ExtendSelectionToNextParagraphBoundaryIntent>(),
+  ExtendSelectionToNextParagraphBoundaryOrCaretLocationIntent:
+      _CellsOwnAction<
+          ExtendSelectionToNextParagraphBoundaryOrCaretLocationIntent>(),
+  ExtendSelectionToLineBreakIntent:
+      _CellsOwnAction<ExtendSelectionToLineBreakIntent>(),
+  ExtendSelectionToDocumentBoundaryIntent:
+      _CellsOwnAction<ExtendSelectionToDocumentBoundaryIntent>(),
+  ExtendSelectionVerticallyToAdjacentLineIntent:
+      _CellsOwnAction<ExtendSelectionVerticallyToAdjacentLineIntent>(),
+  ExtendSelectionVerticallyToAdjacentPageIntent:
+      _CellsOwnAction<ExtendSelectionVerticallyToAdjacentPageIntent>(),
+};
+
 class _InlineTableState extends State<InlineTable> {
   late TableData _data;
   List<List<LiveMarkdownController>> _ctls = const [];
@@ -786,6 +860,10 @@ class _InlineTableState extends State<InlineTable> {
         },
         child: Actions(
           actions: {
+            // Before this table's own keys, and for the same reason they are
+            // here: a cell is a field inside a field, and without this the
+            // paragraph answers for it. See [_CellsOwnAction].
+            ..._cellsOwnKeys,
             _CellMove:
                 CallbackAction<_CellMove>(onInvoke: (i) => _onMove(r, c, i)),
             _CellEnter:

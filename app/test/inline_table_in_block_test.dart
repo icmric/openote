@@ -294,6 +294,95 @@ void main() {
         reason: 'and stop blinking a second caret beside the cell it is in');
   });
 
+  group('a cell answers its own editing keys', () {
+    // **A cell is a text field inside a text field**, and `EditableText`
+    // publishes most of its editing actions through `Action.overridable` so
+    // that a widget above a field can change what a key does inside it. The
+    // paragraph IS above the cell, so it was found as the override and
+    // answered for it: its action ran against the paragraph's own text and
+    // posted the result at the cell. See [_CellsOwnAction] in
+    // inline_table.dart. Both of these are the owner's, from real use.
+
+    /// Into the first cell, with [text] typed into it.
+    Future<TextEditingController> inCell(WidgetTester t, String text) async {
+      app.editingBlockId = block.id;
+      await pump(t);
+      await t.tap(find.byType(TextField).at(1));
+      await t.pumpAndSettle();
+      t.testTextInput.updateEditingValue(TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      ));
+      await t.pumpAndSettle();
+      return t.widget<TextField>(find.byType(TextField).at(1)).controller!;
+    }
+
+    Future<void> chord(WidgetTester t, LogicalKeyboardKey key,
+        {bool shift = false}) async {
+      await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      if (shift) await t.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await t.sendKeyEvent(key);
+      if (shift) await t.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await t.pumpAndSettle();
+    }
+
+    testWidgets('Ctrl+Backspace deletes a word', (t) async {
+      final c = await inCell(t, 'hello world');
+      await chord(t, LogicalKeyboardKey.backspace);
+      expect(c.text, 'hello ',
+          reason: 'the owner: "i am unable to backspace words". This resolved '
+              'to the PARAGRAPH\'s delete action, which is disabled while a '
+              'cell holds the keyboard — so the key did nothing at all');
+      expect(tablesIn(block.content).single.cells[0][0], 'hello ',
+          reason: 'and it reached the payload, like any other cell edit');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('Ctrl+Shift+Left selects a word, and only in the cell',
+        (t) async {
+      final c = await inCell(t, 'hello world');
+      await chord(t, LogicalKeyboardKey.arrowLeft, shift: true);
+
+      expect(c.selection.baseOffset, 11);
+      expect(c.selection.extentOffset, 6,
+          reason: 'one word back, inside the cell');
+      expect(c.text, 'hello world',
+          reason: 'the owner: this "caused it to bug out and say to update '
+              'openote to view the table". The paragraph measured the word '
+              'boundary in its OWN text and handed the cell that whole value, '
+              'reference and all — and a cell has no atom host, so the only '
+              'thing it could draw was the alt text');
+      expect(c.text.contains(InlineAtom.scheme), isFalse);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and Ctrl+Left moves by a word without disturbing anything',
+        (t) async {
+      final c = await inCell(t, 'hello world');
+      await chord(t, LogicalKeyboardKey.arrowLeft);
+      expect(c.selection.isCollapsed, isTrue);
+      expect(c.selection.baseOffset, 6);
+      expect(c.text, 'hello world');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('the paragraph keeps its own caret through all of it',
+        (t) async {
+      await inCell(t, 'hello world');
+      final host =
+          t.widget<TextField>(find.byType(TextField).first).controller!;
+      final was = host.selection;
+      await chord(t, LogicalKeyboardKey.arrowLeft, shift: true);
+      await chord(t, LogicalKeyboardKey.backspace);
+      expect(host.selection, was,
+          reason: 'a key pressed in a cell is not the paragraph\'s business');
+      expect(host.text, contains(InlineAtom.scheme),
+          reason: 'and its reference is untouched');
+      app.cancelPendingSave();
+    });
+  });
+
   test('a COPIED table pastes with its cells, not as an empty box', () {
     // Cutting leaves a payload behind for the paste to find. Copying does
     // not — the original stays exactly where it was, so nothing was ever
