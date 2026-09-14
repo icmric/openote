@@ -1,3 +1,5 @@
+import 'package:flutter/widgets.dart';
+
 import '../model/inline_atom.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
@@ -53,6 +55,20 @@ InlineAtomHost blockAtomHost(
       onOpen: onOpen,
       onNeedWidth: onNeedWidth,
       takeInitialCell: (id) => app.takePendingAtomCell(blockId, id),
+      rememberCell: (id, row, col) {
+        app.pendingAtomCell =
+            (blockId: blockId, atomId: id, row: row, col: col);
+        // Good for THIS frame only. A table that is being rebuilt mounts
+        // again within it and takes the note; one that is being closed does
+        // not, and the note must not survive to surprise whoever opens the
+        // block next.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final p = app.pendingAtomCell;
+          if (p != null && p.blockId == blockId && p.atomId == id) {
+            app.pendingAtomCell = null;
+          }
+        });
+      },
     );
 
 /// Keep a block's payloads and its references in step after the text changed.

@@ -23,6 +23,7 @@ class InlineAtomHost {
     this.onOpen,
     this.takeInitialCell,
     this.onNeedWidth,
+    this.rememberCell,
   });
 
   /// The atoms this block is carrying, read fresh. Never a snapshot: an atom
@@ -69,6 +70,18 @@ class InlineAtomHost {
 
   /// The atom wants more room than the box has.
   final void Function(double total)? onNeedWidth;
+
+  /// **Where the caret was, said on the way out.**
+  ///
+  /// An atom widget can be torn down and built again in the same frame — the
+  /// block's whole subtree is replaced whenever its key changes, which a page
+  /// switch, an undo and a sync pull all do — and the focus goes with it. The
+  /// atom that mounts in its place has no way to know, so the one going out
+  /// leaves a note. The host throws it away at the end of the frame if nobody
+  /// picked it up, because then it was a real close and not a rebuild, and a
+  /// caret that jumped into a cell the next time you opened the block would
+  /// be its own bug.
+  final void Function(String id, int row, int col)? rememberCell;
 }
 
 /// **One atom, drawn — the same widget wherever it is drawn.**
@@ -135,6 +148,8 @@ Widget inlineAtomWidget({
     onKeyboard: h.onKeyboard,
     onExit: h.onExit == null ? null : () => h.onExit!(id),
     onOpen: h.onOpen == null ? null : (r, c) => h.onOpen!(id, r, c),
+    rememberCell:
+        h.rememberCell == null ? null : (r, c) => h.rememberCell!(id, r, c),
     takeInitialCell: () => h.takeInitialCell?.call(id),
   );
 }

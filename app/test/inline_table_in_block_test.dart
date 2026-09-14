@@ -572,6 +572,76 @@ void main() {
     });
   });
 
+  group('a block rebuilt underneath the caret', () {
+    // **The whole subtree goes, not just the table.** `BlockView` is keyed
+    // `'<id>#<docRevision>'`, and a page switch, an undo and a sync pull all
+    // bump that revision — so the block's element is replaced outright,
+    // taking the session, the field, the table and the focus with it. What
+    // the owner sees is the caret arriving in a cell and then leaving it:
+    // *"the cursor would be in the table initially, then jump out"*.
+    //
+    // The table going out leaves a note saying which cell had the caret, and
+    // the one built in its place picks it up. A note nobody picks up is
+    // dropped at the end of the frame, so closing a block really does close
+    // it.
+
+    Future<void> pumpAs(WidgetTester t, int revision) async {
+      await t.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        theme: onoteTheme(Brightness.light),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 520,
+              child: TextBlockView(
+                  key: ValueKey('${block.id}#$revision'),
+                  block: block,
+                  app: app),
+            ),
+          ),
+        ),
+      ));
+      await t.pumpAndSettle();
+    }
+
+    int focusedField(WidgetTester t) => t
+        .widgetList<TextField>(find.byType(TextField))
+        .toList()
+        .indexWhere((f) => f.focusNode?.hasPrimaryFocus ?? false);
+
+    testWidgets('keeps it, in the cell it was in', (t) async {
+      app.editingBlockId = block.id;
+      await pumpAs(t, 1);
+      await t.tap(find.byType(TextField).at(2)); // row 0, col 1
+      await t.pumpAndSettle();
+      expect(focusedField(t), 2, reason: 'in the second cell to begin with');
+
+      await pumpAs(t, 2); // the revision moves: everything is rebuilt
+
+      expect(focusedField(t), 2,
+          reason: 'the caret was in a cell, and it is in the same cell — a '
+              'rebuild is not somewhere the caret should be lost');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('but closing the block really closes it', (t) async {
+      app.editingBlockId = block.id;
+      await pumpAs(t, 1);
+      await t.tap(find.byType(TextField).at(1));
+      await t.pumpAndSettle();
+
+      // Closed rather than rebuilt: nothing mounts to pick the note up.
+      app.editingBlockId = null;
+      await pumpAs(t, 1);
+      expect(app.pendingAtomCell, isNull,
+          reason: 'a caret that jumped into a cell the next time the block '
+              'was opened would be its own bug');
+      app.cancelPendingSave();
+    });
+  });
+
   test('a COPIED table pastes with its cells, not as an empty box', () {
     // Cutting leaves a payload behind for the paste to find. Copying does
     // not — the original stays exactly where it was, so nothing was ever

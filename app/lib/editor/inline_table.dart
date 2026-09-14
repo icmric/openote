@@ -121,6 +121,7 @@ class InlineTable extends StatefulWidget {
     this.onKeyboard,
     this.onExit,
     this.onOpen,
+    this.rememberCell,
     this.takeInitialCell,
   });
 
@@ -157,6 +158,11 @@ class InlineTable extends StatefulWidget {
   /// for editing and hands the cell straight back as [initialCell], so one
   /// click lands the caret where the pointer was.
   final void Function(int row, int col)? onOpen;
+
+  /// Where the caret was, said as this table is torn down, so that a table
+  /// rebuilt in its place the same frame can put it back. See
+  /// `InlineAtomHost.rememberCell`.
+  final void Function(int row, int col)? rememberCell;
 
   /// The cell to put the caret in, asked for ONCE as this table mounts —
   /// by a click on a cell while the table was being read, or by the Tab that
@@ -308,6 +314,18 @@ class _InlineTableState extends State<InlineTable> {
     _data = widget.binding.read();
     if (widget.editable) _build(_data);
     widget.revision?.addListener(_external);
+    // **And once more at the end of this frame.** A table that is replacing
+    // one torn down in the same frame mounts BEFORE the old one is disposed —
+    // Flutter inflates the new element and unmounts the old when the build is
+    // finished — so the note saying where the caret was does not exist yet
+    // when [build] first looks for it. See `InlineAtomHost.rememberCell`.
+    if (widget.editable) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final at = widget.takeInitialCell?.call();
+        if (at != null) _askForCell(at.row, at.col);
+      });
+    }
   }
 
   @override
@@ -329,6 +347,17 @@ class _InlineTableState extends State<InlineTable> {
     // rebuilt underneath it — would otherwise leave that true for ever, and
     // a paragraph that cannot be typed into is a far worse bug than the one
     // the flag exists to fix. Post-frame because this runs during a build.
+    // **Leave a note saying where the caret was**, before the nodes that know
+    // are thrown away. If this teardown is really a rebuild — the block's
+    // subtree is replaced whole whenever its key changes — the table that
+    // mounts in its place picks the note up and the caret never moves. If it
+    // is a real close, nobody picks it up and the host drops it at the end of
+    // the frame.
+    final remember = widget.rememberCell;
+    final was = _lastFocused;
+    if (remember != null && was != null && _holdingKeyboard) {
+      remember(was.row, was.col);
+    }
     final tell = widget.onKeyboard;
     if (_holdingKeyboard && tell != null) {
       _holdingKeyboard = false;
@@ -491,7 +520,23 @@ class _InlineTableState extends State<InlineTable> {
     return false;
   }
 
-  void _focusChanged() => _settleKeyboard();
+  /// The last cell that held the caret, kept after it has let go.
+  ///
+  /// Read in [dispose], where the nodes can no longer answer: a widget's
+  /// children are unmounted before it is, so by the time this State is
+  /// disposed every cell's `Focus` has already detached and unfocused itself.
+  /// Asking then always says "nobody", which is how the note about where the
+  /// caret was came to be blank.
+  ({int row, int col})? _lastFocused;
+
+  void _focusChanged() {
+    for (var r = 0; r < _nodes.length; r++) {
+      for (var c = 0; c < _nodes[r].length; c++) {
+        if (_nodes[r][c].hasFocus) _lastFocused = (row: r, col: c);
+      }
+    }
+    _settleKeyboard();
+  }
 
   /// Tell the host, once the frame has settled, whether this table has the
   /// keyboard.
