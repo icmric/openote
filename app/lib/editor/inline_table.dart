@@ -263,6 +263,29 @@ final Map<Type, Action<Intent>> _cellsOwnKeys = <Type, Action<Intent>>{
       _CellsOwnAction<ExtendSelectionVerticallyToAdjacentLineIntent>(),
   ExtendSelectionVerticallyToAdjacentPageIntent:
       _CellsOwnAction<ExtendSelectionVerticallyToAdjacentPageIntent>(),
+  ExpandSelectionToLineBreakIntent:
+      _CellsOwnAction<ExpandSelectionToLineBreakIntent>(),
+  ExpandSelectionToDocumentBoundaryIntent:
+      _CellsOwnAction<ExpandSelectionToDocumentBoundaryIntent>(),
+  ScrollToDocumentBoundaryIntent:
+      _CellsOwnAction<ScrollToDocumentBoundaryIntent>(),
+  TransposeCharactersIntent: _CellsOwnAction<TransposeCharactersIntent>(),
+  // **Cut, copy, paste and select-all**, which are overridable like the rest
+  // and were being answered by the paragraph in the two ways it can get this
+  // wrong. Copy read the PARAGRAPH's selection, which is collapsed while a
+  // cell has the keyboard, so there was nothing to copy and Ctrl+C and Ctrl+X
+  // did nothing. Paste is disabled on a read-only field, and the paragraph is
+  // read-only exactly while a cell holds the keyboard, so Ctrl+V did nothing
+  // either. The owner: *"cut, copy, and paste shortcuts dont work inside the
+  // box"*. Cut has no intent of its own — it is a copy that collapses the
+  // selection — so this one entry is both.
+  SelectAllTextIntent: _CellsOwnAction<SelectAllTextIntent>(),
+  CopySelectionTextIntent: _CellsOwnAction<CopySelectionTextIntent>(),
+  PasteTextIntent: _CellsOwnAction<PasteTextIntent>(),
+  // Deliberately NOT the two tap-outside intents. They decide what a click
+  // somewhere else does to this field's focus, which is a question the
+  // paragraph is better placed to answer than a cell is — and focus around
+  // this table has been settled twice already without them.
 };
 
 class _InlineTableState extends State<InlineTable> {
@@ -414,6 +437,15 @@ class _InlineTableState extends State<InlineTable> {
   /// [Listenable], which in this app is every keystroke anywhere.
   void _external() {
     if (!mounted) return;
+    // **Somebody outside asking for a cell.** An arrow key pressed in the
+    // paragraph at the table's edge leaves the request where the Tab that
+    // makes a table leaves it, and for the same reason: this widget is built
+    // once per id and then kept, so there is nothing to pass it to. Polled
+    // here because this already runs on every notification the app makes.
+    if (widget.editable) {
+      final asked = widget.takeInitialCell?.call();
+      if (asked != null) _askForCell(asked.row, asked.col);
+    }
     final next = widget.binding.read();
     if (next.rows != _rows || next.cols != _cols) {
       setState(() {
@@ -487,9 +519,53 @@ class _InlineTableState extends State<InlineTable> {
   void _restructure(TableData next, {({int row, int col})? focus}) {
     _write(next, structural: true);
     setState(() => _build(next));
-    if (focus == null) return;
+    if (focus != null) _askForCell(focus.row, focus.col);
+  }
+
+  /// The cell the caret is being sent to, until it actually gets there.
+  ///
+  /// A single post-frame `requestFocus` is one throw of the dice: the frame it
+  /// is made in may be the frame the grid is rebuilt in, or the one the block
+  /// is re-laid-out in, and if the request does not land the caret is left in
+  /// the paragraph with nothing to put it right. The owner saw the last of
+  /// those: *"sometimes when hitting enter to create a new row, it does push
+  /// the cursor out of the table"* — sometimes, because it is a race.
+  ///
+  /// So the request is kept and re-made until the cell has the caret, for at
+  /// most a few frames. Bounded because a request that can never be satisfied
+  /// must not fight the person for the keyboard for ever.
+  ({int row, int col})? _wantCell;
+  int _wantTries = 0;
+
+  void _askForCell(int r, int c) {
+    _wantCell = (row: r, col: c);
+    _wantTries = 0;
+    _pursueCell();
+  }
+
+  void _pursueCell() {
+    // **And make sure a frame actually happens.** A post-frame callback runs
+    // at the end of the NEXT frame, and if nothing is dirty there is no next
+    // frame: the request sat in the queue until something else woke the tree
+    // up, which in a running app is the caret blinking and in a test is never.
+    WidgetsBinding.instance.ensureVisualUpdate();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focusCell(focus.row, focus.col);
+      final want = _wantCell;
+      if (!mounted || want == null) return;
+      if (want.row >= _nodes.length || want.col >= _nodes[want.row].length) {
+        _wantCell = null;
+        return;
+      }
+      if (_nodes[want.row][want.col].hasPrimaryFocus) {
+        _wantCell = null;
+        return;
+      }
+      if (_wantTries++ >= 3) {
+        _wantCell = null;
+        return;
+      }
+      _focusCell(want.row, want.col);
+      _pursueCell();
     });
   }
 
@@ -711,11 +787,7 @@ class _InlineTableState extends State<InlineTable> {
     if (widget.editable && !_placedInitial) {
       _placedInitial = true;
       final at = widget.takeInitialCell?.call();
-      if (at != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _focusCell(at.row, at.col);
-        });
-      }
+      if (at != null) _askForCell(at.row, at.col);
     }
 
     final border = widget.dark ? OnoteColors.night300 : OnoteColors.paper300;

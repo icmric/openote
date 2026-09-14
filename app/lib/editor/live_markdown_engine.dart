@@ -877,6 +877,45 @@ class _LiveMarkdownSession extends OnoteEditSession {
     return false;
   }
 
+  /// **The caret crossing a table steps into it**, from either side, exactly
+  /// as it steps into an equation.
+  ///
+  /// The owner: *"if my cursor is at the end of the table but outside of it, i
+  /// cannot use the arrow keys to navigate into it, it just gets rid of the
+  /// cursor and never moves me into the table"*. Quite so — the caret crossed
+  /// the whole object in one step and came out the far side, which is right
+  /// for a picture and wrong for something you can write in.
+  ///
+  /// The cell is asked for the way every other cell request is made, by
+  /// leaving it on the app: an atom widget is built once per id and kept, so
+  /// there is no handle here to call a method on. See `_external` in
+  /// inline_table.dart, which picks it up on the notification below.
+  bool _enterAtomAtEdge({required bool fromRight}) {
+    final sel = controller.selection;
+    if (!sel.isValid || !sel.isCollapsed) return false;
+    final at = sel.baseOffset;
+    final b = app.blockById(blockId);
+    if (b == null) return false;
+    for (final r in InlineAtom.referencesIn(controller.text)) {
+      if (at != (fromRight ? r.end : r.start)) continue;
+      final atom = InlineAtom.allIn(b.content)[r.id];
+      // A picture, or something a newer build made: nothing to step into, so
+      // the caret goes on past it as it always did.
+      if (atom == null || atom.type != 'table') return false;
+      final d = TableData.from(atom.content);
+      if (d.rows == 0 || d.cols == 0) return false;
+      app.pendingAtomCell = (
+        blockId: blockId,
+        atomId: r.id,
+        row: fromRight ? d.rows - 1 : 0,
+        col: fromRight ? d.cols - 1 : 0,
+      );
+      app.refreshChrome();
+      return true;
+    }
+    return false;
+  }
+
   /// **A click that resolved to somewhere INSIDE a math run opens it there.**
   ///
   /// Only reachable from the very first click on a paragraph that was not
@@ -1074,10 +1113,12 @@ class _LiveMarkdownSession extends OnoteEditSession {
     // equation as a unit, which is its own correct behaviour (E.4).
     if (!hw.isShiftPressed && k == LogicalKeyboardKey.arrowLeft) {
       if (_enterMathAtEdge(fromRight: true)) return KeyEventResult.handled;
+      if (_enterAtomAtEdge(fromRight: true)) return KeyEventResult.handled;
       return KeyEventResult.ignored;
     }
     if (!hw.isShiftPressed && k == LogicalKeyboardKey.arrowRight) {
       if (_enterMathAtEdge(fromRight: false)) return KeyEventResult.handled;
+      if (_enterAtomAtEdge(fromRight: false)) return KeyEventResult.handled;
       return KeyEventResult.ignored;
     }
     final TextEditingValue? next;
@@ -1313,7 +1354,20 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // Fires ONCE, after the caret has been placed, and never for a tap
       // that landed on the equation itself (that one is the atom's own
       // gesture, which wins the arena). See [_enterMathOnTapAtLineEnd].
-      onTap: _enterMathOnTapAtLineEnd,
+      onTap: () {
+        // **A tap on the sentence is a tap OUT of the table.**
+        //
+        // `EditableText.requestKeyboard` asks for focus only when the field
+        // does NOT already have it — and a host's `FocusNode.hasFocus` is
+        // true the whole time a cell holds the keyboard, because the cell is
+        // its descendant. So the paragraph never asked, the cell kept the
+        // caret, and clicking back into the sentence did nothing at all.
+        //
+        // Nothing else needs doing here: the tap has already put the
+        // paragraph's own caret where it landed.
+        if (_focus.hasFocus && !_focus.hasPrimaryFocus) _focus.requestFocus();
+        _enterMathOnTapAtLineEnd();
+      },
       showCursor: !inlineChildFocused,
       // **And the keyboard itself, not only the caret.**
       //

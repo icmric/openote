@@ -367,6 +367,49 @@ void main() {
       app.cancelPendingSave();
     });
 
+    testWidgets('cut, copy and paste are the cell\'s too', (t) async {
+      // The owner: *"cut, copy, and paste shortcuts dont work inside the box,
+      // like if i highlight some text and cut it nothing happens, and if i
+      // try to paste again nothing"*. Both halves are the paragraph
+      // answering: copy read its selection, which is collapsed while a cell
+      // has the keyboard, and paste is disabled on a read-only field — which
+      // the paragraph is, exactly while a cell has the keyboard.
+      var board = '';
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        switch (call.method) {
+          case 'Clipboard.setData':
+            board = (call.arguments as Map)['text'] as String;
+          case 'Clipboard.getData':
+            return <String, dynamic>{'text': board};
+          case 'Clipboard.hasStrings':
+            return <String, dynamic>{'value': board.isNotEmpty};
+        }
+        return null;
+      });
+      addTearDown(() => TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null));
+
+      final c = await inCell(t, 'hello world');
+      c.selection = const TextSelection(baseOffset: 6, extentOffset: 11);
+      await t.pumpAndSettle();
+
+      // Cut has no intent of its own: it is a copy that collapses.
+      await chord(t, LogicalKeyboardKey.keyX);
+      expect(board, 'world');
+      expect(c.text, 'hello ');
+
+      await chord(t, LogicalKeyboardKey.keyV);
+      expect(c.text, 'hello world');
+
+      await chord(t, LogicalKeyboardKey.keyA);
+      expect(c.selection.extentOffset, 11, reason: 'select all, in the cell');
+      await chord(t, LogicalKeyboardKey.keyC);
+      expect(board, 'hello world');
+      app.cancelPendingSave();
+    });
+
     testWidgets('the paragraph keeps its own caret through all of it',
         (t) async {
       await inCell(t, 'hello world');
@@ -379,6 +422,105 @@ void main() {
           reason: 'a key pressed in a cell is not the paragraph\'s business');
       expect(host.text, contains(InlineAtom.scheme),
           reason: 'and its reference is untouched');
+      app.cancelPendingSave();
+    });
+  });
+
+  group('the arrow keys step into it', () {
+    // The owner: *"if my cursor is at the end of the table but outside of it,
+    // i cannot use the arrow keys to navigate into it, it just gets rid of the
+    // cursor and never moves me into the table"*. The caret crossed the whole
+    // object in one step and came out the far side — right for a picture,
+    // wrong for something you can write in. An equation has stepped into
+    // itself from either side since v0.20; this is the same door.
+
+    /// The caret in the sentence, just past the table.
+    Future<TextEditingController> afterTheTable(WidgetTester t) async {
+      app.editingBlockId = block.id;
+      await pump(t);
+      final box = t.getRect(find.byType(Table));
+      await t.tapAt(Offset(box.right + 20, box.center.dy));
+      await t.pumpAndSettle();
+      final host =
+          t.widget<TextField>(find.byType(TextField).first).controller!;
+      expect(FocusManager.instance.primaryFocus?.debugLabel, isNot('tableCell'),
+          reason: 'the sentence has the caret to begin with');
+      return host;
+    }
+
+    int focusedField(WidgetTester t) => t
+        .widgetList<TextField>(find.byType(TextField))
+        .toList()
+        .indexWhere((f) => f.focusNode?.hasPrimaryFocus ?? false);
+
+    testWidgets('Left from just after it lands in the LAST cell', (t) async {
+      final host = await afterTheTable(t);
+      final ref = InlineAtom.rangeIn(host.text, 't1')!;
+      host.selection = TextSelection.collapsed(offset: ref.end);
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await t.pumpAndSettle();
+
+      // Field 0 is the paragraph; the cells follow in reading order, so the
+      // last of a 2x2 is field 4.
+      expect(focusedField(t), 4,
+          reason: 'coming from the right, you arrive at the right-hand end');
+      expect(host.selection.baseOffset, ref.end,
+          reason: 'and the sentence keeps its own caret where it was');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and Right from just before it lands in the first',
+        (t) async {
+      final host = await afterTheTable(t);
+      final ref = InlineAtom.rangeIn(host.text, 't1')!;
+      host.selection = TextSelection.collapsed(offset: ref.start);
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await t.pumpAndSettle();
+
+      expect(focusedField(t), 1);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and clicking the sentence takes the caret back out',
+        (t) async {
+      app.editingBlockId = block.id;
+      await pump(t);
+      await t.tap(find.byType(TextField).at(1));
+      await t.pumpAndSettle();
+      expect(focusedField(t), 1, reason: 'in a cell');
+
+      final box = t.getRect(find.byType(Table));
+      await t.tapAt(Offset(box.right + 20, box.center.dy));
+      await t.pumpAndSettle();
+
+      expect(focusedField(t), 0,
+          reason: 'a field whose DESCENDANT holds the keyboard still reports '
+              'hasFocus, and EditableText only asks for focus when it has '
+              'none — so the paragraph never asked for it back, and clicking '
+              'the sentence did nothing at all');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('Enter in the last row lands in the row it just made',
+        (t) async {
+      app.editingBlockId = block.id;
+      await pump(t);
+      await t.tap(find.byType(TextField).at(4)); // the last cell of the 2x2
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.enter);
+      await t.pumpAndSettle();
+
+      expect(tablesIn(block.content).single.rows, 3);
+      expect(focusedField(t), 6,
+          reason: 'the owner: "sometimes when hitting enter to create a new '
+              'row, it does push the cursor out of the table" — sometimes, '
+              'because a single post-frame request is one throw of the dice');
+      t.testTextInput.updateEditingValue(const TextEditingValue(
+          text: 'third', selection: TextSelection.collapsed(offset: 5)));
+      await t.pumpAndSettle();
+      expect(tablesIn(block.content).single.cells[2][1], 'third');
       app.cancelPendingSave();
     });
   });
