@@ -234,6 +234,40 @@ void main() {
             'read mode would turn into a URL under the caret');
   });
 
+  testWidgets('the paragraph gives up its keyboard the FRAME a cell takes it',
+      (t) async {
+    // **The third gate, and why one frame of it matters.**
+    //
+    // A cell is a real `TextField` nested inside the paragraph's own, and a
+    // host `FocusNode` reports `hasFocus` true while any DESCENDANT holds the
+    // primary focus. So the paragraph never learns it has stopped being the
+    // field being typed into: it keeps drawing its caret and keeps its
+    // platform text-input connection open, and which of the two the next
+    // character reaches comes down to attach order.
+    //
+    // The table announces that it has taken the keyboard — but it announces
+    // it POST-FRAME, because focus moving from one cell to the next passes
+    // through "nobody" and a signal sent mid-move would flap. That leaves a
+    // frame in which a cell has the caret and the paragraph still believes it
+    // does, and a frame is all a keystroke needs.
+    //
+    // So the gate is read from the focus tree, which cannot be stale:
+    // `hasFocus` without `hasPrimaryFocus` means a descendant has it. This
+    // pumps exactly ONE frame after the tap, before any notification could
+    // have been delivered.
+    app.editingBlockId = block.id;
+    await pump(t);
+    await t.tap(find.byType(TextField).at(1)); // the first cell
+    await t.pump();
+
+    final host = t.widget<TextField>(find.byType(TextField).first);
+    expect(host.readOnly, isTrue,
+        reason: 'the paragraph must let go of the keyboard in the same frame '
+            'the cell takes it, not in the one after');
+    expect(host.showCursor, isFalse,
+        reason: 'and stop blinking a second caret beside the cell it is in');
+  });
+
   test('a COPIED table pastes with its cells, not as an empty box', () {
     // Cutting leaves a payload behind for the paste to find. Copying does
     // not — the original stays exactly where it was, so nothing was ever

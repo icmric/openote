@@ -280,22 +280,57 @@ class _InlineTableState extends State<InlineTable> {
   /// The controllers and focus nodes, one per cell — built only while the
   /// table is EDITABLE. A page of tables being read would otherwise carry a
   /// text controller and a focus node per cell for nobody to type into.
+  ///
+  /// **A cell that still exists keeps the objects it had.** This used to
+  /// throw the whole grid away and build a new one for any change of shape,
+  /// and that is what put the caret outside the table: adding a row disposed
+  /// the focus node the person was typing into, and a `FocusNode` that is
+  /// detached while it holds the focus hands it to the enclosing SCOPE, which
+  /// gives it to the paragraph. The caret was then put back post-frame — a
+  /// race against a teardown already in flight, and the frame it lost, the
+  /// keystrokes went into the sentence beside the table.
+  ///
+  /// Growing the grid instead means the node being typed into is never
+  /// touched at all: `insertRow` at the end adds cells and disturbs nothing,
+  /// which is the gesture this table is built around (type, Tab, type, Tab).
+  /// Only cells that genuinely disappear are retired.
   void _build(TableData d) {
-    _retireGrid();
-    _ctls = [
-      for (final row in d.cells)
-        [
-          for (final c in row)
-            LiveMarkdownController(text: c, dark: widget.dark)
-        ]
-    ];
-    _nodes = [
-      for (final row in d.cells)
-        [
-          for (final _ in row)
-            FocusNode(debugLabel: 'tableCell')..addListener(_focusChanged)
-        ]
-    ];
+    final ctls = <List<LiveMarkdownController>>[];
+    final nodes = <List<FocusNode>>[];
+    for (var r = 0; r < d.rows; r++) {
+      final row = <LiveMarkdownController>[];
+      final keys = <FocusNode>[];
+      for (var c = 0; c < d.cols; c++) {
+        if (r < _ctls.length && c < _ctls[r].length) {
+          final ctl = _ctls[r][c];
+          // Positions shift under an insert in the MIDDLE, so what this cell
+          // holds may now be its neighbour's text. Assigning moves the
+          // caret to the end of it, which is why the callers that insert
+          // ask for a cell explicitly afterwards.
+          if (ctl.text != d.cells[r][c]) ctl.text = d.cells[r][c];
+          row.add(ctl);
+          keys.add(_nodes[r][c]);
+        } else {
+          row.add(LiveMarkdownController(text: d.cells[r][c], dark: widget.dark));
+          keys.add(FocusNode(debugLabel: 'tableCell')..addListener(_focusChanged));
+        }
+      }
+      ctls.add(row);
+      nodes.add(keys);
+    }
+    for (var r = 0; r < _ctls.length; r++) {
+      for (var c = 0; c < _ctls[r].length; c++) {
+        if (r < d.rows && c < d.cols) continue;
+        _retired
+          ..add(_ctls[r][c])
+          ..add(_nodes[r][c]);
+      }
+    }
+    _ctls = ctls;
+    _nodes = nodes;
+    if (_retired.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _drainRetired());
+    }
   }
 
   /// Something outside this widget may have changed the table.
@@ -749,6 +784,14 @@ class _InlineTableState extends State<InlineTable> {
   /// change of character the paragraph itself made, and the other half of why
   /// clicking into a cell moves nothing.
   Widget _editable(int r, int c, TextStyle style) => TextField(
+        // **Keyed on the focus node, not the position.** A row removed from
+        // the middle slides every cell below it up, so the field at (r, c) can
+        // be handed a different controller and a different focus node than it
+        // had last frame — and `EditableText` does not reconsider its platform
+        // text-input connection when its focus node is swapped underneath it.
+        // It would go on being the field the keyboard was wired to while the
+        // caret was somewhere else entirely. A key makes that a new field.
+        key: ObjectKey(_nodes[r][c]),
         controller: _ctls[r][c],
         focusNode: _nodes[r][c],
         maxLines: null,

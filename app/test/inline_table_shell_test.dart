@@ -23,6 +23,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openote/editor/text_block_view.dart';
 import 'package:openote/model/inline_atom.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -126,6 +127,77 @@ void main() {
         'typing belongs');
     expect(text(), contains('onote://atom/'),
         reason: 'and not a character of it reached the paragraph');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('type, Tab, type, Tab — and the row Tab just made is typed into',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+
+    // **The whole gesture, the way a table actually gets filled in.** The
+    // second Tab is the one that used to break it: it adds a row, and adding
+    // a row rebuilt the grid, and rebuilding the grid disposed the focus node
+    // holding the caret. A `FocusNode` detached while it has the focus hands
+    // it to the enclosing SCOPE, and the scope gives it back to the
+    // paragraph — so the caret left the table and the next word went into the
+    // sentence beside it. Nothing smaller than the whole application can see
+    // this: in a bare harness the refocus wins the race every time.
+    tester.testTextInput.enterText('Element');
+    await settle(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester);
+    tester.testTextInput.enterText('Symbol');
+    await settle(tester);
+    expect(cells(), [
+      ['Element', 'Symbol']
+    ]);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester);
+    expect(cells(), [
+      ['Element', 'Symbol'],
+      ['', '']
+    ], reason: 'Tab in the last cell adds a row');
+
+    // Typed at nobody in particular — it goes wherever the keyboard is.
+    tester.testTextInput.enterText('Sodium');
+    await settle(tester);
+    expect(cells(), [
+      ['Element', 'Symbol'],
+      ['Sodium', '']
+    ], reason: 'the first cell of the new row, which is where Tab left the '
+        'caret — not the old cell, and not the paragraph');
+    expect(text(), startsWith('!['),
+        reason: 'and not one character of it reached the sentence');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('a table in a sentence does not pin the box to its maximum',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+
+    tester.testTextInput.enterText('Element');
+    await settle(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester);
+    // Out of the table, and on with the sentence — which puts a word on the
+    // same line as the reference.
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await settle(tester);
+    tester.testTextInput.enterText('${text()} and so on');
+    await settle(tester);
+
+    // The owner noticed this before I did: *"it does expand the box to its
+    // max size when the cursor jumps out"*. A reference is ninety characters
+    // of `![… — update Openote to see it](onote://atom/<uuid>)`, which is
+    // wider than a box is ever allowed to measure — so the moment anything
+    // shared its line, the box snapped to 640 and stayed there.
+    expect(TextBlockView.autoWidth(block, dark: false),
+        lessThan(TextBlockView.maxAutoW),
+        reason: 'the box is measured on what is READ, and the reference is '
+            'not read — the table it stands for is');
     app.cancelPendingSave();
   });
 

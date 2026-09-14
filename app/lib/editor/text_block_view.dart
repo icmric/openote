@@ -154,17 +154,23 @@ class TextBlockView extends StatefulWidget {
     // is 80-odd characters of source that the reader never sees, and measuring
     // it would pin any auto-width box to its maximum the instant a picture
     // landed in it.
-    final source = engine
-        .deserialize(b.content)
+    // **The atom references go first, wherever they are.** The image strip
+    // below only takes a reference that has a line to itself, and a table
+    // that shares its line with a word — which is every table made by typing
+    // and pressing Tab, the moment anything is typed after it — was being
+    // measured as ninety characters of `![… — update Openote to see
+    // it](onote://atom/<uuid>)`. That is wider than the widest box this
+    // measurement is allowed to ask for, so the box snapped to its 640px
+    // maximum and stayed there. The table's own width is added back below.
+    final source = withoutAtomRefs(engine.deserialize(b.content))
         .replaceAll(RegExp(r'^\s*!\[[^\]]*\]\([^)]*\)\s*$', multiLine: true), '');
     final style = baseStyle(b, dark: dark);
     var w = engine.measureIntrinsicWidth(source, style);
     // **A box has to be at least as wide as the table inside it.**
     //
-    // The reference is stripped above with everything else in `![…](…)` form,
-    // which is right — forty characters of URL would pin the box to its
-    // maximum — but it leaves the measurement blind to the thing the
-    // reference stands for. A table narrower than it needs is drawn squeezed:
+    // The reference is stripped above — forty characters of URL would pin the
+    // box to its maximum — but stripping it leaves the measurement blind to
+    // the thing the reference stands for. A table narrower than it needs is drawn squeezed:
     // the widget scales its columns down to fit rather than overflowing, so
     // the failure is quiet and permanent rather than loud.
     final head = style.copyWith(fontWeight: FontWeight.w600);

@@ -461,8 +461,27 @@ class _LiveMarkdownSession extends OnoteEditSession {
     app.refreshChrome();
   }
 
+  /// **Is somebody typing INSIDE this paragraph rather than into it?**
+  ///
+  /// Read from the focus tree first, because the focus tree cannot be stale.
+  /// `hasFocus` without `hasPrimaryFocus` means exactly one thing — a
+  /// DESCENDANT of this field holds the keyboard — and a table cell and an
+  /// inline equation are both descendants. The notifiers below it are how the
+  /// field learns to REBUILD when the answer changes; they are no longer how
+  /// it learns the answer.
+  ///
+  /// That distinction is the bug. A structural change rebuilds a table's
+  /// cells, and while it does, no cell is focused for a frame; the table said
+  /// so, the flag went false, and the paragraph took its caret and its
+  /// text-input connection straight back — with the caret drawn in the
+  /// sentence and every keystroke landing there. One frame of a stale `false`
+  /// is all it takes, and no arrangement of notifications can rule it out.
+  /// Asking the focus manager can.
   @override
-  bool get inlineChildFocused => _mathFocus.hasFocus || _atomFocus.value;
+  bool get inlineChildFocused =>
+      (_focus.hasFocus && !_focus.hasPrimaryFocus) ||
+      _mathFocus.hasFocus ||
+      _atomFocus.value;
 
   /// Escape, or Tab off the end of a table: the keyboard comes back to the
   /// paragraph with the caret just after the atom.
@@ -1283,7 +1302,11 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // The host keeps focus while an inline equation is edited (the field is
       // its focus DESCENDANT), so without this the paragraph blinks a second
       // caret right next to the equation's own.
-      listenable: Listenable.merge([_mathFocus, _atomFocus]),
+      // `_focus` itself is in here because [inlineChildFocused] now asks it:
+      // a node is notified when it stops being the primary focus and when it
+      // becomes it again, which is precisely when this field's caret, its key
+      // handling and its keyboard have to change hands.
+      listenable: Listenable.merge([_focus, _mathFocus, _atomFocus]),
       builder: (context, _) => TextField(
       controller: controller,
       focusNode: _focus,

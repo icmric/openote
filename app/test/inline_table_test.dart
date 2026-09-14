@@ -540,6 +540,104 @@ void main() {
     });
   });
 
+  group('a change of shape keeps the caret', () {
+    // **The defect these exist for**, in the owner's words: *"it then puts my
+    // cursor outside the table, so rather than typing into the newly created
+    // table, its typing out of it"*.
+    //
+    // Every structural change goes through `_restructure`, which used to
+    // throw the whole grid away and build a new one. That disposed the focus
+    // node holding the caret, and a `FocusNode` detached while it has the
+    // focus hands it to the enclosing SCOPE — which gives it to the
+    // paragraph. The caret was then put back post-frame, racing a teardown
+    // already in flight; the frame it lost, the next word went into the
+    // sentence beside the table.
+    //
+    // So these do not assert where the caret IS. They type, and assert where
+    // the characters land — which is the only question the owner asked.
+
+    /// The cells, in reading order. Field 0 is the paragraph itself.
+    Finder cell(int i) => find.byType(TextField).at(i + 1);
+
+    testWidgets('Tab off the end adds a row and types into it', (t) async {
+      await editor(t);
+      await t.tap(cell(3)); // the last cell of the 2x2
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.tab);
+      await t.pumpAndSettle();
+      expect(stored().cells, [
+        ['Term', 'Meaning'],
+        ['a', 'b'],
+        ['', ''],
+      ]);
+
+      // Typed at NOBODY in particular: this goes to whichever field holds the
+      // platform's text-input connection, which is the whole question.
+      t.testTextInput.enterText('Third');
+      await t.pumpAndSettle();
+      expect(stored().cells[2][0], 'Third',
+          reason: 'type, Tab, type, Tab is how a table gets filled in — the '
+              'row Tab just made has to be the one that is typed into');
+    });
+
+    testWidgets('and the menu leaves the keyboard in the table too', (t) async {
+      await editor(t);
+      await t.tap(cell(0));
+      await t.pumpAndSettle();
+      await t.tapAt(t.getCenter(cell(0)), buttons: kSecondaryButton);
+      await t.pumpAndSettle();
+      await t.tap(find.text('Insert row below'));
+      await t.pumpAndSettle();
+
+      t.testTextInput.enterText('Middle');
+      await t.pumpAndSettle();
+      expect(stored().cells, [
+        ['Term', 'Meaning'],
+        ['Middle', ''],
+        ['a', 'b'],
+      ], reason: 'the menu asked for the new row, so that is where the '
+          'keyboard belongs');
+    });
+
+    testWidgets('a cell that survives keeps the objects it had', (t) async {
+      await editor(t);
+      TextField at(int i) => t.widget<TextField>(cell(i));
+      final ctl = at(0).controller, node = at(0).focusNode;
+      await t.tap(cell(3));
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.tab);
+      await t.pumpAndSettle();
+
+      expect(identical(at(0).controller, ctl), isTrue);
+      expect(identical(at(0).focusNode, node), isTrue,
+          reason: 'a row added at the end disturbs nothing above it — and a '
+              'focus node that is never detached is a caret that never has '
+              'to be put back');
+    });
+
+    testWidgets('and a cell that does not is not left wired to the keyboard',
+        (t) async {
+      await editor(t);
+      await t.tap(cell(2)); // row 1, col 0 — the row about to go
+      await t.pumpAndSettle();
+      await t.tapAt(t.getCenter(cell(2)), buttons: kSecondaryButton);
+      await t.pumpAndSettle();
+      await t.tap(find.text('Delete row'));
+      await t.pumpAndSettle();
+
+      expect(stored().cells, [
+        ['Term', 'Meaning']
+      ]);
+      // The fields at those positions are now different objects. Without a
+      // key on the focus node, `EditableText` would keep the platform
+      // connection it opened for the row that has just been deleted.
+      t.testTextInput.enterText('Kept');
+      await t.pumpAndSettle();
+      expect(stored().cells, hasLength(1),
+          reason: 'nothing may be typed back into a row that is gone');
+    });
+  });
+
   group('nothing moves when you click into it', () {
     // **The requirement, measured.** Two widgets draw a cell — a Text.rich
     // and a TextField — so the only way to know they agree is to build the
