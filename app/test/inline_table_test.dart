@@ -1024,6 +1024,60 @@ void main() {
     });
   });
 
+  group('a column follows what is typed into it', () {
+    // **The table is measured from its own cells, so it has to be redrawn
+    // when they change.** It was not: a cell keeps its own controller, so the
+    // letters appeared while the column they were in never widened, and the
+    // text wrapped inside it — one letter per line. The owner: *"when i start
+    // typing it will take a second or two to start expanding horizontally (so
+    // letters get stacked), but it will catch up"*. It caught up when
+    // something else happened to rebuild the table, which is a frame or three
+    // later and, in a box that is not changing size, never.
+
+    testWidgets('in the same frame as the keystroke', (t) async {
+      await editor(t);
+      final wide = t.getRect(find.byType(Table)).width;
+      await t.tap(find.byType(TextField).at(1));
+      await t.pumpAndSettle();
+      final line = t.getRect(find.byType(TextField).at(1)).height;
+
+      // Comfortably under `kTableColumnCap`, which is where a column stops
+      // widening on its own and the text is MEANT to wrap.
+      const typed = 'Element symbol and';
+      t.testTextInput.updateEditingValue(const TextEditingValue(
+        text: typed,
+        selection: TextSelection.collapsed(offset: typed.length),
+      ));
+      await t.pump(); // ONE frame, not "eventually"
+
+      expect(t.getRect(find.byType(Table)).width, greaterThan(wide),
+          reason: 'the column is as wide as the longest thing in it, and the '
+              'longest thing in it has just changed');
+      expect(t.getRect(find.byType(TextField).at(1)).height, line,
+          reason: 'one line of text, not eighteen stacked letters');
+    });
+
+    testWidgets('and shrinks back when the text goes away', (t) async {
+      await editor(t);
+      await t.tap(find.byType(TextField).at(1));
+      await t.pumpAndSettle();
+      const typed = 'Element symbol and';
+      t.testTextInput.updateEditingValue(const TextEditingValue(
+        text: typed,
+        selection: TextSelection.collapsed(offset: typed.length),
+      ));
+      await t.pump();
+      final grown = t.getRect(find.byType(Table)).width;
+
+      t.testTextInput.updateEditingValue(const TextEditingValue(
+        text: 'T',
+        selection: TextSelection.collapsed(offset: 1),
+      ));
+      await t.pump();
+      expect(t.getRect(find.byType(Table)).width, lessThan(grown));
+    });
+  });
+
   group('column widths', () {
     testWidgets('a stored width is used exactly, uncapped', (t) async {
       (content['atoms'] as Map)['t1'] = {

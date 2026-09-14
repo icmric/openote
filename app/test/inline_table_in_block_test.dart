@@ -216,6 +216,53 @@ void main() {
         greaterThanOrEqualTo(want));
   });
 
+  testWidgets('a table growing does not turn its box into a manual one',
+      (t) async {
+    // A table asks for room the instant it is drawn narrower than it wants,
+    // which is true for a frame whenever it grows. The measurement that sizes
+    // the box already accounts for tables, so the next frame is wider anyway
+    // — but the request used to latch the box to a manual width on the
+    // strength of that one frame, and a box that has stopped measuring itself
+    // never wraps again and never shrinks back. The owner watched it "expand
+    // with the typed text and not line wrap anything again until it hits its
+    // max width", which is exactly what that latch does.
+    //
+    // In a box NARROWER than the table wants, so the request really is made.
+    block.w = 220;
+    app.editingBlockId = block.id;
+    await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
+      theme: onoteTheme(Brightness.light),
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 220,
+            child: TextBlockView(block: block, app: app),
+          ),
+        ),
+      ),
+    ));
+    await t.pumpAndSettle();
+    await t.tap(find.byType(TextField).at(1));
+    await t.pumpAndSettle();
+
+    const typed = 'Element symbol and';
+    t.testTextInput.updateEditingValue(const TextEditingValue(
+      text: typed,
+      selection: TextSelection.collapsed(offset: typed.length),
+    ));
+    await t.pumpAndSettle();
+
+    expect(block.content['autoWidth'], isNot(false),
+        reason: 'the box can still size itself to what is in it');
+    expect(TextBlockView.autoWidth(block, dark: false),
+        greaterThan(220.0),
+        reason: 'and it has — without anybody having to drag it');
+    app.cancelPendingSave();
+  });
+
   test('a sentence beside a table gets room for BOTH', () {
     // The owner, after the box stopped snapping to its maximum: *"although it
     // pushed text onto the next line which isnt ideal"*. Quite so — the words

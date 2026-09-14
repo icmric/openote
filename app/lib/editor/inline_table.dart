@@ -523,7 +523,25 @@ class _InlineTableState extends State<InlineTable> {
   void _write(TableData next, {bool structural = false}) {
     final push = structural || !_undoPushed;
     if (push) _undoPushed = true;
-    _data = next;
+    // **Draw the table again**, because its shape on screen is measured from
+    // exactly this. A column is as wide as the longest thing in it and a row
+    // is as tall as it has to be, and both of those were being computed from
+    // a `_data` that had been updated without anything asking for a new
+    // frame. The cell being typed into kept its own text — it has its own
+    // controller — so the letters appeared, in a column that never widened:
+    // sixteen characters in a 21px column is sixteen lines of one letter.
+    // The owner: *"when i start typing it will take a second or two to start
+    // expanding horizontally (so letters get stacked), but it will catch up"*.
+    // It caught up when something ELSE happened to rebuild the table — the
+    // box around it changing width, which is a frame or three later and
+    // sometimes not at all.
+    //
+    // This is not the "built once" property: that one is about a keystroke in
+    // the SENTENCE not rebuilding the table, and it is kept by the atom
+    // cache, which hands back the same widget. Rebuilding this State is what
+    // any field does when what it draws changes, and the cells keep their
+    // controllers and their focus nodes across it.
+    setState(() => _data = next);
     widget.binding.write(next, pushUndo: push);
   }
 

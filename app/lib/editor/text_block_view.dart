@@ -283,6 +283,21 @@ class _TextBlockViewState extends State<TextBlockView> {
     session.requestExtraWidth = (extra) {
       final b = widget.block;
       if (extra <= 0) return;
+      // **Do not take an auto-width box away from somebody for one squeezed
+      // frame.** A table asks for room the instant it is drawn narrower than
+      // it wants, which happens for a frame whenever it grows — and the
+      // measurement below it already accounts for tables, so the next frame
+      // is wider anyway. Latching the box to a manual width on the strength
+      // of that one frame turned an auto-sizing box into one that has to be
+      // resized by hand ever after: the owner watched it "expand with the
+      // typed text and not line wrap anything again until it hits its max
+      // width", which is what a box does once it has stopped measuring
+      // itself. Only a table that wants more than auto-width could ever give
+      // it gets the latch.
+      if (b.content['autoWidth'] != false &&
+          b.w + extra <= TextBlockView.maxAutoW) {
+        return;
+      }
       _pushUndoOnce();
       // Without this the next build measures the text and puts the width
       // straight back: `autoWidth` measurement deliberately ignores image
