@@ -707,6 +707,65 @@ void main() {
               'to be put back');
     });
 
+    testWidgets('and the host is never told the keyboard is free mid-move',
+        (t) async {
+      // **The gap.** Rebuilding a grid puts a frame between the cell that had
+      // the caret and the cell that is about to have it, and in that frame
+      // nothing in the table is focused. Saying so hands the paragraph its
+      // keyboard back — and the paragraph, on its next frame, claims the caret
+      // it has just been told is free. The owner: *"it created the new row
+      // below me, but put my cursor out of the table"*, and *"my suspicion is
+      // some kind of race condition"*, which is exactly what it is: two
+      // post-frame callbacks and a focus change that lands in a microtask
+      // between them.
+      //
+      // Deleting the row the caret is in is the one shape of this that a test
+      // can force: that cell really is retired, so the gap is certain rather
+      // than a matter of timing.
+      final said = <bool>[];
+      final c =
+          LiveMarkdownController(text: content['text'] as String, dark: false)
+            ..atomHost = InlineAtomHost(
+              atoms: () => InlineAtom.allIn(content),
+              write: (id, v, {required bool pushUndo}) {
+                final was = InlineAtom.allIn(content)[id];
+                InlineAtom.putIn(content,
+                    InlineAtom(id: id, type: was?.type ?? 'table', content: v));
+              },
+              editable: true,
+              revision: revision,
+              onKeyboard: said.add,
+            );
+      addTearDown(c.dispose);
+      await t.pumpWidget(frame(TextField(
+          controller: c,
+          maxLines: null,
+          style: const TextStyle(fontSize: 14),
+          strutStyle: StrutStyle.fromTextStyle(const TextStyle(fontSize: 14),
+              forceStrutHeight: false))));
+      await t.pumpAndSettle();
+
+      await t.tap(cell(2)); // row 1, col 0 — the row about to go
+      await t.pumpAndSettle();
+      expect(said, [true], reason: 'the cell has the keyboard');
+      said.clear();
+
+      await t.tapAt(t.getCenter(cell(2)), buttons: kSecondaryButton);
+      await t.pumpAndSettle();
+      await t.tap(find.text('Delete row'));
+      await t.pumpAndSettle();
+
+      expect(said, isNot(contains(false)),
+          reason: 'the caret is moving from one of this table\'s cells to '
+              'another. It never left, and the paragraph must not be told it '
+              'did — being told is what lets it take the caret. (It holds '
+              'here because a retired node loses its listener before it is '
+              'disposed; the guard exists for the orderings where it does '
+              'not, which a fake clock cannot produce.)');
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'tableCell',
+          reason: 'and it arrived');
+    });
+
     testWidgets('and a cell that does not is not left wired to the keyboard',
         (t) async {
       await editor(t);

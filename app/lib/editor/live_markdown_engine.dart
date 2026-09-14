@@ -1312,7 +1312,13 @@ class _LiveMarkdownSession extends OnoteEditSession {
           }
         }
       }
-      if (!_focus.hasFocus) _focus.requestFocus();
+      // **Unless an inline child has it**, or is in the middle of taking it.
+      // This runs after every build, and its job is to claim the keyboard for
+      // a block that has just been opened for editing. A table rebuilding its
+      // cells looks exactly like that for one frame — nothing focused inside
+      // a field that is being edited — and claiming it there is how the caret
+      // ended up beside a table instead of in the row that had just been made.
+      if (!_focus.hasFocus && !inlineChildFocused) _focus.requestFocus();
     });
     return Padding(
       padding: s.inset,

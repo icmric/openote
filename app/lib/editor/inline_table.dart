@@ -491,14 +491,28 @@ class _InlineTableState extends State<InlineTable> {
     return false;
   }
 
-  void _focusChanged() {
-    // Focus moving from one cell to the next passes through "nobody", so the
-    // answer is only true once the frame has settled. Without this every Tab
-    // would tell the host it had the keyboard back and then lost it again,
-    // and the host redraws its caret on that signal.
+  void _focusChanged() => _settleKeyboard();
+
+  /// Tell the host, once the frame has settled, whether this table has the
+  /// keyboard.
+  ///
+  /// Settled because focus moving from one cell to the next passes through
+  /// "nobody": without the delay every Tab would say the keyboard had gone
+  /// back and then come again, and the host redraws its caret on that signal.
+  ///
+  /// **A cell being ASKED for counts as holding it.** Rebuilding a table's
+  /// grid puts a gap between the cell that had the caret and the cell that is
+  /// about to, and in that gap nothing in the table is focused. Saying so
+  /// hands the paragraph its keyboard back mid-move — and the paragraph, on
+  /// its next frame, claims the caret it has just been told is free. That is
+  /// the window behind *"it created the new row below me, but put my cursor
+  /// out of the table"*, and why it happens only sometimes: it is a race
+  /// between two post-frame callbacks and a focus change that lands in a
+  /// microtask between them.
+  void _settleKeyboard() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final holding = _anyFocused;
+      final holding = _anyFocused || _wantCell != null;
       if (holding == _holdingKeyboard) return;
       _holdingKeyboard = holding;
       if (!holding) _undoPushed = false;
@@ -540,6 +554,9 @@ class _InlineTableState extends State<InlineTable> {
   void _askForCell(int r, int c) {
     _wantCell = (row: r, col: c);
     _wantTries = 0;
+    // Said BEFORE the caret has moved, not after: from here until it lands,
+    // this table has the keyboard and the paragraph must not take it.
+    _settleKeyboard();
     _pursueCell();
   }
 
@@ -552,19 +569,23 @@ class _InlineTableState extends State<InlineTable> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final want = _wantCell;
       if (!mounted || want == null) return;
-      if (want.row >= _nodes.length || want.col >= _nodes[want.row].length) {
+      void stop() {
         _wantCell = null;
-        return;
+        // The answer to "does this table have the keyboard" has just changed
+        // shape, and if the pursuit failed nobody else will say so.
+        _settleKeyboard();
       }
-      if (_nodes[want.row][want.col].hasPrimaryFocus) {
-        _wantCell = null;
-        return;
-      }
-      if (_wantTries++ >= 3) {
-        _wantCell = null;
-        return;
-      }
-      _focusCell(want.row, want.col);
+
+      // A grid that is momentarily the wrong size is a frame to wait for, not
+      // a reason to give up: the cell being asked for may not have been built
+      // yet. Dropping the request here is how it was lost.
+      final built =
+          want.row < _nodes.length && want.col < _nodes[want.row].length;
+      if (built && _nodes[want.row][want.col].hasPrimaryFocus) return stop();
+      // Somebody chose another cell in the meantime — a click. Theirs wins.
+      if (built && _anyFocused && _wantTries > 0) return stop();
+      if (_wantTries++ >= 8) return stop();
+      if (built) _focusCell(want.row, want.col);
       _pursueCell();
     });
   }
@@ -629,7 +650,9 @@ class _InlineTableState extends State<InlineTable> {
     if (r == _rows - 1) {
       _restructure(_data.insertRow(_rows), focus: (row: r + 1, col: c));
     } else {
-      _focusCell(r + 1, c);
+      // Through the same door as every other move between cells, so that a
+      // frame going wrong here cannot leave the caret in the paragraph either.
+      _askForCell(r + 1, c);
     }
     return null;
   }
