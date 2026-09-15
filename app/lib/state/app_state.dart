@@ -280,6 +280,15 @@ class AppState extends ChangeNotifier
   int get blobRevision => _blobRevision;
   int _blobRevision = 0;
 
+  /// Say that bytes arrived, for a test.
+  ///
+  /// The real callers are a pull, a repair pass and the held-blob sweep —
+  /// none of which a widget test can drive without a second device and a
+  /// folder full of half-delivered files. This is the event itself, so the
+  /// test exercises the same path the app does rather than a stand-in.
+  @visibleForTesting
+  void debugBytesArrived() => _bytesMayHaveArrived();
+
   void _bytesMayHaveArrived() {
     // **Guarded, because every caller is asynchronous.** A pull, a repair pass
     // and a retry timer all reach here, and all of them can land after the
@@ -687,15 +696,7 @@ class AppState extends ChangeNotifier
     if (notebookId == null) return;
     _gitEnabled = on;
     if (remote != null) _gitRemote = remote.trim().isEmpty ? null : remote.trim();
-    _repo.setSetting(
-        _gitKey(notebookId!),
-        on || _gitRemote != null || _gitSshKey != null
-            ? {
-                'enabled': on,
-                'remote': _gitRemote,
-                if (_gitSshKey != null) 'sshKey': _gitSshKey,
-              }
-            : null);
+    _persistGitSettings();
     if (on) {
       final git = _git;
       await git.init();
@@ -757,19 +758,41 @@ class AppState extends ChangeNotifier
   GitSync get _git => GitSync(currentNotebook.logDirPath,
       token: _githubToken, sshKey: _gitSshKey);
 
+  /// This notebook's git settings row, or no row at all when there is nothing
+  /// left worth remembering.
+  ///
+  /// One writer, so the remote, the key and the enabled flag can never
+  /// disagree about whether the row should exist.
+  void _persistGitSettings() {
+    _repo.setSetting(
+        _gitKey(notebookId!),
+        _gitEnabled || _gitRemote != null || _gitSshKey != null
+            ? {
+                'enabled': _gitEnabled,
+                'remote': _gitRemote,
+                if (_gitSshKey != null) 'sshKey': _gitSshKey,
+              }
+            : null);
+  }
+
   /// Point this notebook's git at a particular SSH key, or back at the
   /// machine's default. See [gitSshKey].
   ///
   /// Stored in the notebook's settings and NEVER in `.git/config`: that file
   /// is inside the replicated directory, so a path that is right here is wrong
   /// on every other machine the notebook reaches.
-  Future<void> setGitSshKey(String? path) async {
+  ///
+  /// **Writes the setting and stops.** Routing this through [setGitEnabled] —
+  /// which is where it started, to share the writer — meant that choosing a
+  /// key silently ran `git init`, rewrote `.gitignore`, made a commit and
+  /// pushed. Changing which key you sign in with is not a reason to sync, and
+  /// the dialog has a Sync now button an inch away for when it is.
+  void setGitSshKey(String? path) {
     if (notebookId == null) return;
     final v = path?.trim();
     _gitSshKey = v == null || v.isEmpty ? null : v;
-    // Through the same writer the remote uses, so the two can never disagree
-    // about whether the settings row should exist at all.
-    await setGitEnabled(_gitEnabled);
+    _persistGitSettings();
+    notifyListeners();
   }
 
   void reloadGitHub() {
@@ -4108,9 +4131,17 @@ class AppState extends ChangeNotifier
   /// Store a blob during import (images pulled out of a `.one` file).
   String importBlob(String nb, Uint8List bytes, String mime) {
     final hash = _repo.putBlob(nb, bytes, mime);
-    // These bytes are readable NOW. An image block created in the same breath
-    // (a drop, a paste, a OneNote import) may already have tried and failed.
-    _bytesMayHaveArrived();
+    // **Deliberately does NOT say the bytes arrived.** It is the one write
+    // that never rescues a placeholder, and the one that would cost most if
+    // it tried: every local route stores the bytes BEFORE creating the block
+    // that names them — a drop, a paste, the Insert menu and the OneNote
+    // importer all do — so no view is ever waiting on one of these.
+    //
+    // And it runs in bulk. `flushSave` persists every ink stroke through here
+    // on the debounce, and an import writes one per picture, so notifying
+    // from here would fire a rebuild per blob — during a save, while someone
+    // is drawing — and each rebuild would send every missing image back to
+    // the disk. Exactly the storm `blobRevision` exists to avoid.
     // The op records only the hash, mime and size; the bytes are written to
     // `blobs/<sha256>` — content-addressed and immutable, so they need no merge
     // logic and can be fetched lazily (ADR-0006 §3). Putting megabytes of image

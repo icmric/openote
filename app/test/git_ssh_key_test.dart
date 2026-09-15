@@ -18,7 +18,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/sync/git_sync.dart';
-import 'package:openote/ui/sync_dialog.dart' show isSshRemote;
 
 import 'support/sqlite.dart';
 
@@ -158,7 +157,11 @@ void main() {
     var haveSqlite = false;
     setUpAll(() => haveSqlite = initSqliteForTests());
 
-    test('survives closing and reopening the notebook', () async {
+    test('survives closing and reopening the notebook, and does NOT sync',
+        () async {
+      // Setting a key used to run through `setGitEnabled`, which inits the
+      // repo, rewrites .gitignore, commits and pushes. Choosing which key
+      // you sign in with is not a reason to do any of that.
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       AppState.syncLogEnabled = false;
       final tmp = Directory.systemTemp.createTempSync('onote_sshset_');
@@ -166,15 +169,19 @@ void main() {
       try {
         final nb = await repo.createNotebook('Notes');
         final app = AppState(repo)..notebookId = nb.id;
-        await app.setGitSshKey('/home/me/.ssh/notes_key');
+        app.setGitSshKey('/home/me/.ssh/notes_key');
         expect(app.gitSshKey, '/home/me/.ssh/notes_key');
+        expect(app.gitEnabled, isFalse,
+            reason: 'choosing which key to sign in with is not choosing to '
+                'sync — routing this back through setGitEnabled would init '
+                'the repo, commit and push on the spot');
 
         // Reopened: `reloadGit` is what every notebook-open path calls.
         app.reloadGit();
         expect(app.gitSshKey, '/home/me/.ssh/notes_key',
             reason: 'a setting that evaporates on reopen is not a setting');
 
-        await app.setGitSshKey(null);
+        app.setGitSshKey(null);
         app.reloadGit();
         expect(app.gitSshKey, isNull, reason: 'and it can be taken back off');
         app.cancelPendingSave();

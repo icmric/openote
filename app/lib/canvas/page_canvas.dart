@@ -335,16 +335,22 @@ class _PageCanvasState extends State<PageCanvas> {
       );
       _addPoint(e, pt);
       // A shape is rubber-banded from here rather than followed from here.
-      _shapeFrom = app.inkShape == null ? null : pt;
+      // **The shape is captured with the anchor**, not read again per move:
+      // reading `app.inkShape!` mid-drag asserts on a state that a rebuild,
+      // a hot reload or any future keyboard shortcut could produce, and the
+      // shape you started drawing is the one you should finish drawing.
+      final s = app.inkShape;
+      _shape = s == null ? null : (from: pt, kind: s);
     });
   }
 
-  /// Where a shape drag began, or null when the pen is following the hand.
+  /// The shape being dragged and where it began, or null when the pen is
+  /// following the hand.
   ///
   /// See [AppState.inkShape]: a shape is an ordinary [Stroke] whose points are
   /// worked out instead of sampled, so all of this reuses the wet-stroke
   /// machinery and changes only where the points come from.
-  Offset? _shapeFrom;
+  ({Offset from, InkShape kind})? _shape;
 
   /// Redraw the wet stroke as [app.inkShape] dragged from [_shapeFrom] to
   /// [to], replacing its points rather than adding to them.
@@ -355,12 +361,12 @@ class _PageCanvasState extends State<PageCanvas> {
   /// rectangle. The freehand pen keeps every bit of its pressure; this is the
   /// one place it is deliberately thrown away.
   void _reshapeWet(Offset to) {
-    final w = _wet, from = _shapeFrom;
-    if (w == null || from == null) return;
+    final w = _wet, s = _shape;
+    if (w == null || s == null) return;
     // Densified, because the eraser and the lasso both work on POINTS and
     // neither looks at the line between two of them — see [kShapeMaxGap]. Raw,
     // a line is two points and the middle of it cannot be rubbed out.
-    final pts = densify(shapePoints(app.inkShape!, from, to,
+    final pts = densify(shapePoints(s.kind, s.from, to,
         constrain: HardwareKeyboard.instance.isShiftPressed));
     w.x
       ..clear()
@@ -385,7 +391,7 @@ class _PageCanvasState extends State<PageCanvas> {
     // Repaint-only: grow the stroke and nudge the ink painter. No setState —
     // rebuilding every visible block per point made inking sluggish.
     final pt = _clampToPagePoint(controller.screenToPage(e.localPosition));
-    if (_shapeFrom != null) {
+    if (_shape != null) {
       _reshapeWet(pt);
     } else {
       _addPoint(e, pt);
@@ -466,8 +472,8 @@ class _PageCanvasState extends State<PageCanvas> {
       app.setPenErasing(false);
     }
     final w = _wet;
-    final from = _shapeFrom;
-    _shapeFrom = null;
+    final wasShape = _shape != null;
+    _shape = null;
     if (w == null || w.x.length < 2) {
       setState(() => _wet = null);
       return;
@@ -476,9 +482,15 @@ class _PageCanvasState extends State<PageCanvas> {
     // when it was dragged nowhere, so the point-count guard above cannot catch
     // this one: without it, a stray click on the page leaves a speck of a
     // rectangle behind that is then hard to see and hard to erase.
-    if (from != null) {
-      final to = _clampToPagePoint(controller.screenToPage(e.localPosition));
-      if ((to - from).distance * controller.scale < 6) {
+    //
+    // Measured from what was actually DRAWN rather than from where the pointer
+    // came up: the two can differ by a frame, and the drawing is the thing
+    // being judged. Scaled to screen pixels, so the threshold means the same
+    // thing at every zoom.
+    if (wasShape) {
+      final w0 = w.x.reduce(math.min), w1 = w.x.reduce(math.max);
+      final h0 = w.y.reduce(math.min), h1 = w.y.reduce(math.max);
+      if (Offset(w1 - w0, h1 - h0).distance * controller.scale < 6) {
         setState(() => _wet = null);
         return;
       }

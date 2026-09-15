@@ -165,9 +165,15 @@ void main() {
             'frame is exactly what the read queue exists to prevent');
     expect(find.text('Missing image'), findsOneWidget);
 
-    // **Now the bytes land** — a pull, a repair, an import. `addBlob` goes
-    // through `importBlob`, one of the places that says so.
+    // **Now the bytes land.** Two separate things, kept separate on purpose:
+    // the file appears, and the app learns that a file appeared. `addBlob`
+    // only does the first — a local write never rescues a placeholder,
+    // because every local route stores the bytes BEFORE creating the block
+    // that names them, and notifying from there would fire once per ink blob
+    // on every autosave. `debugBytesArrived` is the second, standing in for
+    // the pull or the repair that really carries it.
     app.addBlob(png, 'image/png');
+    app.debugBytesArrived();
     await settle(t);
 
     expect(find.byType(Image), findsOneWidget,

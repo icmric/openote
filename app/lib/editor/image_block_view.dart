@@ -147,6 +147,9 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     _hash = h;
     if (h == null) {
       _provider = null;
+      // Not "waiting for bytes" — there are none to wait for. Left set, this
+      // block would ask to be re-read on every delivery for ever.
+      _missingAt = null;
       if (mounted) setState(() {});
       return;
     }

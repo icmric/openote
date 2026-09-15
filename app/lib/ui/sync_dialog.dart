@@ -19,6 +19,7 @@ import 'package:path/path.dart' as p;
 
 import '../core/platform_open.dart';
 import '../state/app_state.dart';
+import '../sync/git_sync.dart' show isSshRemote;
 import '../store/media_gc.dart' show VideoSweep;
 import '../store/repository.dart'
     show BlobReclaim, ContainerDemotion, SpaceReclaim;
@@ -29,26 +30,6 @@ import '../theme/onote_theme.dart';
 import 'notebook_manager.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
-
-
-/// Is this an address ssh will be asked to open?
-///
-/// The two shapes git accepts: `ssh://git@host/path`, and the scp-like
-/// `git@host:path` that every server's copy button actually hands out.
-///
-/// Deliberately loose. It decides whether to OFFER the key control, so
-/// guessing wrong costs one extra row on screen — not a broken sync — and the
-/// people this matters to are the ones typing the second shape.
-bool isSshRemote(String remote) {
-  final r = remote.trim();
-  if (r.isEmpty) return false;
-  if (r.startsWith('ssh://')) return true;
-  if (r.startsWith('http://') || r.startsWith('https://')) return false;
-  // `user@host:something`. The colon must come AFTER the `@`, or a Windows
-  // path handed in as a local remote — `C:/Users/me/notes` — reads as a host.
-  final at = r.indexOf('@');
-  return at > 0 && r.indexOf(':', at) > at;
-}
 
 Future<void> showSyncDialog(BuildContext context, AppState app) async {
   final nb = app.notebookId;
@@ -1728,7 +1709,17 @@ class _GitSectionState extends State<_GitSection> {
       TextEditingController(text: widget.app.gitRemote ?? '');
 
   Future<void> _pickSshKey() async {
-    final file = await openFile();
+    // **Opened at `~/.ssh`, where the key is.** It is a hidden folder on every
+    // platform Openote runs on, so a picker starting anywhere else asks
+    // somebody to type a path they cannot see — which is the sort of technical
+    // errand this dialog exists to spare them. Falls back to the picker's own
+    // default if the folder is not there.
+    final home = Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'];
+    final ssh = home == null ? null : p.join(home, '.ssh');
+    final file = await openFile(
+        initialDirectory:
+            ssh != null && Directory(ssh).existsSync() ? ssh : null);
     if (file == null) return;
     var path = file.path;
     // **A `.pub` is the wrong half, and picking it is the obvious mistake.**
@@ -1748,7 +1739,7 @@ class _GitSectionState extends State<_GitSection> {
         return;
       }
     }
-    await widget.app.setGitSshKey(path);
+    widget.app.setGitSshKey(path);
     if (mounted) setState(() {});
   }
 
@@ -1882,9 +1873,9 @@ class _GitSectionState extends State<_GitSection> {
                   icon: const Icon(Icons.close, size: 15),
                   visualDensity: VisualDensity.compact,
                   tooltip: 'Go back to the usual key',
-                  onPressed: () async {
-                    await app.setGitSshKey(null);
-                    if (mounted) setState(() {});
+                  onPressed: () {
+                    app.setGitSshKey(null);
+                    setState(() {});
                   },
                 ),
             ]),

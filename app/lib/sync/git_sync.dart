@@ -37,6 +37,25 @@ import '../model/models.dart';
 /// copied between machines and pasted into bug reports, and a token in an
 /// `-c http.extraHeader=…` argument is visible to every other process on the
 /// machine for as long as git runs. The environment is neither.
+/// Is this an address ssh will be asked to open?
+///
+/// The two shapes git accepts: `ssh://git@host/path`, and the scp-like
+/// `git@host:path` that every server's copy button actually hands out.
+///
+/// Deliberately loose. It decides whether to OFFER the key control, so
+/// guessing wrong costs one extra row on screen — not a broken sync — and the
+/// people this matters to are the ones typing the second shape.
+bool isSshRemote(String remote) {
+  final r = remote.trim();
+  if (r.isEmpty) return false;
+  if (r.startsWith('ssh://')) return true;
+  if (r.startsWith('http://') || r.startsWith('https://')) return false;
+  // `user@host:something`. The colon must come AFTER the `@`, or a Windows
+  // path handed in as a local remote — `C:/Users/me/notes` — reads as a host.
+  final at = r.indexOf('@');
+  return at > 0 && r.indexOf(':', at) > at;
+}
+
 class GitSync {
   const GitSync(this.dir, {this.token, this.sshKey});
 
@@ -390,6 +409,11 @@ media/
   /// [token] authenticates a PRIVATE repository — which is what this feature
   /// creates by default, so it is the normal case rather than the exotic one.
   /// Passed through the environment exactly as [push] and [pull] pass it.
+  /// [sshKey] is threaded through but **nothing passes it yet**: a clone
+  /// happens before the notebook exists, so there is no per-notebook key to
+  /// read and no UI asking for one. Somebody joining a notebook on a server
+  /// that wants a non-default key still has to clone it by hand first.
+  /// Stated here rather than left to be discovered.
   static Future<GitResult> clone(String url, String intoDir,
       {String? token, String? sshKey}) async {
     final git = await gitExecutable();
