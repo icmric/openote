@@ -11,6 +11,7 @@ import 'package:super_clipboard/super_clipboard.dart'
 
 import '../canvas/align_guides.dart';
 import '../canvas/canvas_controller.dart';
+import '../canvas/ink_shapes.dart';
 import '../core/engine.dart';
 import '../core/ids.dart';
 import '../core/onote_ffi.dart';
@@ -280,8 +281,13 @@ class AppState extends ChangeNotifier
   int _blobRevision = 0;
 
   void _bytesMayHaveArrived() {
+    // **Guarded, because every caller is asynchronous.** A pull, a repair pass
+    // and a retry timer all reach here, and all of them can land after the
+    // notebook was closed or the app torn down — where `notifyListeners`
+    // throws. The counter still moves: a view built afterwards should see that
+    // something arrived, and it costs nothing to say so.
     _blobRevision++;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   /// Store bytes in the current notebook, returning the content hash.
@@ -4608,6 +4614,41 @@ class AppState extends ChangeNotifier
   void setPenErasing(bool v) {
     if (penErasing == v) return;
     penErasing = v;
+    notifyListeners();
+  }
+
+  /// **The shape the pen draws instead of following the hand**, or null for
+  /// freehand — which is what it is nearly all of the time.
+  ///
+  /// Issue #10: *"Drawing diagrams with a mouse is really difficult without
+  /// the simple shapes."* Nearly everyone using Openote is on a school laptop
+  /// with a trackpad rather than a tablet with a stylus, so a straight line is
+  /// not a nicety for them; it is the difference between a diagram and a mess.
+  ///
+  /// **A modifier on the pen, not a tool of its own.** The owner: *"all i want
+  /// is to be able to draw diagrams and what not with the pen."* Drawn that
+  /// way it keeps the colour, the size, the highlighter and the eraser exactly
+  /// as they are — a shape is a stroke, so everything that already understands
+  /// ink understands shapes without being told they exist. A sixth entry in
+  /// [Tool] would instead have meant a new case anywhere a tool is compared,
+  /// and a pen whose colour swatches vanished when you picked a rectangle.
+  ///
+  /// Not persisted. Shapes are for a diagram, not for a way of working, and
+  /// finding the pen still stuck on Rectangle tomorrow morning would read as a
+  /// fault rather than as a memory.
+  InkShape? inkShape;
+
+  void setInkShape(InkShape? s) {
+    if (inkShape == s) return;
+    inkShape = s;
+    // Choosing a shape is choosing to draw, the way taking a colour off the
+    // page is: without this, picking Rectangle while the select tool is in
+    // hand puts a control on screen that does nothing until you also find the
+    // pen. Chosen rather than automatic, so reaching for the mouse does not
+    // undo it (see [toolWasAutomatic]).
+    if (s != null && tool != Tool.pen && tool != Tool.highlighter) {
+      setTool(Tool.pen);
+    }
     notifyListeners();
   }
 
