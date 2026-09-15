@@ -93,10 +93,14 @@ void main() {
             ['a', 'b']
           ]),
           madeIn: '1.1.0')!;
-      expect(out.content['text'], contains('update Openote'));
-      expect(out.content['text'], contains('1x2 table'),
-          reason: 'and still says what the thing IS, for a screen reader and '
-              'for any Markdown viewer that is not Openote at all');
+      expect(out.content['text'], contains('update Openote to see the table'));
+      // **And nothing in it can go out of date.** It used to open with the
+      // table's size, which was written once and never refreshed — add two
+      // rows and the buffer still claimed 1x2. Refreshing it would mean
+      // rewriting the reference, whose LENGTH every caret after it is measured
+      // from, so the sentence carries no numbers at all.
+      expect(RegExp(r'\d+x\d+').hasMatch(out.content['text'] as String), isFalse,
+          reason: 'a size baked into the text is a size that will be wrong');
     });
 
     test('a block that is not a table is not touched', () {

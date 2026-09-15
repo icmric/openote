@@ -215,20 +215,27 @@ class TableData {
   /// reader says, and what is shown where the payload itself has gone.
   String get altText => '${rows}x$cols table';
 
-  /// **The alt text the reference is WRITTEN with**, which is what a reader
-  /// that cannot draw the table shows in its place.
+  /// **The alt text a reference is WRITTEN with.**
   ///
-  /// It carries the instruction as well as the description, and the audience
-  /// for that is specific: the owner's other machines. A build that has never
-  /// heard of an inline atom draws this line as plain text, and nothing this
-  /// build does can change that — so the one channel to those machines is the
-  /// alt text itself, and "2x2 table" alone leaves somebody staring at a line
-  /// of punctuation wondering what broke.
+  /// The audience is specific: a build that has never heard of an inline atom
+  /// draws this line as plain text, and nothing this build does can change
+  /// that — so the alt text is the ONLY channel to it. It therefore carries an
+  /// instruction rather than a description, because the reader's question is
+  /// "what do I do about this", not "what was it".
   ///
-  /// No version number in it on purpose: the version that can read this is
+  /// **It deliberately says nothing that can go out of date.** It used to open
+  /// with the table's size — `2x2 table — …` — which was written once, when
+  /// the reference was created, and never again: add two rows and the buffer
+  /// still claimed 2x2. Refreshing it would mean rewriting the reference, and
+  /// the reference's LENGTH is a position every caret and selection after it
+  /// is measured from, so rewriting one under somebody's cursor moves their
+  /// cursor. A sentence with no numbers in it cannot be stale, and the numbers
+  /// were never what the reader needed.
+  ///
+  /// No version number, for the same reason: the version that can read this is
   /// whichever one wrote it, and a number baked into the note now would be
   /// wrong for every later one.
-  String get referenceAlt => '$altText — update Openote to see it';
+  static const String referenceAlt = 'update Openote to see the table';
 
   // ── Structure ────────────────────────────────────────────────────────────
   //

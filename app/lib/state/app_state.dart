@@ -9270,7 +9270,7 @@ class AppState extends ChangeNotifier
       content: {...data.toContent(), 'madeIn': kAppVersion},
     );
     final content = <String, dynamic>{
-      'text': atom.reference(data.referenceAlt)
+      'text': atom.reference(TableData.referenceAlt)
     };
     InlineAtom.putIn(content, atom);
     final b = addBlock(Block(

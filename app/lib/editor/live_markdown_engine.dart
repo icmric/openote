@@ -432,7 +432,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
       row: 0,
       col: head.isEmpty ? 0 : 1,
     );
-    final ref = atom.reference(table.referenceAlt);
+    final ref = atom.reference(TableData.referenceAlt);
     _applyEdit(TextEditingValue(
       text: t.replaceRange(start, end, ref),
       selection: TextSelection.collapsed(offset: start + ref.length),
