@@ -18,6 +18,7 @@
 // DELETE THIS FILE once the cause is found.
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 /// Whether the focus instrument is armed. A `const` from the environment, so
 /// an ordinary build drops every call below and the string never ships.
@@ -39,4 +40,22 @@ void focusLogWithStack(String message) {
       if (f.contains('package:openote/')) f.trim()
   ];
   debugPrint('[caret] $message\n${ours.map((f) => '    $f').join('\n')}');
+}
+
+/// **Every change of primary focus, tagged.**
+///
+/// `debugFocusChanges` says the same thing and a great deal more, but it prints
+/// untagged and in volume, which makes the one transition that matters hard to
+/// find in a console a media player and a sync engine are also writing to.
+/// This is the same answer in one grep-able line per change.
+void armFocusWatch() {
+  if (!kFocusDebug) return;
+  FocusNode? last;
+  FocusManager.instance.addListener(() {
+    final now = FocusManager.instance.primaryFocus;
+    if (identical(now, last)) return;
+    focusLog('PRIMARY: ${last?.debugLabel ?? 'none'} '
+        '-> ${now?.debugLabel ?? 'none'}');
+    last = now;
+  });
 }

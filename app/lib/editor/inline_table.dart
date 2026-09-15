@@ -396,6 +396,11 @@ class _InlineTableState extends State<InlineTable> {
   final List<Object> _retired = [];
 
   void _drainRetired() {
+    if (_retired.isNotEmpty) {
+      final focused = _retired.whereType<FocusNode>().where((n) => n.hasFocus);
+      focusLog('drainRetired: disposing ${_retired.length} '
+          '(${focused.length} of them STILL HAVE FOCUS)');
+    }
     for (final o in _retired) {
       if (o is TextEditingController) o.dispose();
       if (o is FocusNode) {
@@ -534,11 +539,16 @@ class _InlineTableState extends State<InlineTable> {
   ({int row, int col})? _lastFocused;
 
   void _focusChanged() {
+    ({int row, int col})? has;
     for (var r = 0; r < _nodes.length; r++) {
       for (var c = 0; c < _nodes[r].length; c++) {
-        if (_nodes[r][c].hasFocus) _lastFocused = (row: r, col: c);
+        if (_nodes[r][c].hasFocus) {
+          has = (row: r, col: c);
+          _lastFocused = has;
+        }
       }
     }
+    focusLog('focusChanged: cell=$has grid=${_rows}x$_cols want=$_wantCell');
     _settleKeyboard();
   }
 
@@ -654,10 +664,20 @@ class _InlineTableState extends State<InlineTable> {
       focusLog('pursue try=$_wantTries want=$want built=$built '
           'anyFocused=$_anyFocused '
           'primary=${WidgetsBinding.instance.focusManager.primaryFocus?.debugLabel}');
-      if (built && _nodes[want.row][want.col].hasPrimaryFocus) return stop();
+      if (built && _nodes[want.row][want.col].hasPrimaryFocus) {
+        focusLog('pursue STOP: the wanted cell has the caret');
+        return stop();
+      }
       // Somebody chose another cell in the meantime — a click. Theirs wins.
-      if (built && _anyFocused && _wantTries > 0) return stop();
-      if (_wantTries++ >= 8) return stop();
+      if (built && _anyFocused && _wantTries > 0) {
+        focusLog('pursue STOP: assumed a click — ANOTHER cell has it '
+            '(lastFocused=$_lastFocused, wanted=$want)');
+        return stop();
+      }
+      if (_wantTries++ >= 8) {
+        focusLog('pursue STOP: gave up after 8 frames, wanted=$want');
+        return stop();
+      }
       if (built) _focusCell(want.row, want.col);
       _pursueCell();
     });
