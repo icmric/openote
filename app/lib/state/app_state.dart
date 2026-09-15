@@ -254,6 +254,36 @@ class AppState extends ChangeNotifier
   Uint8List? blob(String hash) =>
       notebookId == null ? null : _repo.getBlob(notebookId!, hash);
 
+  /// **Bumped when bytes that were not readable a moment ago may be now.**
+  ///
+  /// The two halves of a blob travel separately: an op carries the hash, mime
+  /// and size, and the bytes arrive as their own file in the shared folder.
+  /// So a page routinely opens holding a reference to a picture whose bytes
+  /// are still in flight, and [blob] answers null for it — correctly, and
+  /// only for the moment.
+  ///
+  /// Nothing told the picture when that moment passed. A view that had read
+  /// null once kept its placeholder until its State was destroyed outright —
+  /// a page switch, a pull bumping `docRevision`, or a restart — which is the
+  /// shape of the report this exists to fix: *"I sometimes can't see the
+  /// imported images on the canvas. They usually load after a minute or two
+  /// or after restarting openote."* A minute or two is the git cycle; the
+  /// restart is the restart.
+  ///
+  /// A counter rather than a stream of hashes because the question a view has
+  /// is not "did MY bytes arrive" but "is it worth asking again", and the
+  /// cheap honest answer to that is "something landed since you last looked".
+  /// See `ImageBlockView`, which re-reads only when this has moved — a blob
+  /// read is synchronous and megabytes wide, so retrying on every rebuild
+  /// would reinstate the page-switch stall its deferred queue exists to stop.
+  int get blobRevision => _blobRevision;
+  int _blobRevision = 0;
+
+  void _bytesMayHaveArrived() {
+    _blobRevision++;
+    notifyListeners();
+  }
+
   /// Store bytes in the current notebook, returning the content hash.
   String addBlob(Uint8List bytes, String mime) =>
       importBlob(notebookId!, bytes, mime);
@@ -593,11 +623,22 @@ class AppState extends ChangeNotifier
 
   bool _gitEnabled = false;
   String? _gitRemote;
+  String? _gitSshKey;
   Timer? _gitDebounce;
 
   /// Is this notebook backed by a git remote?
   bool get gitEnabled => _gitEnabled;
   String? get gitRemote => _gitRemote;
+
+  /// **The SSH private key this notebook authenticates with**, or null for
+  /// whatever the machine's agent and `~/.ssh/config` already offer.
+  ///
+  /// Per notebook, like the remote and unlike the GitHub account, because that
+  /// is the shape of the need it answers (issue #10): *"if you have a separate
+  /// git user (eg on self hosted Forgejo) for your notes"*. The notes go to one
+  /// server as one identity while everything else on the machine keeps using
+  /// the default key.
+  String? get gitSshKey => _gitSshKey;
 
   /// What the last cycle did, for the dialog. Null until one has run.
   String? gitStatus;
@@ -625,6 +666,7 @@ class AppState extends ChangeNotifier
     reloadGitHub();
     _gitEnabled = false;
     _gitRemote = null;
+    _gitSshKey = null;
     gitStatus = null;
     _gitDebounce?.cancel();
     if (notebookId == null) return;
@@ -632,14 +674,22 @@ class AppState extends ChangeNotifier
     if (raw is! Map) return;
     _gitEnabled = raw['enabled'] == true;
     _gitRemote = raw['remote'] as String?;
+    _gitSshKey = raw['sshKey'] as String?;
   }
 
   Future<void> setGitEnabled(bool on, {String? remote}) async {
     if (notebookId == null) return;
     _gitEnabled = on;
     if (remote != null) _gitRemote = remote.trim().isEmpty ? null : remote.trim();
-    _repo.setSetting(_gitKey(notebookId!),
-        on || _gitRemote != null ? {'enabled': on, 'remote': _gitRemote} : null);
+    _repo.setSetting(
+        _gitKey(notebookId!),
+        on || _gitRemote != null || _gitSshKey != null
+            ? {
+                'enabled': on,
+                'remote': _gitRemote,
+                if (_gitSshKey != null) 'sshKey': _gitSshKey,
+              }
+            : null);
     if (on) {
       final git = _git;
       await git.init();
@@ -698,7 +748,23 @@ class AppState extends ChangeNotifier
   /// to make ordinary background syncs authenticate too — otherwise the
   /// create-and-push button would work and the timer that runs a minute later
   /// would start failing, which is the worst of both.
-  GitSync get _git => GitSync(currentNotebook.logDirPath, token: _githubToken);
+  GitSync get _git => GitSync(currentNotebook.logDirPath,
+      token: _githubToken, sshKey: _gitSshKey);
+
+  /// Point this notebook's git at a particular SSH key, or back at the
+  /// machine's default. See [gitSshKey].
+  ///
+  /// Stored in the notebook's settings and NEVER in `.git/config`: that file
+  /// is inside the replicated directory, so a path that is right here is wrong
+  /// on every other machine the notebook reaches.
+  Future<void> setGitSshKey(String? path) async {
+    if (notebookId == null) return;
+    final v = path?.trim();
+    _gitSshKey = v == null || v.isEmpty ? null : v;
+    // Through the same writer the remote uses, so the two can never disagree
+    // about whether the settings row should exist at all.
+    await setGitEnabled(_gitEnabled);
+  }
 
   void reloadGitHub() {
     final raw = _repo.getSetting(_githubKey);
@@ -1599,6 +1665,9 @@ class AppState extends ChangeNotifier
           'were missing or held bytes that were not what their name said, '
           'and were rewritten — ${proof.salvaged.length} of them from a copy '
           'a cloud client had renamed, the rest from the notebook file');
+      // Rewritten means readable. Whatever was showing a placeholder for one
+      // of these can have another go.
+      _bytesMayHaveArrived();
     }
     if (proof.ok) {
       _cancelBlobRetry(nb);
@@ -2005,6 +2074,9 @@ class AppState extends ChangeNotifier
         if (verified > 0) {
           debugPrint('[openote/sync] $verified late blob file(s) verified '
               'against their name and released to the read path');
+          // "Released to the read path" is exactly the event a picture
+          // holding a placeholder is waiting for.
+          _bytesMayHaveArrived();
         }
         // Awaited: the parse is paced now (see `OpLogStore.readDeviceFrom`),
         // so the ~1 s a first read of a 64.6 MB log costs is spent in ~8 ms
@@ -2012,6 +2084,11 @@ class AppState extends ChangeNotifier
         final pending = await r.pendingForeignOps(_repo.getSetting);
         if (pending.isEmpty) continue;
         total += await _syncPullLocked(nb, r, pending);
+        // A pull is the moment the folder gains files. Said unconditionally
+        // rather than only for `blob.put` ops: the bytes are not carried BY
+        // the op, so a picture whose op folded on an earlier cycle may be
+        // exactly the one whose file has only now landed beside it.
+        _bytesMayHaveArrived();
       } while (_pullAgain);
       return total;
     } finally {
@@ -4025,6 +4102,9 @@ class AppState extends ChangeNotifier
   /// Store a blob during import (images pulled out of a `.one` file).
   String importBlob(String nb, Uint8List bytes, String mime) {
     final hash = _repo.putBlob(nb, bytes, mime);
+    // These bytes are readable NOW. An image block created in the same breath
+    // (a drop, a paste, a OneNote import) may already have tried and failed.
+    _bytesMayHaveArrived();
     // The op records only the hash, mime and size; the bytes are written to
     // `blobs/<sha256>` — content-addressed and immutable, so they need no merge
     // logic and can be fetched lazily (ADR-0006 §3). Putting megabytes of image

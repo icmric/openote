@@ -1,8 +1,13 @@
+import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
+import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart';
 
 import '../l10n/l10n.dart';
+import '../media/pdf_pages.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
@@ -69,6 +74,17 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       // selectable, which the raster on the canvas can never be.
       if (b.content['pdf'] is String)
         _item('open-pdf', Icons.picture_as_pdf_outlined, 'Open the PDF…'),
+      // **Get the picture back out.** Issue #10: *"There is the possibility
+      // that you need an image you imported into the note. It would be REALLY
+      // useful to have a save image button."* A note that can swallow a
+      // picture and never give it back is a one-way door, and an attachment
+      // and a video have had their own "Save a copy…" all along.
+      //
+      // In the right-click menu because that is where every browser and every
+      // document editor puts "Save image as…", so it is the first place
+      // anybody looks — and it costs the picture no chrome drawn over it.
+      if (pictureIn(b) != null)
+        _item('save-image', Icons.download_outlined, 'Save image as…'),
       const PopupMenuDivider(),
       _item('front', Icons.flip_to_front, 'Bring to front'),
       _item('back', Icons.flip_to_back, 'Send to back'),
@@ -108,6 +124,8 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
             hash: b.content['pdf'] as String,
             initialPage: (b.content['page'] as num?)?.toInt() ?? 0);
       }
+    case 'save-image':
+      if (context.mounted) await _saveImage(context, app, b);
     case 'copy':
       app.copySelectedBlocks();
     case 'cut':
@@ -121,6 +139,86 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
     case 'delete':
       app.removeSelected();
   }
+}
+
+/// **What this block holds that could be written out as a picture**, or null.
+///
+/// Two shapes qualify. An image block is bytes in the blob store. A slide is a
+/// REFERENCE — `{pdf: sha256:…, page: n}` — whose pixels exist only while
+/// something is looking at them, so saving one means rendering it. Both are
+/// pictures to the person looking at the page, so both offer the item; the
+/// difference lives in [_saveImage] and nowhere else.
+@visibleForTesting
+({bool slide, String hash})? pictureIn(Block b) {
+  final pdf = b.content['pdf'];
+  if (pdf is String) return (slide: true, hash: pdf);
+  if (b.type != BlockType.image) return null;
+  final blob = b.content['blob'];
+  return blob is String ? (slide: false, hash: blob) : null;
+}
+
+/// The extension for [mime], defaulting to `.png`.
+///
+/// An image block keeps `{blob, mime}` and no filename — neither a drop, a
+/// paste nor the Insert menu records one — so the suggested name is built
+/// rather than remembered. Getting the extension right is the part that
+/// matters: it is what decides whether the saved file opens by double-click.
+@visibleForTesting
+String extForMime(String? mime) => switch (mime) {
+      'image/jpeg' => 'jpg',
+      'image/gif' => 'gif',
+      'image/webp' => 'webp',
+      'image/bmp' => 'bmp',
+      'image/svg+xml' => 'svg',
+      _ => 'png',
+    };
+
+/// Write the picture in [b] to a file the person chooses.
+///
+/// Every failure gets words. The same three the attachment's "Save a copy…"
+/// already handles, because they are the three that happen: the bytes are not
+/// here yet (a picture still syncing), the write threw (a full stick, a
+/// protected folder), and the happy path — which also says something, so a
+/// save that went somewhere unexpected is findable.
+Future<void> _saveImage(BuildContext context, AppState app, Block b) async {
+  void say(String msg) => ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(msg)));
+
+  final pic = pictureIn(b);
+  if (pic == null) return;
+
+  Uint8List? bytes;
+  String suggested;
+  if (pic.slide) {
+    final page = (b.content['page'] as num?)?.toInt() ?? 0;
+    bytes = await PdfPages.pageImage(app, pic.hash, page);
+    // One-based: the person is looking at "page 1", not at index 0.
+    suggested = 'slide-${page + 1}.png';
+  } else {
+    bytes = app.blob(pic.hash);
+    suggested = 'image.${extForMime(b.content['mime'] as String?)}';
+  }
+  if (bytes == null) {
+    // The same wait the placeholder on the canvas is describing, said in the
+    // same terms — see `AppState.blobRevision`. "Missing" would be a lie: the
+    // bytes are expected, they are simply not here yet.
+    if (context.mounted) {
+      say(pic.slide
+          ? "That PDF isn't here yet — it may still be syncing."
+          : "That picture isn't here yet — it may still be syncing.");
+    }
+    return;
+  }
+
+  final loc = await getSaveLocation(suggestedName: suggested);
+  if (loc == null) return;
+  try {
+    await File(loc.path).writeAsBytes(bytes);
+  } catch (e) {
+    if (context.mounted) say("That copy didn't save: $e");
+    return;
+  }
+  if (context.mounted) say('Saved to ${loc.path}');
 }
 
 /// The canvas's own menu: paste, the ten things you can add, and the page's

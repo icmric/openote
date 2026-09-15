@@ -49,6 +49,19 @@ class ImageBlockView extends StatefulWidget {
   final Block block;
   final AppState app;
 
+  /// **Forget the shared read queue's history. Tests only.**
+  ///
+  /// `_readQueue` is static and chained, which is what paces cold reads at one
+  /// per event-loop turn across every image on the page. It also means the
+  /// queue outlives a `testWidgets` case — and a future created inside one
+  /// test's fake-async zone never completes in the next one, so a second test
+  /// in the same file chains its read onto a future that can never resolve and
+  /// its picture never loads. That is not a bug in the app, where there is only
+  /// ever one zone; it is a trap for anyone writing the second test.
+  @visibleForTesting
+  static void resetReadQueue() =>
+      _ImageBlockViewState._readQueue = Future<void>.value();
+
   @override
   State<ImageBlockView> createState() => _ImageBlockViewState();
 }
@@ -61,6 +74,24 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   /// then says "rendering" rather than "missing", which are different facts.
   bool _rendering = false;
 
+  /// **The blob revision at which this picture last came back empty**, or
+  /// null when it has bytes (or has never had a hash to look for).
+  ///
+  /// [didUpdateWidget] re-reads only when the HASH changes, and a blob that
+  /// is merely LATE keeps the same hash for ever — so one null read used to
+  /// be final. The placeholder then stayed until this State was destroyed
+  /// outright: a page switch, a pull bumping `docRevision`, or a restart.
+  /// That is the whole of the reported symptom, *"they usually load after a
+  /// minute or two or after restarting openote"* — the minute or two being
+  /// the git cycle, which reloads the page for unrelated reasons.
+  ///
+  /// Retrying on every rebuild is NOT the fix. A cold read is a synchronous
+  /// SQLite read of megabytes, and one per image per frame is precisely the
+  /// page-switch stall the deferred queue below exists to prevent. So the
+  /// retry is tied to [AppState.blobRevision], which moves only when bytes
+  /// that were unreadable have become readable — a pull, a repair, an import.
+  int? _missingAt;
+
   @override
   void initState() {
     super.initState();
@@ -71,7 +102,15 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   void didUpdateWidget(covariant ImageBlockView old) {
     super.didUpdateWidget(old);
     final key = widget.block.content['pdf'] ?? widget.block.content['blob'];
-    if (key != _hash) _load();
+    if (key != _hash) {
+      _load();
+      return;
+    }
+    // Same picture, but the bytes behind it may have arrived since. See
+    // [_missingAt]; `_rendering` keeps a retry from stacking on a read that
+    // is still in flight.
+    final at = _missingAt;
+    if (at != null && at != widget.app.blobRevision && !_rendering) _load();
   }
 
   void _load() {
@@ -85,6 +124,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
       final hit = PdfPages.cached(pdf, page);
       if (hit != null) {
         _provider = MemoryImage(hit);
+        _missingAt = null;
         if (mounted) setState(() {});
         return;
       }
@@ -94,6 +134,10 @@ class _ImageBlockViewState extends State<ImageBlockView> {
         setState(() {
           _rendering = false;
           _provider = png == null ? null : MemoryImage(png);
+          // A slide renders FROM the stored PDF, so a slide that drew nothing
+          // is usually a PDF whose bytes have not landed — the same wait, and
+          // the same answer.
+          _missingAt = png == null ? widget.app.blobRevision : null;
         });
       });
       if (mounted) setState(() {});
@@ -111,6 +155,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     final cached = _blobCache.get(h);
     if (cached != null) {
       _setBytes(cached);
+      _missingAt = null;
       if (mounted) setState(() {});
       return;
     }
@@ -141,6 +186,10 @@ class _ImageBlockViewState extends State<ImageBlockView> {
       setState(() {
         _rendering = false;
         _setBytes(b);
+        // Null here is "not arrived yet", not "not a picture": the hash names
+        // bytes the notebook expects to hold. Remember when we asked, so the
+        // next delivery gets another look. See [_missingAt].
+        _missingAt = b == null ? widget.app.blobRevision : null;
       });
     });
     if (mounted) setState(() {});

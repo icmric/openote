@@ -30,6 +30,26 @@ import 'notebook_manager.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
 
+
+/// Is this an address ssh will be asked to open?
+///
+/// The two shapes git accepts: `ssh://git@host/path`, and the scp-like
+/// `git@host:path` that every server's copy button actually hands out.
+///
+/// Deliberately loose. It decides whether to OFFER the key control, so
+/// guessing wrong costs one extra row on screen — not a broken sync — and the
+/// people this matters to are the ones typing the second shape.
+bool isSshRemote(String remote) {
+  final r = remote.trim();
+  if (r.isEmpty) return false;
+  if (r.startsWith('ssh://')) return true;
+  if (r.startsWith('http://') || r.startsWith('https://')) return false;
+  // `user@host:something`. The colon must come AFTER the `@`, or a Windows
+  // path handed in as a local remote — `C:/Users/me/notes` — reads as a host.
+  final at = r.indexOf('@');
+  return at > 0 && r.indexOf(':', at) > at;
+}
+
 Future<void> showSyncDialog(BuildContext context, AppState app) async {
   final nb = app.notebookId;
   if (nb == null) return;
@@ -1707,6 +1727,31 @@ class _GitSectionState extends State<_GitSection> {
   late final TextEditingController _remote =
       TextEditingController(text: widget.app.gitRemote ?? '');
 
+  Future<void> _pickSshKey() async {
+    final file = await openFile();
+    if (file == null) return;
+    var path = file.path;
+    // **A `.pub` is the wrong half, and picking it is the obvious mistake.**
+    // The two files sit side by side with almost the same name, and the one
+    // people have seen — the one they paste into a server — is the public
+    // one. ssh needs the private key. Where the private counterpart is right
+    // there, take it and say nothing: there is no other thing they could have
+    // meant, and a failed sync two minutes later explains itself far worse.
+    if (path.endsWith('.pub')) {
+      final private = path.substring(0, path.length - 4);
+      if (File(private).existsSync()) {
+        path = private;
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('That is the public half of a key. Choose the file '
+                'with the same name but no “.pub” on the end.')));
+        return;
+      }
+    }
+    await widget.app.setGitSshKey(path);
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1802,7 +1847,56 @@ class _GitSectionState extends State<_GitSection> {
               await app.setGitEnabled(true, remote: v);
               if (mounted) setState(() {});
             },
+            onChanged: (_) => setState(() {}),
           ),
+          // **Only for an SSH address.** Most people sync to GitHub over
+          // https and will never have heard of a key file; putting the
+          // control in front of them is the kind of technical noise this
+          // dialog exists to keep out. It appears exactly when the address
+          // they have typed is one ssh will handle.
+          if (isSshRemote(_remote.text.isEmpty
+              ? (app.gitRemote ?? '')
+              : _remote.text)) ...[
+            const SizedBox(height: 10),
+            Row(children: [
+              Icon(Icons.key_outlined,
+                  size: 15, color: context.surfaces.textSecondary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  app.gitSshKey == null
+                      ? 'Using this computer\'s usual key'
+                      : p.basename(app.gitSshKey!),
+                  style: const TextStyle(fontSize: 12),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              TextButton(
+                onPressed: _pickSshKey,
+                child: Text(
+                    app.gitSshKey == null ? 'Use another key…' : 'Change…',
+                    style: const TextStyle(fontSize: 12)),
+              ),
+              if (app.gitSshKey != null)
+                IconButton(
+                  icon: const Icon(Icons.close, size: 15),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Go back to the usual key',
+                  onPressed: () async {
+                    await app.setGitSshKey(null);
+                    if (mounted) setState(() {});
+                  },
+                ),
+            ]),
+            Text(
+              'Only needed if these notes live on a server you sign in to as '
+              'a different user from the rest of your work.',
+              style: TextStyle(
+                  fontSize: 11,
+                  height: 1.4,
+                  color: context.surfaces.textSecondary),
+            ),
+          ],
           const SizedBox(height: 8),
           Row(children: [
             TextButton.icon(
