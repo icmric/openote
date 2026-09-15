@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../export/onenote_import.dart' show oneNoteLineHeight;
@@ -31,6 +33,23 @@ class TextBlockView extends StatefulWidget {
   final AppState app;
 
   static const double minAutoW = 200, maxAutoW = 640;
+
+  /// **The ceiling for a box that carries an object rather than a sentence.**
+  ///
+  /// [maxAutoW] is a READING measure: past about 640px a line of prose is
+  /// tiring to follow, so a paragraph stops widening and wraps instead. A
+  /// table is not prose and cannot wrap. Squeezing one compresses real data
+  /// into columns too narrow to read, which is what the owner met: *"when i
+  /// add a new column, it makes the existing ones smaller, compressing the
+  /// text"*. Adding a column made the table want more than 640, the box
+  /// refused to grow past it, and `InlineTable` scaled every column down to
+  /// fit the box it had been given.
+  ///
+  /// So a line carrying a table may push its box as wide as that table needs.
+  /// The same 4000 every other width in the app is clamped to (a resize
+  /// handle, a drag, `requestExtraWidth`): a table may be large, not
+  /// unbounded.
+  static const double maxObjectW = 4000;
 
   static String? _fontFamilyOf(String? font) => switch (font) {
         null || '' || 'sans' => 'Inter', // the bundled default face
@@ -169,6 +188,8 @@ class TextBlockView extends StatefulWidget {
     // followed by a table needs room for both, one after the other, which is
     // how they are drawn.
     var w = 0.0;
+    // Raised only by a line that carries an object; see [maxObjectW].
+    var ceiling = maxAutoW;
     var pos = 0;
     for (final line in full.split('\n')) {
       final lineStart = pos;
@@ -180,19 +201,28 @@ class TextBlockView extends StatefulWidget {
       final bare = withoutAtomRefs(line)
           .replaceAll(RegExp(r'^\s*!\[[^\]]*\]\([^)]*\)\s*$'), '');
       var lw = bare.isEmpty ? 0.0 : engine.measureIntrinsicWidth(bare, style);
+      var carriesObject = false;
       for (final r in InlineAtom.referencesIn(full)) {
         if (r.start < lineStart || r.start >= lineStart + line.length) continue;
         final atom = atoms[r.id];
         if (atom == null || atom.type != 'table') continue;
+        carriesObject = true;
         // A table narrower than it needs is drawn squeezed — the widget
         // scales its columns down to fit rather than overflowing — so the
         // failure this prevents is quiet and permanent rather than loud.
         lw += tableNaturalWidth(TableData.from(atom.content), head);
       }
       if (lw > w) w = lw;
+      // This line cannot be narrowed by wrapping it, so the reading measure
+      // does not apply. It is this LINE's width and not the table's on
+      // purpose: `Results: ` followed by a table needs room for both, one
+      // after the other, which is how they are drawn.
+      if (carriesObject) {
+        ceiling = math.max(ceiling, math.min(maxObjectW, lw + chrome + slack));
+      }
     }
     return _autoWidthCache[key] =
-        (w + chrome + slack).clamp(minAutoW, maxAutoW).toDouble();
+        (w + chrome + slack).clamp(minAutoW, ceiling).toDouble();
   }
 
   /// Measurement cache for [autoWidth]; see the note there.
@@ -294,8 +324,15 @@ class _TextBlockViewState extends State<TextBlockView> {
       // width", which is what a box does once it has stopped measuring
       // itself. Only a table that wants more than auto-width could ever give
       // it gets the latch.
-      if (b.content['autoWidth'] != false &&
-          b.w + extra <= TextBlockView.maxAutoW) {
+      // The ceiling the MEASUREMENT would give this block, which for one
+      // carrying a table is no longer the reading measure — see
+      // [TextBlockView.maxObjectW]. Comparing against 640 here latched a wide
+      // table's box to a manual width on the strength of one squeezed frame,
+      // when the very next measurement would have given it the room.
+      final measured = b.content.containsKey('atoms')
+          ? TextBlockView.maxObjectW
+          : TextBlockView.maxAutoW;
+      if (b.content['autoWidth'] != false && b.w + extra <= measured) {
         return;
       }
       _pushUndoOnce();

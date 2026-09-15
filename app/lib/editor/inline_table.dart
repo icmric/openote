@@ -7,7 +7,6 @@ import '../l10n/l10n.dart';
 import '../markdown/md_render.dart' show inlineSpans;
 import '../model/inline_atom.dart';
 import '../theme/onote_theme.dart';
-import 'focus_debug.dart';
 import 'live_markdown_controller.dart';
 
 /// Where a table's data lives, and how a change to it is saved.
@@ -44,6 +43,18 @@ const double kTableColumnCap = 320;
 /// The narrowest a column can be dragged. Below this the text is unreadable
 /// and the handle itself becomes hard to grab back.
 const double kTableColumnMin = 36;
+
+/// **The narrowest a column is MEASURED to**, which is a different question
+/// from how narrow one may be dragged.
+///
+/// A column nobody has sized is one the app is choosing a width for, and the
+/// drag floor is the wrong answer to that question: 36px is about three
+/// characters. A column made by Tab is empty by definition, so it measured to
+/// exactly that floor and the first word typed into it wrapped — *"keeping
+/// the new one just a bit too small so typed text gets wrapped"*. Somebody
+/// who wants a narrow column can still drag it to [kTableColumnMin]; this is
+/// only what the app picks when nobody has said.
+const double kTableColumnAuto = 72;
 
 /// Padding inside a cell. Named because the measured width of a column is
 /// this plus its widest text, and the two must agree or a column is drawn
@@ -312,8 +323,6 @@ class _InlineTableState extends State<InlineTable> {
   @override
   void initState() {
     super.initState();
-    focusLog('TABLE BUILT (a teardown immediately above this line means the '
-        'widget was REPLACED, not closed)');
     _data = widget.binding.read();
     if (widget.editable) _build(_data);
     widget.revision?.addListener(_external);
@@ -343,7 +352,6 @@ class _InlineTableState extends State<InlineTable> {
 
   @override
   void dispose() {
-    focusLog('TABLE TORN DOWN (holding=$_holdingKeyboard want=$_wantCell)');
     widget.revision?.removeListener(_external);
     // **Hand the keyboard back on the way out.** The host stands its own key
     // handling, caret and text-input connection down while a cell holds the
@@ -396,11 +404,6 @@ class _InlineTableState extends State<InlineTable> {
   final List<Object> _retired = [];
 
   void _drainRetired() {
-    if (_retired.isNotEmpty) {
-      final focused = _retired.whereType<FocusNode>().where((n) => n.hasFocus);
-      focusLog('drainRetired: disposing ${_retired.length} '
-          '(${focused.length} of them STILL HAVE FOCUS)');
-    }
     for (final o in _retired) {
       if (o is TextEditingController) o.dispose();
       if (o is FocusNode) {
@@ -539,16 +542,11 @@ class _InlineTableState extends State<InlineTable> {
   ({int row, int col})? _lastFocused;
 
   void _focusChanged() {
-    ({int row, int col})? has;
     for (var r = 0; r < _nodes.length; r++) {
       for (var c = 0; c < _nodes[r].length; c++) {
-        if (_nodes[r][c].hasFocus) {
-          has = (row: r, col: c);
-          _lastFocused = has;
-        }
+        if (_nodes[r][c].hasFocus) _lastFocused = (row: r, col: c);
       }
     }
-    focusLog('focusChanged: cell=$has grid=${_rows}x$_cols want=$_wantCell');
     _settleKeyboard();
   }
 
@@ -572,8 +570,6 @@ class _InlineTableState extends State<InlineTable> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final holding = _anyFocused || _wantCell != null;
-      focusLog('settleKeyboard: holding=$holding was=$_holdingKeyboard '
-          'anyFocused=$_anyFocused want=$_wantCell');
       if (holding == _holdingKeyboard) return;
       _holdingKeyboard = holding;
       if (!holding) _undoPushed = false;
@@ -631,7 +627,6 @@ class _InlineTableState extends State<InlineTable> {
   int _wantTries = 0;
 
   void _askForCell(int r, int c) {
-    focusLog('askForCell($r,$c)');
     _wantCell = (row: r, col: c);
     _wantTries = 0;
     // Said BEFORE the caret has moved, not after: from here until it lands,
@@ -661,23 +656,10 @@ class _InlineTableState extends State<InlineTable> {
       // yet. Dropping the request here is how it was lost.
       final built =
           want.row < _nodes.length && want.col < _nodes[want.row].length;
-      focusLog('pursue try=$_wantTries want=$want built=$built '
-          'anyFocused=$_anyFocused '
-          'primary=${WidgetsBinding.instance.focusManager.primaryFocus?.debugLabel}');
-      if (built && _nodes[want.row][want.col].hasPrimaryFocus) {
-        focusLog('pursue STOP: the wanted cell has the caret');
-        return stop();
-      }
+      if (built && _nodes[want.row][want.col].hasPrimaryFocus) return stop();
       // Somebody chose another cell in the meantime — a click. Theirs wins.
-      if (built && _anyFocused && _wantTries > 0) {
-        focusLog('pursue STOP: assumed a click — ANOTHER cell has it '
-            '(lastFocused=$_lastFocused, wanted=$want)');
-        return stop();
-      }
-      if (_wantTries++ >= 8) {
-        focusLog('pursue STOP: gave up after 8 frames, wanted=$want');
-        return stop();
-      }
+      if (built && _anyFocused && _wantTries > 0) return stop();
+      if (_wantTries++ >= 8) return stop();
       if (built) _focusCell(want.row, want.col);
       _pursueCell();
     });
@@ -1242,7 +1224,7 @@ double _measuredColumn(TableData d, int col, TextStyle headerStyle) {
     if (w > widest) widest = w;
   }
   return (widest + kTableCellPad.horizontal + 2)
-      .clamp(kTableColumnMin, kTableColumnCap);
+      .clamp(kTableColumnAuto, kTableColumnCap);
 }
 
 /// How wide the whole table wants to be, borders included.
