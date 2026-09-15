@@ -678,6 +678,22 @@ class _InlineTableState extends State<InlineTable> {
       }
     }
     var nr = r + m.dr, nc = c + m.dc;
+    // **Tab off the end of the FIRST row adds a column, not a row.**
+    //
+    // The owner: *"on the first row pressing tab should add a new column
+    // rather than return me"*. The top row is where a table's shape is
+    // decided — you are naming the columns, not filling anything in — so the
+    // gesture that extends it should extend it SIDEWAYS. Every row after it
+    // behaves as it does in Word and every spreadsheet, where Tab at the end
+    // makes a row.
+    //
+    // A table is born one row old with the caret in its second cell, so this
+    // is the rule that governs the whole of building a new one: type, Tab,
+    // type, Tab lays out the headings, and Enter starts the body.
+    if (m.wrap && r == 0 && m.dc > 0 && nc >= _cols) {
+      _restructure(_data.insertColumn(_cols), focus: (row: 0, col: _cols));
+      return null;
+    }
     if (m.wrap) {
       if (nc >= _cols) {
         nc = 0;

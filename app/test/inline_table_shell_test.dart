@@ -130,7 +130,7 @@ void main() {
     app.cancelPendingSave();
   });
 
-  testWidgets('type, Tab, type, Tab — and the row Tab just made is typed into',
+  testWidgets('type, Tab, type, Tab — and the cell Tab just made is typed into',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await shell(tester);
@@ -155,19 +155,22 @@ void main() {
 
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await settle(tester);
+    // **Sideways, because this is the heading row.** The owner: *"on the first
+    // row pressing tab should add a new column rather than return me"* — the
+    // top row is where a table's shape is decided, so the gesture that extends
+    // it extends it across. Enter starts the body; every row after the first
+    // gets a new ROW from Tab, as it does in Word.
     expect(cells(), [
-      ['Element', 'Symbol'],
-      ['', '']
-    ], reason: 'Tab in the last cell adds a row');
+      ['Element', 'Symbol', '']
+    ], reason: 'Tab off the end of the first row adds a column');
 
     // Typed at nobody in particular — it goes wherever the keyboard is.
-    tester.testTextInput.enterText('Sodium');
+    tester.testTextInput.enterText('Mass');
     await settle(tester);
     expect(cells(), [
-      ['Element', 'Symbol'],
-      ['Sodium', '']
-    ], reason: 'the first cell of the new row, which is where Tab left the '
-        'caret — not the old cell, and not the paragraph');
+      ['Element', 'Symbol', 'Mass']
+    ], reason: 'the new heading, which is where Tab left the caret — not the '
+        'old cell, and not the paragraph');
     expect(text(), startsWith('!['),
         reason: 'and not one character of it reached the sentence');
     app.cancelPendingSave();
