@@ -8,6 +8,7 @@ import '../markdown/md_render.dart' show indentPx, kBulletGutter, subSupStyle;
 import '../math/math_view.dart' show mathStyleIn;
 import '../markdown/md_syntax.dart';
 import '../model/inline_atom.dart';
+import 'focus_debug.dart';
 import 'inline_atom_view.dart';
 import 'inline_math_editor.dart';
 import '../theme/onote_theme.dart';
@@ -1252,6 +1253,9 @@ class LiveMarkdownController extends TextEditingController {
   /// common case — writing at the end of a block — keeps every atom above the
   /// caret. Stable ids (v0.19 Step 1) are what lift that limit, by letting
   /// the callbacks stop capturing offsets at all.
+  /// Last atom cache key seen, for the focus instrument only.
+  String? _lastAtomKey;
+
   Widget _atom(String key, Widget Function() build) {
     final hit = _atomCache[key];
     if (hit != null) return hit;
@@ -1549,7 +1553,16 @@ class LiveMarkdownController extends TextEditingController {
           // either. Editability and the box's width DO change what is built,
           // so they are in it.
           child: _atom(
-            'atom|$id|${host?.editable}|${layoutWidth?.round()}',
+            () {
+              // The width is IN the key, so a box that resizes rebuilds the
+              // table outright. Logged because that teardown is the suspect.
+              final k = 'atom|$id|${host?.editable}|${layoutWidth?.round()}';
+              if (k != _lastAtomKey) {
+                focusLog('atom key: $_lastAtomKey -> $k');
+                _lastAtomKey = k;
+              }
+              return k;
+            }(),
             () => inlineAtomWidget(
               host: host,
               id: id,

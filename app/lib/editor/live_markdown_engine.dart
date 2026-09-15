@@ -12,6 +12,7 @@ import '../model/models.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../state/app_state.dart';
+import 'focus_debug.dart';
 import '../theme/onote_theme.dart';
 import '../math/equation_editor.dart';
 import '../math/evaluate.dart';
@@ -450,6 +451,8 @@ class _LiveMarkdownSession extends OnoteEditSession {
   final ValueNotifier<bool> _atomFocus = ValueNotifier(false);
 
   void _atomTookKeyboard(bool holding) {
+    focusLog('host told: atom holding=$holding '
+        '(was ${_atomFocus.value}, disposed=$_disposed)');
     // A table hands the keyboard back as it is torn down, and the session it
     // is telling may be going down in the same breath — the block closed, the
     // page changed. Late is fine; late and disposed is an assertion.
@@ -489,6 +492,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// Found by id rather than by a captured offset — the atom is built once
   /// and kept, and every character typed in the paragraph moves it.
   void _leaveAtom(String id) {
+    focusLogWithStack('leaveAtom($id): the caret is being put BESIDE the table');
     final at = InlineAtom.rangeIn(controller.text, id);
     if (at != null) {
       controller.selection = TextSelection.collapsed(offset: at.end);
@@ -1318,7 +1322,11 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // cells looks exactly like that for one frame — nothing focused inside
       // a field that is being edited — and claiming it there is how the caret
       // ended up beside a table instead of in the row that had just been made.
-      if (!_focus.hasFocus && !inlineChildFocused) _focus.requestFocus();
+      if (!_focus.hasFocus && !inlineChildFocused) {
+        focusLogWithStack('post-build claim: the paragraph takes the keyboard '
+            '(atomFocus=${_atomFocus.value} math=${_mathFocus.hasFocus})');
+        _focus.requestFocus();
+      }
     });
     return Padding(
       padding: s.inset,

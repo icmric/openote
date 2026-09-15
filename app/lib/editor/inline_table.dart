@@ -7,6 +7,7 @@ import '../l10n/l10n.dart';
 import '../markdown/md_render.dart' show inlineSpans;
 import '../model/inline_atom.dart';
 import '../theme/onote_theme.dart';
+import 'focus_debug.dart';
 import 'live_markdown_controller.dart';
 
 /// Where a table's data lives, and how a change to it is saved.
@@ -311,6 +312,8 @@ class _InlineTableState extends State<InlineTable> {
   @override
   void initState() {
     super.initState();
+    focusLog('TABLE BUILT (a teardown immediately above this line means the '
+        'widget was REPLACED, not closed)');
     _data = widget.binding.read();
     if (widget.editable) _build(_data);
     widget.revision?.addListener(_external);
@@ -340,6 +343,7 @@ class _InlineTableState extends State<InlineTable> {
 
   @override
   void dispose() {
+    focusLog('TABLE TORN DOWN (holding=$_holdingKeyboard want=$_wantCell)');
     widget.revision?.removeListener(_external);
     // **Hand the keyboard back on the way out.** The host stands its own key
     // handling, caret and text-input connection down while a cell holds the
@@ -558,6 +562,8 @@ class _InlineTableState extends State<InlineTable> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final holding = _anyFocused || _wantCell != null;
+      focusLog('settleKeyboard: holding=$holding was=$_holdingKeyboard '
+          'anyFocused=$_anyFocused want=$_wantCell');
       if (holding == _holdingKeyboard) return;
       _holdingKeyboard = holding;
       if (!holding) _undoPushed = false;
@@ -615,6 +621,7 @@ class _InlineTableState extends State<InlineTable> {
   int _wantTries = 0;
 
   void _askForCell(int r, int c) {
+    focusLog('askForCell($r,$c)');
     _wantCell = (row: r, col: c);
     _wantTries = 0;
     // Said BEFORE the caret has moved, not after: from here until it lands,
@@ -644,6 +651,9 @@ class _InlineTableState extends State<InlineTable> {
       // yet. Dropping the request here is how it was lost.
       final built =
           want.row < _nodes.length && want.col < _nodes[want.row].length;
+      focusLog('pursue try=$_wantTries want=$want built=$built '
+          'anyFocused=$_anyFocused '
+          'primary=${WidgetsBinding.instance.focusManager.primaryFocus?.debugLabel}');
       if (built && _nodes[want.row][want.col].hasPrimaryFocus) return stop();
       // Somebody chose another cell in the meantime — a click. Theirs wins.
       if (built && _anyFocused && _wantTries > 0) return stop();

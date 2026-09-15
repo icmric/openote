@@ -241,4 +241,81 @@ void main() {
     expect(table.cols, 2, reason: 'and NOT a column');
     expect(caretInACell(), isTrue);
   });
+
+  testWidgets('the caret survives the debounced save firing under it',
+      (t) async {
+    // Every other test in this file cancels the debounced save after each
+    // keystroke, because the binding fails a test that leaves a timer armed.
+    // That silently suppressed a suspect: `markDirty` arms a 700 ms timer,
+    // and "into the box very briefly, then out of the box" is about that
+    // long. This one lets it fire. It is not the culprit — but the next
+    // person to read this file should not have to re-derive that.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    const atom = InlineAtom(id: 't1', type: 'table', content: {
+      'cells': [
+        ['Element', 'Symbol'],
+        ['Sodium', 'Na'],
+      ]
+    });
+    final content = <String, dynamic>{
+      'text': atom.reference(TableData.referenceAlt)
+    };
+    InlineAtom.putIn(content, atom);
+    await pumpShell(t, content);
+    await openBlock(t);
+
+    final cells = find.byWidgetPredicate(
+        (w) => w is TextField && w.focusNode?.debugLabel == 'tableCell');
+    await t.tap(cells.at(3));
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+
+    await t.sendKeyEvent(LogicalKeyboardKey.enter);
+    await t.pumpAndSettle();
+    expect(caretInACell(), isTrue, reason: 'the caret ARRIVES — never in doubt');
+
+    // NOT cancelled: let the 700 ms debounce run all the way through a save.
+    await t.pump(const Duration(milliseconds: 900));
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+
+    expect(caretInACell(), isTrue, reason: 'and the save must not take it back');
+  });
+
+  testWidgets('the caret survives a table that outgrows its box', (t) async {
+    // A table wider than its box takes a branch no small table reaches
+    // (`inline_table.dart`, `total > room`): it scales the columns down AND
+    // asks the block for more room in a post-frame callback, which latches
+    // `autoWidth = false`, rewrites `b.w` and calls `updateBlock` +
+    // `markDirty`. Three block mutations a frame after Enter, none of which
+    // any other table test provokes.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    const atom = InlineAtom(id: 't1', type: 'table', content: {
+      'cells': [
+        ['Element name in full', 'Chemical symbol', 'Relative atomic mass'],
+        ['Sodium', 'Na', '22.99'],
+      ],
+      'colWidths': [320.0, 320.0, 320.0], // 960 against a 480 box
+    });
+    final content = <String, dynamic>{
+      'text': atom.reference(TableData.referenceAlt)
+    };
+    InlineAtom.putIn(content, atom);
+    await pumpShell(t, content);
+    await openBlock(t);
+
+    final cells = find.byWidgetPredicate(
+        (w) => w is TextField && w.focusNode?.debugLabel == 'tableCell');
+    await t.tap(cells.at(5));
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+    expect(caretInACell(), isTrue, reason: 'precondition');
+
+    await t.sendKeyEvent(LogicalKeyboardKey.enter);
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+    expect(tablesIn(app.blocks.single.content).single.rows, 3);
+    expect(caretInACell(), isTrue,
+        reason: 'the width request must not take the caret with it');
+  });
 }
