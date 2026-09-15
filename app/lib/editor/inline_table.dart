@@ -300,6 +300,47 @@ class _InlineTableState extends State<InlineTable> {
   List<List<LiveMarkdownController>> _ctls = const [];
   List<List<FocusNode>> _nodes = const [];
 
+  /// **The table's own focus scope — where the caret goes when a cell lets go
+  /// of it, instead of out of the table altogether.**
+  ///
+  /// This is the fix for *"it creates the new row, puts my cursor in there,
+  /// and then kicks it out of the table"*, and it works by changing WHERE a
+  /// released caret lands rather than by trying to stop it being released.
+  ///
+  /// A `FocusNode` that stops being focusable — detached because the widget
+  /// holding it was rebuilt from above, disposed, told `canRequestFocus =
+  /// false`, or simply `unfocus()`ed by `EditableText` itself — does not leave
+  /// the caret nowhere. Flutter hands it to the nearest enclosing
+  /// `FocusScope`. Without this widget that scope is the PAGE's, which is
+  /// outside the paragraph entirely: the paragraph's own node stops reporting
+  /// `hasFocus`, its post-build hook sees a block being edited with nothing
+  /// focused inside it, and claims the keyboard — caret beside the table, and
+  /// the next letters typed into the sentence. That is the exact sequence the
+  /// owner's log shows, ending in `post-build claim: the paragraph takes the
+  /// keyboard`.
+  ///
+  /// With a scope of our own the same release lands INSIDE the table: on the
+  /// cell that had the caret a moment ago, or on this scope itself. Either
+  /// way the paragraph's node still reports `hasFocus`, so
+  /// `inlineChildFocused` stays true, the paragraph keeps its caret and its
+  /// text-input connection stood down, and [_scopeChanged] puts the caret
+  /// back in the cell we asked for — in the same microtask, before a frame is
+  /// painted. Nothing is visible, and nothing is typed anywhere it should not
+  /// be.
+  ///
+  /// **Why a row and not a column.** The heading row's cells are wrapped in a
+  /// `KeyedSubtree` carrying a `GlobalKey` (they are measured for the column
+  /// drag handles), and a GlobalKey'd element survives a rebuild from above
+  /// intact — focus node and all. No other row has one. So the identical code
+  /// path, reached by the identical keystroke, loses the caret when it lands
+  /// in the BODY and keeps it when it lands in the HEADING, which is precisely
+  /// what was reported: *"I can create a column with no issues, just rows."*
+  ///
+  /// Owned by the State rather than by the `FocusScope` widget, so it survives
+  /// any rebuild of this table's subtree — a scope that is itself thrown away
+  /// cannot catch anything.
+  final FocusScopeNode _scope = FocusScopeNode(debugLabel: 'inlineTable');
+
   /// True once this burst of editing has pushed an undo step, so a sentence
   /// typed into a cell collapses into one. Cleared when the keyboard leaves.
   bool _undoPushed = false;
@@ -317,6 +358,7 @@ class _InlineTableState extends State<InlineTable> {
     _data = widget.binding.read();
     if (widget.editable) _build(_data);
     widget.revision?.addListener(_external);
+    _scope.addListener(_scopeChanged);
     // **And once more at the end of this frame.** A table that is replacing
     // one torn down in the same frame mounts BEFORE the old one is disposed —
     // Flutter inflates the new element and unmounts the old when the build is
@@ -369,6 +411,9 @@ class _InlineTableState extends State<InlineTable> {
     }
     _retireGrid();
     _drainRetired();
+    _scope
+      ..removeListener(_scopeChanged)
+      ..dispose();
     super.dispose();
   }
 
@@ -397,9 +442,17 @@ class _InlineTableState extends State<InlineTable> {
 
   void _drainRetired() {
     if (_retired.isNotEmpty) {
-      final focused = _retired.whereType<FocusNode>().where((n) => n.hasFocus);
+      final focused =
+          _retired.whereType<FocusNode>().where((n) => n.hasFocus).length;
       focusLog('drainRetired: disposing ${_retired.length} '
-          '(${focused.length} of them STILL HAVE FOCUS)');
+          '($focused of them STILL HAVE FOCUS)');
+      // **Move the caret off it deliberately, rather than letting the
+      // disposal do it.** Detaching a focused `FocusNode` hands the caret to
+      // the enclosing scope, and while [_scope] now catches that, a cell we
+      // can name is a better destination than the scope itself — it keeps a
+      // real text field under the keyboard for the whole of the handover
+      // instead of for all but one microtask of it.
+      if (focused > 0 && mounted) _sendCaretHome();
     }
     for (final o in _retired) {
       if (o is TextEditingController) o.dispose();
@@ -520,7 +573,16 @@ class _InlineTableState extends State<InlineTable> {
     return true;
   }
 
+  /// **Does this table hold the keyboard?**
+  ///
+  /// [_scope] first, and that is the load-bearing half: it answers true while
+  /// the scope ITSELF holds the caret, which is the state a cell leaves
+  /// behind when it is rebuilt or disposed out from under the person. Asking
+  /// only the cells said "nobody" there, the host was told the keyboard was
+  /// free, and the paragraph took it — see the note on [_scope]. The grid is
+  /// still asked as well, for the frames before the scope is attached.
   bool get _anyFocused {
+    if (_scope.hasFocus) return true;
     for (final row in _nodes) {
       for (final n in row) {
         if (n.hasFocus) return true;
@@ -528,6 +590,62 @@ class _InlineTableState extends State<InlineTable> {
     }
     return false;
   }
+
+  /// The cell the caret is actually IN, or null — including "in this table
+  /// but not in any cell", which is null here and true for [_anyFocused].
+  ({int row, int col})? get _focusedCell {
+    for (var r = 0; r < _nodes.length; r++) {
+      for (var c = 0; c < _nodes[r].length; c++) {
+        if (_nodes[r][c].hasPrimaryFocus) return (row: r, col: c);
+      }
+    }
+    return null;
+  }
+
+  /// The caret has landed on the scope rather than in a cell: a cell let go
+  /// of it without another taking it. Put it back where it was going.
+  ///
+  /// Called from the scope's own notification, so the request is made in the
+  /// same microtask the release was applied in and the next frame is drawn
+  /// with the caret already in the cell. Nothing is painted in between.
+  void _scopeChanged() {
+    if (!mounted) return;
+    if (_scope.hasPrimaryFocus) {
+      focusLog('scope holds the caret — a cell let go of it');
+      _sendCaretHome();
+    }
+    _settleKeyboard();
+  }
+
+  /// Put the caret in the cell it is owed: the one being pursued, else the
+  /// one that had it last, else the first.
+  ///
+  /// Never invents a destination outside the grid, and does nothing at all on
+  /// a table with no cells to type into — a read-only table must not trap the
+  /// keyboard it was never given.
+  void _sendCaretHome() {
+    if (!widget.editable || _ctls.isEmpty || _rows == 0 || _cols == 0) return;
+    // **Bounded within a frame.** A focus change is applied in a microtask,
+    // so a cell that took the caret and dropped it again in the same breath
+    // would bounce between here and the scope for ever without a frame ever
+    // being drawn — a hang rather than a misplaced caret, which is worse than
+    // the bug. Four goes, then leave the caret on the scope: the table still
+    // holds the keyboard there ([_anyFocused] says so), so the paragraph
+    // cannot take it, and the next frame starts the count again.
+    if (_homeTries >= 4) {
+      focusLog('sendCaretHome: four goes in one frame, leaving it on the '
+          'scope rather than spinning');
+      return;
+    }
+    _homeTries++;
+    WidgetsBinding.instance
+      ..ensureVisualUpdate()
+      ..addPostFrameCallback((_) => _homeTries = 0);
+    final home = _wantCell ?? _lastFocused ?? (row: 0, col: 0);
+    _focusCell(home.row.clamp(0, _rows - 1), home.col.clamp(0, _cols - 1));
+  }
+
+  int _homeTries = 0;
 
   /// The last cell that held the caret, kept after it has let go.
   ///
@@ -630,8 +748,20 @@ class _InlineTableState extends State<InlineTable> {
   ({int row, int col})? _wantCell;
   int _wantTries = 0;
 
+  /// The cell the caret was in when [_wantCell] was asked for.
+  ///
+  /// The pursuit gives up when it finds ANOTHER cell holding the caret, on
+  /// the reasoning that somebody clicked there and their choice beats ours.
+  /// The cell we are moving AWAY from is the one exception: finding the caret
+  /// still sitting there means the request has not landed yet, which is the
+  /// ordinary state of the first frame or two and the opposite of a reason to
+  /// stop. Without this the pursuit could stand itself down on the very frame
+  /// it was made and leave the caret in the row above the new one.
+  ({int row, int col})? _wantFrom;
+
   void _askForCell(int r, int c) {
     focusLog('askForCell($r,$c)');
+    _wantFrom = _focusedCell ?? _lastFocused;
     _wantCell = (row: r, col: c);
     _wantTries = 0;
     // Said BEFORE the caret has moved, not after: from here until it lands,
@@ -651,6 +781,7 @@ class _InlineTableState extends State<InlineTable> {
       if (!mounted || want == null) return;
       void stop() {
         _wantCell = null;
+        _wantFrom = null;
         // The answer to "does this table have the keyboard" has just changed
         // shape, and if the pursuit failed nobody else will say so.
         _settleKeyboard();
@@ -661,17 +792,21 @@ class _InlineTableState extends State<InlineTable> {
       // yet. Dropping the request here is how it was lost.
       final built =
           want.row < _nodes.length && want.col < _nodes[want.row].length;
+      final holder = _focusedCell;
       focusLog('pursue try=$_wantTries want=$want built=$built '
-          'anyFocused=$_anyFocused '
+          'holder=$holder scope=${_scope.hasPrimaryFocus} '
           'primary=${WidgetsBinding.instance.focusManager.primaryFocus?.debugLabel}');
-      if (built && _nodes[want.row][want.col].hasPrimaryFocus) {
+      if (built && holder == want) {
         focusLog('pursue STOP: the wanted cell has the caret');
         return stop();
       }
       // Somebody chose another cell in the meantime — a click. Theirs wins.
-      if (built && _anyFocused && _wantTries > 0) {
+      // The cell we are coming FROM does not count: the caret has simply not
+      // moved yet. Nor does the scope holding it, which means a cell let go
+      // and [_scopeChanged] is putting it back — the pursuit's own business.
+      if (built && holder != null && holder != _wantFrom && _wantTries > 0) {
         focusLog('pursue STOP: assumed a click — ANOTHER cell has it '
-            '(lastFocused=$_lastFocused, wanted=$want)');
+            '(holder=$holder, from=$_wantFrom, wanted=$want)');
         return stop();
       }
       if (_wantTries++ >= 8) {
@@ -998,10 +1133,18 @@ class _InlineTableState extends State<InlineTable> {
     // The cells are deeper than this, so a tap that lands on one still goes
     // to that cell and this never sees it. What arrives here is only what
     // would otherwise have left the table altogether.
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapUp: (d) => _focusNearestCell(d.globalPosition),
-      child: sized,
+    //
+    // **Inside the table's own focus scope**, which is what keeps a released
+    // caret in the table instead of handing it to the page — see [_scope].
+    // Only on the editable side: a table being read holds no keyboard and
+    // must not be able to catch one.
+    return FocusScope(
+      node: _scope,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapUp: (d) => _focusNearestCell(d.globalPosition),
+        child: sized,
+      ),
     );
   }
 

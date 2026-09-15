@@ -142,6 +142,40 @@ void main() {
         reason: 'something took it back a few frames later');
   });
 
+  testWidgets('and it survives the new cell being RELEASED under it',
+      (t) async {
+    // The reported failure, forced rather than waited for.
+    //
+    // The caret arrives in the new row and then the cell goes quiet on its
+    // own — `anyFocused=false`, with nobody in this codebase having asked for
+    // it. Whatever does that inside the framework (a detach, a dispose, a
+    // `canRequestFocus` flipped, `EditableText` handing the keyboard back)
+    // ends in one call, and this is that call. What the fix changes is not
+    // whether it happens but where the caret LANDS when it does: the table's
+    // own focus scope rather than the page's, so the paragraph never sees a
+    // block being edited with nothing focused in it.
+    await pump(t);
+    await clickCell(t, 1, 1);
+    await key(t, LogicalKeyboardKey.enter);
+    expect(rowsNow(), 3);
+    expect(caretInACell(), isTrue, reason: 'precondition: the caret arrives');
+
+    FocusManager.instance.primaryFocus!.unfocus();
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+
+    expect(caretInACell(), isTrue,
+        reason: 'THE BUG: the caret is handed to the page, and the paragraph '
+            'claims it back on its next post-frame hook');
+
+    t.testTextInput.enterText('Potassium');
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+    expect(tablesIn(block.content).single.cells.last, contains('Potassium'));
+    expect(block.content['text'], isNot(contains('Potassium')),
+        reason: 'not one character of it belongs in the sentence');
+  });
+
   testWidgets('typing into the new row reaches the TABLE, not the paragraph',
       (t) async {
     // The symptom as the owner meets it: they type, and the letters land in
