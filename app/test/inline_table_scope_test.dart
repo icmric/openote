@@ -256,6 +256,26 @@ void main() {
       expect(keyboard.last, isFalse);
     });
 
+    testWidgets('and closing the table outright is not an assertion',
+        (t) async {
+      // The other half of owning a scope. A cell letting go on the way out
+      // would hand the caret to a scope that is being detached in the same
+      // breath, and a `FocusScopeNode` marked for focus while it detaches is
+      // a framework assertion rather than a misplaced caret — which is what
+      // `inline_table_in_block_test.dart`'s "closing the block really closes
+      // it" caught. The scope stops accepting focus as the table leaves.
+      await editor(t);
+      await t.tap(cells().at(3));
+      await t.pumpAndSettle();
+      expect(caretInACell(), isTrue, reason: 'precondition');
+
+      await t.pumpWidget(frame(const SizedBox.shrink()));
+      await t.pumpAndSettle();
+
+      expect(find.byType(Table), findsNothing, reason: 'it really is gone');
+      expect(caretInACell(), isFalse);
+    });
+
     testWidgets('a table being READ holds no scope at all', (t) async {
       // A read-only table has no cells to put a caret in, so a scope around
       // one could only ever swallow a keyboard nobody meant it to have.

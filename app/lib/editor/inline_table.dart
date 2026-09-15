@@ -358,7 +358,9 @@ class _InlineTableState extends State<InlineTable> {
     _data = widget.binding.read();
     if (widget.editable) _build(_data);
     widget.revision?.addListener(_external);
-    _scope.addListener(_scopeChanged);
+    _scope
+      ..canRequestFocus = widget.editable
+      ..addListener(_scopeChanged);
     // **And once more at the end of this frame.** A table that is replacing
     // one torn down in the same frame mounts BEFORE the old one is disposed —
     // Flutter inflates the new element and unmounts the old when the build is
@@ -380,7 +382,43 @@ class _InlineTableState extends State<InlineTable> {
       old.revision?.removeListener(_external);
       widget.revision?.addListener(_external);
     }
+    // A table that stops being editable drops its `FocusScope` on the next
+    // build. Closing the scope to new focus BEFORE that happens is the same
+    // rule [deactivate] states, for the same reason.
+    if (old.editable != widget.editable) {
+      _scope.canRequestFocus = widget.editable;
+    }
     if (!identical(old.binding, widget.binding)) _external();
+  }
+
+  /// **On the way out, stop being somewhere the caret can go.**
+  ///
+  /// [deactivate] runs on this State BEFORE any of its children are unmounted,
+  /// which is the only moment early enough to matter. A cell's `Focus`
+  /// detaching hands the caret to its enclosing scope — that is the whole
+  /// point of [_scope], and during a teardown it is exactly wrong: the scope
+  /// is about to be detached too, and a `FocusScopeNode` that is marked for
+  /// focus while it is being detached is a framework assertion rather than a
+  /// misplaced caret. `inline_table_in_block_test.dart`'s "closing the block
+  /// really closes it" is that assertion, and it is how this was found.
+  ///
+  /// `canRequestFocus = false` makes the framework's own unfocus walk step
+  /// straight past us to the page's scope — which is where a caret belongs
+  /// when the table it was in no longer exists. A table that is being
+  /// REBUILT rather than closed still keeps its caret: the note left in
+  /// [dispose] is what carries it across, and always was.
+  @override
+  void deactivate() {
+    _scope.canRequestFocus = false;
+    super.deactivate();
+  }
+
+  /// The mirror of [deactivate], for an element that goes back into the tree
+  /// rather than out of it.
+  @override
+  void activate() {
+    super.activate();
+    _scope.canRequestFocus = widget.editable;
   }
 
   @override
