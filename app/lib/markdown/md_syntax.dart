@@ -406,3 +406,42 @@ String replaceMathRun(String text, ({int start, int end, String latex}) run,
       .replaceFirst('wrap', wrap));
 }
 
+
+/// **How much of a link is the address, and how much is the words.**
+///
+/// [MdMatch.openLen] and [MdMatch.closeLen] record what the READ renderer
+/// needs, and for the two link shapes that is not the whole of the marker:
+/// `extLink` says `[` and nothing else, leaving `](https://…)` unaccounted
+/// for, and `wikiLink` says `[[` and `]]` while `|<page-id>` sits between the
+/// label and the closer. The live editor emits `marker + inner + marker` as
+/// three substrings of the source, so an incomplete pair cannot cover the
+/// match — which is why links were the last inline kinds left as legible
+/// source, and the one place where clicking into a sentence still changed what
+/// it said.
+///
+/// This is the completed pair, derived from the match rather than stored, so
+/// there is one answer rather than a second table to keep in step.
+///
+/// **Null the moment the arithmetic does not add up**, and that is the whole
+/// safety story: the caller falls back to drawing the source, exactly as it
+/// did before. A grammar change can therefore cost the live form of a link,
+/// but it can never cost the coverage invariant that keeps every caret offset
+/// in a paragraph exactly where the buffer says it is.
+({int openLen, int closeLen})? linkMarkers(
+    MdInline kind, String? label, String full) {
+  final open = switch (kind) {
+    MdInline.extLink => 1, // '['
+    MdInline.wikiLink => 2, // '[['
+    _ => -1,
+  };
+  if (open < 0 || label == null) return null;
+  final close = full.length - open - label.length;
+  // A closer of nothing would mean the label ran to the end of the match,
+  // which no link shape can do — both of them end in a bracket.
+  if (close <= 0) return null;
+  // And the label really does sit where the arithmetic says. Cheap, and it is
+  // what turns "probably" into "proven" for the substring the caller emits.
+  if (full.length < open + label.length) return null;
+  if (full.substring(open, open + label.length) != label) return null;
+  return (openLen: open, closeLen: close);
+}

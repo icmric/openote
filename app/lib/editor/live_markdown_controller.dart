@@ -413,15 +413,32 @@ class LiveMarkdownController extends TextEditingController {
         ));
         continue;
       }
-      // Exactly the kinds [_inline] zeroes: their source stays legible, so
-      // there is nothing hidden for the caret to trip over.
-      switch (c.kind) {
-        case MdInline.wikiLink:
-        case MdInline.extLink:
-        case MdInline.bareUrl:
-          continue;
-        default:
+      // **A link hides its address, so the caret must be told about it.**
+      //
+      // This is the same marker run everything else gets, and registering it
+      // here is what buys the whole of the behaviour: `_snapOutOfHiddenMarkers`
+      // steps the caret across `](https://…)` in one press instead of through
+      // sixty invisible characters, and `markerAwareDelete` makes Backspace at
+      // either edge mean what it means everywhere else. Leaving links out of
+      // this table was the reason the old code had to leave their source
+      // visible — the objection in its own comment was "the caret walking
+      // through characters nobody can see", and that machinery is the answer
+      // to it. It arrived after the comment did.
+      if (c.kind == MdInline.wikiLink || c.kind == MdInline.extLink) {
+        final mk = linkMarkers(c.kind, c.label, sub.substring(m.start, m.end));
+        if (mk == null) continue; // drawn as source; nothing is hidden
+        out.add((
+          start: regionStart + m.start,
+          end: regionStart + m.end,
+          openLen: mk.openLen,
+          closeLen: mk.closeLen,
+          kind: MdRunKind.marker,
+        ));
+        continue;
       }
+      // A bare URL is its own label: there is nothing to hide, and hiding
+      // half of it would leave the caret walking through the other half.
+      if (c.kind == MdInline.bareUrl) continue;
       if (c.openLen <= 0 && c.closeLen <= 0) continue;
       out.add((
         start: regionStart + m.start,
@@ -1679,11 +1696,36 @@ class LiveMarkdownController extends TextEditingController {
                   : Color(0xFF000000 | v));
         case MdInline.wikiLink:
         case MdInline.extLink:
+          // **A link is its words, not its address** — the same change of
+          // character bold and an equation already make when the caret arrives.
+          // It was the last inline kind without one, so clicking into a
+          // sentence made `[the docs](https://…/a/very/long/path)` unfold in
+          // the middle of it and the line re-wrap around sixty characters
+          // nobody wrote.
+          //
+          // Colour and underline are the READ renderer's own (`_ExternalLink`),
+          // because the two renderers are one text box to the person looking
+          // at them. Underline costs no width, so the "nothing moves when you
+          // click into it" measurement holds.
+          //
+          // `linkMarkers` returns null if the arithmetic cannot be proven, and
+          // then this behaves exactly as it did before: source, legible,
+          // nothing hidden. There is no third outcome.
+          final linkMk =
+              linkMarkers(c.kind, c.label, sub.substring(m.start, m.end));
+          openLen = linkMk?.openLen ?? 0;
+          closeLen = linkMk?.closeLen ?? 0;
+          final linkInk = dark ? OnoteColors.ink300 : OnoteColors.ink600;
+          inner = cBase.copyWith(
+              color: linkInk,
+              decoration:
+                  linkMk == null ? null : TextDecoration.underline,
+              decorationColor: linkInk);
         case MdInline.bareUrl:
         case MdInline.math: // handled above; listed to keep the switch total
-          // The editor has no live form for these yet, so they stay legible
-          // source. Zero-width markers would hide half a URL and leave the
-          // caret walking through characters nobody can see.
+          // A bare URL is already its own label — there is nothing to hide,
+          // and hiding half of it would leave the caret walking through the
+          // other half.
           openLen = closeLen = 0;
           inner = cBase.copyWith(
               color: dark ? OnoteColors.ink300 : OnoteColors.ink600);

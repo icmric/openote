@@ -119,16 +119,28 @@ void main() {
       }
     });
 
-    testWidgets('a link still shows its source — it has no live form yet',
-        (t) async {
-      // Deliberately NOT hidden: zero-width markers would hide half a URL and
-      // leave the caret walking through characters nobody can see.
+    testWidgets('a link shows its words, and hides its address', (t) async {
+      // **This test used to assert the opposite**, and the reason it gave was
+      // sound at the time: *"zero-width markers would hide half a URL and
+      // leave the caret walking through characters nobody can see."*
+      //
+      // What changed is not the reasoning, it is the machinery underneath it.
+      // `_snapOutOfHiddenMarkers` steps the caret across a hidden run in one
+      // press and `markerAwareDelete` makes Backspace at its edges mean what
+      // it means everywhere else — both of which arrived after that comment
+      // was written, and both of which are precisely the answer to it. Every
+      // other inline kind has had a live form all along; a link was the last
+      // one where clicking into a sentence changed what the sentence said.
       final c = await _pumpField(t, 'see [docs](https://x.test) now', caret: 6);
       final visible = _leaves(_render(t, c))
           .where((l) => !_isHidden(l))
           .map((l) => l.text)
           .join();
-      expect(visible, contains('https://x.test'));
+      expect(visible, contains('docs'), reason: 'the words stay');
+      expect(visible, isNot(contains('https://x.test')),
+          reason: 'and the address goes, as it does when the block is read');
+      expect(visible, isNot(contains('](')),
+          reason: 'including the brackets that carry it');
     });
   });
 
