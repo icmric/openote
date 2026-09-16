@@ -132,6 +132,7 @@
   "insertGroupWrite": "书写",
   "insertLinkToPage": "链接到页面",
   "insertPageLink": "页面链接",
+  "linkEdit": "编辑链接…",
   "insertPageWindow": "页面窗口",
   "insertPdfAsCard": "作为卡片 — 在弹窗中打开",
   "insertPdfFailed": "PDF 导入失败：{reason}",

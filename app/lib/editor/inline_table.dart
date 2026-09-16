@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import '../l10n/l10n.dart';
 import '../markdown/md_render.dart' show inlineSpans;
 import '../model/inline_atom.dart';
 import '../theme/onote_theme.dart';
+import '../ui/link_dialog.dart';
 import 'live_markdown_controller.dart';
 
 /// Where a table's data lives, and how a change to it is saved.
@@ -135,6 +137,7 @@ class InlineTable extends StatefulWidget {
     this.onOpen,
     this.rememberCell,
     this.takeInitialCell,
+    this.linkPages,
   });
 
   final TableBinding binding;
@@ -176,6 +179,12 @@ class InlineTable extends StatefulWidget {
   /// `InlineAtomHost.rememberCell`.
   final void Function(int row, int col)? rememberCell;
 
+  /// Every other page in the notebook, for the link dialog opened from a cell
+  /// by Ctrl+K. A cell is a paragraph like any other as far as links are
+  /// concerned, and offering it a smaller dialog than the sentence outside the
+  /// table would be a difference with nothing behind it.
+  final List<({String id, String title})> Function()? linkPages;
+
   /// The cell to put the caret in, asked for ONCE as this table mounts —
   /// by a click on a cell while the table was being read, or by the Tab that
   /// made the table in the first place.
@@ -207,6 +216,10 @@ class _CellBreak extends Intent {
 
 class _CellEscape extends Intent {
   const _CellEscape();
+}
+
+class _CellLink extends Intent {
+  const _CellLink();
 }
 
 /// **A cell's own editing keys stay the cell's.**
@@ -737,6 +750,29 @@ class _InlineTableState extends State<InlineTable> {
     return null;
   }
 
+  /// **Ctrl+K in a cell.**
+  ///
+  /// The same flow the paragraph runs, over this cell's own controller. The
+  /// rules about where a link may go — never into a table's own reference,
+  /// never into an equation, never across a line — live in `linkSiteAt` and
+  /// are therefore answered identically here; a second copy of them is a
+  /// second chance to get one wrong, and a cell is exactly where somebody
+  /// would find out the hard way.
+  ///
+  /// The write goes through [_write] like any other cell edit, so it is one
+  /// undo step and it reaches the note the same way typing does.
+  Object? _onLink(int r, int c) {
+    if (!widget.editable || r >= _ctls.length || c >= _ctls[r].length) {
+      return null;
+    }
+    final ctl = _ctls[r][c];
+    final pages = widget.linkPages?.call() ?? const [];
+    unawaited(runLinkFlow(context, ctl, pages: pages).then((changed) {
+      if (changed && mounted) _write(_data.withCell(r, c, ctl.text));
+    }));
+    return null;
+  }
+
   Object? _onEnter(int r, int c) {
     if (r == _rows - 1) {
       _restructure(_data.insertRow(_rows), focus: (row: r + 1, col: c));
@@ -869,6 +905,12 @@ class _InlineTableState extends State<InlineTable> {
             _cols > 1,
             () => _restructure(_data.removeColumn(c),
                 focus: (row: r, col: c >= _cols - 1 ? _cols - 2 : c))),
+        // Offered on the same terms as the paragraph's: only when the caret
+        // is already inside a link, because "Edit link" with nothing to edit
+        // is a menu row that does nothing.
+        if (linkSiteAt(_ctls[r][c].text, _ctls[r][c].selection) case final site
+            when site.ok && site.isEdit)
+          item(l.linkEdit, true, () => _onLink(r, c)),
         ...field.contextMenuButtonItems,
       ],
     );
@@ -1043,6 +1085,14 @@ class _InlineTableState extends State<InlineTable> {
           SingleActivator(LogicalKeyboardKey.enter, control: true):
               _CellBreak(),
           SingleActivator(LogicalKeyboardKey.escape): _CellEscape(),
+          // **Ctrl+K reaches a cell too.** The shell's formatting chords stand
+          // down while a cell holds the keyboard (`canFormatText`), which is
+          // right for Bold — it would style the sentence outside the table —
+          // but a link belongs to whichever field is being typed into, and a
+          // cell is a field. It runs the same flow the paragraph does, so the
+          // rules about where a link may go are answered once.
+          SingleActivator(LogicalKeyboardKey.keyK, control: true): _CellLink(),
+          SingleActivator(LogicalKeyboardKey.keyK, meta: true): _CellLink(),
         },
         child: Actions(
           actions: {
@@ -1056,6 +1106,8 @@ class _InlineTableState extends State<InlineTable> {
                 CallbackAction<_CellEnter>(onInvoke: (_) => _onEnter(r, c)),
             _CellBreak:
                 CallbackAction<_CellBreak>(onInvoke: (_) => _onBreak(r, c)),
+            _CellLink:
+                CallbackAction<_CellLink>(onInvoke: (_) => _onLink(r, c)),
             _CellEscape: CallbackAction<_CellEscape>(onInvoke: (_) {
               widget.onExit?.call();
               return null;

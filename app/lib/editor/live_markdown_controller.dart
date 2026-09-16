@@ -2142,3 +2142,228 @@ class _ResizeDrag extends Drag {
   }
   return null;
 }
+
+/// **Why Ctrl+K declines.**
+///
+/// Each of these is a place where splicing `[…](…)` into the buffer would
+/// produce something the grammar cannot read back — so the answer is a
+/// sentence to the person rather than an edit they did not ask for. A link
+/// that silently does not render is a worse outcome than a link that was
+/// politely refused, because the first one is only discovered later, in a note
+/// somebody was relying on.
+enum LinkBlocked {
+  /// No caret at all. Nothing to attach to and nowhere to put it.
+  noCaret,
+
+  /// A selection that crosses a line. The inline grammar is scanned per line,
+  /// so a match spanning one could never be drawn — it would be written into
+  /// the note and then read back as literal brackets.
+  lines,
+
+  /// A picture, a table or a flashcard. All three are ALL-OR-NOTHING: their
+  /// reference is a pointer to a payload held elsewhere, and a bracket spliced
+  /// into one stops it matching, which strands the payload and spills forty
+  /// characters of URL into the sentence.
+  object,
+
+  /// Inside an equation, where `[` and `]` are LaTeX rather than a link.
+  maths,
+
+  /// The words already carry a bracket, which `[label](url)` cannot hold —
+  /// the label is `[^\]\[]+` by construction.
+  bracket,
+
+  /// Inside some other inline run — bold, code, a colour. Neither renderer
+  /// re-scans the inside of a run, so a link placed there would be correct
+  /// Markdown that this editor draws as its own source. Refusing is the
+  /// honest answer until nesting is real.
+  nested,
+}
+
+/// **Where a link would go, or why it cannot go anywhere.**
+///
+/// One answer to the question "what does Ctrl+K act on", asked by the
+/// paragraph, by a table cell, and by the right-click menu — so that the three
+/// of them cannot disagree about what is safe.
+class LinkSite {
+  const LinkSite.at(this.start, this.end, this.label,
+      {this.url, this.wiki = false})
+      : blocked = null;
+  const LinkSite.no(this.blocked)
+      : start = -1,
+        end = -1,
+        label = '',
+        url = null,
+        wiki = false;
+
+  /// The range the link will replace. For an edit, the whole existing link.
+  final int start, end;
+
+  /// The words that will be the label — empty when the caret had nothing to
+  /// attach to, which is what makes the dialog ask for display text.
+  final String label;
+
+  /// The address already there. Non-null means this is an edit, not an insert.
+  final String? url;
+
+  /// True when the link being edited is the `[[Title|page-id]]` form. Recorded
+  /// rather than guessed from whether the target has a colon in it: a page id
+  /// is opaque, and a guess about somebody's data is a bug waiting for the one
+  /// id that breaks it.
+  final bool wiki;
+
+  final LinkBlocked? blocked;
+
+  bool get ok => blocked == null;
+  bool get isEdit => url != null;
+}
+
+/// **What Ctrl+K would act on at [sel], and whether it may.**
+///
+/// The rules, in the owner's words: *"If text is highlighted it should insert
+/// the link onto that, if nothing is highlighted but the cursor is pressed up
+/// against a word it should do it for that (if there is a space between the
+/// cursor and word DONT fill it on there), and if it cannot insert it on
+/// existing text, add a field to add display text."*
+///
+/// Deliberately here, beside the other readers of this grammar, and pure so
+/// that every refusal above can be proven by a test rather than argued for in
+/// a comment. The safety rules are not a nicety: a table's reference and a
+/// picture's are pointers, and the cost of splicing a bracket into one is a
+/// payload nothing can reach again.
+LinkSite linkSiteAt(String text, TextSelection sel) {
+  if (!sel.isValid) return const LinkSite.no(LinkBlocked.noCaret);
+  final t = text;
+  final lo = sel.start.clamp(0, t.length), hi = sel.end.clamp(0, t.length);
+  if (t.substring(lo, hi).contains('\n')) {
+    return const LinkSite.no(LinkBlocked.lines);
+  }
+
+  final lineStart = lo == 0 ? 0 : t.lastIndexOf('\n', lo - 1) + 1;
+  var lineEnd = t.indexOf('\n', lo);
+  if (lineEnd < 0) lineEnd = t.length;
+  final line = t.substring(lineStart, lineEnd);
+
+  // A line that IS an object — a picture, a card — has no prose to link.
+  if (inlineCardRe.hasMatch(line)) return const LinkSite.no(LinkBlocked.object);
+  final img = LiveMarkdownController._imageLineRe.firstMatch(line);
+  if (img != null) return const LinkSite.no(LinkBlocked.object);
+
+  // Everything the grammar already knows is on this line, in buffer offsets.
+  // An existing link WINS: Ctrl+K inside one means edit it, which is the
+  // behaviour every other editor has trained people to expect.
+  LinkBlocked? clash;
+  for (final m in mdInlineRe.allMatches(line)) {
+    final c = classifyInline(m);
+    final s = lineStart + m.start, e = lineStart + m.end;
+    final overlaps = lo < e && hi > s;
+    final inside = lo >= s && hi <= e;
+    if (c.kind == MdInline.extLink || c.kind == MdInline.wikiLink) {
+      if (inside) {
+        return LinkSite.at(s, e, c.label ?? c.inner,
+            url: c.target ?? '', wiki: c.kind == MdInline.wikiLink);
+      }
+      if (overlaps) clash ??= LinkBlocked.nested;
+      continue;
+    }
+    if (!overlaps) continue;
+    clash ??= switch (c.kind) {
+      MdInline.atom => LinkBlocked.object,
+      MdInline.math ||
+      MdInline.mathDisplay ||
+      MdInline.mathPadded ||
+      MdInline.mathEmpty =>
+        LinkBlocked.maths,
+      // A bare URL is already a link; wrapping one in another is not something
+      // to guess at on somebody's behalf.
+      MdInline.bareUrl => LinkBlocked.nested,
+      _ => LinkBlocked.nested,
+    };
+  }
+  if (clash != null) return LinkSite.no(clash);
+
+  // A character that can be part of a word. Brackets are excluded because the
+  // label cannot hold them, so a word carrying one is caught here rather than
+  // by producing a link that does not match.
+  bool word(int i) {
+    if (i < 0 || i >= t.length) return false;
+    final ch = t[i];
+    return ch.trim().isNotEmpty && !'[]()'.contains(ch);
+  }
+
+  var s = lo, e = hi;
+  if (lo == hi) {
+    // Pressed up against a word on either side, and nothing when there is a
+    // gap. A caret with space around it has nothing to label.
+    if (word(lo - 1) || word(lo)) {
+      while (word(s - 1)) {
+        s--;
+      }
+      while (word(e)) {
+        e++;
+      }
+      // Sentence punctuation belongs to the writer, not to the address — the
+      // same rule the bare-URL renderer already applies at the other end.
+      const edge = '.,;:!?"\'';
+      while (e > s && edge.contains(t[e - 1])) {
+        e--;
+      }
+      while (s < e && edge.contains(t[s])) {
+        s++;
+      }
+    }
+  }
+
+  final label = t.substring(s, e);
+  if (label.contains('[') || label.contains(']')) {
+    return const LinkSite.no(LinkBlocked.bracket);
+  }
+  return LinkSite.at(s, e, label);
+}
+
+/// A URL the link grammar can hold.
+///
+/// `_link` reads `[^)\s]+`, so a close bracket or a space inside an address
+/// would end the match early and leave the tail of somebody's URL sitting in
+/// their sentence as text. Both are legal in a real URL — Wikipedia is full of
+/// the first — so they are percent-encoded rather than refused. Everything
+/// else is left exactly as typed: an address that has been "helpfully"
+/// rewritten is the kind of thing that fails months later.
+String encodeLinkTarget(String url) => url
+    .trim()
+    .replaceAll('%', '%25')
+    .replaceAll(' ', '%20')
+    .replaceAll('\t', '%09')
+    .replaceAll('(', '%28')
+    .replaceAll(')', '%29');
+
+/// The edit Ctrl+K makes: [site] becomes `[label](url)`, caret after it.
+///
+/// [wiki] writes the `[[Title|page-id]]` form instead, for a link to another
+/// page in the notebook. Both shapes go through here so that "what does
+/// inserting a link do to the buffer" has one answer — and so that a page link
+/// made this way is found again by [linkSiteAt], and can therefore be edited
+/// and removed with the same two keystrokes as any other.
+({String text, TextSelection selection}) applyLink(
+    String text, LinkSite site,
+    {required String label, required String url, bool wiki = false}) {
+  // `[[|id]]` matches nothing — the wiki label is `[^\]|]+` — so a page link
+  // with no words falls back to the page's own id rather than being written
+  // as something no renderer will read.
+  final ref = wiki
+      ? '[[${label.isEmpty ? url : label}|$url]]'
+      : '[$label](${encodeLinkTarget(url)})';
+  return (
+    text: text.replaceRange(site.start, site.end, ref),
+    selection: TextSelection.collapsed(offset: site.start + ref.length),
+  );
+}
+
+/// The edit "Remove link" makes: the words stay, the address goes.
+({String text, TextSelection selection}) removeLink(String text, LinkSite site) {
+  return (
+    text: text.replaceRange(site.start, site.end, site.label),
+    selection:
+        TextSelection.collapsed(offset: site.start + site.label.length),
+  );
+}

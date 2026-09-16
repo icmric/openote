@@ -530,6 +530,9 @@ class LIt extends L {
   String get insertPageLink => 'Collegamento';
 
   @override
+  String get linkEdit => 'Modifica collegamento…';
+
+  @override
   String get insertPageWindow => 'Finestra';
 
   @override

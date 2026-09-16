@@ -132,6 +132,7 @@
   "insertGroupWrite": "Scrivi",
   "insertLinkToPage": "Collega a una pagina",
   "insertPageLink": "Collegamento",
+  "linkEdit": "Modifica collegamento…",
   "insertPageWindow": "Finestra",
   "insertPdfAsCard": "Come scheda — si apre in una finestra",
   "insertPdfFailed": "Importazione del PDF fallita: {reason}",

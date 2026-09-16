@@ -132,6 +132,7 @@
   "insertGroupWrite": "Schreiben",
   "insertLinkToPage": "Mit einer Seite verknüpfen",
   "insertPageLink": "Seitenlink",
+  "linkEdit": "Link bearbeiten…",
   "insertPageWindow": "Seitenfenster",
   "insertPdfAsCard": "Als Karte — öffnet ein Fenster",
   "insertPdfFailed": "PDF-Import fehlgeschlagen: {reason}",

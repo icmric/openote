@@ -24,6 +24,7 @@ class InlineAtomHost {
     this.takeInitialCell,
     this.onNeedWidth,
     this.rememberCell,
+    this.linkPages,
   });
 
   /// The atoms this block is carrying, read fresh. Never a snapshot: an atom
@@ -70,6 +71,11 @@ class InlineAtomHost {
 
   /// The atom wants more room than the box has.
   final void Function(double total)? onNeedWidth;
+
+  /// Every other page in the notebook, for the link dialog's "or link to a
+  /// page" half. Null on a surface with no notebook behind it — a preview, a
+  /// test — and the dialog simply does not offer that half.
+  final List<({String id, String title})> Function()? linkPages;
 
   /// **Where the caret was, said on the way out.**
   ///
@@ -151,6 +157,7 @@ Widget inlineAtomWidget({
     rememberCell:
         h.rememberCell == null ? null : (r, c) => h.rememberCell!(id, r, c),
     takeInitialCell: () => h.takeInitialCell?.call(id),
+    linkPages: h.linkPages,
   );
 }
 

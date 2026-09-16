@@ -60,6 +60,7 @@ import '../l10n/l10n.dart';
 import '../state/app_state.dart';
 import '../store/media_store.dart';
 import 'insert_portal_dialog.dart';
+import 'link_dialog.dart';
 import 'media_link_dialog.dart';
 import 'onote_dialog.dart';
 import 'sidebar.dart';
@@ -656,9 +657,36 @@ Future<void> copyVideoIntoNotebook(
   }
 }
 
+/// **Insert ▸ Link — the same door Ctrl+K opens.**
+///
+/// The owner: *"i think we should change this to 'insert link' rather than
+/// 'page link' as that makes me think that it only allows linking to internal
+/// pages, which it doesnt."* The old label was accurate — this really did only
+/// offer other pages, and there was no route to a web address from the menu at
+/// all — but the instinct is the useful thing: somebody reaching for "link"
+/// should not have to know in advance whether the address is inside this
+/// notebook. Worth noting the translations had already drifted to the honest
+/// word: French, Spanish and Italian all say simply "link".
+///
+/// So with a box open this is Ctrl+K by another route, and the page picker is
+/// a section of that dialog. With nothing open there is no text to attach
+/// anything to, and the old behaviour — pick a page, drop a link block on the
+/// canvas — is still the only sensible one.
 Future<void> insertPageLink(
     BuildContext context, AppState app, Offset at) async {
-  final pages = app.pages.where((p) => p.id != app.pageId).toList();
+  final pages = [
+    for (final p in app.pages)
+      if (p.id != app.pageId) (id: p.id, title: p.title)
+  ];
+
+  final ae = app.activeEditor;
+  if (ae != null && app.canFormatText) {
+    if (await runLinkFlow(context, ae.controller, pages: pages)) {
+      app.commitActiveEditor();
+    }
+    return;
+  }
+
   if (pages.isEmpty) {
     _say(context, 'No other pages to link to yet.');
     return;
@@ -681,14 +709,7 @@ Future<void> insertPageLink(
     ),
   );
   if (choice == null) return;
-  // If a text box is being edited, insert inline at the caret; otherwise drop
-  // a new link block.
-  if (app.activeEditor != null && app.canFormatText) {
-    final title = app.node(choice)?.title ?? 'page';
-    app.insertTextAtActiveCursor('[[$title|$choice]]');
-  } else {
-    app.insertPageLink(choice);
-  }
+  app.insertPageLink(choice);
 }
 
 /// Import a PDF, with progress.

@@ -24,6 +24,7 @@ import 'math_paste_formatter.dart';
 import 'live_markdown_controller.dart';
 import 'onote_text_editor.dart';
 import 'unicode_input.dart';
+import '../ui/link_dialog.dart';
 import '../ui/save_picture.dart';
 
 /// The engine we own: a [TextField] driven by [LiveMarkdownController] for the
@@ -1076,6 +1077,26 @@ class _LiveMarkdownSession extends OnoteEditSession {
       return KeyEventResult.ignored;
     }
     final hw = HardwareKeyboard.instance;
+    // **Ctrl+K — the chord everything else uses for a link.**
+    //
+    // Handled HERE rather than in the shell's global handler because this is
+    // where the controller and its `onChanged` both are, and a link is an edit
+    // to the buffer that has to be saved like any other. The shell's handler
+    // runs first and passes on anything it does not claim, so a table cell —
+    // whose own Shortcuts sit BELOW this node and therefore see the key before
+    // it does — still gets to answer for itself.
+    if ((hw.isControlPressed || hw.isMetaPressed) &&
+        !hw.isAltPressed &&
+        event.logicalKey == LogicalKeyboardKey.keyK) {
+      final ctx = _lastContext;
+      if (ctx != null && ctx.mounted) {
+        unawaited(runLinkFlow(ctx, controller, pages: _linkablePages())
+            .then((changed) {
+          if (changed) onChanged(controller.text);
+        }));
+      }
+      return KeyEventResult.handled;
+    }
     // A chord is somebody else's (Ctrl+B, Ctrl+Enter, the canvas nudges).
     if (hw.isControlPressed || hw.isMetaPressed || hw.isAltPressed) {
       return KeyEventResult.ignored;
@@ -1449,9 +1470,10 @@ class _LiveMarkdownSession extends OnoteEditSession {
         final items = [...editable.contextMenuButtonItems];
         final extra = _spellMenuItems(editable);
         final picture = _pictureMenuItems(context, editable);
+        final link = _linkMenuItems(context, editable);
         return AdaptiveTextSelectionToolbar.buttonItems(
           anchors: editable.contextMenuAnchors,
-          buttonItems: [...picture, ...extra, ...items],
+          buttonItems: [...picture, ...link, ...extra, ...items],
         );
       },
       onChanged: (v) {
@@ -1490,6 +1512,40 @@ class _LiveMarkdownSession extends OnoteEditSession {
             app.blob(ref.hash),
             notHereYet: "That picture isn't here yet — it may still be syncing.",
           ));
+        },
+      ),
+    ];
+  }
+
+  /// Every other page in this notebook, for the dialog's "or link to a page"
+  /// half. Empty is a perfectly good answer — the section simply does not
+  /// appear — which is what a brand-new notebook shows.
+  List<LinkablePage> _linkablePages() => [
+        for (final p in app.pages)
+          if (p.id != app.pageId) (id: p.id, title: p.title)
+      ];
+
+  /// **"Edit link…", and only when there is a link to edit.**
+  ///
+  /// The owner: *"rightclicking the link should also give me an option to edit
+  /// link, which brings up the same popup. That option should not appear if i
+  /// have not already linked text."* `linkSiteAt` answers both halves — it
+  /// reports an EDIT only when the caret is inside an existing link — so the
+  /// condition here and the behaviour of Ctrl+K cannot drift apart.
+  List<ContextMenuButtonItem> _linkMenuItems(
+      BuildContext context, EditableTextState editable) {
+    final site = linkSiteAt(controller.text, controller.selection);
+    if (!site.ok || !site.isEdit) return const [];
+    return [
+      ContextMenuButtonItem(
+        label: 'Edit link…',
+        onPressed: () {
+          editable.hideToolbar();
+          unawaited(
+              runLinkFlow(context, controller, pages: _linkablePages())
+                  .then((changed) {
+            if (changed) onChanged(controller.text);
+          }));
         },
       ),
     ];

@@ -5638,6 +5638,17 @@ class AppState extends ChangeNotifier
   /// the session on its first build.
   Offset? pendingCaretGlobal;
 
+  /// **Save what the active editor's controller now holds.**
+  ///
+  /// For an edit made straight to the controller — a link inserted by Ctrl+K
+  /// from the Insert menu, say — where the field's own `onChanged` never fires
+  /// because nothing was typed. The same commit [insertTextAtActiveCursor]
+  /// makes, without the insert.
+  void commitActiveEditor() {
+    _commitActiveEditor();
+    notifyListeners();
+  }
+
   void _commitActiveEditor() {
     final ae = activeEditor;
     if (ae == null) return;

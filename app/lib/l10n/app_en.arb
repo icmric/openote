@@ -681,9 +681,13 @@
   "@insertLinkToPage": {
     "description": "Title of the dialog that picks which page to link to."
   },
-  "insertPageLink": "Page link",
+  "linkEdit": "Edit link…",
+  "@linkEdit": {
+    "description": "Right-click menu item on text that is already a link: reopens the link dialog to change its address."
+  },
+  "insertPageLink": "Link…",
   "@insertPageLink": {
-    "description": "Insert item: a link to another page in the notebook."
+    "description": "Insert item: attach an address to some words \u2014 a web address, or another page in this notebook."
   },
   "insertPageWindow": "Page window",
   "@insertPageWindow": {
