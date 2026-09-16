@@ -687,6 +687,10 @@ Future<void> insertPageLink(
     return;
   }
 
+  // Nothing was awaited on the way here, but the analyzer cannot see that past
+  // the branch above — and a guard that is merely redundant is cheaper than a
+  // lint everyone learns to scroll past.
+  if (!context.mounted) return;
   if (pages.isEmpty) {
     _say(context, 'No other pages to link to yet.');
     return;

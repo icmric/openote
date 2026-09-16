@@ -58,7 +58,7 @@ void main() {
       // A click on the picture resolves inside the run and
       // `_snapOutOfHiddenMarkers` then pushes the caret to one end or the
       // other. Neither end may lose the picture.
-      final text = 'Notes:\n$ref\nmore';
+      const text = 'Notes:\n$ref\nmore';
       expect(pictureRefAt(text, 7)?.hash, hash, reason: 'the left edge');
       expect(pictureRefAt(text, 7 + ref.length)?.hash, hash,
           reason: 'the right edge');
@@ -105,7 +105,7 @@ void main() {
 
     test('the right picture is found when a page holds several', () {
       const other = '![](sha256:def456)';
-      final text = '$ref\n$other';
+      const text = '$ref\n$other';
       expect(pictureRefAt(text, 0)?.hash, hash);
       expect(pictureRefAt(text, ref.length + 1)?.hash, 'sha256:def456');
     });

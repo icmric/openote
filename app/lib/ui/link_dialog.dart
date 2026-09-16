@@ -16,7 +16,6 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../core/platform_open.dart';
 import '../editor/live_markdown_controller.dart';

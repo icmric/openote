@@ -114,7 +114,7 @@ void main() {
           span = c.buildTextSpan(
               context: context,
               style: const TextStyle(fontSize: 14),
-              withComposing: false) as TextSpan;
+              withComposing: false);
           return const SizedBox();
         }),
       ));
