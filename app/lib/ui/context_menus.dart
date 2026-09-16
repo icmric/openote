@@ -1,8 +1,6 @@
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart';
 
@@ -14,6 +12,7 @@ import '../theme/tokens.dart';
 import 'color_picker.dart';
 import 'insert_catalog.dart';
 import 'pdf_viewer_dialog.dart';
+import 'save_picture.dart';
 
 /// Right-click menus (style guide: most actions within ≤2 clicks).
 
@@ -157,22 +156,6 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
   return blob is String ? (slide: false, hash: blob) : null;
 }
 
-/// The extension for [mime], defaulting to `.png`.
-///
-/// An image block keeps `{blob, mime}` and no filename — neither a drop, a
-/// paste nor the Insert menu records one — so the suggested name is built
-/// rather than remembered. Getting the extension right is the part that
-/// matters: it is what decides whether the saved file opens by double-click.
-@visibleForTesting
-String extForMime(String? mime) => switch (mime) {
-      'image/jpeg' => 'jpg',
-      'image/gif' => 'gif',
-      'image/webp' => 'webp',
-      'image/bmp' => 'bmp',
-      'image/svg+xml' => 'svg',
-      _ => 'png',
-    };
-
 /// Write the picture in [b] to a file the person chooses.
 ///
 /// Every failure gets words. The same three the attachment's "Save a copy…"
@@ -181,44 +164,30 @@ String extForMime(String? mime) => switch (mime) {
 /// protected folder), and the happy path — which also says something, so a
 /// save that went somewhere unexpected is findable.
 Future<void> _saveImage(BuildContext context, AppState app, Block b) async {
-  void say(String msg) => ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text(msg)));
-
   final pic = pictureIn(b);
   if (pic == null) return;
 
-  Uint8List? bytes;
-  String suggested;
+  final Uint8List? bytes;
+  final String base;
+  final String? mime;
   if (pic.slide) {
     final page = (b.content['page'] as num?)?.toInt() ?? 0;
     bytes = await PdfPages.pageImage(app, pic.hash, page);
     // One-based: the person is looking at "page 1", not at index 0.
-    suggested = 'slide-${page + 1}.png';
+    base = 'slide-${page + 1}';
+    mime = 'image/png'; // what the renderer produced, not what the PDF is
   } else {
     bytes = app.blob(pic.hash);
-    suggested = 'image.${extForMime(b.content['mime'] as String?)}';
+    base = 'image';
+    mime = b.content['mime'] as String?;
   }
-  if (bytes == null) {
-    // The same wait the placeholder on the canvas is describing, said in the
-    // same terms — see `AppState.blobRevision`. "Missing" would be a lie: the
-    // bytes are expected, they are simply not here yet.
-    if (context.mounted) {
-      say(pic.slide
+  if (!context.mounted) return;
+  await savePictureBytes(context, bytes,
+      mime: mime,
+      base: base,
+      notHereYet: pic.slide
           ? "That PDF isn't here yet — it may still be syncing."
           : "That picture isn't here yet — it may still be syncing.");
-    }
-    return;
-  }
-
-  final loc = await getSaveLocation(suggestedName: suggested);
-  if (loc == null) return;
-  try {
-    await File(loc.path).writeAsBytes(bytes);
-  } catch (e) {
-    if (context.mounted) say("That copy didn't save: $e");
-    return;
-  }
-  if (context.mounted) say('Saved to ${loc.path}');
 }
 
 /// The canvas's own menu: paste, the ten things you can add, and the page's

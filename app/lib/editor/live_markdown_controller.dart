@@ -2060,3 +2060,43 @@ class _ResizeDrag extends Drag {
 // WrapSelectionFormatter moved to wrap_selection.dart, where every content
 // editor can reach it without importing this whole controller — the export
 // keeps existing importers compiling.
+
+/// **The in-flow picture whose reference covers [offset], or null.**
+///
+/// A picture in a sentence is `![](sha256:…)` alone on its line — ordinary
+/// characters in the block's own Markdown, not a block of its own. Three of
+/// the four ways a picture reaches a page produce this shape (Ctrl+V at the
+/// caret, a drop onto a text box, Insert ▸ Image), so it is the common one,
+/// and anything offering to act on "the picture" has to be able to find it.
+///
+/// Deliberately here rather than beside the menu that asks. [_imageLineRe] is
+/// the LINE grammar, and this file owns it; the last time a second copy of
+/// that knowledge existed, the copy did not know that `onote://atom/…` shares
+/// the `![…](…)` shape and every table on its own line was drawn as a broken
+/// picture. One reader, one answer.
+///
+/// Returns the range the whole reference occupies — the caller needs it to
+/// know what it would be acting on — and the blob hash. Null for a line that
+/// is not a picture, for a table's atom reference, and for any source that is
+/// not a stored blob (an `http://` image is not ours to write out).
+({int start, int end, String hash})? pictureRefAt(String text, int offset) {
+  if (offset < 0) return null;
+  var pos = 0;
+  for (final line in text.split('\n')) {
+    final end = pos + line.length;
+    // `<=` so a caret snapped to either edge of the reference still finds it:
+    // a click on the picture resolves inside the run, and
+    // `_snapOutOfHiddenMarkers` then pushes it to one end or the other.
+    if (offset <= end) {
+      if (offset < pos) return null;
+      final m = LiveMarkdownController._imageLineRe.firstMatch(line);
+      if (m == null) return null;
+      final src = m.group(3)!;
+      if (LiveMarkdownController._isAtomRef(src)) return null;
+      if (!src.startsWith('sha256:')) return null;
+      return (start: pos + m.start, end: pos + m.end, hash: src);
+    }
+    pos = end + 1;
+  }
+  return null;
+}

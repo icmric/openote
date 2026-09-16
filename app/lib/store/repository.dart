@@ -1879,7 +1879,7 @@ class Repository {
       db.execute(
           'INSERT OR IGNORE INTO blobs(hash,bytes,mime,size,created_at) '
           'VALUES(?,?,?,?,?)',
-          [hash, bytes, _sniffMime(bytes), bytes.length, nowMs()]);
+          [hash, bytes, sniffMime(bytes), bytes.length, nowMs()]);
       restored++;
       await Future<void>.delayed(const Duration(milliseconds: 1));
     }
@@ -2964,7 +2964,12 @@ class Repository {
   /// the way back it is read from the content. Only [blobIndex] — the Step 5
   /// backfill — ever consumes it, so an unrecognised type costs a generic
   /// label and nothing else; guessing wrong from a filename would cost more.
-  static String _sniffMime(Uint8List b) {
+  ///
+  /// Public because `save_picture.dart` asks the same question of bytes it is
+  /// about to write out: an in-flow `![](sha256:…)` reference carries no mime
+  /// of its own, and a second copy of these magic numbers is exactly the kind
+  /// of duplication that has already let one grammar drift from another here.
+  static String sniffMime(Uint8List b) {
     bool starts(List<int> magic, {int at = 0}) {
       if (b.length < at + magic.length) return false;
       for (var i = 0; i < magic.length; i++) {

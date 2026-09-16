@@ -24,6 +24,7 @@ import 'math_paste_formatter.dart';
 import 'live_markdown_controller.dart';
 import 'onote_text_editor.dart';
 import 'unicode_input.dart';
+import '../ui/save_picture.dart';
 
 /// The engine we own: a [TextField] driven by [LiveMarkdownController] for the
 /// live container, [MarkdownView] for the read-only ones.
@@ -1447,15 +1448,52 @@ class _LiveMarkdownSession extends OnoteEditSession {
         if (inlineChildFocused) return const SizedBox.shrink();
         final items = [...editable.contextMenuButtonItems];
         final extra = _spellMenuItems(editable);
+        final picture = _pictureMenuItems(context, editable);
         return AdaptiveTextSelectionToolbar.buttonItems(
           anchors: editable.contextMenuAnchors,
-          buttonItems: [...extra, ...items],
+          buttonItems: [...picture, ...extra, ...items],
         );
       },
       onChanged: (v) {
         onChanged(v);
         _scheduleSpellCheck();
       }));
+
+  /// **"Save image as…" for a picture sitting IN the sentence.**
+  ///
+  /// The block menu offers this for a picture that is a block of its own, and
+  /// that covers the rarer shape: a drop only makes a block when it misses
+  /// every text box. Ctrl+V at the caret, a drop onto a box and Insert ▸ Image
+  /// all splice `![](sha256:…)` into a paragraph instead, and for those the
+  /// picture is characters in THIS field — so this menu is the only one that
+  /// can see it, and the right-click that opens this menu has already put the
+  /// caret on it.
+  ///
+  /// Empty when the caret is not on a picture, which is nearly always, so the
+  /// menu looks exactly as it always did.
+  List<ContextMenuButtonItem> _pictureMenuItems(
+      BuildContext context, EditableTextState editable) {
+    final sel = controller.selection;
+    if (!sel.isValid) return const [];
+    final text = controller.text;
+    final ref = pictureRefAt(text, sel.baseOffset.clamp(0, text.length));
+    if (ref == null) return const [];
+    return [
+      ContextMenuButtonItem(
+        label: 'Save image as…',
+        onPressed: () {
+          editable.hideToolbar();
+          // An in-flow reference records no mime — it is the hash and nothing
+          // else — so the name is worked out from the bytes themselves.
+          unawaited(savePictureBytes(
+            context,
+            app.blob(ref.hash),
+            notHereYet: "That picture isn't here yet — it may still be syncing.",
+          ));
+        },
+      ),
+    ];
+  }
 
   /// Correction items for the word under the caret, plus "Add to dictionary".
   /// Empty when the click didn't land on a misspelling — the menu then looks

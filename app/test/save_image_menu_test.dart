@@ -21,6 +21,7 @@ import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/theme/onote_theme.dart';
 import 'package:openote/ui/context_menus.dart';
+import 'package:openote/ui/save_picture.dart' show extForMime;
 
 class _NoopRepo implements Repository {
   @override
