@@ -54,6 +54,10 @@ InlineAtomHost blockAtomHost(
       onExit: onExit,
       onOpen: onOpen,
       onNeedWidth: onNeedWidth,
+      // The page's own stack, reached from inside a cell when the cell's own
+      // history has nothing left — which is how Ctrl+Z takes back a row.
+      undo: app.undo,
+      redo: app.redo,
       takeInitialCell: (id) => app.takePendingAtomCell(blockId, id),
       // Read fresh each time the dialog opens: a page added or renamed since
       // the block was mounted must be in the list, and this widget is built

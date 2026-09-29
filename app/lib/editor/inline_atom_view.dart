@@ -25,6 +25,8 @@ class InlineAtomHost {
     this.onNeedWidth,
     this.rememberCell,
     this.linkPages,
+    this.undo,
+    this.redo,
   });
 
   /// The atoms this block is carrying, read fresh. Never a snapshot: an atom
@@ -71,6 +73,12 @@ class InlineAtomHost {
 
   /// The atom wants more room than the box has.
   final void Function(double total)? onNeedWidth;
+
+  /// **The page's own undo stack**, for the changes a cell's text history
+  /// cannot know about — a row, a column, a dragged width. See
+  /// [TableBinding.undo]. Null on a read surface.
+  final VoidCallback? undo;
+  final VoidCallback? redo;
 
   /// Every other page in the notebook, for the link dialog's "or link to a
   /// page" half. Null on a surface with no notebook behind it — a preview, a
@@ -145,6 +153,8 @@ Widget inlineAtomWidget({
             pushUndo: pushUndo);
       },
       onNeedWidth: h.onNeedWidth,
+      undo: h.undo,
+      redo: h.redo,
     ),
     editable: h.editable,
     style: style,

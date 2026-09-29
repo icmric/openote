@@ -17,6 +17,8 @@ class TableBinding {
     required this.read,
     required this.write,
     this.onNeedWidth,
+    this.undo,
+    this.redo,
   });
 
   /// The table as it stands. Called on every build and on every external
@@ -32,6 +34,18 @@ class TableBinding {
   /// The table wants [total] logical pixels of width. The host grows the box
   /// if it can; if it cannot, the columns are scaled to fit instead.
   final void Function(double total)? onNeedWidth;
+
+  /// **Take back the last change to the PAGE**, for the changes a cell's own
+  /// undo history cannot possibly know about.
+  ///
+  /// A cell is a text field and its history is its text. A row, a column, a
+  /// width dragged — none of those happen IN a field, so none of them are in
+  /// one's history. The owner: *"undo in a table will undo typing now as
+  /// expected, however it wont undo row creations."*
+  ///
+  /// Null on a read-only surface, where there is nothing to take back.
+  final VoidCallback? undo;
+  final VoidCallback? redo;
 }
 
 /// **How wide a column gets before somebody says otherwise.**
@@ -267,6 +281,61 @@ class _CellsOwnAction<T extends Intent> extends ContextAction<T> {
   bool consumesKey(T intent) => callingAction?.consumesKey(intent) ?? false;
 }
 
+/// **Ctrl+Z in a cell: the cell first, then the page.**
+///
+/// Undo and redo are made overridable one layer below the intents
+/// [_CellsOwnAction] deals with — by the `UndoHistory` widget `EditableText`
+/// builds around itself — so they need claiming too, and for the same reason:
+/// left alone, the paragraph's history answers, and IT goes back past the
+/// moment the table's reference was written into the sentence. One press and
+/// the whole table is gone. That was the owner's first report.
+///
+/// Handing straight back to the cell fixed that and left a hole, which was
+/// the owner's second: *"undo in a table will undo typing now as expected,
+/// however it wont undo row creations."* Of course not — a cell is a text
+/// field and its history is its text. A row, a column, a dragged width: none
+/// of those happen IN a field, so none of them are in one's history. And a
+/// row's first cell is brand new, so its history is empty, so Ctrl+Z after
+/// making one did nothing at all.
+///
+/// So: the cell answers while it has something to answer with, and the page's
+/// own stack answers when it does not. Which also gives the right cascade —
+/// undo your typing back to the start of the cell, and the next press takes
+/// the row away.
+class _CellUndoAction<T extends Intent> extends ContextAction<T> {
+  _CellUndoAction({required this.canDo, required this.past});
+
+  /// Whether this cell's own history has a step left. Read live, not
+  /// captured: it changes with every keystroke.
+  final bool Function() canDo;
+
+  /// The page's stack, for everything the cell cannot know about.
+  final VoidCallback? past;
+
+  @override
+  Object? invoke(T intent, [BuildContext? context]) {
+    if (canDo()) {
+      final a = callingAction;
+      if (a != null) {
+        return a is ContextAction<T>
+            ? a.invoke(intent, context)
+            : a.invoke(intent);
+      }
+    }
+    past?.call();
+    return null;
+  }
+
+  /// Always. An undo with nothing left to undo must still be SWALLOWED here,
+  /// or it carries on up to the paragraph — which is the defect this whole
+  /// class exists to prevent.
+  @override
+  bool get isActionEnabled => true;
+
+  @override
+  bool consumesKey(T intent) => true;
+}
+
 /// Every editing intent `EditableText` makes overridable, claimed for the
 /// cell. The list is exactly its `_makeOverridable` entries: the others are
 /// registered plainly, so the nearest field — the cell — already wins them.
@@ -313,29 +382,6 @@ final Map<Type, Action<Intent>> _cellsOwnKeys = <Type, Action<Intent>>{
   SelectAllTextIntent: _CellsOwnAction<SelectAllTextIntent>(),
   CopySelectionTextIntent: _CellsOwnAction<CopySelectionTextIntent>(),
   PasteTextIntent: _CellsOwnAction<PasteTextIntent>(),
-  // **Undo and redo, which are the same hijacking with the worst ending.**
-  //
-  // The owner: *"pressing ctrl + z after making several edits to a table just
-  // deletes the whole table rather than undoing the last edit to the table"*.
-  //
-  // These two are not in `EditableText`'s overridable list, which is why the
-  // first pass through this file missed them — they are made overridable one
-  // layer down, by the `UndoHistory` widget `EditableText` builds around
-  // itself. Same mechanism, so same hijacking: the paragraph is an ancestor,
-  // its `UndoHistory` is found as the override, and Ctrl+Z in a cell rewinds
-  // the PARAGRAPH's text instead of the cell's.
-  //
-  // And the paragraph's history goes back past the moment the table was made.
-  // One press and the `![…](onote://atom/…)` reference is gone from the
-  // sentence — which is the whole table, because the reference is the only
-  // thing tying the payload to the note. So the one key everybody reaches for
-  // when they want something back was the fastest way to lose the lot.
-  //
-  // Handing back to `callingAction` gives a cell the undo any text field has:
-  // its own. A structural change (a row, a column) is not in that history and
-  // is still taken back by the page's stack, from outside the table.
-  UndoTextIntent: _CellsOwnAction<UndoTextIntent>(),
-  RedoTextIntent: _CellsOwnAction<RedoTextIntent>(),
   // Deliberately NOT the two tap-outside intents. They decide what a click
   // somewhere else does to this field's focus, which is a question the
   // paragraph is better placed to answer than a cell is — and focus around
@@ -346,6 +392,10 @@ class _InlineTableState extends State<InlineTable> {
   late TableData _data;
   List<List<LiveMarkdownController>> _ctls = const [];
   List<List<FocusNode>> _nodes = const [];
+
+  /// One per cell, so [_CellUndoAction] can ask whether this cell still has
+  /// a step of its own to take back before reaching for the page's stack.
+  List<List<UndoHistoryController>> _undos = const [];
 
   /// **The table's own focus scope — where the caret goes when a cell lets go
   /// of it, instead of out of the table altogether.**
@@ -514,8 +564,12 @@ class _InlineTableState extends State<InlineTable> {
     for (final row in _nodes) {
       _retired.addAll(row);
     }
+    for (final row in _undos) {
+      _retired.addAll(row);
+    }
     _ctls = const [];
     _nodes = const [];
+    _undos = const [];
     if (_retired.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) => _drainRetired());
   }
@@ -535,6 +589,7 @@ class _InlineTableState extends State<InlineTable> {
     }
     for (final o in _retired) {
       if (o is TextEditingController) o.dispose();
+      if (o is UndoHistoryController) o.dispose();
       if (o is FocusNode) {
         o
           ..removeListener(_focusChanged)
@@ -564,9 +619,11 @@ class _InlineTableState extends State<InlineTable> {
   void _build(TableData d) {
     final ctls = <List<LiveMarkdownController>>[];
     final nodes = <List<FocusNode>>[];
+    final undos = <List<UndoHistoryController>>[];
     for (var r = 0; r < d.rows; r++) {
       final row = <LiveMarkdownController>[];
       final keys = <FocusNode>[];
+      final hist = <UndoHistoryController>[];
       for (var c = 0; c < d.cols; c++) {
         if (r < _ctls.length && c < _ctls[r].length) {
           final ctl = _ctls[r][c];
@@ -577,24 +634,32 @@ class _InlineTableState extends State<InlineTable> {
           if (ctl.text != d.cells[r][c]) ctl.text = d.cells[r][c];
           row.add(ctl);
           keys.add(_nodes[r][c]);
+          hist.add(_undos[r][c]);
         } else {
           row.add(LiveMarkdownController(text: d.cells[r][c], dark: widget.dark));
           keys.add(FocusNode(debugLabel: 'tableCell')..addListener(_focusChanged));
+          // A brand-new cell has an empty history, which is exactly what
+          // makes Ctrl+Z in a just-made row reach the page's stack and take
+          // the row away.
+          hist.add(UndoHistoryController());
         }
       }
       ctls.add(row);
       nodes.add(keys);
+      undos.add(hist);
     }
     for (var r = 0; r < _ctls.length; r++) {
       for (var c = 0; c < _ctls[r].length; c++) {
         if (r < d.rows && c < d.cols) continue;
         _retired
           ..add(_ctls[r][c])
-          ..add(_nodes[r][c]);
+          ..add(_nodes[r][c])
+          ..add(_undos[r][c]);
       }
     }
     _ctls = ctls;
     _nodes = nodes;
+    _undos = undos;
     if (_retired.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _drainRetired());
     }
@@ -1306,6 +1371,17 @@ class _InlineTableState extends State<InlineTable> {
             // here: a cell is a field inside a field, and without this the
             // paragraph answers for it. See [_CellsOwnAction].
             ..._cellsOwnKeys,
+            // AFTER the shared map, because these two want a per-cell answer
+            // rather than the blanket "hand it back to the field" the rest
+            // get. See [_CellUndoAction].
+            UndoTextIntent: _CellUndoAction<UndoTextIntent>(
+              canDo: () => _undos[r][c].value.canUndo,
+              past: widget.binding.undo,
+            ),
+            RedoTextIntent: _CellUndoAction<RedoTextIntent>(
+              canDo: () => _undos[r][c].value.canRedo,
+              past: widget.binding.redo,
+            ),
             _CellMove:
                 CallbackAction<_CellMove>(onInvoke: (i) => _onMove(r, c, i)),
             _CellEnter:
@@ -1391,6 +1467,7 @@ class _InlineTableState extends State<InlineTable> {
           focusedBorder: InputBorder.none,
           filled: false,
         ),
+        undoController: _undos[r][c],
         onChanged: (v) => _write(_data.withCell(r, c, v)),
       );
 

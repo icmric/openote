@@ -75,6 +75,11 @@ class TableBlockView extends StatelessWidget {
             b.w = needed;
             app.markDirty();
           },
+          // A row or a column is not in any cell's text history, so Ctrl+Z
+          // inside a cell falls through to here once the cell has nothing of
+          // its own left to take back.
+          undo: app.undo,
+          redo: app.redo,
         ),
         editable: app.editingBlockId == block.id,
         style: const TextStyle(fontSize: 13),

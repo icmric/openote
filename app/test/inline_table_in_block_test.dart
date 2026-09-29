@@ -425,6 +425,45 @@ void main() {
       app.cancelPendingSave();
     });
 
+    testWidgets('Ctrl+Z takes back a ROW, which no cell history knows about',
+        (t) async {
+      // The owner, after the fix above: *"undo in a table will undo typing
+      // now as expected, however it wont undo row creations (i.e. if i create
+      // a row and press ctrl + z, it wont remove it)."*
+      //
+      // Of course not — a cell is a text field and its history is its text.
+      // A row does not happen IN a field, so it is in no field's history, and
+      // a new row's first cell is brand new and therefore has none at all. So
+      // the cell answers while it has something to answer with, and the
+      // page's own stack answers when it does not.
+      app.editingBlockId = block.id;
+      await pump(t);
+      // The last cell of the 2x2, where Enter makes the next row — the header
+      // row's Enter means something else (it starts the body).
+      await t.tap(find.byType(TextField).at(4));
+      await t.pumpAndSettle();
+      expect(tablesIn(block.content).single.rows, 2);
+
+      await t.sendKeyEvent(LogicalKeyboardKey.enter);
+      await t.pumpAndSettle();
+      expect(tablesIn(block.content).single.rows, 3,
+          reason: 'the row this test is about');
+
+      await chord(t, LogicalKeyboardKey.keyZ);
+
+      // Read from the LIVE block, not the captured one: `app.undo()` restores
+      // the page from JSON, which replaces every `Block` object on it. The
+      // variable this fixture holds is detached from that moment on, and
+      // would report the row still there for ever.
+      final live = app.blocks.single.content;
+      expect(tablesIn(live).single.rows, 2,
+          reason: 'the row is gone — this did nothing at all before');
+      expect(tablesIn(live), hasLength(1),
+          reason: 'and the table itself is still there, which is the other '
+              'half of this and the first thing that went wrong');
+      app.cancelPendingSave();
+    });
+
     testWidgets('Ctrl+Shift+Left selects a word, and only in the cell',
         (t) async {
       final c = await inCell(t, 'hello world');
