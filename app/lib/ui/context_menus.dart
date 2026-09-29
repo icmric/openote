@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart';
 
 import '../l10n/l10n.dart';
+import '../canvas/portal_view.dart';
 import '../media/pdf_pages.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
@@ -37,6 +38,39 @@ PopupMenuItem<String> _item(String v, IconData icon, String label,
         ),
     ]),
   );
+}
+
+/// Swap a page window for a one-line link to the same page.
+///
+/// A replacement rather than an edit, because [Block.type] is final — and
+/// that is the honest shape of it anyway: an embed and a paragraph are not
+/// the same block wearing different clothes.
+///
+/// The link is written as Markdown (`[Title](onote://page/id)`), which is the
+/// one spelling of a page link everything else in the app already reads —
+/// `md_common.dart` writes it, the live editor draws it as a chip, and the
+/// exporter carries it out. A second spelling would be a second thing to keep
+/// in step.
+void _turnIntoPageLink(AppState app, Block b) {
+  final ref = PortalRef.parse(b.content);
+  if (ref == null) return;
+  final title = app.node(ref.pageId)?.title;
+  app.pushUndo();
+  final link =
+      '[${title == null || title.isEmpty ? 'another page' : title}]'
+      '(onote://page/${ref.pageId})';
+  final made = app.addBlock(Block(
+    type: BlockType.text,
+    x: b.x,
+    y: b.y,
+    // Not the window's width: a line of text in a 380px box would wrap where
+    // nothing needs to wrap, and the box is what you see when you click it.
+    w: 320,
+    z: b.z,
+    content: {'text': link},
+  ));
+  app.removeBlock(b.id, recordUndo: false);
+  app.select(made.id);
 }
 
 Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
@@ -84,6 +118,14 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       // anybody looks — and it costs the picture no chrome drawn over it.
       if (pictureIn(b) != null)
         _item('save-image', Icons.download_outlined, 'Save image as…'),
+      // **A window onto a page, or a line that points at one.** The owner
+      // asked for the window to be draggable out of the navigator *"(and
+      // right clicking this should provide the option to change this to a
+      // page link)"* — because the two are the same intention at different
+      // sizes, and which one you want is often clear only once you can see
+      // the window taking up a third of the page.
+      if (b.type == BlockType.embed && PortalRef.parse(b.content) != null)
+        _item('to-link', Icons.link, 'Change to a page link'),
       const PopupMenuDivider(),
       _item('front', Icons.flip_to_front, 'Bring to front'),
       _item('back', Icons.flip_to_back, 'Send to back'),
@@ -125,6 +167,8 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       }
     case 'save-image':
       if (context.mounted) await _saveImage(context, app, b);
+    case 'to-link':
+      _turnIntoPageLink(app, b);
     case 'copy':
       app.copySelectedBlocks();
     case 'cut':

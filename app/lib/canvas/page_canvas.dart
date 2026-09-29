@@ -22,6 +22,7 @@ import 'ink_shapes.dart';
 import 'media_drop.dart';
 import 'ink_painter.dart';
 import 'page_title_view.dart';
+import 'portal_view.dart';
 
 /// The page canvas (CANVAS-1 v0.3): an auto-growing page surface on a neutral
 /// backdrop. Select-mode input model (style guide §8):
@@ -983,6 +984,9 @@ class _PageCanvasState extends State<PageCanvas> {
 
   /// Hover/drag state for the bar, for the colour feedback a control that
   /// consumes your pointer owes you.
+  /// A page from the navigator is being dragged over the canvas.
+  bool _pageDragOver = false;
+
   bool _scrollbarHover = false;
   bool _scrollbarDrag = false;
 
@@ -1510,6 +1514,52 @@ class _PageCanvasState extends State<PageCanvas> {
       );
     }
 
+    // **A page dragged out of the navigator and onto this one becomes a
+    // window onto it.**
+    //
+    // The owner: *"If i drag and drop a page from the page list onto the
+    // currently active page, it should create a page window (and right
+    // clicking this should provide the option to change this to a page
+    // link)"*. Insert ▸ Page window already made one, through a dialog that
+    // asks you to find the page in a list — while the page is right there in
+    // the navigator, and dragging it was doing nothing at all.
+    //
+    // OUTSIDE the file DropTarget, which is a different kind of drag
+    // entirely: that one is the operating system's, this one never leaves
+    // Flutter.
+    // Held in its own local before the wrap. A builder closure captures the
+    // VARIABLE, and `canvas` is about to name the DragTarget — so returning
+    // `canvas` from the builder would have it build itself, for ever.
+    final beneath = canvas;
+    canvas = DragTarget<String>(
+      onWillAcceptWithDetails: (d) =>
+          app.node(d.data)?.kind == NodeKind.page && d.data != app.pageId,
+      onMove: (_) {
+        if (!_pageDragOver) setState(() => _pageDragOver = true);
+      },
+      onLeave: (_) => setState(() => _pageDragOver = false),
+      onAcceptWithDetails: (d) {
+        setState(() => _pageDragOver = false);
+        final box = context.findRenderObject() as RenderBox?;
+        if (box == null) return;
+        // `d.offset` is the top-left of the feedback, and the navigator's
+        // drag chips are built with `pointerDragAnchorStrategy` — so it is
+        // the pointer, and the window lands under the cursor rather than
+        // up and to the left of it.
+        final at = controller.screenToPage(box.globalToLocal(d.offset));
+        app.pushUndo();
+        final b = app.addBlock(Block(
+          type: BlockType.embed,
+          x: at.dx,
+          y: at.dy,
+          w: 380,
+          content: PortalRef.contentFor(d.data),
+        ));
+        app.select(b.id);
+      },
+      builder: (ctx, cand, rej) => beneath,
+    );
+
     // Drag-and-drop (MEDIA-1): files dropped anywhere on the page land where
     // they were dropped. Wraps the whole canvas so the drop target matches
     // what the user sees, and highlights only while a drag is over it.
@@ -1565,6 +1615,19 @@ class _PageCanvasState extends State<PageCanvas> {
               child: Listener(
                 behavior: HitTestBehavior.opaque,
                 onPointerDown: (e) => _pickColourAt(e.position),
+              ),
+            ),
+          ),
+        // The same wash the file drop uses, so a drag that will land
+        // something looks the same whatever is being dragged.
+        if (_pageDragOver)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(
+                color: Theme.of(context)
+                    .colorScheme
+                    .primary
+                    .withValues(alpha: .06),
               ),
             ),
           ),
