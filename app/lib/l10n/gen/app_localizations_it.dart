@@ -527,10 +527,10 @@ class LIt extends L {
   String get insertLinkToPage => 'Collega a una pagina';
 
   @override
-  String get insertPageLink => 'Collegamento';
+  String get linkEdit => 'Modifica collegamento…';
 
   @override
-  String get linkEdit => 'Modifica collegamento…';
+  String get insertPageLink => 'Collegamento';
 
   @override
   String get insertPageWindow => 'Finestra';

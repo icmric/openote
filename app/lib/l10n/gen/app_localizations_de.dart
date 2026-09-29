@@ -527,10 +527,10 @@ class LDe extends L {
   String get insertLinkToPage => 'Mit einer Seite verknüpfen';
 
   @override
-  String get insertPageLink => 'Seitenlink';
+  String get linkEdit => 'Link bearbeiten…';
 
   @override
-  String get linkEdit => 'Link bearbeiten…';
+  String get insertPageLink => 'Seitenlink';
 
   @override
   String get insertPageWindow => 'Seitenfenster';

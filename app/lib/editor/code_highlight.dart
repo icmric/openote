@@ -16,12 +16,24 @@ List<TextSpan> highlightCode(String src, String language, bool dark) {
   final kwStyle = TextStyle(color: dark ? OnoteColors.ink300 : OnoteColors.ink600);
   final typeStyle =
       TextStyle(color: dark ? const Color(0xFFA78BFA) : const Color(0xFF6A4BC0));
+  // **Strings are warm, comments are green** — the arrangement every editor
+  // anybody has used shares, and the reason it is worth matching is that the
+  // two are the tokens you scan for. Openote had strings green and comments
+  // grey, so a comment read as "dimmed code" rather than as prose. Moving
+  // comments to green alone would have put them in the same hue as strings
+  // and made them LESS distinct, not more; the pair only works as a pair.
   final strStyle =
-      TextStyle(color: dark ? const Color(0xFF7FCB98) : OnoteColors.success);
+      TextStyle(color: dark ? const Color(0xFFCE9178) : const Color(0xFFA31515));
   final numStyle =
       TextStyle(color: dark ? OnoteColors.brass400 : OnoteColors.brass700);
-  const comStyle = TextStyle(
-      color: OnoteColors.graphite400, fontStyle: FontStyle.italic);
+  // Not VS Code's exact greens: #6A9955 on this darker code surface measures
+  // 4.55:1, which passes AA by two hundredths and leaves nothing for a
+  // display that is not the one it was checked on. These are the same hue,
+  // moved until they had some room — 5.4:1 dark, 5.6:1 light, against the
+  // code block's own background rather than the page's.
+  final comStyle = TextStyle(
+      color: dark ? const Color(0xFF74A860) : const Color(0xFF156915),
+      fontStyle: FontStyle.italic);
 
   final spans = <TextSpan>[];
   final buf = StringBuffer();

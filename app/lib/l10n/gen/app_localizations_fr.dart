@@ -526,10 +526,10 @@ class LFr extends L {
   String get insertLinkToPage => 'Lier à une page';
 
   @override
-  String get insertPageLink => 'Lien';
+  String get linkEdit => 'Modifier le lien…';
 
   @override
-  String get linkEdit => 'Modifier le lien…';
+  String get insertPageLink => 'Lien';
 
   @override
   String get insertPageWindow => 'Fenêtre';

@@ -2,76 +2,7 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
-## [1.0.0] — 2026-09-07
-
-### Added — bring your notes over from OneNote without exporting anything
-
-- **Sign in to Microsoft, pick a notebook, and it arrives.** No exporting, no
-  files, no leaving the app. On a Mac or on Linux this is not merely the easier
-  way, it is the **only** way: OneNote for Mac cannot export a notebook at all,
-  and there is no OneNote for Linux.
-- **Your notebook fills in while you watch.** Each section is written as it
-  arrives, so you can open and read the parts already in while the rest is
-  still coming, and keep typing the whole time. It says how far through it is.
-- **Handwriting comes too.** So do equations, pictures, tables, lists, your
-  to-do ticks, and **attachments** — which the file import has never managed.
-- **Your notebook's own links work.** A contents page that pointed at other
-  pages still points at them, now inside Openote. A link to something you did
-  not import still opens OneNote, exactly as before.
-- **Openote learns nothing about you.** It asks to read your notebooks and
-  nothing else — no name, no email, no address book, no files, no calendar —
-  and it cannot change anything in OneNote even if it wanted to. There is no
-  Openote server, so your notes go from Microsoft to your own machine and
-  nowhere else.
-- **You do not have to sign in at all.** The exported-file route is still there
-  on the same screen, described side by side, because not wanting to sign in to
-  a Microsoft account is a perfectly good reason not to.
-
-- **Subpages stay subpages.** They arrive indented under the page they belong
-  to, exactly as in OneNote — including a subpage of a subpage. Measured on a
-  real notebook: 212 of 331 pages came over nested, two of them two deep.
-
-### Changed — a paragraph's history stops repeating itself
-
-- **Editing a paragraph no longer records the whole paragraph.** Openote saves
-  a few hundred milliseconds after you stop typing, and every one of those
-  saves used to write the entire paragraph again into the notebook's history —
-  so a shared notebook's history grew with the length of what you were writing
-  rather than with what you changed. It records the characters that actually
-  moved now. Measured on forty saves of a one-thousand-character paragraph:
-  **12 KB instead of 60 KB**, and unlike before, the cost no longer grows as
-  the paragraph does.
-- **Nothing you already have needs converting.** Every notebook written by
-  every earlier version opens in 1.0 and stays fully editable, with its whole
-  history — the compatibility gate only ever points forwards.
-- **What this costs, plainly:** a notebook that 1.0 has typed into is
-  **read-only on Openote 0.9 and earlier**. They will open it and show you
-  everything; they will not let you add to it, because they cannot read part
-  of its history and writing on top of a history you have half-read is how
-  notes get lost. Update every device that shares a notebook and it never
-  comes up. This is why it was done now rather than later: it gets more
-  disruptive with every week of installs.
-
-### Changed — one band of toolbar fewer, and the pen puts itself away
-
-- **The page's own settings are a tab.** Ruling, sheet or canvas, paper size,
-  the grid and the zoom used to sit on a third strip under the toolbar. They
-  are on a **Page** tab now, next to Home, Insert and Draw, which is where you
-  would have looked for them first.
-- **Undo and redo are always there.** They used to be at the start of the Home
-  row, so they were missing from every other tab. They are above the tabs now,
-  where nothing hides them.
-- **The word count is up top**, beside the other things you glance at rather
-  than at the end of a strip. Click it for characters and reading time, as
-  before.
-- **Outline, tags and links are one button.** They are the same question asked
-  three ways — what is on this page, and what is it attached to — so one
-  **Page overview** button opens the last one you looked at, and you move
-  between them inside the panel.
-- **No more "Done".** Bringing a pen near the screen still switches to
-  handwriting on its own; reaching for the mouse now switches back. A tool you
-  picked yourself stays picked, so drawing with a mouse still works, and Escape
-  puts it down.
+## [1.0.1] — unreleased
 
 ### Changed — Ctrl+B now bolds what you type next, not the word behind you
 
@@ -229,6 +160,143 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   instead of starting it over.
 - **Reaching for the mouse wins.** Scrolling or zooming while the page is
   easing stops it dead, so it never fights you for the view.
+
+### Added — a link reads as its words, and Ctrl+K makes one
+
+- **A link stays its words while you are writing.** Clicking into a sentence
+  used to unfold `[the docs](https://…/a/very/long/path)` in the middle of it
+  and re-wrap the line around sixty characters nobody had written. Now a link
+  behaves like everything else in a note: bold stays bold, an equation stays an
+  equation, and a link stays its words. The caret crosses the hidden address in
+  one press, and Backspace at either edge means what it means everywhere else.
+- **Ctrl+K puts a link on what you have selected**, or on the word the caret is
+  touching — but not across a space, so a link never swallows the gap before
+  the next word. A full stop at the end of a sentence stays with the sentence.
+- **Ctrl+K inside a link edits it**, and so does "Edit link…" in the
+  right-click menu. Both ask the same question, so they cannot disagree.
+- **Insert ▸ Page link is now Insert ▸ Link**, and opens the same dialog with
+  the page picker inside it. There was no route to a web address from the menu
+  at all before.
+
+### Added — straight lines and simple shapes for the pen
+
+- **Pick a shape on the Draw tab and drag** — line, arrow, rectangle, ellipse
+  or triangle — and the stroke comes out straight. Pick it again to turn it off
+  and go back to drawing freehand. Drawing a diagram with a trackpad is the
+  difference between a diagram and a mess, and most people using Openote are on
+  a school laptop rather than a tablet.
+- **A shape is ink.** It takes the colour, the size and the opacity you have
+  chosen, both erasers rub it out, the lasso picks it up, undo undoes it, and
+  it exports with everything else. The trade is that a shape cannot be
+  re-shaped afterwards — it is ink, and ink is edited with the eraser.
+
+### Fixed — pictures that arrived late, and a way to save one out
+
+- **A picture that was still arriving now appears when it does.** Reported as
+  *"they usually load after a minute or two or after restarting openote"* — the
+  page had asked for the bytes once, got nothing, and never asked again. The
+  minute or two was the sync cycle reloading the page for its own reasons.
+  Most likely to be seen syncing through your own git server.
+- **Save a copy of a picture**, from the right-click menu, where every browser
+  puts it. An attachment and a video have always had this; a picture did not,
+  so importing one was a one-way door. Slides are rendered out rather than
+  copied, and the file always gets an extension.
+- **"Save image as…" appears for a picture in a sentence too.** It was only
+  ever offered for a picture that had missed every text box — which is one
+  route in of four, and the least common one.
+
+### Added — your own SSH key for a notebook
+
+- **Point a notebook at a particular SSH key**, alongside its remote. If your
+  notes go to one server as one identity while the rest of the machine keeps
+  its default key, you could not sync at all before this.
+
+### Fixed — Enter in an empty note no longer throws
+
+- **Pressing Enter in an empty text block crashed** with a `RangeError`
+  (issue #11). The editor was checking whether the line you were leaving opened
+  a code fence, and looked one character further back than there was note to
+  look at. An empty line is not a fence, which is the answer it was about to
+  give anyway.
+
+### Changed — comments in code are green
+
+- **Comments in a code block are green rather than grey**, as they are in
+  almost every editor. Grey read as "dimmed code" instead of as prose.
+- **Strings are warm** — a soft red — where they used to be green. The two only
+  work as a pair: comments in the same colour as strings would have been less
+  distinct than the grey they replaced, not more.
+
+## [1.0.0] — 2026-09-07
+
+### Added — bring your notes over from OneNote without exporting anything
+
+- **Sign in to Microsoft, pick a notebook, and it arrives.** No exporting, no
+  files, no leaving the app. On a Mac or on Linux this is not merely the easier
+  way, it is the **only** way: OneNote for Mac cannot export a notebook at all,
+  and there is no OneNote for Linux.
+- **Your notebook fills in while you watch.** Each section is written as it
+  arrives, so you can open and read the parts already in while the rest is
+  still coming, and keep typing the whole time. It says how far through it is.
+- **Handwriting comes too.** So do equations, pictures, tables, lists, your
+  to-do ticks, and **attachments** — which the file import has never managed.
+- **Your notebook's own links work.** A contents page that pointed at other
+  pages still points at them, now inside Openote. A link to something you did
+  not import still opens OneNote, exactly as before.
+- **Openote learns nothing about you.** It asks to read your notebooks and
+  nothing else — no name, no email, no address book, no files, no calendar —
+  and it cannot change anything in OneNote even if it wanted to. There is no
+  Openote server, so your notes go from Microsoft to your own machine and
+  nowhere else.
+- **You do not have to sign in at all.** The exported-file route is still there
+  on the same screen, described side by side, because not wanting to sign in to
+  a Microsoft account is a perfectly good reason not to.
+
+- **Subpages stay subpages.** They arrive indented under the page they belong
+  to, exactly as in OneNote — including a subpage of a subpage. Measured on a
+  real notebook: 212 of 331 pages came over nested, two of them two deep.
+
+### Changed — a paragraph's history stops repeating itself
+
+- **Editing a paragraph no longer records the whole paragraph.** Openote saves
+  a few hundred milliseconds after you stop typing, and every one of those
+  saves used to write the entire paragraph again into the notebook's history —
+  so a shared notebook's history grew with the length of what you were writing
+  rather than with what you changed. It records the characters that actually
+  moved now. Measured on forty saves of a one-thousand-character paragraph:
+  **12 KB instead of 60 KB**, and unlike before, the cost no longer grows as
+  the paragraph does.
+- **Nothing you already have needs converting.** Every notebook written by
+  every earlier version opens in 1.0 and stays fully editable, with its whole
+  history — the compatibility gate only ever points forwards.
+- **What this costs, plainly:** a notebook that 1.0 has typed into is
+  **read-only on Openote 0.9 and earlier**. They will open it and show you
+  everything; they will not let you add to it, because they cannot read part
+  of its history and writing on top of a history you have half-read is how
+  notes get lost. Update every device that shares a notebook and it never
+  comes up. This is why it was done now rather than later: it gets more
+  disruptive with every week of installs.
+
+### Changed — one band of toolbar fewer, and the pen puts itself away
+
+- **The page's own settings are a tab.** Ruling, sheet or canvas, paper size,
+  the grid and the zoom used to sit on a third strip under the toolbar. They
+  are on a **Page** tab now, next to Home, Insert and Draw, which is where you
+  would have looked for them first.
+- **Undo and redo are always there.** They used to be at the start of the Home
+  row, so they were missing from every other tab. They are above the tabs now,
+  where nothing hides them.
+- **The word count is up top**, beside the other things you glance at rather
+  than at the end of a strip. Click it for characters and reading time, as
+  before.
+- **Outline, tags and links are one button.** They are the same question asked
+  three ways — what is on this page, and what is it attached to — so one
+  **Page overview** button opens the last one you looked at, and you move
+  between them inside the panel.
+- **No more "Done".** Bringing a pen near the screen still switches to
+  handwriting on its own; reaching for the mouse now switches back. A tool you
+  picked yourself stays picked, so drawing with a mouse still works, and Escape
+  puts it down.
 
 ### Added — colours you choose, and a way to take one off the page
 

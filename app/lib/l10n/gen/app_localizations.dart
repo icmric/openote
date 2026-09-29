@@ -899,17 +899,17 @@ abstract class L {
   /// **'Link to page'**
   String get insertLinkToPage;
 
-  /// Insert item: attach an address to some words — a web address, or another page in this notebook.
-  ///
-  /// In en, this message translates to:
-  /// **'Link…'**
-  String get insertPageLink;
-
   /// Right-click menu item on text that is already a link: reopens the link dialog to change its address.
   ///
   /// In en, this message translates to:
   /// **'Edit link…'**
   String get linkEdit;
+
+  /// Insert item: attach an address to some words — a web address, or another page in this notebook.
+  ///
+  /// In en, this message translates to:
+  /// **'Link…'**
+  String get insertPageLink;
 
   /// Insert item: a live window showing another page inside this one.
   ///
