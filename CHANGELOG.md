@@ -2,7 +2,85 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
-## [1.0.1] — unreleased
+## [1.0.1] — 2026-09-29
+
+### Fixed — the markup never shows itself
+
+- **Bold a word, press space, keep typing.** The asterisks used to appear:
+  `**bold**` became `**bold **`, and a marker may not sit against a space, so
+  what had been a bold word turned into four asterisks and some text. The
+  space now steps outside the run — which is the only place Markdown can hold
+  it — and the bold carries on through it, word after word.
+- **Deleting a bold word takes all of it.** Selecting one and pressing
+  Backspace left `**` behind, because the markers cannot be seen and the
+  selection therefore lands inside them. All three natural ways to select a
+  styled word now remove it whole, and typing over one keeps its style.
+- **Ctrl+Z in a table cell no longer deletes the table.** It reached the
+  paragraph's own undo history, which goes back past the moment the table was
+  put into the sentence — so one press took the whole table away. It now takes
+  back what you typed in the cell, and once there is nothing left of that, the
+  row or column you just made.
+
+### Added — the navigator does what you drag and remembers what you fold
+
+- **Fold the sections column away** with the chevron beside the notebook name.
+  The navigator gives the width back rather than leaving a gap, which is the
+  point: it is space for the page.
+- **Closed groups and closed pages stay closed** when you quit and come back.
+- **Drop a page or a section into the empty space below the list** and it goes
+  to the bottom. That space used to hit nothing at all, which is where a hand
+  overshooting a short list actually lands.
+- **Drag a page from the navigator onto the page you are writing** and you get
+  a live window onto it. Right-click the window to turn it into a page link
+  instead, or right-click a page link to turn it into a window — they are the
+  same thing at two sizes, and which one you want is usually clear only once
+  you can see it.
+
+### Changed — things land where you are working
+
+- **Insert puts a new block under the box you were last writing in**, rather
+  than in the middle of the screen. A code block for the paragraph you are
+  half-way through belongs beside that paragraph.
+- **A new code block opens in the language the last one was set to.** Plain
+  text until you have said otherwise; only a language you PICKED is
+  remembered, never one the app guessed from the source.
+- **Click out of a box onto the page and the next box opens straight away.**
+  It used to take two clicks, the first of which did nothing you asked for.
+  Nothing is left behind: a box you leave empty removes itself.
+- **Enter from the page title** makes the same bare box a click makes, with no
+  border and no `heading (#), list (-)` hint.
+- **Insert no longer offers "Text box"** — clicking the page has always made
+  one, and now so does clicking out of one.
+- **"Edit" is gone from the right-click menu**, since left-clicking a box has
+  always opened it.
+
+### Changed — the Draw toolbar
+
+- **Pen thickness is four dots**, each drawn at the size it sets, instead of a
+  slider you had to aim: 1 to 10 across 110 pixels is nine pixels per step.
+  Anything in between is still reachable behind the ⚙, which now goes up to 40
+  and shows the dot it will draw, in the colour it will draw it.
+- **Two recent colours on the row rather than four.** Six presets, four
+  recents and two buttons is twelve round things in a row — and the recents
+  were what made the row change width as you used it. The rest are one click
+  away in the picker, which still keeps them all.
+- **"Mix your own colour" says what it does.** It was a bare text button in
+  the same grey as the labels around it, so the one control that reaches any
+  colour at all looked like the least important thing on the dialog.
+
+### Fixed — tables and pictures
+
+- **A converted table keeps the width it had.** A table block was a box with a
+  width, and a table with no column widths of its own simply filled it; the
+  new shape has no box, so it drew at the width of its own text — a table that
+  filled 620px came back at 277. The width is now written down as the columns
+  the block implied, in the content's own proportions.
+- **A link inside a table cell follows when you click it**, instead of opening
+  the table for editing.
+- **Right-click a picture in a sentence to save it**, whether or not the box
+  is open and wherever the cursor happens to be.
+- **Every right-click menu looks the same.** A block's menu and a text field's
+  were two different objects on screen for the same gesture.
 
 ### Changed — Ctrl+B now bolds what you type next, not the word behind you
 
