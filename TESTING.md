@@ -3,6 +3,9 @@
 > Working document · last updated 2026-09-29 · **v1.0.1 is not cut yet** —
 > this is the pass that decides whether it can be.
 >
+> **§7 is new**, and is the twelve things you reported part-way through this
+> pass. None of it has been near a human.
+>
 > Everything below is **built, covered by automated tests, and never touched
 > by a human**. Tests prove a mechanism; they cannot tell you a gesture feels
 > wrong, that a colour is hard to read, or that something is technically
@@ -167,7 +170,73 @@ me fixing something and you finding it still broken. Please be unkind to it.
 
 ---
 
-## 7. Editor odds and ends
+## 7. The twelve from your testing pass
+
+Everything in this section is new since you started testing and none of it
+has been near a human. The first two are the ones I would break first.
+
+### 7.1 Styled text (the one that matters)
+
+- [ ] **Bold a word, press space, keep typing.** The asterisks must never
+      appear, and the bold must carry on to the next word, and the word after
+      that. Same for italic.
+- [ ] **Select a bold word and delete it.** All of it goes — no `**` left
+      behind at either end. Try it three ways: dragging left-to-right,
+      dragging right-to-left, and selecting just the letters you can see.
+- [ ] **Type over a selected bold word.** What you type should still be bold.
+- [ ] **Ctrl+Z inside a table cell** takes back what you typed in the cell.
+      It must not take the table away.
+
+### 7.2 The navigator
+
+- [ ] **Fold the sections away** with the chevron in the notebook header. The
+      navigator should get narrower — that is the point — and the page list
+      stays.
+- [ ] **Close some groups and some pages, quit, reopen.** They should still
+      be closed.
+- [ ] **Drag a page into the empty space below the list.** It goes to the
+      bottom. Same for a section.
+- [ ] **Drag a subpage down there** — it should become a top-level page, not
+      an indented one under nothing.
+- [ ] **Dropping onto the middle of a page row still makes a subpage.**
+
+### 7.3 Page windows
+
+- [ ] **Drag a page from the navigator onto the open page.** You get a window
+      onto it.
+- [ ] **Right-click that window → Change to a page link.** It becomes a link
+      in a text box, in the same spot, and the link works.
+
+### 7.4 Writing and inserting
+
+- [ ] **Click out of a box onto the page.** A new box opens straight away —
+      it should not take two clicks.
+- [ ] **Click about the page a few times without typing.** You should not be
+      collecting invisible empty boxes; check by dragging a marquee over the
+      area afterwards.
+- [ ] **Enter from the page title** makes the same bare box a click makes —
+      no border, no `heading (#), list (-)` hint.
+- [ ] **Insert something while writing.** It should land under the box you
+      were in, not in the middle of the screen. **This now applies to every
+      Insert item, not just the code box** — tell me if you want it narrowed
+      back to code only.
+- [ ] **Insert ▸ Code twice**, setting the language on the first. The second
+      should open in that language.
+- [ ] **Insert no longer offers "Text box".**
+
+### 7.5 The Draw toolbar
+
+- [ ] **Four thickness dots instead of the slider.** Is picking one actually
+      easier than aiming the slider was?
+- [ ] **The ⚙ beside them** opens the old slider for anything in between.
+- [ ] **Two mixed colours on the row now, not four**, and the palette button
+      opens the full picker.
+- [ ] **"Mix your own colour" in the picker** — is it clear now what that row
+      does?
+
+---
+
+## 8. Editor odds and ends
 
 - [ ] **Ctrl+B then type** — the new words come out bold, and stop when you
       press it again. It should not reach back and bold the word behind you.
@@ -182,7 +251,7 @@ me fixing something and you finding it still broken. Please be unkind to it.
 
 ---
 
-## 8. Two things I already know about
+## 9. Two things I already know about
 
 Not for you to test — recorded here so you are not surprised by them.
 
