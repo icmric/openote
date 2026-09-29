@@ -251,19 +251,34 @@ has been near a human. The first two are the ones I would break first.
 
 ---
 
-## 9. Two things I already know about
+## 9. Things I already know about
 
 Not for you to test — recorded here so you are not surprised by them.
 
-- **`graph_plot_test` can fail under load.** It asserts that ten frames of a
-  curve redraw inside 160ms, which is a fair thing to want and an unfair
-  thing to promise on a runner doing six other things. It passes alone and
-  fails when the machine is busy. `tool_follows_device_test` had the same
-  shape and is now fixed properly — its correctness never depended on the
-  clock, so the clock came out. This one's whole point IS the clock, so the
-  choice is between not gating on it (the repo already has perf probes that
-  print their numbers instead of asserting them) or widening the budget until
-  it only catches a real regression. Your call; I have not touched it.
+- **Four tests can fail when the machine is busy**, and they are all the same
+  shape: each asserts something about *time* rather than about behaviour.
+
+  | Test | What it promises |
+  |---|---|
+  | `graph_plot_test` | ten frames of a curve redraw inside 160ms |
+  | `cloud_sync_test` | a big fold yields the event loop enough times |
+  | `code_runner_test` | a 2-second timeout fires within a 15-second budget |
+  | `import_writer_test` | pages start landing before the import finishes |
+
+  All four are fair things to want and unfair things to promise on a runner
+  doing six other things. **A full suite run on 2026-09-29 went red on the
+  last three — and took 120 minutes instead of its usual 11**, which is the
+  whole story: all forty-four of them passed on their own straight
+  afterwards. If you see these three red, look at how long the run took
+  before you look at the code.
+
+  `tool_follows_device_test` had the same shape and is now fixed properly —
+  its correctness never depended on the clock, so the clock came out. These
+  four are harder, because the clock IS what they are measuring. The choice
+  for each is between not gating on it (the repo already has perf probes that
+  print their numbers instead of asserting them) and widening the budget
+  until it only catches a real regression. Your call; I have not touched
+  them.
 - **A caret parked on a table's scope.** If a cell were to take and drop the
   caret four times inside one frame, the caret would sit on the table itself
   with nothing typeable until you click. I could not make it happen, and the
