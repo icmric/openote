@@ -8700,6 +8700,47 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// **Send [id] to the end of the list it is in.**
+  ///
+  /// The owner: *"if i drop it anywhere in the column below the existing
+  /// pages, it should move it to the bottom."* Which is what dropping
+  /// something in the space under a list means everywhere else — and until
+  /// now meant nothing at all here, because the only drop targets were the
+  /// rows themselves and there is no row down there to hit.
+  ///
+  /// Not [reorderNode] against the last row, for two reasons. A page dropped
+  /// past the end of the list is a TOP-LEVEL page by the act of putting it
+  /// there, so a subpage dragged down here is promoted rather than left as an
+  /// orphan indented under nothing. And the last row is often a subpage, so
+  /// "after the last row" and "at the end of the list" are different places.
+  ///
+  /// [into] re-parents on the way, for a section dropped below every group:
+  /// it belongs to the notebook now, not to whichever group it came out of.
+  void moveNodeToEnd(String id, {String? into, bool reparent = false}) {
+    final n = node(id);
+    if (n == null) return;
+    pushUndo();
+    if (reparent) n.parentId = into;
+    // A page that lands at the end of a section's list is a page of that
+    // section, not a subpage of whatever used to be above it.
+    if (n.kind == NodeKind.page) n.level = 0;
+    // One millisecond past the latest sibling rather than simply "now": two
+    // drops inside the same millisecond would otherwise tie, and a tie is
+    // decided by whatever the id sort does, which is not what was asked for.
+    var last = nowMs();
+    for (final s in nodes) {
+      if (s.kind != n.kind || s.parentId != n.parentId || s.id == n.id) {
+        continue;
+      }
+      final v = int.tryParse(s.position.replaceFirst('a', ''));
+      if (v != null && v >= last) last = v + 1;
+    }
+    n.position = 'a${last.toString().padLeft(15, '0')}';
+    _putNode(notebookId!, n);
+    reloadNodes();
+    notifyListeners();
+  }
+
   void moveNode(String id, int delta) {
     final n = node(id);
     if (n == null) return;

@@ -470,16 +470,21 @@ class _SidebarState extends State<Sidebar> {
           ),
         ),
         Expanded(
-          child: pages.isEmpty
-              ? Center(
-                  child: Text(l.navNoPages,
-                      style: TextStyle(
-                          fontSize: 12, color: context.surfaces.textSecondary)),
-                )
-              : ListView(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  children: pages,
-                ),
+          child: _DropAtEnd(
+            app: app,
+            kind: NodeKind.page,
+            child: pages.isEmpty
+                ? Center(
+                    child: Text(l.navNoPages,
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: context.surfaces.textSecondary)),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    children: pages,
+                  ),
+          ),
         ),
       ],
     );
@@ -512,9 +517,12 @@ class _SidebarState extends State<Sidebar> {
         dark: dark,
         active: app.activeSectionId == s.id);
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 8),
-      children: [
+    return _DropAtEnd(
+      app: app,
+      kind: NodeKind.section,
+      child: ListView(
+        padding: const EdgeInsets.only(bottom: 8),
+        children: [
         for (final g in groups) ...[
           _GroupHeader(app: app, group: g),
           // Indented AND railed. Indentation alone says "these are children";
@@ -547,7 +555,8 @@ class _SidebarState extends State<Sidebar> {
           ),
         ],
         for (final s in looseSections) row(s),
-      ],
+        ],
+      ),
     );
   }
 
@@ -703,6 +712,72 @@ class _GroupHeaderState extends State<_GroupHeader> {
 ///
 /// 5px wide and visually just the divider line — the affordance is the cursor
 /// change, which is how every two-pane app on the desktop does it.
+/// **The empty space under a list is "put it at the end".**
+///
+/// The owner: *"if i drop it anywhere in the column below the existing pages,
+/// it should move it to the bottom."* Dragging in this navigator only ever
+/// aimed at a ROW — one to go above, below, or inside — so a drop into the
+/// space past the last row hit nothing at all and the drag was abandoned.
+/// That space is the most obvious place to aim for "last", and it is exactly
+/// where a hand overshooting a short list ends up.
+///
+/// It WRAPS the list rather than sitting under it, because a list that fills
+/// its column leaves nothing to sit under. Flutter resolves a drop to the
+/// innermost target beneath the pointer, so a row still answers for itself
+/// and this only hears about the drops no row wanted.
+class _DropAtEnd extends StatefulWidget {
+  const _DropAtEnd(
+      {required this.app, required this.kind, required this.child});
+
+  final AppState app;
+
+  /// What this list holds, and therefore what it will take. A page dropped on
+  /// the sections column is not "the last section".
+  final NodeKind kind;
+
+  final Widget child;
+
+  @override
+  State<_DropAtEnd> createState() => _DropAtEndState();
+}
+
+class _DropAtEndState extends State<_DropAtEnd> {
+  bool _over = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (d) =>
+          widget.app.node(d.data)?.kind == widget.kind,
+      onMove: (_) {
+        if (!_over) setState(() => _over = true);
+      },
+      onLeave: (_) => setState(() => _over = false),
+      onAcceptWithDetails: (d) {
+        setState(() => _over = false);
+        // A section dropped below every group belongs to the notebook now,
+        // not to whichever group it was dragged out of. A page's section is
+        // decided by the column it was dropped in, which has not changed.
+        widget.app.moveNodeToEnd(d.data,
+            reparent: widget.kind == NodeKind.section);
+      },
+      builder: (ctx, cand, rej) => Stack(children: [
+        Positioned.fill(child: widget.child),
+        // The same insertion line a row draws, at the end of the list, so the
+        // affordance says the same thing in both places.
+        if (_over && cand.isNotEmpty)
+          Positioned(
+            left: 8,
+            right: 8,
+            bottom: 6,
+            child: Container(height: 2, color: scheme.primary),
+          ),
+      ]),
+    );
+  }
+}
+
 class _VDragHandle extends StatelessWidget {
   const _VDragHandle({required this.onDrag, required this.onEnd});
   final void Function(double dx) onDrag;
