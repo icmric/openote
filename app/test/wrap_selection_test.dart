@@ -81,4 +81,42 @@ void main() {
         '```\n\n```',
         reason: 'the markdown editor still does');
   });
+
+  test('Enter on the first line of an empty block is not a fence, and does '
+      'not throw', () {
+    // Issue #11. The fence check stepped back one character to find the
+    // start of the line, and at offset 0 that is -1, which `lastIndexOf`
+    // refuses. So the formatter threw before it could reach the conclusion
+    // it was about to reach anyway: an empty line is not an opening fence.
+    // A `RangeError` on Enter in an empty note is about as visible as a bug
+    // gets.
+    const empty = TextEditingValue(
+      text: '',
+      selection: TextSelection.collapsed(offset: 0),
+    );
+    const typedEnter = TextEditingValue(
+      text: '\n',
+      selection: TextSelection.collapsed(offset: 1),
+    );
+    expect(const WrapSelectionFormatter().formatEditUpdate(empty, typedEnter).text,
+        '\n');
+  });
+
+  test('and neither is Enter at the very start of a line that has text', () {
+    // The same step-back, one line further on: offset 0 is not the only
+    // place it happens, it is only the place it threw.
+    const atStart = TextEditingValue(
+      text: 'some prose',
+      selection: TextSelection.collapsed(offset: 0),
+    );
+    const typedEnter = TextEditingValue(
+      text: '\nsome prose',
+      selection: TextSelection.collapsed(offset: 1),
+    );
+    expect(
+        const WrapSelectionFormatter()
+            .formatEditUpdate(atStart, typedEnter)
+            .text,
+        '\nsome prose');
+  });
 }

@@ -98,7 +98,14 @@ class WrapSelectionFormatter extends TextInputFormatter {
     if (at < 0 || at > oldValue.text.length) return null;
     if (newValue.text.length <= at || newValue.text[at] != '\n') return null;
 
-    final lineStart = oldValue.text.lastIndexOf('\n', at - 1) + 1;
+    // **`at == 0` is a real caret position, and `lastIndexOf` will not
+    // take the -1 that comes of stepping back from it.** Reported as
+    // issue #11: Enter in an empty Markdown block threw out of here
+    // before the check below could say that an empty line is not a
+    // fence. At the very start of the text there is no line above to
+    // search, so the line begins where the text does.
+    final lineStart =
+        at == 0 ? 0 : oldValue.text.lastIndexOf('\n', at - 1) + 1;
     final line = oldValue.text.substring(lineStart, at);
     if (!_openFenceRe.hasMatch(line)) return null;
     // Already inside a fence (odd number of fence lines above)? Then this line
