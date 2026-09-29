@@ -642,6 +642,53 @@ void main() {
     });
   });
 
+  testWidgets('Ctrl+K in a cell opens the link dialog and gives the caret back',
+      (t) async {
+    // **A crossing neither side had tested.** Linking inside a cell came from
+    // one line of work and the caret machinery from another, and they met for
+    // the first time when those lines were brought together. A dialog takes
+    // the keyboard out of the table by definition, which is the one thing the
+    // rest of this file is about preventing — so what matters is that the
+    // table lets go willingly and gets it back afterwards.
+    app.editingBlockId = block.id;
+    await pump(t);
+    await t.tap(find.byType(TextField).at(1));
+    await t.pumpAndSettle();
+    final cell = t.widget<TextField>(find.byType(TextField).at(1)).controller!;
+    cell.selection = const TextSelection(baseOffset: 0, extentOffset: 7);
+    await t.pumpAndSettle();
+
+    int focusedField() => t
+        .widgetList<TextField>(find.byType(TextField))
+        .toList()
+        .indexWhere((f) => f.focusNode?.hasPrimaryFocus ?? false);
+    bool hostReadOnly() =>
+        t.widget<TextField>(find.byType(TextField).first).readOnly;
+
+    expect(focusedField(), 1);
+    expect(hostReadOnly(), isTrue);
+
+    await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await t.sendKeyEvent(LogicalKeyboardKey.keyK);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await t.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsOneWidget,
+        reason: 'the same flow the paragraph runs, over this cell');
+    expect(hostReadOnly(), isFalse,
+        reason: 'the table has genuinely let the keyboard go — holding it '
+            'while a dialog is up would be the worse failure');
+
+    await t.sendKeyEvent(LogicalKeyboardKey.escape);
+    await t.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(focusedField(), 1, reason: 'and the caret is back in the cell');
+    expect(hostReadOnly(), isTrue);
+    expect(cell.text, 'Element', reason: 'cancelled, so nothing was linked');
+    app.cancelPendingSave();
+  });
+
   test('a COPIED table pastes with its cells, not as an empty box', () {
     // Cutting leaves a payload behind for the paste to find. Copying does
     // not — the original stays exactly where it was, so nothing was ever

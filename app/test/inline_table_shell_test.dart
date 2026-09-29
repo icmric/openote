@@ -176,6 +176,83 @@ void main() {
     app.cancelPendingSave();
   });
 
+  testWidgets('type, Tab, type, ENTER — and the row Enter made is typed into',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+
+    // **The journey as reported, in the whole application.** The owner:
+    // *"I typed some content, pressed tab to create a table, typed a bit more
+    // in the new cell it put me into, then pressed enter. It created the new
+    // row below me, but put my cursor out of the table."*
+    //
+    // Pinned here as well as in `inline_table_focus_test.dart` because every
+    // one of the caret defects in this feature reproduced only under the real
+    // shell: the block is rebuilt from above, the save fires, the chrome
+    // notifies, and the frame the caret is placed in is never as quiet as a
+    // two-widget harness makes it.
+    tester.testTextInput.enterText('Element');
+    await settle(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester);
+    tester.testTextInput.enterText('Symbol');
+    await settle(tester);
+    expect(cells(), [
+      ['Element', 'Symbol']
+    ]);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await settle(tester);
+    expect(cells(), [
+      ['Element', 'Symbol'],
+      ['', '']
+    ], reason: 'Enter in the last row starts the body');
+
+    // Well past the 700ms save, because the report was not about the first
+    // frame — it was about the caret being taken back a moment later.
+    await settle(tester, frames: 20);
+    tester.testTextInput.enterText('Sodium');
+    await settle(tester);
+
+    expect(cells(), [
+      ['Element', 'Symbol'],
+      ['', 'Sodium']
+    ], reason: 'the caret stayed in the row Enter had just made — in the same '
+        'COLUMN it was pressed in, which is what Enter means in a table and '
+        'is why the second cell and not the first');
+    expect(text(), startsWith('!['),
+        reason: 'and the sentence took none of it');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('Tab on the first row widens it, and the caret goes with it',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+
+    // The top row names the columns, so Tab off its end extends it sideways
+    // rather than starting a body row — the owner's rule. The caret question
+    // is the same one either way, and this is the shape a table is in for the
+    // whole of being built: one row old, freshly made by the keystroke before.
+    tester.testTextInput.enterText('Element');
+    await settle(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester);
+    tester.testTextInput.enterText('Symbol');
+    await settle(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester, frames: 20);
+    expect(cells().single, hasLength(3), reason: 'a third column');
+
+    tester.testTextInput.enterText('Number');
+    await settle(tester);
+    expect(cells(), [
+      ['Element', 'Symbol', 'Number']
+    ], reason: 'and the caret was waiting in it');
+    app.cancelPendingSave();
+  });
+
   testWidgets('a table in a sentence does not pin the box to its maximum',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
