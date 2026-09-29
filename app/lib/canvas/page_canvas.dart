@@ -917,8 +917,27 @@ class _PageCanvasState extends State<PageCanvas> {
         final pagePt = controller.screenToPage(e.localPosition);
         if (app.tool == Tool.text) {
           _createTextAt(pagePt); // Text tool: always create
-        } else if (app.selectedIds.isNotEmpty || app.editingBlockId != null) {
-          app.select(null); // first click clears; next click creates
+        } else if (app.editingBlockId != null) {
+          // **Writing somewhere, then clicking the page, means "and now
+          // here".** The owner: *"If i am in a box and click out onto the
+          // canvas, it should auto create a new content box rather than
+          // unfocusing the current box, then requiring another click to
+          // create a new box."*
+          //
+          // The old rule spent the first click closing the box you had
+          // already finished with, which is not a thing anybody sets out to
+          // do — you click the page because you want to write there.
+          //
+          // Nothing is left behind: a text box exited with nothing in it
+          // removes itself (`TextBlockView._handleExitTransition`), so
+          // clicking about the page moves one empty box around rather than
+          // dropping a trail of them.
+          _createTextAt(pagePt);
+        } else if (app.selectedIds.isNotEmpty) {
+          // SELECTED but not being typed into is a different gesture: you
+          // picked a block up to move or style it, and clicking the page is
+          // how you put it down. That first click still just clears.
+          app.select(null);
         } else {
           // Click-anywhere-to-type (CANVAS-3). The seamless backdrop is part
           // of the page, so this also works out in the margin when zoomed out.
