@@ -189,8 +189,18 @@ void main() {
     // answer changes.
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final app = await canvas(tester, 'onote_tool_stuck_');
-    PageCanvas.stylusGrace = const Duration(milliseconds: 1);
-    addTearDown(() => PageCanvas.stylusGrace = const Duration(seconds: 2));
+    // **Time is held still rather than shortened.**
+    //
+    // This used to set the grace to a millisecond and then wait twenty real
+    // ones. That is a race, and it lost about one run in three: the pen is
+    // recorded and the grace is read a few lines apart, and a loaded runner
+    // puts more than a millisecond between any two lines — so the pen had
+    // already "left" by the time the assertion below asked, on a machine busy
+    // enough. Under load only, never alone, which is the worst way for a
+    // build to go red.
+    var now = DateTime(2026);
+    PageCanvas.clock = () => now;
+    addTearDown(() => PageCanvas.clock = DateTime.now);
 
     // Sent raw: `TestGesture.moveTo` builds its hover events without any
     // buttons at all, whatever the gesture was created with, so the one thing
@@ -205,8 +215,8 @@ void main() {
     expect(app.penErasing, isTrue, reason: 'the button is down and in range');
 
     // The pen goes away without ever touching down, so nothing else clears it.
-    await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 20)));
+    // Exactly past the grace, because the clock does what it is told.
+    now = now.add(PageCanvas.stylusGrace * 2);
     await hover(tester, PointerDeviceKind.mouse, pointer: 8);
 
     expect(app.penErasing, isFalse,

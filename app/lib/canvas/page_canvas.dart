@@ -42,6 +42,21 @@ class PageCanvas extends StatefulWidget {
   /// spending two real seconds waiting for it.
   static Duration stylusGrace = const Duration(seconds: 2);
 
+  /// **Where "now" comes from, so a test can hold it still.**
+  ///
+  /// Whether a pen is in range is a question about elapsed wall-clock time,
+  /// and a test that answers it by shrinking [stylusGrace] to a millisecond
+  /// and then waiting is racing the machine it runs on: the pen is recorded
+  /// and the grace is read a few lines apart, and a loaded runner can put
+  /// more than a millisecond between any two lines. `tool_follows_device_test`
+  /// did exactly that and failed about one run in three — under load, never
+  /// alone, which is the worst shape a red build can have.
+  ///
+  /// Replacing the clock instead of shortening the fuse removes the race
+  /// rather than making it less likely: time moves when the test says so, and
+  /// the assertions are exact.
+  static DateTime Function() clock = DateTime.now;
+
   const PageCanvas({super.key, required this.state});
   final AppState state;
 
@@ -112,7 +127,7 @@ class _PageCanvasState extends State<PageCanvas> {
   bool get _stylusActive {
     final t = _lastStylus;
     return t != null &&
-        DateTime.now().difference(t) < PageCanvas.stylusGrace;
+        PageCanvas.clock().difference(t) < PageCanvas.stylusGrace;
   }
 
   /// The button is only believed while the pen is in range. Out of range there
@@ -133,7 +148,7 @@ class _PageCanvasState extends State<PageCanvas> {
   void _noteStylus(PointerEvent e) {
     if (e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
-      _lastStylus = DateTime.now();
+      _lastStylus = PageCanvas.clock();
     }
   }
 
@@ -177,7 +192,7 @@ class _PageCanvasState extends State<PageCanvas> {
     // mouse arriving with the pen gone is the signal to put the pen down.
     if (!isPen && !_stylusActive && !app.toolWasAutomatic) return;
     final approaching = !_stylusActive;
-    if (isPen) _lastStylus = DateTime.now();
+    if (isPen) _lastStylus = PageCanvas.clock();
     // **Watched while the pen hovers, not only when it lands.**
     //
     // Reported by an S Pen user: *"Holding the side button should temporarily
