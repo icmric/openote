@@ -318,4 +318,94 @@ void main() {
     expect(caretInACell(), isTrue,
         reason: 'the width request must not take the caret with it');
   });
+
+  testWidgets('A LINK IN A CELL: the caret stays put while typing beside it',
+      (t) async {
+    // Reported after v1.0.1: *"the caret now jumps around like crazy in and
+    // out of the table, making it unuseable."* The owner's tables have links
+    // in them — which no test had — so that is the shape this reproduces.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    const atom = InlineAtom(id: 'tl', type: 'table', content: {
+      'cells': [
+        ['See', '[[Kinematics|pg-2]]'],
+        ['Also', 'plain'],
+      ]
+    });
+    final content = <String, dynamic>{
+      'text': 'Before ${atom.reference('2x2 table')} after.',
+    };
+    InlineAtom.putIn(content, atom);
+    await pumpShell(t, content);
+
+    await openBlock(t);
+    expect(app.editingBlockId, block.id, reason: 'the block is open');
+
+    // Into the cell that holds the link.
+    final cells = find.descendant(
+        of: find.byType(TextBlockView), matching: find.byType(TextField));
+    await t.tap(cells.at(2));
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+    expect(caretInACell(), isTrue, reason: 'the click landed in a cell');
+
+    // Type a few characters, checking after each that the caret has not been
+    // thrown out of the table.
+    for (final ch in ['a', 'b', 'c']) {
+      t.testTextInput.enterText('[[Kinematics|pg-2]]$ch');
+      await t.pumpAndSettle();
+      app.cancelPendingSave();
+      expect(caretInACell(), isTrue, reason: 'still in the cell after "$ch"');
+    }
+  });
+
+  testWidgets('THE VIEW FOLLOWS THE CELL, not the paragraph behind it',
+      (t) async {
+    // Reported after v1.0.1: *"the caret now jumps around like crazy in and
+    // out of the table, making it unuseable."*
+    //
+    // `ensureCaretVisible` asks the SESSION where the caret is, and the
+    // session answers from the paragraph's own `renderEditable` and the
+    // paragraph's own selection. While a cell holds the keyboard the
+    // paragraph is read-only and its selection is wherever it was last left —
+    // so every keystroke in a cell scrolled the page to a point that has
+    // nothing to do with where anybody is typing.
+    //
+    // Both halves of this shipped in the same release: tables moved into the
+    // paragraph, and the view learned to follow the caret. Neither test knew
+    // about the other.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    const atom = InlineAtom(id: 'tv', type: 'table', content: {
+      'cells': [
+        ['Element', 'Symbol'],
+        ['Sodium', 'Na'],
+      ]
+    });
+    final content = <String, dynamic>{
+      'text': 'A sentence long enough to have a caret of its own '
+          '${atom.reference('2x2 table')}',
+    };
+    InlineAtom.putIn(content, atom);
+    await pumpShell(t, content);
+    await openBlock(t);
+
+    // Put the paragraph's own caret at the very start, then go into the LAST
+    // cell — as far from that as the block gets.
+    final fields = find.descendant(
+        of: find.byType(TextBlockView), matching: find.byType(TextField));
+    t.widget<TextField>(fields.first).controller!.selection =
+        const TextSelection.collapsed(offset: 0);
+    await t.pumpAndSettle();
+    await t.tap(fields.last);
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+    expect(caretInACell(), isTrue, reason: 'the caret is in a cell');
+
+    final says = app.activeSession!.caretRectGlobal();
+    expect(says, isNotNull, reason: 'it knows where the caret is');
+    final cell = t.getRect(fields.last);
+    expect(cell.inflate(24).contains(says!.center), isTrue,
+        reason: 'the caret it reports must be the one that is blinking — it '
+            "reported the paragraph's instead, at ${says.center}, while the "
+            'cell is at ${cell.center}');
+  });
 }

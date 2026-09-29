@@ -778,6 +778,39 @@ class _PageCanvasState extends State<PageCanvas> {
   Rect _blockRect(Block b) => Rect.fromLTWH(
       b.x, b.y, b.w, b.h ?? app.renderSizes[b.id]?.height ?? 60);
 
+  /// **The rect to CULL against, which is not the rect to hit-test against.**
+  ///
+  /// Reported: *"if the page loads already part way down, the page content
+  /// wont load until i scroll up. I assume this has to do with detecting when
+  /// to load something based on the top of the box rather than any of the
+  /// perimiter."* Very nearly — it is the HEIGHT, and the owner's reading of
+  /// the symptom is exactly right about what it looks like.
+  ///
+  /// A text block carries no height: it is whatever its words come to, and
+  /// that is known only once it has been laid out and recorded in
+  /// [AppState.renderSizes] — which `selectPage` clears. So on the first
+  /// frame of a page every auto-height block is assumed to be [_kGuessedH]
+  /// tall. Open a page already scrolled down (the per-page view is restored),
+  /// and a block whose top is above the viewport but whose real height
+  /// reaches well into it does not overlap a 60px guess. It is culled, so it
+  /// is never laid out, so it is never measured, so it stays culled — until
+  /// you scroll far enough up for its TOP to come into range.
+  ///
+  /// **You cannot cull what you have not measured**, so an unmeasured block
+  /// is assumed tall instead of short. The asymmetry is the whole fix and it
+  /// is sound: a block below the view cannot be dragged into it by being
+  /// taller, because a box grows downwards from its top. Only a block ABOVE
+  /// the view can be wrongly culled by a height guess, and only by guessing
+  /// low.
+  ///
+  /// Deliberately NOT [_blockRect], which decides marquee selection, erase
+  /// and hit-testing — a 2000px phantom there would select things nobody
+  /// dragged over.
+  Rect _cullRect(Block b) {
+    final known = b.h ?? app.renderSizes[b.id]?.height;
+    return Rect.fromLTWH(b.x, b.y, b.w, known ?? _kUnmeasuredHeight);
+  }
+
   /// Anything on the page that brings its own background.
   ///
   /// A picture and a PDF page are surfaces in their own right: writing on one
@@ -994,6 +1027,12 @@ class _PageCanvasState extends State<PageCanvas> {
   /// than the viewport at the current zoom. Built inside the canvas's
   /// AnimatedBuilder, so it tracks every pan and zoom without its own state.
   /// **What is selected, as one rectangle in page space.**
+  /// How tall a block nobody has measured yet is assumed to be, for culling
+  /// only. Generous on purpose: the cost of guessing high is building a few
+  /// blocks that turn out not to be on screen, once, and the cost of guessing
+  /// low is a page that looks empty until you scroll. See [_cullRect].
+  static const double _kUnmeasuredHeight = 2000;
+
   Rect? _selectionRect() {
     Rect? out;
     for (final b in app.blocks) {
@@ -1228,7 +1267,7 @@ class _PageCanvasState extends State<PageCanvas> {
             // ink block off-screen still paints under its selection rect.
             if (app.selectedIds.contains(b.id) ||
                 app.editingBlockId == b.id ||
-                visible.overlaps(_blockRect(b)))
+                visible.overlaps(_cullRect(b)))
               ..._strokesOf(b),
         ];
         final selectedInkRects = [
@@ -1301,7 +1340,7 @@ class _PageCanvasState extends State<PageCanvas> {
                         for (final b in ([
                           ...app.blocks.where((b) =>
                               b.type != BlockType.ink &&
-                              (visible.overlaps(_blockRect(b)) ||
+                              (visible.overlaps(_cullRect(b)) ||
                                   app.selectedIds.contains(b.id) ||
                                   app.editingBlockId == b.id))
                         ]..sort((a, b) {

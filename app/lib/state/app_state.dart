@@ -7144,6 +7144,15 @@ class AppState extends ChangeNotifier
 
   List<double>? viewFor(String id) => _viewMemory[id];
 
+  /// Record the current view as [id]'s remembered one.
+  ///
+  /// The same thing leaving a page does, reachable by name so a test can open
+  /// a page already scrolled — which is the one state in which an unmeasured
+  /// block can be culled and stay culled. See `PageCanvas._cullRect`.
+  @visibleForTesting
+  void rememberViewForTest(String id) =>
+      _viewMemory[id] = [canvas.scale, canvas.offset.dx, canvas.offset.dy];
+
   void _rememberView() {
     final id = pageId;
     if (id == null) return;

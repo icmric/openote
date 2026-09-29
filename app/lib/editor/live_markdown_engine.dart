@@ -1280,8 +1280,51 @@ class _LiveMarkdownSession extends OnoteEditSession {
     }
   }
 
+  /// **The caret an inline child is holding**, when one is.
+  ///
+  /// Reported after v1.0.1: *"the caret now jumps around like crazy in and
+  /// out of the table, making it unuseable."*
+  ///
+  /// [AppState.ensureCaretVisible] asks the session where the caret is, and
+  /// the session answered from the PARAGRAPH's `renderEditable` and the
+  /// paragraph's own selection. While a cell holds the keyboard the paragraph
+  /// is read-only and its selection is wherever it was last left — so every
+  /// keystroke in a cell scrolled the page to a point that had nothing to do
+  /// with where anybody was typing, and the page yanked about on every
+  /// letter.
+  ///
+  /// Both halves of that shipped in the same release: tables moved into the
+  /// paragraph, and the view learned to follow the caret. Each was tested;
+  /// neither test knew about the other.
+  ///
+  /// Null unless an inline child really has the keyboard, so the ordinary
+  /// path below is untouched.
+  Rect? _innerCaretRectGlobal() {
+    if (!inlineChildFocused) return null;
+    final ctx = FocusManager.instance.primaryFocus?.context;
+    if (ctx == null) return null;
+    // A cell's `Focus` sits inside its `EditableText`, so the state that
+    // knows the caret is an ANCESTOR of the node that has it.
+    final st = ctx.findAncestorStateOfType<EditableTextState>();
+    if (st == null) return null;
+    try {
+      final r = st.renderEditable;
+      if (!r.hasSize) return null;
+      final sel = st.textEditingValue.selection;
+      if (!sel.isValid) return null;
+      final local = r.getLocalRectForCaret(
+          TextPosition(offset: sel.extentOffset, affinity: sel.affinity));
+      return local.shift(r.localToGlobal(Offset.zero));
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Rect? caretRectGlobal() {
+    // Whoever actually has the caret answers first.
+    final inner = _innerCaretRectGlobal();
+    if (inner != null) return inner;
     final st = _editableState();
     if (st == null) return null;
     try {
