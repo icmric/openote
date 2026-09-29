@@ -2048,39 +2048,100 @@ Widget _penDot(BuildContext context, AppState app, double v, L l) {
 String _penSizeLabel(double v) =>
     v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
-/// The old slider, kept for anybody who wants 3.5.
+/// **The ink the pen will actually put down**, resolved.
+///
+/// `auto` is not a colour — it is "whatever contrasts with the page", decided
+/// when the stroke is drawn ([InkPainter.autoColor]). A preview that painted
+/// it as the near-black it usually becomes would advertise black while the pen
+/// wrote white in dark mode, which is the exact defect the toolbar's own
+/// default swatch was fixed for.
+Color currentInkColor(BuildContext context, AppState app) {
+  final dark = Theme.of(context).brightness == Brightness.dark;
+  if (app.inkColor == 'auto') {
+    return dark ? OnoteColors.moon100 : OnoteColors.graphite900;
+  }
+  return onoteColorFromHex(app.inkColor) ??
+      (dark ? OnoteColors.moon100 : OnoteColors.graphite900);
+}
+
+/// **Half-pixel steps, kept half-pixel.**
+///
+/// A `Slider` divided into 39 steps between 0.5 and 20 lands on values like
+/// 3.4000000000000004, because that is what repeated addition of 19.5/39 does
+/// in binary floating point — and the readout then printed all seventeen
+/// digits of it. The owner: *"Some numbers also have a huge amount of decimal
+/// places, i guess its a floating point error."* Exactly that, and snapping is
+/// the fix rather than formatting: the stored size should BE 3.5, not print as
+/// it.
+double snapPenSize(double v) => (v * 2).roundToDouble() / 2;
+
+/// The old slider, kept for anybody who wants 3.5 — with the dot it will draw
+/// shown at the size and colour it will draw it.
 Future<void> _showExactPenSize(BuildContext context, AppState app) {
   final l = L.of(context);
   return showOnoteDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: Text(l.barPenSizeExact),
-      content: StatefulBuilder(
-        builder: (ctx2, setLocal) => Row(mainAxisSize: MainAxisSize.min, children: [
-          SizedBox(
-            width: 240,
-            child: Slider(
-              value: app.penSize.clamp(0.5, 20),
-              min: 0.5,
-              max: 20,
-              // Half-pixel steps: the point of this dialog is a thickness the
-              // presets do not cover, and a continuous slider cannot be read
-              // back or typed again tomorrow.
-              divisions: 39,
-              label: _penSizeLabel(app.penSize),
-              onChanged: (v) {
-                app.penSize = v;
-                app.refresh();
-                setLocal(() {});
-              },
-            ),
-          ),
-          SizedBox(
-            width: 34,
-            child: Text(_penSizeLabel(app.penSize),
-                style: OnoteType.caption, textAlign: TextAlign.end),
-          ),
-        ]),
+      // **A width, and a Column that takes only the height it needs.**
+      //
+      // `showOnoteDialog` goes through `showGeneralDialog`, whose page fills
+      // the screen — so content with nothing to size it against stretched to
+      // the full height. The owner: *"The 'exact size' popup has the right
+      // length but its height expands as far as it can."*
+      content: SizedBox(
+        width: 300,
+        child: StatefulBuilder(
+          builder: (ctx2, setLocal) {
+            void set(double v) {
+              app.penSize = snapPenSize(v);
+              app.refresh();
+              setLocal(() {});
+            }
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // The dot itself, at the size it will be drawn and in the
+                // colour it will be drawn in — the owner asked for both, and
+                // the second is what makes it a preview rather than a gauge.
+                // A fixed 24px box so the row does not jump as the dot grows.
+                SizedBox(
+                  height: 24,
+                  child: Center(
+                    child: Container(
+                      width: app.penSize,
+                      height: app.penSize,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: currentInkColor(ctx2, app),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(children: [
+                  Expanded(
+                    child: Slider(
+                      value: app.penSize.clamp(0.5, 20),
+                      min: 0.5,
+                      max: 20,
+                      divisions: 39, // every half pixel
+                      label: _penSizeLabel(app.penSize),
+                      onChanged: set,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 34,
+                    child: Text(_penSizeLabel(app.penSize),
+                        style: OnoteType.caption, textAlign: TextAlign.end),
+                  ),
+                ]),
+              ],
+            );
+          },
+        ),
       ),
       actions: [
         TextButton(

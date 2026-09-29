@@ -46,19 +46,32 @@ PopupMenuItem<String> _item(String v, IconData icon, String label,
 /// that is the honest shape of it anyway: an embed and a paragraph are not
 /// the same block wearing different clothes.
 ///
-/// The link is written as Markdown (`[Title](onote://page/id)`), which is the
-/// one spelling of a page link everything else in the app already reads —
-/// `md_common.dart` writes it, the live editor draws it as a chip, and the
-/// exporter carries it out. A second spelling would be a second thing to keep
-/// in step.
+/// **The link is a wiki link, `[[Title|id]]`, and that matters.**
+///
+/// The first cut wrote `[Title](onote://page/id)`, which LOOKS like the right
+/// answer and is not: that is the shape `md_common.markdownInline` projects a
+/// page link into on the way OUT to a `.md` file. Inside the editor the
+/// grammar's `_link` branch matches `https?:` and `mailto:` only, on purpose —
+/// so `onote://` cannot be claimed by it and stays free for atom references.
+/// A page link written that way is therefore not a link at all; it is eleven
+/// characters of punctuation sitting in the sentence. The owner: *"it seems to
+/// write out the markdown for it correctly but doesnt actually register it as
+/// a link."*
+///
+/// `[[Title|id]]` is what Ctrl+K writes ([applyLink]) and what `linkSiteAt`
+/// finds again, so a link made here can be edited and removed with the same
+/// keystrokes as any other.
 void _turnIntoPageLink(AppState app, Block b) {
   final ref = PortalRef.parse(b.content);
   if (ref == null) return;
   final title = app.node(ref.pageId)?.title;
   app.pushUndo();
-  final link =
-      '[${title == null || title.isEmpty ? 'another page' : title}]'
-      '(onote://page/${ref.pageId})';
+  // An empty label falls back to the id rather than to words, for the reason
+  // `applyLink` gives: `[[|id]]` matches nothing, because the wiki label is
+  // `[^\]|]+`.
+  final label =
+      title == null || title.trim().isEmpty ? ref.pageId : title.trim();
+  final link = '[[$label|${ref.pageId}]]';
   final made = app.addBlock(Block(
     type: BlockType.text,
     x: b.x,

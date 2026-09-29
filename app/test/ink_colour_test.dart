@@ -26,6 +26,7 @@ import 'package:openote/canvas/ink_ops.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/theme/onote_theme.dart';
+import 'package:openote/ui/color_picker.dart';
 import 'package:openote/ui/command_bar.dart';
 
 import 'support/app.dart';
@@ -210,6 +211,60 @@ void main() {
           reason: 'the slider is behind a button, not gone');
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
+    });
+
+    testWidgets('the exact-size popup is popup-sized, and shows the dot',
+        (tester) async {
+      // The owner: *"The 'exact size' popup has the right length but its
+      // height expands as far as it can. Some numbers also have a huge amount
+      // of decimal places… Also it would be nice to have a circle on there
+      // which shows the size of the dot that it will draw. This dot should
+      // also be coloured the same as the currently selected colour."*
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await fixture(tester, 'onote_ink_exact_');
+      app.tool = Tool.pen;
+      app.setInkColor('#7A3E9D');
+      await drawTab(tester, app);
+
+      await tester.tap(find.byTooltip('Exact size…'));
+      await tester.pumpAndSettle();
+
+      // The dialog's SURFACE, not `AlertDialog`'s own render box — that one
+      // is the full-screen `Align` every dialog is centred by, and measuring
+      // it says 900 for a perfectly ordinary popup.
+      final surface = tester.getSize(find
+          .descendant(
+              of: find.byType(AlertDialog), matching: find.byType(Material))
+          .first);
+      final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+      expect(surface.height, lessThan(screen.height * 0.5),
+          reason: '`showOnoteDialog` goes through `showGeneralDialog`, whose '
+              'page fills the screen. Measured before the fix: 852 of 900, '
+              'because `Row(mainAxisSize: min)` sizes its CROSS axis to its '
+              'tallest child, and a `SizedBox` that sets only a width passes '
+              'the height constraint straight through to the Slider');
+
+      // The dot, at the size AND colour the pen will draw with.
+      final dot = tester.widget<Container>(find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byWidgetPredicate((w) =>
+              w is Container &&
+              w.decoration is BoxDecoration &&
+              (w.decoration as BoxDecoration).shape == BoxShape.circle)));
+      expect((dot.decoration as BoxDecoration).color,
+          onoteColorFromHex('#7A3E9D'));
+
+      // Half-pixel steps, kept half-pixel: 19.5/39 added repeatedly in binary
+      // floating point is what produced 3.4000000000000004.
+      await tester.drag(find.byType(Slider), const Offset(40, 0));
+      await tester.pumpAndSettle();
+      expect(app.penSize, snapPenSize(app.penSize),
+          reason: 'the stored size IS a half — it does not merely print as one');
+      expect(app.penSize * 2, (app.penSize * 2).roundToDouble());
+
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 500));
     });
 
     testWidgets('the row shows two mixed colours, not four', (tester) async {

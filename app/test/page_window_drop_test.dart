@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/canvas/page_canvas.dart';
 import 'package:openote/canvas/portal_view.dart';
+import 'package:openote/markdown/md_syntax.dart';
 import 'package:openote/l10n/l10n.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -126,7 +127,13 @@ void main() {
     await dragOntoCanvas(tester, 'Kinematics');
     final window = app.blocks.single;
 
-    await tester.tapAt(tester.getCenter(find.byType(PageCanvas)),
+    // On the WINDOW ITSELF, not on its title bar. The owner: *"if i right
+    // click the box bar it will give me the option to turn it into a page
+    // link, but not if i right click the window itself."* A window wraps its
+    // content in a `SelectionArea` so the text inside can be copied, and
+    // `SelectableRegion`'s own secondary-tap recogniser — nearer the pointer
+    // than the block's — was swallowing the click.
+    await tester.tapAt(tester.getCenter(find.byType(PortalContent)),
         buttons: kSecondaryButton);
     await settle(tester);
 
@@ -141,12 +148,113 @@ void main() {
     final now = app.blocks.single;
     expect(now.id, isNot(window.id), reason: 'Block.type is final');
     expect(now.type, BlockType.text);
-    expect(now.content['text'], '[Kinematics](onote://page/$otherId)',
-        reason: 'the one spelling of a page link the rest of the app already '
-            'reads — the live editor draws it as a chip and the exporter '
-            'carries it out');
+    expect(now.content['text'], '[[Kinematics|$otherId]]',
+        reason: 'the WIKI form, which is what the editor reads. The first cut '
+            'wrote `[Kinematics](onote://page/id)` — the shape a page link is '
+            'projected into on the way OUT to a .md file — and inside the '
+            'editor that is not a link at all, because the grammar matches '
+            '`https?:` and `mailto:` only');
+
+    // Proven against the grammar rather than by eye: this is the claim the
+    // owner actually made — *"it seems to write out the markdown for it
+    // correctly but doesnt actually register it as a link."*
+    final marks = [
+      for (final m in mdInlineRe.allMatches(now.content['text'] as String))
+        classifyInline(m).kind
+    ];
+    expect(marks, [MdInline.wikiLink],
+        reason: 'the renderer sees one page link and nothing else');
     expect(now.x, window.x, reason: 'and it stays where the window was');
     expect(now.y, window.y);
+    app.cancelPendingSave();
+  });
+
+  testWidgets('and a page link offers the window, going the other way',
+      (tester) async {
+    // The owner: *"The option for the reverse should also be there when right
+    // clicking a page link."* They are the same intention at two sizes, and
+    // you only find out which one you wanted by looking at it.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+    final note = app.addBlock(Block(
+      type: BlockType.text,
+      x: 90,
+      y: 130,
+      w: 320,
+      h: 44,
+      content: {'text': 'see [[Kinematics|$otherId]] for this', 'autoWidth': false},
+    ));
+    app.select(note.id, edit: true);
+    await settle(tester);
+
+    // The caret inside the link is what `linkSiteAt` reads, and what decides
+    // whether there is a link to offer anything about at all.
+    final ctl = app.activeEditor!.controller;
+    ctl.selection = const TextSelection.collapsed(offset: 10);
+    await settle(tester);
+
+    // The block's own editor: the navigator's search box is an `EditableText`
+    // and so is the page title, and both come before it.
+    await tester.tapAt(
+        tester.getCenter(find
+            .descendant(
+                of: find.byType(PageCanvas),
+                matching: find.byType(EditableText))
+            .last),
+        buttons: kSecondaryButton);
+    await settle(tester);
+
+    final entry = find.text('Show as a page window');
+    expect(entry, findsOneWidget);
+    await tester.tap(entry);
+    await settle(tester);
+
+    expect(app.blockById(note.id)?.content['text'], 'see  for this',
+        reason: 'the link comes out of the sentence — there is nowhere in a '
+            'line of prose to put a block');
+    final made = app.blocks.firstWhere((b) => b.type == BlockType.embed);
+    expect(PortalRef.parse(made.content)?.pageId, otherId);
+    expect(made.y, greaterThan(note.y), reason: 'below the box it came from');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('but a web link has no window to become', (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+    final note = app.addBlock(Block(
+      type: BlockType.text,
+      x: 90,
+      y: 130,
+      w: 320,
+      h: 44,
+      content: {
+        'text': 'see [the docs](https://example.com) for this',
+        'autoWidth': false
+      },
+    ));
+    app.select(note.id, edit: true);
+    await settle(tester);
+    app.activeEditor!.controller.selection =
+        const TextSelection.collapsed(offset: 10);
+    await settle(tester);
+
+    // The block's own editor: the navigator's search box is an `EditableText`
+    // and so is the page title, and both come before it.
+    await tester.tapAt(
+        tester.getCenter(find
+            .descendant(
+                of: find.byType(PageCanvas),
+                matching: find.byType(EditableText))
+            .last),
+        buttons: kSecondaryButton);
+    await settle(tester);
+
+    expect(find.text('Edit link…'), findsOneWidget,
+        reason: 'it is still a link');
+    expect(find.text('Show as a page window'), findsNothing,
+        reason: 'a web address is not a page in this notebook. `site.wiki` is '
+            'recorded rather than guessed from the target, because a page id '
+            'is opaque');
     app.cancelPendingSave();
   });
 

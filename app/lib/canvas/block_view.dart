@@ -565,7 +565,10 @@ class _BlockViewState extends State<BlockView> {
       BlockType.table => TableBlockView(block: b, app: app),
       BlockType.file => FileBlockView(block: b, app: app),
       BlockType.flashcard => FlashcardBlockView(block: b, app: app),
-      BlockType.embed => PortalBlockView(block: b, app: app),
+      BlockType.embed => PortalBlockView(
+          block: b,
+          app: app,
+          onMenu: (at) => showBlockMenu(context, app, b, at)),
       BlockType.board => BoardBlockView(block: b, app: app),
       BlockType.graph => GraphBlockView(block: b, app: app),
       BlockType.substitute => SubstituteBlockView(block: b, app: app),

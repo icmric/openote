@@ -17,6 +17,7 @@ import '../math/equation_editor.dart';
 import '../math/evaluate.dart';
 import '../math/math_editor.dart';
 import '../math/math_field.dart';
+import '../canvas/portal_view.dart';
 import 'block_atom_host.dart';
 import 'emphasis_guard.dart';
 import 'inline_math_editor.dart';
@@ -1554,7 +1555,54 @@ class _LiveMarkdownSession extends OnoteEditSession {
           }));
         },
       ),
+      // **The other direction of the window/link pair.**
+      //
+      // The owner, having asked for a page window to be turnable into a link:
+      // *"The option for the reverse should also be there when right clicking
+      // a page link."* Which is right — they are the same intention at two
+      // sizes, and you only find out which one you wanted by looking at it.
+      //
+      // Only for a PAGE link. `site.wiki` is recorded rather than guessed from
+      // the target, because a page id is opaque and a guess about somebody's
+      // data is a bug waiting for the one id that breaks it. A web address has
+      // no window to become.
+      if (site.wiki && (site.url?.isNotEmpty ?? false))
+        ContextMenuButtonItem(
+          label: 'Show as a page window',
+          onPressed: () {
+            editable.hideToolbar();
+            _showLinkAsWindow(site);
+          },
+        ),
     ];
+  }
+
+  /// Take the link out of the sentence and put a window below the box.
+  ///
+  /// Below rather than in place, because a window is a block and a link is
+  /// some words: there is nowhere in a line of prose to put one. The host box
+  /// keeps everything else that was written in it.
+  void _showLinkAsWindow(LinkSite site) {
+    final host = app.blockById(blockId);
+    final pageId = site.url;
+    if (host == null || pageId == null || app.node(pageId) == null) return;
+    app.pushUndo();
+    final next = controller.text.replaceRange(site.start, site.end, '');
+    controller.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: site.start),
+      composing: TextRange.empty,
+    );
+    onChanged(next); // a programmatic edit never fires the field's onChanged
+    final at = app.belowBlock(host);
+    final made = app.addBlock(Block(
+      type: BlockType.embed,
+      x: at.dx,
+      y: at.dy,
+      w: 380,
+      content: PortalRef.contentFor(pageId),
+    ));
+    app.select(made.id);
   }
 
   /// Correction items for the word under the caret, plus "Add to dictionary".

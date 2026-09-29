@@ -435,10 +435,29 @@ bool portalSourceLive(AppState app, String pageId) => app.node(pageId) != null;
 /// it the live region — read-only, text-selectable, aspect-locked to the
 /// region so resizing the block zooms the window instead of distorting it.
 class PortalBlockView extends StatelessWidget {
-  const PortalBlockView({super.key, required this.block, required this.app});
+  const PortalBlockView(
+      {super.key, required this.block, required this.app, this.onMenu});
 
   final Block block;
   final AppState app;
+
+  /// **Right-click inside the window, not only on its bar.**
+  ///
+  /// The owner: *"if i right click the box bar it will give me the option to
+  /// turn it into a page link, but not if i right click the window itself, i
+  /// would like it to appear there."*
+  ///
+  /// The block's own body handler never saw it. A window wraps its content in
+  /// a `SelectionArea` so the text inside can be copied, and `SelectableRegion`
+  /// registers its own secondary-tap recogniser for the selection toolbar —
+  /// which, being nearer the pointer than the block's, wins the arena and
+  /// swallows the click.
+  ///
+  /// Taken as a callback rather than calling `showBlockMenu` here: this file
+  /// is under `canvas/` and that menu is under `ui/`, which already imports
+  /// this one for [PortalRef]. An import back the other way would close the
+  /// loop for a single call.
+  final void Function(Offset globalPosition)? onMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -475,15 +494,24 @@ class PortalBlockView extends StatelessWidget {
       // videos play, and nothing that writes is ever constructed. The
       // SelectionArea keeps the windowed text selectable for copying.
       child: SelectionArea(
-        child: ClipRect(
-          child: FittedBox(
-            fit: BoxFit.contain,
-            alignment: Alignment.topLeft,
-            child: PortalContent(
-              app: app,
-              source: src,
-              rect: rect,
-              chain: [if (hostPage != null) hostPage, ref.pageId],
+        // Inside the SelectionArea, so this recogniser sits NEARER the pointer
+        // than the one that was eating the click. Opaque, because the whole
+        // window should answer a right-click, including the parts of it that
+        // are blank page.
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onSecondaryTapUp:
+              onMenu == null ? null : (d) => onMenu!(d.globalPosition),
+          child: ClipRect(
+            child: FittedBox(
+              fit: BoxFit.contain,
+              alignment: Alignment.topLeft,
+              child: PortalContent(
+                app: app,
+                source: src,
+                rect: rect,
+                chain: [if (hostPage != null) hostPage, ref.pageId],
+              ),
             ),
           ),
         ),
