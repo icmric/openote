@@ -167,9 +167,83 @@ void main() {
     expect(runs, hasLength(1));
     expect(classifyInline(runs.single).inner, 'big');
 
-    // And typing on carries the sentence, rather than the bold.
-    await type(t, c, 'o');
-    expect(c.text, 'note **big** o');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('and the bold carries on through it, word after word', (t) async {
+    // The owner, on the first cut of the fix: *"if i bold and press space now
+    // it just doesnt keep the bolding, so if i tried to type multiple words in
+    // bold it wouldnt."*
+    //
+    // Quite right. Moving the space out of the run stops the run, so the space
+    // has to re-arm the same queue Ctrl+B uses. The next word is then wrapped
+    // as its own run and the two are folded back into one, which is why the
+    // buffer below holds a single pair of markers rather than a pair per word.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final c = await open(t, 5);
+    app.wrapSelection('**');
+    await t.pump();
+    for (final ch in ['b', 'i', 'g']) {
+      await type(t, c, ch);
+    }
+
+    await type(t, c, ' ');
+    expect(app.pendingMarks, {'**'},
+        reason: 'the space says "still bold", because that is what the '
+            'student was doing when they pressed it');
+
+    for (final ch in ['r', 'e', 'd']) {
+      await type(t, c, ch);
+    }
+    expect(c.text, 'note **big red**',
+        reason: 'one run, not `**big** **red**` — they render the same, and '
+            'the tidier one is what somebody would have typed');
+
+    // A third word needs no further help: the caret is back inside the run.
+    await type(t, c, ' ');
+    for (final ch in ['o', 'x']) {
+      await type(t, c, ch);
+    }
+    expect(c.text, 'note **big red ox**');
+
+    final runs = [
+      for (final m in mdInlineRe.allMatches(c.text))
+        if (classifyInline(m).kind == MdInline.bold) m
+    ];
+    expect(runs, hasLength(1));
+    expect(classifyInline(runs.single).inner, 'big red ox');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('back-selecting a bold word deletes all of it, markers included',
+      (t) async {
+    // The owner: *"if i back select a bold word it will remove it but leave
+    // ** at the start, so it doesnt remove it all, you need to ensure that it
+    // never disconnects them."*
+    //
+    // `markerAwareDelete` already answers this for a Backspace at a marker
+    // edge, but it takes a COLLAPSED caret only and returns null for a
+    // selection — which then falls through to the field's own delete, and the
+    // field cannot see markers.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final c = await open(t, 5);
+    app.wrapSelection('**');
+    await t.pump();
+    for (final ch in ['b', 'i', 'g']) {
+      await type(t, c, ch);
+    }
+    expect(c.text, 'note **big**');
+
+    // Back over the word, the way a drag right-to-left or Shift+Left reports
+    // it: from the end of what can be seen to the start of it.
+    c.selection = const TextSelection(baseOffset: 12, extentOffset: 7);
+    await t.pump();
+    await t.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await t.pump();
+
+    expect(c.text, 'note ',
+        reason: 'all of it, markers included — not `note **`');
+    expect(c.selection.baseOffset, 5);
     app.cancelPendingSave();
   });
 

@@ -5925,6 +5925,27 @@ class AppState extends ChangeNotifier
     return classifyInline(hit).kind;
   }
 
+  /// **Keep a style going across the space that just ended its run.**
+  ///
+  /// A marker may not sit against a space, so `**big **` is not bold and never
+  /// can be — the space has to go outside the run (`EmphasisGuardFormatter`).
+  /// That alone would stop the bold dead at the space bar, which the owner
+  /// found immediately: *"if i bold and press space now it just doesnt keep
+  /// the bolding, so if i tried to type multiple words in bold it wouldnt."*
+  ///
+  /// Re-arming the same queue Ctrl+B uses is what carries it on: the next word
+  /// is wrapped as its own run, and `mergeRunAtCaret` folds the two back into
+  /// one. What the student sees is bold that simply kept going.
+  void carryStyleOn(Set<String> marks,
+      {required String blockId, required int at}) {
+    if (marks.isEmpty) return;
+    pendingMarks = {...marks};
+    pendingMarkAt = at;
+    pendingMarkCaret = at;
+    pendingMarkBlockId = blockId;
+    notifyListeners();
+  }
+
   /// Cancel a queued style: the caret moved, or something other than a plain
   /// insertion happened at the queued spot.
   void clearPendingMarks() {

@@ -1441,7 +1441,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
         // into `**bold**` with the caret parked inside the closing markers,
         // and this one is what stops the very next space from taking that
         // apart in front of the student. It needs to see the wrapped text.
-        const EmphasisGuardFormatter(),
+        EmphasisGuardFormatter(app, s.block.id),
       ],
       decoration: InputDecoration(
         isDense: true,
