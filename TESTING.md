@@ -186,10 +186,15 @@ me fixing something and you finding it still broken. Please be unkind to it.
 
 Not for you to test — recorded here so you are not surprised by them.
 
-- **`tool_follows_device_test` fails about one run in three**, on your machine
-  and in CI, and has done since before this release. It is a timing
-  assertion, not a real failure, but it will make CI red at random. Worth
-  fixing before it trains everyone to ignore a red build.
+- **`graph_plot_test` can fail under load.** It asserts that ten frames of a
+  curve redraw inside 160ms, which is a fair thing to want and an unfair
+  thing to promise on a runner doing six other things. It passes alone and
+  fails when the machine is busy. `tool_follows_device_test` had the same
+  shape and is now fixed properly — its correctness never depended on the
+  clock, so the clock came out. This one's whole point IS the clock, so the
+  choice is between not gating on it (the repo already has perf probes that
+  print their numbers instead of asserting them) or widening the budget until
+  it only catches a real regression. Your call; I have not touched it.
 - **A caret parked on a table's scope.** If a cell were to take and drop the
   caret four times inside one frame, the caret would sit on the table itself
   with nothing typeable until you click. I could not make it happen, and the
