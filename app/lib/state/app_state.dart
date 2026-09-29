@@ -45,6 +45,7 @@ import '../ink/ink_codec.dart';
 import '../ink/ink_storage.dart';
 import '../sync/materializer.dart';
 import '../sync/git_sync.dart';
+import '../editor/inline_table.dart' show tableColumnWidths;
 import '../editor/list_editing.dart';
 import '../markdown/md_syntax.dart';
 import '../api/mcp_connect.dart';
@@ -3196,7 +3197,9 @@ class AppState extends ChangeNotifier
     var done = 0;
     for (var i = 0; i < blocks.length; i++) {
       if (blocks[i].type != BlockType.table) continue;
-      final out = tableBlockAsText(blocks[i], madeIn: kAppVersion);
+      final out = tableBlockAsText(blocks[i],
+          madeIn: kAppVersion,
+          widthsIfNone: _impliedColumnWidths(blocks[i]));
       // Null is a REFUSAL, not a failure: the block stays a table block, which
       // still draws, still saves and still exports. Nothing is lost by
       // leaving it alone, and something might be by forcing it.
@@ -3217,6 +3220,43 @@ class AppState extends ChangeNotifier
   /// first sign of the user doing anything — typing, a pull, switching
   /// notebooks — stops the run where it stands. Every page already converted
   /// is durable on its own; the remainder is simply still to do.
+  /// **The column widths a table block implied but never wrote down.**
+  ///
+  /// A table block is a box with a width, and a table with no widths of its
+  /// own just filled it. An atom has no box — it sizes its columns from what
+  /// is in them — so converting one loses the only record of how wide the
+  /// table was. The owner: *"many pages end up slightly off when converting
+  /// the tables."*
+  ///
+  /// The widths are the content's own proportions, scaled up to the width the
+  /// block was. Proportions rather than equal shares because equal shares are
+  /// a guess with a worse failure mode: a three-character column given a third
+  /// of 620px looks wrong in a way a reader notices, and the content is the
+  /// only evidence there is about what each column was for.
+  ///
+  /// Null whenever there is nothing to repair: a table that says what it
+  /// wants, a block no wider than its contents, or a measurement that came
+  /// back as nothing.
+  List<double>? _impliedColumnWidths(Block b) {
+    final d = TableData.from(b.content);
+    if (d.colWidths.isNotEmpty || d.cols == 0) return null;
+    // The block's own padding, per side — `_kBlockContentInset` in
+    // table_block_view.dart, which is private to it.
+    const inset = 8.0;
+    final target = b.w - inset * 2;
+    // A fixed style, because only the RATIOS survive the scaling below: the
+    // table draws at whatever its paragraph uses, and measuring at 13 decides
+    // proportions, not pixels.
+    final natural = tableColumnWidths(d, const TextStyle(fontSize: 13));
+    final total = natural.fold<double>(0, (a, c) => a + c);
+    if (total <= 0 || !total.isFinite || !target.isFinite) return null;
+    // Only ever WIDER. A block narrower than its own table is already drawing
+    // it squeezed, and writing that squeeze down would make it permanent.
+    if (target <= total + 1) return null;
+    final k = target / total;
+    return [for (final w in natural) w * k];
+  }
+
   Future<TableConversionResult> convertTablesToInline(
     String nb, {
     bool unattended = false,
@@ -3276,7 +3316,10 @@ class AppState extends ChangeNotifier
           var moved = 0;
           for (var k = 0; k < data.blocks.length; k++) {
             if (data.blocks[k].type != BlockType.table) continue;
-            final out = tableBlockAsText(data.blocks[k], madeIn: kAppVersion);
+            final out = tableBlockAsText(data.blocks[k],
+                madeIn: kAppVersion,
+                widthsIfNone:
+                    _impliedColumnWidths(data.blocks[k]));
             if (out == null) {
               refused++;
               continue;

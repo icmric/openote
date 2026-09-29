@@ -135,6 +135,13 @@ void main() {
           reason: 'there is no picture here to save');
       expect(find.text('Delete'), findsOneWidget,
           reason: 'but the menu itself is still the menu');
+      // The owner: *"Please remove the edit button in the right click menu as
+      // thats accesable by left clicking the boxes."* A left click has opened
+      // a box for editing since the beginning, and a row that repeats the
+      // gesture you used to open the menu is a row everything else has to be
+      // read past. The same reasoning kept "Text box" off this menu, and
+      // later off the Insert ribbon.
+      expect(find.text('Edit'), findsNothing);
     });
   });
 }

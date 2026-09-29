@@ -17,6 +17,8 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:flutter/painting.dart';
+import 'package:openote/editor/inline_table.dart';
 import 'package:openote/model/inline_atom.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/model/table_conversion.dart';
@@ -183,6 +185,103 @@ void main() {
               Block(type: BlockType.text, x: 0, y: 0, content: {'text': 'hi'}),
               madeIn: 'test'),
           isNull);
+    });
+  });
+
+  group('the width a block knew and an atom cannot ask for', () {
+    // The owner: *"cell width seems to get lost still. This isnt the end of
+    // the world, except for that it means that many pages end up slightly off
+    // when converting the tables."*
+    //
+    // A table BLOCK is a box with a width, and a table with no column widths
+    // of its own simply filled it. An atom has no box — it sizes its columns
+    // from what is in them — so a three-word table that used to fill 620px
+    // draws at 277. Nothing was dropped; the width was recorded somewhere the
+    // new shape does not have.
+
+    Block wide({List<double>? widths, double w = 620}) => Block(
+          type: BlockType.table,
+          x: 0,
+          y: 0,
+          w: w,
+          content: {
+            'cells': [
+              ['Element', 'Symbol', 'Z'],
+              ['Sodium', 'Na', '11'],
+            ],
+            if (widths != null) 'colWidths': widths,
+          },
+        );
+
+    /// What the columns ask for on their own, which is what the caller
+    /// measures and scales.
+    List<double> natural(Block b) =>
+        tableColumnWidths(TableData.from(b.content), const TextStyle(fontSize: 13));
+
+    List<double> scaledTo(Block b, double target) {
+      final n = natural(b);
+      final k = target / n.fold<double>(0, (a, c) => a + c);
+      return [for (final w in n) w * k];
+    }
+
+    test("a table with no widths of its own is given the block's", () {
+      final b = wide();
+      // 8px of block padding a side, so 604 of usable width.
+      final want = scaledTo(b, 604);
+      final out = tableBlockAsText(b, madeIn: 'test', widthsIfNone: want)!;
+      final t = tablesIn(out.content).single;
+
+      expect(t.colWidths, want);
+      expect(t.colWidths.fold<double>(0, (a, c) => a + c), closeTo(604, 0.001),
+          reason: 'it fills the box it used to fill');
+      expect(t.colWidths[0], greaterThan(t.colWidths[2]),
+          reason: "the content's own proportions, not equal shares — a "
+              'three-character column given a third of 620px looks wrong in a '
+              'way a reader notices');
+      expect(t.cells[1][0], 'Sodium', reason: 'and nothing else moved');
+    });
+
+    test('a table that says what it wants is not second-guessed', () {
+      final b = wide(widths: [100, 200, 300]);
+      final out =
+          tableBlockAsText(b, madeIn: 'test', widthsIfNone: [9, 9, 9])!;
+      expect(tablesIn(out.content).single.colWidths, [100, 200, 300],
+          reason: 'dragged widths are carried verbatim like everything else');
+    });
+
+    test('and with nothing offered, nothing is added', () {
+      final out = tableBlockAsText(wide(), madeIn: 'test')!;
+      expect(tablesIn(out.content).single.colWidths, isEmpty,
+          reason: 'the old behaviour, still reachable — this function may not '
+              'invent a width on its own');
+    });
+
+    test('a list it cannot vouch for is refused, and changes nothing', () {
+      for (final bad in <List<double>>[
+        [10, 20], // too short
+        [10, 20, 30, 40], // too long
+        [10, 20, double.nan],
+        [10, 20, double.infinity],
+        [10, 20, 0], // a zero width means "measure me", not "be invisible"
+        [10, 20, -5],
+      ]) {
+        final out = tableBlockAsText(wide(), madeIn: 'test', widthsIfNone: bad);
+        expect(out, isNotNull, reason: 'the conversion still happens: $bad');
+        expect(tablesIn(out!.content).single.colWidths, isEmpty,
+            reason: 'it simply declines the widths: $bad');
+      }
+    });
+
+    test('the proof still refuses a table it would have changed', () {
+      // The guard that makes all of this safe: the result is compared against
+      // the table that SHOULD come out, so a width written wrong is a refusal
+      // rather than a quiet rewrite.
+      final b = wide();
+      final out = tableBlockAsText(b, madeIn: 'test', widthsIfNone: [1.5, 2.5, 3.5]);
+      expect(out, isNotNull);
+      expect(tablesIn(out!.content).single.colWidths, [1.5, 2.5, 3.5],
+          reason: 'silly but valid, and honoured exactly — the caller is '
+              'trusted to measure, and audited on the shape of what it says');
     });
   });
 }

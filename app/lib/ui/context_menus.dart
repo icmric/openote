@@ -89,15 +89,18 @@ void _turnIntoPageLink(AppState app, Block b) {
 Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
     Offset globalPos) async {
   if (!app.selectedIds.contains(b.id)) app.select(b.id);
-  final editable = b.type == BlockType.text ||
-      b.type == BlockType.code ||
-      b.type == BlockType.math;
   final action = await showMenu<String>(
     context: context,
     position: RelativeRect.fromLTRB(
         globalPos.dx, globalPos.dy, globalPos.dx, globalPos.dy),
     items: [
-      if (editable) _item('edit', Icons.edit_outlined, 'Edit'),
+      // **No "Edit".** The owner: *"Please remove the edit button in the
+      // right click menu as thats accesable by left clicking the boxes."*
+      // Quite so — a left click has opened a box for editing since the
+      // beginning, and a menu row that repeats the gesture you used to open
+      // the menu is a row everything else has to be read past. The same
+      // reasoning already kept "Text box" off this menu and, later, off the
+      // Insert ribbon.
       _item('copy', Icons.copy_outlined, 'Copy', shortcut: 'Ctrl+C'),
       _item('cut', Icons.cut_outlined, 'Cut', shortcut: 'Ctrl+X'),
       _item('duplicate', Icons.copy_all_outlined, 'Duplicate',
@@ -147,8 +150,6 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
     ],
   );
   switch (action) {
-    case 'edit':
-      app.select(b.id, edit: true);
     case 'lock':
       app.pushUndo();
       if (b.content['locked'] == true) {

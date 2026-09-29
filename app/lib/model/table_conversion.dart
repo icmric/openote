@@ -35,10 +35,15 @@ import 'models.dart';
 /// [madeIn] is stamped into the payload so that a build too old to draw an
 /// atom of some future type can say which version made it — see
 /// `inline_atom_view.dart`. It is information for a stranger, not state.
+/// [widthsIfNone] is what to store as the table's column widths **when the
+/// block carries none of its own** — see the note below on why that is a loss
+/// worth repairing rather than a value worth preserving. Null, or a list of
+/// the wrong length, leaves the table exactly as it was.
 Block? tableBlockAsText(
   Block b, {
   required String madeIn,
   String Function()? atomId,
+  List<double>? widthsIfNone,
 }) {
   if (b.type != BlockType.table) return null;
   // **Refuse a shape this cannot carry across.** `TableData.from` reads a
@@ -71,10 +76,27 @@ Block? tableBlockAsText(
   // somebody EDITS a cell the normalised form is written, which is right: an
   // edit is a person changing their data, not a migration doing it for them.
   //
+  // **The one thing the block knew that the atom cannot ask for.**
+  //
+  // A table BLOCK is a box with a width, and a table with no column widths of
+  // its own simply filled it. An atom has no box: it sizes its columns from
+  // what is in them, and a three-word table that used to fill 620px draws at
+  // 277 — the owner: *"cell width seems to get lost still… it means that many
+  // pages end up slightly off when converting the tables."* Nothing was
+  // dropped; the width was recorded in a place the new shape does not have.
+  //
+  // So it is written down, once, as the column widths the block implied. This
+  // is the one value this function may ADD, and only when the source has none
+  // — a table whose columns were dragged says what it wants, and that is
+  // carried verbatim like everything else. The caller measures, because what
+  // a column naturally wants is a question about rendering and this file
+  // knows nothing about that.
+  final fit = _fitted(before, widthsIfNone);
   // Deep-copied so the new block shares no list with the old one.
   final carried = jsonDecode(jsonEncode(<String, dynamic>{
     if (b.content.containsKey('cells')) 'cells': b.content['cells'],
     if (b.content.containsKey('colWidths')) 'colWidths': b.content['colWidths'],
+    if (fit != null) 'colWidths': fit,
   })) as Map<String, dynamic>;
   final atom = InlineAtom(
     id: id,
@@ -101,13 +123,22 @@ Block? tableBlockAsText(
   // it run through `TableData.from`, so two different files that normalise to
   // the same grid compare equal. Only the second would have caught a
   // conversion that turned every number into a string.
+  //
+  // When a width has been written in, the thing to prove is not "unchanged"
+  // but "changed in exactly the one way asked for" — so the comparison is
+  // against the table that SHOULD come out, cells and all.
+  final want = fit == null
+      ? before
+      : TableData(cells: before.cells, colWidths: fit);
   final back = tablesIn(content);
-  if (back.length != 1 || !back.single.sameAs(before)) return null;
+  if (back.length != 1 || !back.single.sameAs(want)) return null;
   final wrote = InlineAtom.allIn(content)[id]?.content;
   if (wrote == null) return null;
-  for (final key in const ['cells', 'colWidths']) {
-    if (jsonEncode(wrote[key]) != jsonEncode(b.content[key])) return null;
-  }
+  if (jsonEncode(wrote['cells']) != jsonEncode(b.content['cells'])) return null;
+  // The widths are the one key that may differ, and only in the one way:
+  // added, in full, exactly as the caller asked, to a table that had none.
+  final expectWidths = fit ?? b.content['colWidths'];
+  if (jsonEncode(wrote['colWidths']) != jsonEncode(expectWidths)) return null;
 
   final j = b.toJson();
   j['type'] = 'text';
@@ -115,4 +146,18 @@ Block? tableBlockAsText(
   final out = Block.fromJson(j);
   if (out.id != b.id || out.type != BlockType.text) return null;
   return out..updatedAt = nowMs();
+}
+
+/// The widths to write for a table that has none, or null to write nothing.
+///
+/// Refuses anything it cannot vouch for: a list of the wrong length, a width
+/// that is not a positive finite number, or a table that already says what it
+/// wants. A conversion that runs unattended does not get to guess.
+List<double>? _fitted(TableData before, List<double>? widths) {
+  if (widths == null || before.colWidths.isNotEmpty) return null;
+  if (widths.length != before.cols || widths.isEmpty) return null;
+  for (final w in widths) {
+    if (!w.isFinite || w <= 1) return null;
+  }
+  return [...widths];
 }
