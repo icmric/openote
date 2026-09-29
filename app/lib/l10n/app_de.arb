@@ -163,6 +163,8 @@
   "navBinRetention": "Was hier liegt, wird nach {days} Tagen endgültig gelöscht.",
   "navClose": "Schließen",
   "navCollapse": "Navigator einklappen  (Strg+\\)",
+  "navHideSections": "Abschnittsliste ausblenden",
+  "navShowSections": "Abschnittsliste einblenden",
   "navColour": "Farbe",
   "navColourDefault": "Standard",
   "navComingUp": "DEMNÄCHST",

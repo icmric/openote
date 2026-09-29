@@ -634,6 +634,12 @@ class LPt extends L {
   String get navCollapse => 'Fechar o navegador  (Ctrl+\\)';
 
   @override
+  String get navHideSections => 'Ocultar a lista de seções';
+
+  @override
+  String get navShowSections => 'Mostrar a lista de seções';
+
+  @override
   String get navColour => 'Cor';
 
   @override

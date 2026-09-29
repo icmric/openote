@@ -4383,6 +4383,17 @@ class AppState extends ChangeNotifier
   double navPagesW = 168; // pages column, px
   bool navCollapsed = false; // the whole navigator as a 44px rail
 
+  /// **The sections column alone, folded away.**
+  ///
+  /// The owner: *"i want to be able to colapse the section bar to provide
+  /// extra space"*. [navCollapsed] already folds the WHOLE navigator to a
+  /// 44px rail, which is a different thing: it takes the page list with it,
+  /// and the page list is what you are reading while you write. This takes
+  /// only the column you are not looking at, and the navigator keeps the
+  /// width it no longer spends on it — which is where the extra space comes
+  /// from.
+  bool navSectionsCollapsed = false;
+
   /// The Home surface (favourites + recents) shown in the pages pane.
   /// Transient by design: selecting any page returns the pane to that page's
   /// section, so Home behaves like a springboard rather than a place you can
@@ -4412,6 +4423,16 @@ class AppState extends ChangeNotifier
   void toggleNavCollapsed() {
     navCollapsed = !navCollapsed;
     _repo.setSetting('navCollapsed', navCollapsed);
+    notifyListeners();
+  }
+
+  void toggleNavSectionsCollapsed() {
+    navSectionsCollapsed = !navSectionsCollapsed;
+    _repo.setSetting('navSectionsCollapsed', navSectionsCollapsed);
+    // The navigator memo keys on this; without it the column folds away and
+    // the pane it left behind keeps yesterday's width until something else
+    // happens to rebuild it.
+    navRevision++;
     notifyListeners();
   }
 
@@ -5482,6 +5503,7 @@ class AppState extends ChangeNotifier
         ? collapsedPages.remove(id)
         : collapsedPages.add(id);
     navRevision++; // lengths can alias (one collapse + one expand); this can't
+    _rememberCollapsed();
     notifyListeners();
   }
 
@@ -6841,6 +6863,9 @@ class AppState extends ChangeNotifier
     if (npw is num) navPagesW = npw.toDouble().clamp(140, 320);
     final nc = _repo.getSetting('navCollapsed');
     if (nc is bool) navCollapsed = nc;
+    final nsc = _repo.getSetting('navSectionsCollapsed');
+    if (nsc is bool) navSectionsCollapsed = nsc;
+    loadCollapsedState();
     final slp = _repo.getSetting('sectionLastPage');
     if (slp is Map) {
       slp.forEach((k, v) {
@@ -8885,7 +8910,41 @@ class AppState extends ChangeNotifier
         ? collapsedGroups.remove(id)
         : collapsedGroups.add(id);
     navRevision++;
+    _rememberCollapsed();
     notifyListeners();
+  }
+
+  /// **What is folded away stays folded away across a restart.**
+  ///
+  /// The owner: *"it should remeber what groups are closed and open (both page
+  /// and section) when closing and opening the app."* Both sets were session
+  /// state, so a navigator somebody had tidied into three visible sections
+  /// came back fully unfolded every morning — and re-folding it is exactly the
+  /// work they did the collapsing to avoid.
+  ///
+  /// Stored as ids rather than as anything positional: a page moved, renamed
+  /// or re-parented keeps its id, so it keeps its state. An id that no longer
+  /// names anything is simply never asked about, and is dropped the next time
+  /// this writes.
+  void _rememberCollapsed() {
+    _repo.setSetting('collapsedPages', collapsedPages.toList());
+    _repo.setSetting('collapsedGroups', collapsedGroups.toList());
+  }
+
+  /// The other half of [_rememberCollapsed], read at startup.
+  ///
+  /// Public because it is a real seam rather than a test hook: restoring the
+  /// navigator's folds is one named step of bringing the workspace up, and
+  /// [init] does far too much else (schedulers, sync polling, a widget
+  /// binding) to be the only way to reach it.
+  void loadCollapsedState() {
+    for (final (key, into) in [
+      ('collapsedPages', collapsedPages),
+      ('collapsedGroups', collapsedGroups),
+    ]) {
+      final v = _repo.getSetting(key);
+      if (v is List) into.addAll(v.whereType<String>());
+    }
   }
 
   Future<void> deleteNode(String id) async {

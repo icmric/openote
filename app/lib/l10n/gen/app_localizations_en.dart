@@ -636,6 +636,12 @@ class LEn extends L {
   String get navCollapse => 'Collapse the navigator  (Ctrl+\\)';
 
   @override
+  String get navHideSections => 'Hide the section list';
+
+  @override
+  String get navShowSections => 'Show the section list';
+
+  @override
   String get navColour => 'Colour';
 
   @override

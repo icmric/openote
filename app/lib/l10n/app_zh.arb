@@ -163,6 +163,8 @@
   "navBinRetention": "这里的内容会在 {days} 天后被彻底删除。",
   "navClose": "关闭",
   "navCollapse": "收起导航栏  (Ctrl+\\)",
+  "navHideSections": "隐藏分区列表",
+  "navShowSections": "显示分区列表",
   "navColour": "颜色",
   "navColourDefault": "默认",
   "navComingUp": "即将到来",

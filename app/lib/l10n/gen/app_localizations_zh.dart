@@ -614,6 +614,12 @@ class LZh extends L {
   String get navCollapse => '收起导航栏  (Ctrl+\\)';
 
   @override
+  String get navHideSections => '隐藏分区列表';
+
+  @override
+  String get navShowSections => '显示分区列表';
+
+  @override
   String get navColour => '颜色';
 
   @override

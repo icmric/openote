@@ -1085,6 +1085,18 @@ abstract class L {
   /// **'Collapse the navigator  (Ctrl+\\)'**
   String get navCollapse;
 
+  /// Tooltip on the button that folds the sections column away to give the page more room.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide the section list'**
+  String get navHideSections;
+
+  /// Tooltip on the same button when the sections column is already folded away.
+  ///
+  /// In en, this message translates to:
+  /// **'Show the section list'**
+  String get navShowSections;
+
   /// Label beside the row of colours a section can be given.
   ///
   /// In en, this message translates to:

@@ -636,6 +636,12 @@ class LFr extends L {
   String get navCollapse => 'Replier le navigateur  (Ctrl+\\)';
 
   @override
+  String get navHideSections => 'Masquer la liste des sections';
+
+  @override
+  String get navShowSections => 'Afficher la liste des sections';
+
+  @override
   String get navColour => 'Couleur';
 
   @override

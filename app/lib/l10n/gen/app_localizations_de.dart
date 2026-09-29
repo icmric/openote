@@ -636,6 +636,12 @@ class LDe extends L {
   String get navCollapse => 'Navigator einklappen  (Strg+\\)';
 
   @override
+  String get navHideSections => 'Abschnittsliste ausblenden';
+
+  @override
+  String get navShowSections => 'Abschnittsliste einblenden';
+
+  @override
   String get navColour => 'Farbe';
 
   @override

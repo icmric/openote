@@ -163,6 +163,8 @@
   "navBinRetention": "Ce qui est ici est supprimé définitivement au bout de {days} jours.",
   "navClose": "Fermer",
   "navCollapse": "Replier le navigateur  (Ctrl+\\)",
+  "navHideSections": "Masquer la liste des sections",
+  "navShowSections": "Afficher la liste des sections",
   "navColour": "Couleur",
   "navColourDefault": "Par défaut",
   "navComingUp": "À VENIR",

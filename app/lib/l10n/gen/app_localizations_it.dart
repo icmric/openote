@@ -637,6 +637,12 @@ class LIt extends L {
   String get navCollapse => 'Chiudi il navigatore  (Ctrl+\\)';
 
   @override
+  String get navHideSections => 'Nascondi l\'elenco delle sezioni';
+
+  @override
+  String get navShowSections => 'Mostra l\'elenco delle sezioni';
+
+  @override
   String get navColour => 'Colore';
 
   @override

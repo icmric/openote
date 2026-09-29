@@ -191,7 +191,10 @@ List<InsertItem> get kInsertItems =>
 /// A test asserts this names every item in the catalog exactly once, so the
 /// two cannot drift apart.
 const List<String> kRibbonOrder = [
-  'text',
+  // No 'text'. A click anywhere on the page already makes a text box, and
+  // clicking OUT of one now makes the next — so the button was a third way to
+  // do the thing the page does when you click it. The owner: *"please remove
+  // the text box option from the insert window, its redundant now"*.
   'equation',
   'code',
   'table',
@@ -249,25 +252,6 @@ List<InsertItem> get kMenuItemsAndExtras => [
 /// elsewhere, and pointing at something that already exists.
 final List<InsertGroup> kInsertGroups = [
   InsertGroup(title: (l) => l.insertGroupWrite, items: [
-    InsertItem(
-      id: 'text',
-      icon: Icons.text_fields,
-      label: (l) => l.insertTextBox,
-      // Not on the right-click menu: a click on the page already makes one,
-      // and a menu row that repeats the gesture you used to open it is
-      // clutter. On the ribbon because that is where it has always been.
-      onMenu: false,
-      size: const Size(320, 60),
-      run: (context, app, at) async {
-        final b = app.addBlock(Block(
-            type: BlockType.text,
-            x: at.dx,
-            y: at.dy,
-            w: 320,
-            content: {'text': ''}));
-        app.select(b.id, edit: true);
-      },
-    ),
     InsertItem(
       id: 'equation',
       icon: Icons.functions,

@@ -169,7 +169,12 @@ class _SidebarState extends State<Sidebar> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Container(
-          width: app.navSectionsW + app.navPagesW,
+          // The sections column folded away is width the navigator stops
+          // spending, which is the whole point of folding it — see
+          // [AppState.navSectionsCollapsed].
+          width: app.navSectionsCollapsed
+              ? app.navPagesW
+              : app.navSectionsW + app.navPagesW,
           color: context.surfaces.chrome2,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -387,23 +392,27 @@ class _SidebarState extends State<Sidebar> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(
-          width: app.navSectionsW,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _HomeTile(app: app),
-              Expanded(child: _sectionsColumn(context)),
-            ],
+        // Both of these go together: a drag handle for a column that is not
+        // there resizes nothing and sits in the way of the pages.
+        if (!app.navSectionsCollapsed) ...[
+          SizedBox(
+            width: app.navSectionsW,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _HomeTile(app: app),
+                Expanded(child: _sectionsColumn(context)),
+              ],
+            ),
           ),
-        ),
-        _VDragHandle(
-          onDrag: (dx) {
-            app.navSectionsW = (app.navSectionsW + dx).clamp(96.0, 220.0);
-            app.refresh();
-          },
-          onEnd: () => app.setNavSectionsW(app.navSectionsW),
-        ),
+          _VDragHandle(
+            onDrag: (dx) {
+              app.navSectionsW = (app.navSectionsW + dx).clamp(96.0, 220.0);
+              app.refresh();
+            },
+            onEnd: () => app.setNavSectionsW(app.navSectionsW),
+          ),
+        ],
         // The pages pane sits on the lighter surface colour — the same
         // two-tone depth cue the canvas already uses, no new tokens.
         Expanded(
@@ -1168,6 +1177,25 @@ class _NotebookHeader extends StatelessWidget {
                   ),
                 ),
                 const Icon(Icons.unfold_more, size: 16),
+                // **Beside the one that folds the whole navigator**, because
+                // it is the same question asked about a smaller part of it.
+                // Not in the pages pane's own header, which would read better
+                // and is not drawn on Home — and a button you can fold the
+                // sections away with but then cannot find again is worse than
+                // no button at all.
+                IconButton(
+                  icon: Icon(
+                      app.navSectionsCollapsed
+                          ? Icons.chevron_right
+                          : Icons.chevron_left,
+                      size: 16),
+                  tooltip: app.navSectionsCollapsed
+                      ? l.navShowSections
+                      : l.navHideSections,
+                  isSelected: app.navSectionsCollapsed,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: app.toggleNavSectionsCollapsed,
+                ),
                 IconButton(
                   icon: const Icon(Icons.keyboard_double_arrow_left, size: 16),
                   tooltip: l.navCollapse,

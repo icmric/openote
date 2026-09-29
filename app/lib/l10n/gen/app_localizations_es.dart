@@ -636,6 +636,12 @@ class LEs extends L {
   String get navCollapse => 'Plegar el navegador  (Ctrl+\\)';
 
   @override
+  String get navHideSections => 'Ocultar la lista de secciones';
+
+  @override
+  String get navShowSections => 'Mostrar la lista de secciones';
+
+  @override
   String get navColour => 'Color';
 
   @override

@@ -65,11 +65,11 @@ void main() {
   }
 
   group('the catalog itself', () {
-    testWidgets('is thirteen things, grouped for the menu', (tester) async {
+    testWidgets('is twelve things, grouped for the menu', (tester) async {
       final l = await _translations(tester);
       expect(kInsertGroups.map((g) => g.title(l)).toList(),
           ['Write', 'Bring in', 'Link up']);
-      expect(kInsertItems.length, 13);
+      expect(kInsertItems.length, 12);
     });
 
     test('the ribbon is one row, in the order it has always been', () {
@@ -77,7 +77,7 @@ void main() {
       // the words off four of them: "i dont love the new menu stuff though, i
       // think we go back to what we had before."
       expect(kInsertRibbon.map((i) => i.id).toList(), [
-        'text', 'equation', 'code', 'table', 'board', 'image', 'pdf',
+        'equation', 'code', 'table', 'board', 'image', 'pdf',
         'file', 'video', 'flashcard', 'pagelink', 'portal', 'template',
       ]);
     });
@@ -98,11 +98,11 @@ void main() {
       }
     });
 
-    test('three of them are on the ribbon only, and say why', () {
+    test('two of them are on the ribbon only, and say why', () {
       // Each is a command the right-click GESTURE already performs, or one
       // that is not about a point on the page at all.
       final menu = kMenuGroups.expand((g) => g.items).map((i) => i.id).toSet();
-      for (final id in ['text', 'flashcard', 'template']) {
+      for (final id in ['flashcard', 'template']) {
         expect(kInsertItems.map((i) => i.id), contains(id), reason: id);
         expect(menu.contains(id), isFalse, reason: id);
       }
@@ -237,10 +237,12 @@ void main() {
               reason: i.id);
         }
       }
-      // And the three the ribbon has that the right-click menu does not.
-      expect(find.text('Text box'), findsOneWidget);
+      // And the two the ribbon has that the right-click menu does not.
       expect(find.text('Flashcard'), findsOneWidget);
       expect(find.text('Template'), findsOneWidget);
+      // "Text box" is gone from both: a click on the page makes one, and so
+      // does clicking out of one, which is two ways already.
+      expect(find.text('Text box'), findsNothing);
       app.cancelPendingSave();
     });
 

@@ -835,6 +835,14 @@
   "@navCollapse": {
     "description": "Tooltip. Keep the shortcut in brackets as typed."
   },
+  "navHideSections": "Hide the section list",
+  "@navHideSections": {
+    "description": "Tooltip on the button that folds the sections column away to give the page more room."
+  },
+  "navShowSections": "Show the section list",
+  "@navShowSections": {
+    "description": "Tooltip on the same button when the sections column is already folded away."
+  },
   "navColour": "Colour",
   "@navColour": {
     "description": "Label beside the row of colours a section can be given."
