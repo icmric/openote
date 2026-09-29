@@ -60,6 +60,7 @@ import '../l10n/l10n.dart';
 import '../state/app_state.dart';
 import '../store/media_store.dart';
 import 'insert_portal_dialog.dart';
+import 'link_dialog.dart';
 import 'media_link_dialog.dart';
 import 'onote_dialog.dart';
 import 'sidebar.dart';
@@ -168,9 +169,28 @@ class InsertGroup {
   final List<InsertItem> items;
 }
 
-/// Where a ribbon press should put [item] — centred on what you are looking
-/// at, which is what every Insert button has always done.
+/// **Where a ribbon press should put [item]: under whatever you were just
+/// writing in, or centred on the view when you were not writing in
+/// anything.**
+///
+/// The owner, about the code block: *"It should also insert it either where
+/// the cursor is or below the last edited text box, if the cursor is not on
+/// the canvas in an otherwise empty box."* Centring on the viewport was the
+/// only rule, so a code block for the paragraph you were mid-way through
+/// landed in the middle of the screen — often on top of something, always
+/// away from the thing it belongs to.
+///
+/// Applied to every item rather than to the code block alone. The complaint
+/// is not about code: a table, an equation and a picture all belong beside
+/// the writing that asked for them, and one Insert button that lands where
+/// you are working while the next lands in the middle of the screen would be
+/// the stranger behaviour of the two.
+///
+/// The exception is an item that lays ITSELF out down the page — the PDF
+/// importers, which declare [Size.zero] and ignore this point entirely.
 Offset insertAnchor(AppState app, InsertItem item) {
+  final near = app.insertNeighbour;
+  if (near != null && item.size != Size.zero) return app.belowBlock(near);
   final c = app.canvas.screenToPage(
       Offset(app.canvas.viewport.width / 2, app.canvas.viewport.height / 2));
   return Offset(c.dx - item.size.width / 2, c.dy - item.size.height / 2);
@@ -190,7 +210,10 @@ List<InsertItem> get kInsertItems =>
 /// A test asserts this names every item in the catalog exactly once, so the
 /// two cannot drift apart.
 const List<String> kRibbonOrder = [
-  'text',
+  // No 'text'. A click anywhere on the page already makes a text box, and
+  // clicking OUT of one now makes the next — so the button was a third way to
+  // do the thing the page does when you click it. The owner: *"please remove
+  // the text box option from the insert window, its redundant now"*.
   'equation',
   'code',
   'table',
@@ -249,25 +272,6 @@ List<InsertItem> get kMenuItemsAndExtras => [
 final List<InsertGroup> kInsertGroups = [
   InsertGroup(title: (l) => l.insertGroupWrite, items: [
     InsertItem(
-      id: 'text',
-      icon: Icons.text_fields,
-      label: (l) => l.insertTextBox,
-      // Not on the right-click menu: a click on the page already makes one,
-      // and a menu row that repeats the gesture you used to open it is
-      // clutter. On the ribbon because that is where it has always been.
-      onMenu: false,
-      size: const Size(320, 60),
-      run: (context, app, at) async {
-        final b = app.addBlock(Block(
-            type: BlockType.text,
-            x: at.dx,
-            y: at.dy,
-            w: 320,
-            content: {'text': ''}));
-        app.select(b.id, edit: true);
-      },
-    ),
-    InsertItem(
       id: 'equation',
       icon: Icons.functions,
       label: (l) => l.insertEquation,
@@ -291,19 +295,15 @@ final List<InsertGroup> kInsertGroups = [
           run: insertTableFromPickedFile,
         ),
       ],
+      // Inline when a text box is being edited, a block of its own
+      // otherwise — the same rule "insert a page link" already follows, and
+      // the one §5.1 states for every type that can be both.
       run: (context, app, at) async {
-        final b = app.addBlock(Block(
-            type: BlockType.table,
-            x: at.dx,
-            y: at.dy,
-            w: 360,
-            content: {
-              'cells': [
-                ['Header', 'Header'],
-                ['', ''],
-              ]
-            }));
-        app.select(b.id, edit: true);
+        if (app.canFormatText &&
+            (app.activeSession?.startInlineTable() ?? false)) {
+          return;
+        }
+        app.insertTable(at: at);
       },
     ),
     InsertItem(
@@ -317,7 +317,9 @@ final List<InsertGroup> kInsertGroups = [
             x: at.dx,
             y: at.dy,
             w: 400,
-            content: {'language': 'text', 'source': ''}));
+            // Plain text until somebody has said otherwise, and whatever
+            // they last said after that — see [AppState.lastCodeLanguage].
+            content: {'language': app.lastCodeLanguage, 'source': ''}));
         app.select(b.id, edit: true);
       },
     ),
@@ -660,9 +662,40 @@ Future<void> copyVideoIntoNotebook(
   }
 }
 
+/// **Insert ▸ Link — the same door Ctrl+K opens.**
+///
+/// The owner: *"i think we should change this to 'insert link' rather than
+/// 'page link' as that makes me think that it only allows linking to internal
+/// pages, which it doesnt."* The old label was accurate — this really did only
+/// offer other pages, and there was no route to a web address from the menu at
+/// all — but the instinct is the useful thing: somebody reaching for "link"
+/// should not have to know in advance whether the address is inside this
+/// notebook. Worth noting the translations had already drifted to the honest
+/// word: French, Spanish and Italian all say simply "link".
+///
+/// So with a box open this is Ctrl+K by another route, and the page picker is
+/// a section of that dialog. With nothing open there is no text to attach
+/// anything to, and the old behaviour — pick a page, drop a link block on the
+/// canvas — is still the only sensible one.
 Future<void> insertPageLink(
     BuildContext context, AppState app, Offset at) async {
-  final pages = app.pages.where((p) => p.id != app.pageId).toList();
+  final pages = [
+    for (final p in app.pages)
+      if (p.id != app.pageId) (id: p.id, title: p.title)
+  ];
+
+  final ae = app.activeEditor;
+  if (ae != null && app.canFormatText) {
+    if (await runLinkFlow(context, ae.controller, pages: pages)) {
+      app.commitActiveEditor();
+    }
+    return;
+  }
+
+  // Nothing was awaited on the way here, but the analyzer cannot see that past
+  // the branch above — and a guard that is merely redundant is cheaper than a
+  // lint everyone learns to scroll past.
+  if (!context.mounted) return;
   if (pages.isEmpty) {
     _say(context, 'No other pages to link to yet.');
     return;
@@ -685,14 +718,7 @@ Future<void> insertPageLink(
     ),
   );
   if (choice == null) return;
-  // If a text box is being edited, insert inline at the caret; otherwise drop
-  // a new link block.
-  if (app.activeEditor != null && app.canFormatText) {
-    final title = app.node(choice)?.title ?? 'page';
-    app.insertTextAtActiveCursor('[[$title|$choice]]');
-  } else {
-    app.insertPageLink(choice);
-  }
+  app.insertPageLink(choice);
 }
 
 /// Import a PDF, with progress.

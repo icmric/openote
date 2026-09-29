@@ -8,6 +8,19 @@
 // recolouring it all worked; the only way to remove it was the Delete key,
 // which is not on a tablet somebody is holding in one hand with a pen in the
 // other — the exact person the lasso is for.
+//
+// It later grew too eager, and the same owner said so: *"i would only want
+// this to appear when i have multiple things selected rather than also when i
+// have a single thing selected, given this means that when im editing a text
+// box we have a bin button and the cross button, and the bin button makes it
+// feel messy"*. A selected block carries a cross on its own move bar, so one
+// selection was offering two ways to delete one thing.
+//
+// So the rule is "never two deletes for one thing", which keeps both asks:
+// the bin is gone for a lone block that has its own cross, and still there
+// for a multiple selection — where the cross belongs to the primary block
+// alone — and for a pen in hand, where the bar is suppressed and the tablet
+// this was all built for still has no Delete key.
 
 import 'dart:io';
 
@@ -97,21 +110,84 @@ void main() {
     await drain(tester);
   });
 
-  testWidgets('selected ink can be deleted without a keyboard', (tester) async {
+  testWidgets('a pen cannot be in hand with something selected', (tester) async {
+    // Why the single-selection rule below is safe. This button was built for
+    // ink on a tablet with no Delete key, and the worry is that hiding it for
+    // one selected thing strands that person. It cannot: picking up anything
+    // that draws clears the selection, so the only tools that can be in hand
+    // while something is selected are the ones that leave the block's own bar
+    // — and its cross — on screen.
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-    final app = await canvas(tester, 'onote_del_ink_');
+    final app = await canvas(tester, 'onote_del_pen_');
+    final b = app.addBlock(ink());
+    app.select(b.id);
+    expect(app.selectedIds, isNotEmpty, reason: 'precondition');
+
+    app.setTool(Tool.pen);
+    expect(app.selectedIds, isEmpty,
+        reason: 'a pen deselects, so "selected, with a pen" is not a state '
+            'this app can be in');
+    await pump(tester, app);
+    expect(find.byIcon(Icons.delete_outline), findsNothing);
+    await drain(tester);
+  });
+
+  testWidgets('one selected block does not get a second delete button',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await canvas(tester, 'onote_del_one_');
     final b = app.addBlock(ink());
     app.select(b.id);
     await pump(tester, app);
 
+    expect(find.byIcon(Icons.delete_outline), findsNothing,
+        reason: 'the block already carries a cross on its own bar');
+    expect(app.showSelectionDelete, isFalse);
+    await drain(tester);
+  });
+
+  testWidgets('a text box being written in does not get one either',
+      (tester) async {
+    // The reported case, in the words it was reported in: a bin and a cross
+    // either side of the same box.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await canvas(tester, 'onote_del_text_');
+    final b = app.addBlock(Block(
+        type: BlockType.text,
+        x: 40,
+        y: 60,
+        w: 300,
+        content: {'text': 'writing', 'autoWidth': false}));
+    app.select(b.id, edit: true);
+    await pump(tester, app);
+
+    expect(find.byIcon(Icons.delete_outline), findsNothing);
+    await drain(tester);
+  });
+
+  testWidgets('two selected blocks do get one', (tester) async {
+    // A cross belongs to the primary block and says nothing about the rest,
+    // so the floating button is the only control that means "all of this".
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await canvas(tester, 'onote_del_two_');
+    final a = app.addBlock(ink());
+    final b = app.addBlock(Block(
+        type: BlockType.text,
+        x: 40,
+        y: 400,
+        w: 300,
+        content: {'text': 'also this', 'autoWidth': false}));
+    app.select(a.id);
+    app.select(b.id, additive: true);
+    await pump(tester, app);
+
+    expect(app.selectedIds.length, 2, reason: 'precondition');
     final button = find.byIcon(Icons.delete_outline);
     expect(button, findsOneWidget);
     await tester.tap(button);
     await tester.pump();
-
-    expect(app.blocks.any((x) => x.id == b.id), isFalse);
-    expect(find.byIcon(Icons.delete_outline), findsNothing,
-        reason: 'and it goes away with the thing it was about');
+    expect(app.blocks.where((x) => x.id == a.id || x.id == b.id), isEmpty,
+        reason: 'and it takes the whole selection, not just the primary');
     await drain(tester);
   });
 

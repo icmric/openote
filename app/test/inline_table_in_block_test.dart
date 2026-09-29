@@ -1,0 +1,901 @@
+// The wiring, end to end through a real text block.
+//
+// `inline_table_test.dart` mounts the controller and the table directly, which
+// is where the behaviour is. This file asserts the thing that file cannot: that
+// the EDITOR actually hands an atom a host — in both of its halves. The read
+// view and the editing session build that host in two different places
+// (`buildReadOnly` and `openSession`), and a table that draws in one and not
+// the other is the shape-change this whole piece of work exists to remove.
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:openote/editor/block_atom_host.dart';
+import 'package:openote/editor/inline_table.dart';
+import 'package:openote/editor/text_block_view.dart';
+import 'package:openote/l10n/l10n.dart';
+import 'package:openote/model/inline_atom.dart';
+import 'package:openote/model/models.dart';
+import 'package:openote/state/app_state.dart';
+import 'package:openote/store/repository.dart';
+import 'package:openote/theme/onote_theme.dart';
+
+/// Rendering a block never reaches storage, and a real repository would drag
+/// SQLite into a pure widget test.
+class _NoopRepo implements Repository {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+void main() {
+  late AppState app;
+  late Block block;
+
+  setUp(() {
+    app = AppState(_NoopRepo())
+      ..notebookId = 'nb'
+      ..pageId = 'pg'
+      // The editing session debounces a spell check on a Timer, and a pending
+      // timer fails the test after the tree is torn down. Nothing here is
+      // about spelling.
+      ..spellCheckEnabled = false;
+    const atom = InlineAtom(id: 't1', type: 'table', content: {
+      'cells': [
+        ['Element', 'Symbol'],
+        ['Sodium', 'Na'],
+      ]
+    });
+    final content = <String, dynamic>{
+      'text': 'Results: ${atom.reference('2x2 table')} and it holds.',
+    };
+    InlineAtom.putIn(content, atom);
+    block = Block(type: BlockType.text, x: 0, y: 0, w: 520, content: content);
+    app.blocks = [block];
+  });
+
+  // A cell write marks the page dirty, which arms the save debounce; a pending
+  // timer fails the test once the tree is torn down.
+  tearDown(() => app.cancelPendingSave());
+
+  Future<void> pump(WidgetTester t) async {
+    await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
+      theme: onoteTheme(Brightness.light),
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 520,
+            child: TextBlockView(block: block, app: app),
+          ),
+        ),
+      ),
+    ));
+    await t.pumpAndSettle();
+  }
+
+  group('Tab makes a table, the way OneNote does', () {
+    /// A paragraph with [text] in it, open for editing, focused.
+    Future<Block> typing(WidgetTester t, String text) async {
+      final b = Block(
+          type: BlockType.text, x: 0, y: 0, w: 520, content: {'text': text});
+      app.blocks = [b];
+      block = b;
+      app.editingBlockId = b.id;
+      await pump(t);
+      await t.tap(find.byType(TextField).first);
+      await t.pumpAndSettle();
+      // The caret at the end, which is where it is after typing the line.
+      final field = t.widget<TextField>(find.byType(TextField).first);
+      field.controller!.selection =
+          TextSelection.collapsed(offset: text.length);
+      await t.pumpAndSettle();
+      return b;
+    }
+
+    testWidgets('the line you are on becomes the first cell', (t) async {
+      final b = await typing(t, 'Element');
+      await t.sendKeyEvent(LogicalKeyboardKey.tab);
+      await t.pumpAndSettle();
+
+      expect(tablesIn(b.content).single.cells, [
+        ['Element', '']
+      ], reason: 'what you had typed is the first cell, not lost and not '
+          'left sitting above the table');
+      expect(b.content['text'], contains('onote://atom/'),
+          reason: 'and the line is the reference that stands for it');
+
+      final fields = t.widgetList<TextField>(find.byType(TextField)).toList();
+      expect(fields, hasLength(3), reason: 'the paragraph and two cells');
+      expect(fields[2].focusNode?.hasFocus, isTrue,
+          reason: 'the caret lands in the SECOND cell — the first one is the '
+              'word you just finished typing');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('at the START of a line it still indents, as it always did',
+        (t) async {
+      // The narrow half of OneNote's rule, and the reason it is narrow: Tab
+      // at the start of a line is how an outline is built, and taking that
+      // away to gain a table would be a trade nobody asked for.
+      final b = await typing(t, 'Element');
+      final field = t.widget<TextField>(find.byType(TextField).first);
+      field.controller!.selection = const TextSelection.collapsed(offset: 0);
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.tab);
+      await t.pumpAndSettle();
+
+      expect(tablesIn(b.content), isEmpty);
+      expect(b.content['text'], '  Element',
+          reason: 'indented, which is what Tab at a line start has meant all '
+              'along');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('but Tab still nests a list, which it has always done',
+        (t) async {
+      final b = await typing(t, '- first\n- second');
+      await t.sendKeyEvent(LogicalKeyboardKey.tab);
+      await t.pumpAndSettle();
+
+      expect(tablesIn(b.content), isEmpty,
+          reason: 'Tab inside a list has meant nesting for as long as lists '
+              'have, and that wins');
+      expect(find.byType(Table), findsNothing);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and Insert -> Table puts one in the paragraph you are in',
+        (t) async {
+      // The ribbon is an explicit request, so it does not care where the
+      // caret is — but it goes INLINE while a paragraph is open, the same
+      // rule "insert a page link" already follows.
+      final b = await typing(t, 'Element');
+      final field = t.widget<TextField>(find.byType(TextField).first);
+      field.controller!.selection = const TextSelection.collapsed(offset: 0);
+      await t.pumpAndSettle();
+
+      expect(app.activeSession!.startInlineTable(), isTrue,
+          reason: 'at the very start of the line, where Tab would decline');
+      await t.pumpAndSettle();
+      expect(tablesIn(b.content).single.cells, [
+        ['Element', '']
+      ]);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and never nests a table inside a table', (t) async {
+      // The line already holds a reference. Making it the first cell of a
+      // new table would not be a nested table, it would be a lost one.
+      await pump(t);
+      app.editingBlockId = block.id;
+      await pump(t);
+      await t.tap(find.byType(TextField).first);
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.tab);
+      await t.pumpAndSettle();
+
+      expect(tablesIn(block.content), hasLength(1));
+      expect(find.byType(Table), findsOneWidget);
+      app.cancelPendingSave();
+    });
+  });
+
+  testWidgets('a new table opens with the caret in its first cell', (t) async {
+    // You asked for a table because you are about to fill one in. The click
+    // that made it says which cell, and the table consumes that once as it
+    // opens — so it does not jump back there a quarter of an hour later.
+    final made = app.insertTable(at: const Offset(0, 0));
+    block = made;
+    await pump(t);
+    final cells = t.widgetList<TextField>(find.byType(TextField)).toList();
+    expect(cells, hasLength(5), reason: 'the paragraph, and four cells');
+    expect(cells[1].focusNode?.hasFocus, isTrue,
+        reason: 'the first cell, not the paragraph beside it');
+    app.cancelPendingSave();
+  });
+
+  test('the box is at least as wide as the table inside it', () {
+    // The reference is stripped before the paragraph is measured — forty
+    // characters of URL would pin the box to its maximum — which leaves the
+    // measurement blind to the thing the reference stands for unless it asks.
+    // A box too narrow does not overflow; the table quietly scales down, so
+    // the failure would have been permanent and silent.
+    final wide = Block(
+      type: BlockType.text,
+      x: 0,
+      y: 0,
+      w: 200,
+      content: block.content,
+    );
+    final style = TextBlockView.baseStyle(wide, dark: false);
+    final want = tableNaturalWidth(tablesIn(wide.content).single,
+        style.copyWith(fontWeight: FontWeight.w600));
+    expect(TextBlockView.autoWidth(wide, dark: false),
+        greaterThanOrEqualTo(want));
+  });
+
+  testWidgets('a table growing does not turn its box into a manual one',
+      (t) async {
+    // A table asks for room the instant it is drawn narrower than it wants,
+    // which is true for a frame whenever it grows. The measurement that sizes
+    // the box already accounts for tables, so the next frame is wider anyway
+    // — but the request used to latch the box to a manual width on the
+    // strength of that one frame, and a box that has stopped measuring itself
+    // never wraps again and never shrinks back. The owner watched it "expand
+    // with the typed text and not line wrap anything again until it hits its
+    // max width", which is exactly what that latch does.
+    //
+    // In a box NARROWER than the table wants, so the request really is made.
+    block.w = 220;
+    app.editingBlockId = block.id;
+    await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
+      theme: onoteTheme(Brightness.light),
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 220,
+            child: TextBlockView(block: block, app: app),
+          ),
+        ),
+      ),
+    ));
+    await t.pumpAndSettle();
+    await t.tap(find.byType(TextField).at(1));
+    await t.pumpAndSettle();
+
+    const typed = 'Element symbol and';
+    t.testTextInput.updateEditingValue(const TextEditingValue(
+      text: typed,
+      selection: TextSelection.collapsed(offset: typed.length),
+    ));
+    await t.pumpAndSettle();
+
+    expect(block.content['autoWidth'], isNot(false),
+        reason: 'the box can still size itself to what is in it');
+    expect(TextBlockView.autoWidth(block, dark: false),
+        greaterThan(220.0),
+        reason: 'and it has — without anybody having to drag it');
+    app.cancelPendingSave();
+  });
+
+  test('a sentence beside a table gets room for BOTH', () {
+    // The owner, after the box stopped snapping to its maximum: *"although it
+    // pushed text onto the next line which isnt ideal"*. Quite so — the words
+    // and the table are drawn one after the other, so the room they need is
+    // the two added together. Taking the larger of the two instead is what
+    // pushed the sentence onto the line below its own table.
+    Block withText(String t) => Block(
+        type: BlockType.text,
+        x: 0,
+        y: 0,
+        w: 200,
+        content: Map<String, dynamic>.from(block.content)..['text'] = t);
+
+    final ref = InlineAtom.allIn(block.content)['t1']!.reference('2x2 table');
+    final alone = TextBlockView.autoWidth(withText(ref), dark: false);
+    final beside =
+        TextBlockView.autoWidth(withText('Results: $ref and it holds.'), dark: false);
+
+    expect(beside, greaterThan(alone),
+        reason: 'the sentence needs room of its own, beside the table rather '
+            'than instead of it');
+    expect(beside, lessThan(TextBlockView.maxAutoW),
+        reason: 'and it is the WORDS being measured, not ninety characters of '
+            'the reference they sit next to');
+  });
+
+  testWidgets('a table in a paragraph is drawn when the block is read',
+      (t) async {
+    await pump(t);
+    expect(find.byType(Table), findsOneWidget);
+    expect(find.text('Sodium', findRichText: true), findsOneWidget);
+    expect(find.textContaining('onote://atom', findRichText: true), findsNothing,
+        reason: 'the reference stands for the table; it is not shown beside it');
+  });
+
+  testWidgets('and when the block is being edited', (t) async {
+    await pump(t);
+    app.editingBlockId = block.id;
+    await pump(t);
+    expect(find.byType(Table), findsOneWidget,
+        reason: 'the session builds its own host; a table that drew only in '
+            'read mode would turn into a URL under the caret');
+  });
+
+  testWidgets('the paragraph gives up its keyboard the FRAME a cell takes it',
+      (t) async {
+    // **The third gate, and why one frame of it matters.**
+    //
+    // A cell is a real `TextField` nested inside the paragraph's own, and a
+    // host `FocusNode` reports `hasFocus` true while any DESCENDANT holds the
+    // primary focus. So the paragraph never learns it has stopped being the
+    // field being typed into: it keeps drawing its caret and keeps its
+    // platform text-input connection open, and which of the two the next
+    // character reaches comes down to attach order.
+    //
+    // The table announces that it has taken the keyboard — but it announces
+    // it POST-FRAME, because focus moving from one cell to the next passes
+    // through "nobody" and a signal sent mid-move would flap. That leaves a
+    // frame in which a cell has the caret and the paragraph still believes it
+    // does, and a frame is all a keystroke needs.
+    //
+    // So the gate is read from the focus tree, which cannot be stale:
+    // `hasFocus` without `hasPrimaryFocus` means a descendant has it. This
+    // pumps exactly ONE frame after the tap, before any notification could
+    // have been delivered.
+    app.editingBlockId = block.id;
+    await pump(t);
+    await t.tap(find.byType(TextField).at(1)); // the first cell
+    await t.pump();
+
+    final host = t.widget<TextField>(find.byType(TextField).first);
+    expect(host.readOnly, isTrue,
+        reason: 'the paragraph must let go of the keyboard in the same frame '
+            'the cell takes it, not in the one after');
+    expect(host.showCursor, isFalse,
+        reason: 'and stop blinking a second caret beside the cell it is in');
+  });
+
+  group('a cell answers its own editing keys', () {
+    // **A cell is a text field inside a text field**, and `EditableText`
+    // publishes most of its editing actions through `Action.overridable` so
+    // that a widget above a field can change what a key does inside it. The
+    // paragraph IS above the cell, so it was found as the override and
+    // answered for it: its action ran against the paragraph's own text and
+    // posted the result at the cell. See [_CellsOwnAction] in
+    // inline_table.dart. Both of these are the owner's, from real use.
+
+    /// Into the first cell, with [text] typed into it.
+    Future<TextEditingController> inCell(WidgetTester t, String text) async {
+      app.editingBlockId = block.id;
+      await pump(t);
+      await t.tap(find.byType(TextField).at(1));
+      await t.pumpAndSettle();
+      t.testTextInput.updateEditingValue(TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      ));
+      await t.pumpAndSettle();
+      return t.widget<TextField>(find.byType(TextField).at(1)).controller!;
+    }
+
+    Future<void> chord(WidgetTester t, LogicalKeyboardKey key,
+        {bool shift = false}) async {
+      await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      if (shift) await t.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await t.sendKeyEvent(key);
+      if (shift) await t.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await t.pumpAndSettle();
+    }
+
+    testWidgets('Ctrl+Backspace deletes a word', (t) async {
+      final c = await inCell(t, 'hello world');
+      await chord(t, LogicalKeyboardKey.backspace);
+      expect(c.text, 'hello ',
+          reason: 'the owner: "i am unable to backspace words". This resolved '
+              'to the PARAGRAPH\'s delete action, which is disabled while a '
+              'cell holds the keyboard — so the key did nothing at all');
+      expect(tablesIn(block.content).single.cells[0][0], 'hello ',
+          reason: 'and it reached the payload, like any other cell edit');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('Ctrl+Z takes back a cell edit, and not the whole table',
+        (t) async {
+      // The owner: *"pressing ctrl + z after making several edits to a table
+      // just deletes the whole table rather than undoing the last edit"*.
+      //
+      // Undo and redo are made overridable by `UndoHistory`, one layer below
+      // the actions `EditableText` publishes — so they went on resolving to
+      // the paragraph after the other nineteen were claimed. The paragraph's
+      // history reaches back past the table's own reference, and taking that
+      // away takes the table with it: the payload is still in the block and
+      // nothing points at it any more.
+      //
+      // **This does NOT reproduce that.** The block here mounts with the
+      // reference already in its text, so the paragraph's history has no
+      // state that predates it and nothing for its undo to strip. Reproducing
+      // the report needs the table MADE by Tab inside the session, which is
+      // `inline_table_shell_test.dart`'s ground, not this file's. What is
+      // pinned here is the weaker half that this fixture can honestly show:
+      // a cell's Ctrl+Z does not come back holding the paragraph's value.
+      final c = await inCell(t, 'Potassium');
+      final host =
+          t.widget<TextField>(find.byType(TextField).first).controller!;
+
+      await chord(t, LogicalKeyboardKey.keyZ);
+
+      expect(host.text, contains('onote://atom/t1'),
+          reason: 'the sentence still refers to the table, which is the only '
+              'thing keeping it in the note');
+      expect(tablesIn(block.content), hasLength(1),
+          reason: 'and the table itself is still there');
+      expect(c.text, isNot(contains(InlineAtom.scheme)),
+          reason: 'and the cell was never handed the paragraph\'s own value, '
+              'which is the other way this hijacking shows itself — see the '
+              'Ctrl+Shift+Left case below. Whether the cell had a step in its '
+              'history to take back at this instant is `UndoHistory`\'s '
+              'throttle, and not what this test is about');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('Ctrl+Z takes back a ROW, which no cell history knows about',
+        (t) async {
+      // The owner, after the fix above: *"undo in a table will undo typing
+      // now as expected, however it wont undo row creations (i.e. if i create
+      // a row and press ctrl + z, it wont remove it)."*
+      //
+      // Of course not — a cell is a text field and its history is its text.
+      // A row does not happen IN a field, so it is in no field's history, and
+      // a new row's first cell is brand new and therefore has none at all. So
+      // the cell answers while it has something to answer with, and the
+      // page's own stack answers when it does not.
+      app.editingBlockId = block.id;
+      await pump(t);
+      // The last cell of the 2x2, where Enter makes the next row — the header
+      // row's Enter means something else (it starts the body).
+      await t.tap(find.byType(TextField).at(4));
+      await t.pumpAndSettle();
+      expect(tablesIn(block.content).single.rows, 2);
+
+      await t.sendKeyEvent(LogicalKeyboardKey.enter);
+      await t.pumpAndSettle();
+      expect(tablesIn(block.content).single.rows, 3,
+          reason: 'the row this test is about');
+
+      await chord(t, LogicalKeyboardKey.keyZ);
+
+      // Read from the LIVE block, not the captured one: `app.undo()` restores
+      // the page from JSON, which replaces every `Block` object on it. The
+      // variable this fixture holds is detached from that moment on, and
+      // would report the row still there for ever.
+      final live = app.blocks.single.content;
+      expect(tablesIn(live).single.rows, 2,
+          reason: 'the row is gone — this did nothing at all before');
+      expect(tablesIn(live), hasLength(1),
+          reason: 'and the table itself is still there, which is the other '
+              'half of this and the first thing that went wrong');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('Ctrl+Shift+Left selects a word, and only in the cell',
+        (t) async {
+      final c = await inCell(t, 'hello world');
+      await chord(t, LogicalKeyboardKey.arrowLeft, shift: true);
+
+      expect(c.selection.baseOffset, 11);
+      expect(c.selection.extentOffset, 6,
+          reason: 'one word back, inside the cell');
+      expect(c.text, 'hello world',
+          reason: 'the owner: this "caused it to bug out and say to update '
+              'openote to view the table". The paragraph measured the word '
+              'boundary in its OWN text and handed the cell that whole value, '
+              'reference and all — and a cell has no atom host, so the only '
+              'thing it could draw was the alt text');
+      expect(c.text.contains(InlineAtom.scheme), isFalse);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and Ctrl+Left moves by a word without disturbing anything',
+        (t) async {
+      final c = await inCell(t, 'hello world');
+      await chord(t, LogicalKeyboardKey.arrowLeft);
+      expect(c.selection.isCollapsed, isTrue);
+      expect(c.selection.baseOffset, 6);
+      expect(c.text, 'hello world');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('cut, copy and paste are the cell\'s too', (t) async {
+      // The owner: *"cut, copy, and paste shortcuts dont work inside the box,
+      // like if i highlight some text and cut it nothing happens, and if i
+      // try to paste again nothing"*. Both halves are the paragraph
+      // answering: copy read its selection, which is collapsed while a cell
+      // has the keyboard, and paste is disabled on a read-only field — which
+      // the paragraph is, exactly while a cell has the keyboard.
+      var board = '';
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        switch (call.method) {
+          case 'Clipboard.setData':
+            board = (call.arguments as Map)['text'] as String;
+          case 'Clipboard.getData':
+            return <String, dynamic>{'text': board};
+          case 'Clipboard.hasStrings':
+            return <String, dynamic>{'value': board.isNotEmpty};
+        }
+        return null;
+      });
+      addTearDown(() => TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null));
+
+      final c = await inCell(t, 'hello world');
+      c.selection = const TextSelection(baseOffset: 6, extentOffset: 11);
+      await t.pumpAndSettle();
+
+      // Cut has no intent of its own: it is a copy that collapses.
+      await chord(t, LogicalKeyboardKey.keyX);
+      expect(board, 'world');
+      expect(c.text, 'hello ');
+
+      await chord(t, LogicalKeyboardKey.keyV);
+      expect(c.text, 'hello world');
+
+      await chord(t, LogicalKeyboardKey.keyA);
+      expect(c.selection.extentOffset, 11, reason: 'select all, in the cell');
+      await chord(t, LogicalKeyboardKey.keyC);
+      expect(board, 'hello world');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('the paragraph keeps its own caret through all of it',
+        (t) async {
+      await inCell(t, 'hello world');
+      final host =
+          t.widget<TextField>(find.byType(TextField).first).controller!;
+      final was = host.selection;
+      await chord(t, LogicalKeyboardKey.arrowLeft, shift: true);
+      await chord(t, LogicalKeyboardKey.backspace);
+      expect(host.selection, was,
+          reason: 'a key pressed in a cell is not the paragraph\'s business');
+      expect(host.text, contains(InlineAtom.scheme),
+          reason: 'and its reference is untouched');
+      app.cancelPendingSave();
+    });
+  });
+
+  group('the arrow keys step into it', () {
+    // The owner: *"if my cursor is at the end of the table but outside of it,
+    // i cannot use the arrow keys to navigate into it, it just gets rid of the
+    // cursor and never moves me into the table"*. The caret crossed the whole
+    // object in one step and came out the far side — right for a picture,
+    // wrong for something you can write in. An equation has stepped into
+    // itself from either side since v0.20; this is the same door.
+
+    /// The caret in the sentence, just past the table.
+    Future<TextEditingController> afterTheTable(WidgetTester t) async {
+      app.editingBlockId = block.id;
+      await pump(t);
+      final box = t.getRect(find.byType(Table));
+      await t.tapAt(Offset(box.right + 20, box.center.dy));
+      await t.pumpAndSettle();
+      final host =
+          t.widget<TextField>(find.byType(TextField).first).controller!;
+      expect(FocusManager.instance.primaryFocus?.debugLabel, isNot('tableCell'),
+          reason: 'the sentence has the caret to begin with');
+      return host;
+    }
+
+    int focusedField(WidgetTester t) => t
+        .widgetList<TextField>(find.byType(TextField))
+        .toList()
+        .indexWhere((f) => f.focusNode?.hasPrimaryFocus ?? false);
+
+    testWidgets('Left from just after it lands in the LAST cell', (t) async {
+      final host = await afterTheTable(t);
+      final ref = InlineAtom.rangeIn(host.text, 't1')!;
+      host.selection = TextSelection.collapsed(offset: ref.end);
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await t.pumpAndSettle();
+
+      // Field 0 is the paragraph; the cells follow in reading order, so the
+      // last of a 2x2 is field 4.
+      expect(focusedField(t), 4,
+          reason: 'coming from the right, you arrive at the right-hand end');
+      expect(host.selection.baseOffset, ref.end,
+          reason: 'and the sentence keeps its own caret where it was');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and Right from just before it lands in the first',
+        (t) async {
+      final host = await afterTheTable(t);
+      final ref = InlineAtom.rangeIn(host.text, 't1')!;
+      host.selection = TextSelection.collapsed(offset: ref.start);
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await t.pumpAndSettle();
+
+      expect(focusedField(t), 1);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and clicking the sentence takes the caret back out',
+        (t) async {
+      app.editingBlockId = block.id;
+      await pump(t);
+      await t.tap(find.byType(TextField).at(1));
+      await t.pumpAndSettle();
+      expect(focusedField(t), 1, reason: 'in a cell');
+
+      final box = t.getRect(find.byType(Table));
+      await t.tapAt(Offset(box.right + 20, box.center.dy));
+      await t.pumpAndSettle();
+
+      expect(focusedField(t), 0,
+          reason: 'a field whose DESCENDANT holds the keyboard still reports '
+              'hasFocus, and EditableText only asks for focus when it has '
+              'none — so the paragraph never asked for it back, and clicking '
+              'the sentence did nothing at all');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('Enter in the last row lands in the row it just made',
+        (t) async {
+      app.editingBlockId = block.id;
+      await pump(t);
+      await t.tap(find.byType(TextField).at(4)); // the last cell of the 2x2
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.enter);
+      await t.pumpAndSettle();
+
+      expect(tablesIn(block.content).single.rows, 3);
+      expect(focusedField(t), 6,
+          reason: 'the owner: "sometimes when hitting enter to create a new '
+              'row, it does push the cursor out of the table" — sometimes, '
+              'because a single post-frame request is one throw of the dice');
+      t.testTextInput.updateEditingValue(const TextEditingValue(
+          text: 'third', selection: TextSelection.collapsed(offset: 5)));
+      await t.pumpAndSettle();
+      expect(tablesIn(block.content).single.cells[2][1], 'third');
+      app.cancelPendingSave();
+    });
+  });
+
+  group('a block rebuilt underneath the caret', () {
+    // **The whole subtree goes, not just the table.** `BlockView` is keyed
+    // `'<id>#<docRevision>'`, and a page switch, an undo and a sync pull all
+    // bump that revision — so the block's element is replaced outright,
+    // taking the session, the field, the table and the focus with it. What
+    // the owner sees is the caret arriving in a cell and then leaving it:
+    // *"the cursor would be in the table initially, then jump out"*.
+    //
+    // The table going out leaves a note saying which cell had the caret, and
+    // the one built in its place picks it up. A note nobody picks up is
+    // dropped at the end of the frame, so closing a block really does close
+    // it.
+
+    Future<void> pumpAs(WidgetTester t, int revision) async {
+      await t.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        theme: onoteTheme(Brightness.light),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 520,
+              child: TextBlockView(
+                  key: ValueKey('${block.id}#$revision'),
+                  block: block,
+                  app: app),
+            ),
+          ),
+        ),
+      ));
+      await t.pumpAndSettle();
+    }
+
+    int focusedField(WidgetTester t) => t
+        .widgetList<TextField>(find.byType(TextField))
+        .toList()
+        .indexWhere((f) => f.focusNode?.hasPrimaryFocus ?? false);
+
+    testWidgets('keeps it, in the cell it was in', (t) async {
+      app.editingBlockId = block.id;
+      await pumpAs(t, 1);
+      await t.tap(find.byType(TextField).at(2)); // row 0, col 1
+      await t.pumpAndSettle();
+      expect(focusedField(t), 2, reason: 'in the second cell to begin with');
+
+      await pumpAs(t, 2); // the revision moves: everything is rebuilt
+
+      expect(focusedField(t), 2,
+          reason: 'the caret was in a cell, and it is in the same cell — a '
+              'rebuild is not somewhere the caret should be lost');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('but closing the block really closes it', (t) async {
+      app.editingBlockId = block.id;
+      await pumpAs(t, 1);
+      await t.tap(find.byType(TextField).at(1));
+      await t.pumpAndSettle();
+
+      // Closed rather than rebuilt: nothing mounts to pick the note up.
+      app.editingBlockId = null;
+      await pumpAs(t, 1);
+      expect(app.pendingAtomCell, isNull,
+          reason: 'a caret that jumped into a cell the next time the block '
+              'was opened would be its own bug');
+      app.cancelPendingSave();
+    });
+  });
+
+  testWidgets('Ctrl+K in a cell opens the link dialog and gives the caret back',
+      (t) async {
+    // **A crossing neither side had tested.** Linking inside a cell came from
+    // one line of work and the caret machinery from another, and they met for
+    // the first time when those lines were brought together. A dialog takes
+    // the keyboard out of the table by definition, which is the one thing the
+    // rest of this file is about preventing — so what matters is that the
+    // table lets go willingly and gets it back afterwards.
+    app.editingBlockId = block.id;
+    await pump(t);
+    await t.tap(find.byType(TextField).at(1));
+    await t.pumpAndSettle();
+    final cell = t.widget<TextField>(find.byType(TextField).at(1)).controller!;
+    cell.selection = const TextSelection(baseOffset: 0, extentOffset: 7);
+    await t.pumpAndSettle();
+
+    int focusedField() => t
+        .widgetList<TextField>(find.byType(TextField))
+        .toList()
+        .indexWhere((f) => f.focusNode?.hasPrimaryFocus ?? false);
+    bool hostReadOnly() =>
+        t.widget<TextField>(find.byType(TextField).first).readOnly;
+
+    expect(focusedField(), 1);
+    expect(hostReadOnly(), isTrue);
+
+    await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await t.sendKeyEvent(LogicalKeyboardKey.keyK);
+    await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await t.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsOneWidget,
+        reason: 'the same flow the paragraph runs, over this cell');
+    expect(hostReadOnly(), isFalse,
+        reason: 'the table has genuinely let the keyboard go — holding it '
+            'while a dialog is up would be the worse failure');
+
+    await t.sendKeyEvent(LogicalKeyboardKey.escape);
+    await t.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(focusedField(), 1, reason: 'and the caret is back in the cell');
+    expect(hostReadOnly(), isTrue);
+    expect(cell.text, 'Element', reason: 'cancelled, so nothing was linked');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('a page link in a cell follows, rather than opening the table',
+      (t) async {
+    // The owner: *"If a link is on text in a table, clicking it will enter
+    // editing mode for the table rather than following the link."*
+    //
+    // A cell being read draws its text through the same inline renderer the
+    // paragraph does — but it was calling it without a page-link handler, so
+    // a page link in a cell had no tap of its own, and the cell's "open me
+    // for editing" tap was the only one left to answer.
+    const link = InlineAtom(id: 't2', type: 'table', content: {
+      'cells': [
+        ['See', '[[Kinematics|pg-2]]'],
+      ]
+    });
+    final content = <String, dynamic>{
+      'text': 'Before ${link.reference('1x2 table')} after.',
+    };
+    InlineAtom.putIn(content, link);
+    block = Block(type: BlockType.text, x: 0, y: 0, w: 520, content: content);
+    app.blocks = [block];
+    app.editingBlockId = null; // being read, not written
+    await pump(t);
+
+    await t.tap(find.text('Kinematics'));
+    await t.pumpAndSettle();
+
+    expect(app.editingBlockId, isNull,
+        reason: 'the table did NOT open for editing, which is the report');
+    app.cancelPendingSave();
+  });
+
+  test('a COPIED table pastes with its cells, not as an empty box', () {
+    // Cutting leaves a payload behind for the paste to find. Copying does
+    // not — the original stays exactly where it was, so nothing was ever
+    // orphaned — and the clipboard carries the reference text and nothing
+    // else. The paste has to find the payload on the page.
+    final pasted = Block(
+      type: BlockType.text,
+      x: 0,
+      y: 200,
+      content: {'text': 'a copy: ${block.content['text']}'},
+    );
+    app.blocks = [block, pasted];
+
+    reconcileBlockAtoms(app, pasted.id, pasted.content['text'] as String);
+
+    expect(tablesIn(pasted.content).single.cells, [
+      ['Element', 'Symbol'],
+      ['Sodium', 'Na'],
+    ]);
+    expect(tablesIn(block.content), hasLength(1),
+        reason: 'and the one it was copied FROM is untouched');
+  });
+
+  test('a reference to nothing at all stays a reference to nothing', () {
+    final orphan = Block(
+        type: BlockType.text,
+        x: 0,
+        y: 0,
+        content: {'text': '![2x2 table](onote://atom/never-existed)'});
+    app.blocks = [orphan];
+    reconcileBlockAtoms(app, orphan.id, orphan.content['text'] as String);
+    expect(tablesIn(orphan.content), isEmpty);
+    expect(orphan.content.containsKey('atoms'), isFalse,
+        reason: 'inventing an empty table would be inventing data');
+  });
+
+  testWidgets('one click on a cell opens the box AND lands in that cell',
+      (t) async {
+    // The headline interaction, end to end through the real block view: the
+    // click asks the host to open, the host remembers which cell, and the
+    // table consumes that as it mounts. Anything less is "click, then click
+    // again", which is the thing that was asked not to happen.
+    await pump(t);
+    expect(app.editingBlockId, isNull, reason: 'precondition: being read');
+
+    // Row 1, column 1 — "Na", the cell furthest from where a default caret
+    // would land.
+    final cells = find.byType(TextField);
+    expect(cells, findsNothing, reason: 'a cell being read is not a field');
+    await t.tap(find.text('Na', findRichText: true));
+    await t.pumpAndSettle();
+
+    expect(app.editingBlockId, block.id);
+    await pump(t);
+    final fields = t.widgetList<TextField>(find.byType(TextField)).toList();
+    expect(fields, hasLength(5));
+    expect(fields[4].focusNode?.hasFocus, isTrue,
+        reason: 'the LAST cell — the one under the pointer — not the first');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('Bold belongs to whoever has the keyboard', (t) async {
+    // With the caret in a cell, Ctrl+B and the toolbar's B must not reach
+    // past it and style the sentence the table is sitting in. A table used to
+    // be a block of its own, where `canFormatText` was false on the block
+    // type alone; a table inside a paragraph made the paragraph the answer.
+    await pump(t);
+    app.editingBlockId = block.id;
+    await pump(t);
+    expect(app.canFormatText, isTrue, reason: 'precondition: a text block');
+
+    await t.tap(find.byType(TextField).at(1));
+    await t.pumpAndSettle();
+    expect(app.canFormatText, isFalse,
+        reason: 'the caret they can see is in the cell; Bold on the '
+            'paragraph would be invisible and would fire later on a word '
+            'they type somewhere else');
+
+    app.cancelPendingSave();
+  });
+
+  testWidgets('typing in a cell writes to the block it is in', (t) async {
+    await pump(t);
+    app.editingBlockId = block.id;
+    await pump(t);
+
+    // Field 0 is the paragraph; the rest are cells.
+    final cell = find.byType(TextField).at(1);
+    await t.tap(cell);
+    await t.pumpAndSettle();
+    await t.enterText(cell, 'Hydrogen');
+    await t.pumpAndSettle();
+
+    app.cancelPendingSave();
+    expect(tablesIn(block.content).single.cells.first.first, 'Hydrogen',
+        reason: 'the host resolves the block by id and writes the payload '
+            'there — that is the whole of what the wiring has to do');
+    expect(block.content['text'], contains('onote://atom/t1'),
+        reason: 'and the paragraph itself is untouched');
+  });
+}

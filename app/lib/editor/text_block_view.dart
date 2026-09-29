@@ -1,7 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/models.dart';
+import '../model/inline_atom.dart';
+import 'inline_table.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -29,6 +33,23 @@ class TextBlockView extends StatefulWidget {
   final AppState app;
 
   static const double minAutoW = 200, maxAutoW = 640;
+
+  /// **The ceiling for a box that carries an object rather than a sentence.**
+  ///
+  /// [maxAutoW] is a READING measure: past about 640px a line of prose is
+  /// tiring to follow, so a paragraph stops widening and wraps instead. A
+  /// table is not prose and cannot wrap. Squeezing one compresses real data
+  /// into columns too narrow to read, which is what the owner met: *"when i
+  /// add a new column, it makes the existing ones smaller, compressing the
+  /// text"*. Adding a column made the table want more than 640, the box
+  /// refused to grow past it, and `InlineTable` scaled every column down to
+  /// fit the box it had been given.
+  ///
+  /// So a line carrying a table may push its box as wide as that table needs.
+  /// The same 4000 every other width in the app is clamped to (a resize
+  /// handle, a drag, `requestExtraWidth`): a table may be large, not
+  /// unbounded.
+  static const double maxObjectW = 4000;
 
   static String? _fontFamilyOf(String? font) => switch (font) {
         null || '' || 'sans' => 'Inter', // the bundled default face
@@ -135,22 +156,73 @@ class TextBlockView extends StatefulWidget {
     // that can see the difference.
     final key = '${b.id}\u0000${b.content['text']}\u0000'
         '${b.content['fontSize']}\u0000${b.content['lineHeight']}\u0000'
-        '${b.content['font']}\u0000$dark';
+        '${b.content['font']}\u0000$dark'
+        // The atoms, by IDENTITY rather than by value: this key is built on
+        // every frame for every visible block, and a table's payload printed
+        // into it would be a kilobyte of garbage per block per frame. Every
+        // write to an atom REPLACES the map (`InlineAtom.putIn`), so the
+        // identity changes exactly when the content does — while a block
+        // merely being dragged keeps the same map, and the same measurement.
+        '\u0000${identityHashCode(b.content['atoms'])}';
     final hit = _autoWidthCache[key];
     if (hit != null) return hit;
     if (_autoWidthCache.length > 512) _autoWidthCache.clear();
 
     final engine = OnoteEditors.active;
-    // Image references are stripped before measuring: `![](sha256:<64 hex>)`
-    // is 80-odd characters of source that the reader never sees, and measuring
-    // it would pin any auto-width box to its maximum the instant a picture
-    // landed in it.
-    final source = engine
-        .deserialize(b.content)
-        .replaceAll(RegExp(r'^\s*!\[[^\]]*\]\([^)]*\)\s*$', multiLine: true), '');
-    final w = engine.measureIntrinsicWidth(source, baseStyle(b, dark: dark));
+    final style = baseStyle(b, dark: dark);
+    final head = style.copyWith(fontWeight: FontWeight.w600);
+    final atoms = InlineAtom.allIn(b.content);
+    final full = engine.deserialize(b.content);
+    // Everything on a line ADDS UP, and the widest line wins.
+    //
+    // Two things are being measured at once and they are measured differently.
+    // The words are measured as text. An object — a table — is not text at
+    // all: its reference is ninety characters of `![… — update Openote to see
+    // it](onote://atom/<uuid>)` that the reader never sees, so measuring those
+    // characters pins the box to its maximum, and ignoring them leaves it
+    // blind to the thing standing in their place. So the references come out
+    // and each object's own width goes back in where it was.
+    //
+    // Adding rather than taking the larger of the two is what stops a
+    // sentence being pushed onto the line below its own table: `Results: `
+    // followed by a table needs room for both, one after the other, which is
+    // how they are drawn.
+    var w = 0.0;
+    // Raised only by a line that carries an object; see [maxObjectW].
+    var ceiling = maxAutoW;
+    var pos = 0;
+    for (final line in full.split('\n')) {
+      final lineStart = pos;
+      pos += line.length + 1;
+      // A picture on a line of its own is measured as nothing, as it always
+      // has been: `![](sha256:<64 hex>)` is 80 characters of source that is
+      // never drawn, and the picture itself is clamped to the box rather than
+      // the box being stretched to the picture.
+      final bare = withoutAtomRefs(line)
+          .replaceAll(RegExp(r'^\s*!\[[^\]]*\]\([^)]*\)\s*$'), '');
+      var lw = bare.isEmpty ? 0.0 : engine.measureIntrinsicWidth(bare, style);
+      var carriesObject = false;
+      for (final r in InlineAtom.referencesIn(full)) {
+        if (r.start < lineStart || r.start >= lineStart + line.length) continue;
+        final atom = atoms[r.id];
+        if (atom == null || atom.type != 'table') continue;
+        carriesObject = true;
+        // A table narrower than it needs is drawn squeezed — the widget
+        // scales its columns down to fit rather than overflowing — so the
+        // failure this prevents is quiet and permanent rather than loud.
+        lw += tableNaturalWidth(TableData.from(atom.content), head);
+      }
+      if (lw > w) w = lw;
+      // This line cannot be narrowed by wrapping it, so the reading measure
+      // does not apply. It is this LINE's width and not the table's on
+      // purpose: `Results: ` followed by a table needs room for both, one
+      // after the other, which is how they are drawn.
+      if (carriesObject) {
+        ceiling = math.max(ceiling, math.min(maxObjectW, lw + chrome + slack));
+      }
+    }
     return _autoWidthCache[key] =
-        (w + chrome + slack).clamp(minAutoW, maxAutoW).toDouble();
+        (w + chrome + slack).clamp(minAutoW, ceiling).toDouble();
   }
 
   /// Measurement cache for [autoWidth]; see the note there.
@@ -241,6 +313,28 @@ class _TextBlockViewState extends State<TextBlockView> {
     session.requestExtraWidth = (extra) {
       final b = widget.block;
       if (extra <= 0) return;
+      // **Do not take an auto-width box away from somebody for one squeezed
+      // frame.** A table asks for room the instant it is drawn narrower than
+      // it wants, which happens for a frame whenever it grows — and the
+      // measurement below it already accounts for tables, so the next frame
+      // is wider anyway. Latching the box to a manual width on the strength
+      // of that one frame turned an auto-sizing box into one that has to be
+      // resized by hand ever after: the owner watched it "expand with the
+      // typed text and not line wrap anything again until it hits its max
+      // width", which is what a box does once it has stopped measuring
+      // itself. Only a table that wants more than auto-width could ever give
+      // it gets the latch.
+      // The ceiling the MEASUREMENT would give this block, which for one
+      // carrying a table is no longer the reading measure — see
+      // [TextBlockView.maxObjectW]. Comparing against 640 here latched a wide
+      // table's box to a manual width on the strength of one squeezed frame,
+      // when the very next measurement would have given it the room.
+      final measured = b.content.containsKey('atoms')
+          ? TextBlockView.maxObjectW
+          : TextBlockView.maxAutoW;
+      if (b.content['autoWidth'] != false && b.w + extra <= measured) {
+        return;
+      }
       _pushUndoOnce();
       // Without this the next build measures the text and puts the width
       // straight back: `autoWidth` measurement deliberately ignores image

@@ -18,6 +18,7 @@ import 'package:openote/l10n/l10n.dart';
 
 import 'support/app.dart';
 
+import 'package:openote/model/inline_atom.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -64,11 +65,11 @@ void main() {
   }
 
   group('the catalog itself', () {
-    testWidgets('is thirteen things, grouped for the menu', (tester) async {
+    testWidgets('is twelve things, grouped for the menu', (tester) async {
       final l = await _translations(tester);
       expect(kInsertGroups.map((g) => g.title(l)).toList(),
           ['Write', 'Bring in', 'Link up']);
-      expect(kInsertItems.length, 13);
+      expect(kInsertItems.length, 12);
     });
 
     test('the ribbon is one row, in the order it has always been', () {
@@ -76,7 +77,7 @@ void main() {
       // the words off four of them: "i dont love the new menu stuff though, i
       // think we go back to what we had before."
       expect(kInsertRibbon.map((i) => i.id).toList(), [
-        'text', 'equation', 'code', 'table', 'board', 'image', 'pdf',
+        'equation', 'code', 'table', 'board', 'image', 'pdf',
         'file', 'video', 'flashcard', 'pagelink', 'portal', 'template',
       ]);
     });
@@ -97,11 +98,11 @@ void main() {
       }
     });
 
-    test('three of them are on the ribbon only, and say why', () {
+    test('two of them are on the ribbon only, and say why', () {
       // Each is a command the right-click GESTURE already performs, or one
       // that is not about a point on the page at all.
       final menu = kMenuGroups.expand((g) => g.items).map((i) => i.id).toSet();
-      for (final id in ['text', 'flashcard', 'template']) {
+      for (final id in ['flashcard', 'template']) {
         expect(kInsertItems.map((i) => i.id), contains(id), reason: id);
         expect(menu.contains(id), isFalse, reason: id);
       }
@@ -158,6 +159,53 @@ void main() {
               'size the block arrives at');
     });
 
+    test('but it lands under the box you were writing in, when there was one',
+        () {
+      // The owner, about the code block: *"It should also insert it either
+      // where the cursor is or below the last edited text box, if the cursor
+      // is not on the canvas in an otherwise empty box."* Centring on the
+      // view was the only rule, so a code block for the paragraph you were
+      // half-way through arrived in the middle of the screen.
+      app.canvas.viewport = const Size(1000, 800);
+      final note = app.addBlock(Block(
+          type: BlockType.text,
+          x: 120,
+          y: 240,
+          w: 300,
+          h: 80,
+          content: {'text': 'a paragraph'}));
+      app.select(note.id, edit: true);
+
+      final code = kInsertItems.firstWhere((i) => i.id == 'code');
+      expect(insertAnchor(app, code), const Offset(120, 332),
+          reason: 'lined up with the box, 12px under it');
+
+      // And it outlives the caret leaving: by the time the Insert button has
+      // been pressed, the cursor is on the Insert button.
+      app.select(null);
+      expect(insertAnchor(app, code), const Offset(120, 332));
+
+      // A PDF lays itself out down the page and says so with a zero size, so
+      // it is the one thing this must not move.
+      final pdf = kInsertItems.firstWhere((i) => i.id == 'pdf');
+      expect(pdf.size, Size.zero);
+      expect(insertAnchor(app, pdf),
+          app.canvas.screenToPage(const Offset(500, 400)));
+
+      app.blocks = [];
+      app.select(null);
+      app.lastEditedBlockId = null;
+      app.cancelPendingSave();
+    });
+
+    test('a new code block opens in the language the last one was set to', () {
+      // *"it should still default to plain text, however it should ideally
+      // automatically set the language to the last set one."*
+      expect(app.lastCodeLanguage, 'text', reason: 'until somebody says');
+      app.rememberCodeLanguage('python');
+      expect(app.lastCodeLanguage, 'python');
+    });
+
     test('and a right-click puts its corner where you clicked', () async {
       if (!haveSqlite) return;
       final table = kInsertItems.firstWhere((i) => i.id == 'table');
@@ -167,6 +215,38 @@ void main() {
   });
 
   group('both surfaces make the same block', () {
+    testWidgets('a new code block really opens in the remembered language',
+        (tester) async {
+      // The unit test above proves the setting; this proves the catalog
+      // actually asks for it, which is the half that can silently be wrong.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      widen(tester);
+      late BuildContext ctx;
+      await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        home: Scaffold(body: Builder(builder: (c) {
+          ctx = c;
+          return const SizedBox();
+        })),
+      ));
+      final code = kInsertItems.firstWhere((i) => i.id == 'code');
+
+      await code.run(ctx, app, const Offset(10, 20));
+      expect(app.blocks.single.content['language'], 'text',
+          reason: 'plain text until somebody has said otherwise');
+
+      app.blocks = [];
+      app.rememberCodeLanguage('dart');
+      await code.run(ctx, app, const Offset(10, 20));
+      expect(app.blocks.single.content['language'], 'dart');
+
+      app.blocks = [];
+      app.select(null);
+      app.lastEditedBlockId = null;
+      app.cancelPendingSave();
+    });
+
     testWidgets('a table from the ribbon and a table from the menu are equal',
         (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
@@ -185,8 +265,12 @@ void main() {
       await table.run(ctx, app, const Offset(400, 500));
       expect(app.blocks.length, 2);
       final a = app.blocks[0], b = app.blocks[1];
-      expect(a.type, BlockType.table);
-      expect(a.content['cells'], b.content['cells'],
+      // A table is a paragraph carrying a table now, not a box of its own —
+      // and both surfaces still make the identical thing, which is what this
+      // test has always been for.
+      expect(a.type, BlockType.text);
+      expect(tablesIn(a.content).single.cells,
+          tablesIn(b.content).single.cells,
           reason: 'the literal header row lived in TWO places before this, '
               'which is exactly how the two menus drifted');
       expect(a.w, b.w);
@@ -232,10 +316,12 @@ void main() {
               reason: i.id);
         }
       }
-      // And the three the ribbon has that the right-click menu does not.
-      expect(find.text('Text box'), findsOneWidget);
+      // And the two the ribbon has that the right-click menu does not.
       expect(find.text('Flashcard'), findsOneWidget);
       expect(find.text('Template'), findsOneWidget);
+      // "Text box" is gone from both: a click on the page makes one, and so
+      // does clicking out of one, which is two ways already.
+      expect(find.text('Text box'), findsNothing);
       app.cancelPendingSave();
     });
 

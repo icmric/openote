@@ -26,6 +26,7 @@ import 'package:openote/canvas/ink_ops.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/theme/onote_theme.dart';
+import 'package:openote/ui/color_picker.dart';
 import 'package:openote/ui/command_bar.dart';
 
 import 'support/app.dart';
@@ -169,9 +170,162 @@ void main() {
         await tester.pump();
         expect(find.byIcon(Icons.colorize_outlined), findsOneWidget,
             reason: '$tool');
-        expect(find.byIcon(Icons.add_circle_outline), findsOneWidget,
+        // A palette, not a plus: `add_circle_outline` beside a row of
+        // colours reads as "add a colour to this row" when what it opens is
+        // the whole picker.
+        expect(find.byIcon(Icons.palette_outlined), findsOneWidget,
             reason: '$tool');
       }
+    });
+
+    testWidgets('pen thickness is a few dots, not a slider to aim at',
+        (tester) async {
+      // The owner: *"The slider to adjust the pen size is not intuitive,
+      // please have just a few options for size, then maybe an option to
+      // adjust it to something more exact or specific."*
+      //
+      // 1-to-10 across 110px is nine pixels per unit, so choosing a thickness
+      // was a drag you had to aim and reading the one you had meant looking
+      // at a handle position rather than at a thickness.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await fixture(tester, 'onote_ink_size_');
+      app.tool = Tool.pen;
+      await drawTab(tester, app);
+
+      expect(find.byType(Slider), findsNothing,
+          reason: 'not on the toolbar any more');
+      for (final v in kPenSizes) {
+        expect(find.byTooltip('Pen size ${v == v.roundToDouble() ? v.toInt() : v}'),
+            findsOneWidget,
+            reason: 'a dot for $v');
+      }
+
+      await tester.tap(find.byTooltip('Pen size 5'));
+      await tester.pump();
+      expect(app.penSize, 5);
+
+      // And anything the four do not cover is still reachable.
+      await tester.tap(find.byTooltip('Exact size…'));
+      await tester.pumpAndSettle();
+      expect(find.byType(Slider), findsOneWidget,
+          reason: 'the slider is behind a button, not gone');
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('the exact-size popup is popup-sized, and shows the dot',
+        (tester) async {
+      // The owner: *"The 'exact size' popup has the right length but its
+      // height expands as far as it can. Some numbers also have a huge amount
+      // of decimal places… Also it would be nice to have a circle on there
+      // which shows the size of the dot that it will draw. This dot should
+      // also be coloured the same as the currently selected colour."*
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await fixture(tester, 'onote_ink_exact_');
+      app.tool = Tool.pen;
+      app.setInkColor('#7A3E9D');
+      await drawTab(tester, app);
+
+      await tester.tap(find.byTooltip('Exact size…'));
+      await tester.pumpAndSettle();
+
+      // The dialog's SURFACE, not `AlertDialog`'s own render box — that one
+      // is the full-screen `Align` every dialog is centred by, and measuring
+      // it says 900 for a perfectly ordinary popup.
+      final surface = tester.getSize(find
+          .descendant(
+              of: find.byType(AlertDialog), matching: find.byType(Material))
+          .first);
+      final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+      expect(surface.height, lessThan(screen.height * 0.5),
+          reason: '`showOnoteDialog` goes through `showGeneralDialog`, whose '
+              'page fills the screen. Measured before the fix: 852 of 900, '
+              'because `Row(mainAxisSize: min)` sizes its CROSS axis to its '
+              'tallest child, and a `SizedBox` that sets only a width passes '
+              'the height constraint straight through to the Slider');
+
+      // The dot, at the size AND colour the pen will draw with.
+      final dot = tester.widget<Container>(find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byWidgetPredicate((w) =>
+              w is Container &&
+              w.decoration is BoxDecoration &&
+              (w.decoration as BoxDecoration).shape == BoxShape.circle)));
+      expect((dot.decoration as BoxDecoration).color,
+          onoteColorFromHex('#7A3E9D'));
+
+      // **The drag tells the rest of the app once, at the end.**
+      //
+      // The owner: *"Dragging the slider is super laggy."* Every step used to
+      // call `app.refresh()`, which notifies `AppState` and rebuilds the whole
+      // shell — navigator, command bar and a canvas full of blocks — to move a
+      // dot inside a dialog.
+      var notified = 0;
+      void count() => notified++;
+      app.addListener(count);
+
+      final before = app.penSize;
+      final bar = tester.getRect(find.byType(Slider));
+      final g = await tester.startGesture(bar.centerLeft + const Offset(8, 0));
+      for (var i = 0; i < 12; i++) {
+        await g.moveBy(const Offset(18, 0));
+        await tester.pump();
+      }
+      final steps = app.penSize;
+      await g.up();
+      await tester.pumpAndSettle();
+      app.removeListener(count);
+
+      expect(steps, greaterThan(before),
+          reason: 'the drag really did walk through a lot of sizes');
+      expect(notified, 1,
+          reason: 'once, when the finger came off — not once per step. '
+              '`penSize` is a plain field that nothing reads until the next '
+              'stroke is drawn');
+
+      // Half-pixel steps, kept half-pixel: 19.5/39 added repeatedly in binary
+      // floating point is what produced 3.4000000000000004.
+      expect(app.penSize, snapPenSize(app.penSize),
+          reason: 'the stored size IS a half — it does not merely print as one');
+      expect(app.penSize * 2, (app.penSize * 2).roundToDouble());
+
+      // And it goes further than it did: *"would be nice to be able to make
+      // it a little bigger"*.
+      final wide = await tester.startGesture(bar.centerLeft);
+      await wide.moveTo(bar.centerRight + const Offset(40, 0));
+      await tester.pump();
+      await wide.up();
+      await tester.pumpAndSettle();
+      expect(app.penSize, kPenSizeMax);
+      expect(kPenSizeMax, greaterThan(20.0));
+
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 500));
+    });
+
+    testWidgets('the row shows two mixed colours, not four', (tester) async {
+      // *"There are by default a lot of options for colours, more than most
+      // people would want."* Six presets plus four recents plus two buttons
+      // is twelve round things — and the recents were also what made the row
+      // change width as you used it.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await fixture(tester, 'onote_ink_two_');
+      app.tool = Tool.pen;
+      for (final hex in ['111111', '222222', '333333', '444444']) {
+        app.rememberCustomColor(hex);
+      }
+      await drawTab(tester, app);
+
+      // `rememberCustomColor` puts the newest first.
+      expect(find.byTooltip('#444444'), findsOneWidget);
+      expect(find.byTooltip('#333333'), findsOneWidget);
+      expect(find.byTooltip('#222222'), findsNothing,
+          reason: 'the rest are one click away in the picker, which keeps '
+              'every one of them');
+      // `rememberCustomColor` writes the list to settings, which arms a
+      // 400ms workspace save; a pending timer fails the test at teardown.
+      await tester.pump(const Duration(milliseconds: 500));
     });
 
     testWidgets('picking a colour picks up the pen', (tester) async {

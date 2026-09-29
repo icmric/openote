@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import '../markdown/md_render.dart' show indentPx, kBulletGutter, subSupStyle;
 import '../math/math_view.dart' show mathStyleIn;
 import '../markdown/md_syntax.dart';
+import '../model/inline_atom.dart';
+import 'inline_atom_view.dart';
 import 'inline_math_editor.dart';
 import '../theme/onote_theme.dart';
 import '../study/flashcards.dart' show inlineCardRe;
@@ -55,8 +57,22 @@ const double kEditorCaretMargin = 3.0;
 /// text verbatim, it falls back to an unstyled span, so editing can never
 /// corrupt or desync.
 class LiveMarkdownController extends TextEditingController {
-  LiveMarkdownController({super.text, required this.dark});
-  bool dark;
+  LiveMarkdownController({super.text, required bool dark}) : _dark = dark;
+
+  /// Light or dark, set by the engine on every build.
+  ///
+  /// A setter rather than a field because the atom cache keys on what an atom
+  /// was built FROM, and an atom is built from a style this decides. Without
+  /// the clear, switching theme left every picture, card and equation drawn
+  /// in the old one until its text happened to move.
+  bool get dark => _dark;
+  set dark(bool v) {
+    if (_dark == v) return;
+    _dark = v;
+    _atomCache.clear();
+  }
+
+  bool _dark;
 
   /// Resolves an in-flow image reference (`sha256:<hash>`) to bytes, so the
   /// picture is shown WHILE the block is being edited and not only after the
@@ -77,6 +93,13 @@ class LiveMarkdownController extends TextEditingController {
   /// equations as plain drawings, which is what a read-only surface wants.
   void Function(int start, int end, String latex, Rect anchor, Offset tapGlobal)?
       onMathTap;
+
+  /// **What this block's inline atoms are, and what they may do.**
+  ///
+  /// Null on a surface with no note behind it (a preview, a test), and an
+  /// atom then draws as its alt text — which is exactly what a renderer that
+  /// cannot draw it should show.
+  InlineAtomHost? atomHost;
 
   /// **Does this equation have a graph worth pointing at right now?**
   ///
@@ -264,6 +287,19 @@ class LiveMarkdownController extends TextEditingController {
   static final _checkboxLineRe = RegExp(r'^([ 	]*)[-*+] \[( |x|X)\]');
   static final _quoteLineRe = RegExp(r'^>\s?');
 
+  /// **The two dialects share a shape, and only the scheme tells them apart.**
+  ///
+  /// `![alt](sha256:…)` is a picture and `![alt](onote://atom/…)` is a table,
+  /// and [_imageLineRe] matches BOTH. A table on a line of its own — which is
+  /// where a converted table and a newly inserted one both are — was therefore
+  /// being taken for a picture whose blob could not be found, and drawn as its
+  /// own dim reference text.
+  ///
+  /// The inline grammar has always drawn this distinction (`md_syntax.dart`,
+  /// and `inline_atom_test.dart` pins it); this is the LINE grammar, which has
+  /// its own copy, and the copy did not know.
+  static bool _isAtomRef(String src) => src.startsWith(InlineAtom.scheme);
+
   /// A whole line that is nothing but an image reference — the in-flow form
   /// (Data Model §5.1). Line-anchored to match the renderer exactly, so what
   /// the editor draws is precisely what read mode turns into a picture.
@@ -330,7 +366,8 @@ class LiveMarkdownController extends TextEditingController {
     // Whole-line constructs are drawn as one object with the rest of the
     // source trailing hidden; they have no inline runs of their own.
     if (inlineCardRe.hasMatch(line)) return;
-    if (_imageLineRe.hasMatch(line)) return;
+    final imgLine = _imageLineRe.firstMatch(line);
+    if (imgLine != null && !_isAtomRef(imgLine.group(3)!)) return;
     var from = 0;
     final h = _headingRe.firstMatch(line);
     if (h != null) {
@@ -361,15 +398,47 @@ class LiveMarkdownController extends TextEditingController {
         ));
         continue;
       }
-      // Exactly the kinds [_inline] zeroes: their source stays legible, so
-      // there is nothing hidden for the caret to trip over.
-      switch (c.kind) {
-        case MdInline.wikiLink:
-        case MdInline.extLink:
-        case MdInline.bareUrl:
-          continue;
-        default:
+      // An atom is drawn as ONE object standing on the reference's first
+      // character, so the other forty-odd characters of
+      // `![3x2 table](onote://atom/0198…)` are invisible. The caret crosses
+      // the whole of it in one step, exactly as it does an equation —
+      // otherwise Left inside a sentence gives forty dead keystrokes.
+      if (c.kind == MdInline.atom) {
+        out.add((
+          start: regionStart + m.start + 1,
+          end: regionStart + m.end,
+          openLen: m.end - m.start - 1,
+          closeLen: 0,
+          kind: MdRunKind.atom,
+        ));
+        continue;
       }
+      // **A link hides its address, so the caret must be told about it.**
+      //
+      // This is the same marker run everything else gets, and registering it
+      // here is what buys the whole of the behaviour: `_snapOutOfHiddenMarkers`
+      // steps the caret across `](https://…)` in one press instead of through
+      // sixty invisible characters, and `markerAwareDelete` makes Backspace at
+      // either edge mean what it means everywhere else. Leaving links out of
+      // this table was the reason the old code had to leave their source
+      // visible — the objection in its own comment was "the caret walking
+      // through characters nobody can see", and that machinery is the answer
+      // to it. It arrived after the comment did.
+      if (c.kind == MdInline.wikiLink || c.kind == MdInline.extLink) {
+        final mk = linkMarkers(c.kind, c.label, sub.substring(m.start, m.end));
+        if (mk == null) continue; // drawn as source; nothing is hidden
+        out.add((
+          start: regionStart + m.start,
+          end: regionStart + m.end,
+          openLen: mk.openLen,
+          closeLen: mk.closeLen,
+          kind: MdRunKind.marker,
+        ));
+        continue;
+      }
+      // A bare URL is its own label: there is nothing to hide, and hiding
+      // half of it would leave the caret walking through the other half.
+      if (c.kind == MdInline.bareUrl) continue;
       if (c.openLen <= 0 && c.closeLen <= 0) continue;
       out.add((
         start: regionStart + m.start,
@@ -383,7 +452,162 @@ class LiveMarkdownController extends TextEditingController {
 
   @override
   set value(TextEditingValue newValue) {
-    super.value = _snapOutOfHiddenMarkers(newValue);
+    super.value = _snapOutOfHiddenMarkers(_guardObjects(newValue));
+  }
+
+  String? _objectsFor;
+  List<({int start, int end})>? _objectsCache;
+
+  /// **The spans that are drawn as ONE object**, in source offsets.
+  ///
+  /// A table, an inline equation, an in-flow picture and a flashcard are the
+  /// same trick: one widget stands on the construct's FIRST code unit and the
+  /// rest of the source trails behind it at a hairline, so the paragraph keeps
+  /// exactly as many code units as the buffer and not one caret offset moves.
+  ///
+  /// What that costs is this. Every offset from that first character to the
+  /// end of the construct is laid out in the SAME place - hard against the
+  /// object's right edge - so a click beside a table, or Left from just past
+  /// it, lands the caret at `start + 1`, which looks like "after the table"
+  /// and is in fact between the `!` and the `[`. The next keystroke splices a
+  /// character into the reference, it stops matching, and the table is
+  /// replaced by forty characters of its own URL.
+  ///
+  /// So an object has exactly two legal caret positions: before it and after
+  /// it. [_snapOutOfHiddenMarkers] keeps the caret to those two, and
+  /// [_guardObjects] is the floor under that for anything that arrives
+  /// without a caret ever having been there.
+  List<({int start, int end})> _objectRanges([String? of]) {
+    final t = of ?? text;
+    if (_objectsFor == t) return _objectsCache!;
+    final out = <({int start, int end})>[];
+    for (final r in _runs(t)) {
+      // The run records the HIDDEN remainder, so the object itself starts one
+      // character earlier - on the code unit its widget stands on.
+      //
+      // **Equations are deliberately not in here.** They are drawn with the
+      // same trick and they have the same hole, but an equation is OPENED by
+      // putting the caret inside it: the session's own editor writes at
+      // offsets between the dollars, and the click that opens one resolves to
+      // an offset inside the run. Fencing that off does not protect an
+      // equation, it stops anybody editing one. The distinction that matters
+      // is further down in [_guardObjects]: a mangled equation is still all
+      // of its own data, sitting there to be typed back into shape, while a
+      // mangled atom reference is a pointer to a payload nothing can reach.
+      if (r.kind == MdRunKind.atom) {
+        out.add((start: r.start - 1, end: r.end));
+      }
+    }
+    // Pictures and flashcards take a whole line and are not in `_runs` at all
+    // - `_lineRuns` returns before it reaches them. They are drawn with the
+    // same placeholder arithmetic and have exactly the same hole.
+    var pos = 0;
+    for (final line in t.split('\n')) {
+      final img = _imageLineRe.firstMatch(line);
+      if (img != null && !_isAtomRef(img.group(3)!)) {
+        out.add((start: pos + img.start, end: pos + img.end));
+      } else {
+        final card = inlineCardRe.firstMatch(line);
+        if (card != null) {
+          out.add((start: pos + card.start, end: pos + card.end));
+        }
+      }
+      pos += line.length + 1;
+    }
+    _objectsFor = t;
+    return _objectsCache = out;
+  }
+
+  /// **An edit may never land inside an object.**
+  ///
+  /// The owner, on typing beside a table: *"it seems to insert it into the
+  /// thing that renders the table so the hash comes up and the table
+  /// disapears. This is very bad, this should never be able to ever happen"*.
+  /// Quite right, and it is not a display glitch: the reference stops
+  /// matching, so the payload is stranded with nothing pointing at it and the
+  /// URL appears in the sentence. A note has lost its table.
+  ///
+  /// Keeping the caret out (above) is the fix for typing. This is the floor
+  /// under it, because an edit can arrive at an offset no caret ever visited
+  /// - a paste over a selection dragged through half a reference, an IME
+  /// composition, a platform update against a selection one frame stale. It
+  /// sits in `set value` rather than in an input formatter so that there is
+  /// one door to guard rather than one per path.
+  ///
+  /// An insertion inside an object is moved AFTER it, which is where it looked
+  /// like it was going. An edit that would eat PART of one takes the whole
+  /// object instead: half a reference is worse than no reference, and an undo
+  /// brings a table back where a broken URL cannot be turned back into one.
+  ///
+  /// **Atom references only, and that is not timidity.** An equation, a
+  /// picture and a flashcard are written in their own source: the text IS the
+  /// data, their own editors rewrite the inside of it on purpose (an equation
+  /// retyped, a picture dragged to a new `=WxH`, a card's answer changed), and
+  /// a mangled one is visible and can be typed back into shape. An atom
+  /// reference is the opposite — it is a POINTER, its payload lives somewhere
+  /// the text cannot reach, and nothing in the app ever writes inside one. A
+  /// character spliced into it orphans the payload for good. So the caret is
+  /// kept out of all four (above), and this last resort guards the one where
+  /// there is no legitimate interior edit to be told apart from an accident.
+  TextEditingValue _guardObjects(TextEditingValue next) {
+    final a = value.text, b = next.text;
+    if (a == b) return next;
+    if (!a.contains(InlineAtom.scheme)) return next;
+    final objs = InlineAtom.referencesIn(a)
+        .map((r) => (start: r.start, end: r.end))
+        .toList();
+    if (objs.isEmpty) return next;
+    // The edit, as "a[p, ea) became b[p, eb)".
+    final shorter = a.length < b.length ? a.length : b.length;
+    var p = 0;
+    while (p < shorter && a.codeUnitAt(p) == b.codeUnitAt(p)) {
+      p++;
+    }
+    var ea = a.length, eb = b.length;
+    while (ea > p && eb > p && a.codeUnitAt(ea - 1) == b.codeUnitAt(eb - 1)) {
+      ea--;
+      eb--;
+    }
+    for (final o in objs) {
+      if (!(p > o.start && p < o.end) && !(ea > o.start && ea < o.end)) {
+        continue;
+      }
+      final inserted = b.substring(p, eb);
+      if (p == ea) {
+        // **Where the caret says it went beats where the characters say.**
+        // Comparing from both ends is ambiguous when the typed character is
+        // already there: typing an exclamation mark just BEFORE a table reads
+        // as an insertion one place to the right, which is inside it. The
+        // selection knows better, so it gets the casting vote - but only when
+        // it describes an edit that genuinely produces this text.
+        final sel = next.selection;
+        if (sel.isValid && sel.isCollapsed) {
+          final q = sel.baseOffset - inserted.length;
+          if (q >= 0 &&
+              q != p &&
+              q <= a.length &&
+              q + inserted.length <= b.length &&
+              !(q > o.start && q < o.end) &&
+              a.replaceRange(q, q, b.substring(q, q + inserted.length)) == b) {
+            return next;
+          }
+        }
+        final at = o.end;
+        return next.copyWith(
+          text: a.replaceRange(at, at, inserted),
+          selection: TextSelection.collapsed(offset: at + inserted.length),
+          composing: TextRange.empty,
+        );
+      }
+      final from = p < o.start ? p : o.start;
+      final to = ea > o.end ? ea : o.end;
+      return next.copyWith(
+        text: a.replaceRange(from, to, inserted),
+        selection: TextSelection.collapsed(offset: from + inserted.length),
+        composing: TextRange.empty,
+      );
+    }
+    return next;
   }
 
   /// Step a caret that has landed *between* the characters of an invisible
@@ -404,11 +628,23 @@ class LiveMarkdownController extends TextEditingController {
     if (!sel.isValid || !old.selection.isValid) return next;
     if (old.text != next.text) return next;
     final rs = _runs(next.text);
-    if (rs.isEmpty) return next;
+    final objs = _objectRanges(next.text);
+    if (rs.isEmpty && objs.isEmpty) return next;
 
     int fix(int off, int from) {
       if (from == off) return off;
+      // **An object is all or nothing**, and its two ends are the only places
+      // a caret may be. Its own run below records only the HIDDEN remainder -
+      // from `start + 1` - which left `start + 1` itself looking like an edge
+      // when it is in fact the inside of the reference: between the `!` and
+      // the `[`, where one keystroke ends a table. See [_objectRanges].
+      for (final o in objs) {
+        if (off > o.start && off < o.end) {
+          return from < off ? o.end : o.start;
+        }
+      }
       for (final r in rs) {
+        if (r.kind == MdRunKind.atom) continue;
         for (final edge in [
           (r.start, r.start + r.openLen),
           (r.end - r.closeLen, r.end),
@@ -457,6 +693,17 @@ class LiveMarkdownController extends TextEditingController {
     if (!sel.isValid || !sel.isCollapsed) return null;
     final at = sel.baseOffset;
     final t = v.text;
+    // **An atom is one thing.** Backspace just after a table deletes the
+    // table, not the last character of its id: a half-eaten reference would
+    // spill `![3x2 table](onote://atom/0198…` into the paragraph as literal
+    // text and strand the payload behind it. The run records the HIDDEN
+    // remainder, so the reference itself starts one character earlier.
+    for (final r in _runs(t)) {
+      if (r.kind != MdRunKind.atom) continue;
+      final from = r.start - 1;
+      if (!forward && at == r.end) return _spliced(v, from, r.end);
+      if (forward && at == from) return _spliced(v, from, r.end);
+    }
     for (final r in _runs(t)) {
       final innerStart = r.start + r.openLen;
       final innerEnd = r.end - r.closeLen;
@@ -997,6 +1244,48 @@ class LiveMarkdownController extends TextEditingController {
   /// That was the picture "sitting about 1 char width from the left edge", and
   /// the same phantom width is what pushed a full-width picture onto the next
   /// line. Both have to be zeroed, not just the size.
+  /// **An atom widget is built once per identity, never once per keystroke.**
+  ///
+  /// Rebuilding the paragraph is cheap — `buildTextSpan` itself is under a
+  /// millisecond — but rebuilding the WIDGETS inside it is not, and every
+  /// keystroke rebuilds the whole span tree. Measured on this machine before
+  /// this cache existed, per keystroke in one block: 20 equations 129.6 ms,
+  /// 40 equations 227.0 ms, 100 equations 561.7 ms, against 16.5 ms for the
+  /// same block with none. Forty equations is an ordinary page of maths
+  /// notes, and a fifth of a second per character is not typing.
+  ///
+  /// Handing back the SAME widget instance does two things: the subtree is
+  /// not constructed, and Flutter's own `Element.update` sees an identical
+  /// widget and skips rebuilding beneath it. It also keeps the atom's State
+  /// alive, so a drag in progress or a player's position survives a keystroke
+  /// elsewhere in the block.
+  ///
+  /// **The key must name everything the widget was built from — including
+  /// any offset its callbacks captured.** A cached atom whose `onEdit` closed
+  /// over a stale `lineStart` would write to the wrong place, which is a
+  /// corrupted note rather than a slow one. That is why the offsets are in
+  /// every key below, and it is also the limit of this cache: typing BEFORE
+  /// an atom moves it and rebuilds it, while typing after it does not. The
+  /// common case — writing at the end of a block — keeps every atom above the
+  /// caret. Stable ids (v0.19 Step 1) are what lift that limit, by letting
+  /// the callbacks stop capturing offsets at all.
+  Widget _atom(String key, Widget Function() build) {
+    final hit = _atomCache[key];
+    if (hit != null) return hit;
+    // Bounded rather than cleared on every edit: an entry is only garbage
+    // once its key can never recur, and the key moves with the text, so a
+    // long editing session in a picture-heavy block would otherwise grow it
+    // without limit. 256 is far more atoms than a block has.
+    if (_atomCache.length > 256) _atomCache.clear();
+    return _atomCache[key] = build();
+  }
+
+  final Map<String, Widget> _atomCache = {};
+
+  /// How many atoms are held, for the test that pins the bound.
+  @visibleForTesting
+  int get debugAtomCacheSize => _atomCache.length;
+
   TextStyle _hidden(TextStyle base) => base.copyWith(
         color: const Color(0x00000000),
         fontSize: 0.01,
@@ -1037,14 +1326,16 @@ class LiveMarkdownController extends TextEditingController {
         out.add(_SourceSpan(
           source: line.substring(0, 1),
           alignment: PlaceholderAlignment.top,
-          child: _InlineCard(
-            key: ValueKey('card@$lineStart'),
-            front: card.group(1) ?? '',
-            back: card.group(2) ?? '',
-            selected: onLine,
-            onEdit: (f, b) => replaceCardLine(
-                lineStart, lineStart + line.length, line, f, b),
-          ),
+          child: _atom(
+              'card|$lineStart|${line.length}|$onLine|$line',
+              () => _InlineCard(
+                    key: ValueKey('card@$lineStart'),
+                    front: card.group(1) ?? '',
+                    back: card.group(2) ?? '',
+                    selected: onLine,
+                    onEdit: (f, b) => replaceCardLine(
+                        lineStart, lineStart + line.length, line, f, b),
+                  )),
         ));
         out.add(TextSpan(text: line.substring(1), style: _hidden(base)));
         return;
@@ -1066,7 +1357,7 @@ class LiveMarkdownController extends TextEditingController {
     // into it breaks the reference and the source reappears, which is its own
     // explanation of what just happened.
     final img = _imageLineRe.firstMatch(line);
-    if (img != null) {
+    if (img != null && !_isAtomRef(img.group(3)!)) {
       // Dim and monospace, so a reference standing in for a picture reads as a
       // placeholder rather than as writing. Used both when there are no bytes
       // and when the bytes turn out not to be an image.
@@ -1086,20 +1377,27 @@ class LiveMarkdownController extends TextEditingController {
         out.add(_SourceSpan(
           source: line.substring(0, 1),
           alignment: PlaceholderAlignment.top,
-          child: _EditImage(
-            // Keyed by line so the drag state belongs to THIS picture, and is
-            // dropped if the text above it moves and the offsets go stale.
-            key: ValueKey('${img.group(3)}@$lineStart'),
-            bytes: bytes,
-            width: double.tryParse(img.group(4) ?? ''),
-            height: double.tryParse(img.group(5) ?? ''),
-            indent: indentPx(img.group(1)!.length, base.fontSize),
-            selected: onLine,
-            onNeedWidth: requestExtraWidth,
-            label: line,
-            labelStyle: refStyle,
-            onResize: (w, h) => resizeImageLine(lineStart, lineEnd, line, w, h),
-          ),
+          // `bytes.length` in the key, not the bytes: a blob that arrives
+          // after a first draw has to replace the placeholder, and comparing
+          // the buffers themselves would cost more than rebuilding.
+          child: _atom(
+              'img|$lineStart|$lineEnd|$onLine|${bytes.length}|$line',
+              () => _EditImage(
+                    // Keyed by line so the drag state belongs to THIS
+                    // picture, and is dropped if the text above it moves and
+                    // the offsets go stale.
+                    key: ValueKey('${img.group(3)}@$lineStart'),
+                    bytes: bytes,
+                    width: double.tryParse(img.group(4) ?? ''),
+                    height: double.tryParse(img.group(5) ?? ''),
+                    indent: indentPx(img.group(1)!.length, base.fontSize),
+                    selected: onLine,
+                    onNeedWidth: requestExtraWidth,
+                    label: line,
+                    labelStyle: refStyle,
+                    onResize: (w, h) =>
+                        resizeImageLine(lineStart, lineEnd, line, w, h),
+                  )),
         ));
         out.add(TextSpan(text: line.substring(1), style: _hidden(base)));
         return;
@@ -1243,6 +1541,47 @@ class LiveMarkdownController extends TextEditingController {
       // disagreed about `***both***`, `_italic_` and `snake_case`.
       final c = classifyInline(m);
 
+      // **A table, drawn where it sits.**
+      //
+      // Same placeholder arithmetic as the equation below and the pictures
+      // above: the widget stands for the reference's FIRST character and the
+      // other forty-odd characters of `![3x2 table](onote://atom/0198…)`
+      // trail behind it at a hairline. The paragraph keeps exactly as many
+      // code units as the buffer, so not one caret offset moves, and the
+      // coverage check proves it again on every keystroke.
+      if (c.kind == MdInline.atom) {
+        final full = sub.substring(m.start, m.end);
+        final id = c.target!;
+        final host = atomHost;
+        out.add(_SourceSpan(
+          source: full.substring(0, 1),
+          // MIDDLE, not baseline: a table is an object in the line rather
+          // than a word on it, and a table following half a sentence reads
+          // as centred against that sentence. On its own line — where nearly
+          // every table is — the two are the same thing.
+          alignment: PlaceholderAlignment.middle,
+          // The KEY is what makes a table affordable: it holds the atom's
+          // id, not its contents, so typing in a cell does not rebuild the
+          // table the cell is in, and typing in the paragraph does not
+          // either. Editability and the box's width DO change what is built,
+          // so they are in it.
+          child: _atom(
+            'atom|$id|${host?.editable}|${layoutWidth?.round()}',
+            () => inlineAtomWidget(
+              host: host,
+              id: id,
+              alt: c.inner,
+              style: cBase,
+              dark: dark,
+              maxWidth: layoutWidth,
+            ),
+          ),
+        ));
+        out.add(TextSpan(text: full.substring(1), style: _hidden(cBase)));
+        last = m.end;
+        continue;
+      }
+
       // Maths stays MATHS while the sentence around it is being edited.
       //
       // It used to drop back to `$\frac{1}{2}$` the moment the caret entered
@@ -1278,17 +1617,22 @@ class LiveMarkdownController extends TextEditingController {
           // the text jumps on click-in.
           alignment: PlaceholderAlignment.baseline,
           baseline: TextBaseline.alphabetic,
+          // The live editor is never cached: it owns the keyboard and its
+          // own state, and handing back a stale one would be handing back a
+          // stale equation.
           child: editingHere
               ? mathEditorBuilder!(c.inner, mBase)
-              : InlineMathAtom(
-                  latex: c.inner,
-                  style: mBase,
-                  linkTint: graphLinkTint?.call(c.inner),
-                  onTap: tap == null
-                      ? null
-                      : (rect, tapGlobal) =>
-                          tap(from, to, c.inner, rect, tapGlobal),
-                ),
+              : _atom(
+                  'math|$from|$to|${c.inner}|${graphLinkTint?.call(c.inner)}',
+                  () => InlineMathAtom(
+                        latex: c.inner,
+                        style: mBase,
+                        linkTint: graphLinkTint?.call(c.inner),
+                        onTap: tap == null
+                            ? null
+                            : (rect, tapGlobal) =>
+                                tap(from, to, c.inner, rect, tapGlobal),
+                      )),
         ));
         out.add(TextSpan(text: full.substring(1), style: _hidden(cBase)));
         last = m.end;
@@ -1298,6 +1642,10 @@ class LiveMarkdownController extends TextEditingController {
       var openLen = c.openLen, closeLen = c.closeLen;
       final TextStyle inner;
       switch (c.kind) {
+        case MdInline.atom:
+          // Handled above, as one object. Listed to keep the switch total.
+          openLen = closeLen = 0;
+          inner = cBase;
         case MdInline.mathEmpty:
         case MdInline.mathDisplay:
         case MdInline.mathPadded:
@@ -1348,11 +1696,36 @@ class LiveMarkdownController extends TextEditingController {
                   : Color(0xFF000000 | v));
         case MdInline.wikiLink:
         case MdInline.extLink:
+          // **A link is its words, not its address** — the same change of
+          // character bold and an equation already make when the caret arrives.
+          // It was the last inline kind without one, so clicking into a
+          // sentence made `[the docs](https://…/a/very/long/path)` unfold in
+          // the middle of it and the line re-wrap around sixty characters
+          // nobody wrote.
+          //
+          // Colour and underline are the READ renderer's own (`_ExternalLink`),
+          // because the two renderers are one text box to the person looking
+          // at them. Underline costs no width, so the "nothing moves when you
+          // click into it" measurement holds.
+          //
+          // `linkMarkers` returns null if the arithmetic cannot be proven, and
+          // then this behaves exactly as it did before: source, legible,
+          // nothing hidden. There is no third outcome.
+          final linkMk =
+              linkMarkers(c.kind, c.label, sub.substring(m.start, m.end));
+          openLen = linkMk?.openLen ?? 0;
+          closeLen = linkMk?.closeLen ?? 0;
+          final linkInk = dark ? OnoteColors.ink300 : OnoteColors.ink600;
+          inner = cBase.copyWith(
+              color: linkInk,
+              decoration:
+                  linkMk == null ? null : TextDecoration.underline,
+              decorationColor: linkInk);
         case MdInline.bareUrl:
         case MdInline.math: // handled above; listed to keep the switch total
-          // The editor has no live form for these yet, so they stay legible
-          // source. Zero-width markers would hide half a URL and leave the
-          // caret walking through characters nobody can see.
+          // A bare URL is already its own label — there is nothing to hide,
+          // and hiding half of it would leave the caret walking through the
+          // other half.
           openLen = closeLen = 0;
           inner = cBase.copyWith(
               color: dark ? OnoteColors.ink300 : OnoteColors.ink600);
@@ -1470,7 +1843,7 @@ class _SourceSpan extends WidgetSpan {
 /// Backspace at an equation's edge are different operations — one splices
 /// text, the other steps INSIDE the equation (v0.20 §B.5) — and telling them
 /// apart by the shape of the offsets was one refactor away from wrong.
-enum MdRunKind { marker, math }
+enum MdRunKind { marker, math, atom }
 
 /// One inline construct with hidden markers, in source offsets.
 typedef _MdRun = ({int start, int end, int openLen, int closeLen, MdRunKind kind});
@@ -1729,3 +2102,268 @@ class _ResizeDrag extends Drag {
 // WrapSelectionFormatter moved to wrap_selection.dart, where every content
 // editor can reach it without importing this whole controller — the export
 // keeps existing importers compiling.
+
+/// **The in-flow picture whose reference covers [offset], or null.**
+///
+/// A picture in a sentence is `![](sha256:…)` alone on its line — ordinary
+/// characters in the block's own Markdown, not a block of its own. Three of
+/// the four ways a picture reaches a page produce this shape (Ctrl+V at the
+/// caret, a drop onto a text box, Insert ▸ Image), so it is the common one,
+/// and anything offering to act on "the picture" has to be able to find it.
+///
+/// Deliberately here rather than beside the menu that asks. [_imageLineRe] is
+/// the LINE grammar, and this file owns it; the last time a second copy of
+/// that knowledge existed, the copy did not know that `onote://atom/…` shares
+/// the `![…](…)` shape and every table on its own line was drawn as a broken
+/// picture. One reader, one answer.
+///
+/// Returns the range the whole reference occupies — the caller needs it to
+/// know what it would be acting on — and the blob hash. Null for a line that
+/// is not a picture, for a table's atom reference, and for any source that is
+/// not a stored blob (an `http://` image is not ours to write out).
+({int start, int end, String hash})? pictureRefAt(String text, int offset) {
+  if (offset < 0) return null;
+  var pos = 0;
+  for (final line in text.split('\n')) {
+    final end = pos + line.length;
+    // `<=` so a caret snapped to either edge of the reference still finds it:
+    // a click on the picture resolves inside the run, and
+    // `_snapOutOfHiddenMarkers` then pushes it to one end or the other.
+    if (offset <= end) {
+      if (offset < pos) return null;
+      final m = LiveMarkdownController._imageLineRe.firstMatch(line);
+      if (m == null) return null;
+      final src = m.group(3)!;
+      if (LiveMarkdownController._isAtomRef(src)) return null;
+      if (!src.startsWith('sha256:')) return null;
+      return (start: pos + m.start, end: pos + m.end, hash: src);
+    }
+    pos = end + 1;
+  }
+  return null;
+}
+
+/// **Why Ctrl+K declines.**
+///
+/// Each of these is a place where splicing `[…](…)` into the buffer would
+/// produce something the grammar cannot read back — so the answer is a
+/// sentence to the person rather than an edit they did not ask for. A link
+/// that silently does not render is a worse outcome than a link that was
+/// politely refused, because the first one is only discovered later, in a note
+/// somebody was relying on.
+enum LinkBlocked {
+  /// No caret at all. Nothing to attach to and nowhere to put it.
+  noCaret,
+
+  /// A selection that crosses a line. The inline grammar is scanned per line,
+  /// so a match spanning one could never be drawn — it would be written into
+  /// the note and then read back as literal brackets.
+  lines,
+
+  /// A picture, a table or a flashcard. All three are ALL-OR-NOTHING: their
+  /// reference is a pointer to a payload held elsewhere, and a bracket spliced
+  /// into one stops it matching, which strands the payload and spills forty
+  /// characters of URL into the sentence.
+  object,
+
+  /// Inside an equation, where `[` and `]` are LaTeX rather than a link.
+  maths,
+
+  /// The words already carry a bracket, which `[label](url)` cannot hold —
+  /// the label is `[^\]\[]+` by construction.
+  bracket,
+
+  /// Inside some other inline run — bold, code, a colour. Neither renderer
+  /// re-scans the inside of a run, so a link placed there would be correct
+  /// Markdown that this editor draws as its own source. Refusing is the
+  /// honest answer until nesting is real.
+  nested,
+}
+
+/// **Where a link would go, or why it cannot go anywhere.**
+///
+/// One answer to the question "what does Ctrl+K act on", asked by the
+/// paragraph, by a table cell, and by the right-click menu — so that the three
+/// of them cannot disagree about what is safe.
+class LinkSite {
+  const LinkSite.at(this.start, this.end, this.label,
+      {this.url, this.wiki = false})
+      : blocked = null;
+  const LinkSite.no(this.blocked)
+      : start = -1,
+        end = -1,
+        label = '',
+        url = null,
+        wiki = false;
+
+  /// The range the link will replace. For an edit, the whole existing link.
+  final int start, end;
+
+  /// The words that will be the label — empty when the caret had nothing to
+  /// attach to, which is what makes the dialog ask for display text.
+  final String label;
+
+  /// The address already there. Non-null means this is an edit, not an insert.
+  final String? url;
+
+  /// True when the link being edited is the `[[Title|page-id]]` form. Recorded
+  /// rather than guessed from whether the target has a colon in it: a page id
+  /// is opaque, and a guess about somebody's data is a bug waiting for the one
+  /// id that breaks it.
+  final bool wiki;
+
+  final LinkBlocked? blocked;
+
+  bool get ok => blocked == null;
+  bool get isEdit => url != null;
+}
+
+/// **What Ctrl+K would act on at [sel], and whether it may.**
+///
+/// The rules, in the owner's words: *"If text is highlighted it should insert
+/// the link onto that, if nothing is highlighted but the cursor is pressed up
+/// against a word it should do it for that (if there is a space between the
+/// cursor and word DONT fill it on there), and if it cannot insert it on
+/// existing text, add a field to add display text."*
+///
+/// Deliberately here, beside the other readers of this grammar, and pure so
+/// that every refusal above can be proven by a test rather than argued for in
+/// a comment. The safety rules are not a nicety: a table's reference and a
+/// picture's are pointers, and the cost of splicing a bracket into one is a
+/// payload nothing can reach again.
+LinkSite linkSiteAt(String text, TextSelection sel) {
+  if (!sel.isValid) return const LinkSite.no(LinkBlocked.noCaret);
+  final t = text;
+  final lo = sel.start.clamp(0, t.length), hi = sel.end.clamp(0, t.length);
+  if (t.substring(lo, hi).contains('\n')) {
+    return const LinkSite.no(LinkBlocked.lines);
+  }
+
+  final lineStart = lo == 0 ? 0 : t.lastIndexOf('\n', lo - 1) + 1;
+  var lineEnd = t.indexOf('\n', lo);
+  if (lineEnd < 0) lineEnd = t.length;
+  final line = t.substring(lineStart, lineEnd);
+
+  // A line that IS an object — a picture, a card — has no prose to link.
+  if (inlineCardRe.hasMatch(line)) return const LinkSite.no(LinkBlocked.object);
+  final img = LiveMarkdownController._imageLineRe.firstMatch(line);
+  if (img != null) return const LinkSite.no(LinkBlocked.object);
+
+  // Everything the grammar already knows is on this line, in buffer offsets.
+  // An existing link WINS: Ctrl+K inside one means edit it, which is the
+  // behaviour every other editor has trained people to expect.
+  LinkBlocked? clash;
+  for (final m in mdInlineRe.allMatches(line)) {
+    final c = classifyInline(m);
+    final s = lineStart + m.start, e = lineStart + m.end;
+    final overlaps = lo < e && hi > s;
+    final inside = lo >= s && hi <= e;
+    if (c.kind == MdInline.extLink || c.kind == MdInline.wikiLink) {
+      if (inside) {
+        return LinkSite.at(s, e, c.label ?? c.inner,
+            url: c.target ?? '', wiki: c.kind == MdInline.wikiLink);
+      }
+      if (overlaps) clash ??= LinkBlocked.nested;
+      continue;
+    }
+    if (!overlaps) continue;
+    clash ??= switch (c.kind) {
+      MdInline.atom => LinkBlocked.object,
+      MdInline.math ||
+      MdInline.mathDisplay ||
+      MdInline.mathPadded ||
+      MdInline.mathEmpty =>
+        LinkBlocked.maths,
+      // A bare URL is already a link; wrapping one in another is not something
+      // to guess at on somebody's behalf.
+      MdInline.bareUrl => LinkBlocked.nested,
+      _ => LinkBlocked.nested,
+    };
+  }
+  if (clash != null) return LinkSite.no(clash);
+
+  // A character that can be part of a word. Brackets are excluded because the
+  // label cannot hold them, so a word carrying one is caught here rather than
+  // by producing a link that does not match.
+  bool word(int i) {
+    if (i < 0 || i >= t.length) return false;
+    final ch = t[i];
+    return ch.trim().isNotEmpty && !'[]()'.contains(ch);
+  }
+
+  var s = lo, e = hi;
+  if (lo == hi) {
+    // Pressed up against a word on either side, and nothing when there is a
+    // gap. A caret with space around it has nothing to label.
+    if (word(lo - 1) || word(lo)) {
+      while (word(s - 1)) {
+        s--;
+      }
+      while (word(e)) {
+        e++;
+      }
+      // Sentence punctuation belongs to the writer, not to the address — the
+      // same rule the bare-URL renderer already applies at the other end.
+      const edge = '.,;:!?"\'';
+      while (e > s && edge.contains(t[e - 1])) {
+        e--;
+      }
+      while (s < e && edge.contains(t[s])) {
+        s++;
+      }
+    }
+  }
+
+  final label = t.substring(s, e);
+  if (label.contains('[') || label.contains(']')) {
+    return const LinkSite.no(LinkBlocked.bracket);
+  }
+  return LinkSite.at(s, e, label);
+}
+
+/// A URL the link grammar can hold.
+///
+/// `_link` reads `[^)\s]+`, so a close bracket or a space inside an address
+/// would end the match early and leave the tail of somebody's URL sitting in
+/// their sentence as text. Both are legal in a real URL — Wikipedia is full of
+/// the first — so they are percent-encoded rather than refused. Everything
+/// else is left exactly as typed: an address that has been "helpfully"
+/// rewritten is the kind of thing that fails months later.
+String encodeLinkTarget(String url) => url
+    .trim()
+    .replaceAll('%', '%25')
+    .replaceAll(' ', '%20')
+    .replaceAll('\t', '%09')
+    .replaceAll('(', '%28')
+    .replaceAll(')', '%29');
+
+/// The edit Ctrl+K makes: [site] becomes `[label](url)`, caret after it.
+///
+/// [wiki] writes the `[[Title|page-id]]` form instead, for a link to another
+/// page in the notebook. Both shapes go through here so that "what does
+/// inserting a link do to the buffer" has one answer — and so that a page link
+/// made this way is found again by [linkSiteAt], and can therefore be edited
+/// and removed with the same two keystrokes as any other.
+({String text, TextSelection selection}) applyLink(
+    String text, LinkSite site,
+    {required String label, required String url, bool wiki = false}) {
+  // `[[|id]]` matches nothing — the wiki label is `[^\]|]+` — so a page link
+  // with no words falls back to the page's own id rather than being written
+  // as something no renderer will read.
+  final ref = wiki
+      ? '[[${label.isEmpty ? url : label}|$url]]'
+      : '[$label](${encodeLinkTarget(url)})';
+  return (
+    text: text.replaceRange(site.start, site.end, ref),
+    selection: TextSelection.collapsed(offset: site.start + ref.length),
+  );
+}
+
+/// The edit "Remove link" makes: the words stay, the address goes.
+({String text, TextSelection selection}) removeLink(String text, LinkSite site) {
+  return (
+    text: text.replaceRange(site.start, site.end, site.label),
+    selection:
+        TextSelection.collapsed(offset: site.start + site.label.length),
+  );
+}

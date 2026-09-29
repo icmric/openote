@@ -1,16 +1,128 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart';
 
 import '../l10n/l10n.dart';
+import '../canvas/portal_view.dart';
+import '../media/pdf_pages.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
 import 'color_picker.dart';
 import 'insert_catalog.dart';
 import 'pdf_viewer_dialog.dart';
+import 'save_picture.dart';
 
 /// Right-click menus (style guide: most actions within ≤2 clicks).
+
+/// **One right-click menu, worn by both of the things that draw one.**
+///
+/// The owner: *"we need to make the right click menus all the same visually,
+/// we currently have 2."* Quite so — a block's menu is a Material popup with
+/// icons and shortcut hints, while a text field's is Flutter's own selection
+/// toolbar, which is a row of bare words. Same gesture, same kind of list,
+/// two completely different objects on screen.
+///
+/// This gives the text field the block menu's clothes: the same surface, the
+/// same 36px rows, the same icon-then-label-then-shortcut layout. It keeps
+/// `DesktopTextSelectionToolbar` for the SURFACE and the positioning, because
+/// a selection menu has to sit against the selection and that widget already
+/// knows how — the parts worth sharing are the ones you can see.
+Widget onoteTextContextMenu(
+    BuildContext context, EditableTextState editable,
+    List<ContextMenuButtonItem> items) {
+  final l = MaterialLocalizations.of(context);
+  return DesktopTextSelectionToolbar(
+    anchor: editable.contextMenuAnchors.primaryAnchor,
+    children: [
+      for (final item in items)
+        _ToolbarRow(
+          icon: _iconFor(item),
+          label: item.label ?? l.moreButtonTooltip,
+          shortcut: _shortcutFor(item),
+          onPressed: item.onPressed,
+        ),
+    ],
+  );
+}
+
+/// The icon for one toolbar row.
+///
+/// Flutter's own items carry a [ContextMenuButtonType], which is the reliable
+/// thing to switch on. Openote's own are added by label from the editor, so
+/// they are matched by label — which is fragile in general and safe here,
+/// because both ends of the match live in this repository and a miss costs a
+/// missing icon rather than a missing row.
+IconData _iconFor(ContextMenuButtonItem item) => switch (item.type) {
+      ContextMenuButtonType.cut => Icons.cut_outlined,
+      ContextMenuButtonType.copy => Icons.copy_outlined,
+      ContextMenuButtonType.paste => Icons.content_paste_outlined,
+      ContextMenuButtonType.selectAll => Icons.select_all,
+      ContextMenuButtonType.delete => Icons.delete_outline,
+      ContextMenuButtonType.lookUp => Icons.search,
+      ContextMenuButtonType.searchWeb => Icons.travel_explore_outlined,
+      ContextMenuButtonType.share => Icons.share_outlined,
+      ContextMenuButtonType.liveTextInput => Icons.text_fields,
+      ContextMenuButtonType.custom => switch (item.label) {
+          'Save image as…' => Icons.download_outlined,
+          'Edit link…' => Icons.link,
+          'Show as a page window' => Icons.picture_in_picture_alt_outlined,
+          'Add to dictionary' => Icons.library_add_outlined,
+          _ => Icons.spellcheck, // a spelling suggestion: the word itself
+        },
+    };
+
+String? _shortcutFor(ContextMenuButtonItem item) => switch (item.type) {
+      ContextMenuButtonType.cut => 'Ctrl+X',
+      ContextMenuButtonType.copy => 'Ctrl+C',
+      ContextMenuButtonType.paste => 'Ctrl+V',
+      ContextMenuButtonType.selectAll => 'Ctrl+A',
+      _ => null,
+    };
+
+/// One row, laid out exactly as [_item] lays out a block-menu row.
+class _ToolbarRow extends StatelessWidget {
+  const _ToolbarRow({
+    required this.icon,
+    required this.label,
+    required this.shortcut,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? shortcut;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      style: TextButton.styleFrom(
+        alignment: AlignmentDirectional.centerStart,
+        minimumSize: const Size.fromHeight(36),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        shape: const RoundedRectangleBorder(),
+        foregroundColor: Theme.of(context).colorScheme.onSurface,
+        textStyle: const TextStyle(fontSize: 13),
+      ),
+      onPressed: onPressed,
+      child: Row(children: [
+        Icon(icon, size: 16),
+        const SizedBox(width: 10),
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
+        if (shortcut != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 18),
+            child: Text(shortcut!,
+                style: OnoteType.caption
+                    .copyWith(color: context.surfaces.textSecondary)),
+          ),
+      ]),
+    );
+  }
+}
 
 PopupMenuItem<String> _item(String v, IconData icon, String label,
     {bool enabled = true, String? shortcut}) {
@@ -35,18 +147,99 @@ PopupMenuItem<String> _item(String v, IconData icon, String label,
   );
 }
 
+/// Swap a page window for a one-line link to the same page.
+///
+/// A replacement rather than an edit, because [Block.type] is final — and
+/// that is the honest shape of it anyway: an embed and a paragraph are not
+/// the same block wearing different clothes.
+///
+/// **The link is a wiki link, `[[Title|id]]`, and that matters.**
+///
+/// The first cut wrote `[Title](onote://page/id)`, which LOOKS like the right
+/// answer and is not: that is the shape `md_common.markdownInline` projects a
+/// page link into on the way OUT to a `.md` file. Inside the editor the
+/// grammar's `_link` branch matches `https?:` and `mailto:` only, on purpose —
+/// so `onote://` cannot be claimed by it and stays free for atom references.
+/// A page link written that way is therefore not a link at all; it is eleven
+/// characters of punctuation sitting in the sentence. The owner: *"it seems to
+/// write out the markdown for it correctly but doesnt actually register it as
+/// a link."*
+///
+/// `[[Title|id]]` is what Ctrl+K writes ([applyLink]) and what `linkSiteAt`
+/// finds again, so a link made here can be edited and removed with the same
+/// keystrokes as any other.
+void _turnIntoPageLink(AppState app, Block b) {
+  final ref = PortalRef.parse(b.content);
+  if (ref == null) return;
+  final title = app.node(ref.pageId)?.title;
+  app.pushUndo();
+  // An empty label falls back to the id rather than to words, for the reason
+  // `applyLink` gives: `[[|id]]` matches nothing, because the wiki label is
+  // `[^\]|]+`.
+  final label =
+      title == null || title.trim().isEmpty ? ref.pageId : title.trim();
+  final link = '[[$label|${ref.pageId}]]';
+  final made = app.addBlock(Block(
+    type: BlockType.text,
+    x: b.x,
+    y: b.y,
+    // Not the window's width: a line of text in a 380px box would wrap where
+    // nothing needs to wrap, and the box is what you see when you click it.
+    w: 320,
+    z: b.z,
+    content: {'text': link},
+  ));
+  app.removeBlock(b.id, recordUndo: false);
+  app.select(made.id);
+}
+
+/// **The menu one picture in a sentence answers with.**
+///
+/// The owner: *"To be able to save an image, i need to be both in editing
+/// mode and have the cursor on the image, right clicking it not in editing
+/// mode or while in editing but with the cursor else where should bring up
+/// the option to save the image."*
+///
+/// The block's own menu cannot offer this, and correctly: a picture in a
+/// sentence is characters in the text, so the block is a paragraph and
+/// `pictureIn` says — rightly — that it holds no picture. The picture is the
+/// only thing that knows where it is, so it is the thing that answers.
+///
+/// Drawn by the same [showMenu] with the same [_item] rows as every other
+/// right-click in the app.
+Future<void> showPictureMenu(
+    BuildContext context, AppState app, String src, Offset globalPos) async {
+  final action = await showMenu<String>(
+    context: context,
+    position: RelativeRect.fromLTRB(
+        globalPos.dx, globalPos.dy, globalPos.dx, globalPos.dy),
+    items: [_item('save-image', Icons.download_outlined, 'Save image as…')],
+  );
+  if (action != 'save-image' || !context.mounted) return;
+  // An in-flow reference records no mime — it is the hash and nothing else —
+  // so the name is worked out from the bytes themselves.
+  await savePictureBytes(
+    context,
+    app.blob(src),
+    notHereYet: "That picture isn't here yet — it may still be syncing.",
+  );
+}
+
 Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
     Offset globalPos) async {
   if (!app.selectedIds.contains(b.id)) app.select(b.id);
-  final editable = b.type == BlockType.text ||
-      b.type == BlockType.code ||
-      b.type == BlockType.math;
   final action = await showMenu<String>(
     context: context,
     position: RelativeRect.fromLTRB(
         globalPos.dx, globalPos.dy, globalPos.dx, globalPos.dy),
     items: [
-      if (editable) _item('edit', Icons.edit_outlined, 'Edit'),
+      // **No "Edit".** The owner: *"Please remove the edit button in the
+      // right click menu as thats accesable by left clicking the boxes."*
+      // Quite so — a left click has opened a box for editing since the
+      // beginning, and a menu row that repeats the gesture you used to open
+      // the menu is a row everything else has to be read past. The same
+      // reasoning already kept "Text box" off this menu and, later, off the
+      // Insert ribbon.
       _item('copy', Icons.copy_outlined, 'Copy', shortcut: 'Ctrl+C'),
       _item('cut', Icons.cut_outlined, 'Cut', shortcut: 'Ctrl+X'),
       _item('duplicate', Icons.copy_all_outlined, 'Duplicate',
@@ -69,6 +262,25 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       // selectable, which the raster on the canvas can never be.
       if (b.content['pdf'] is String)
         _item('open-pdf', Icons.picture_as_pdf_outlined, 'Open the PDF…'),
+      // **Get the picture back out.** Issue #10: *"There is the possibility
+      // that you need an image you imported into the note. It would be REALLY
+      // useful to have a save image button."* A note that can swallow a
+      // picture and never give it back is a one-way door, and an attachment
+      // and a video have had their own "Save a copy…" all along.
+      //
+      // In the right-click menu because that is where every browser and every
+      // document editor puts "Save image as…", so it is the first place
+      // anybody looks — and it costs the picture no chrome drawn over it.
+      if (pictureIn(b) != null)
+        _item('save-image', Icons.download_outlined, 'Save image as…'),
+      // **A window onto a page, or a line that points at one.** The owner
+      // asked for the window to be draggable out of the navigator *"(and
+      // right clicking this should provide the option to change this to a
+      // page link)"* — because the two are the same intention at different
+      // sizes, and which one you want is often clear only once you can see
+      // the window taking up a third of the page.
+      if (b.type == BlockType.embed && PortalRef.parse(b.content) != null)
+        _item('to-link', Icons.link, 'Change to a page link'),
       const PopupMenuDivider(),
       _item('front', Icons.flip_to_front, 'Bring to front'),
       _item('back', Icons.flip_to_back, 'Send to back'),
@@ -77,8 +289,6 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
     ],
   );
   switch (action) {
-    case 'edit':
-      app.select(b.id, edit: true);
     case 'lock':
       app.pushUndo();
       if (b.content['locked'] == true) {
@@ -108,6 +318,10 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
             hash: b.content['pdf'] as String,
             initialPage: (b.content['page'] as num?)?.toInt() ?? 0);
       }
+    case 'save-image':
+      if (context.mounted) await _saveImage(context, app, b);
+    case 'to-link':
+      _turnIntoPageLink(app, b);
     case 'copy':
       app.copySelectedBlocks();
     case 'cut':
@@ -121,6 +335,56 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
     case 'delete':
       app.removeSelected();
   }
+}
+
+/// **What this block holds that could be written out as a picture**, or null.
+///
+/// Two shapes qualify. An image block is bytes in the blob store. A slide is a
+/// REFERENCE — `{pdf: sha256:…, page: n}` — whose pixels exist only while
+/// something is looking at them, so saving one means rendering it. Both are
+/// pictures to the person looking at the page, so both offer the item; the
+/// difference lives in [_saveImage] and nowhere else.
+@visibleForTesting
+({bool slide, String hash})? pictureIn(Block b) {
+  final pdf = b.content['pdf'];
+  if (pdf is String) return (slide: true, hash: pdf);
+  if (b.type != BlockType.image) return null;
+  final blob = b.content['blob'];
+  return blob is String ? (slide: false, hash: blob) : null;
+}
+
+/// Write the picture in [b] to a file the person chooses.
+///
+/// Every failure gets words. The same three the attachment's "Save a copy…"
+/// already handles, because they are the three that happen: the bytes are not
+/// here yet (a picture still syncing), the write threw (a full stick, a
+/// protected folder), and the happy path — which also says something, so a
+/// save that went somewhere unexpected is findable.
+Future<void> _saveImage(BuildContext context, AppState app, Block b) async {
+  final pic = pictureIn(b);
+  if (pic == null) return;
+
+  final Uint8List? bytes;
+  final String base;
+  final String? mime;
+  if (pic.slide) {
+    final page = (b.content['page'] as num?)?.toInt() ?? 0;
+    bytes = await PdfPages.pageImage(app, pic.hash, page);
+    // One-based: the person is looking at "page 1", not at index 0.
+    base = 'slide-${page + 1}';
+    mime = 'image/png'; // what the renderer produced, not what the PDF is
+  } else {
+    bytes = app.blob(pic.hash);
+    base = 'image';
+    mime = b.content['mime'] as String?;
+  }
+  if (!context.mounted) return;
+  await savePictureBytes(context, bytes,
+      mime: mime,
+      base: base,
+      notHereYet: pic.slide
+          ? "That PDF isn't here yet — it may still be syncing."
+          : "That picture isn't here yet — it may still be syncing.");
 }
 
 /// The canvas's own menu: paste, the ten things you can add, and the page's

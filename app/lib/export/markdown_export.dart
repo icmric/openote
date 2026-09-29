@@ -106,7 +106,12 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
   for (final b in ordered) {
     switch (b.type) {
       case BlockType.text:
-        buf.writeln(markdownInline(b.content['text'] as String? ?? '').trimRight());
+        // Atoms first, so a table inside a paragraph is exported as a table
+        // rather than as the URL that stands for it — and so the words in
+        // its cells go through the same projection as the words around it.
+        buf.writeln(markdownInline(
+                expandAtoms(b.content['text'] as String? ?? '', b.content))
+            .trimRight());
         buf.writeln();
       case BlockType.math:
         final latex = b.content['latex'] as String? ?? '';

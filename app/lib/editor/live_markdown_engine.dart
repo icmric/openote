@@ -5,6 +5,9 @@ import 'package:flutter/services.dart';
 
 import '../markdown/md_render.dart';
 import '../markdown/md_syntax.dart';
+import '../core/ids.dart';
+import '../update/app_update.dart' show kAppVersion;
+import '../model/inline_atom.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
@@ -14,12 +17,18 @@ import '../math/equation_editor.dart';
 import '../math/evaluate.dart';
 import '../math/math_editor.dart';
 import '../math/math_field.dart';
+import '../canvas/portal_view.dart';
+import 'block_atom_host.dart';
+import 'emphasis_guard.dart';
 import 'inline_math_editor.dart';
 import 'list_editing.dart';
 import 'math_paste_formatter.dart';
 import 'live_markdown_controller.dart';
 import 'onote_text_editor.dart';
 import 'unicode_input.dart';
+import '../ui/context_menus.dart';
+import '../ui/link_dialog.dart';
+import '../ui/save_picture.dart';
 
 /// The engine we own: a [TextField] driven by [LiveMarkdownController] for the
 /// live container, [MarkdownView] for the read-only ones.
@@ -58,6 +67,25 @@ class LiveMarkdownEngine extends OnoteTextEditor {
         // never the one being edited at the moment its graph is picked out —
         // which made "it works both ways" true only for maths blocks.
         mathLinkTint: (latex) => app.inlineGraphTint(block.id, latex),
+        // A picture in a sentence answers its own right-click, because the
+        // block's menu cannot: the block is a paragraph, and `pictureIn`
+        // rightly says a paragraph holds no picture.
+        onPictureMenu: (src, at) =>
+            unawaited(showPictureMenu(context, app, src, at)),
+        // **A table is a table before you click on it.**
+        //
+        // The read view mounts the same widget the editing session does, so
+        // nothing about a table changes shape when the caret arrives. It is
+        // not editable here — that needs the session — but a click in a cell
+        // opens the box AND says which cell, so one click still lands the
+        // caret where the pointer is.
+        atomHost: blockAtomHost(app, block.id,
+            editable: false,
+            onOpen: (id, row, col) {
+              app.pendingAtomCell =
+                  (blockId: block.id, atomId: id, row: row, col: col);
+              app.select(block.id, edit: true);
+            }),
         // Tag markers (TEXT-5) hang in the line's gutter.
         tagsByLine: NoteTag.byLine(block.content),
         onToggleTag: (line, checked) =>
@@ -76,23 +104,46 @@ class LiveMarkdownEngine extends OnoteTextEditor {
     required Block block,
     required AppState app,
     required ValueChanged<String> onChanged,
-  }) =>
-      _LiveMarkdownSession(
-        app: app,
-        controller: LiveMarkdownController(
-            text: deserialize(block.content), dark: false)
-          // The same resolver the read view gets, so an in-flow image is a
-          // picture in both — see the note in live_markdown_controller.dart on
-          // how it stays there without desyncing a single caret offset.
-          ..imageResolver = (src) {
-            if (app.notebookId == null || !src.startsWith('sha256:')) return null;
-            return app.blob(src);
-          },
-        onChanged: onChanged,
-      )
-        ..spellCheckEnabled = app.spellCheckEnabled
-        // Check once on open so existing text is marked without an edit.
-        ..scheduleInitialSpellCheck();
+  }) {
+    final session = _LiveMarkdownSession(
+      app: app,
+      blockId: block.id,
+      controller: LiveMarkdownController(
+          text: deserialize(block.content), dark: false)
+        // The same resolver the read view gets, so an in-flow image is a
+        // picture in both — see the note in live_markdown_controller.dart on
+        // how it stays there without desyncing a single caret offset.
+        ..imageResolver = (src) {
+          if (app.notebookId == null || !src.startsWith('sha256:')) return null;
+          return app.blob(src);
+        },
+      // **The payloads follow the text.** Deleting a table's reference drops
+      // its payload; pasting one back brings the payload with it. Both are
+      // one call, made before the text is saved, so what is written is always
+      // a block whose references and payloads agree.
+      onChanged: (text) {
+        reconcileBlockAtoms(app, block.id, text);
+        onChanged(text);
+      },
+    );
+    session.controller.atomHost = blockAtomHost(
+      app,
+      block.id,
+      editable: true,
+      onKeyboard: session._atomTookKeyboard,
+      onExit: session._leaveAtom,
+      onNeedWidth: (total) {
+        final avail = session.controller.layoutWidth;
+        if (avail == null) return;
+        final extra = total + 16 - avail;
+        if (extra > 0) session.requestExtraWidth?.call(extra);
+      },
+    );
+    return session
+      ..spellCheckEnabled = app.spellCheckEnabled
+      // Check once on open so existing text is marked without an edit.
+      ..scheduleInitialSpellCheck();
+  }
 
   @override
   double measureIntrinsicWidth(String text, TextStyle style) {
@@ -107,10 +158,91 @@ class LiveMarkdownEngine extends OnoteTextEditor {
   }
 }
 
+/// Wraps the next thing typed after a style chord (Ctrl+B and friends)
+/// pressed with a collapsed caret and nothing to toggle off — see
+/// [AppState.wrapSelection] and [AppState.pendingMarks].
+///
+/// It wraps the whole span from the queued spot to the caret rather than
+/// whatever this one edit added, which is what makes it work with an IME:
+/// a composed word is in the buffer for several keystrokes before it is
+/// committed, and only the finished word should end up inside the markers.
+/// Nothing is wrapped while composing is still in progress, because the
+/// preview is about to be replaced by the next one.
+///
+/// One shot: once the wrap is made the queue clears, and what it leaves
+/// behind is a real (now non-empty) run that the ordinary hidden-marker
+/// machinery in [LiveMarkdownController] already extends on the next
+/// keystroke — this never has to run twice for the same word. Anything that
+/// says the queue no longer describes where the caret is — a deletion back
+/// past the anchor, an edit before it — clears it and passes the edit
+/// through untouched.
+class _PendingStyleFormatter extends TextInputFormatter {
+  _PendingStyleFormatter(this.app, this.blockId);
+  final AppState app;
+  final String blockId;
+
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final at = app.pendingMarkAt;
+    if (at == null ||
+        app.pendingMarks.isEmpty ||
+        app.pendingMarkBlockId != blockId) {
+      return newValue;
+    }
+    void cancel() => app.clearPendingMarks();
+
+    final sel = newValue.selection;
+    // The caret must still be at or past the queued spot, and everything
+    // before that spot untouched. Backspacing back over it, or an edit
+    // somewhere else entirely, means the queue is describing a place that no
+    // longer exists.
+    if (!sel.isValid ||
+        !sel.isCollapsed ||
+        sel.baseOffset < at ||
+        at > newValue.text.length ||
+        at > oldValue.text.length ||
+        newValue.text.substring(0, at) != oldValue.text.substring(0, at)) {
+      cancel();
+      return newValue;
+    }
+    if (newValue.composing.isValid && !newValue.composing.isCollapsed) {
+      // Mid-composition: hold the queue open and follow the caret, so the
+      // "the caret left" rule does not fire on a word that is still arriving.
+      app.pendingMarkCaret = sel.baseOffset;
+      return newValue;
+    }
+    final end = sel.baseOffset;
+    // Nothing typed yet at all (a forward delete at the caret, say): the
+    // queue is still good, there is simply nothing to wrap.
+    if (end == at) {
+      app.pendingMarkCaret = end;
+      return newValue;
+    }
+    final run = newValue.text.substring(at, end);
+    // A space before the first real character keeps the queue and moves it
+    // along: Ctrl+B, space, word should still bold the word.
+    if (!run.contains('\n') && run.trim().isEmpty) {
+      app.pendingMarkAt = end;
+      app.pendingMarkCaret = end;
+      return newValue;
+    }
+    final wrap = app.applyPendingMarks(run);
+    cancel();
+    if (wrap == null) return newValue;
+    return TextEditingValue(
+      text: newValue.text.replaceRange(at, end, wrap.text),
+      selection: TextSelection.collapsed(offset: at + wrap.caret),
+      composing: TextRange.empty,
+    );
+  }
+}
+
 class _LiveMarkdownSession extends OnoteEditSession {
   _LiveMarkdownSession({
     required this.app,
     required this.controller,
+    required this.blockId,
     required this.onChanged,
   }) {
     // Resizing a picture rewrites the buffer from inside the controller, and a
@@ -132,6 +264,30 @@ class _LiveMarkdownSession extends OnoteEditSession {
     // has left it - the host caret is parked inside the run while editing,
     // so any selection outside [start, end] means "close" (v0.20 B.2.5).
     controller.addListener(_maybeCloseOnCaretExit);
+    controller.addListener(_maybeCancelPendingStyle);
+    // Every keystroke and every caret move, which is exactly when the caret
+    // can have gone out of sight. The work behind this is one rectangle
+    // comparison unless it actually needs to scroll.
+    controller.addListener(app.ensureCaretVisible);
+  }
+
+  /// A queued style belongs to the spot the caret was at when the chord was
+  /// pressed. Move off it with an arrow key or a click and the queue is stale
+  /// - and unlike an EDIT, which [_PendingStyleFormatter] sees, a pure caret
+  /// move never reaches a formatter at all, so it has to be caught here.
+  void _maybeCancelPendingStyle() {
+    if (app.pendingMarks.isEmpty ||
+        app.pendingMarkBlockId != app.editingBlockId) {
+      return;
+    }
+    final sel = controller.selection;
+    // Against the EXPECTED caret, not the anchor: a word still being composed
+    // by an IME has legitimately moved the caret past the anchor already.
+    if (!sel.isValid ||
+        !sel.isCollapsed ||
+        sel.baseOffset != app.pendingMarkCaret) {
+      app.clearPendingMarks();
+    }
   }
 
   /// Alt+= in a paragraph: an empty equation AT THE CARET, opened for editing.
@@ -214,8 +370,141 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// never override that.
   Offset? _mathInitialTapGlobal;
 
+  /// The block this session is editing. Held because an atom's payload lives
+  /// in that block's content, and starting a table has to put one there
+  /// before the reference to it reaches the buffer.
+  final String blockId;
+
   @override
   bool get inlineMathFocused => _mathFocus.hasFocus;
+
+  /// **Tab after something you typed: the line becomes a table's first cell.**
+  ///
+  /// OneNote's gesture, and the one the owner reached for: *"i pressed tab
+  /// like is the case in onenote and others and it didnt work"*. It did not,
+  /// because Tab already meant indent-this-line, and the list engine takes a
+  /// plain line as one to indent.
+  ///
+  /// So the rule is OneNote's own, and it is narrow on purpose:
+  ///
+  ///  * **something typed on this line before the caret** → a table, with
+  ///    what you typed as its first cell;
+  ///  * **the start of a line** → the indent it has always been, which is how
+  ///    an outline is built and is not a thing to take away;
+  ///  * **a list line** → nesting, which Tab has meant for as long as lists
+  ///    have.
+  ///
+  /// The payload goes into the block BEFORE the reference reaches the text:
+  /// the save path reconciles the two, and a reference that arrived first
+  /// would be a reference to nothing for as long as that took.
+  @override
+  bool startInlineTable({bool onlyAfterText = false}) {
+    final b = app.blockById(blockId);
+    if (b == null) return false;
+    final v = controller.value;
+    final t = v.text;
+    if (!v.selection.isValid || !v.selection.isCollapsed) return false;
+    final at = v.selection.baseOffset.clamp(0, t.length);
+    final start = at <= 0 ? 0 : t.lastIndexOf('\n', at - 1) + 1;
+    // Nothing WRITTEN before the caret on this line: Tab is the indent it
+    // always was, and a second Tab is a second indent. Whitespace counts as
+    // nothing, which is the difference between this and `at == start`: the
+    // owner pressed Tab twice and got "a table with a tab in the first
+    // column", because the indent the first Tab made was enough to convince
+    // the second one that something had been typed. An explicit Insert →
+    // Table has no such qualm — it was asked for.
+    if (onlyAfterText && t.substring(start, at).trim().isEmpty) return false;
+    final lineEnd = t.indexOf('\n', at);
+    final end = lineEnd < 0 ? t.length : lineEnd;
+    final line = t.substring(start, end);
+    // A list nests. A line already holding an atom is left alone: a table
+    // whose first cell is another table's reference is not a nested table,
+    // it is a lost table.
+    if (parseListLine(line) != null) return false;
+    if (line.contains(InlineAtom.scheme)) return false;
+
+    final head = line.trim();
+    final table = TableData(cells: [
+      [head, '']
+    ], colWidths: const []);
+    final atom = InlineAtom(
+      id: newId(),
+      type: 'table',
+      content: {...table.toContent(), 'madeIn': kAppVersion},
+    );
+    InlineAtom.putIn(b.content, atom);
+    // An empty line means you are starting from scratch, so the caret goes
+    // in the FIRST cell; a line with writing on it has just become that
+    // cell, so the caret goes to the next one.
+    app.pendingAtomCell = (
+      blockId: blockId,
+      atomId: atom.id,
+      row: 0,
+      col: head.isEmpty ? 0 : 1,
+    );
+    final ref = atom.reference(TableData.referenceAlt);
+    _applyEdit(TextEditingValue(
+      text: t.replaceRange(start, end, ref),
+      selection: TextSelection.collapsed(offset: start + ref.length),
+      composing: TextRange.empty,
+    ));
+    return true;
+  }
+
+  /// A table cell inside this paragraph has the keyboard.
+  ///
+  /// A `ValueNotifier` rather than a bool so the field can be rebuilt on it:
+  /// the host keeps focus while an inline child is typed into (the child is
+  /// its focus DESCENDANT), so without a rebuild the paragraph goes on
+  /// blinking a second caret beside the one in the cell.
+  final ValueNotifier<bool> _atomFocus = ValueNotifier(false);
+
+  void _atomTookKeyboard(bool holding) {
+    // A table hands the keyboard back as it is torn down, and the session it
+    // is telling may be going down in the same breath — the block closed, the
+    // page changed. Late is fine; late and disposed is an assertion.
+    if (_disposed || _atomFocus.value == holding) return;
+    _atomFocus.value = holding;
+    // The command bar asks [AppState.canFormatText], and the answer has just
+    // changed: Bold belongs to whoever has the keyboard, and while that is a
+    // cell it belongs to nobody the bar can reach.
+    app.refreshChrome();
+  }
+
+  /// **Is somebody typing INSIDE this paragraph rather than into it?**
+  ///
+  /// Read from the focus tree first, because the focus tree cannot be stale.
+  /// `hasFocus` without `hasPrimaryFocus` means exactly one thing — a
+  /// DESCENDANT of this field holds the keyboard — and a table cell and an
+  /// inline equation are both descendants. The notifiers below it are how the
+  /// field learns to REBUILD when the answer changes; they are no longer how
+  /// it learns the answer.
+  ///
+  /// That distinction is the bug. A structural change rebuilds a table's
+  /// cells, and while it does, no cell is focused for a frame; the table said
+  /// so, the flag went false, and the paragraph took its caret and its
+  /// text-input connection straight back — with the caret drawn in the
+  /// sentence and every keystroke landing there. One frame of a stale `false`
+  /// is all it takes, and no arrangement of notifications can rule it out.
+  /// Asking the focus manager can.
+  @override
+  bool get inlineChildFocused =>
+      (_focus.hasFocus && !_focus.hasPrimaryFocus) ||
+      _mathFocus.hasFocus ||
+      _atomFocus.value;
+
+  /// Escape, or Tab off the end of a table: the keyboard comes back to the
+  /// paragraph with the caret just after the atom.
+  ///
+  /// Found by id rather than by a captured offset — the atom is built once
+  /// and kept, and every character typed in the paragraph moves it.
+  void _leaveAtom(String id) {
+    final at = InlineAtom.rangeIn(controller.text, id);
+    if (at != null) {
+      controller.selection = TextSelection.collapsed(offset: at.end);
+    }
+    _focus.requestFocus();
+  }
 
   Widget _buildInlineEditor(String latex, TextStyle base) {
     final ed = _mathEditor;
@@ -598,6 +887,45 @@ class _LiveMarkdownSession extends OnoteEditSession {
     return false;
   }
 
+  /// **The caret crossing a table steps into it**, from either side, exactly
+  /// as it steps into an equation.
+  ///
+  /// The owner: *"if my cursor is at the end of the table but outside of it, i
+  /// cannot use the arrow keys to navigate into it, it just gets rid of the
+  /// cursor and never moves me into the table"*. Quite so — the caret crossed
+  /// the whole object in one step and came out the far side, which is right
+  /// for a picture and wrong for something you can write in.
+  ///
+  /// The cell is asked for the way every other cell request is made, by
+  /// leaving it on the app: an atom widget is built once per id and kept, so
+  /// there is no handle here to call a method on. See `_external` in
+  /// inline_table.dart, which picks it up on the notification below.
+  bool _enterAtomAtEdge({required bool fromRight}) {
+    final sel = controller.selection;
+    if (!sel.isValid || !sel.isCollapsed) return false;
+    final at = sel.baseOffset;
+    final b = app.blockById(blockId);
+    if (b == null) return false;
+    for (final r in InlineAtom.referencesIn(controller.text)) {
+      if (at != (fromRight ? r.end : r.start)) continue;
+      final atom = InlineAtom.allIn(b.content)[r.id];
+      // A picture, or something a newer build made: nothing to step into, so
+      // the caret goes on past it as it always did.
+      if (atom == null || atom.type != 'table') return false;
+      final d = TableData.from(atom.content);
+      if (d.rows == 0 || d.cols == 0) return false;
+      app.pendingAtomCell = (
+        blockId: blockId,
+        atomId: r.id,
+        row: fromRight ? d.rows - 1 : 0,
+        col: fromRight ? d.cols - 1 : 0,
+      );
+      app.refreshChrome();
+      return true;
+    }
+    return false;
+  }
+
   /// **A click that resolved to somewhere INSIDE a math run opens it there.**
   ///
   /// Only reachable from the very first click on a paragraph that was not
@@ -748,7 +1076,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
     // the equation and declined - it belongs to nobody else in this session.
     // Above the Alt+X check on purpose: Alt+X would otherwise rewrite the
     // code point at the HOST caret while the student is inside an equation.
-    if (inlineMathFocused) return KeyEventResult.ignored;
+    if (inlineChildFocused) return KeyEventResult.ignored;
     if (isAltXChord(event) && _applyAltX()) return KeyEventResult.handled;
     // A REPEAT counts. Holding Enter on `- item` fires one down event and
     // then repeats, and skipping those let the field insert plain newlines
@@ -757,6 +1085,26 @@ class _LiveMarkdownSession extends OnoteEditSession {
       return KeyEventResult.ignored;
     }
     final hw = HardwareKeyboard.instance;
+    // **Ctrl+K — the chord everything else uses for a link.**
+    //
+    // Handled HERE rather than in the shell's global handler because this is
+    // where the controller and its `onChanged` both are, and a link is an edit
+    // to the buffer that has to be saved like any other. The shell's handler
+    // runs first and passes on anything it does not claim, so a table cell —
+    // whose own Shortcuts sit BELOW this node and therefore see the key before
+    // it does — still gets to answer for itself.
+    if ((hw.isControlPressed || hw.isMetaPressed) &&
+        !hw.isAltPressed &&
+        event.logicalKey == LogicalKeyboardKey.keyK) {
+      final ctx = _lastContext;
+      if (ctx != null && ctx.mounted) {
+        unawaited(runLinkFlow(ctx, controller, pages: _linkablePages())
+            .then((changed) {
+          if (changed) onChanged(controller.text);
+        }));
+      }
+      return KeyEventResult.handled;
+    }
     // A chord is somebody else's (Ctrl+B, Ctrl+Enter, the canvas nudges).
     if (hw.isControlPressed || hw.isMetaPressed || hw.isAltPressed) {
       return KeyEventResult.ignored;
@@ -795,10 +1143,12 @@ class _LiveMarkdownSession extends OnoteEditSession {
     // equation as a unit, which is its own correct behaviour (E.4).
     if (!hw.isShiftPressed && k == LogicalKeyboardKey.arrowLeft) {
       if (_enterMathAtEdge(fromRight: true)) return KeyEventResult.handled;
+      if (_enterAtomAtEdge(fromRight: true)) return KeyEventResult.handled;
       return KeyEventResult.ignored;
     }
     if (!hw.isShiftPressed && k == LogicalKeyboardKey.arrowRight) {
       if (_enterMathAtEdge(fromRight: false)) return KeyEventResult.handled;
+      if (_enterAtomAtEdge(fromRight: false)) return KeyEventResult.handled;
       return KeyEventResult.ignored;
     }
     final TextEditingValue? next;
@@ -807,6 +1157,13 @@ class _LiveMarkdownSession extends OnoteEditSession {
           ? handleListShiftEnter(controller.value)
           : handleListEnter(controller.value);
     } else if (k == LogicalKeyboardKey.tab) {
+      // **Before the list engine**, which takes any line as one to indent —
+      // so asking it first would mean never asking this at all. It declines
+      // for a list line, for the start of a line and for a line that already
+      // holds a table, which is exactly where indent and nesting belong.
+      if (!hw.isShiftPressed && startInlineTable(onlyAfterText: true)) {
+        return KeyEventResult.handled;
+      }
       next = handleListTab(controller.value, outdent: hw.isShiftPressed);
       // Tab is ALWAYS consumed inside a text box, even when the engine
       // declines to change anything — Shift+Tab at the left margin, or Tab
@@ -924,6 +1281,25 @@ class _LiveMarkdownSession extends OnoteEditSession {
   }
 
   @override
+  Rect? caretRectGlobal() {
+    final st = _editableState();
+    if (st == null) return null;
+    try {
+      final r = st.renderEditable;
+      if (!r.hasSize) return null;
+      final sel = controller.selection;
+      if (!sel.isValid) return null;
+      final local = r.getLocalRectForCaret(
+          TextPosition(offset: sel.extentOffset, affinity: sel.affinity));
+      return local.shift(r.localToGlobal(Offset.zero));
+    } catch (_) {
+      // No layout yet, or the field went away between frames — the same
+      // degradation offsetAtGlobal makes, for the same reasons.
+      return null;
+    }
+  }
+
+  @override
   void setSelection(int base, int extent) {
     final n = controller.text.length;
     controller.selection = TextSelection(
@@ -966,7 +1342,13 @@ class _LiveMarkdownSession extends OnoteEditSession {
           }
         }
       }
-      if (!_focus.hasFocus) _focus.requestFocus();
+      // **Unless an inline child has it**, or is in the middle of taking it.
+      // This runs after every build, and its job is to claim the keyboard for
+      // a block that has just been opened for editing. A table rebuilding its
+      // cells looks exactly like that for one frame — nothing focused inside
+      // a field that is being edited — and claiming it there is how the caret
+      // ended up beside a table instead of in the row that had just been made.
+      if (!_focus.hasFocus && !inlineChildFocused) _focus.requestFocus();
     });
     return Padding(
       padding: s.inset,
@@ -997,15 +1379,48 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // The host keeps focus while an inline equation is edited (the field is
       // its focus DESCENDANT), so without this the paragraph blinks a second
       // caret right next to the equation's own.
-      listenable: _mathFocus,
+      // `_focus` itself is in here because [inlineChildFocused] now asks it:
+      // a node is notified when it stops being the primary focus and when it
+      // becomes it again, which is precisely when this field's caret, its key
+      // handling and its keyboard have to change hands.
+      listenable: Listenable.merge([_focus, _mathFocus, _atomFocus]),
       builder: (context, _) => TextField(
       controller: controller,
       focusNode: _focus,
       // Fires ONCE, after the caret has been placed, and never for a tap
       // that landed on the equation itself (that one is the atom's own
       // gesture, which wins the arena). See [_enterMathOnTapAtLineEnd].
-      onTap: _enterMathOnTapAtLineEnd,
-      showCursor: !_mathFocus.hasFocus,
+      onTap: () {
+        // **A tap on the sentence is a tap OUT of the table.**
+        //
+        // `EditableText.requestKeyboard` asks for focus only when the field
+        // does NOT already have it — and a host's `FocusNode.hasFocus` is
+        // true the whole time a cell holds the keyboard, because the cell is
+        // its descendant. So the paragraph never asked, the cell kept the
+        // caret, and clicking back into the sentence did nothing at all.
+        //
+        // Nothing else needs doing here: the tap has already put the
+        // paragraph's own caret where it landed.
+        if (_focus.hasFocus && !_focus.hasPrimaryFocus) _focus.requestFocus();
+        _enterMathOnTapAtLineEnd();
+      },
+      showCursor: !inlineChildFocused,
+      // **And the keyboard itself, not only the caret.**
+      //
+      // A cell is a real `TextField` nested inside this one, and a nested
+      // `EditableText` does not make its host give anything up: the host's
+      // `FocusNode.hasFocus` stays TRUE while a descendant holds the primary
+      // focus, so as far as the host is concerned it is still the field being
+      // typed into and it holds its platform text-input connection open. Two
+      // clients, one keyboard, and which one the next character reaches is
+      // then a question of attach ORDER — which nothing here controls.
+      //
+      // `readOnly` closes that connection (`_shouldCreateInputConnection` in
+      // EditableText), and reopens it when the cell hands the keyboard back.
+      // This is the third gate, after the key handler and the caret: the
+      // first two decide who ACTS on a keystroke, and this one decides who
+      // receives it at all.
+      readOnly: inlineChildFocused,
       maxLines: null,
       style: s.baseStyle,
       // NON-FORCED strut, explicitly. TextField's default when none is
@@ -1020,11 +1435,20 @@ class _LiveMarkdownSession extends OnoteEditSession {
       strutStyle:
           StrutStyle.fromTextStyle(s.baseStyle, forceStrutHeight: false),
       cursorColor: Theme.of(context).colorScheme.primary,
-      inputFormatters: const [
-        WrapSelectionFormatter(),
+      inputFormatters: [
+        const WrapSelectionFormatter(),
         // Maths pasted into a paragraph arrives as maths. See the file
         // header for why this is a formatter and not a key handler.
-        MathPasteFormatter(),
+        const MathPasteFormatter(),
+        // Ctrl+B et al with nothing selected queue a style rather than
+        // touching existing text (AppState.wrapSelection) — this is what
+        // makes the queue real: it wraps the very next thing typed.
+        _PendingStyleFormatter(app, s.block.id),
+        // LAST, and it has to be: the formatter above is what turns "bold"
+        // into `**bold**` with the caret parked inside the closing markers,
+        // and this one is what stops the very next space from taking that
+        // apart in front of the student. It needs to see the wrapped text.
+        EmphasisGuardFormatter(app, s.block.id),
       ],
       decoration: InputDecoration(
         isDense: true,
@@ -1055,18 +1479,161 @@ class _LiveMarkdownSession extends OnoteEditSession {
         // top of the answer's own menu, offering actions that act on the
         // SENTENCE. A block equation has no such second menu; this is the
         // same rule, stated the same way as the caret is two lines up.
-        if (_mathFocus.hasFocus) return const SizedBox.shrink();
+        if (inlineChildFocused) return const SizedBox.shrink();
         final items = [...editable.contextMenuButtonItems];
         final extra = _spellMenuItems(editable);
-        return AdaptiveTextSelectionToolbar.buttonItems(
-          anchors: editable.contextMenuAnchors,
-          buttonItems: [...extra, ...items],
-        );
+        final picture = _pictureMenuItems(context, editable);
+        final link = _linkMenuItems(context, editable);
+        // The block menu's clothes, so the two menus a right-click can
+        // produce are one object with two contents — see
+        // [onoteTextContextMenu].
+        return onoteTextContextMenu(
+            context, editable, [...picture, ...link, ...extra, ...items]);
       },
       onChanged: (v) {
         onChanged(v);
         _scheduleSpellCheck();
       }));
+
+  /// **"Save image as…" for a picture sitting IN the sentence.**
+  ///
+  /// The block menu offers this for a picture that is a block of its own, and
+  /// that covers the rarer shape: a drop only makes a block when it misses
+  /// every text box. Ctrl+V at the caret, a drop onto a box and Insert ▸ Image
+  /// all splice `![](sha256:…)` into a paragraph instead, and for those the
+  /// picture is characters in THIS field — so this menu is the only one that
+  /// can see it, and the right-click that opens this menu has already put the
+  /// caret on it.
+  ///
+  /// Empty when the caret is not on a picture, which is nearly always, so the
+  /// menu looks exactly as it always did.
+  List<ContextMenuButtonItem> _pictureMenuItems(
+      BuildContext context, EditableTextState editable) {
+    final ref = _pictureUnderMenu(editable);
+    if (ref == null) return const [];
+    return [
+      ContextMenuButtonItem(
+        label: 'Save image as…',
+        onPressed: () {
+          editable.hideToolbar();
+          // An in-flow reference records no mime — it is the hash and nothing
+          // else — so the name is worked out from the bytes themselves.
+          unawaited(savePictureBytes(
+            context,
+            app.blob(ref.hash),
+            notHereYet: "That picture isn't here yet — it may still be syncing.",
+          ));
+        },
+      ),
+    ];
+  }
+
+  /// **The picture this menu is about**, which is the one the pointer is on
+  /// rather than the one the caret happens to be beside.
+  ///
+  /// The owner: *"To be able to save an image, i need to be both in editing
+  /// mode and have the cursor on the image… while in editing but with the
+  /// cursor else where should bring up the option to save the image."*
+  ///
+  /// The caret was the only thing asked, on the reasoning that a right-click
+  /// in a text field puts the caret where you clicked. It does — unless what
+  /// you clicked is a picture, because a picture is a `WidgetSpan` with its
+  /// own resize grip and its own gestures, and the field never sees the
+  /// press. So the click position is resolved to a text offset directly, and
+  /// the caret is consulted only as a fallback for a menu opened from the
+  /// keyboard.
+  ({int start, int end, String hash})? _pictureUnderMenu(
+      EditableTextState editable) {
+    final text = controller.text;
+    final at = editable.contextMenuAnchors.primaryAnchor;
+    final hit = editable.renderEditable.getPositionForPoint(at);
+    final under = pictureRefAt(text, hit.offset.clamp(0, text.length));
+    if (under != null) return under;
+    final sel = controller.selection;
+    if (!sel.isValid) return null;
+    return pictureRefAt(text, sel.baseOffset.clamp(0, text.length));
+  }
+
+  /// Every other page in this notebook, for the dialog's "or link to a page"
+  /// half. Empty is a perfectly good answer — the section simply does not
+  /// appear — which is what a brand-new notebook shows.
+  List<LinkablePage> _linkablePages() => [
+        for (final p in app.pages)
+          if (p.id != app.pageId) (id: p.id, title: p.title)
+      ];
+
+  /// **"Edit link…", and only when there is a link to edit.**
+  ///
+  /// The owner: *"rightclicking the link should also give me an option to edit
+  /// link, which brings up the same popup. That option should not appear if i
+  /// have not already linked text."* `linkSiteAt` answers both halves — it
+  /// reports an EDIT only when the caret is inside an existing link — so the
+  /// condition here and the behaviour of Ctrl+K cannot drift apart.
+  List<ContextMenuButtonItem> _linkMenuItems(
+      BuildContext context, EditableTextState editable) {
+    final site = linkSiteAt(controller.text, controller.selection);
+    if (!site.ok || !site.isEdit) return const [];
+    return [
+      ContextMenuButtonItem(
+        label: 'Edit link…',
+        onPressed: () {
+          editable.hideToolbar();
+          unawaited(
+              runLinkFlow(context, controller, pages: _linkablePages())
+                  .then((changed) {
+            if (changed) onChanged(controller.text);
+          }));
+        },
+      ),
+      // **The other direction of the window/link pair.**
+      //
+      // The owner, having asked for a page window to be turnable into a link:
+      // *"The option for the reverse should also be there when right clicking
+      // a page link."* Which is right — they are the same intention at two
+      // sizes, and you only find out which one you wanted by looking at it.
+      //
+      // Only for a PAGE link. `site.wiki` is recorded rather than guessed from
+      // the target, because a page id is opaque and a guess about somebody's
+      // data is a bug waiting for the one id that breaks it. A web address has
+      // no window to become.
+      if (site.wiki && (site.url?.isNotEmpty ?? false))
+        ContextMenuButtonItem(
+          label: 'Show as a page window',
+          onPressed: () {
+            editable.hideToolbar();
+            _showLinkAsWindow(site);
+          },
+        ),
+    ];
+  }
+
+  /// Take the link out of the sentence and put a window below the box.
+  ///
+  /// Below rather than in place, because a window is a block and a link is
+  /// some words: there is nowhere in a line of prose to put one. The host box
+  /// keeps everything else that was written in it.
+  void _showLinkAsWindow(LinkSite site) {
+    final host = app.blockById(blockId);
+    final pageId = site.url;
+    if (host == null || pageId == null || app.node(pageId) == null) return;
+    app.pushUndo();
+    final next = controller.text.replaceRange(site.start, site.end, '');
+    controller.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: site.start),
+      composing: TextRange.empty,
+    );
+    onChanged(next); // a programmatic edit never fires the field's onChanged
+    final at = app.belowBlock(host);
+    final made = app.addBlock(Block(
+      type: BlockType.embed,
+      x: at.dx,
+      y: at.dy,
+      w: 380,
+      content: PortalRef.contentFor(pageId),
+    ));
+    app.select(made.id);
+  }
 
   /// Correction items for the word under the caret, plus "Add to dictionary".
   /// Empty when the click didn't land on a misspelling — the menu then looks
@@ -1134,8 +1701,11 @@ class _LiveMarkdownSession extends OnoteEditSession {
     _lastContext = null;
     _spellDebounce?.cancel();
     controller.removeListener(_maybeCloseOnCaretExit);
+    controller.removeListener(_maybeCancelPendingStyle);
+    controller.removeListener(app.ensureCaretVisible);
     controller.dispose();
     _focus.dispose();
     _mathFocus.dispose();
+    _atomFocus.dispose();
   }
 }

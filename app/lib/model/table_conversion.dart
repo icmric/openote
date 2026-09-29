@@ -1,0 +1,163 @@
+import 'dart:convert';
+
+import '../core/ids.dart';
+import 'inline_atom.dart';
+import 'models.dart';
+
+/// **Turning a table block into a paragraph that carries the table.**
+///
+/// The owner's decision, and the reasoning with it: *"Assuming the conversion
+/// is bulletproof and other than the incompatability is not noticable to the
+/// user if its the new or old, lets just automatically update them all on open
+/// … so that we dont end up with a staggered mess of mix and match table
+/// types."*
+///
+/// Which puts the whole weight on "bulletproof", so this function is written
+/// to be refusable rather than clever:
+///
+/// * **It proves the result before returning it.** The table is read back out
+///   of the new block and compared cell for cell against the one that went in
+///   ([TableData.sameAs]); anything less than identical returns null and the
+///   caller leaves the block exactly as it was. A block that cannot be
+///   converted is not a broken block — it is a table that goes on working as
+///   a table, which is why refusing is a real answer.
+/// * **It keeps the block's identity.** The same id, position, size, z-order,
+///   frame, access and unknown fields come through, because the new block is
+///   built from the old one's own JSON with two keys changed. Selection, tags,
+///   links and the op log all key on that id; a new id would be a delete and
+///   an insert to every one of them.
+/// * **It loses nothing it did not understand.** Every key the table block's
+///   content carried that is not the table itself is carried over, and a
+///   `text` key (which a table block should never have, but might, after a
+///   hand edit or a foreign writer) is kept ABOVE the table rather than
+///   overwritten.
+///
+/// [madeIn] is stamped into the payload so that a build too old to draw an
+/// atom of some future type can say which version made it — see
+/// `inline_atom_view.dart`. It is information for a stranger, not state.
+/// [widthsIfNone] is what to store as the table's column widths **when the
+/// block carries none of its own** — see the note below on why that is a loss
+/// worth repairing rather than a value worth preserving. Null, or a list of
+/// the wrong length, leaves the table exactly as it was.
+Block? tableBlockAsText(
+  Block b, {
+  required String madeIn,
+  String Function()? atomId,
+  List<double>? widthsIfNone,
+}) {
+  if (b.type != BlockType.table) return null;
+  // **Refuse a shape this cannot carry across.** `TableData.from` reads a
+  // `cells` that is not a list as "no table", and drawing it as an empty 2x2
+  // grid is what the editor has always done — but the original value is still
+  // IN the file, and converting would write the empty grid over it. Whatever
+  // that value is, it is somebody's, and a converter that runs on its own
+  // while nobody is watching does not get to decide it was worthless.
+  final cells = b.content['cells'];
+  final widths = b.content['colWidths'];
+  if ((cells != null && cells is! List) ||
+      (widths != null && widths is! List)) {
+    return null;
+  }
+  final before = TableData.from(b.content);
+  final id = (atomId ?? newId)();
+  // **Carried across verbatim, not re-serialised through `TableData`.**
+  //
+  // `TableData.from` NORMALISES — it stringifies every cell and pads every
+  // short row — because that is what the editor has always done when it DRAWS
+  // a table. Writing the normalised form back is a different thing entirely:
+  // it rewrites somebody's file, in a job that runs on its own while they are
+  // not looking. Measured on the previous version: `22.99` became `"22.99"`,
+  // `['d']` became `['d','','']`, and a `null` cell became `''`.
+  //
+  // None of that loses a value you could see, which is exactly why it went
+  // unnoticed — and why the proof below could not catch it, since both sides
+  // of that comparison normalise too. Taking the original values means the
+  // conversion moves the table and changes nothing about it. The first time
+  // somebody EDITS a cell the normalised form is written, which is right: an
+  // edit is a person changing their data, not a migration doing it for them.
+  //
+  // **The one thing the block knew that the atom cannot ask for.**
+  //
+  // A table BLOCK is a box with a width, and a table with no column widths of
+  // its own simply filled it. An atom has no box: it sizes its columns from
+  // what is in them, and a three-word table that used to fill 620px draws at
+  // 277 — the owner: *"cell width seems to get lost still… it means that many
+  // pages end up slightly off when converting the tables."* Nothing was
+  // dropped; the width was recorded in a place the new shape does not have.
+  //
+  // So it is written down, once, as the column widths the block implied. This
+  // is the one value this function may ADD, and only when the source has none
+  // — a table whose columns were dragged says what it wants, and that is
+  // carried verbatim like everything else. The caller measures, because what
+  // a column naturally wants is a question about rendering and this file
+  // knows nothing about that.
+  final fit = _fitted(before, widthsIfNone);
+  // Deep-copied so the new block shares no list with the old one.
+  final carried = jsonDecode(jsonEncode(<String, dynamic>{
+    if (b.content.containsKey('cells')) 'cells': b.content['cells'],
+    if (b.content.containsKey('colWidths')) 'colWidths': b.content['colWidths'],
+    if (fit != null) 'colWidths': fit,
+  })) as Map<String, dynamic>;
+  final atom = InlineAtom(
+    id: id,
+    type: 'table',
+    content: {...carried, 'madeIn': madeIn},
+  );
+
+  final content = <String, dynamic>{
+    for (final e in b.content.entries)
+      if (e.key != 'cells' && e.key != 'colWidths' && e.key != 'text')
+        e.key: e.value,
+  };
+  final kept = b.content['text'];
+  final ref = atom.reference(TableData.referenceAlt);
+  content['text'] =
+      kept is String && kept.isNotEmpty ? '$kept\n$ref' : ref;
+  InlineAtom.putIn(content, atom);
+
+  // **The proof, in two halves.**
+  //
+  // The first reads the table back through the very code the editor and every
+  // exporter will use, and compares it cell for cell with what went in. The
+  // second compares the STORED form, which the first cannot see: both sides of
+  // it run through `TableData.from`, so two different files that normalise to
+  // the same grid compare equal. Only the second would have caught a
+  // conversion that turned every number into a string.
+  //
+  // When a width has been written in, the thing to prove is not "unchanged"
+  // but "changed in exactly the one way asked for" — so the comparison is
+  // against the table that SHOULD come out, cells and all.
+  final want = fit == null
+      ? before
+      : TableData(cells: before.cells, colWidths: fit);
+  final back = tablesIn(content);
+  if (back.length != 1 || !back.single.sameAs(want)) return null;
+  final wrote = InlineAtom.allIn(content)[id]?.content;
+  if (wrote == null) return null;
+  if (jsonEncode(wrote['cells']) != jsonEncode(b.content['cells'])) return null;
+  // The widths are the one key that may differ, and only in the one way:
+  // added, in full, exactly as the caller asked, to a table that had none.
+  final expectWidths = fit ?? b.content['colWidths'];
+  if (jsonEncode(wrote['colWidths']) != jsonEncode(expectWidths)) return null;
+
+  final j = b.toJson();
+  j['type'] = 'text';
+  j['content'] = content;
+  final out = Block.fromJson(j);
+  if (out.id != b.id || out.type != BlockType.text) return null;
+  return out..updatedAt = nowMs();
+}
+
+/// The widths to write for a table that has none, or null to write nothing.
+///
+/// Refuses anything it cannot vouch for: a list of the wrong length, a width
+/// that is not a positive finite number, or a table that already says what it
+/// wants. A conversion that runs unattended does not get to guess.
+List<double>? _fitted(TableData before, List<double>? widths) {
+  if (widths == null || before.colWidths.isNotEmpty) return null;
+  if (widths.length != before.cols || widths.isEmpty) return null;
+  for (final w in widths) {
+    if (!w.isFinite || w <= 1) return null;
+  }
+  return [...widths];
+}

@@ -15,7 +15,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' show Offset;
 
-import '../model/models.dart';
 import '../state/app_state.dart';
 import 'xlsx_import.dart';
 
@@ -175,13 +174,13 @@ String detectCsvDelimiter(String text) {
     ({List<List<String>> cells, int droppedRows, int droppedCols}) r,
     Offset at) {
   if (r.cells.isEmpty) return (placed: false, note: null);
-  final b = app.addBlock(Block(
-    type: BlockType.table,
-    x: at.dx,
-    y: at.dy,
-    w: (r.cells.first.length * 120).clamp(240, 960).toDouble(),
-    content: {'cells': r.cells},
-  ));
+  // Through [AppState.insertTable], so a spreadsheet dropped on the page
+  // arrives in the same shape as a table made any other way.
+  final b = app.insertTable(
+    at: at,
+    cells: r.cells,
+    width: (r.cells.first.length * 120).clamp(240, 960).toDouble(),
+  );
   app.select(b.id);
   if (r.droppedRows > 0 || r.droppedCols > 0) {
     final parts = [

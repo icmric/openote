@@ -1,278 +1,287 @@
 # What needs testing, and what I need from you
 
-> Working document · last updated 2026-08-10 · **v0.7.0 is cut** — install
-> it from the release page (one last manual install; the app updates
-> itself from here). The Linux queue (§3) is unblocked by this release.
+> Working document · last updated 2026-09-29 · **v1.0.1 is not cut yet** —
+> this is the pass that decides whether it can be.
 >
-> Everything below is either **built but never touched by a human**, or
-> **half-verified** — you confirmed part and deferred the rest. Tick things
-> off as you go; tell me what breaks. Confirmed things get deleted, so this
-> file stays the honest queue rather than a museum.
+> **§7 is new**, and is the twelve things you reported part-way through this
+> pass. None of it has been near a human.
+>
+> Everything below is **built, covered by automated tests, and never touched
+> by a human**. Tests prove a mechanism; they cannot tell you a gesture feels
+> wrong, that a colour is hard to read, or that something is technically
+> correct and still not what you meant. That is what this list is for.
+>
+> Only things you can do yourself, on your own machine, are in here. Anything
+> the test suite already settles has been left out on purpose.
+>
+> Tick as you go and tell me what breaks — what you did, what happened, what
+> you expected. Confirmed rows get deleted, so this file stays the honest
+> queue rather than a museum.
 >
 > Not to be confused with [the pre-release checklist](docs/pre-release-checklist.md),
-> which is the *fixed* pass — the same forty-odd rows run on the packaged build
-> before every release. This file is the frontier: what is new, what is
-> half-verified, what is waiting on hardware you have and I don't.
+> which is the *fixed* pass — the same forty-odd rows run on the packaged
+> build before every release. This file is the frontier.
+>
+> **The v0.7-era queue that used to live here has been cleared out.** Three
+> releases have shipped over it and I have no record of what you confirmed.
+> If something from it is still outstanding — the pen's proximity switching,
+> the tail eraser, the barrel button, finger-drag panning, board cards on
+> touch — say so and I will put it back.
 
 ---
 
-## 1. Deferred by you, waiting on hardware
+## 1. Tables in your writing
 
-### 1.1 Touch — needs the tablet / touch screen
+The largest change in this release, and the one with the longest history of
+me fixing something and you finding it still broken. Please be unkind to it.
 
-- [ ] **Finger drag pans the page** (not marquee). A finger *tap* should
-      still do everything a click does — create a text box on empty page,
-      select a block. Pen and mouse drags still marquee.
-- [ ] **Board cards on touch.** Dragging a card between columns uses an
-      immediate drag; the block itself moves by long-press. Flagged when the
-      board shipped: these two may fight on touch — if a card drag keeps
-      picking up the whole block (or vice versa), describe which gesture you
-      made and what moved.
+### 1.1 Making one, and filling it in
 
-### 1.2 The pen — needs the stylus
+- [ ] **Type a word and press Tab.** The word becomes the first cell of a
+      table and the caret lands in the second.
+- [ ] **Tab again** (still on the top row). This adds a **column**, not a row
+      — the top row is where you name things — and the caret goes into it.
+- [ ] **Press Enter.** This starts a body row, and the caret lands in the
+      **same column** you pressed Enter in. Type: it must go into that cell.
+- [ ] **Keep going: type, Tab, type, Tab** down a body row. Tab at the end of
+      a body row makes the next row.
+- [ ] **On an empty line, Tab indents twice** and never makes a table.
 
-- [ ] **Proximity switches to inking.** With Select active, bring the pen
-      NEAR the page (don't touch): the tool should flip to Pen. Pick Select
-      again while the pen hovers — it must stick until the pen leaves and
-      comes back. The toggle for the whole behaviour is in the Draw tab.
-- [ ] **The tail erases.** Flip the pen; strokes under it should erase with
-      no tool change.
-- [ ] **The barrel button erases** while held during a stroke. (Whatever
-      your pen's button is mapped to in the OS, the signal that reaches apps
-      is the barrel flag; if pressing it does something OTHER than erase,
-      tell me what.)
+> The caret leaving the table is the bug you have hit four times. If it
+> happens again, tell me **which key**, **which cell you were in**, and
+> whether the row or column was still created.
 
----
+### 1.2 Getting in and out
 
-## 2. Built this round, untested or partly tested
+- [ ] **Click a cell** — the caret goes in it, and stays there.
+- [ ] **Click the sentence** beside or below the table — the caret comes out.
+- [ ] **Arrow keys walk in.** With the caret just after the table, press ←:
+      it should step into the last cell. Just before it, → steps into the
+      first.
+- [ ] **Escape** puts the caret back in the paragraph, and the table stays.
+- [ ] **Arrow down from the last row** leaves the table downwards.
 
-### 2.1 PDF-as-PDF — the deep change; you confirmed the viewer, the rest needs eyes
+### 1.3 The thing that must never happen
 
-The importer no longer rasterises pages into stored images: the PDF is
-stored once, slides are drawn from it on demand.
+- [ ] **Put the caret right at the table's edge and type.** Space, letters,
+      anything. The table must stay a table. If it ever turns into
+      `![… ](onote://atom/…)`, stop and tell me — that is a note losing its
+      table, and it is the one failure here I care about more than any other.
+- [ ] **Select from inside the table out into the sentence and type over it.**
+      The table should go completely, or not at all — never half.
+- [ ] **Backspace just after a table** deletes the whole table.
+- [ ] **Undo brings it back.**
 
-- [ ] **A fresh printout import looks IDENTICAL to the old kind** — same
-      sharpness, same layout, annotate with the pen as before. This is the
-      claim the whole change hangs on.
-- [ ] **Import speed**: a big deck should import in seconds now (the
-      per-page rendering is gone from the import path).
-- [ ] **Notebook size**: import a deck you've imported before and compare
-      the notebook's size — it should now cost roughly the PDF, once.
-- [x] The popup viewer opens, text selects and copies. *(Confirmed; sizing
-      and scrolling fixed on your feedback — recheck the wheel distance and
-      the page-numbered thumb if you get a chance.)*
-- [ ] **The card**: import ▸ arrow ▸ *As a card*, or drop a .pdf onto the
-      page — one thumbnail block, click opens the viewer.
-- [ ] **Scroll a long printout fast** — slides render as they arrive
-      (brief spinner placeholder is expected; blank holes or wrong pages are
-      not).
-- [ ] Note: **old imports keep their old raster storage** — only new
-      imports get the stored-once form. If you want existing decks
-      converted, say so and I'll build the migration (same shape as the ink
-      one, housekeeping would run it).
+### 1.4 Editing in a cell
 
-### 2.2 The page scroll bar — NEW, from your report
+- [ ] **Ctrl+C, Ctrl+X, Ctrl+V and Ctrl+A** inside a cell.
+- [ ] **Ctrl+Backspace and Ctrl+Delete** delete a whole word.
+- [ ] **Ctrl+Shift+←/→** selects by word, inside the cell only.
+- [ ] **Bold, italic and an equation inside a cell** stay themselves as you
+      type them.
+- [ ] **Ctrl+K in a cell** opens the link dialog, and the caret comes back to
+      the cell when you close it.
 
-- [ ] A vertical bar on the right edge of the page whenever the page is
-      taller than the window: drag it, click the track to jump. Wheel and
-      panning unchanged.
+### 1.5 Shape and size
 
-### 2.3 Code cells — NEW, and the JS half is untestable by machine
+- [ ] **The column widens as you type**, from the first character — not after
+      a pause, and no stacking letters. It stops widening at a sensible width
+      and wraps after that.
+- [ ] **The box grows to fit the table**, and a sentence next to a table gets
+      room for both rather than being pushed onto the next line.
+- [ ] **Drag a column border** to resize it; the width sticks.
+- [ ] **Right-click a cell**: insert row above/below, column left/right,
+      delete row, delete column — all relative to the cell you clicked. The
+      caret should stay in the table after each.
+- [ ] **The last row and the last column cannot be deleted.**
 
-SQL cells are fully covered by tests; the JS engine only exists in a real
-build (QuickJS arrives with the Flutter build, not the test VM), so **every
-JS item below is machine-unverified**:
+### 1.6 Your existing tables
 
-- [ ] Make a code block, set its language to `sql`, put a table on the same
-      page (drop a CSV), and run `SELECT * FROM t1` — the Run button, or
-      Ctrl+Enter while editing. Output should appear under the source as a
-      real table and SURVIVE a restart.
-- [ ] The error for a wrong table name should list the tables that do
-      exist on the page.
-- [ ] Set language `js`: `console.log("hi"); 1 + 2` — output shows both.
-      `tables.<name>` should hold your page table's rows.
-- [ ] `typeof fetch` in a js cell must print `undefined` — if it prints
-      `function`, stop and tell me immediately, that is a sandbox hole.
-- [ ] A `while(true){}` js cell: the spinner should give way to a
-      "Stopped" error after ~5 s and the app stay responsive. (Known,
-      documented: the stuck engine thread keeps burning a core until app
-      close — the UI recovering is the claim to check.)
-- [ ] The scroll bar again after this build: drag it — the page should
-      move and NO selection box should appear behind it (that was the
-      pointer-claim fix).
-
-### 2.4 AI access (MCP) — NEW
-
-The protocol and tools are machine-tested over real HTTP; what needs a
-human is the end-to-end with a real client:
-
-- [x] View tab ▸ the robot icon ▸ turn it on ▸ press **Connect Claude
-      Code** — no terminal, no copying; Openote writes the connection
-      itself. *(Confirmed end-to-end 2026-08-10: your Connect click, then
-      list → read → create page → 14 flashcards, all over the wire.)*
-- [ ] **Connect Gemini CLI** — same button pattern. If you don't have
-      Gemini CLI installed, the honest "doesn't look installed yet"
-      message IS the pass; if you do, ask it to list your notebooks.
-- [ ] **Re-import a OneNote section containing ¬** (e.g. Discrete Maths
-      week 1): the NOT symbols that came in as � should now arrive as ¬.
-      Existing pages keep their � until re-imported or hand-fixed.
-- [ ] Ask it to CREATE something — "make me 5 flashcards about X on page Y"
-      is the canonical test. The cards should appear on the page, be
-      undoable with Ctrl+Z, and show up in the study deck.
-- [ ] Restart Openote: the server should come back by itself (the toggle
-      stays on), and the same pasted config should still work.
-- [ ] Sanity: with the toggle OFF, the same client must fail to connect.
-
-### 2.5 Update through the app — NEW in 0.7.0
-
-- [ ] What you can check NOW: a fresh 0.7.0 install shows **no** update
-      button (nothing newer exists — a button here would be a bug).
-- [ ] The real test arrives with the NEXT release: an Update button appears
-      near Study/Planner within a launch, tooltip names the version, and
-      pressing Update now saves everything, downloads with a progress bar
-      you can't click past, closes, installs silently, and **reopens as
-      the new version by itself**. Nothing to press but the one button.
-      (0.6.2 can't test this — the updater ships in 0.7.0.)
-
-### 2.6 v0.7.1 — the consistency round
-
-- [ ] **Linux push, the real retest**: on the Linux machine open Sync ▸
-      Connect GitHub ▸ paste a token ▸ sync — the push should go through.
-      Before connecting, the error should now say exactly that in plain
-      words (no "terminal prompts disabled").
-- [ ] **Code blocks, full re-test** (your reports, all addressed): click
-      into the middle of a line — caret lands THERE. Drag over code
-      without clicking first — highlights, Ctrl+C copies. While EDITING:
-      arrows move the caret (not the selected box), Enter makes a new
-      line, dragging selects text.
-- [ ] **Type-through**: select any text or code box (click once, or Tab)
-      and just start typing — it should enter the box at the END and your
-      letters appear. Tool letters (V/T/P/H/E) still switch tools when
-      nothing typeable is selected.
-- [ ] **More motion**: toolbar tabs (Home/Insert/Draw/View) crossfade;
-      the PDF viewer grows out of its thumbnail card; section groups and
-      subpage groups slide open/closed in the sidebar.
-- [ ] **Sidebar clicks — THE half-second fix**: clicking pages, sections
-      and groups should act the instant you release the mouse (it was the
-      double-click-to-rename binding making every single click wait out
-      the double-click window — your hotkey-vs-mouse isolation found it).
-      Double-click still renames: first click selects, second opens the
-      name editor, like a file explorer. Group open/close should now
-      visibly ANIMATE instead of jumping late.
-- [ ] **Page-switch speed**: slide-heavy pages should appear immediately,
-      pictures popping in a beat later on first visit; revisits instant.
-- [ ] **Clean status bar**: in this build the bottom bar shows only
-      saved/sync state — no "Rust · hash" chip (that's debug-only now).
-- [ ] **Settings** (the gear, top-right of the tab row): theme, spell
-      check, pen switch all live; Check for updates says "up to date".
-- [ ] **Dialogs** should all open with the same quick fade-and-settle.
-- [ ] **The update button itself**: install 0.7.0 first, then publish
-      0.7.1 — 0.7.0 should offer it, download, install and relaunch
-      by itself. This is the whole update-through-app loop, live.
-
-### 2.7 Text editing — the big round (NEW, all five of your reports)
-
-Lists, in a text box:
-
-- [ ] Type `- milk` and press **Enter** — the next bullet should already be
-      there. Same with `* `, `+ `, `1. ` and `- [ ] `.
-- [ ] **Enter on an empty bullet** leaves the list. If the bullet is
-      indented, each Enter steps out one level first.
-- [ ] **Tab** indents the item, **Shift+Tab** outdents. (Tab used to jump
-      out of the box entirely.) Tab on the FIRST item of a list correctly
-      does nothing — it would have no parent.
-- [ ] **Backspace** at the start of an item's text removes the bullet and
-      keeps the words; on a nested item it outdents first.
-- [ ] Make five numbered items: they should read 1–5 even though the
-      button writes "1." each time. Delete the middle one — the rest
-      renumber.
-- [ ] **Shift+Enter** gives a second line inside the same bullet.
-
-The jump you reported:
-
-- [ ] Click into a bulleted list. **Nothing should move sideways** — the
-      words should stay exactly where they were. Check a nested list too,
-      and a checkbox list, and a numbered one.
-
-Formatting:
-
-- [ ] Put the cursor in a word (no selection) and press **Ctrl+B** — that
-      word goes bold, and **no asterisks appear**. Press it again with the
-      cursor still in the word: the bold comes off.
-- [ ] The **Bold button should look switched on** whenever the cursor is
-      inside bold text. Same for italic, highlight, code, etc.
-- [ ] Ctrl+B then Ctrl+I on a word → it should be bold AND italic, with no
-      stray `*` anywhere.
-- [ ] Type `2 * 3 * 4` — the asterisks must stay visible and nothing goes
-      italic. Type `snake_case_name` — the underscores stay.
-- [ ] Ctrl+B inside a **code block** should do nothing at all.
-
-Import (needs a re-import of a OneNote section):
-
-- [ ] Blank lines you left between paragraphs should now come through.
-- [ ] Text that was **bold and italic** should arrive as both, with no
-      leftover asterisks around it.
-
-### 2.8 Code blocks — NEW
-
-- [ ] Type `(`, `[`, `{`, `"` — the closing one should appear with the
-      cursor between. Type the closing one yourself: it should step over,
-      not double up. Backspace between an empty pair removes both.
-- [ ] Type `{`, press Enter — you should land on a blank indented line with
-      the `}` on its own line below.
-- [ ] **Tab** indents (two spaces, four for C/C++/C#/Java), **Shift+Tab**
-      outdents; select several lines and try both.
-- [ ] Paste some Python (or C++, or SQL) into a fresh code block — the
-      language label should change by itself. Then pick a language from the
-      menu and paste something else: it must **not** override your choice.
-- [ ] Open the language menu: SQL and JavaScript should be at the top under
-      "Runs on this device" with a Run badge, then C → C++ → C#.
-- [ ] Ctrl+Z should undo a Tab indent and a language change.
-
-### 2.9 Small recent things
-
-- [ ] **Ctrl+/** — the keyboard shortcut reference, from anywhere including
-      mid-typing. Same chord or Esc closes it; View tab has a button too.
-      Everything it lists should be true — a listed chord that doesn't work
-      is a bug worth reporting.
-- [ ] **Keyboard-only canvas**: click an empty part of the page once, then
-      put the mouse down. Tab / Shift+Tab should walk the boxes in reading
-      order, plain arrows jump to the nearest box in that direction, Enter
-      drops into the box's editor, Esc climbs back out, Ctrl+arrows move
-      the selected box (add Shift for 1 px), Del deletes. Arrow keys inside
-      a text box must still move the CARET (the box only moves with Ctrl).
-
-- [ ] **Selected-box priority on text**: select a box whose end runs under
-      another, then try SELECTING TEXT in the overlapped part (you confirmed
-      resize; text selection through the overlap is the other half).
-- [ ] **Box tint through a page window**: tint a box, then look at it
-      through a portal on another page — the tint should show there too.
-- [ ] **Markdown export of a board** — each column a heading with its list.
+- [ ] **Open a notebook with old tables in it.** They convert to the new kind
+      as you open the page, and the rest of the notebook follows quietly. You
+      should not be able to tell, except that they now sit in the writing.
+- [ ] **Nothing is lost.** Check a table you care about, cell by cell, against
+      what you remember — and check the page still opens after a restart.
+- [ ] **On a second device**, if you have one syncing: a table made here
+      should arrive there intact.
 
 ---
 
-## 3. Linux — waits for the next release
+## 2. Links
 
-- [ ] **Insert ▸ Image.** If it still does nothing, there is now an error
-      message with the actual reason — quote it at me. (The silent-failure
-      path is gone either way.)
-- [ ] **Git sync retest**: the fresh-machine identity fix shipped in 0.6.1
-      but your broken notebook may still be sitting there — press sync once
-      on it, then check the repo on GitHub has `ops/` and `blobs/` in it.
-- [ ] **Portal video** — the card has its shape back; play should work
-      in-place (needs libmpv, which the .deb/.rpm install).
-- [ ] CSV/xlsx drop, the board, PDF-as-PDF — all also worth one pass on
-      Linux since none has run there.
+- [ ] **Click into a link.** It stays its words — it must not unfold into
+      `[words](https://…)` and re-wrap the line.
+- [ ] **Select some words and press Ctrl+K.** The link goes on them.
+- [ ] **Put the caret against a word and press Ctrl+K** with nothing selected.
+      The link goes on that word — and **not** across the space before it.
+- [ ] **A full stop at the end of a sentence stays out of the link.**
+- [ ] **Ctrl+K inside an existing link** edits it, and so does **right-click →
+      Edit link…**
+- [ ] **Insert ▸ Link** opens the same dialog, with the page picker in it.
+- [ ] **The link still works** when you click it in the finished note.
 
-## 4. Things you reported that are DESIGN work, not bugs (parked, visibly)
+---
 
-| You said | Where it stands |
-|---|---|
-| Excel import "imported it just as a plain text table" — no formulas, styling rules, charts | Correct and currently by design: a formula cell imports the number you saw. Keeping formulas live needs the table block to HAVE a formula/styling/chart model first — that's the spreadsheet-engine design pass, top of the Tables item in PLANNING.md, and the importer grows with it. |
-| Dead links inside a page window | Could not reproduce through the full widget stack with mouse or touch — my standing suspicion is links inside TABLE blocks (inert by policy) vs text (live). Next time you hit one: table or plain text, page link or web link? |
+## 3. Shapes for the pen
 
-## 5. Older verification debt — still true
+- [ ] **Draw tab → pick Line, Arrow, Rectangle, Ellipse or Triangle**, then
+      drag on the page. The stroke comes out straight.
+- [ ] **Pick it again to turn it off** and go back to freehand.
+- [ ] **A shape takes the colour, size and opacity** you have chosen,
+      including the highlighter.
+- [ ] **Both erasers rub it out**, the lasso picks it up, and undo undoes it.
+- [ ] **It survives a save and reopen**, and appears in a PDF export.
+- [ ] **Drawing with a trackpad** — the case this was built for. Is it
+      actually usable?
 
-- [ ] **macOS has never been run by a human.**
-- [ ] Two-machine image sync (§ the old 1.3): device B pulling while the
-      image file is still copying should get the page now, picture later.
+---
+
+## 4. Pictures
+
+- [ ] **A picture that is still arriving** (syncing from your server) should
+      appear on its own when the bytes land — without a restart and without
+      waiting for the next sync cycle.
+- [ ] **Right-click a picture → Save a copy.** Both kinds: one dropped onto
+      empty page, and one pasted into a paragraph. The saved file should open
+      in an image viewer and have a proper extension.
+- [ ] **A slide from an imported PDF** saves out too.
+- [ ] **A picture your cloud client renamed** is found and put back.
+
+---
+
+## 5. Your own SSH key
+
+- [ ] **In the sync dialog** for a notebook, "Use another key…" lets you
+      choose a private key file. Sync to a server that needs it while the rest
+      of the machine keeps its default key.
+- [ ] **A path with spaces in it** works (this is the part most likely to be
+      wrong).
+
+---
+
+## 6. Code blocks — new colours
+
+- [ ] **Comments are green and italic**, strings are a warm red, in a code
+      block in **both** light and dark themes.
+- [ ] **Is it actually more readable?** This one is a judgement call and
+      yours is the one that counts. I moved strings off green so that
+      comments in green would stand out; if you would rather have the old
+      green strings back and a different comment colour, say so.
+
+---
+
+## 7. The twelve from your testing pass
+
+Everything in this section is new since you started testing and none of it
+has been near a human. The first two are the ones I would break first.
+
+### 7.1 Styled text (the one that matters)
+
+- [ ] **Bold a word, press space, keep typing.** The asterisks must never
+      appear, and the bold must carry on to the next word, and the word after
+      that. Same for italic.
+- [ ] **Select a bold word and delete it.** All of it goes — no `**` left
+      behind at either end. Try it three ways: dragging left-to-right,
+      dragging right-to-left, and selecting just the letters you can see.
+- [ ] **Type over a selected bold word.** What you type should still be bold.
+- [ ] **Ctrl+Z inside a table cell** takes back what you typed in the cell.
+      It must not take the table away.
+
+### 7.2 The navigator
+
+- [ ] **Fold the sections away** with the chevron in the notebook header. The
+      navigator should get narrower — that is the point — and the page list
+      stays.
+- [ ] **Close some groups and some pages, quit, reopen.** They should still
+      be closed.
+- [ ] **Drag a page into the empty space below the list.** It goes to the
+      bottom. Same for a section.
+- [ ] **Drag a subpage down there** — it should become a top-level page, not
+      an indented one under nothing.
+- [ ] **Dropping onto the middle of a page row still makes a subpage.**
+
+### 7.3 Page windows
+
+- [ ] **Drag a page from the navigator onto the open page.** You get a window
+      onto it.
+- [ ] **Right-click that window → Change to a page link.** It becomes a link
+      in a text box, in the same spot, and the link works.
+
+### 7.4 Writing and inserting
+
+- [ ] **Click out of a box onto the page.** A new box opens straight away —
+      it should not take two clicks.
+- [ ] **Click about the page a few times without typing.** You should not be
+      collecting invisible empty boxes; check by dragging a marquee over the
+      area afterwards.
+- [ ] **Enter from the page title** makes the same bare box a click makes —
+      no border, no `heading (#), list (-)` hint.
+- [ ] **Insert something while writing.** It should land under the box you
+      were in, not in the middle of the screen. **This now applies to every
+      Insert item, not just the code box** — tell me if you want it narrowed
+      back to code only.
+- [ ] **Insert ▸ Code twice**, setting the language on the first. The second
+      should open in that language.
+- [ ] **Insert no longer offers "Text box".**
+
+### 7.5 The Draw toolbar
+
+- [ ] **Four thickness dots instead of the slider.** Is picking one actually
+      easier than aiming the slider was?
+- [ ] **The ⚙ beside them** opens the old slider for anything in between.
+- [ ] **Two mixed colours on the row now, not four**, and the palette button
+      opens the full picker.
+- [ ] **"Mix your own colour" in the picker** — is it clear now what that row
+      does?
+
+---
+
+## 8. Editor odds and ends
+
+- [ ] **Ctrl+B then type** — the new words come out bold, and stop when you
+      press it again. It should not reach back and bold the word behind you.
+      Same for Ctrl+I and Ctrl+U and the toolbar buttons.
+- [ ] **Press Enter in a completely empty text block.** This used to crash;
+      it should simply make a new line.
+- [ ] **Delete a page** — you should land on the page next door, in the same
+      section.
+- [ ] **Delete a section, then Ctrl+Z.** It comes back.
+- [ ] **Type down a long page** — the view follows the caret smoothly, and
+      scrolling or zooming yourself stops it dead rather than fighting you.
+
+---
+
+## 9. Things I already know about
+
+Not for you to test — recorded here so you are not surprised by them.
+
+- **Four tests can fail when the machine is busy**, and they are all the same
+  shape: each asserts something about *time* rather than about behaviour.
+
+  | Test | What it promises |
+  |---|---|
+  | `graph_plot_test` | ten frames of a curve redraw inside 160ms |
+  | `cloud_sync_test` | a big fold yields the event loop enough times |
+  | `code_runner_test` | a 2-second timeout fires within a 15-second budget |
+  | `import_writer_test` | pages start landing before the import finishes |
+
+  All four are fair things to want and unfair things to promise on a runner
+  doing six other things. **A full suite run on 2026-09-29 went red on the
+  last three — and took 120 minutes instead of its usual 11**, which is the
+  whole story: all forty-four of them passed on their own straight
+  afterwards. If you see these three red, look at how long the run took
+  before you look at the code.
+
+  `tool_follows_device_test` had the same shape and is now fixed properly —
+  its correctness never depended on the clock, so the clock came out. These
+  four are harder, because the clock IS what they are measuring. The choice
+  for each is between not gating on it (the repo already has perf probes that
+  print their numbers instead of asserting them) and widening the budget
+  until it only catches a real regression. Your call; I have not touched
+  them.
+- **A caret parked on a table's scope.** If a cell were to take and drop the
+  caret four times inside one frame, the caret would sit on the table itself
+  with nothing typeable until you click. I could not make it happen, and the
+  obvious fix risks a worse problem, so it is written down rather than
+  changed. If you ever get a table that swallows the keyboard and only a
+  click gets you out, this is what you found.

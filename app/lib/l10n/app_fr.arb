@@ -1,4 +1,7 @@
 {
+  "atomNewerVersion": "Créé dans Openote {version}",
+  "atomNewerVersionUnknown": "Créé dans une version plus récente d’Openote",
+  "atomUpdateToView": "Mettez Openote à jour pour l’afficher",
   "barBadgeCount": "{count}",
   "barBlankOut": "Masquer la sélection",
   "barBlankOutNeedsSelection": "Sélectionnez d'abord les mots à masquer.",
@@ -38,6 +41,8 @@
   "barInkDefaultColour": "Encre par défaut — s’adapte à la page",
   "barInkHighlighterColourTitle": "Couleur du surligneur",
   "barInkMoreColours": "Plus de couleurs…",
+  "barPenSize": "Épaisseur {size}",
+  "barPenSizeExact": "Taille exacte…",
   "barInkPickColour": "Prélever une couleur sur la page",
   "barInkPickingHint": "Cliquez sur un élément de la page pour reprendre sa couleur",
   "barInlineCode": "Code en ligne",
@@ -129,6 +134,7 @@
   "insertGroupWrite": "Écrire",
   "insertLinkToPage": "Lier à une page",
   "insertPageLink": "Lien",
+  "linkEdit": "Modifier le lien…",
   "insertPageWindow": "Fenêtre",
   "insertPdfAsCard": "En carte — s'ouvre dans une fenêtre",
   "insertPdfFailed": "L'import du PDF a échoué : {reason}",
@@ -159,6 +165,8 @@
   "navBinRetention": "Ce qui est ici est supprimé définitivement au bout de {days} jours.",
   "navClose": "Fermer",
   "navCollapse": "Replier le navigateur  (Ctrl+\\)",
+  "navHideSections": "Masquer la liste des sections",
+  "navShowSections": "Afficher la liste des sections",
   "navColour": "Couleur",
   "navColourDefault": "Par défaut",
   "navComingUp": "À VENIR",
@@ -166,7 +174,31 @@
   "navDeleteForeverBody": "« {title} » et toutes ses pages seront supprimées pour de bon. C'est irréversible.{caveat}",
   "navDeleteForeverTitle": "Supprimer définitivement ?",
   "navDeletePermanently": "Supprimer définitivement",
-  "navDeletedRestorable": "« {title} » supprimée — vous pouvez la restaurer depuis la corbeille.",
+  "navDeletedPage": "Page « {title} » supprimée",
+  "@navDeletedPage": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedSection": "Section « {title} » supprimée",
+  "@navDeletedSection": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedGroup": "Groupe « {title} » supprimé",
+  "@navDeletedGroup": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navUndo": "Annuler",
   "navDeletesInDays": "{days, plural, =1{Supprimé dans 1 jour} other{Supprimé dans {days} jours}}",
   "navDeletesSoon": "Bientôt supprimé",
   "navExamCountdown": "Examen {when} · {countdown}…",
@@ -399,6 +431,12 @@
   "shellTagTheLine": "Étiqueter la ligne où vous êtes",
   "shellTagsHint": "Les étiquettes marquent une ligne — à faire, important, question, définition — pour la retrouver, la réviser ou lui donner une échéance.",
   "shellUnlock": "Déverrouiller",
+  "tableColumnLeft": "Insérer une colonne à gauche",
+  "tableColumnRight": "Insérer une colonne à droite",
+  "tableDeleteColumn": "Supprimer la colonne",
+  "tableDeleteRow": "Supprimer la ligne",
+  "tableRowAbove": "Insérer une ligne au-dessus",
+  "tableRowBelow": "Insérer une ligne en dessous",
   "tagContact": "Contact",
   "tagCritical": "Urgent",
   "tagCustom": "Étiquette",

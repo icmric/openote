@@ -1,0 +1,328 @@
+// **A table made with Tab, in the whole application.**
+//
+// Every other test in this feature mounts a widget or two. This one mounts
+// `AppShell` over a real notebook and types through the platform's own text
+// input, because the defect it exists to catch could not be seen from any
+// smaller vantage point: the owner pressed Tab, got their table, and then
+// found their typing going into the paragraph BESIDE it.
+//
+// The mechanism is particular to a nested editor. A cell is a real
+// `TextField` inside the paragraph's own, and a host `FocusNode` reports
+// `hasFocus` true while any DESCENDANT holds the primary focus — so the host
+// never learns it has stopped being the field being typed into, and holds its
+// platform text-input connection open. Two clients, one keyboard. Standing the
+// host's key handler and caret down was not enough; it has to give up the
+// connection too, and that is what these tests pin.
+//
+// Settling is a fixed number of frames rather than `pumpAndSettle`: the shell
+// never goes idle (a caret blinks, a status dot turns), so settling it means
+// waiting ten minutes for a timeout.
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:openote/editor/text_block_view.dart';
+import 'package:openote/model/inline_atom.dart';
+import 'package:openote/model/models.dart';
+import 'package:openote/state/app_state.dart';
+import 'package:openote/store/repository.dart';
+import 'package:openote/ui/app_shell.dart';
+
+import 'support/app.dart';
+import 'support/sqlite.dart';
+
+Future<void> settle(WidgetTester t, {int frames = 6}) async {
+  for (var i = 0; i < frames; i++) {
+    await t.pump(const Duration(milliseconds: 60));
+  }
+}
+
+void main() {
+  var haveSqlite = false;
+  setUpAll(() => haveSqlite = initSqliteForTests());
+
+  late Directory tmp;
+  late Repository repo;
+  late AppState app;
+  late Block block;
+
+  /// The real shell, over a real notebook, with one empty paragraph open.
+  Future<void> shell(WidgetTester t) async {
+    AppState.syncLogEnabled = false;
+    addTearDown(() => AppState.syncLogEnabled = true);
+    // Real disk I/O must run OUTSIDE the fake-async test zone, or the futures
+    // it waits on never complete and the test hangs.
+    await t.runAsync(() async {
+      tmp = Directory.systemTemp.createTempSync('onote_shelltab_');
+      repo = await Repository.openAt(tmp);
+      final nb = await repo.createNotebook('Tab');
+      app = AppState(repo)
+        ..notebookId = nb.id
+        ..spellCheckEnabled = false;
+      app.reloadNodes();
+      final page = app.nodes.firstWhere((n) => n.kind == NodeKind.page);
+      app.importPage(
+          nb.id,
+          page.id,
+          [
+            Block(
+                type: BlockType.text,
+                x: 40,
+                y: 120,
+                w: 400,
+                content: {'text': ''})
+          ],
+          PageProps());
+      app.reloadNodes();
+      await app.selectPage(page.id);
+      block = app.blocks.single;
+    });
+    addTearDown(() {
+      app.cancelPendingSave();
+      repo.dispose();
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    t.view.physicalSize = const Size(1400, 900);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(testApp(AppShell(app: app)));
+    await settle(t);
+    app.select(block.id, edit: true);
+    await settle(t);
+  }
+
+  String text() => block.content['text'] as String? ?? '';
+  List<List<String>> cells() => tablesIn(block.content).single.cells;
+
+  testWidgets('type, Tab, and the next thing typed goes in the table',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+
+    tester.testTextInput.enterText('Element');
+    await settle(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester);
+
+    expect(cells(), [
+      ['Element', '']
+    ]);
+    // Past the 700ms save, which notifies and rebuilds the whole tree. The
+    // keyboard has to survive that: a rebuild is the moment a host field
+    // would take its connection back.
+    await settle(tester, frames: 20);
+
+    // **Typed at nobody in particular** — this goes to whichever field holds
+    // the platform's text-input connection, which is the whole question.
+    tester.testTextInput.enterText('Symbol');
+    await settle(tester);
+
+    expect(cells(), [
+      ['Element', 'Symbol']
+    ], reason: 'the caret was left in the second cell, so that is where the '
+        'typing belongs');
+    expect(text(), contains('onote://atom/'),
+        reason: 'and not a character of it reached the paragraph');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('type, Tab, type, Tab — and the cell Tab just made is typed into',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+
+    // **The whole gesture, the way a table actually gets filled in.** The
+    // second Tab is the one that used to break it: it adds a row, and adding
+    // a row rebuilt the grid, and rebuilding the grid disposed the focus node
+    // holding the caret. A `FocusNode` detached while it has the focus hands
+    // it to the enclosing SCOPE, and the scope gives it back to the
+    // paragraph — so the caret left the table and the next word went into the
+    // sentence beside it. Nothing smaller than the whole application can see
+    // this: in a bare harness the refocus wins the race every time.
+    tester.testTextInput.enterText('Element');
+    await settle(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester);
+    tester.testTextInput.enterText('Symbol');
+    await settle(tester);
+    expect(cells(), [
+      ['Element', 'Symbol']
+    ]);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester);
+    // **Sideways, because this is the heading row.** The owner: *"on the first
+    // row pressing tab should add a new column rather than return me"* — the
+    // top row is where a table's shape is decided, so the gesture that extends
+    // it extends it across. Enter starts the body; every row after the first
+    // gets a new ROW from Tab, as it does in Word.
+    expect(cells(), [
+      ['Element', 'Symbol', '']
+    ], reason: 'Tab off the end of the first row adds a column');
+
+    // Typed at nobody in particular — it goes wherever the keyboard is.
+    tester.testTextInput.enterText('Mass');
+    await settle(tester);
+    expect(cells(), [
+      ['Element', 'Symbol', 'Mass']
+    ], reason: 'the new heading, which is where Tab left the caret — not the '
+        'old cell, and not the paragraph');
+    expect(text(), startsWith('!['),
+        reason: 'and not one character of it reached the sentence');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('type, Tab, type, ENTER — and the row Enter made is typed into',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+
+    // **The journey as reported, in the whole application.** The owner:
+    // *"I typed some content, pressed tab to create a table, typed a bit more
+    // in the new cell it put me into, then pressed enter. It created the new
+    // row below me, but put my cursor out of the table."*
+    //
+    // Pinned here as well as in `inline_table_focus_test.dart` because every
+    // one of the caret defects in this feature reproduced only under the real
+    // shell: the block is rebuilt from above, the save fires, the chrome
+    // notifies, and the frame the caret is placed in is never as quiet as a
+    // two-widget harness makes it.
+    tester.testTextInput.enterText('Element');
+    await settle(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester);
+    tester.testTextInput.enterText('Symbol');
+    await settle(tester);
+    expect(cells(), [
+      ['Element', 'Symbol']
+    ]);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await settle(tester);
+    expect(cells(), [
+      ['Element', 'Symbol'],
+      ['', '']
+    ], reason: 'Enter in the last row starts the body');
+
+    // Well past the 700ms save, because the report was not about the first
+    // frame — it was about the caret being taken back a moment later.
+    await settle(tester, frames: 20);
+    tester.testTextInput.enterText('Sodium');
+    await settle(tester);
+
+    expect(cells(), [
+      ['Element', 'Symbol'],
+      ['', 'Sodium']
+    ], reason: 'the caret stayed in the row Enter had just made — in the same '
+        'COLUMN it was pressed in, which is what Enter means in a table and '
+        'is why the second cell and not the first');
+    expect(text(), startsWith('!['),
+        reason: 'and the sentence took none of it');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('Tab on the first row widens it, and the caret goes with it',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+
+    // The top row names the columns, so Tab off its end extends it sideways
+    // rather than starting a body row — the owner's rule. The caret question
+    // is the same one either way, and this is the shape a table is in for the
+    // whole of being built: one row old, freshly made by the keystroke before.
+    tester.testTextInput.enterText('Element');
+    await settle(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester);
+    tester.testTextInput.enterText('Symbol');
+    await settle(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester, frames: 20);
+    expect(cells().single, hasLength(3), reason: 'a third column');
+
+    tester.testTextInput.enterText('Number');
+    await settle(tester);
+    expect(cells(), [
+      ['Element', 'Symbol', 'Number']
+    ], reason: 'and the caret was waiting in it');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('a table in a sentence does not pin the box to its maximum',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+
+    tester.testTextInput.enterText('Element');
+    await settle(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester);
+    // Out of the table, and on with the sentence — which puts a word on the
+    // same line as the reference.
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await settle(tester);
+    tester.testTextInput.enterText('${text()} and so on');
+    await settle(tester);
+
+    // The owner noticed this before I did: *"it does expand the box to its
+    // max size when the cursor jumps out"*. A reference is ninety characters
+    // of `![… — update Openote to see it](onote://atom/<uuid>)`, which is
+    // wider than a box is ever allowed to measure — so the moment anything
+    // shared its line, the box snapped to 640 and stayed there.
+    expect(TextBlockView.autoWidth(block, dark: false),
+        lessThan(TextBlockView.maxAutoW),
+        reason: 'the box is measured on what is READ, and the reference is '
+            'not read — the table it stands for is');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('Tab twice on an empty line indents twice, and makes no table',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester);
+    expect(text(), '  ');
+
+    // The owner: "if i press tab twice it will open a table with a tab in the
+    // first column which i dont really love". The indent the first Tab made
+    // was enough to convince the second that something had been typed.
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester);
+    expect(text(), '    ');
+    expect(tablesIn(block.content), isEmpty);
+    app.cancelPendingSave();
+  });
+
+  testWidgets('Escape gives the paragraph its keyboard back', (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await shell(tester);
+
+    tester.testTextInput.enterText('Element');
+    await settle(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await settle(tester);
+    expect(app.canFormatText, isFalse, reason: 'a cell has the keyboard');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await settle(tester);
+
+    expect(app.canFormatText, isTrue,
+        reason: 'and the paragraph has it back — a box that could never be '
+            'typed into again would be a far worse bug than the one the gate '
+            'exists to fix');
+    tester.testTextInput.enterText('${text()} tail');
+    await settle(tester);
+    expect(text(), endsWith('tail'));
+    expect(cells(), [
+      ['Element', '']
+    ], reason: 'and the table is still there, untouched');
+    app.cancelPendingSave();
+  });
+}

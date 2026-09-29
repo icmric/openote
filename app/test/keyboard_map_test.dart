@@ -77,7 +77,7 @@ void main() {
       // the bottom and this test failed for a row that renders perfectly
       // well. Grow this number when the map grows, or the test starts
       // measuring the viewport instead of the overlay.
-      tester.view.physicalSize = const Size(1000, 4200);
+      tester.view.physicalSize = const Size(1000, 4800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(

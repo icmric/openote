@@ -9,6 +9,17 @@ class LEn extends L {
   LEn([String locale = 'en']) : super(locale);
 
   @override
+  String atomNewerVersion(String version) {
+    return 'Made in Openote $version';
+  }
+
+  @override
+  String get atomNewerVersionUnknown => 'Made in a newer version of Openote';
+
+  @override
+  String get atomUpdateToView => 'Update Openote to view it';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -134,6 +145,14 @@ class LEn extends L {
 
   @override
   String get barInkMoreColours => 'More colours…';
+
+  @override
+  String barPenSize(String size) {
+    return 'Pen size $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Exact size…';
 
   @override
   String get barInkPickColour => 'Pick a colour off the page';
@@ -516,7 +535,10 @@ class LEn extends L {
   String get insertLinkToPage => 'Link to page';
 
   @override
-  String get insertPageLink => 'Page link';
+  String get linkEdit => 'Edit link…';
+
+  @override
+  String get insertPageLink => 'Link…';
 
   @override
   String get insertPageWindow => 'Page window';
@@ -622,6 +644,12 @@ class LEn extends L {
   String get navCollapse => 'Collapse the navigator  (Ctrl+\\)';
 
   @override
+  String get navHideSections => 'Hide the section list';
+
+  @override
+  String get navShowSections => 'Show the section list';
+
+  @override
   String get navColour => 'Colour';
 
   @override
@@ -645,9 +673,22 @@ class LEn extends L {
   String get navDeletePermanently => 'Delete permanently';
 
   @override
-  String navDeletedRestorable(String title) {
-    return 'Deleted “$title” — restore it from the recycle bin.';
+  String navDeletedPage(String title) {
+    return 'Deleted page “$title”';
   }
+
+  @override
+  String navDeletedSection(String title) {
+    return 'Deleted section “$title”';
+  }
+
+  @override
+  String navDeletedGroup(String title) {
+    return 'Deleted group “$title”';
+  }
+
+  @override
+  String get navUndo => 'Undo';
 
   @override
   String navDeletesInDays(int days) {
@@ -1508,6 +1549,24 @@ class LEn extends L {
 
   @override
   String get shellUnlock => 'Unlock';
+
+  @override
+  String get tableColumnLeft => 'Insert column left';
+
+  @override
+  String get tableColumnRight => 'Insert column right';
+
+  @override
+  String get tableDeleteColumn => 'Delete column';
+
+  @override
+  String get tableDeleteRow => 'Delete row';
+
+  @override
+  String get tableRowAbove => 'Insert row above';
+
+  @override
+  String get tableRowBelow => 'Insert row below';
 
   @override
   String get tagContact => 'Contact';

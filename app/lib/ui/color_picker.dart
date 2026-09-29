@@ -165,13 +165,59 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
                     if (_parse(hex) != null) swatch(_parse(hex)!),
                 ]),
               ],
-              const SizedBox(height: 8),
-              TextButton.icon(
-                icon: Icon(_customOpen ? Icons.expand_less : Icons.expand_more,
-                    size: 16),
-                label: const Text('Custom colour'),
-                onPressed: () => setState(() => _customOpen = !_customOpen),
+              const SizedBox(height: 10),
+              // **The way to any colour at all, said so it reads as one.**
+              //
+              // The owner: *"the 'custom colour' option does need to be more
+              // clear"*. It was a bare text button in the same grey as the
+              // labels around it, wearing a chevron that could as easily have
+              // meant "show more swatches" — so the one control here that
+              // reaches every colour looked like the least important thing on
+              // the dialog. It is now a bordered row the width of the grid,
+              // with the wheel icon everything else uses for this, a sentence
+              // that says what it does, and the colour you are on shown on the
+              // end so the row is also the answer to "what have I got".
+              InkWell(
+                mouseCursor: WidgetStateMouseCursor.clickable,
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => setState(() => _customOpen = !_customOpen),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: Theme.of(context).colorScheme.outline),
+                  ),
+                  child: Row(children: [
+                    // A spectrum, not the eyedropper: `colorize` already
+                    // means "take the colour off something on screen", which
+                    // is the toolbar button next door and a different act.
+                    const Icon(Icons.gradient, size: 16),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text('Mix your own colour',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                    ),
+                    Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: _color,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: OnoteColors.paper300),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                        _customOpen
+                            ? Icons.expand_less
+                            : Icons.expand_more,
+                        size: 18),
+                  ]),
+                ),
               ),
+              if (_customOpen) const SizedBox(height: 10),
               if (_customOpen) ...[
                 // Saturation/value field
                 SizedBox(

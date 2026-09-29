@@ -157,6 +157,19 @@ abstract class OnoteEditSession {
   /// selection model of its own.
   void setSelection(int base, int extent) {}
 
+  /// Where the caret is on screen, or null when the engine cannot say.
+  ///
+  /// The mirror of [offsetAtGlobal]: that one turns a point into a position in
+  /// the text, this one turns the position in the text back into a point. The
+  /// canvas uses it to keep the caret in sight while somebody writes, and it
+  /// is on the seam rather than in the engine because "where is the caret"
+  /// is a question any text engine can answer and the canvas must not have to
+  /// know which one it is asking.
+  ///
+  /// Null is a supported answer, exactly as it is for [offsetAtGlobal]: no
+  /// layout yet, no caret, or no Flutter text layer at all.
+  Rect? caretRectGlobal() => null;
+
   /// True while an inline equation INSIDE this session holds the keyboard.
   ///
   /// The one flag every gate reads (v0.20 §B.2.6): the session's own key
@@ -164,6 +177,17 @@ abstract class OnoteEditSession {
   /// leave the keystroke to the equation. Three gates, one truth — the
   /// alternative was three copies of "is a MathField focused?" drifting apart.
   bool get inlineMathFocused => false;
+
+  /// True while ANY inline child inside this session holds the keyboard — an
+  /// equation being written, a cell of a table being typed into.
+  ///
+  /// [inlineMathFocused] is the equation half of this and stays, because
+  /// "is the maths open" is a different question from "is the paragraph's own
+  /// keyboard handling standing down" and the maths one has its own callers.
+  /// The GATES read this one: the session's key handler, the caret it draws
+  /// and the menu it offers all belong to whoever has the keyboard, and there
+  /// is now more than one thing that can have it.
+  bool get inlineChildFocused => inlineMathFocused;
 
   /// Start an equation AT THE CARET, inside this paragraph.
   ///
@@ -174,6 +198,20 @@ abstract class OnoteEditSession {
   /// the engine has no inline maths of its own, and the caller then falls back
   /// to a block.
   bool startInlineMath() => false;
+
+  /// **Start a TABLE at the caret, inside this paragraph.**
+  ///
+  /// Tab, the way OneNote has always done it: the line you are on becomes the
+  /// first cell and the caret lands in the second. Returns false when the
+  /// engine has no inline tables of its own, or when the line cannot become
+  /// one, and the caller then falls back to a block of its own — the same
+  /// shape as [startInlineMath], and the same reason: "insert a table" means
+  /// something different depending on whether you are writing at the time.
+  /// [onlyAfterText] is what makes Tab safe to use for this: it declines at
+  /// the start of a line, where Tab has always meant indent. An explicit
+  /// "insert a table" from the ribbon passes false and gets one wherever the
+  /// caret is.
+  bool startInlineTable({bool onlyAfterText = false}) => false;
 
   void dispose();
 }

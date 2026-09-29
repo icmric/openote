@@ -9,6 +9,18 @@ class LFr extends L {
   LFr([String locale = 'fr']) : super(locale);
 
   @override
+  String atomNewerVersion(String version) {
+    return 'Créé dans Openote $version';
+  }
+
+  @override
+  String get atomNewerVersionUnknown =>
+      'Créé dans une version plus récente d’Openote';
+
+  @override
+  String get atomUpdateToView => 'Mettez Openote à jour pour l’afficher';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -134,6 +146,14 @@ class LFr extends L {
 
   @override
   String get barInkMoreColours => 'Plus de couleurs…';
+
+  @override
+  String barPenSize(String size) {
+    return 'Épaisseur $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Taille exacte…';
 
   @override
   String get barInkPickColour => 'Prélever une couleur sur la page';
@@ -514,6 +534,9 @@ class LFr extends L {
   String get insertLinkToPage => 'Lier à une page';
 
   @override
+  String get linkEdit => 'Modifier le lien…';
+
+  @override
   String get insertPageLink => 'Lien';
 
   @override
@@ -621,6 +644,12 @@ class LFr extends L {
   String get navCollapse => 'Replier le navigateur  (Ctrl+\\)';
 
   @override
+  String get navHideSections => 'Masquer la liste des sections';
+
+  @override
+  String get navShowSections => 'Afficher la liste des sections';
+
+  @override
   String get navColour => 'Couleur';
 
   @override
@@ -644,9 +673,22 @@ class LFr extends L {
   String get navDeletePermanently => 'Supprimer définitivement';
 
   @override
-  String navDeletedRestorable(String title) {
-    return '« $title » supprimée — vous pouvez la restaurer depuis la corbeille.';
+  String navDeletedPage(String title) {
+    return 'Page « $title » supprimée';
   }
+
+  @override
+  String navDeletedSection(String title) {
+    return 'Section « $title » supprimée';
+  }
+
+  @override
+  String navDeletedGroup(String title) {
+    return 'Groupe « $title » supprimé';
+  }
+
+  @override
+  String get navUndo => 'Annuler';
 
   @override
   String navDeletesInDays(int days) {
@@ -1519,6 +1561,24 @@ class LFr extends L {
 
   @override
   String get shellUnlock => 'Déverrouiller';
+
+  @override
+  String get tableColumnLeft => 'Insérer une colonne à gauche';
+
+  @override
+  String get tableColumnRight => 'Insérer une colonne à droite';
+
+  @override
+  String get tableDeleteColumn => 'Supprimer la colonne';
+
+  @override
+  String get tableDeleteRow => 'Supprimer la ligne';
+
+  @override
+  String get tableRowAbove => 'Insérer une ligne au-dessus';
+
+  @override
+  String get tableRowBelow => 'Insérer une ligne en dessous';
 
   @override
   String get tagContact => 'Contact';

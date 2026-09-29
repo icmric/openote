@@ -241,7 +241,9 @@ _Markdown _pageMarkdown(String title, List<Block> blocks, String assetPrefix) {
   for (final b in ordered) {
     switch (b.type) {
       case BlockType.text:
-        buf.writeln(markdownInline(b.content['text'] as String? ?? '').trimRight());
+        buf.writeln(markdownInline(
+                expandAtoms(b.content['text'] as String? ?? '', b.content))
+            .trimRight());
         buf.writeln();
       case BlockType.math:
         final latex = b.content['latex'] as String? ?? '';
@@ -321,7 +323,10 @@ Map<String, dynamic> _jsonCanvas(List<Block> blocks, String assetPrefix) {
         nodes.add({
           'id': b.id,
           'type': 'text',
-          'text': b.content['text'] as String? ?? '',
+          // JSON Canvas has no atom, so a table travels as the GFM table it
+          // projects to. A node holding `onote://atom/…` would be a hole in
+          // the file for every reader but this one.
+          'text': expandAtoms(b.content['text'] as String? ?? '', b.content),
           'x': x, 'y': y, 'width': w, 'height': h,
         });
       case BlockType.graph:

@@ -13,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/canvas/media_drop.dart';
 import 'package:openote/export/csv_import.dart';
+import 'package:openote/model/inline_atom.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -112,7 +113,7 @@ void main() {
       } catch (_) {}
     });
 
-    test('a .csv becomes an editable table block where it landed', () async {
+    test('a .csv becomes an editable table where it landed', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final f = File('${tmp.path}/marks.csv')
         ..writeAsStringSync('unit,mark\n"maths, discrete",82\nphysics,74');
@@ -124,10 +125,12 @@ void main() {
       expect(n, 1);
       expect(app.blocks.length, before + 1);
       final table = app.blocks.last;
-      expect(table.type, BlockType.table,
-          reason: 'tabular data becomes a TABLE, not an attachment');
+      // A paragraph carrying a table, which is what a table IS now — the
+      // point of the assertion is that tabular data becomes a TABLE and not
+      // an attachment, and that is unchanged.
+      expect(table.type, BlockType.text);
       expect(table.x, 120);
-      expect(table.content['cells'], [
+      expect(tablesIn(table.content).single.cells, [
         ['unit', 'mark'],
         ['maths, discrete', '82'],
         ['physics', '74'],

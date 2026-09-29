@@ -107,6 +107,24 @@ abstract class L {
     Locale('zh')
   ];
 
+  /// Shown inside a box where a table or similar should be, on a device whose Openote is too old to draw it. {version} is the version it was made in, e.g. "1.1.0".
+  ///
+  /// In en, this message translates to:
+  /// **'Made in Openote {version}'**
+  String atomNewerVersion(String version);
+
+  /// Shown inside a box where a table or similar should be, when the version that made it was not recorded.
+  ///
+  /// In en, this message translates to:
+  /// **'Made in a newer version of Openote'**
+  String get atomNewerVersionUnknown;
+
+  /// Second line of that box: what to do about it. Kept short — it sits inside a box the size of the missing table.
+  ///
+  /// In en, this message translates to:
+  /// **'Update Openote to view it'**
+  String get atomUpdateToView;
+
   /// A small number printed on a toolbar badge — cards due, or reminders waiting. Its own message so the digits are grouped and shaped for this language rather than printed as raw ASCII.
   ///
   /// In en, this message translates to:
@@ -340,6 +358,18 @@ abstract class L {
   /// In en, this message translates to:
   /// **'More colours…'**
   String get barInkMoreColours;
+
+  /// Tooltip on one of the preset pen-thickness buttons. {size} is the thickness in pixels.
+  ///
+  /// In en, this message translates to:
+  /// **'Pen size {size}'**
+  String barPenSize(String size);
+
+  /// Tooltip on the button that opens a slider for a thickness none of the presets cover.
+  ///
+  /// In en, this message translates to:
+  /// **'Exact size…'**
+  String get barPenSizeExact;
 
   /// Tooltip on the eyedropper button.
   ///
@@ -881,10 +911,16 @@ abstract class L {
   /// **'Link to page'**
   String get insertLinkToPage;
 
-  /// Insert item: a link to another page in the notebook.
+  /// Right-click menu item on text that is already a link: reopens the link dialog to change its address.
   ///
   /// In en, this message translates to:
-  /// **'Page link'**
+  /// **'Edit link…'**
+  String get linkEdit;
+
+  /// Insert item: attach an address to some words — a web address, or another page in this notebook.
+  ///
+  /// In en, this message translates to:
+  /// **'Link…'**
   String get insertPageLink;
 
   /// Insert item: a live window showing another page inside this one.
@@ -1061,6 +1097,18 @@ abstract class L {
   /// **'Collapse the navigator  (Ctrl+\\)'**
   String get navCollapse;
 
+  /// Tooltip on the button that folds the sections column away to give the page more room.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide the section list'**
+  String get navHideSections;
+
+  /// Tooltip on the same button when the sections column is already folded away.
+  ///
+  /// In en, this message translates to:
+  /// **'Show the section list'**
+  String get navShowSections;
+
   /// Label beside the row of colours a section can be given.
   ///
   /// In en, this message translates to:
@@ -1103,11 +1151,29 @@ abstract class L {
   /// **'Delete permanently'**
   String get navDeletePermanently;
 
-  /// Confirmation after deleting a page.
+  /// Snackbar after deleting a page. Kept short because it carries an Undo button beside it.
   ///
   /// In en, this message translates to:
-  /// **'Deleted “{title}” — restore it from the recycle bin.'**
-  String navDeletedRestorable(String title);
+  /// **'Deleted page “{title}”'**
+  String navDeletedPage(String title);
+
+  /// Snackbar after deleting a section, with an Undo button beside it.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted section “{title}”'**
+  String navDeletedSection(String title);
+
+  /// Snackbar after deleting a section group, with an Undo button beside it.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted group “{title}”'**
+  String navDeletedGroup(String title);
+
+  /// Button on the deleted-something snackbar that puts it straight back.
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get navUndo;
 
   /// How long a deleted thing has left in the recycle bin.
   ///
@@ -2500,6 +2566,42 @@ abstract class L {
   /// In en, this message translates to:
   /// **'Unlock'**
   String get shellUnlock;
+
+  /// Right-click menu on a table cell: add an empty column to the left of the cell that was clicked.
+  ///
+  /// In en, this message translates to:
+  /// **'Insert column left'**
+  String get tableColumnLeft;
+
+  /// Right-click menu on a table cell: add an empty column to the right of the cell that was clicked.
+  ///
+  /// In en, this message translates to:
+  /// **'Insert column right'**
+  String get tableColumnRight;
+
+  /// Right-click menu on a table cell: remove the column the cell is in. Disabled when only one column is left.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete column'**
+  String get tableDeleteColumn;
+
+  /// Right-click menu on a table cell: remove the row the cell is in. Disabled when only one row is left.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete row'**
+  String get tableDeleteRow;
+
+  /// Right-click menu on a table cell: add an empty row above the cell that was clicked.
+  ///
+  /// In en, this message translates to:
+  /// **'Insert row above'**
+  String get tableRowAbove;
+
+  /// Right-click menu on a table cell: add an empty row below the cell that was clicked.
+  ///
+  /// In en, this message translates to:
+  /// **'Insert row below'**
+  String get tableRowBelow;
 
   /// Tag name: a person to get in touch with.
   ///

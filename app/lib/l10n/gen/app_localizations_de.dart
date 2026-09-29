@@ -9,6 +9,18 @@ class LDe extends L {
   LDe([String locale = 'de']) : super(locale);
 
   @override
+  String atomNewerVersion(String version) {
+    return 'Erstellt mit Openote $version';
+  }
+
+  @override
+  String get atomNewerVersionUnknown =>
+      'Mit einer neueren Openote-Version erstellt';
+
+  @override
+  String get atomUpdateToView => 'Openote aktualisieren, um es anzuzeigen';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -134,6 +146,14 @@ class LDe extends L {
 
   @override
   String get barInkMoreColours => 'Weitere Farben…';
+
+  @override
+  String barPenSize(String size) {
+    return 'Stiftgröße $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Genaue Größe…';
 
   @override
   String get barInkPickColour => 'Farbe von der Seite aufnehmen';
@@ -515,6 +535,9 @@ class LDe extends L {
   String get insertLinkToPage => 'Mit einer Seite verknüpfen';
 
   @override
+  String get linkEdit => 'Link bearbeiten…';
+
+  @override
   String get insertPageLink => 'Seitenlink';
 
   @override
@@ -621,6 +644,12 @@ class LDe extends L {
   String get navCollapse => 'Navigator einklappen  (Strg+\\)';
 
   @override
+  String get navHideSections => 'Abschnittsliste ausblenden';
+
+  @override
+  String get navShowSections => 'Abschnittsliste einblenden';
+
+  @override
   String get navColour => 'Farbe';
 
   @override
@@ -644,9 +673,22 @@ class LDe extends L {
   String get navDeletePermanently => 'Endgültig löschen';
 
   @override
-  String navDeletedRestorable(String title) {
-    return '„$title“ gelöscht — du kannst sie im Papierkorb wiederherstellen.';
+  String navDeletedPage(String title) {
+    return 'Seite „$title“ gelöscht';
   }
+
+  @override
+  String navDeletedSection(String title) {
+    return 'Abschnitt „$title“ gelöscht';
+  }
+
+  @override
+  String navDeletedGroup(String title) {
+    return 'Gruppe „$title“ gelöscht';
+  }
+
+  @override
+  String get navUndo => 'Rückgängig';
 
   @override
   String navDeletesInDays(int days) {
@@ -1519,6 +1561,24 @@ class LDe extends L {
 
   @override
   String get shellUnlock => 'Entsperren';
+
+  @override
+  String get tableColumnLeft => 'Spalte links einfügen';
+
+  @override
+  String get tableColumnRight => 'Spalte rechts einfügen';
+
+  @override
+  String get tableDeleteColumn => 'Spalte löschen';
+
+  @override
+  String get tableDeleteRow => 'Zeile löschen';
+
+  @override
+  String get tableRowAbove => 'Zeile oberhalb einfügen';
+
+  @override
+  String get tableRowBelow => 'Zeile unterhalb einfügen';
 
   @override
   String get tagContact => 'Kontakt';

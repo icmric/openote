@@ -1879,7 +1879,7 @@ class Repository {
       db.execute(
           'INSERT OR IGNORE INTO blobs(hash,bytes,mime,size,created_at) '
           'VALUES(?,?,?,?,?)',
-          [hash, bytes, _sniffMime(bytes), bytes.length, nowMs()]);
+          [hash, bytes, sniffMime(bytes), bytes.length, nowMs()]);
       restored++;
       await Future<void>.delayed(const Duration(milliseconds: 1));
     }
@@ -2964,7 +2964,12 @@ class Repository {
   /// the way back it is read from the content. Only [blobIndex] — the Step 5
   /// backfill — ever consumes it, so an unrecognised type costs a generic
   /// label and nothing else; guessing wrong from a filename would cost more.
-  static String _sniffMime(Uint8List b) {
+  ///
+  /// Public because `save_picture.dart` asks the same question of bytes it is
+  /// about to write out: an in-flow `![](sha256:…)` reference carries no mime
+  /// of its own, and a second copy of these magic numbers is exactly the kind
+  /// of duplication that has already let one grammar drift from another here.
+  static String sniffMime(Uint8List b) {
     bool starts(List<int> magic, {int at = 0}) {
       if (b.length < at + magic.length) return false;
       for (var i = 0; i < magic.length; i++) {
@@ -3670,6 +3675,20 @@ class Repository {
   /// narrower than `"strokes"` — it excludes an empty array and excludes an
   /// already-converted page, so the conversion is re-runnable and a second run
   /// finds nothing.
+  /// Pages holding a table BLOCK — the shape a table had before it could
+  /// live inside a paragraph.
+  ///
+  /// A string scan of the page mirror, exactly like [pageIdsWithInlineInk] and
+  /// for the same reason: materialising three hundred pages to discover that
+  /// two of them have a table is most of the work for none of the answer.
+  /// `Block.toJson` writes the type as exactly `"type":"table"`.
+  List<String> pageIdsWithTableBlocks(String notebookId) => [
+        for (final r in _db(notebookId).select(
+            'SELECT page_id FROM page_mirror WHERE json LIKE ?',
+            const [r'%"type":"table"%']))
+          r['page_id'] as String
+      ];
+
   List<String> pageIdsWithInlineInk(String notebookId) => [
         for (final r in _db(notebookId).select(
             'SELECT page_id FROM page_mirror WHERE json LIKE ?',

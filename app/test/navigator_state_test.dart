@@ -130,6 +130,36 @@ void main() {
     expect(repo.getSetting('navCollapsed'), true);
   });
 
+  test('what is folded away is still folded away next time', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // The owner: *"it should remeber what groups are closed and open (both
+    // page and section) when closing and opening the app."* Both sets were
+    // session state, so a navigator somebody had tidied came back fully
+    // unfolded every morning.
+    final (repo, tmp, app) = await fixture('onote_nav_fold_');
+    addTearDown(() => cleanup(repo, tmp));
+
+    final page = byTitle(app, 'A0').id;
+    const group = 'grp-1';
+    app.togglePageCollapsed(page);
+    app.toggleGroupCollapsed(group);
+    expect(repo.getSetting('collapsedPages'), [page]);
+    expect(repo.getSetting('collapsedGroups'), [group]);
+
+    // A second run of the app over the same workspace. `init` does far too
+    // much else to call here — schedulers, sync polling, a widget binding —
+    // so this drives the one step of it that matters.
+    final next = AppState(repo)..notebookId = app.notebookId;
+    next.loadCollapsedState();
+    expect(next.collapsedPages, contains(page));
+    expect(next.collapsedGroups, contains(group));
+
+    // And unfolding is remembered just as much as folding is — the setting
+    // is the whole set, not a list of things ever collapsed.
+    app.togglePageCollapsed(page);
+    expect(repo.getSetting('collapsedPages'), isEmpty);
+  });
+
   test('collapse and favourite toggles bump navRevision', () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     // The navigator memo keys on this counter; lengths can alias (one

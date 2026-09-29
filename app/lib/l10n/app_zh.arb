@@ -1,4 +1,7 @@
 {
+  "atomNewerVersion": "由 Openote {version} 创建",
+  "atomNewerVersionUnknown": "由较新版本的 Openote 创建",
+  "atomUpdateToView": "请更新 Openote 以查看",
   "barBadgeCount": "{count}",
   "barBlankOut": "把选中的内容挖空",
   "barBlankOutNeedsSelection": "请先选中要挖空的文字。",
@@ -38,6 +41,8 @@
   "barInkDefaultColour": "默认墨迹 — 跟随页面",
   "barInkHighlighterColourTitle": "荧光笔的颜色",
   "barInkMoreColours": "更多颜色…",
+  "barPenSize": "笔迹粗细 {size}",
+  "barPenSizeExact": "精确大小…",
   "barInkPickColour": "从页面上拾取颜色",
   "barInkPickingHint": "点击页面上的任意内容以使用它的颜色",
   "barInlineCode": "行内代码",
@@ -129,6 +134,7 @@
   "insertGroupWrite": "书写",
   "insertLinkToPage": "链接到页面",
   "insertPageLink": "页面链接",
+  "linkEdit": "编辑链接…",
   "insertPageWindow": "页面窗口",
   "insertPdfAsCard": "作为卡片 — 在弹窗中打开",
   "insertPdfFailed": "PDF 导入失败：{reason}",
@@ -159,6 +165,8 @@
   "navBinRetention": "这里的内容会在 {days} 天后被彻底删除。",
   "navClose": "关闭",
   "navCollapse": "收起导航栏  (Ctrl+\\)",
+  "navHideSections": "隐藏分区列表",
+  "navShowSections": "显示分区列表",
   "navColour": "颜色",
   "navColourDefault": "默认",
   "navComingUp": "即将到来",
@@ -166,7 +174,31 @@
   "navDeleteForeverBody": "“{title}”及其所有页面都将被永久删除，无法撤销。{caveat}",
   "navDeleteForeverTitle": "彻底删除？",
   "navDeletePermanently": "彻底删除",
-  "navDeletedRestorable": "已删除“{title}” — 可以从回收站还原。",
+  "navDeletedPage": "已删除页面“{title}”",
+  "@navDeletedPage": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedSection": "已删除分区“{title}”",
+  "@navDeletedSection": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedGroup": "已删除分区组“{title}”",
+  "@navDeletedGroup": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navUndo": "撤销",
   "navDeletesInDays": "{days, plural, other{{days} 天后删除}}",
   "navDeletesSoon": "即将删除",
   "navExamCountdown": "考试 {when} · {countdown}…",
@@ -399,6 +431,12 @@
   "shellTagTheLine": "标记当前所在的行",
   "shellTagsHint": "标记用来标注某一行 — 待办、重要、问题、定义 — 方便你以后找回、复习，或者给它加个截止日期。",
   "shellUnlock": "解锁",
+  "tableColumnLeft": "在左侧插入列",
+  "tableColumnRight": "在右侧插入列",
+  "tableDeleteColumn": "删除列",
+  "tableDeleteRow": "删除行",
+  "tableRowAbove": "在上方插入行",
+  "tableRowBelow": "在下方插入行",
   "tagContact": "联系人",
   "tagCritical": "紧急",
   "tagCustom": "标记",

@@ -1,4 +1,6 @@
 import 'dart:typed_data';
+import '../editor/inline_atom_view.dart';
+import '../model/inline_atom.dart';
 
 import 'package:flutter/material.dart';
 
@@ -75,12 +77,14 @@ class MarkdownView extends StatefulWidget {
     super.key,
     required this.text,
     required this.baseStyle,
+    this.onPictureMenu,
     this.onToggleCheckbox,
     this.onWikiLink,
     this.imageResolver,
     this.tagsByLine = const {},
     this.onToggleTag,
     this.mathLinkTint,
+    this.atomHost,
   });
 
   final String text;
@@ -105,6 +109,16 @@ class MarkdownView extends StatefulWidget {
   /// their literal Markdown.
   final Uint8List? Function(String src)? imageResolver;
 
+  /// **What this block's inline atoms are, and what they may do** — a table
+  /// in a paragraph, today. Null on a surface with no note behind it, and an
+  /// atom then reads as its alt text.
+  ///
+  /// The read view supplies a host at all (rather than drawing atoms dead)
+  /// because a table you can resize and click into without first opening the
+  /// box is the behaviour tables already had, and losing it would be a
+  /// regression dressed as a feature.
+  final InlineAtomHost? atomHost;
+
   /// **This equation has a graph, and one of the two is being looked at.**
   ///
   /// The same hook the live editor sets, on the READ path. Without it a
@@ -113,6 +127,18 @@ class MarkdownView extends StatefulWidget {
   /// paragraph is in when its graph is clicked. The link is supposed to work
   /// both ways.
   final Color? Function(String latex)? mathLinkTint;
+
+  /// **Right-click on a picture, with nothing open.**
+  ///
+  /// The owner: *"right clicking it not in editing mode … should bring up the
+  /// option to save the image."* The block's own menu cannot answer this: a
+  /// picture in a sentence is characters in the text, so the BLOCK is a
+  /// paragraph and `pictureIn` rightly says it holds no picture. The picture
+  /// itself is the only thing that knows where it is, so it is the thing that
+  /// answers the click.
+  ///
+  /// Called with the blob reference and where the pointer was.
+  final void Function(String src, Offset at)? onPictureMenu;
 
   @override
   State<MarkdownView> createState() => _MarkdownViewState();
@@ -364,7 +390,7 @@ class _MarkdownViewState extends State<MarkdownView> {
       return Padding(
         padding: EdgeInsets.only(top: index == 0 ? 0 : 6, bottom: 2),
         child: Text.rich(
-          TextSpan(children: inlineSpans(h.group(2)!, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
+          TextSpan(children: inlineSpans(h.group(2)!, baseStyle, dark, onWikiLink, widget.mathLinkTint, widget.atomHost)),
           style: baseStyle.copyWith(
             fontSize: sizes[level - 1],
             fontWeight: FontWeight.w600,
@@ -417,7 +443,7 @@ class _MarkdownViewState extends State<MarkdownView> {
             Expanded(
               child: Text.rich(
                 TextSpan(
-                  children: inlineSpans(cb.group(3)!, baseStyle, dark, onWikiLink, widget.mathLinkTint),
+                  children: inlineSpans(cb.group(3)!, baseStyle, dark, onWikiLink, widget.mathLinkTint, widget.atomHost),
                   style: checked
                       ? baseStyle.copyWith(
                           decoration: TextDecoration.lineThrough,
@@ -465,7 +491,7 @@ class _MarkdownViewState extends State<MarkdownView> {
                     style: baseStyle.copyWith(color: OnoteColors.graphite500))),
             Expanded(
                 child: Text.rich(
-                    TextSpan(children: inlineSpans(body, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
+                    TextSpan(children: inlineSpans(body, baseStyle, dark, onWikiLink, widget.mathLinkTint, widget.atomHost)),
                     style: baseStyle)),
           ],
         ),
@@ -496,7 +522,14 @@ class _MarkdownViewState extends State<MarkdownView> {
     // its resized dimensions, not natural pixels). Without a size, natural
     // size capped to the box width.
     final img = _reImage.firstMatch(line);
-    if (img != null && widget.imageResolver != null) {
+    // An atom reference has the same SHAPE as a picture and only the scheme
+    // tells them apart — see `_isAtomRef` in live_markdown_controller.dart.
+    // It reaches the paragraph below, where the shared inline grammar draws
+    // it. (It fell through here anyway, because no resolver can resolve it;
+    // depending on that would be depending on an accident.)
+    if (img != null &&
+        widget.imageResolver != null &&
+        !img.group(3)!.startsWith(InlineAtom.scheme)) {
       final src = img.group(3)!;
       var bytes = _imgCache[src];
       if (bytes == null) {
@@ -525,17 +558,24 @@ class _MarkdownViewState extends State<MarkdownView> {
             fit: BoxFit.contain,
             alignment: Alignment.topLeft,
             gaplessPlayback: true);
+        final menu = widget.onPictureMenu;
         return Padding(
           padding: EdgeInsets.only(
               left: indentPx(img.group(1)!.length, baseStyle.fontSize),
               top: sized ? 0 : 4,
               bottom: sized ? 0 : 4),
-          child: sized
-              ? Align(alignment: Alignment.topLeft, child: image)
-              : ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 640),
-                  child: image,
-                ),
+          child: GestureDetector(
+            // Secondary only. Everything else about this picture — a click to
+            // open the box, a drag to move it — still belongs to the block.
+            onSecondaryTapUp:
+                menu == null ? null : (d) => menu(src, d.globalPosition),
+            child: sized
+                ? Align(alignment: Alignment.topLeft, child: image)
+                : ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 640),
+                    child: image,
+                  ),
+          ),
         );
       }
       // Unresolvable blob → fall through to the literal-text rendering below.
@@ -550,7 +590,7 @@ class _MarkdownViewState extends State<MarkdownView> {
         decoration: const BoxDecoration(
             border: Border(left: BorderSide(color: OnoteColors.ink300, width: 3))),
         child: Text.rich(
-          TextSpan(children: inlineSpans(quote.group(1)!, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
+          TextSpan(children: inlineSpans(quote.group(1)!, baseStyle, dark, onWikiLink, widget.mathLinkTint, widget.atomHost)),
           style: baseStyle.copyWith(color: OnoteColors.graphite500),
         ),
       );
@@ -597,7 +637,7 @@ class _MarkdownViewState extends State<MarkdownView> {
         child: Text.rich(
           TextSpan(
               children: inlineSpans(
-                  plainIndent.group(2)!, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
+                  plainIndent.group(2)!, baseStyle, dark, onWikiLink, widget.mathLinkTint, widget.atomHost)),
           style: baseStyle,
         ),
       );
@@ -605,7 +645,7 @@ class _MarkdownViewState extends State<MarkdownView> {
 
     // Paragraph (empty lines keep their height)
     return Text.rich(
-      TextSpan(children: inlineSpans(line.isEmpty ? ' ' : line, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
+      TextSpan(children: inlineSpans(line.isEmpty ? ' ' : line, baseStyle, dark, onWikiLink, widget.mathLinkTint, widget.atomHost)),
       style: baseStyle,
     );
   }
@@ -656,7 +696,8 @@ TextStyle subSupStyle(TextStyle base, {required bool sup, required bool dark}) {
 /// and external `[label](https://…)` links (TEXT-1).
 List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
     [void Function(String label, String? id)? onWikiLink,
-    Color? Function(String latex)? mathLinkTint]) {
+    Color? Function(String latex)? mathLinkTint,
+    InlineAtomHost? atomHost]) {
   final spans = <InlineSpan>[];
   final pattern = mdInlineRe;
   var last = 0;
@@ -668,6 +709,32 @@ List<InlineSpan> inlineSpans(String text, TextStyle base, bool dark,
     // so reading and writing can never disagree about what a run of text is.
     final c = classifyInline(m);
     switch (c.kind) {
+      case MdInline.atom:
+        // The SAME widget the live editor mounts (`inlineAtomWidget`), so a
+        // table cannot look one way while the caret is in the paragraph and
+        // another way when it is not. That single shape-change is what this
+        // whole piece of work exists to remove.
+        spans.add(WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          // **Through a LayoutBuilder, because an atom has to know its room.**
+          // A table's columns are fixed widths, and a `RenderTable` given
+          // less room than they add up to does not complain and does not
+          // clip: it draws its cells where they would have gone, straight
+          // over whatever is beside the box. Measured before this line
+          // existed — three 400px columns in a 300px box drew cells at x=8,
+          // 408 and 808. The live editor passes its own known width in; this
+          // is the read path's answer to the same question.
+          child: LayoutBuilder(
+            builder: (context, cons) => inlineAtomWidget(
+              host: atomHost,
+              id: c.target!,
+              alt: c.inner,
+              style: base,
+              dark: dark,
+              maxWidth: cons.maxWidth.isFinite ? cons.maxWidth : null,
+            ),
+          ),
+        ));
       case MdInline.mathEmpty:
         // An equation started and never written into. It should not survive to
         // a saved note at all — the editor sweeps it on the way out — but if

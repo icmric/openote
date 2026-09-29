@@ -116,10 +116,17 @@ void main() {
     await settle(tester);
     expect(app.activeSession!.inlineMathFocused, isTrue);
 
-    // The toolbar's Bold button is NOT gated on math focus: it wraps the word
-    // at the parked caret, which sits INSIDE the equation's run. Probe-proven
+    // The toolbar's Bold button is NOT gated on math focus, and the host
+    // selection it acts on sits INSIDE the equation's run. Probe-proven
     // before the fix: the next equation keystroke wrote the tree at the stale
     // range, leaving 'aa $x+$x**$ bb cc dd'.
+    //
+    // A SELECTION, because Bold from a bare caret now queues a style for the
+    // next thing typed instead of rewriting anything — the rewrite is what
+    // this test is about, so it has to be one that still happens.
+    app.activeEditor!.controller.selection =
+        const TextSelection(baseOffset: 4, extentOffset: 5);
+    await settle(tester);
     app.wrapSelection('**');
     await settle(tester);
 

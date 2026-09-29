@@ -11,6 +11,8 @@
 ///  * [tableToMarkdown] — one GFM-table renderer.
 library;
 
+import '../model/inline_atom.dart';
+
 // Characters illegal in Windows/macOS/Linux filenames, plus control chars.
 final _invalidNameChars = RegExp(r'[<>:"/\\|?*\x00-\x1F]');
 final _trailingDotsSpaces = RegExp(r'[. ]+$');
@@ -147,4 +149,37 @@ String plainLine(String line) {
       RegExp(r'\[\[([^\]|]+)(?:\|[^\]]*)?\]\]'), (m) => m.group(1)!);
 
   return s.trim();
+}
+
+/// **A block's text with every inline atom written out as Markdown.**
+///
+/// `page.md` is the lossy convenience path (Data Model Spec §5.2, §10 §8):
+/// each atom projects to its native Markdown — a table to a GFM table — while
+/// `page.json` keeps the reference and stays the fidelity path. Without this
+/// an exported note would carry `![3x2 table](onote://atom/0198…)` where its
+/// table was, which no reader anywhere can do anything with.
+///
+/// An atom of a type this build does not know keeps its reference exactly as
+/// written: it is valid CommonMark, so a foreign reader shows the alt text
+/// rather than a syntax error, and a re-import still has the id.
+String expandAtoms(String text, Map<String, dynamic> content) {
+  if (!text.contains(InlineAtom.scheme)) return text;
+  final atoms = InlineAtom.allIn(content);
+  final buf = StringBuffer();
+  var last = 0;
+  for (final r in InlineAtom.referencesIn(text)) {
+    buf.write(text.substring(last, r.start));
+    last = r.end;
+    final atom = atoms[r.id];
+    if (atom == null || atom.type != 'table') {
+      buf.write(text.substring(r.start, r.end));
+      continue;
+    }
+    final md = tableToMarkdown(TableData.from(atom.content).cells);
+    // On its own lines, always. A GFM table is a block construct: written
+    // into the middle of a sentence it is not a table at all, just pipes.
+    if (md.isNotEmpty) buf.write('\n\n$md\n');
+  }
+  buf.write(text.substring(last));
+  return buf.toString();
 }

@@ -11,6 +11,7 @@ import 'package:super_clipboard/super_clipboard.dart'
 
 import '../canvas/align_guides.dart';
 import '../canvas/canvas_controller.dart';
+import '../canvas/ink_shapes.dart';
 import '../core/engine.dart';
 import '../core/ids.dart';
 import '../core/onote_ffi.dart';
@@ -21,6 +22,7 @@ import '../editor/onote_text_editor.dart';
 import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
 import '../model/history.dart';
+import '../model/inline_atom.dart';
 import '../math/active_math.dart';
 import '../math/evaluate.dart';
 import '../math/linear_math.dart';
@@ -31,6 +33,7 @@ import '../onenote/graph_import.dart';
 import '../onenote/unfinished_import.dart';
 import '../onenote/graph_links.dart';
 import '../model/models.dart';
+import '../model/table_conversion.dart';
 import '../store/database.dart'
     show NotebookFileMissing, NotebookFileProblem, notebookFileProblem;
 import '../store/notebook_writer.dart' show sha256Hex;
@@ -42,6 +45,7 @@ import '../ink/ink_codec.dart';
 import '../ink/ink_storage.dart';
 import '../sync/materializer.dart';
 import '../sync/git_sync.dart';
+import '../editor/inline_table.dart' show tableColumnWidths;
 import '../editor/list_editing.dart';
 import '../markdown/md_syntax.dart';
 import '../api/mcp_connect.dart';
@@ -251,6 +255,50 @@ class AppState extends ChangeNotifier
   /// Bytes of a blob in the current notebook, or null.
   Uint8List? blob(String hash) =>
       notebookId == null ? null : _repo.getBlob(notebookId!, hash);
+
+  /// **Bumped when bytes that were not readable a moment ago may be now.**
+  ///
+  /// The two halves of a blob travel separately: an op carries the hash, mime
+  /// and size, and the bytes arrive as their own file in the shared folder.
+  /// So a page routinely opens holding a reference to a picture whose bytes
+  /// are still in flight, and [blob] answers null for it — correctly, and
+  /// only for the moment.
+  ///
+  /// Nothing told the picture when that moment passed. A view that had read
+  /// null once kept its placeholder until its State was destroyed outright —
+  /// a page switch, a pull bumping `docRevision`, or a restart — which is the
+  /// shape of the report this exists to fix: *"I sometimes can't see the
+  /// imported images on the canvas. They usually load after a minute or two
+  /// or after restarting openote."* A minute or two is the git cycle; the
+  /// restart is the restart.
+  ///
+  /// A counter rather than a stream of hashes because the question a view has
+  /// is not "did MY bytes arrive" but "is it worth asking again", and the
+  /// cheap honest answer to that is "something landed since you last looked".
+  /// See `ImageBlockView`, which re-reads only when this has moved — a blob
+  /// read is synchronous and megabytes wide, so retrying on every rebuild
+  /// would reinstate the page-switch stall its deferred queue exists to stop.
+  int get blobRevision => _blobRevision;
+  int _blobRevision = 0;
+
+  /// Say that bytes arrived, for a test.
+  ///
+  /// The real callers are a pull, a repair pass and the held-blob sweep —
+  /// none of which a widget test can drive without a second device and a
+  /// folder full of half-delivered files. This is the event itself, so the
+  /// test exercises the same path the app does rather than a stand-in.
+  @visibleForTesting
+  void debugBytesArrived() => _bytesMayHaveArrived();
+
+  void _bytesMayHaveArrived() {
+    // **Guarded, because every caller is asynchronous.** A pull, a repair pass
+    // and a retry timer all reach here, and all of them can land after the
+    // notebook was closed or the app torn down — where `notifyListeners`
+    // throws. The counter still moves: a view built afterwards should see that
+    // something arrived, and it costs nothing to say so.
+    _blobRevision++;
+    if (!_disposed) notifyListeners();
+  }
 
   /// Store bytes in the current notebook, returning the content hash.
   String addBlob(Uint8List bytes, String mime) =>
@@ -591,11 +639,22 @@ class AppState extends ChangeNotifier
 
   bool _gitEnabled = false;
   String? _gitRemote;
+  String? _gitSshKey;
   Timer? _gitDebounce;
 
   /// Is this notebook backed by a git remote?
   bool get gitEnabled => _gitEnabled;
   String? get gitRemote => _gitRemote;
+
+  /// **The SSH private key this notebook authenticates with**, or null for
+  /// whatever the machine's agent and `~/.ssh/config` already offer.
+  ///
+  /// Per notebook, like the remote and unlike the GitHub account, because that
+  /// is the shape of the need it answers (issue #10): *"if you have a separate
+  /// git user (eg on self hosted Forgejo) for your notes"*. The notes go to one
+  /// server as one identity while everything else on the machine keeps using
+  /// the default key.
+  String? get gitSshKey => _gitSshKey;
 
   /// What the last cycle did, for the dialog. Null until one has run.
   String? gitStatus;
@@ -623,6 +682,7 @@ class AppState extends ChangeNotifier
     reloadGitHub();
     _gitEnabled = false;
     _gitRemote = null;
+    _gitSshKey = null;
     gitStatus = null;
     _gitDebounce?.cancel();
     if (notebookId == null) return;
@@ -630,14 +690,14 @@ class AppState extends ChangeNotifier
     if (raw is! Map) return;
     _gitEnabled = raw['enabled'] == true;
     _gitRemote = raw['remote'] as String?;
+    _gitSshKey = raw['sshKey'] as String?;
   }
 
   Future<void> setGitEnabled(bool on, {String? remote}) async {
     if (notebookId == null) return;
     _gitEnabled = on;
     if (remote != null) _gitRemote = remote.trim().isEmpty ? null : remote.trim();
-    _repo.setSetting(_gitKey(notebookId!),
-        on || _gitRemote != null ? {'enabled': on, 'remote': _gitRemote} : null);
+    _persistGitSettings();
     if (on) {
       final git = _git;
       await git.init();
@@ -696,7 +756,45 @@ class AppState extends ChangeNotifier
   /// to make ordinary background syncs authenticate too — otherwise the
   /// create-and-push button would work and the timer that runs a minute later
   /// would start failing, which is the worst of both.
-  GitSync get _git => GitSync(currentNotebook.logDirPath, token: _githubToken);
+  GitSync get _git => GitSync(currentNotebook.logDirPath,
+      token: _githubToken, sshKey: _gitSshKey);
+
+  /// This notebook's git settings row, or no row at all when there is nothing
+  /// left worth remembering.
+  ///
+  /// One writer, so the remote, the key and the enabled flag can never
+  /// disagree about whether the row should exist.
+  void _persistGitSettings() {
+    _repo.setSetting(
+        _gitKey(notebookId!),
+        _gitEnabled || _gitRemote != null || _gitSshKey != null
+            ? {
+                'enabled': _gitEnabled,
+                'remote': _gitRemote,
+                if (_gitSshKey != null) 'sshKey': _gitSshKey,
+              }
+            : null);
+  }
+
+  /// Point this notebook's git at a particular SSH key, or back at the
+  /// machine's default. See [gitSshKey].
+  ///
+  /// Stored in the notebook's settings and NEVER in `.git/config`: that file
+  /// is inside the replicated directory, so a path that is right here is wrong
+  /// on every other machine the notebook reaches.
+  ///
+  /// **Writes the setting and stops.** Routing this through [setGitEnabled] —
+  /// which is where it started, to share the writer — meant that choosing a
+  /// key silently ran `git init`, rewrote `.gitignore`, made a commit and
+  /// pushed. Changing which key you sign in with is not a reason to sync, and
+  /// the dialog has a Sync now button an inch away for when it is.
+  void setGitSshKey(String? path) {
+    if (notebookId == null) return;
+    final v = path?.trim();
+    _gitSshKey = v == null || v.isEmpty ? null : v;
+    _persistGitSettings();
+    notifyListeners();
+  }
 
   void reloadGitHub() {
     final raw = _repo.getSetting(_githubKey);
@@ -1506,8 +1604,7 @@ class AppState extends ChangeNotifier
       // `blobs/` and re-hashing it.
       if (_disposed) return copied;
       try {
-        _noteBlobProof(
-            nb, await r.proveBlobs(read: (h) => _repo.containerBlob(nb, h)));
+        await proveBlobsPatiently(nb);
       } catch (e) {
         // This proof half had no handler of its own, and the chain is awaited
         // by nobody unless a mirror is waiting on it — so a throw here was an
@@ -1558,7 +1655,36 @@ class AppState extends ChangeNotifier
   /// Per notebook, like [_logAhead] rather than like [_logError]: a clean proof
   /// of one notebook must not clear a hole reported in another, and the user
   /// can only act on the one they are looking at.
-  void _noteBlobProof(String nb, BlobProof proof) {
+  /// How long to keep quiet, and for how many more tries, before telling
+  /// somebody a picture is missing.
+  ///
+  /// **A hole found on the first pass is usually not a hole.** Every cheap
+  /// cause is transient and fixes itself: a cloud client that has not
+  /// downloaded the file yet, a files-on-demand placeholder that has not
+  /// hydrated, a file locked for the second the client is writing it. The
+  /// expensive cause — bytes that are genuinely gone — is the only one worth
+  /// a sentence as alarming as the one below, and it is the only one that
+  /// survives being asked again.
+  ///
+  /// Each retry is a full repair pass, not just a second look: it re-reads
+  /// the container, re-scans for a file a cloud client renamed, and sees
+  /// whatever has arrived in the folder since. So this is "run the repairs
+  /// again before frightening anybody", spread over about twenty seconds.
+  @visibleForTesting
+  static List<Duration> blobProofPatience = const [
+    Duration(seconds: 3),
+    Duration(seconds: 15),
+  ];
+
+  final Map<String, Timer> _blobRetries = {};
+  final Map<String, int> _blobAttempts = {};
+
+  void _cancelBlobRetry(String nb) {
+    _blobRetries.remove(nb)?.cancel();
+    _blobAttempts.remove(nb);
+  }
+
+  void _noteBlobProof(String nb, BlobProof proof, {bool mayRetry = false}) {
     if (proof.repaired.isNotEmpty) {
       // Worth a line even though nothing is wrong any more: Openote's own
       // writes are temp+rename and cannot tear, so a wrong-bytes or missing
@@ -1567,11 +1693,40 @@ class AppState extends ChangeNotifier
       // a person tidying it by hand — and that tends to recur.
       debugPrint('[openote/sync] ${proof.repaired.length} blob file(s) in $nb '
           'were missing or held bytes that were not what their name said, '
-          'and were rewritten from the notebook file');
+          'and were rewritten — ${proof.salvaged.length} of them from a copy '
+          'a cloud client had renamed, the rest from the notebook file');
+      // Rewritten means readable. Whatever was showing a placeholder for one
+      // of these can have another go.
+      _bytesMayHaveArrived();
     }
     if (proof.ok) {
+      _cancelBlobRetry(nb);
       _blobHole.remove(nb);
     } else {
+      // Not a word yet. Ask again, with every repair the first pass had —
+      // most of what looks like a hole at open is a cloud client that has not
+      // finished, and saying so is worse than saying nothing.
+      final attempt = _blobAttempts[nb] ?? 0;
+      if (mayRetry && attempt < blobProofPatience.length) {
+        _blobAttempts[nb] = attempt + 1;
+        _blobRetries.remove(nb)?.cancel();
+        _blobRetries[nb] = Timer(blobProofPatience[attempt], () async {
+          _blobRetries.remove(nb);
+          if (_disposed || notebookId == null) return;
+          final r = _recorders[nb];
+          if (r == null) return;
+          try {
+            _noteBlobProof(
+                nb, await r.proveBlobs(read: (h) => _repo.containerBlob(nb, h)),
+                mayRetry: true);
+          } catch (_) {
+            // The notebook left mid-retry, the folder went away. Nothing to
+            // report and nothing to fix — the next open asks again.
+          }
+        });
+        return;
+      }
+      _cancelBlobRetry(nb);
       // **Not "still fine on this computer."** That reassurance used to be
       // unconditional, but by the time either set here is non-empty, the
       // container has ALREADY been asked for good bytes and could not
@@ -1617,6 +1772,21 @@ class AppState extends ChangeNotifier
   /// content really is what the name claims**, repairing from the container
   /// where it can.
   ///
+  /// The proof the app runs by itself, which says nothing about a hole until
+  /// it has run the repairs again a couple of times — see [blobProofPatience].
+  ///
+  /// [proveBlobBytes] is the impatient twin, for a caller that asked a direct
+  /// question and is owed a direct answer: a migration deciding whether it may
+  /// proceed cannot wait twenty seconds, and nobody is reading a sentence on
+  /// its behalf.
+  Future<void> proveBlobsPatiently(String nb) async {
+    final r = _recorders[nb];
+    if (r == null) return;
+    _noteBlobProof(
+        nb, await r.proveBlobs(read: (h) => _repo.containerBlob(nb, h)),
+        mayRetry: true);
+  }
+
   /// The gate for the rest of the v0.17 storage work, exposed so a migration —
   /// and the tests that stand in for one — can refuse rather than proceed.
   /// Forces a synchronous log replay if no recorder is open; see
@@ -1792,9 +1962,44 @@ class AppState extends ChangeNotifier
         return;
       }
 
+      // **Two jobs, one visit.** Handwriting that is still JSON, and tables
+      // that are still blocks of their own. They share the schedule because
+      // they share every constraint — rewrite whole pages, must fold first,
+      // must yield the moment the user does anything — and because a second
+      // timer would mean two background passes fighting for the same write
+      // lock on the same notebook.
       final pages = inlineInkPageCount(nb);
-      if (pages == 0) {
+      final tablePages = tableBlockPageCount(nb);
+      if (pages == 0 && tablePages == 0) {
         _repo.setSetting(_housekeepingKey(nb), now);
+        _housekept.add(nb);
+        return;
+      }
+
+      // Not on a notebook this build may only READ. The pass would refuse
+      // anyway — but it would refuse as a DEFERRAL, so the note would flash
+      // up and the whole visit would be rescheduled every three minutes for
+      // as long as the app stayed open on it.
+      if (tablePages > 0 && !notebookIsReadOnly(nb)) {
+        // Announced, like the ink job: a notebook quietly rewriting itself is
+        // alarming if you happen to notice.
+        housekeepingNote = 'Updating tables on $tablePages pages…';
+        notifyListeners();
+        final t = await convertTablesToInline(nb, unattended: true);
+        if (_disposed) return;
+        housekeepingNote = null;
+        notifyListeners();
+        if (t.deferred) {
+          // It stepped aside. What it converted is durable; the clock is NOT
+          // stamped and the session slot is NOT consumed, so the rest happens
+          // once things go quiet.
+          _deferHousekeeping(nb);
+          return;
+        }
+      }
+
+      if (pages == 0) {
+        _repo.setSetting(_housekeepingKey(nb), nowMs());
         _housekept.add(nb);
         return;
       }
@@ -1899,6 +2104,9 @@ class AppState extends ChangeNotifier
         if (verified > 0) {
           debugPrint('[openote/sync] $verified late blob file(s) verified '
               'against their name and released to the read path');
+          // "Released to the read path" is exactly the event a picture
+          // holding a placeholder is waiting for.
+          _bytesMayHaveArrived();
         }
         // Awaited: the parse is paced now (see `OpLogStore.readDeviceFrom`),
         // so the ~1 s a first read of a 64.6 MB log costs is spent in ~8 ms
@@ -1906,6 +2114,11 @@ class AppState extends ChangeNotifier
         final pending = await r.pendingForeignOps(_repo.getSetting);
         if (pending.isEmpty) continue;
         total += await _syncPullLocked(nb, r, pending);
+        // A pull is the moment the folder gains files. Said unconditionally
+        // rather than only for `blob.put` ops: the bytes are not carried BY
+        // the op, so a picture whose op folded on an earlier cycle may be
+        // exactly the one whose file has only now landed beside it.
+        _bytesMayHaveArrived();
       } while (_pullAgain);
       return total;
     } finally {
@@ -2449,6 +2662,17 @@ class AppState extends ChangeNotifier
   /// a log line at shutdown in the app, and in tests a failure charged to
   /// whichever test runs next.
   Future<void> settleBackgroundWork() async {
+    // **A blob retry is dropped, not waited for.** It is a timer that has not
+    // fired: nothing is in flight, so there is nothing to be consistent with,
+    // and whoever is about to purge or move this folder should not wait
+    // twenty seconds to find that out. Dropping it costs nothing — the next
+    // open proves the notebook again — while keeping it would let a repair
+    // write a blob, and `writeBlob` recreate `blobs/`, inside a directory
+    // that is in the middle of being deleted. That is the recreated-husk
+    // hazard `discardImportedNotebook` already warns about, by another door.
+    for (final nb in _blobRetries.keys.toList()) {
+      _cancelBlobRetry(nb);
+    }
     // Each pass can start more work (a warm installs, which starts a
     // backfill), so drain until a pass finds nothing.
     for (var pass = 0; pass < 8; pass++) {
@@ -2629,10 +2853,24 @@ class AppState extends ChangeNotifier
         // touching the folder (purge and move), and it is what failed the
         // purge test on windows-latest even after the watcher stop itself
         // was already being awaited.
-        final Future<void> f = syncPull(nb).then<void>((n) {
+        final Future<void> f = syncPull(nb).then<void>((n) async {
           lastPullAt = DateTime.now();
           debugPrint('[openote/sync] auto-pull folded $n op(s)');
           notifyListeners();
+          // A pull is how the missing bytes ARRIVE. Without this, a notebook
+          // that was told a picture was missing went on saying so until it
+          // was closed and opened again, long after the file had landed.
+          // Gated on there being something to clear, because the proof
+          // re-hashes every blob in the notebook and no pull should pay that
+          // when nothing is wrong.
+          if (!_disposed && _blobHole.containsKey(nb)) {
+            try {
+              await proveBlobsPatiently(nb);
+            } catch (_) {
+              // The notebook left, the folder went away. The next pull or the
+              // next open asks again.
+            }
+          }
         }).catchError((Object e) {
           debugPrint('[openote/sync] auto-pull failed: $e');
         });
@@ -2903,6 +3141,232 @@ class AppState extends ChangeNotifier
     } catch (_) {
       return 0;
     }
+  }
+
+  // ── Tables move into the paragraph they belong to ────────────────────
+  //
+  // A table used to be a box of its own beside the writing; it is now a thing
+  // INSIDE the writing, like an equation. Both draw identically — the same
+  // widget, bound to two different places — so the conversion changes nothing
+  // anybody can see, which is what made the owner's decision the right one:
+  // *"lets just automatically update them all on open (or on update) so that
+  // we dont end up with a staggered mess of mix and match table types"*.
+  //
+  // **The one thing it does change is what an OLDER build shows**, and that
+  // cannot be helped from here: a build that has never heard of an atom draws
+  // the reference as text. This build draws a box saying which version made
+  // it (`inline_atom_view.dart`), which is the same courtesy in the direction
+  // we can actually extend it.
+  //
+  // Everything about how this runs is borrowed from the ink conversion below,
+  // because that one has already paid for the lessons: fold first or a pull
+  // undoes the work, stop the watcher, one transaction per page, yield to the
+  // user at the first sign of them doing anything, and never touch the page
+  // they are looking at.
+
+  /// How many pages still hold a table block. One indexed scan.
+  int tableBlockPageCount(String nb) {
+    try {
+      return _repo.pageIdsWithTableBlocks(nb).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// **The open page's tables, converted in memory, now.**
+  ///
+  /// The page somebody is looking at is the one page the background walk must
+  /// not touch (its editor is live and its blocks are held in memory, not read
+  /// from disk), and it is also the one page where converting is free: the
+  /// blocks are already here. So it happens on the way in, from [selectPage],
+  /// and the walk skips it.
+  ///
+  /// Undoable, and deliberately: `selectPage` has just cleared the stack, so
+  /// this becomes its first entry and one Ctrl+Z puts the page back exactly as
+  /// it was on disk. That is the same guarantee the field-code repair gives,
+  /// and for the same reason — this is the one automatic path that rewrites
+  /// something the user already owns.
+  ///
+  /// Returns how many tables moved.
+  int convertOpenPageTables() {
+    final nb = notebookId;
+    if (nb == null || pageId == null) return 0;
+    // Not into a notebook this build may only read, and not across a pull
+    // that is rewriting these very blocks from the log.
+    if (notebookIsReadOnly(nb) || _pulling) return 0;
+    var done = 0;
+    for (var i = 0; i < blocks.length; i++) {
+      if (blocks[i].type != BlockType.table) continue;
+      final out = tableBlockAsText(blocks[i],
+          madeIn: kAppVersion,
+          widthsIfNone: _impliedColumnWidths(blocks[i]));
+      // Null is a REFUSAL, not a failure: the block stays a table block, which
+      // still draws, still saves and still exports. Nothing is lost by
+      // leaving it alone, and something might be by forcing it.
+      if (out == null) continue;
+      if (done == 0) pushUndo();
+      blocks[i] = out;
+      done++;
+    }
+    if (done > 0) markDirty();
+    return done;
+  }
+
+  /// **The rest of the notebook**, in the order somebody would miss them:
+  /// the section they are in, then everything else in tree order. The page
+  /// they are ON is already done, in memory, by [convertOpenPageTables].
+  ///
+  /// [unattended] is the automatic path, and it behaves like a guest: the
+  /// first sign of the user doing anything — typing, a pull, switching
+  /// notebooks — stops the run where it stands. Every page already converted
+  /// is durable on its own; the remainder is simply still to do.
+  /// **The column widths a table block implied but never wrote down.**
+  ///
+  /// A table block is a box with a width, and a table with no widths of its
+  /// own just filled it. An atom has no box — it sizes its columns from what
+  /// is in them — so converting one loses the only record of how wide the
+  /// table was. The owner: *"many pages end up slightly off when converting
+  /// the tables."*
+  ///
+  /// The widths are the content's own proportions, scaled up to the width the
+  /// block was. Proportions rather than equal shares because equal shares are
+  /// a guess with a worse failure mode: a three-character column given a third
+  /// of 620px looks wrong in a way a reader notices, and the content is the
+  /// only evidence there is about what each column was for.
+  ///
+  /// Null whenever there is nothing to repair: a table that says what it
+  /// wants, a block no wider than its contents, or a measurement that came
+  /// back as nothing.
+  List<double>? _impliedColumnWidths(Block b) {
+    final d = TableData.from(b.content);
+    if (d.colWidths.isNotEmpty || d.cols == 0) return null;
+    // The block's own padding, per side — `_kBlockContentInset` in
+    // table_block_view.dart, which is private to it.
+    const inset = 8.0;
+    final target = b.w - inset * 2;
+    // A fixed style, because only the RATIOS survive the scaling below: the
+    // table draws at whatever its paragraph uses, and measuring at 13 decides
+    // proportions, not pixels.
+    final natural = tableColumnWidths(d, const TextStyle(fontSize: 13));
+    final total = natural.fold<double>(0, (a, c) => a + c);
+    if (total <= 0 || !total.isFinite || !target.isFinite) return null;
+    // Only ever WIDER. A block narrower than its own table is already drawing
+    // it squeezed, and writing that squeeze down would make it permanent.
+    if (target <= total + 1) return null;
+    final k = target / total;
+    return [for (final w in natural) w * k];
+  }
+
+  Future<TableConversionResult> convertTablesToInline(
+    String nb, {
+    bool unattended = false,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    if (notebookIsReadOnly(nb)) {
+      return const TableConversionResult(
+          pages: 0, tables: 0, refused: 0, deferred: true);
+    }
+    await flushSave();
+    // **Catch up with the other devices FIRST, or this work is undone.** A
+    // pull rebuilds each changed page from the op log, and the log still holds
+    // the pre-conversion `block.set` ops; recording ours is refused while
+    // `foreignPending` is true, so converting now would be silently reverted
+    // by the very next pull. This is not hypothetical — it is exactly what
+    // happened to the ink conversion, and cost forty-five seconds of work.
+    await syncPull(nb);
+    final rec = await warmRecorder(nb);
+    if (rec != null && rec.foreignPending) {
+      return const TableConversionResult(
+          pages: 0, tables: 0, refused: 0, deferred: true);
+    }
+
+    var candidates = _repo.pageIdsWithTableBlocks(nb);
+    if (notebookId == nb && pageId != null) {
+      candidates = [for (final p in candidates) if (p != pageId) p];
+    }
+    if (candidates.isEmpty) {
+      return const TableConversionResult(pages: 0, tables: 0, refused: 0);
+    }
+    candidates = _tableConversionOrder(candidates);
+
+    // A pull landing mid-run would rewrite pages from the log behind us.
+    await _stopWatching();
+    var pages = 0, tables = 0, refused = 0, aborted = false;
+    try {
+      for (var i = 0; i < candidates.length; i++) {
+        if (unattended &&
+            (_dirty ||
+                _pulling ||
+                notebookId != nb ||
+                (rec?.foreignPending ?? false))) {
+          aborted = true;
+          break;
+        }
+        final id = candidates[i];
+        // **Re-checked, not just filtered once.** The page somebody is
+        // looking at may have changed since the candidates were listed — they
+        // opened one while the walk was working through the section. Its
+        // blocks are held in memory by a live editor; rewriting the file
+        // underneath them would be overwritten again by their next save, and
+        // the page would flip between the two forms. [convertOpenPageTables]
+        // has it covered anyway, on the way in.
+        if (notebookId == nb && id == pageId) continue;
+        try {
+          final data = _repo.readPage(nb, id);
+          var moved = 0;
+          for (var k = 0; k < data.blocks.length; k++) {
+            if (data.blocks[k].type != BlockType.table) continue;
+            final out = tableBlockAsText(data.blocks[k],
+                madeIn: kAppVersion,
+                widthsIfNone:
+                    _impliedColumnWidths(data.blocks[k]));
+            if (out == null) {
+              refused++;
+              continue;
+            }
+            data.blocks[k] = out;
+            moved++;
+          }
+          if (moved == 0) continue;
+          // One transaction per page, so an interrupted run leaves a notebook
+          // that is partly converted and entirely working — both forms draw,
+          // save and export, which is the property that makes stopping safe.
+          importBatch(nb, () => importPage(nb, id, data.blocks, data.props));
+          pages++;
+          tables += moved;
+        } catch (e) {
+          // One page that will not convert must not stop the others. It keeps
+          // its table blocks, which still work in every respect.
+          refused++;
+          debugPrint('[openote/tables] could not convert $id: $e');
+        }
+        onProgress?.call(i + 1, candidates.length);
+        // A REAL delay, not Duration.zero: a zero timer is itself work due
+        // immediately, so the queue never goes idle — and idle is when
+        // Windows lets the mouse and keyboard through.
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+    } finally {
+      _startWatching();
+    }
+    if (pages > 0) {
+      _invalidateSyncStatus();
+      if (!_disposed) notifyListeners();
+    }
+    return TableConversionResult(
+        pages: pages, tables: tables, refused: refused, deferred: aborted);
+  }
+
+  /// Current section first, then everything else in tree order.
+  List<String> _tableConversionOrder(List<String> candidates) {
+    final order = {for (var i = 0; i < nodes.length; i++) nodes[i].id: i};
+    final parents = {for (final n in nodes) n.id: n.parentId};
+    int rank(String id) => parents[id] == activeSectionId ? 0 : 1;
+    return [...candidates]..sort((a, b) {
+        final r = rank(a).compareTo(rank(b));
+        if (r != 0) return r;
+        return (order[a] ?? 1 << 30).compareTo(order[b] ?? 1 << 30);
+      });
   }
 
   /// Convert a notebook's existing ink from JSON to binary blobs.
@@ -3710,6 +4174,17 @@ class AppState extends ChangeNotifier
   /// Store a blob during import (images pulled out of a `.one` file).
   String importBlob(String nb, Uint8List bytes, String mime) {
     final hash = _repo.putBlob(nb, bytes, mime);
+    // **Deliberately does NOT say the bytes arrived.** It is the one write
+    // that never rescues a placeholder, and the one that would cost most if
+    // it tried: every local route stores the bytes BEFORE creating the block
+    // that names them — a drop, a paste, the Insert menu and the OneNote
+    // importer all do — so no view is ever waiting on one of these.
+    //
+    // And it runs in bulk. `flushSave` persists every ink stroke through here
+    // on the debounce, and an import writes one per picture, so notifying
+    // from here would fire a rebuild per blob — during a save, while someone
+    // is drawing — and each rebuild would send every missing image back to
+    // the disk. Exactly the storm `blobRevision` exists to avoid.
     // The op records only the hash, mime and size; the bytes are written to
     // `blobs/<sha256>` — content-addressed and immutable, so they need no merge
     // logic and can be fetched lazily (ADR-0006 §3). Putting megabytes of image
@@ -3951,6 +4426,17 @@ class AppState extends ChangeNotifier
   double navPagesW = 168; // pages column, px
   bool navCollapsed = false; // the whole navigator as a 44px rail
 
+  /// **The sections column alone, folded away.**
+  ///
+  /// The owner: *"i want to be able to colapse the section bar to provide
+  /// extra space"*. [navCollapsed] already folds the WHOLE navigator to a
+  /// 44px rail, which is a different thing: it takes the page list with it,
+  /// and the page list is what you are reading while you write. This takes
+  /// only the column you are not looking at, and the navigator keeps the
+  /// width it no longer spends on it — which is where the extra space comes
+  /// from.
+  bool navSectionsCollapsed = false;
+
   /// The Home surface (favourites + recents) shown in the pages pane.
   /// Transient by design: selecting any page returns the pane to that page's
   /// section, so Home behaves like a springboard rather than a place you can
@@ -3980,6 +4466,16 @@ class AppState extends ChangeNotifier
   void toggleNavCollapsed() {
     navCollapsed = !navCollapsed;
     _repo.setSetting('navCollapsed', navCollapsed);
+    notifyListeners();
+  }
+
+  void toggleNavSectionsCollapsed() {
+    navSectionsCollapsed = !navSectionsCollapsed;
+    _repo.setSetting('navSectionsCollapsed', navSectionsCollapsed);
+    // The navigator memo keys on this; without it the column folds away and
+    // the pane it left behind keeps yesterday's width until something else
+    // happens to rebuild it.
+    navRevision++;
     notifyListeners();
   }
 
@@ -4043,10 +4539,105 @@ class AppState extends ChangeNotifier
   List<Block> blocks = [];
   PageProps pageProps = PageProps();
 
+  /// The block with this id on the open page, or null.
+  ///
+  /// Anything holding a `Block` across frames is holding a stale one the
+  /// moment an undo or a sync pull rebuilds the page from JSON, so the things
+  /// that outlive a build — an inline atom's write path, for one — look the
+  /// block up by id instead of capturing it.
+  Block? blockById(String id) {
+    for (final b in blocks) {
+      if (b.id == id) return b;
+    }
+    return null;
+  }
+
+  /// **Where a cut table's payload waits to be pasted.**
+  ///
+  /// Cutting an atom's reference takes the text and leaves the payload
+  /// behind; pasting it somewhere else arrives with nothing but an id. So a
+  /// payload whose reference has gone is remembered here for the rest of the
+  /// session, and any reference that turns up without one is filled in from
+  /// it. Without this, cut-and-paste of a table would paste an empty box —
+  /// the one outcome a table must never have.
+  ///
+  /// Bounded, and lost when the app closes: this is a clipboard, not storage.
+  /// The payload it holds is a copy of one that was already written to disk,
+  /// so nothing here is the only copy of anything.
+  final Map<String, InlineAtom> _atomMorgue = {};
+
+  void rememberAtom(InlineAtom atom) {
+    if (_atomMorgue.length > 64) _atomMorgue.clear();
+    _atomMorgue[atom.id] = atom;
+  }
+
+  /// The payload for [id], for a reference that turned up without one.
+  ///
+  /// Two places to look, and both are needed:
+  ///
+  /// * what was CUT — a payload left behind when its reference was taken away;
+  /// * what is still on the PAGE — because copy-and-paste leaves the original
+  ///   exactly where it was, so nothing was ever cut and the morgue is empty.
+  ///   Without this, copying a table and pasting it two lines down gave a
+  ///   reference to nothing.
+  ///
+  /// The same id then appears in two blocks, which is harmless: a payload is
+  /// stored per block, so the two copies are separate tables from the moment
+  /// either is edited.
+  InlineAtom? recallAtom(String id) {
+    final kept = _atomMorgue[id];
+    if (kept != null) return kept;
+    for (final b in blocks) {
+      final found = InlineAtom.allIn(b.content)[id];
+      if (found != null) return found;
+    }
+    return null;
+  }
+
+  /// The cell a click landed in, on a table that was being read rather than
+  /// edited. Consumed once by the table as it opens, so the caret lands where
+  /// the pointer was instead of the box opening and waiting to be clicked a
+  /// second time.
+  ({String blockId, String atomId, int row, int col})? pendingAtomCell;
+
+  ({int row, int col})? takePendingAtomCell(String blockId, String atomId) {
+    final p = pendingAtomCell;
+    if (p == null || p.blockId != blockId || p.atomId != atomId) return null;
+    pendingAtomCell = null;
+    return (row: p.row, col: p.col);
+  }
+
   // Selection (CANVAS-7: single + multi)
   final Set<String> selectedIds = {};
   String? selectedBlockId; // primary (gets handles/chrome)
   String? editingBlockId;
+
+  /// **The last box somebody was actually writing in**, which outlives the
+  /// caret leaving it.
+  ///
+  /// [editingBlockId] is null the moment focus goes anywhere else — a
+  /// toolbar button, the ribbon — which is exactly when something needs to
+  /// know where the work was. See `insertAnchor`: the owner asked for a new
+  /// block to land *"where the cursor is or below the last edited text box"*,
+  /// and by the time the Insert button has been pressed the cursor is on the
+  /// Insert button.
+  ///
+  /// Cleared with the page, since a block id from another page names nothing
+  /// here.
+  String? lastEditedBlockId;
+
+  /// Where a new block should go when nobody said: just below [b], lined up
+  /// with its left edge.
+  ///
+  /// The gap is the same 12px the align guides settle to, so a block put here
+  /// looks placed rather than dropped.
+  Offset belowBlock(Block b) => Offset(b.x, _rectOf(b).bottom + 12);
+
+  /// The block a new one should be placed under, or null to fall back to the
+  /// middle of the view. Never names a block on another page: [blockById]
+  /// only looks at the open one.
+  Block? get insertNeighbour =>
+      blockById(editingBlockId ?? selectedBlockId ?? lastEditedBlockId ?? '');
 
   /// The block a click just created — or opened — with nothing in it and
   /// nothing typed since: OneNote-style, a caret is live and ready to type,
@@ -4145,6 +4736,41 @@ class AppState extends ChangeNotifier
   void setPenErasing(bool v) {
     if (penErasing == v) return;
     penErasing = v;
+    notifyListeners();
+  }
+
+  /// **The shape the pen draws instead of following the hand**, or null for
+  /// freehand — which is what it is nearly all of the time.
+  ///
+  /// Issue #10: *"Drawing diagrams with a mouse is really difficult without
+  /// the simple shapes."* Nearly everyone using Openote is on a school laptop
+  /// with a trackpad rather than a tablet with a stylus, so a straight line is
+  /// not a nicety for them; it is the difference between a diagram and a mess.
+  ///
+  /// **A modifier on the pen, not a tool of its own.** The owner: *"all i want
+  /// is to be able to draw diagrams and what not with the pen."* Drawn that
+  /// way it keeps the colour, the size, the highlighter and the eraser exactly
+  /// as they are — a shape is a stroke, so everything that already understands
+  /// ink understands shapes without being told they exist. A sixth entry in
+  /// [Tool] would instead have meant a new case anywhere a tool is compared,
+  /// and a pen whose colour swatches vanished when you picked a rectangle.
+  ///
+  /// Not persisted. Shapes are for a diagram, not for a way of working, and
+  /// finding the pen still stuck on Rectangle tomorrow morning would read as a
+  /// fault rather than as a memory.
+  InkShape? inkShape;
+
+  void setInkShape(InkShape? s) {
+    if (inkShape == s) return;
+    inkShape = s;
+    // Choosing a shape is choosing to draw, the way taking a colour off the
+    // page is: without this, picking Rectangle while the select tool is in
+    // hand puts a control on screen that does nothing until you also find the
+    // pen. Chosen rather than automatic, so reaching for the mouse does not
+    // undo it (see [toolWasAutomatic]).
+    if (s != null && tool != Tool.pen && tool != Tool.highlighter) {
+      setTool(Tool.pen);
+    }
     notifyListeners();
   }
 
@@ -4830,6 +5456,26 @@ class AppState extends ChangeNotifier
   /// Nothing consults a flag any more — [PageCanvas] simply switches.
 
   /// True when the selection is ink and can therefore be recoloured (INK-7).
+  /// Whether the canvas should float a Delete above what is selected.
+  ///
+  /// **Only for more than one thing.** A selected block puts a cross on its
+  /// own move bar, so a single selection was offering two ways to delete one
+  /// thing a few pixels apart — reported of the commonest case there is:
+  /// "when im editing a text box we have a bin button and the cross button,
+  /// and the bin button makes it feel messy".
+  ///
+  /// A multiple selection keeps it, and needs it: the cross belongs to the
+  /// PRIMARY block alone and says nothing about the others, so the floating
+  /// button is the only control that means "all of this".
+  ///
+  /// The case this button was built for is not lost by that. It was for ink
+  /// on a tablet, where there is no Delete key — but a lasso leaves the lasso
+  /// tool in hand, not a pen, and a lassoed block shows its bar and its cross
+  /// like any other. A pen cannot be in hand with something selected at all,
+  /// because [setTool] clears the selection on the way to any tool that
+  /// draws.
+  bool get showSelectionDelete => selectedIds.length > 1;
+
   bool get hasInkSelection =>
       blocks.any((b) => selectedIds.contains(b.id) && b.type == BlockType.ink);
 
@@ -4927,6 +5573,7 @@ class AppState extends ChangeNotifier
         ? collapsedPages.remove(id)
         : collapsedPages.add(id);
     navRevision++; // lengths can alias (one collapse + one expand); this can't
+    _rememberCollapsed();
     notifyListeners();
   }
 
@@ -5083,6 +5730,17 @@ class AppState extends ChangeNotifier
   /// the session on its first build.
   Offset? pendingCaretGlobal;
 
+  /// **Save what the active editor's controller now holds.**
+  ///
+  /// For an edit made straight to the controller — a link inserted by Ctrl+K
+  /// from the Insert menu, say — where the field's own `onChanged` never fires
+  /// because nothing was typed. The same commit [insertTextAtActiveCursor]
+  /// makes, without the insert.
+  void commitActiveEditor() {
+    _commitActiveEditor();
+    notifyListeners();
+  }
+
   void _commitActiveEditor() {
     final ae = activeEditor;
     if (ae == null) return;
@@ -5096,8 +5754,23 @@ class AppState extends ChangeNotifier
   bool get canFormatText {
     final id = editingBlockId;
     if (id == null) return false;
+    // **Not while something inside the paragraph has the keyboard.** An
+    // equation being written, or a cell of a table being typed into: the
+    // caret the user can see is in there, and [wrapSelection] would act on
+    // the paragraph's own — invisible, somewhere else, and leaving a queued
+    // style to fire on the next word they type OUT here.
+    //
+    // A table used to be a block of its own, so this returned false for it on
+    // the block type alone; a table inside a paragraph made the paragraph the
+    // answer, and this is what keeps it honest.
+    if (activeSession?.inlineChildFocused ?? false) return false;
     return blocks.where((b) => b.id == id).firstOrNull?.type == BlockType.text;
   }
+
+  /// Redraw the chrome — the command bar, the block handles — because
+  /// something changed that only they read. Not a document change: nothing
+  /// here marks the page dirty or touches the undo stack.
+  void refreshChrome() => notifyListeners();
 
   /// Insert text at the caret of the active editor (e.g. a page link inline).
   void insertTextAtActiveCursor(String s) {
@@ -5282,37 +5955,135 @@ class AppState extends ChangeNotifier
         y: pos.dy,
         w: 320,
         content: {'text': ''}));
+    // **The same box a click on the page makes**, which is what Enter from
+    // the title is asking for. The owner: *"it opens up a box which has the
+    // old hints for md in it, it should be the same as normally clicking
+    // elsewhere."* It was the same box in every respect but this one flag,
+    // and the flag is what holds the chrome and the `heading (#), list (-)…`
+    // hint back until something is actually typed. Set BEFORE [select]
+    // notifies, for the reason `PageCanvas._createTextAt` gives: any later
+    // and the border flashes on for exactly one frame.
+    pendingEmptyBlockId = b.id;
     select(b.id, edit: true);
   }
 
-  /// The word surrounding [at], or null when the caret is not in one.
+  /// Queued by a style chord (Ctrl+B/I, command bar) pressed with a
+  /// collapsed caret and nothing to toggle off — see [wrapSelection]. Nothing
+  /// is written to the buffer for this: the NEXT thing typed at
+  /// [pendingMarkAt] in [pendingMarkBlockId] is wrapped in these marks in one
+  /// step (`_PendingStyleFormatter` in live_markdown_engine.dart), becoming a
+  /// real run the existing hidden-marker machinery already knows how to
+  /// extend. Kept here rather than on the controller because the chord is
+  /// engine-agnostic (ADR-0004) even though only the live-markdown engine
+  /// currently acts on it.
+  Set<String> pendingMarks = {};
+  int? pendingMarkAt;
+  String? pendingMarkBlockId;
+
+  /// Where the caret is expected to be while the queue waits, which is the
+  /// anchor until something is typed.
   ///
-  /// "Word" is deliberately generous — letters, digits, apostrophes and
-  /// hyphens — so `don't` and `well-known` bold whole rather than in pieces.
-  static ({int start, int end})? _wordAt(String t, int at) {
-    // Apostrophes are in (so `don't` bolds whole) but hyphens are NOT: with
-    // the caret at the start of `- item`, a hyphen-inclusive word would
-    // reach back and bold the bullet marker itself.
-    bool isWord(int i) =>
-        i >= 0 && i < t.length && RegExp(r"[\w']").hasMatch(t[i]);
-    var s = at, e = at;
-    while (isWord(s - 1)) {
-      s--;
+  /// It is not always the anchor, because an IME composes IN the buffer: a
+  /// student typing Japanese has `ん` in the text and the caret past it before
+  /// any of it is committed. Without somewhere to record that, the "the caret
+  /// left, so the queue is stale" rule would fire on the first keystroke of
+  /// every composed word and the style would silently never apply.
+  int? pendingMarkCaret;
+
+  static bool _allSame(String m, String ch) =>
+      m.isNotEmpty && m.split('').every((x) => x == ch);
+
+  /// How many of [ch] the queue is already holding — the rung [cycleMarker]
+  /// is standing on when there is no text to read one from.
+  int _queuedWidth(String ch) {
+    var n = 0;
+    for (final m in pendingMarks) {
+      if (_allSame(m, ch)) n += m.length;
     }
-    while (isWord(e)) {
-      e++;
-    }
-    return s == e ? null : (start: s, end: e);
+    return n;
+  }
+
+  /// What a queued mark will BE once something is typed inside it.
+  ///
+  /// Asked of the grammar with a one-character probe rather than looked up in
+  /// a table, which is the same measurement [markerChordLadders] is built
+  /// from — so `_x_` and `*x*` answer alike, and `***` answers bold-italic
+  /// rather than nothing. A table here would need its own entry for every
+  /// spelling of every mark, and `_` has none.
+  static MdInline? _kindOfMark(String m) {
+    final probe = '${m}x$m';
+    final hit = mdInlineRe.firstMatch(probe);
+    if (hit == null || hit.start != 0 || hit.end != probe.length) return null;
+    return classifyInline(hit).kind;
+  }
+
+  /// **Keep a style going across the space that just ended its run.**
+  ///
+  /// A marker may not sit against a space, so `**big **` is not bold and never
+  /// can be — the space has to go outside the run (`EmphasisGuardFormatter`).
+  /// That alone would stop the bold dead at the space bar, which the owner
+  /// found immediately: *"if i bold and press space now it just doesnt keep
+  /// the bolding, so if i tried to type multiple words in bold it wouldnt."*
+  ///
+  /// Re-arming the same queue Ctrl+B uses is what carries it on: the next word
+  /// is wrapped as its own run, and `mergeRunAtCaret` folds the two back into
+  /// one. What the student sees is bold that simply kept going.
+  void carryStyleOn(Set<String> marks,
+      {required String blockId, required int at}) {
+    if (marks.isEmpty) return;
+    pendingMarks = {...marks};
+    pendingMarkAt = at;
+    pendingMarkCaret = at;
+    pendingMarkBlockId = blockId;
+    notifyListeners();
+  }
+
+  /// **The language the last code block was set to**, which is what the next
+  /// one starts in.
+  ///
+  /// The owner: *"it should still default to plain text, however it should
+  /// ideally automatically set the language to the last set one."* Somebody
+  /// writing up a practical is writing up one language, and picking Python
+  /// out of the menu for the ninth block in a row is nine picks that say the
+  /// same thing.
+  ///
+  /// Plain text is still the FALLBACK — it is what this holds until a real
+  /// choice is made, and a block that was never given a language does not set
+  /// it. Only an explicit pick from the menu counts: a language the app
+  /// GUESSED from the source is not somebody saying what they are writing,
+  /// and letting a guess steer the next block would spread one bad guess
+  /// across a page.
+  ///
+  /// Kept per workspace rather than per notebook: it is a fact about the
+  /// person, not about the notes.
+  String lastCodeLanguage = 'text';
+
+  void rememberCodeLanguage(String id) {
+    if (id == lastCodeLanguage) return;
+    lastCodeLanguage = id;
+    _repo.setSetting('lastCodeLanguage', id);
+  }
+
+  /// Cancel a queued style: the caret moved, or something other than a plain
+  /// insertion happened at the queued spot.
+  void clearPendingMarks() {
+    if (pendingMarks.isEmpty && pendingMarkAt == null) return;
+    pendingMarks = {};
+    pendingMarkAt = null;
+    pendingMarkCaret = null;
+    pendingMarkBlockId = null;
+    notifyListeners();
   }
 
   /// Toggle-wrap the live selection with markers (Ctrl+B/I, command bar).
   ///
-  /// Three behaviours, and the first two are the reported bug:
+  /// Three behaviours:
   ///
-  /// * **A caret with no selection formats the WORD it sits in.** It used to
-  ///   insert a bare `****` at the caret — which no renderer matches, so the
-  ///   asterisks stayed visible in the note forever, and one Backspace ate a
-  ///   single marker and left `***` behind.
+  /// * **A caret with no selection sets the style for what you TYPE NEXT**,
+  ///   like a word processor's Bold button — it used to format the WORD the
+  ///   caret sat in instead, which meant Ctrl+B while finishing a sentence
+  ///   bolded the word you'd just typed rather than the one you were about
+  ///   to. See [pendingMarks].
   /// * **Toggling off works from INSIDE a run**, not only when the selection
   ///   exactly equals it. Before, a caret inside bold text and Ctrl+B nested
   ///   a second empty pair and everything typed after came out un-bold.
@@ -5338,6 +6109,23 @@ class AppState extends ChangeNotifier
       // so the toggle missed and wrapped it again as `**__bold__**`.
       final atCaret = _runAround(t, s, s, mark);
       if (atCaret != null) {
+        // **At the END of the run this means "stop", not "undo".** Typing a
+        // bold word leaves the caret against the closing marker, and pressing
+        // the chord again there is how everybody turns bold OFF for what
+        // comes next — reported as "pressing the hotkey again after typing
+        // out the text will unbold it, which is wrong". So step over the
+        // markers instead of removing them: the word keeps its bold, the
+        // caret lands outside the run, and the next letter is plain.
+        //
+        // Anywhere strictly INSIDE the run still un-formats it, which is the
+        // only way to take formatting off without selecting it first — the
+        // markers cannot be seen, so there is nothing to delete by hand.
+        if (s == atCaret.close) {
+          c.selection =
+              TextSelection.collapsed(offset: atCaret.close + atCaret.strip);
+          notifyListeners();
+          return;
+        }
         pushUndo();
         final inner =
             t.substring(atCaret.open + atCaret.strip, atCaret.close);
@@ -5352,12 +6140,32 @@ class AppState extends ChangeNotifier
         notifyListeners();
         return;
       }
-      final w = _wordAt(t, s);
-      // Nothing to format and nothing to un-format: better to do nothing
-      // than to write markers into the file and hope the user types.
-      if (w == null) return;
-      s = w.start;
-      e = w.end;
+      // A caret standing inside the OPPOSITE mark swaps that run rather than
+      // queueing anything: `~^x^~` reads as neither, and "no, make it the
+      // other one" is what the press means from in there. Falls through to
+      // the shared swap below rather than repeating it.
+      final opp = _oppositeMark[mark];
+      if (opp == null || _runAround(t, s, s, opp) == null) {
+        // Nothing to un-format and nothing selected: don't touch existing
+        // text. Queue the mark so the next insertion right here gets wrapped
+        // in it — pressing the SAME chord again before typing anything
+        // cancels the queue, like toggling the button back off.
+        if (pendingMarkBlockId != ae.block.id || pendingMarkAt != s) {
+          pendingMarks = {};
+          pendingMarkAt = s;
+          pendingMarkBlockId = ae.block.id;
+        }
+        pendingMarkCaret = s;
+        if (opp != null) pendingMarks.remove(opp);
+        if (!pendingMarks.remove(mark)) pendingMarks.add(mark);
+        if (pendingMarks.isEmpty) {
+          pendingMarkAt = null;
+          pendingMarkCaret = null;
+          pendingMarkBlockId = null;
+        }
+        notifyListeners();
+        return;
+      }
     } else {
       // Shrink the selection off its own whitespace and newlines. A marker
       // may not sit against a space (that is the flanking rule that keeps
@@ -5494,6 +6302,44 @@ class AppState extends ChangeNotifier
           ? s.replaceAllMapped(
               RegExp(r'\S+'), (m) => '$mark${m.group(0)}$close')
           : '$mark$s$close';
+
+  /// [pendingMarks] applied to a freshly typed [s], with where the caret then
+  /// belongs — the one-shot half of the WYSIWYG toggle.
+  ///
+  /// It lives here beside [_wrapRun] rather than in the input formatter that
+  /// calls it, because every rule about where a marker may legally sit is
+  /// here: a run opens and closes on ONE line, a marker may not sit against
+  /// whitespace, and `~`/`^` take one pair per word. A second copy of those
+  /// in the formatter is how the two would drift apart.
+  ///
+  /// Returns null when there is nothing the grammar can wrap, which is the
+  /// formatter's signal to drop the queue and let the keystroke through.
+  ({String text, int caret})? applyPendingMarks(String s) {
+    if (pendingMarks.isEmpty || s.isEmpty || s.contains('\n')) return null;
+    final lead = s.length - s.trimLeft().length;
+    final trail = s.length - s.trimRight().length;
+    // Whitespace alone: `** **` matches nothing, so there is no wrap to make.
+    if (lead + trail >= s.length) return null;
+    final core = s.substring(lead, s.length - trail);
+    // Pasted text can arrive with its own spaces around it. They stay OUTSIDE
+    // the markers — that is the flanking rule, and `** hi **` is the same
+    // permanently-visible-asterisks bug by another route.
+    var wrapped = core;
+    var open = 0;
+    for (final m in pendingMarks) {
+      wrapped = _wrapRun(wrapped, m, m);
+      open += m.length;
+    }
+    // One pair per word leaves every run already closed, so the caret goes
+    // after the lot; a single run is still open, so it goes INSIDE, which is
+    // what makes the next keystroke extend the run rather than follow it.
+    final perWord = pendingMarks.any(_noSpaceMarks.contains) &&
+        RegExp(r'\s').hasMatch(core);
+    return (
+      text: s.substring(0, lead) + wrapped + s.substring(s.length - trail),
+      caret: lead + (perWord ? wrapped.length : open + core.length),
+    );
+  }
 
   /// The run of [mark]'s kind enclosing [s]..[e], with how many characters to
   /// strip from each end to remove exactly that mark.
@@ -5686,8 +6532,10 @@ class AppState extends ChangeNotifier
     );
   }
 
-  /// Ctrl + a Markdown marker character: wrap the word at the caret in that
+  /// Ctrl + a Markdown marker character: style what gets typed next in that
   /// marker, and press it again to add a layer, as far as the grammar goes.
+  /// With a selection it wraps the selection, and with the caret inside a run
+  /// it widens that run — both where they always were.
   ///
   /// Returns **false** when [ch] is not a marker character the grammar uses,
   /// which is how the shell knows to leave that keystroke completely alone.
@@ -5711,7 +6559,15 @@ class AppState extends ChangeNotifier
     if (!sel.isValid) return true;
     final t = c.text;
     final run = _markerRunAround(t, sel.start, sel.end, ch);
-    final have = run?.total ?? 0;
+    // Nothing selected and no run to climb: the ladder is climbed in the
+    // QUEUE rather than in the text, so this chord means "what I type next"
+    // exactly as Ctrl+B now does ([pendingMarks]). The rung it is standing
+    // on is however many of this character are already queued.
+    final onQueue = run == null &&
+        sel.isCollapsed &&
+        pendingMarkBlockId == ae.block.id &&
+        pendingMarkAt == sel.start;
+    final have = run?.total ?? (onQueue ? _queuedWidth(ch) : 0);
     var next = -1;
     for (final w in ladder) {
       if (w > have) {
@@ -5725,12 +6581,25 @@ class AppState extends ChangeNotifier
     // wrapSelection was rewritten to stop producing.
     if (next < 0) return true;
     if (run == null) {
-      // Nothing on yet. Hand it to wrapSelection, which already owns
-      // word-at-caret (apostrophes in, hyphens out), selection trimming, the
-      // multi-line case, the per-word wrap for marks that cannot span a space
-      // and the sub/superscript swap. A second copy of "which word is the
-      // caret in" is precisely how this chord would drift away from Ctrl+B.
-      wrapSelection(ch * next);
+      // A real selection is wrapped where it sits. Handed to wrapSelection,
+      // which already owns selection trimming, the multi-line case, the
+      // per-word wrap for marks that cannot span a space and the
+      // sub/superscript swap — a second copy of any of that is precisely how
+      // this chord would drift away from Ctrl+B.
+      if (!sel.isCollapsed) {
+        wrapSelection(ch * next);
+        return true;
+      }
+      // A bare caret climbs the queue instead, one rung per press.
+      if (pendingMarkBlockId != ae.block.id || pendingMarkAt != sel.start) {
+        pendingMarks = {};
+        pendingMarkAt = sel.start;
+        pendingMarkBlockId = ae.block.id;
+      }
+      pendingMarkCaret = sel.start;
+      pendingMarks.removeWhere((m) => _allSame(m, ch));
+      pendingMarks.add(ch * next);
+      notifyListeners();
       return true;
     }
     pushUndo();
@@ -5797,6 +6666,22 @@ class AppState extends ChangeNotifier
     if (out.contains(MdInline.boldItalic)) {
       out..add(MdInline.bold)..add(MdInline.italic);
     }
+    // A queued style (nothing typed since Ctrl+B) lights the button too —
+    // otherwise the one moment this exists to serve, right after pressing
+    // it, is the one moment the toolbar shows nothing changed.
+    if (pendingMarkBlockId == ae.block.id &&
+        pendingMarkAt == sel.start &&
+        sel.isCollapsed) {
+      for (final m in pendingMarks) {
+        final kind = _kindOfMark(m);
+        if (kind == null) continue;
+        out.add(kind);
+        // Same rule as above: queued `***` is both, and both buttons say so.
+        if (kind == MdInline.boldItalic) {
+          out..add(MdInline.bold)..add(MdInline.italic);
+        }
+      }
+    }
     return out;
   }
 
@@ -5857,6 +6742,12 @@ class AppState extends ChangeNotifier
   // ── Block clipboard (internal, Ctrl+C/X/V when not typing) ────────────
 
   String? _blockClipboard;
+
+  /// What a block copy put on the clipboard, as JSON. For the test that
+  /// checks an inline table travels WITH its block — the payload lives in the
+  /// block's own content, so it either rides along or it is lost.
+  @visibleForTesting
+  String? get debugBlockClipboard => _blockClipboard;
   bool get canPasteBlocks => _blockClipboard != null;
 
   /// When the block clipboard was filled (ms since epoch), and what the
@@ -6068,6 +6959,11 @@ class AppState extends ChangeNotifier
     if (npw is num) navPagesW = npw.toDouble().clamp(140, 320);
     final nc = _repo.getSetting('navCollapsed');
     if (nc is bool) navCollapsed = nc;
+    final nsc = _repo.getSetting('navSectionsCollapsed');
+    if (nsc is bool) navSectionsCollapsed = nsc;
+    final lcl = _repo.getSetting('lastCodeLanguage');
+    if (lcl is String && lcl.isNotEmpty) lastCodeLanguage = lcl;
+    loadCollapsedState();
     final slp = _repo.getSetting('sectionLastPage');
     if (slp is Map) {
       slp.forEach((k, v) {
@@ -6800,6 +7696,8 @@ class AppState extends ChangeNotifier
     _undo.clear();
     _redo.clear();
     renderSizes.clear();
+    // A block id from the page you just left names nothing on this one.
+    lastEditedBlockId = null;
     findMatches = [];
     findQuery = '';
     if (id == null) {
@@ -6810,6 +7708,11 @@ class AppState extends ChangeNotifier
       blocks = data.blocks;
       pageProps = data.props;
       _repairImportedFieldCodes();
+      // A table on the page you just opened becomes a table in the paragraph
+      // it belongs to, here and now. See [convertOpenPageTables]: it is free
+      // (the blocks are in memory), it is undoable, and it is why the
+      // background walk never has to touch the open page.
+      convertOpenPageTables();
       // Heal a page whose content sits under the title band (§7f). Marked
       // dirty only when something actually moved, so merely opening pages
       // does not rewrite the notebook.
@@ -7897,6 +8800,47 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// **Send [id] to the end of the list it is in.**
+  ///
+  /// The owner: *"if i drop it anywhere in the column below the existing
+  /// pages, it should move it to the bottom."* Which is what dropping
+  /// something in the space under a list means everywhere else — and until
+  /// now meant nothing at all here, because the only drop targets were the
+  /// rows themselves and there is no row down there to hit.
+  ///
+  /// Not [reorderNode] against the last row, for two reasons. A page dropped
+  /// past the end of the list is a TOP-LEVEL page by the act of putting it
+  /// there, so a subpage dragged down here is promoted rather than left as an
+  /// orphan indented under nothing. And the last row is often a subpage, so
+  /// "after the last row" and "at the end of the list" are different places.
+  ///
+  /// [into] re-parents on the way, for a section dropped below every group:
+  /// it belongs to the notebook now, not to whichever group it came out of.
+  void moveNodeToEnd(String id, {String? into, bool reparent = false}) {
+    final n = node(id);
+    if (n == null) return;
+    pushUndo();
+    if (reparent) n.parentId = into;
+    // A page that lands at the end of a section's list is a page of that
+    // section, not a subpage of whatever used to be above it.
+    if (n.kind == NodeKind.page) n.level = 0;
+    // One millisecond past the latest sibling rather than simply "now": two
+    // drops inside the same millisecond would otherwise tie, and a tie is
+    // decided by whatever the id sort does, which is not what was asked for.
+    var last = nowMs();
+    for (final s in nodes) {
+      if (s.kind != n.kind || s.parentId != n.parentId || s.id == n.id) {
+        continue;
+      }
+      final v = int.tryParse(s.position.replaceFirst('a', ''));
+      if (v != null && v >= last) last = v + 1;
+    }
+    n.position = 'a${last.toString().padLeft(15, '0')}';
+    _putNode(notebookId!, n);
+    reloadNodes();
+    notifyListeners();
+  }
+
   void moveNode(String id, int delta) {
     final n = node(id);
     if (n == null) return;
@@ -8107,7 +9051,41 @@ class AppState extends ChangeNotifier
         ? collapsedGroups.remove(id)
         : collapsedGroups.add(id);
     navRevision++;
+    _rememberCollapsed();
     notifyListeners();
+  }
+
+  /// **What is folded away stays folded away across a restart.**
+  ///
+  /// The owner: *"it should remeber what groups are closed and open (both page
+  /// and section) when closing and opening the app."* Both sets were session
+  /// state, so a navigator somebody had tidied into three visible sections
+  /// came back fully unfolded every morning — and re-folding it is exactly the
+  /// work they did the collapsing to avoid.
+  ///
+  /// Stored as ids rather than as anything positional: a page moved, renamed
+  /// or re-parented keeps its id, so it keeps its state. An id that no longer
+  /// names anything is simply never asked about, and is dropped the next time
+  /// this writes.
+  void _rememberCollapsed() {
+    _repo.setSetting('collapsedPages', collapsedPages.toList());
+    _repo.setSetting('collapsedGroups', collapsedGroups.toList());
+  }
+
+  /// The other half of [_rememberCollapsed], read at startup.
+  ///
+  /// Public because it is a real seam rather than a test hook: restoring the
+  /// navigator's folds is one named step of bringing the workspace up, and
+  /// [init] does far too much else (schedulers, sync polling, a widget
+  /// binding) to be the only way to reach it.
+  void loadCollapsedState() {
+    for (final (key, into) in [
+      ('collapsedPages', collapsedPages),
+      ('collapsedGroups', collapsedGroups),
+    ]) {
+      final v = _repo.getSetting(key);
+      if (v is List) into.addAll(v.whereType<String>());
+    }
   }
 
   Future<void> deleteNode(String id) async {
@@ -8121,14 +9099,53 @@ class AppState extends ChangeNotifier
     // recycle bin. It also gave the thirty-day retention promise two different
     // start instants for the same deletion.
     final at = nowMs();
+    // Asked BEFORE the delete, because afterwards the node is out of the tree
+    // and nothing left can say which section it belonged to.
+    final neighbour = _pageToLandOnAfterDeleting(id);
     _repo.softDeleteNode(notebookId!, id, at: at);
     _recorderFor(notebookId!)?.nodeDeleted(id, at: at);
     reloadNodes();
     if (pageId == id || !nodes.any((n) => n.id == pageId)) {
-      await selectPage(
+      await selectPage(neighbour ??
           nodes.where((n) => n.kind == NodeKind.page).firstOrNull?.id);
     }
+    // AFTER the page switch, and it has to be: [selectPage] clears the undo
+    // stack, so a step pushed before this line is the one thing Ctrl+Z would
+    // never find — which is precisely the bug this exists to close.
+    pushNodeUndo(id);
     notifyListeners();
+  }
+
+  /// Where to go once [id] is deleted: its neighbour in the SAME section.
+  ///
+  /// Deleting a page used to drop you on the first page of the notebook,
+  /// wherever that was — reported as "rather than keeping me within the
+  /// section and just bumping me up one, it instead bumps me out of the
+  /// section group entirely ... i assume its just going to section 0 as a
+  /// default". It was: the fallback took the first page in the whole tree,
+  /// which is only ever the right answer by accident.
+  ///
+  /// Upwards first, because the page above is the one that slides into the
+  /// place the deleted one had, and looking up is what deleting the bottom of
+  /// a list means everywhere else. Downwards when there is nothing above.
+  ///
+  /// Null when the section is about to have no pages left at all, and for a
+  /// section or a group, where landing somewhere else is the only option —
+  /// the caller's old fallback still covers both.
+  String? _pageToLandOnAfterDeleting(String id) {
+    final going = nodes.where((n) => n.id == id).firstOrNull;
+    if (going == null || going.kind != NodeKind.page) return null;
+    final section = going.parentId;
+    if (section == null) return null;
+    // Pages carry their nesting as a LEVEL and are all parented to the
+    // section, so a subpage of the deleted page is not deleted with it and is
+    // a perfectly good place to land.
+    final siblings = pagesOf(section);
+    final at = siblings.indexWhere((p) => p.id == id);
+    if (at < 0) return null;
+    if (at > 0) return siblings[at - 1].id;
+    if (at + 1 < siblings.length) return siblings[at + 1].id;
+    return null;
   }
 
   String? sectionOf(String? page) =>
@@ -8172,17 +9189,91 @@ class AppState extends ChangeNotifier
     _redo.clear();
   }
 
+  /// An undo step for something that happened to the TREE rather than to the
+  /// page — deleting a section or a page.
+  ///
+  /// Undo was page-scoped: [_snapshot] captures this page's props and blocks
+  /// and nothing else, and [selectPage] clears the stack outright. So the one
+  /// action in the whole app that takes a section away had no undo at all, and
+  /// Ctrl+Z after it did nothing — reported as "the whole section at the
+  /// moment appears to be gone", which is exactly how a recoverable delete
+  /// feels when the key everybody reaches for first says nothing happened.
+  ///
+  /// Pushed as an entry the stack already knows how to carry (a JSON string),
+  /// so the two kinds of step keep their order relative to each other.
+  void pushNodeUndo(String nodeId) {
+    _undo.add(jsonEncode({_kRestoreNode: nodeId}));
+    if (_undo.length > 100) _undo.removeAt(0);
+    _redo.clear();
+  }
+
+  /// Marks an undo entry as "put this node back" rather than "restore this
+  /// page". A page snapshot has no such key, so the two never collide.
+  static const _kRestoreNode = 'restoreNode';
+
   void undo() {
     if (_undo.isEmpty) return;
+    final entry = _undo.removeLast();
+    final node = _nodeOf(entry);
+    if (node != null) {
+      _redo.add(entry);
+      unawaited(restoreDeleted(node));
+      return;
+    }
     _redo.add(_snapshot());
-    _restore(_undo.removeLast());
+    _restore(entry);
   }
 
   void redo() {
     if (_redo.isEmpty) return;
+    final entry = _redo.removeLast();
+    final node = _nodeOf(entry);
+    if (node != null) {
+      // Let [deleteNode] record the undo step itself: it is the only thing
+      // that knows when the page switch it may do has finished clearing the
+      // stack, and a step pushed before that is a step Ctrl+Z never sees.
+      // It also clears the REDO stack on the way through, as a fresh action
+      // should — but this is not a fresh action, so whatever was still
+      // redoable stays redoable.
+      final rest = [..._redo];
+      unawaited(deleteNode(node).then((_) {
+        _redo
+          ..clear()
+          ..addAll(rest);
+        notifyListeners();
+      }));
+      return;
+    }
     _undo.add(_snapshot());
-    _restore(_redo.removeLast());
+    _restore(entry);
   }
+
+  /// Take back one node's deletion — what the "Deleted section X" snackbar's
+  /// **Undo** presses.
+  ///
+  /// Routed through the undo stack whenever that delete is still the top of
+  /// it, so the button and Ctrl+Z are the SAME action rather than two that
+  /// disagree afterwards about what is left to take back. It falls back to a
+  /// plain restore when the stack has moved on, because the button is still
+  /// on screen and must still work.
+  void undoNodeDelete(String id) {
+    if (_undo.isNotEmpty && _nodeOf(_undo.last) == id) {
+      undo();
+      return;
+    }
+    unawaited(restoreDeleted(id));
+  }
+
+  /// The node a tree-step entry names, or null when it is a page snapshot.
+  static String? _nodeOf(String entry) {
+    // Cheap enough to guard the decode: every page snapshot starts `{"page":`.
+    if (!entry.startsWith('{"$_kRestoreNode"')) return null;
+    return (jsonDecode(entry) as Map<String, dynamic>)[_kRestoreNode] as String?;
+  }
+
+  /// Whether Ctrl+Z has anything to take back — including a deleted section,
+  /// which the toolbar could not see before.
+  bool get canUndoTree => _undo.any((e) => _nodeOf(e) != null);
 
   // ── Selection & block ops ──────────────────────────────────────────────
 
@@ -8545,6 +9636,51 @@ class AppState extends ChangeNotifier
     return changed;
   }
 
+  /// **A new table: a paragraph carrying one.**
+  ///
+  /// Every route that makes a table comes through here — the Insert ribbon, a
+  /// dropped CSV, a pasted spreadsheet — so a table made today is already in
+  /// the shape a table made yesterday is being converted INTO. Two creation
+  /// paths would mean the notebook drifting apart faster than the conversion
+  /// puts it together, which is precisely the "staggered mess of mix and match
+  /// table types" this is all meant to avoid.
+  Block insertTable({
+    required Offset at,
+    List<List<String>>? cells,
+    double? width,
+  }) {
+    final data = TableData(
+      cells: cells ??
+          [
+            ['Header', 'Header'],
+            ['', ''],
+          ],
+      colWidths: const [],
+    );
+    final atom = InlineAtom(
+      id: newId(),
+      type: 'table',
+      content: {...data.toContent(), 'madeIn': kAppVersion},
+    );
+    final content = <String, dynamic>{
+      'text': atom.reference(TableData.referenceAlt)
+    };
+    InlineAtom.putIn(content, atom);
+    final b = addBlock(Block(
+      type: BlockType.text,
+      x: at.dx,
+      y: at.dy,
+      w: width ?? 360,
+      content: content,
+    ));
+    // The caret goes in the first cell, not in the paragraph beside it: you
+    // asked for a table because you are about to fill one in.
+    pendingAtomCell =
+        (blockId: b.id, atomId: atom.id, row: 0, col: 0);
+    select(b.id, edit: true);
+    return b;
+  }
+
   Block insertEquation({required Offset at, String seed = ''}) {
     final b = addBlock(Block(
       type: BlockType.math,
@@ -8658,6 +9794,9 @@ class AppState extends ChangeNotifier
         ..add(id);
       selectedBlockId = id;
       editingBlockId = edit ? id : null;
+      // Remembered here rather than where the caret lands, because this is
+      // the one call every route into a block goes through.
+      if (edit) lastEditedBlockId = id;
     }
     notifyListeners();
   }
@@ -8805,18 +9944,12 @@ class AppState extends ChangeNotifier
     pushUndo();
     final needle = find.toLowerCase();
     var count = 0;
-    for (final id in targets) {
-      final b = blocks.where((x) => x.id == id).firstOrNull;
-      if (b == null) continue;
-      final key = switch (b.type) {
-        BlockType.text => 'text',
-        BlockType.code => 'source',
-        _ => null,
-      };
-      if (key == null) continue;
-      final src = b.content[key] as String? ?? '';
+
+    /// One pass over one piece of text. Returns the text and how many times
+    /// the needle was in it.
+    (String, int) swap(String src) {
       final out = StringBuffer();
-      var i = 0;
+      var i = 0, n = 0;
       while (i < src.length) {
         final at = src.toLowerCase().indexOf(needle, i);
         if (at < 0) {
@@ -8827,9 +9960,26 @@ class AppState extends ChangeNotifier
           ..write(src.substring(i, at))
           ..write(replacement);
         i = at + find.length;
-        count++;
+        n++;
       }
-      if (count > 0) b.content[key] = out.toString();
+      return (out.toString(), n);
+    }
+
+    for (final id in targets) {
+      final b = blocks.where((x) => x.id == id).firstOrNull;
+      if (b == null) continue;
+      if (b.type == BlockType.text) {
+        count += _replaceInParagraph(b, swap);
+        continue;
+      }
+      final key = switch (b.type) {
+        BlockType.code => 'source',
+        _ => null,
+      };
+      if (key == null) continue;
+      final (out, n) = swap(b.content[key] as String? ?? '');
+      count += n;
+      if (n > 0) b.content[key] = out;
     }
     if (count > 0) {
       markDirty();
@@ -8840,6 +9990,87 @@ class AppState extends ChangeNotifier
       setFindQuery(findQuery);
     }
     return count;
+  }
+
+  /// **Replace inside a paragraph without touching its machinery.**
+  ///
+  /// An atom reference is left exactly as it is, and the reason is not
+  /// tidiness: replacing "o" with "0" across a page would otherwise rewrite
+  /// `onote://atom/<id>` in every paragraph that carries a table, breaking
+  /// every reference and stranding every payload behind it. Find and Replace
+  /// is a page-wide, one-click, undo-once operation — precisely the shape of
+  /// thing that must not be able to do that.
+  ///
+  /// The table's CELLS are replaced in, which they never were before: a table
+  /// was a block of its own and this method skipped those entirely.
+  int _replaceInParagraph(Block b, (String, int) Function(String) swap) {
+    var count = 0;
+    final src = b.content['text'] as String? ?? '';
+    final out = StringBuffer();
+    var last = 0;
+    for (final r in InlineAtom.referencesIn(src)) {
+      final (text, n) = swap(src.substring(last, r.start));
+      out.write(text);
+      count += n;
+      out.write(src.substring(r.start, r.end)); // verbatim, always
+      last = r.end;
+    }
+    final (tail, n) = swap(src.substring(last));
+    out.write(tail);
+    count += n;
+    if (count > 0) b.content['text'] = out.toString();
+
+    for (final atom in InlineAtom.allIn(b.content).values) {
+      if (atom.type != 'table') continue;
+      final table = TableData.from(atom.content);
+      var touched = 0;
+      final cells = [
+        for (final row in table.cells)
+          [
+            for (final cell in row)
+              () {
+                final (text, n) = swap(cell);
+                touched += n;
+                return text;
+              }()
+          ]
+      ];
+      if (touched == 0) continue;
+      count += touched;
+      InlineAtom.putIn(
+          b.content,
+          InlineAtom(
+              id: atom.id,
+              type: atom.type,
+              content: {
+                ...atom.content,
+                ...TableData(cells: cells, colWidths: table.colWidths)
+                    .toContent(),
+              }));
+    }
+    return count;
+  }
+
+  /// Keep the caret in sight while somebody writes.
+  ///
+  /// Called on every keystroke and every caret move, so it does as little as
+  /// possible: the decision of whether anything is needed at all belongs to
+  /// [CanvasController.revealGlobalRect], and is one rectangle comparison.
+  ///
+  /// **Deferred to the end of the frame**, and coalesced to one check per
+  /// frame however many notifications arrive. The caret's rectangle is asked
+  /// of a render object, and at the moment a keystroke lands the field is
+  /// still holding the layout from BEFORE it — a check run there would chase
+  /// the previous line for ever, always one keystroke behind.
+  bool _caretRevealScheduled = false;
+  void ensureCaretVisible() {
+    if (_caretRevealScheduled) return;
+    _caretRevealScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _caretRevealScheduled = false;
+      final r = activeSession?.caretRectGlobal();
+      if (r != null) canvas.revealGlobalRect(r);
+    });
   }
 
   /// Select a block and centre the view on it. Shared by find and the page
@@ -8857,8 +10088,23 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// What a block SAYS, for find to match against.
+  ///
+  /// For a paragraph that carries a table: the prose without the atom
+  /// reference in it, and the table's cells with it. A table's words were
+  /// never findable while a table was a block of its own (this returned the
+  /// empty string for one), and the reference was never words at all.
   String _blockText(Block b) => switch (b.type) {
-        BlockType.text => b.content['text'] as String? ?? '',
+        BlockType.text => () {
+            final text = withoutAtomRefs(b.content['text'] as String? ?? '');
+            final tables = tablesIn(b.content);
+            if (tables.isEmpty) return text;
+            return [
+              text,
+              for (final t in tables)
+                for (final row in t.cells) row.join(' ')
+            ].join('\n');
+          }(),
         BlockType.code => b.content['source'] as String? ?? '',
         BlockType.math =>
           '${b.content['latex'] ?? ''} ${b.content['linearSource'] ?? ''}',
@@ -8940,6 +10186,15 @@ class AppState extends ChangeNotifier
   /// what stops is writing, because every op this device would append is a
   /// diff against a replay that is missing whatever those operations did.
   bool notebookIsReadOnly(String nb) => _logAhead.containsKey(nb);
+
+  /// Put [nb] into the read-only state a log from a newer build produces,
+  /// without needing one. For the tests that check what this build refuses to
+  /// write while it is only showing a notebook.
+  @visibleForTesting
+  void debugMarkReadOnly(String nb) => _logAhead[nb] = const SaveProblem(
+        short: 'Read-only (test)',
+        message: 'Marked read-only by a test.',
+      );
 
   /// Look at a freshly opened recorder and decide whether its notebook is
   /// readable but not writable.
@@ -9153,6 +10408,10 @@ class AppState extends ChangeNotifier
     _watchedEditor?.removeListener(_onEditorChanged);
     _watchedEditor = null;
     _stopWatching();
+    for (final t in _blobRetries.values) {
+      t.cancel();
+    }
+    _blobRetries.clear();
     unawaited(_mcpServer?.stop());
     _housekeepingTimer?.cancel();
     _housekeepingNoteClear?.cancel();
@@ -9218,6 +10477,29 @@ class NotebookStorage {
 /// this exists to answer: *"it seemed to do something for about 45s before the
 /// spinner just went away and the button returned back to saying 113 pages. No
 /// error in the console."*
+/// What a pass of [AppState.convertTablesToInline] did.
+class TableConversionResult {
+  const TableConversionResult({
+    required this.pages,
+    required this.tables,
+    required this.refused,
+    this.deferred = false,
+  });
+
+  /// Pages rewritten, and tables moved into the paragraph.
+  final int pages, tables;
+
+  /// Tables left exactly as they were, because the conversion could not prove
+  /// itself identical. Not an error: a table block still works.
+  final int refused;
+
+  /// The run stepped aside — the user typed, a pull was mid-flight, the
+  /// notebook changed. What it converted is durable; the rest is still to do.
+  final bool deferred;
+
+  bool get didNothing => pages == 0 && tables == 0;
+}
+
 class InkConversionResult {
   const InkConversionResult({
     required this.candidates,

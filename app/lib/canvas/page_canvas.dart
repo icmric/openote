@@ -18,9 +18,11 @@ import 'block_view.dart';
 import 'align_guides.dart';
 import 'canvas_controller.dart';
 import 'ink_ops.dart';
+import 'ink_shapes.dart';
 import 'media_drop.dart';
 import 'ink_painter.dart';
 import 'page_title_view.dart';
+import 'portal_view.dart';
 
 /// The page canvas (CANVAS-1 v0.3): an auto-growing page surface on a neutral
 /// backdrop. Select-mode input model (style guide §8):
@@ -40,6 +42,21 @@ class PageCanvas extends StatefulWidget {
   /// Settable so a test can check what happens once a pen has gone without
   /// spending two real seconds waiting for it.
   static Duration stylusGrace = const Duration(seconds: 2);
+
+  /// **Where "now" comes from, so a test can hold it still.**
+  ///
+  /// Whether a pen is in range is a question about elapsed wall-clock time,
+  /// and a test that answers it by shrinking [stylusGrace] to a millisecond
+  /// and then waiting is racing the machine it runs on: the pen is recorded
+  /// and the grace is read a few lines apart, and a loaded runner can put
+  /// more than a millisecond between any two lines. `tool_follows_device_test`
+  /// did exactly that and failed about one run in three — under load, never
+  /// alone, which is the worst shape a red build can have.
+  ///
+  /// Replacing the clock instead of shortening the fuse removes the race
+  /// rather than making it less likely: time moves when the test says so, and
+  /// the assertions are exact.
+  static DateTime Function() clock = DateTime.now;
 
   const PageCanvas({super.key, required this.state});
   final AppState state;
@@ -111,7 +128,7 @@ class _PageCanvasState extends State<PageCanvas> {
   bool get _stylusActive {
     final t = _lastStylus;
     return t != null &&
-        DateTime.now().difference(t) < PageCanvas.stylusGrace;
+        PageCanvas.clock().difference(t) < PageCanvas.stylusGrace;
   }
 
   /// The button is only believed while the pen is in range. Out of range there
@@ -132,7 +149,7 @@ class _PageCanvasState extends State<PageCanvas> {
   void _noteStylus(PointerEvent e) {
     if (e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
-      _lastStylus = DateTime.now();
+      _lastStylus = PageCanvas.clock();
     }
   }
 
@@ -176,7 +193,7 @@ class _PageCanvasState extends State<PageCanvas> {
     // mouse arriving with the pen gone is the signal to put the pen down.
     if (!isPen && !_stylusActive && !app.toolWasAutomatic) return;
     final approaching = !_stylusActive;
-    if (isPen) _lastStylus = DateTime.now();
+    if (isPen) _lastStylus = PageCanvas.clock();
     // **Watched while the pen hovers, not only when it lands.**
     //
     // Reported by an S Pen user: *"Holding the side button should temporarily
@@ -333,7 +350,52 @@ class _PageCanvasState extends State<PageCanvas> {
         opacity: app.tool == Tool.highlighter ? 0.4 : 1.0,
       );
       _addPoint(e, pt);
+      // A shape is rubber-banded from here rather than followed from here.
+      // **The shape is captured with the anchor**, not read again per move:
+      // reading `app.inkShape!` mid-drag asserts on a state that a rebuild,
+      // a hot reload or any future keyboard shortcut could produce, and the
+      // shape you started drawing is the one you should finish drawing.
+      final s = app.inkShape;
+      _shape = s == null ? null : (from: pt, kind: s);
     });
+  }
+
+  /// The shape being dragged and where it began, or null when the pen is
+  /// following the hand.
+  ///
+  /// See [AppState.inkShape]: a shape is an ordinary [Stroke] whose points are
+  /// worked out instead of sampled, so all of this reuses the wet-stroke
+  /// machinery and changes only where the points come from.
+  ({Offset from, InkShape kind})? _shape;
+
+  /// Redraw the wet stroke as [app.inkShape] dragged from [_shapeFrom] to
+  /// [to], replacing its points rather than adding to them.
+  ///
+  /// **Pressure is flat.** A shape is a drawn object, not a gesture, and
+  /// carrying the pen's real pressure into it gives a rectangle sides of four
+  /// different weights — which reads as a wobbly hand rather than as a
+  /// rectangle. The freehand pen keeps every bit of its pressure; this is the
+  /// one place it is deliberately thrown away.
+  void _reshapeWet(Offset to) {
+    final w = _wet, s = _shape;
+    if (w == null || s == null) return;
+    // Densified, because the eraser and the lasso both work on POINTS and
+    // neither looks at the line between two of them — see [kShapeMaxGap]. Raw,
+    // a line is two points and the middle of it cannot be rubbed out.
+    final pts = densify(shapePoints(s.kind, s.from, to,
+        constrain: HardwareKeyboard.instance.isShiftPressed));
+    w.x
+      ..clear()
+      ..addAll(pts.map((p) => p.dx));
+    w.y
+      ..clear()
+      ..addAll(pts.map((p) => p.dy));
+    w.p
+      ..clear()
+      ..addAll(List<double>.filled(pts.length, 0.5));
+    w.t
+      ..clear()
+      ..addAll(List<int>.filled(pts.length, nowMs() - w.strokeStart));
   }
 
   void _inkMove(PointerMoveEvent e) {
@@ -344,7 +406,12 @@ class _PageCanvasState extends State<PageCanvas> {
     if (_wet == null) return;
     // Repaint-only: grow the stroke and nudge the ink painter. No setState —
     // rebuilding every visible block per point made inking sluggish.
-    _addPoint(e, _clampToPagePoint(controller.screenToPage(e.localPosition)));
+    final pt = _clampToPagePoint(controller.screenToPage(e.localPosition));
+    if (_shape != null) {
+      _reshapeWet(pt);
+    } else {
+      _addPoint(e, pt);
+    }
     _wetTick.value++;
   }
 
@@ -421,9 +488,28 @@ class _PageCanvasState extends State<PageCanvas> {
       app.setPenErasing(false);
     }
     final w = _wet;
+    final wasShape = _shape != null;
+    _shape = null;
     if (w == null || w.x.length < 2) {
       setState(() => _wet = null);
       return;
+    }
+    // **A shape needs a drag, not a click.** Every shape has two points even
+    // when it was dragged nowhere, so the point-count guard above cannot catch
+    // this one: without it, a stray click on the page leaves a speck of a
+    // rectangle behind that is then hard to see and hard to erase.
+    //
+    // Measured from what was actually DRAWN rather than from where the pointer
+    // came up: the two can differ by a frame, and the drawing is the thing
+    // being judged. Scaled to screen pixels, so the threshold means the same
+    // thing at every zoom.
+    if (wasShape) {
+      final w0 = w.x.reduce(math.min), w1 = w.x.reduce(math.max);
+      final h0 = w.y.reduce(math.min), h1 = w.y.reduce(math.max);
+      if (Offset(w1 - w0, h1 - h0).distance * controller.scale < 6) {
+        setState(() => _wet = null);
+        return;
+      }
     }
     app.pushUndo();
     Block? target;
@@ -832,8 +918,27 @@ class _PageCanvasState extends State<PageCanvas> {
         final pagePt = controller.screenToPage(e.localPosition);
         if (app.tool == Tool.text) {
           _createTextAt(pagePt); // Text tool: always create
-        } else if (app.selectedIds.isNotEmpty || app.editingBlockId != null) {
-          app.select(null); // first click clears; next click creates
+        } else if (app.editingBlockId != null) {
+          // **Writing somewhere, then clicking the page, means "and now
+          // here".** The owner: *"If i am in a box and click out onto the
+          // canvas, it should auto create a new content box rather than
+          // unfocusing the current box, then requiring another click to
+          // create a new box."*
+          //
+          // The old rule spent the first click closing the box you had
+          // already finished with, which is not a thing anybody sets out to
+          // do — you click the page because you want to write there.
+          //
+          // Nothing is left behind: a text box exited with nothing in it
+          // removes itself (`TextBlockView._handleExitTransition`), so
+          // clicking about the page moves one empty box around rather than
+          // dropping a trail of them.
+          _createTextAt(pagePt);
+        } else if (app.selectedIds.isNotEmpty) {
+          // SELECTED but not being typed into is a different gesture: you
+          // picked a block up to move or style it, and clicking the page is
+          // how you put it down. That first click still just clears.
+          app.select(null);
         } else {
           // Click-anywhere-to-type (CANVAS-3). The seamless backdrop is part
           // of the page, so this also works out in the margin when zoomed out.
@@ -879,6 +984,9 @@ class _PageCanvasState extends State<PageCanvas> {
 
   /// Hover/drag state for the bar, for the colour feedback a control that
   /// consumes your pointer owes you.
+  /// A page from the navigator is being dragged over the canvas.
+  bool _pageDragOver = false;
+
   bool _scrollbarHover = false;
   bool _scrollbarDrag = false;
 
@@ -912,7 +1020,10 @@ class _PageCanvasState extends State<PageCanvas> {
   /// clamped into the viewport, so it never covers what it is about and never
   /// leaves the window.
   List<Widget> _selectionActions(BuildContext context) {
-    if (app.selectedIds.isEmpty) return const [];
+    // Whether this is wanted at all is [AppState.showSelectionDelete] — a
+    // lone block already has a cross on its own bar, and two delete buttons
+    // for one thing is the mess that was reported.
+    if (!app.showSelectionDelete) return const [];
     // Not while the selection is being dragged or marqueed out, and not while
     // the eyedropper owns the next click.
     if (_mode != _DragMode.none || app.pickingInkColor) return const [];
@@ -1088,6 +1199,14 @@ class _PageCanvasState extends State<PageCanvas> {
 
     Widget canvas = LayoutBuilder(builder: (context, constraints) {
       controller.viewport = Size(constraints.maxWidth, constraints.maxHeight);
+      // Asked for when something needs it rather than measured now: layout
+      // knows the SIZE of the viewport, but where it lands on screen is not
+      // settled until this frame is painted. See
+      // `CanvasController.revealGlobalRect`.
+      controller.viewportOrigin = () {
+        final box = context.findRenderObject() as RenderBox?;
+        return box != null && box.hasSize ? box.localToGlobal(Offset.zero) : null;
+      };
       return AnimatedBuilder(
         animation: controller,
         builder: (context, _) {
@@ -1395,6 +1514,52 @@ class _PageCanvasState extends State<PageCanvas> {
       );
     }
 
+    // **A page dragged out of the navigator and onto this one becomes a
+    // window onto it.**
+    //
+    // The owner: *"If i drag and drop a page from the page list onto the
+    // currently active page, it should create a page window (and right
+    // clicking this should provide the option to change this to a page
+    // link)"*. Insert ▸ Page window already made one, through a dialog that
+    // asks you to find the page in a list — while the page is right there in
+    // the navigator, and dragging it was doing nothing at all.
+    //
+    // OUTSIDE the file DropTarget, which is a different kind of drag
+    // entirely: that one is the operating system's, this one never leaves
+    // Flutter.
+    // Held in its own local before the wrap. A builder closure captures the
+    // VARIABLE, and `canvas` is about to name the DragTarget — so returning
+    // `canvas` from the builder would have it build itself, for ever.
+    final beneath = canvas;
+    canvas = DragTarget<String>(
+      onWillAcceptWithDetails: (d) =>
+          app.node(d.data)?.kind == NodeKind.page && d.data != app.pageId,
+      onMove: (_) {
+        if (!_pageDragOver) setState(() => _pageDragOver = true);
+      },
+      onLeave: (_) => setState(() => _pageDragOver = false),
+      onAcceptWithDetails: (d) {
+        setState(() => _pageDragOver = false);
+        final box = context.findRenderObject() as RenderBox?;
+        if (box == null) return;
+        // `d.offset` is the top-left of the feedback, and the navigator's
+        // drag chips are built with `pointerDragAnchorStrategy` — so it is
+        // the pointer, and the window lands under the cursor rather than
+        // up and to the left of it.
+        final at = controller.screenToPage(box.globalToLocal(d.offset));
+        app.pushUndo();
+        final b = app.addBlock(Block(
+          type: BlockType.embed,
+          x: at.dx,
+          y: at.dy,
+          w: 380,
+          content: PortalRef.contentFor(d.data),
+        ));
+        app.select(b.id);
+      },
+      builder: (ctx, cand, rej) => beneath,
+    );
+
     // Drag-and-drop (MEDIA-1): files dropped anywhere on the page land where
     // they were dropped. Wraps the whole canvas so the drop target matches
     // what the user sees, and highlights only while a drag is over it.
@@ -1450,6 +1615,19 @@ class _PageCanvasState extends State<PageCanvas> {
               child: Listener(
                 behavior: HitTestBehavior.opaque,
                 onPointerDown: (e) => _pickColourAt(e.position),
+              ),
+            ),
+          ),
+        // The same wash the file drop uses, so a drag that will land
+        // something looks the same whatever is being dragged.
+        if (_pageDragOver)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(
+                color: Theme.of(context)
+                    .colorScheme
+                    .primary
+                    .withValues(alpha: .06),
               ),
             ),
           ),

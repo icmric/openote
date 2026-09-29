@@ -2,6 +2,309 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
+## [1.0.1] — 2026-09-29
+
+### Fixed — the markup never shows itself
+
+- **Bold a word, press space, keep typing.** The asterisks used to appear:
+  `**bold**` became `**bold **`, and a marker may not sit against a space, so
+  what had been a bold word turned into four asterisks and some text. The
+  space now steps outside the run — which is the only place Markdown can hold
+  it — and the bold carries on through it, word after word.
+- **Deleting a bold word takes all of it.** Selecting one and pressing
+  Backspace left `**` behind, because the markers cannot be seen and the
+  selection therefore lands inside them. All three natural ways to select a
+  styled word now remove it whole, and typing over one keeps its style.
+- **Ctrl+Z in a table cell no longer deletes the table.** It reached the
+  paragraph's own undo history, which goes back past the moment the table was
+  put into the sentence — so one press took the whole table away. It now takes
+  back what you typed in the cell, and once there is nothing left of that, the
+  row or column you just made.
+
+### Added — the navigator does what you drag and remembers what you fold
+
+- **Fold the sections column away** with the chevron beside the notebook name.
+  The navigator gives the width back rather than leaving a gap, which is the
+  point: it is space for the page.
+- **Closed groups and closed pages stay closed** when you quit and come back.
+- **Drop a page or a section into the empty space below the list** and it goes
+  to the bottom. That space used to hit nothing at all, which is where a hand
+  overshooting a short list actually lands.
+- **Drag a page from the navigator onto the page you are writing** and you get
+  a live window onto it. Right-click the window to turn it into a page link
+  instead, or right-click a page link to turn it into a window — they are the
+  same thing at two sizes, and which one you want is usually clear only once
+  you can see it.
+
+### Changed — things land where you are working
+
+- **Insert puts a new block under the box you were last writing in**, rather
+  than in the middle of the screen. A code block for the paragraph you are
+  half-way through belongs beside that paragraph.
+- **A new code block opens in the language the last one was set to.** Plain
+  text until you have said otherwise; only a language you PICKED is
+  remembered, never one the app guessed from the source.
+- **Click out of a box onto the page and the next box opens straight away.**
+  It used to take two clicks, the first of which did nothing you asked for.
+  Nothing is left behind: a box you leave empty removes itself.
+- **Enter from the page title** makes the same bare box a click makes, with no
+  border and no `heading (#), list (-)` hint.
+- **Insert no longer offers "Text box"** — clicking the page has always made
+  one, and now so does clicking out of one.
+- **"Edit" is gone from the right-click menu**, since left-clicking a box has
+  always opened it.
+
+### Changed — the Draw toolbar
+
+- **Pen thickness is four dots**, each drawn at the size it sets, instead of a
+  slider you had to aim: 1 to 10 across 110 pixels is nine pixels per step.
+  Anything in between is still reachable behind the ⚙, which now goes up to 40
+  and shows the dot it will draw, in the colour it will draw it.
+- **Two recent colours on the row rather than four.** Six presets, four
+  recents and two buttons is twelve round things in a row — and the recents
+  were what made the row change width as you used it. The rest are one click
+  away in the picker, which still keeps them all.
+- **"Mix your own colour" says what it does.** It was a bare text button in
+  the same grey as the labels around it, so the one control that reaches any
+  colour at all looked like the least important thing on the dialog.
+
+### Fixed — tables and pictures
+
+- **A converted table keeps the width it had.** A table block was a box with a
+  width, and a table with no column widths of its own simply filled it; the
+  new shape has no box, so it drew at the width of its own text — a table that
+  filled 620px came back at 277. The width is now written down as the columns
+  the block implied, in the content's own proportions.
+- **A link inside a table cell follows when you click it**, instead of opening
+  the table for editing.
+- **Right-click a picture in a sentence to save it**, whether or not the box
+  is open and wherever the cursor happens to be.
+- **Every right-click menu looks the same.** A block's menu and a text field's
+  were two different objects on screen for the same gesture.
+
+### Changed — Ctrl+B now bolds what you type next, not the word behind you
+
+- **A formatting shortcut sets the style for what comes NEXT.** Press Ctrl+B in
+  the middle of a sentence and carry on typing: the new words come out bold,
+  and they stop being bold when you press it again. It used to reach back and
+  bold the word the cursor happened to be touching — so finishing a word and
+  pressing Ctrl+B changed the word you had just written instead of the one you
+  were about to. Ctrl+I, Ctrl+U, the toolbar buttons and the Ctrl+marker chords
+  all work the same way.
+- **The toolbar button lights up while you wait.** Nothing is written to the
+  page until you type, so the button going on is what tells you the next word
+  will be bold.
+- **Pressing it again at the end of the word stops bolding** rather than
+  un-bolding what you just wrote. Inside the word it still takes the
+  formatting off, which is the only way to remove it without selecting it
+  first.
+- **A toggle that is on now looks on.** A selected toolbar button used to
+  change only the colour of its glyph, which among a row of grey glyphs is a
+  change you had to be looking for — so pressing Ctrl+B appeared to do
+  nothing at all until you typed. Selected buttons are filled now, everywhere
+  in the app.
+- **With text selected, nothing has changed** — it formats what you highlighted,
+  exactly as before.
+- **Backspace still takes the letter.** The `**` around a bold word are
+  invisible while you write, and Backspace goes on deleting the letter you can
+  see rather than a marker you cannot.
+
+### Fixed — a deleted section is one Ctrl+Z away, and Del stops taking the wrong thing
+
+- **Del took the whole section when you had not aimed at one.** Clicking a row
+  in the navigator pointed the keyboard at it, and nothing ever pointed it
+  somewhere else — so clicking a blank patch of the navigator, or reaching up
+  to the toolbar, left Del still aimed at a section you had stopped thinking
+  about, with nothing on screen to say so. Now: clicking a page deletes that
+  page, clicking a blank patch means the page you are on, and a **section goes
+  only when you click that section and press Del**.
+- **Ctrl+Z brings a deleted page or section back**, with all its pages. It
+  could not before — undo only ever covered the page you had open, so the one
+  action that takes a whole section away was the one action outside it, and
+  Ctrl+Z quietly did nothing. Ctrl+Y puts it back.
+- **The message now offers to undo it**, and says less: "Deleted section “X”"
+  with an **Undo** button, instead of a sentence sending you off to the recycle
+  bin. Deleting from the right-click menu says it too — that route used to say
+  nothing at all.
+- **The recycle bin looks like somewhere things come back from.** Its button
+  was a plain wastebasket sitting between two "make a new thing" buttons, which
+  reads as "delete this"; it is now the bin with an arrow coming out of it.
+
+### Added — a table lives in your writing, and you type in it where it sits
+
+- **A table is part of the paragraph now, not a box beside it.** Write a
+  sentence, put a table in the middle of it, carry on writing underneath —
+  it is all one box, the way an equation already was.
+- **Click a cell and type.** Nothing opens, nothing moves, nothing changes
+  size: the cell you clicked is the cell you are writing in. A table used to
+  turn into rows of `|` pipes the moment the caret arrived.
+- **Press Tab after a word and it becomes a table**, with what you typed as
+  the first cell and the caret in the second — OneNote's own gesture. At the
+  start of a line Tab still indents, and in a list it still nests. Insert →
+  Table does the same thing when you are already writing in a box: the table
+  goes into the paragraph rather than onto the page beside it.
+- **Tab in the last cell adds a row**, so a table fills in the way it does
+  everywhere else: type, Tab, type, Tab. Escape, or ↓ from the last row, takes
+  you back out to the writing.
+- **Right-click in a cell for what a table can do.** Insert a row above or
+  below, a column left or right, delete the row or the column — all relative
+  to the cell you clicked, the way any grown-up editor does it. This replaces
+  the row of buttons that used to sit under every open table and could only
+  ever add and remove at the end.
+- **A cell writes like the rest of the page.** Bold is bold, an equation is an
+  equation, and both stay that way while you type them.
+- **Tab through it, Enter for the next row, Escape to leave.** Tab off the end
+  gives the keyboard back to the paragraph instead of trapping it.
+- **Your existing tables move over on their own.** The page you open converts
+  the moment you open it; the rest of the notebook follows quietly in the
+  background, the section you are in first. Nothing about a table changes when
+  it moves — same cells, same column widths, same everything — and any table
+  the conversion cannot prove identical is left exactly as it is. One Ctrl+Z
+  undoes the page you are looking at.
+- **One thing to know if you use Openote on more than one machine:** a
+  converted table needs this version to draw. An older copy of Openote shows
+  the table's description instead until you update it. Nothing is lost, and it
+  comes back the moment that machine updates.
+
+### Changed — typing in a page full of maths is no longer slow
+
+- **A picture, card or equation inside a paragraph is now drawn once, not
+  again on every keystroke.** Measured per keystroke in one block: twenty
+  equations went from 129.6 ms to 16.3 ms, forty from 227.0 ms to 17.9 ms,
+  and a hundred from 561.7 ms to 25.6 ms — against 16.5 ms for a block with
+  none. Forty equations is an ordinary page of maths notes, and a fifth of a
+  second per character is not typing.
+- **A drag or a selection inside one of them survives a keystroke elsewhere.**
+  Resizing a picture used to forget the drag if a word was typed above it.
+
+### Fixed — a picture Google Drive renamed is found and put back
+
+- **Openote now recovers a blob a cloud client renamed.** Pictures, drawings
+  and attachments are stored under a name that is their own fingerprint and
+  nothing else. Google Drive treats a file with no extension as a file whose
+  extension it should work out, so it renamed one — an 861 KB PDF became
+  `<fingerprint>.pdf`, with a duplicate beside it. Openote looked for the name
+  it wrote, found nothing, and said the picture was missing everywhere on the
+  computer, while the bytes sat in the same folder, perfect, one filename
+  away.
+- **It checks the bytes before believing the file.** A renamed copy is only
+  adopted when its contents really are what the name claims, so a
+  half-downloaded file or an interrupted write is never mistaken for a repair.
+- **Nothing is deleted.** The renamed copy is left exactly where it is; only
+  the missing name is put back.
+- **Openote no longer says a picture is missing on its first look.** Most of
+  what looks like a missing picture at the moment a notebook opens is a cloud
+  client that has not finished downloading it, and being told your pictures
+  are missing while the file is on its way is alarming for no reason. It now
+  tries the repairs again, twice, over about twenty seconds, and only says
+  something if the picture is still not there afterwards. A picture that
+  turns up in the meantime is never mentioned at all.
+- **And when the missing picture does arrive, the warning goes away by
+  itself.** Bytes arrive with a sync; until now the notebook went on saying a
+  picture was missing until you closed and reopened it, long after the file
+  had landed.
+
+### Fixed — deleting a page leaves you next door, not in another section
+
+- **You stay in the section you were in.** Deleting a page used to drop you on
+  the first page of the whole notebook, which was only ever the right place by
+  accident — delete the bottom page of a section and you were thrown out of it
+  entirely. Now you land on the page above, or the one below when there is
+  nothing above, in the same section. A section with nothing left in it still
+  sends you elsewhere, because there is nothing of its own to show.
+
+### Changed — one delete button per thing, not two
+
+- **The floating bin only appears for a selection of more than one.** A
+  selected box already carries a cross on its own bar, so a single selection
+  was offering two ways to delete one thing a few pixels apart — most visible
+  while writing in a text box, where the bin and the cross sat either side of
+  it and made the box look busy. Select several things and the bin is back,
+  because there the cross belongs to one of them and says nothing about the
+  rest.
+
+### Changed — the page follows you down as you write
+
+- **Typing past the bottom of the window brings the window with you.** The
+  paragraph grew downwards and the view stayed where it was, so writing
+  anything long meant stopping to scroll mid-sentence. Now the page eases down
+  just enough to keep the line you are on in sight, and stops as soon as it
+  is.
+- **It only moves when it has to.** While the caret is anywhere comfortable —
+  which is almost always — nothing happens at all. There is no drift, and no
+  motion while you read.
+- **It keeps up.** The movement is a glide rather than a jump, and typing
+  faster does not leave it behind: each keystroke moves where it is heading
+  instead of starting it over.
+- **Reaching for the mouse wins.** Scrolling or zooming while the page is
+  easing stops it dead, so it never fights you for the view.
+
+### Added — a link reads as its words, and Ctrl+K makes one
+
+- **A link stays its words while you are writing.** Clicking into a sentence
+  used to unfold `[the docs](https://…/a/very/long/path)` in the middle of it
+  and re-wrap the line around sixty characters nobody had written. Now a link
+  behaves like everything else in a note: bold stays bold, an equation stays an
+  equation, and a link stays its words. The caret crosses the hidden address in
+  one press, and Backspace at either edge means what it means everywhere else.
+- **Ctrl+K puts a link on what you have selected**, or on the word the caret is
+  touching — but not across a space, so a link never swallows the gap before
+  the next word. A full stop at the end of a sentence stays with the sentence.
+- **Ctrl+K inside a link edits it**, and so does "Edit link…" in the
+  right-click menu. Both ask the same question, so they cannot disagree.
+- **Insert ▸ Page link is now Insert ▸ Link**, and opens the same dialog with
+  the page picker inside it. There was no route to a web address from the menu
+  at all before.
+
+### Added — straight lines and simple shapes for the pen
+
+- **Pick a shape on the Draw tab and drag** — line, arrow, rectangle, ellipse
+  or triangle — and the stroke comes out straight. Pick it again to turn it off
+  and go back to drawing freehand. Drawing a diagram with a trackpad is the
+  difference between a diagram and a mess, and most people using Openote are on
+  a school laptop rather than a tablet.
+- **A shape is ink.** It takes the colour, the size and the opacity you have
+  chosen, both erasers rub it out, the lasso picks it up, undo undoes it, and
+  it exports with everything else. The trade is that a shape cannot be
+  re-shaped afterwards — it is ink, and ink is edited with the eraser.
+
+### Fixed — pictures that arrived late, and a way to save one out
+
+- **A picture that was still arriving now appears when it does.** Reported as
+  *"they usually load after a minute or two or after restarting openote"* — the
+  page had asked for the bytes once, got nothing, and never asked again. The
+  minute or two was the sync cycle reloading the page for its own reasons.
+  Most likely to be seen syncing through your own git server.
+- **Save a copy of a picture**, from the right-click menu, where every browser
+  puts it. An attachment and a video have always had this; a picture did not,
+  so importing one was a one-way door. Slides are rendered out rather than
+  copied, and the file always gets an extension.
+- **"Save image as…" appears for a picture in a sentence too.** It was only
+  ever offered for a picture that had missed every text box — which is one
+  route in of four, and the least common one.
+
+### Added — your own SSH key for a notebook
+
+- **Point a notebook at a particular SSH key**, alongside its remote. If your
+  notes go to one server as one identity while the rest of the machine keeps
+  its default key, you could not sync at all before this.
+
+### Fixed — Enter in an empty note no longer throws
+
+- **Pressing Enter in an empty text block crashed** with a `RangeError`
+  (issue #11). The editor was checking whether the line you were leaving opened
+  a code fence, and looked one character further back than there was note to
+  look at. An empty line is not a fence, which is the answer it was about to
+  give anyway.
+
+### Changed — comments in code are green
+
+- **Comments in a code block are green rather than grey**, as they are in
+  almost every editor. Grey read as "dimmed code" instead of as prose.
+- **Strings are warm** — a soft red — where they used to be green. The two only
+  work as a pair: comments in the same colour as strings would have been less
+  distinct than the grey they replaced, not more.
+
 ## [1.0.0] — 2026-09-07
 
 ### Added — bring your notes over from OneNote without exporting anything

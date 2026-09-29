@@ -9,6 +9,17 @@ class LZh extends L {
   LZh([String locale = 'zh']) : super(locale);
 
   @override
+  String atomNewerVersion(String version) {
+    return '由 Openote $version 创建';
+  }
+
+  @override
+  String get atomNewerVersionUnknown => '由较新版本的 Openote 创建';
+
+  @override
+  String get atomUpdateToView => '请更新 Openote 以查看';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -132,6 +143,14 @@ class LZh extends L {
 
   @override
   String get barInkMoreColours => '更多颜色…';
+
+  @override
+  String barPenSize(String size) {
+    return '笔迹粗细 $size';
+  }
+
+  @override
+  String get barPenSizeExact => '精确大小…';
 
   @override
   String get barInkPickColour => '从页面上拾取颜色';
@@ -495,6 +514,9 @@ class LZh extends L {
   String get insertLinkToPage => '链接到页面';
 
   @override
+  String get linkEdit => '编辑链接…';
+
+  @override
   String get insertPageLink => '页面链接';
 
   @override
@@ -600,6 +622,12 @@ class LZh extends L {
   String get navCollapse => '收起导航栏  (Ctrl+\\)';
 
   @override
+  String get navHideSections => '隐藏分区列表';
+
+  @override
+  String get navShowSections => '显示分区列表';
+
+  @override
   String get navColour => '颜色';
 
   @override
@@ -623,9 +651,22 @@ class LZh extends L {
   String get navDeletePermanently => '彻底删除';
 
   @override
-  String navDeletedRestorable(String title) {
-    return '已删除“$title” — 可以从回收站还原。';
+  String navDeletedPage(String title) {
+    return '已删除页面“$title”';
   }
+
+  @override
+  String navDeletedSection(String title) {
+    return '已删除分区“$title”';
+  }
+
+  @override
+  String navDeletedGroup(String title) {
+    return '已删除分区组“$title”';
+  }
+
+  @override
+  String get navUndo => '撤销';
 
   @override
   String navDeletesInDays(int days) {
@@ -1451,6 +1492,24 @@ class LZh extends L {
 
   @override
   String get shellUnlock => '解锁';
+
+  @override
+  String get tableColumnLeft => '在左侧插入列';
+
+  @override
+  String get tableColumnRight => '在右侧插入列';
+
+  @override
+  String get tableDeleteColumn => '删除列';
+
+  @override
+  String get tableDeleteRow => '删除行';
+
+  @override
+  String get tableRowAbove => '在上方插入行';
+
+  @override
+  String get tableRowBelow => '在下方插入行';
 
   @override
   String get tagContact => '联系人';

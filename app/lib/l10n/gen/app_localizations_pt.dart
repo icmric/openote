@@ -9,6 +9,18 @@ class LPt extends L {
   LPt([String locale = 'pt']) : super(locale);
 
   @override
+  String atomNewerVersion(String version) {
+    return 'Criado no Openote $version';
+  }
+
+  @override
+  String get atomNewerVersionUnknown =>
+      'Criado numa versão mais recente do Openote';
+
+  @override
+  String get atomUpdateToView => 'Atualize o Openote para o ver';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -134,6 +146,14 @@ class LPt extends L {
 
   @override
   String get barInkMoreColours => 'Mais cores…';
+
+  @override
+  String barPenSize(String size) {
+    return 'Espessura $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Tamanho exato…';
 
   @override
   String get barInkPickColour => 'Obter uma cor da página';
@@ -513,6 +533,9 @@ class LPt extends L {
   String get insertLinkToPage => 'Ligar a uma página';
 
   @override
+  String get linkEdit => 'Editar link…';
+
+  @override
   String get insertPageLink => 'Link';
 
   @override
@@ -619,6 +642,12 @@ class LPt extends L {
   String get navCollapse => 'Fechar o navegador  (Ctrl+\\)';
 
   @override
+  String get navHideSections => 'Ocultar a lista de seções';
+
+  @override
+  String get navShowSections => 'Mostrar a lista de seções';
+
+  @override
   String get navColour => 'Cor';
 
   @override
@@ -642,9 +671,22 @@ class LPt extends L {
   String get navDeletePermanently => 'Apagar de vez';
 
   @override
-  String navDeletedRestorable(String title) {
-    return '“$title” apagada — dá para restaurar pela lixeira.';
+  String navDeletedPage(String title) {
+    return 'Página “$title” apagada';
   }
+
+  @override
+  String navDeletedSection(String title) {
+    return 'Seção “$title” apagada';
+  }
+
+  @override
+  String navDeletedGroup(String title) {
+    return 'Grupo “$title” apagado';
+  }
+
+  @override
+  String get navUndo => 'Desfazer';
 
   @override
   String navDeletesInDays(int days) {
@@ -1513,6 +1555,24 @@ class LPt extends L {
 
   @override
   String get shellUnlock => 'Desbloquear';
+
+  @override
+  String get tableColumnLeft => 'Inserir coluna à esquerda';
+
+  @override
+  String get tableColumnRight => 'Inserir coluna à direita';
+
+  @override
+  String get tableDeleteColumn => 'Eliminar coluna';
+
+  @override
+  String get tableDeleteRow => 'Eliminar linha';
+
+  @override
+  String get tableRowAbove => 'Inserir linha acima';
+
+  @override
+  String get tableRowBelow => 'Inserir linha abaixo';
 
   @override
   String get tagContact => 'Contato';

@@ -1,4 +1,7 @@
 {
+  "atomNewerVersion": "Criado no Openote {version}",
+  "atomNewerVersionUnknown": "Criado numa versão mais recente do Openote",
+  "atomUpdateToView": "Atualize o Openote para o ver",
   "barBadgeCount": "{count}",
   "barBlankOut": "Ocultar a seleção",
   "barBlankOutNeedsSelection": "Selecione antes as palavras que quer ocultar.",
@@ -38,6 +41,8 @@
   "barInkDefaultColour": "Tinta predefinida — acompanha a página",
   "barInkHighlighterColourTitle": "Cor do marcador",
   "barInkMoreColours": "Mais cores…",
+  "barPenSize": "Espessura {size}",
+  "barPenSizeExact": "Tamanho exato…",
   "barInkPickColour": "Obter uma cor da página",
   "barInkPickingHint": "Clique em algo na página para usar a sua cor",
   "barInlineCode": "Código no texto",
@@ -129,6 +134,7 @@
   "insertGroupWrite": "Escrever",
   "insertLinkToPage": "Ligar a uma página",
   "insertPageLink": "Link",
+  "linkEdit": "Editar link…",
   "insertPageWindow": "Janela",
   "insertPdfAsCard": "Como cartão — abre numa janela",
   "insertPdfFailed": "A importação do PDF falhou: {reason}",
@@ -159,6 +165,8 @@
   "navBinRetention": "O que está aqui é apagado de vez depois de {days} dias.",
   "navClose": "Fechar",
   "navCollapse": "Fechar o navegador  (Ctrl+\\)",
+  "navHideSections": "Ocultar a lista de seções",
+  "navShowSections": "Mostrar a lista de seções",
   "navColour": "Cor",
   "navColourDefault": "Padrão",
   "navComingUp": "EM BREVE",
@@ -166,7 +174,31 @@
   "navDeleteForeverBody": "“{title}” e todas as suas páginas serão removidas para sempre. Não dá para desfazer.{caveat}",
   "navDeleteForeverTitle": "Apagar de vez?",
   "navDeletePermanently": "Apagar de vez",
-  "navDeletedRestorable": "“{title}” apagada — dá para restaurar pela lixeira.",
+  "navDeletedPage": "Página “{title}” apagada",
+  "@navDeletedPage": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedSection": "Seção “{title}” apagada",
+  "@navDeletedSection": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedGroup": "Grupo “{title}” apagado",
+  "@navDeletedGroup": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navUndo": "Desfazer",
   "navDeletesInDays": "{days, plural, =1{Apaga em 1 dia} other{Apaga em {days} dias}}",
   "navDeletesSoon": "Apaga em breve",
   "navExamCountdown": "Prova {when} · {countdown}…",
@@ -399,6 +431,12 @@
   "shellTagTheLine": "Marcar a linha em que você está",
   "shellTagsHint": "Os marcadores assinalam uma linha — a fazer, importante, pergunta, definição — para você achar de novo, revisar ou dar um prazo.",
   "shellUnlock": "Desbloquear",
+  "tableColumnLeft": "Inserir coluna à esquerda",
+  "tableColumnRight": "Inserir coluna à direita",
+  "tableDeleteColumn": "Eliminar coluna",
+  "tableDeleteRow": "Eliminar linha",
+  "tableRowAbove": "Inserir linha acima",
+  "tableRowBelow": "Inserir linha abaixo",
   "tagContact": "Contato",
   "tagCritical": "Urgente",
   "tagCustom": "Marcador",

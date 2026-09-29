@@ -9,6 +9,18 @@ class LIt extends L {
   LIt([String locale = 'it']) : super(locale);
 
   @override
+  String atomNewerVersion(String version) {
+    return 'Creato con Openote $version';
+  }
+
+  @override
+  String get atomNewerVersionUnknown =>
+      'Creato con una versione più recente di Openote';
+
+  @override
+  String get atomUpdateToView => 'Aggiorna Openote per visualizzarlo';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -134,6 +146,14 @@ class LIt extends L {
 
   @override
   String get barInkMoreColours => 'Altri colori…';
+
+  @override
+  String barPenSize(String size) {
+    return 'Spessore $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Dimensione esatta…';
 
   @override
   String get barInkPickColour => 'Preleva un colore dalla pagina';
@@ -515,6 +535,9 @@ class LIt extends L {
   String get insertLinkToPage => 'Collega a una pagina';
 
   @override
+  String get linkEdit => 'Modifica collegamento…';
+
+  @override
   String get insertPageLink => 'Collegamento';
 
   @override
@@ -622,6 +645,12 @@ class LIt extends L {
   String get navCollapse => 'Chiudi il navigatore  (Ctrl+\\)';
 
   @override
+  String get navHideSections => 'Nascondi l\'elenco delle sezioni';
+
+  @override
+  String get navShowSections => 'Mostra l\'elenco delle sezioni';
+
+  @override
   String get navColour => 'Colore';
 
   @override
@@ -645,9 +674,22 @@ class LIt extends L {
   String get navDeletePermanently => 'Elimina per sempre';
 
   @override
-  String navDeletedRestorable(String title) {
-    return '«$title» eliminata — puoi ripristinarla dal cestino.';
+  String navDeletedPage(String title) {
+    return 'Pagina “$title” eliminata';
   }
+
+  @override
+  String navDeletedSection(String title) {
+    return 'Sezione “$title” eliminata';
+  }
+
+  @override
+  String navDeletedGroup(String title) {
+    return 'Gruppo “$title” eliminato';
+  }
+
+  @override
+  String get navUndo => 'Annulla';
 
   @override
   String navDeletesInDays(int days) {
@@ -1520,6 +1562,24 @@ class LIt extends L {
 
   @override
   String get shellUnlock => 'Sblocca';
+
+  @override
+  String get tableColumnLeft => 'Inserisci colonna a sinistra';
+
+  @override
+  String get tableColumnRight => 'Inserisci colonna a destra';
+
+  @override
+  String get tableDeleteColumn => 'Elimina colonna';
+
+  @override
+  String get tableDeleteRow => 'Elimina riga';
+
+  @override
+  String get tableRowAbove => 'Inserisci riga sopra';
+
+  @override
+  String get tableRowBelow => 'Inserisci riga sotto';
 
   @override
   String get tagContact => 'Contatto';

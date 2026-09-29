@@ -1,4 +1,7 @@
 {
+  "atomNewerVersion": "Creado en Openote {version}",
+  "atomNewerVersionUnknown": "Creado en una versión más reciente de Openote",
+  "atomUpdateToView": "Actualiza Openote para verlo",
   "barBadgeCount": "{count}",
   "barBlankOut": "Ocultar lo seleccionado",
   "barBlankOutNeedsSelection": "Selecciona primero las palabras que quieres ocultar.",
@@ -38,6 +41,8 @@
   "barInkDefaultColour": "Tinta predeterminada: se adapta a la página",
   "barInkHighlighterColourTitle": "Color del marcador",
   "barInkMoreColours": "Más colores…",
+  "barPenSize": "Grosor {size}",
+  "barPenSizeExact": "Tamaño exacto…",
   "barInkPickColour": "Tomar un color de la página",
   "barInkPickingHint": "Haz clic en algo de la página para usar su color",
   "barInlineCode": "Código en línea",
@@ -129,6 +134,7 @@
   "insertGroupWrite": "Escribir",
   "insertLinkToPage": "Enlazar a una página",
   "insertPageLink": "Enlace",
+  "linkEdit": "Editar enlace…",
   "insertPageWindow": "Ventana",
   "insertPdfAsCard": "Como tarjeta — se abre en una ventana",
   "insertPdfFailed": "La importación del PDF ha fallado: {reason}",
@@ -159,6 +165,8 @@
   "navBinRetention": "Lo que hay aquí se borra definitivamente a los {days} días.",
   "navClose": "Cerrar",
   "navCollapse": "Plegar el navegador  (Ctrl+\\)",
+  "navHideSections": "Ocultar la lista de secciones",
+  "navShowSections": "Mostrar la lista de secciones",
   "navColour": "Color",
   "navColourDefault": "Predeterminado",
   "navComingUp": "PRÓXIMAMENTE",
@@ -166,7 +174,31 @@
   "navDeleteForeverBody": "«{title}» y todas sus páginas se borrarán para siempre. Esto no se puede deshacer.{caveat}",
   "navDeleteForeverTitle": "¿Borrar definitivamente?",
   "navDeletePermanently": "Borrar definitivamente",
-  "navDeletedRestorable": "«{title}» borrada — puedes restaurarla desde la papelera.",
+  "navDeletedPage": "Página “{title}” borrada",
+  "@navDeletedPage": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedSection": "Sección “{title}” borrada",
+  "@navDeletedSection": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedGroup": "Grupo “{title}” borrado",
+  "@navDeletedGroup": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navUndo": "Deshacer",
   "navDeletesInDays": "{days, plural, =1{Se borra en 1 día} other{Se borra en {days} días}}",
   "navDeletesSoon": "Se borra pronto",
   "navExamCountdown": "Examen {when} · {countdown}…",
@@ -399,6 +431,12 @@
   "shellTagTheLine": "Etiquetar la línea en la que estás",
   "shellTagsHint": "Las etiquetas marcan una línea — tarea, importante, pregunta, definición — para que puedas volver a encontrarla, repasarla o ponerle una fecha límite.",
   "shellUnlock": "Desbloquear",
+  "tableColumnLeft": "Insertar columna a la izquierda",
+  "tableColumnRight": "Insertar columna a la derecha",
+  "tableDeleteColumn": "Eliminar columna",
+  "tableDeleteRow": "Eliminar fila",
+  "tableRowAbove": "Insertar fila encima",
+  "tableRowBelow": "Insertar fila debajo",
   "tagContact": "Contacto",
   "tagCritical": "Urgente",
   "tagCustom": "Etiqueta",

@@ -32,6 +32,7 @@ import 'settings_dialog.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import '../canvas/ink_shapes.dart';
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
 /// View. OneNote's few-clicks accessibility in Openote's calm language — a
@@ -178,6 +179,10 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         app.inkColor,
         app.customColors.join(','),
         app.penErasing,
+        // Which shape button is lit. Rendered, so the guard test is right to
+        // want it named — without it the row keeps the memoised frame and
+        // picking a shape appears to do nothing at all.
+        app.inkShape,
         app.pickingInkColor,
         app.penSize,
         app.touchDrawing,
@@ -957,6 +962,35 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         onPressed: () => app.setTool(t),
       );
     }
+
+    // **The shapes, and they are always here too — for the reason below.**
+    //
+    // Issue #10: *"Some simple shapes in pen mode — drawing diagrams with a
+    // mouse is really difficult without the simple shapes."* A shape is an
+    // ordinary stroke with its points worked out rather than sampled (see
+    // [AppState.inkShape]), so the colour, size, highlighter and eraser beside
+    // these all keep working on one without being told shapes exist.
+    //
+    // NOT gated on a pen being in hand, though every instinct says to hide
+    // them the rest of the time. That is precisely the bug the colours below
+    // already had: reaching for the mouse is how a toolbar button is pressed,
+    // and reaching for the mouse is also what puts the pen down — so a
+    // pen-only row would vanish as the pointer arrived at it. Choosing a shape
+    // picks the pen up instead, exactly as choosing a colour does.
+    Widget shapeButton(InkShape? shape, IconData icon, String tip) {
+      final on = app.inkShape == shape;
+      return IconButton(
+        icon: Icon(icon, size: 18),
+        tooltip: tip,
+        isSelected: on,
+        visualDensity: VisualDensity.compact,
+        style: IconButton.styleFrom(
+          backgroundColor: on ? scheme.primary.withValues(alpha: .14) : null,
+          foregroundColor: on ? scheme.primary : null,
+        ),
+        onPressed: () => app.setInkShape(shape),
+      );
+    }
     // **The colours are always here.** They used to appear only while a pen,
     // a highlighter or some ink was in hand, and the owner reported what that
     // costs: *"i want it to always be there, not just when im drawing. This
@@ -1041,10 +1075,17 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
     // heading should find it under the pen without mixing it again. Presets
     // are filtered out so no colour appears twice in the row.
     final presets = {for (final (i, c) in colors.indexed) inkOf(i, c)};
+    // TWO, not four. The owner: *"There are by default a lot of options for
+    // colours, more than most people would want, and it looks fine but isnt
+    // super nice."* Six presets plus four recents plus two buttons is twelve
+    // round things in a row, and the recents are the half that also made the
+    // row change width as you used it — everything after them shifted sideways
+    // the first few times you mixed a colour. The rest are one click away in
+    // the picker, which keeps all of them.
     final recents = [
       for (final hex in app.customColors)
         if (!presets.contains('#${hex.replaceFirst('#', '')}')) hex,
-    ].take(4).toList();
+    ].take(2).toList();
     return Row(children: [
       toolButton(Tool.select, Icons.near_me_outlined, l.barToolSelect),
       toolButton(Tool.text, Icons.text_fields, l.barToolText),
@@ -1054,6 +1095,19 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       toolButton(Tool.eraser, Icons.cleaning_services_outlined, l.barToolEraser),
       toolButton(Tool.lasso, Icons.gesture_outlined, l.barToolLasso),
       const _Div(),
+      // Freehand first, and selected by default: it is what the pen does
+      // almost all of the time, and it is the way back.
+      shapeButton(null, Icons.draw_outlined, 'Freehand'),
+      shapeButton(InkShape.line, Icons.horizontal_rule, InkShape.line.tooltip),
+      shapeButton(
+          InkShape.arrow, Icons.arrow_right_alt, InkShape.arrow.tooltip),
+      shapeButton(
+          InkShape.rectangle, Icons.crop_square, InkShape.rectangle.tooltip),
+      shapeButton(
+          InkShape.ellipse, Icons.circle_outlined, InkShape.ellipse.tooltip),
+      shapeButton(
+          InkShape.triangle, Icons.change_history, InkShape.triangle.tooltip),
+      const _Div(),
       for (final (i, c) in colors.indexed)
         swatch(inkOf(i, c), swatchColor(c),
             (!highlighting && i == 0) ? l.barInkDefaultColour : inkOf(i, c)),
@@ -1062,8 +1116,11 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       // The full picker - a palette grid, a hue/saturation field and a hex
       // box - is the one that already exists for text colour. One picker, one
       // set of recents, whatever is being coloured.
+      // A palette, not a plus. `add_circle_outline` beside a row of colours
+      // reads as "add a colour" — something you do TO the row — when what it
+      // opens is the whole picker, every colour included.
       IconButton(
-        icon: const Icon(Icons.add_circle_outline, size: 18),
+        icon: const Icon(Icons.palette_outlined, size: 18),
         tooltip: l.barInkMoreColours,
         visualDensity: VisualDensity.compact,
         onPressed: () async {
@@ -1090,18 +1147,18 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
             style:
                 TextStyle(fontSize: 11, color: context.surfaces.textSecondary))
       else
-        SizedBox(
-          width: 110,
-          child: Slider(
-            value: app.penSize,
-            min: 1,
-            max: 10,
-            onChanged: (v) {
-              app.penSize = v;
-              app.refresh();
-            },
+        ...[
+          for (final v in kPenSizes) _penDot(context, app, v, l),
+          // The slider is still here for anybody who wants 3.5 — behind a
+          // button, which is where a control most people never touch belongs.
+          IconButton(
+            icon: const Icon(Icons.tune, size: 16),
+            tooltip: l.barPenSizeExact,
+            isSelected: !kPenSizes.contains(app.penSize),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _showExactPenSize(context, app),
           ),
-        ),
+        ],
       // What is left really is about ONE tool, and says nothing at all when
       // that tool is not the one in hand.
       if (app.tool == Tool.eraser) ...[
@@ -1931,3 +1988,199 @@ class _SubjectBadge extends StatelessWidget {
   }
 }
 
+
+/// **The pen thicknesses somebody actually picks.**
+///
+/// The owner: *"The slider to adjust the pen size is not intuitive, please
+/// have just a few options for size, then maybe an option to adjust it to
+/// something more exact or specific."*
+///
+/// A 1-to-10 slider 110px wide is nine pixels of travel per unit, so choosing
+/// a thickness was a drag you had to aim, and reading the one you had meant
+/// looking at a handle position rather than at a thickness. Four dots drawn at
+/// the size they set answer both: you point at the one that looks right, and
+/// the one you are using is the one that is ringed.
+///
+/// Four rather than five or three: fine, normal, bold, marker. Anything else
+/// is still reachable through the slider, which is now behind a button — where
+/// a control most people never touch belongs.
+const List<double> kPenSizes = [1, 2.5, 5, 8];
+
+/// One thickness, drawn at that thickness.
+Widget _penDot(BuildContext context, AppState app, double v, L l) {
+  final scheme = Theme.of(context).colorScheme;
+  final on = app.penSize == v;
+  // Clamped so the thinnest is still a target you can hit: the DOT grows with
+  // the value, the button it sits in does not.
+  final d = (v * 2.2).clamp(4.0, 18.0);
+  return Tooltip(
+    message: l.barPenSize(_penSizeLabel(v)),
+    child: InkWell(
+      mouseCursor: WidgetStateMouseCursor.clickable,
+      borderRadius: BorderRadius.circular(99),
+      onTap: () {
+        app.penSize = v;
+        app.refresh();
+      },
+      child: Container(
+        width: 26,
+        height: 26,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: on ? scheme.primary.withValues(alpha: .14) : null,
+        ),
+        child: Container(
+          width: d,
+          height: d,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: on ? scheme.primary : context.surfaces.textSecondary,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// `2.5`, but `5` rather than `5.0` — a thickness reads as a number, not as a
+/// float.
+String _penSizeLabel(double v) =>
+    v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+
+/// **The ink the pen will actually put down**, resolved.
+///
+/// `auto` is not a colour — it is "whatever contrasts with the page", decided
+/// when the stroke is drawn ([InkPainter.autoColor]). A preview that painted
+/// it as the near-black it usually becomes would advertise black while the pen
+/// wrote white in dark mode, which is the exact defect the toolbar's own
+/// default swatch was fixed for.
+Color currentInkColor(BuildContext context, AppState app) {
+  final dark = Theme.of(context).brightness == Brightness.dark;
+  if (app.inkColor == 'auto') {
+    return dark ? OnoteColors.moon100 : OnoteColors.graphite900;
+  }
+  return onoteColorFromHex(app.inkColor) ??
+      (dark ? OnoteColors.moon100 : OnoteColors.graphite900);
+}
+
+/// **Half-pixel steps, kept half-pixel.**
+///
+/// A `Slider` divided into 39 steps between 0.5 and 20 lands on values like
+/// 3.4000000000000004, because that is what repeated addition of 19.5/39 does
+/// in binary floating point — and the readout then printed all seventeen
+/// digits of it. The owner: *"Some numbers also have a huge amount of decimal
+/// places, i guess its a floating point error."* Exactly that, and snapping is
+/// the fix rather than formatting: the stored size should BE 3.5, not print as
+/// it.
+double snapPenSize(double v) => (v * 2).roundToDouble() / 2;
+
+/// **The widest the pen goes.**
+///
+/// The owner: *"would be nice to be able to make it a little bigger"*. 20 was
+/// arbitrary — it was the old toolbar slider's ceiling doubled — and a pen
+/// used to circle a whole diagram, or to annotate a PDF page at low zoom, runs
+/// out at 20 long before it runs out of reasons.
+const double kPenSizeMax = 40;
+
+/// The old slider, kept for anybody who wants 3.5 — with the dot it will draw
+/// shown at the size and colour it will draw it.
+Future<void> _showExactPenSize(BuildContext context, AppState app) {
+  final l = L.of(context);
+  return showOnoteDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(l.barPenSizeExact),
+      // **A width, and a Column that takes only the height it needs.**
+      //
+      // `showOnoteDialog` goes through `showGeneralDialog`, whose page fills
+      // the screen — so content with nothing to size it against stretched to
+      // the full height. The owner: *"The 'exact size' popup has the right
+      // length but its height expands as far as it can."*
+      content: SizedBox(
+        // Wider than it was, because the range is now twice as long and the
+        // travel per half-pixel would otherwise have halved with it.
+        width: 360,
+        child: StatefulBuilder(
+          builder: (ctx2, setLocal) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // The dot itself, at the size it will be drawn and in the
+                // colour it will be drawn in — the owner asked for both, and
+                // the second is what makes it a preview rather than a gauge.
+                // The box is fixed at the widest dot so the row does not jump
+                // as it grows.
+                SizedBox(
+                  height: kPenSizeMax + 6,
+                  child: Center(
+                    child: Container(
+                      width: app.penSize,
+                      height: app.penSize,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: currentInkColor(ctx2, app),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(children: [
+                  Expanded(
+                    child: Slider(
+                      value: app.penSize.clamp(0.5, kPenSizeMax),
+                      min: 0.5,
+                      max: kPenSizeMax,
+                      divisions: (kPenSizeMax / 0.5).round() - 1, // half-pixels
+                      label: _penSizeLabel(app.penSize),
+                      // **Nothing outside this dialog is told until the drag
+                      // ends.**
+                      //
+                      // The owner: *"Dragging the slider is super laggy, my
+                      // guess is that something in there is running on every
+                      // single value change rather than when it snaps to the
+                      // possible sizes."* The guess is close, and the real
+                      // answer is worse: `Slider` already fires `onChanged`
+                      // only when the DISCRETE value changes, so this ran
+                      // about eighty times across a full drag — and every one
+                      // of them called `app.refresh()`, which notifies
+                      // `AppState` and rebuilds the entire shell. Navigator,
+                      // command bar and a canvas full of blocks, eighty times,
+                      // to move a dot in a dialog.
+                      //
+                      // `penSize` is a plain field that nothing reads until
+                      // the next stroke is drawn, so the drag can simply write
+                      // it and repaint THIS dialog. The rest of the app is
+                      // told once, below, when the finger comes off.
+                      onChanged: (v) {
+                        final next = snapPenSize(v);
+                        if (next == app.penSize) return;
+                        app.penSize = next;
+                        setLocal(() {});
+                      },
+                      // Once. The toolbar's own dots read `penSize` to decide
+                      // which of them is ringed, and that is the only thing
+                      // outside this dialog with anything to redraw.
+                      onChangeEnd: (_) => app.refresh(),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 34,
+                    child: Text(_penSizeLabel(app.penSize),
+                        style: OnoteType.caption, textAlign: TextAlign.end),
+                  ),
+                ]),
+              ],
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(L.of(ctx).commonDone)),
+      ],
+    ),
+  );
+}

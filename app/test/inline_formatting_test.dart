@@ -74,41 +74,97 @@ void main() {
   }
 
   group('Ctrl+B with nothing selected', () {
-    test('formats the WORD the caret is in — it never writes bare markers',
-        () {
+    test('sets the style for what you TYPE NEXT, leaving the text alone', () {
       if (!haveSqlite) return;
       edit('make this bo|ld please');
       app.wrapSelection('**');
-      expect(c.text, 'make this **bold** please');
-      expect(c.text.contains('****'), isFalse,
-          reason: 'the reported bug: a bare marker pair in the note');
+      expect(c.text, 'make this bold please',
+          reason: 'it used to bold the word the caret happened to be in, so '
+              'finishing a word and pressing Ctrl+B bolded the word you had '
+              'just typed instead of the one you were about to');
+      expect(app.pendingMarks, {'**'});
+      expect(app.pendingMarkAt, 12);
     });
 
-    test('pressing it again on the same word takes the bold off', () {
-      if (!haveSqlite) return;
-      edit('make this bo|ld please');
-      app.wrapSelection('**');
-      // The caret is inside the run now; toggling must remove it, not nest.
-      c.selection = const TextSelection.collapsed(offset: 14);
-      app.wrapSelection('**');
-      expect(c.text, 'make this bold please');
-    });
-
-    test('in empty space it does nothing rather than leaving markers behind',
-        () {
+    test('pressing it again before typing anything cancels it', () {
       if (!haveSqlite) return;
       edit('word |');
       app.wrapSelection('**');
+      app.wrapSelection('**');
+      expect(app.pendingMarks, isEmpty);
       expect(c.text, 'word ');
     });
 
-    test('every mark behaves the same way', () {
+    test('inside a run it still takes the formatting off', () {
       if (!haveSqlite) return;
-      for (final m in ['**', '*', '++', '~~', '`', '==']) {
+      edit('make this **bo|ld** please');
+      app.wrapSelection('**');
+      expect(c.text, 'make this bold please');
+      expect(app.pendingMarks, isEmpty,
+          reason: 'that was a real edit, not a queued one');
+    });
+
+    test('no mark writes into the buffer on its own', () {
+      if (!haveSqlite) return;
+      for (final m in ['**', '*', '++', '~~', '`', '==', '~', '^']) {
+        app.clearPendingMarks();
         edit('a wo|rd b');
         app.wrapSelection(m);
-        expect(c.text, 'a ${m}word$m b', reason: 'mark "$m"');
+        expect(c.text, 'a word b', reason: 'mark "$m"');
+        expect(app.pendingMarks, {m}, reason: 'mark "$m"');
       }
+    });
+
+    test('two chords queue together', () {
+      if (!haveSqlite) return;
+      edit('a |b');
+      app.wrapSelection('**');
+      app.wrapSelection('*');
+      expect(app.pendingMarks, {'**', '*'});
+    });
+
+    test('sub and superscript replace each other rather than stacking', () {
+      if (!haveSqlite) return;
+      edit('a |b');
+      app.wrapSelection('~');
+      app.wrapSelection('^');
+      expect(app.pendingMarks, {'^'},
+          reason: '`~^x^~` reads as neither, so both pairs would stay visible');
+    });
+  });
+
+  group('what a queued style does to the next thing typed', () {
+    test('wraps it, and leaves the caret inside the run', () {
+      if (!haveSqlite) return;
+      edit('a |b');
+      app.wrapSelection('**');
+      final w = app.applyPendingMarks('word')!;
+      expect(w.text, '**word**');
+      expect(w.text.substring(0, w.caret), '**word',
+          reason: 'the next letter must EXTEND the run, not follow it');
+    });
+
+    test('a newline is not wrapped — a run lives on one line', () {
+      if (!haveSqlite) return;
+      edit('a |b');
+      app.wrapSelection('**');
+      expect(app.applyPendingMarks('\n'), isNull);
+    });
+
+    test('pasted text keeps its own spaces outside the markers', () {
+      if (!haveSqlite) return;
+      edit('a |b');
+      app.wrapSelection('**');
+      // `** hi **` matches nothing, so the asterisks would stay visible.
+      expect(app.applyPendingMarks(' hi ')!.text, ' **hi** ');
+    });
+
+    test('superscript takes one pair per word, as it does for a selection',
+        () {
+      if (!haveSqlite) return;
+      edit('a |b');
+      app.wrapSelection('^');
+      expect(app.applyPendingMarks('n m')!.text, '^n^ ^m^');
     });
   });
 
@@ -174,22 +230,24 @@ void main() {
   });
 
   group('the caret at the start of a list item', () {
-    test('Ctrl+B bolds the word, never the bullet', () {
+    test('Ctrl+B leaves the bullet alone', () {
       if (!haveSqlite) return;
       edit('- |item');
       app.wrapSelection('**');
-      expect(c.text, '- **item**',
-          reason: 'a hyphen must not count as part of the word');
+      expect(c.text, '- item');
+      expect(app.pendingMarkAt, 2,
+          reason: 'the queue belongs at the caret, not at the marker');
     });
   });
 
   group('bold + italic together', () {
     test('produces ***word***, which renders as both', () {
       if (!haveSqlite) return;
-      edit('a wo|rd b');
+      edit('a |b');
       app.wrapSelection('**');
-      c.selection = const TextSelection.collapsed(offset: 8);
       app.wrapSelection('*');
+      final w = app.applyPendingMarks('word')!;
+      c.value = TextEditingValue(text: 'a ${w.text} b');
       expect(c.text, 'a ***word*** b');
       // And the grammar agrees it is one bold-italic run, not bold plus a
       // stray asterisk — the imported-formatting bug, reachable by keyboard.
@@ -269,6 +327,23 @@ void main() {
       expect(app.marksAtCaret(), contains(MdInline.highlight));
       edit('x `co|de` y');
       expect(app.marksAtCaret(), contains(MdInline.code));
+    });
+
+    test('a QUEUED style lights the button too', () {
+      if (!haveSqlite) return;
+      // Nothing is in the buffer yet, and the button is the only thing that
+      // can say the next thing typed will be bold.
+      edit('word |');
+      app.wrapSelection('**');
+      expect(app.marksAtCaret(), contains(MdInline.bold));
+    });
+
+    test('and goes out again when the queue is cancelled', () {
+      if (!haveSqlite) return;
+      edit('word |');
+      app.wrapSelection('**');
+      app.clearPendingMarks();
+      expect(app.marksAtCaret(), isEmpty);
     });
   });
 

@@ -56,6 +56,9 @@ const List<KeySection> keyboardMap = [
   ]),
   KeySection('While writing', [
     KeyBinding('Ctrl+B / Ctrl+I / Ctrl+U', 'Bold / italic / underline'),
+    KeyBinding('Tab, after a word',
+        'Turns the line into a table, with what you typed as the first cell '
+        '(at the start of a line it still indents)'),
     KeyBinding('Ctrl+*',
         'Put the word you are on in italics; press it again for bold, again '
         'for both, and a fourth press does nothing'),
@@ -123,11 +126,15 @@ const List<KeySection> keyboardMap = [
         'Works out what you have written and puts the answer in'),
   ]),
   KeySection('In a table', [
-    KeyBinding('Tab / Shift+Tab', 'Next / previous cell'),
+    KeyBinding('Tab / Shift+Tab',
+        'Next / previous cell — Tab in the last one adds a row'),
     KeyBinding('↑ ↓ ← →',
         'Move between cells (left/right from the text\'s edge)'),
     KeyBinding('Enter', 'The cell below — a new row from the last one'),
     KeyBinding('Ctrl+Enter', 'Line break inside the cell'),
+    KeyBinding('Esc, or ↓ from the last row', 'Back out to the writing'),
+    KeyBinding('Right-click', 'Insert or delete a row or column, where you '
+        'clicked'),
   ]),
   KeySection('In a code cell', [
     KeyBinding('Ctrl+Enter', 'Run'),

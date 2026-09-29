@@ -1,4 +1,22 @@
 {
+  "atomNewerVersion": "Made in Openote {version}",
+  "@atomNewerVersion": {
+    "description": "Shown inside a box where a table or similar should be, on a device whose Openote is too old to draw it. {version} is the version it was made in, e.g. \"1.1.0\".",
+    "placeholders": {
+      "version": {
+        "type": "String",
+        "example": "1.1.0"
+      }
+    }
+  },
+  "atomNewerVersionUnknown": "Made in a newer version of Openote",
+  "@atomNewerVersionUnknown": {
+    "description": "Shown inside a box where a table or similar should be, when the version that made it was not recorded."
+  },
+  "atomUpdateToView": "Update Openote to view it",
+  "@atomUpdateToView": {
+    "description": "Second line of that box: what to do about it. Kept short — it sits inside a box the size of the missing table."
+  },
   "barBadgeCount": "{count}",
   "@barBadgeCount": {
     "description": "A small number printed on a toolbar badge — cards due, or reminders waiting. Its own message so the digits are grouped and shaped for this language rather than printed as raw ASCII.",
@@ -180,6 +198,20 @@
   "barInkMoreColours": "More colours…",
   "@barInkMoreColours": {
     "description": "Tooltip on the button that opens the full colour picker for the pen."
+  },
+  "barPenSize": "Pen size {size}",
+  "@barPenSize": {
+    "description": "Tooltip on one of the preset pen-thickness buttons. {size} is the thickness in pixels.",
+    "placeholders": {
+      "size": {
+        "type": "String",
+        "example": "2.5"
+      }
+    }
+  },
+  "barPenSizeExact": "Exact size…",
+  "@barPenSizeExact": {
+    "description": "Tooltip on the button that opens a slider for a thickness none of the presets cover."
   },
   "barInkPickColour": "Pick a colour off the page",
   "@barInkPickColour": {
@@ -663,9 +695,13 @@
   "@insertLinkToPage": {
     "description": "Title of the dialog that picks which page to link to."
   },
-  "insertPageLink": "Page link",
+  "linkEdit": "Edit link…",
+  "@linkEdit": {
+    "description": "Right-click menu item on text that is already a link: reopens the link dialog to change its address."
+  },
+  "insertPageLink": "Link…",
   "@insertPageLink": {
-    "description": "Insert item: a link to another page in the notebook."
+    "description": "Insert item: attach an address to some words \u2014 a web address, or another page in this notebook."
   },
   "insertPageWindow": "Page window",
   "@insertPageWindow": {
@@ -813,6 +849,14 @@
   "@navCollapse": {
     "description": "Tooltip. Keep the shortcut in brackets as typed."
   },
+  "navHideSections": "Hide the section list",
+  "@navHideSections": {
+    "description": "Tooltip on the button that folds the sections column away to give the page more room."
+  },
+  "navShowSections": "Show the section list",
+  "@navShowSections": {
+    "description": "Tooltip on the same button when the sections column is already folded away."
+  },
   "navColour": "Colour",
   "@navColour": {
     "description": "Label beside the row of colours a section can be given."
@@ -850,14 +894,36 @@
   "@navDeletePermanently": {
     "description": "Tooltip on the button that removes something for good."
   },
-  "navDeletedRestorable": "Deleted “{title}” — restore it from the recycle bin.",
-  "@navDeletedRestorable": {
-    "description": "Confirmation after deleting a page.",
+  "navDeletedPage": "Deleted page “{title}”",
+  "@navDeletedPage": {
+    "description": "Snackbar after deleting a page. Kept short because it carries an Undo button beside it.",
     "placeholders": {
       "title": {
         "type": "String"
       }
     }
+  },
+  "navDeletedSection": "Deleted section “{title}”",
+  "@navDeletedSection": {
+    "description": "Snackbar after deleting a section, with an Undo button beside it.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navDeletedGroup": "Deleted group “{title}”",
+  "@navDeletedGroup": {
+    "description": "Snackbar after deleting a section group, with an Undo button beside it.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "navUndo": "Undo",
+  "@navUndo": {
+    "description": "Button on the deleted-something snackbar that puts it straight back."
   },
   "navDeletesInDays": "{days, plural, =1{Deletes in 1 day} other{Deletes in {days} days}}",
   "@navDeletesInDays": {
@@ -2028,6 +2094,30 @@
   "shellUnlock": "Unlock",
   "@shellUnlock": {
     "description": "Button that asks for the passcode on a locked page."
+  },
+  "tableColumnLeft": "Insert column left",
+  "@tableColumnLeft": {
+    "description": "Right-click menu on a table cell: add an empty column to the left of the cell that was clicked."
+  },
+  "tableColumnRight": "Insert column right",
+  "@tableColumnRight": {
+    "description": "Right-click menu on a table cell: add an empty column to the right of the cell that was clicked."
+  },
+  "tableDeleteColumn": "Delete column",
+  "@tableDeleteColumn": {
+    "description": "Right-click menu on a table cell: remove the column the cell is in. Disabled when only one column is left."
+  },
+  "tableDeleteRow": "Delete row",
+  "@tableDeleteRow": {
+    "description": "Right-click menu on a table cell: remove the row the cell is in. Disabled when only one row is left."
+  },
+  "tableRowAbove": "Insert row above",
+  "@tableRowAbove": {
+    "description": "Right-click menu on a table cell: add an empty row above the cell that was clicked."
+  },
+  "tableRowBelow": "Insert row below",
+  "@tableRowBelow": {
+    "description": "Right-click menu on a table cell: add an empty row below the cell that was clicked."
   },
   "tagContact": "Contact",
   "@tagContact": {

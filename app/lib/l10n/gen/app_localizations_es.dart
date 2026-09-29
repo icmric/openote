@@ -9,6 +9,18 @@ class LEs extends L {
   LEs([String locale = 'es']) : super(locale);
 
   @override
+  String atomNewerVersion(String version) {
+    return 'Creado en Openote $version';
+  }
+
+  @override
+  String get atomNewerVersionUnknown =>
+      'Creado en una versión más reciente de Openote';
+
+  @override
+  String get atomUpdateToView => 'Actualiza Openote para verlo';
+
+  @override
   String barBadgeCount(int count) {
     return '$count';
   }
@@ -135,6 +147,14 @@ class LEs extends L {
 
   @override
   String get barInkMoreColours => 'Más colores…';
+
+  @override
+  String barPenSize(String size) {
+    return 'Grosor $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Tamaño exacto…';
 
   @override
   String get barInkPickColour => 'Tomar un color de la página';
@@ -515,6 +535,9 @@ class LEs extends L {
   String get insertLinkToPage => 'Enlazar a una página';
 
   @override
+  String get linkEdit => 'Editar enlace…';
+
+  @override
   String get insertPageLink => 'Enlace';
 
   @override
@@ -621,6 +644,12 @@ class LEs extends L {
   String get navCollapse => 'Plegar el navegador  (Ctrl+\\)';
 
   @override
+  String get navHideSections => 'Ocultar la lista de secciones';
+
+  @override
+  String get navShowSections => 'Mostrar la lista de secciones';
+
+  @override
   String get navColour => 'Color';
 
   @override
@@ -644,9 +673,22 @@ class LEs extends L {
   String get navDeletePermanently => 'Borrar definitivamente';
 
   @override
-  String navDeletedRestorable(String title) {
-    return '«$title» borrada — puedes restaurarla desde la papelera.';
+  String navDeletedPage(String title) {
+    return 'Página “$title” borrada';
   }
+
+  @override
+  String navDeletedSection(String title) {
+    return 'Sección “$title” borrada';
+  }
+
+  @override
+  String navDeletedGroup(String title) {
+    return 'Grupo “$title” borrado';
+  }
+
+  @override
+  String get navUndo => 'Deshacer';
 
   @override
   String navDeletesInDays(int days) {
@@ -1512,6 +1554,24 @@ class LEs extends L {
 
   @override
   String get shellUnlock => 'Desbloquear';
+
+  @override
+  String get tableColumnLeft => 'Insertar columna a la izquierda';
+
+  @override
+  String get tableColumnRight => 'Insertar columna a la derecha';
+
+  @override
+  String get tableDeleteColumn => 'Eliminar columna';
+
+  @override
+  String get tableDeleteRow => 'Eliminar fila';
+
+  @override
+  String get tableRowAbove => 'Insertar fila encima';
+
+  @override
+  String get tableRowBelow => 'Insertar fila debajo';
 
   @override
   String get tagContact => 'Contacto';
