@@ -527,7 +527,10 @@ class LEn extends L {
   String get insertLinkToPage => 'Link to page';
 
   @override
-  String get insertPageLink => 'Page link';
+  String get insertPageLink => 'Link…';
+
+  @override
+  String get linkEdit => 'Edit link…';
 
   @override
   String get insertPageWindow => 'Page window';

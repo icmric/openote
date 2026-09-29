@@ -506,7 +506,10 @@ class LZh extends L {
   String get insertLinkToPage => '链接到页面';
 
   @override
-  String get insertPageLink => '页面链接';
+  String get insertPageLink => '链接';
+
+  @override
+  String get linkEdit => '编辑链接…';
 
   @override
   String get insertPageWindow => '页面窗口';

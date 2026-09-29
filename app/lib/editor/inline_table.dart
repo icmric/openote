@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -7,7 +8,7 @@ import '../l10n/l10n.dart';
 import '../markdown/md_render.dart' show inlineSpans;
 import '../model/inline_atom.dart';
 import '../theme/onote_theme.dart';
-import 'focus_debug.dart';
+import '../ui/link_dialog.dart';
 import 'live_markdown_controller.dart';
 
 /// Where a table's data lives, and how a change to it is saved.
@@ -44,6 +45,18 @@ const double kTableColumnCap = 320;
 /// The narrowest a column can be dragged. Below this the text is unreadable
 /// and the handle itself becomes hard to grab back.
 const double kTableColumnMin = 36;
+
+/// **The narrowest a column is MEASURED to**, which is a different question
+/// from how narrow one may be dragged.
+///
+/// A column nobody has sized is one the app is choosing a width for, and the
+/// drag floor is the wrong answer to that question: 36px is about three
+/// characters. A column made by Tab is empty by definition, so it measured to
+/// exactly that floor and the first word typed into it wrapped — *"keeping
+/// the new one just a bit too small so typed text gets wrapped"*. Somebody
+/// who wants a narrow column can still drag it to [kTableColumnMin]; this is
+/// only what the app picks when nobody has said.
+const double kTableColumnAuto = 72;
 
 /// Padding inside a cell. Named because the measured width of a column is
 /// this plus its widest text, and the two must agree or a column is drawn
@@ -124,6 +137,7 @@ class InlineTable extends StatefulWidget {
     this.onOpen,
     this.rememberCell,
     this.takeInitialCell,
+    this.linkPages,
   });
 
   final TableBinding binding;
@@ -165,6 +179,12 @@ class InlineTable extends StatefulWidget {
   /// `InlineAtomHost.rememberCell`.
   final void Function(int row, int col)? rememberCell;
 
+  /// Every other page in the notebook, for the link dialog opened from a cell
+  /// by Ctrl+K. A cell is a paragraph like any other as far as links are
+  /// concerned, and offering it a smaller dialog than the sentence outside the
+  /// table would be a difference with nothing behind it.
+  final List<({String id, String title})> Function()? linkPages;
+
   /// The cell to put the caret in, asked for ONCE as this table mounts —
   /// by a click on a cell while the table was being read, or by the Tab that
   /// made the table in the first place.
@@ -196,6 +216,10 @@ class _CellBreak extends Intent {
 
 class _CellEscape extends Intent {
   const _CellEscape();
+}
+
+class _CellLink extends Intent {
+  const _CellLink();
 }
 
 /// **A cell's own editing keys stay the cell's.**
@@ -353,8 +377,6 @@ class _InlineTableState extends State<InlineTable> {
   @override
   void initState() {
     super.initState();
-    focusLog('TABLE BUILT (a teardown immediately above this line means the '
-        'widget was REPLACED, not closed)');
     _data = widget.binding.read();
     if (widget.editable) _build(_data);
     widget.revision?.addListener(_external);
@@ -423,7 +445,6 @@ class _InlineTableState extends State<InlineTable> {
 
   @override
   void dispose() {
-    focusLog('TABLE TORN DOWN (holding=$_holdingKeyboard want=$_wantCell)');
     widget.revision?.removeListener(_external);
     // **Hand the keyboard back on the way out.** The host stands its own key
     // handling, caret and text-input connection down while a cell holds the
@@ -479,18 +500,15 @@ class _InlineTableState extends State<InlineTable> {
   final List<Object> _retired = [];
 
   void _drainRetired() {
-    if (_retired.isNotEmpty) {
-      final focused =
-          _retired.whereType<FocusNode>().where((n) => n.hasFocus).length;
-      focusLog('drainRetired: disposing ${_retired.length} '
-          '($focused of them STILL HAVE FOCUS)');
-      // **Move the caret off it deliberately, rather than letting the
-      // disposal do it.** Detaching a focused `FocusNode` hands the caret to
-      // the enclosing scope, and while [_scope] now catches that, a cell we
-      // can name is a better destination than the scope itself — it keeps a
-      // real text field under the keyboard for the whole of the handover
-      // instead of for all but one microtask of it.
-      if (focused > 0 && mounted) _sendCaretHome();
+    // **Move the caret off a node deliberately, rather than letting the
+    // disposal do it.** Detaching a focused `FocusNode` hands the caret to
+    // the enclosing scope, and while [_scope] now catches that, a cell we can
+    // name is a better destination than the scope itself — it keeps a real
+    // text field under the keyboard for the whole of the handover instead of
+    // for all but one microtask of it.
+    if (mounted &&
+        _retired.whereType<FocusNode>().any((n) => n.hasFocus)) {
+      _sendCaretHome();
     }
     for (final o in _retired) {
       if (o is TextEditingController) o.dispose();
@@ -648,10 +666,7 @@ class _InlineTableState extends State<InlineTable> {
   /// with the caret already in the cell. Nothing is painted in between.
   void _scopeChanged() {
     if (!mounted) return;
-    if (_scope.hasPrimaryFocus) {
-      focusLog('scope holds the caret — a cell let go of it');
-      _sendCaretHome();
-    }
+    if (_scope.hasPrimaryFocus) _sendCaretHome();
     _settleKeyboard();
   }
 
@@ -670,11 +685,7 @@ class _InlineTableState extends State<InlineTable> {
     // the bug. Four goes, then leave the caret on the scope: the table still
     // holds the keyboard there ([_anyFocused] says so), so the paragraph
     // cannot take it, and the next frame starts the count again.
-    if (_homeTries >= 4) {
-      focusLog('sendCaretHome: four goes in one frame, leaving it on the '
-          'scope rather than spinning');
-      return;
-    }
+    if (_homeTries >= 4) return;
     _homeTries++;
     WidgetsBinding.instance
       ..ensureVisualUpdate()
@@ -695,16 +706,11 @@ class _InlineTableState extends State<InlineTable> {
   ({int row, int col})? _lastFocused;
 
   void _focusChanged() {
-    ({int row, int col})? has;
     for (var r = 0; r < _nodes.length; r++) {
       for (var c = 0; c < _nodes[r].length; c++) {
-        if (_nodes[r][c].hasFocus) {
-          has = (row: r, col: c);
-          _lastFocused = has;
-        }
+        if (_nodes[r][c].hasFocus) _lastFocused = (row: r, col: c);
       }
     }
-    focusLog('focusChanged: cell=$has grid=${_rows}x$_cols want=$_wantCell');
     _settleKeyboard();
   }
 
@@ -728,8 +734,6 @@ class _InlineTableState extends State<InlineTable> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final holding = _anyFocused || _wantCell != null;
-      focusLog('settleKeyboard: holding=$holding was=$_holdingKeyboard '
-          'anyFocused=$_anyFocused want=$_wantCell');
       if (holding == _holdingKeyboard) return;
       _holdingKeyboard = holding;
       if (!holding) _undoPushed = false;
@@ -798,7 +802,6 @@ class _InlineTableState extends State<InlineTable> {
   ({int row, int col})? _wantFrom;
 
   void _askForCell(int r, int c) {
-    focusLog('askForCell($r,$c)');
     _wantFrom = _focusedCell ?? _lastFocused;
     _wantCell = (row: r, col: c);
     _wantTries = 0;
@@ -831,26 +834,20 @@ class _InlineTableState extends State<InlineTable> {
       final built =
           want.row < _nodes.length && want.col < _nodes[want.row].length;
       final holder = _focusedCell;
-      focusLog('pursue try=$_wantTries want=$want built=$built '
-          'holder=$holder scope=${_scope.hasPrimaryFocus} '
-          'primary=${WidgetsBinding.instance.focusManager.primaryFocus?.debugLabel}');
-      if (built && holder == want) {
-        focusLog('pursue STOP: the wanted cell has the caret');
-        return stop();
-      }
-      // Somebody chose another cell in the meantime — a click. Theirs wins.
-      // The cell we are coming FROM does not count: the caret has simply not
-      // moved yet. Nor does the scope holding it, which means a cell let go
-      // and [_scopeChanged] is putting it back — the pursuit's own business.
+      if (built && holder == want) return stop();
+      // **Somebody chose another cell in the meantime — a click. Theirs
+      // wins.** But the cell we are coming FROM does not count as somebody
+      // else: the caret has simply not moved yet, and one frame after Enter
+      // that is the ordinary state of the world. Asking `_anyFocused`
+      // instead — is ANY cell focused — could not tell those apart, so the
+      // pursuit stood itself down on the very frame it was made and left the
+      // caret in the row above the new one. Nor does the scope holding it
+      // count: that means a cell has let go and [_scopeChanged] is putting
+      // the caret back, which is the pursuit's own business.
       if (built && holder != null && holder != _wantFrom && _wantTries > 0) {
-        focusLog('pursue STOP: assumed a click — ANOTHER cell has it '
-            '(holder=$holder, from=$_wantFrom, wanted=$want)');
         return stop();
       }
-      if (_wantTries++ >= 8) {
-        focusLog('pursue STOP: gave up after 8 frames, wanted=$want');
-        return stop();
-      }
+      if (_wantTries++ >= 8) return stop();
       if (built) _focusCell(want.row, want.col);
       _pursueCell();
     });
@@ -925,6 +922,29 @@ class _InlineTableState extends State<InlineTable> {
       return null;
     }
     _focusCell(nr, nc, atEnd: m.dc <= 0);
+    return null;
+  }
+
+  /// **Ctrl+K in a cell.**
+  ///
+  /// The same flow the paragraph runs, over this cell's own controller. The
+  /// rules about where a link may go — never into a table's own reference,
+  /// never into an equation, never across a line — live in `linkSiteAt` and
+  /// are therefore answered identically here; a second copy of them is a
+  /// second chance to get one wrong, and a cell is exactly where somebody
+  /// would find out the hard way.
+  ///
+  /// The write goes through [_write] like any other cell edit, so it is one
+  /// undo step and it reaches the note the same way typing does.
+  Object? _onLink(int r, int c) {
+    if (!widget.editable || r >= _ctls.length || c >= _ctls[r].length) {
+      return null;
+    }
+    final ctl = _ctls[r][c];
+    final pages = widget.linkPages?.call() ?? const [];
+    unawaited(runLinkFlow(context, ctl, pages: pages).then((changed) {
+      if (changed && mounted) _write(_data.withCell(r, c, ctl.text));
+    }));
     return null;
   }
 
@@ -1060,6 +1080,12 @@ class _InlineTableState extends State<InlineTable> {
             _cols > 1,
             () => _restructure(_data.removeColumn(c),
                 focus: (row: r, col: c >= _cols - 1 ? _cols - 2 : c))),
+        // Offered on the same terms as the paragraph's: only when the caret
+        // is already inside a link, because "Edit link" with nothing to edit
+        // is a menu row that does nothing.
+        if (linkSiteAt(_ctls[r][c].text, _ctls[r][c].selection) case final site
+            when site.ok && site.isEdit)
+          item(l.linkEdit, true, () => _onLink(r, c)),
         ...field.contextMenuButtonItems,
       ],
     );
@@ -1242,6 +1268,14 @@ class _InlineTableState extends State<InlineTable> {
           SingleActivator(LogicalKeyboardKey.enter, control: true):
               _CellBreak(),
           SingleActivator(LogicalKeyboardKey.escape): _CellEscape(),
+          // **Ctrl+K reaches a cell too.** The shell's formatting chords stand
+          // down while a cell holds the keyboard (`canFormatText`), which is
+          // right for Bold — it would style the sentence outside the table —
+          // but a link belongs to whichever field is being typed into, and a
+          // cell is a field. It runs the same flow the paragraph does, so the
+          // rules about where a link may go are answered once.
+          SingleActivator(LogicalKeyboardKey.keyK, control: true): _CellLink(),
+          SingleActivator(LogicalKeyboardKey.keyK, meta: true): _CellLink(),
         },
         child: Actions(
           actions: {
@@ -1255,6 +1289,8 @@ class _InlineTableState extends State<InlineTable> {
                 CallbackAction<_CellEnter>(onInvoke: (_) => _onEnter(r, c)),
             _CellBreak:
                 CallbackAction<_CellBreak>(onInvoke: (_) => _onBreak(r, c)),
+            _CellLink:
+                CallbackAction<_CellLink>(onInvoke: (_) => _onLink(r, c)),
             _CellEscape: CallbackAction<_CellEscape>(onInvoke: (_) {
               widget.onExit?.call();
               return null;
@@ -1423,7 +1459,7 @@ double _measuredColumn(TableData d, int col, TextStyle headerStyle) {
     if (w > widest) widest = w;
   }
   return (widest + kTableCellPad.horizontal + 2)
-      .clamp(kTableColumnMin, kTableColumnCap);
+      .clamp(kTableColumnAuto, kTableColumnCap);
 }
 
 /// How wide the whole table wants to be, borders included.

@@ -528,6 +528,9 @@ class LPt extends L {
   String get insertPageLink => 'Link';
 
   @override
+  String get linkEdit => 'Editar link…';
+
+  @override
   String get insertPageWindow => 'Janela';
 
   @override

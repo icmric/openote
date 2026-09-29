@@ -1111,8 +1111,15 @@ void main() {
       };
       await editor(t);
       final table = t.widget<Table>(find.byType(Table));
+      // `kTableColumnAuto`, not `kTableColumnMin`. The floor a column is
+      // MEASURED to and the floor it may be DRAGGED to used to be the same
+      // number, and the drag floor — 36px, about three characters — is the
+      // wrong answer to "how wide should the app make a column nobody has
+      // sized". A column made by Tab is empty, so it landed on exactly that
+      // floor and the first word typed into it wrapped. See
+      // `inline_table_column_growth_test.dart`.
       expect((table.columnWidths![0] as FixedColumnWidth).value,
-          kTableColumnMin);
+          kTableColumnAuto);
       expect((table.columnWidths![1] as FixedColumnWidth).value,
           kTableColumnCap);
     });

@@ -529,6 +529,9 @@ class LFr extends L {
   String get insertPageLink => 'Lien';
 
   @override
+  String get linkEdit => 'Modifier le lien…';
+
+  @override
   String get insertPageWindow => 'Fenêtre';
 
   @override

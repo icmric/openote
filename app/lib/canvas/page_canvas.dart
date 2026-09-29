@@ -18,6 +18,7 @@ import 'block_view.dart';
 import 'align_guides.dart';
 import 'canvas_controller.dart';
 import 'ink_ops.dart';
+import 'ink_shapes.dart';
 import 'media_drop.dart';
 import 'ink_painter.dart';
 import 'page_title_view.dart';
@@ -333,7 +334,52 @@ class _PageCanvasState extends State<PageCanvas> {
         opacity: app.tool == Tool.highlighter ? 0.4 : 1.0,
       );
       _addPoint(e, pt);
+      // A shape is rubber-banded from here rather than followed from here.
+      // **The shape is captured with the anchor**, not read again per move:
+      // reading `app.inkShape!` mid-drag asserts on a state that a rebuild,
+      // a hot reload or any future keyboard shortcut could produce, and the
+      // shape you started drawing is the one you should finish drawing.
+      final s = app.inkShape;
+      _shape = s == null ? null : (from: pt, kind: s);
     });
+  }
+
+  /// The shape being dragged and where it began, or null when the pen is
+  /// following the hand.
+  ///
+  /// See [AppState.inkShape]: a shape is an ordinary [Stroke] whose points are
+  /// worked out instead of sampled, so all of this reuses the wet-stroke
+  /// machinery and changes only where the points come from.
+  ({Offset from, InkShape kind})? _shape;
+
+  /// Redraw the wet stroke as [app.inkShape] dragged from [_shapeFrom] to
+  /// [to], replacing its points rather than adding to them.
+  ///
+  /// **Pressure is flat.** A shape is a drawn object, not a gesture, and
+  /// carrying the pen's real pressure into it gives a rectangle sides of four
+  /// different weights — which reads as a wobbly hand rather than as a
+  /// rectangle. The freehand pen keeps every bit of its pressure; this is the
+  /// one place it is deliberately thrown away.
+  void _reshapeWet(Offset to) {
+    final w = _wet, s = _shape;
+    if (w == null || s == null) return;
+    // Densified, because the eraser and the lasso both work on POINTS and
+    // neither looks at the line between two of them — see [kShapeMaxGap]. Raw,
+    // a line is two points and the middle of it cannot be rubbed out.
+    final pts = densify(shapePoints(s.kind, s.from, to,
+        constrain: HardwareKeyboard.instance.isShiftPressed));
+    w.x
+      ..clear()
+      ..addAll(pts.map((p) => p.dx));
+    w.y
+      ..clear()
+      ..addAll(pts.map((p) => p.dy));
+    w.p
+      ..clear()
+      ..addAll(List<double>.filled(pts.length, 0.5));
+    w.t
+      ..clear()
+      ..addAll(List<int>.filled(pts.length, nowMs() - w.strokeStart));
   }
 
   void _inkMove(PointerMoveEvent e) {
@@ -344,7 +390,12 @@ class _PageCanvasState extends State<PageCanvas> {
     if (_wet == null) return;
     // Repaint-only: grow the stroke and nudge the ink painter. No setState —
     // rebuilding every visible block per point made inking sluggish.
-    _addPoint(e, _clampToPagePoint(controller.screenToPage(e.localPosition)));
+    final pt = _clampToPagePoint(controller.screenToPage(e.localPosition));
+    if (_shape != null) {
+      _reshapeWet(pt);
+    } else {
+      _addPoint(e, pt);
+    }
     _wetTick.value++;
   }
 
@@ -421,9 +472,28 @@ class _PageCanvasState extends State<PageCanvas> {
       app.setPenErasing(false);
     }
     final w = _wet;
+    final wasShape = _shape != null;
+    _shape = null;
     if (w == null || w.x.length < 2) {
       setState(() => _wet = null);
       return;
+    }
+    // **A shape needs a drag, not a click.** Every shape has two points even
+    // when it was dragged nowhere, so the point-count guard above cannot catch
+    // this one: without it, a stray click on the page leaves a speck of a
+    // rectangle behind that is then hard to see and hard to erase.
+    //
+    // Measured from what was actually DRAWN rather than from where the pointer
+    // came up: the two can differ by a frame, and the drawing is the thing
+    // being judged. Scaled to screen pixels, so the threshold means the same
+    // thing at every zoom.
+    if (wasShape) {
+      final w0 = w.x.reduce(math.min), w1 = w.x.reduce(math.max);
+      final h0 = w.y.reduce(math.min), h1 = w.y.reduce(math.max);
+      if (Offset(w1 - w0, h1 - h0).distance * controller.scale < 6) {
+        setState(() => _wet = null);
+        return;
+      }
     }
     app.pushUndo();
     Block? target;

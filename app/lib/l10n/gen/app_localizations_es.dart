@@ -530,6 +530,9 @@ class LEs extends L {
   String get insertPageLink => 'Enlace';
 
   @override
+  String get linkEdit => 'Editar enlace…';
+
+  @override
   String get insertPageWindow => 'Ventana';
 
   @override

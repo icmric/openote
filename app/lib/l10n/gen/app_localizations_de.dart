@@ -530,6 +530,9 @@ class LDe extends L {
   String get insertPageLink => 'Seitenlink';
 
   @override
+  String get linkEdit => 'Link bearbeiten…';
+
+  @override
   String get insertPageWindow => 'Seitenfenster';
 
   @override

@@ -132,6 +132,7 @@
   "insertGroupWrite": "Écrire",
   "insertLinkToPage": "Lier à une page",
   "insertPageLink": "Lien",
+  "linkEdit": "Modifier le lien…",
   "insertPageWindow": "Fenêtre",
   "insertPdfAsCard": "En carte — s'ouvre dans une fenêtre",
   "insertPdfFailed": "L'import du PDF a échoué : {reason}",

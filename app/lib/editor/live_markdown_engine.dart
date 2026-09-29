@@ -12,7 +12,6 @@ import '../model/models.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../state/app_state.dart';
-import 'focus_debug.dart';
 import '../theme/onote_theme.dart';
 import '../math/equation_editor.dart';
 import '../math/evaluate.dart';
@@ -25,6 +24,8 @@ import 'math_paste_formatter.dart';
 import 'live_markdown_controller.dart';
 import 'onote_text_editor.dart';
 import 'unicode_input.dart';
+import '../ui/link_dialog.dart';
+import '../ui/save_picture.dart';
 
 /// The engine we own: a [TextField] driven by [LiveMarkdownController] for the
 /// live container, [MarkdownView] for the read-only ones.
@@ -451,8 +452,6 @@ class _LiveMarkdownSession extends OnoteEditSession {
   final ValueNotifier<bool> _atomFocus = ValueNotifier(false);
 
   void _atomTookKeyboard(bool holding) {
-    focusLog('host told: atom holding=$holding '
-        '(was ${_atomFocus.value}, disposed=$_disposed)');
     // A table hands the keyboard back as it is torn down, and the session it
     // is telling may be going down in the same breath — the block closed, the
     // page changed. Late is fine; late and disposed is an assertion.
@@ -492,7 +491,6 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// Found by id rather than by a captured offset — the atom is built once
   /// and kept, and every character typed in the paragraph moves it.
   void _leaveAtom(String id) {
-    focusLogWithStack('leaveAtom($id): the caret is being put BESIDE the table');
     final at = InlineAtom.rangeIn(controller.text, id);
     if (at != null) {
       controller.selection = TextSelection.collapsed(offset: at.end);
@@ -1079,6 +1077,26 @@ class _LiveMarkdownSession extends OnoteEditSession {
       return KeyEventResult.ignored;
     }
     final hw = HardwareKeyboard.instance;
+    // **Ctrl+K — the chord everything else uses for a link.**
+    //
+    // Handled HERE rather than in the shell's global handler because this is
+    // where the controller and its `onChanged` both are, and a link is an edit
+    // to the buffer that has to be saved like any other. The shell's handler
+    // runs first and passes on anything it does not claim, so a table cell —
+    // whose own Shortcuts sit BELOW this node and therefore see the key before
+    // it does — still gets to answer for itself.
+    if ((hw.isControlPressed || hw.isMetaPressed) &&
+        !hw.isAltPressed &&
+        event.logicalKey == LogicalKeyboardKey.keyK) {
+      final ctx = _lastContext;
+      if (ctx != null && ctx.mounted) {
+        unawaited(runLinkFlow(ctx, controller, pages: _linkablePages())
+            .then((changed) {
+          if (changed) onChanged(controller.text);
+        }));
+      }
+      return KeyEventResult.handled;
+    }
     // A chord is somebody else's (Ctrl+B, Ctrl+Enter, the canvas nudges).
     if (hw.isControlPressed || hw.isMetaPressed || hw.isAltPressed) {
       return KeyEventResult.ignored;
@@ -1322,11 +1340,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // cells looks exactly like that for one frame — nothing focused inside
       // a field that is being edited — and claiming it there is how the caret
       // ended up beside a table instead of in the row that had just been made.
-      if (!_focus.hasFocus && !inlineChildFocused) {
-        focusLogWithStack('post-build claim: the paragraph takes the keyboard '
-            '(atomFocus=${_atomFocus.value} math=${_mathFocus.hasFocus})');
-        _focus.requestFocus();
-      }
+      if (!_focus.hasFocus && !inlineChildFocused) _focus.requestFocus();
     });
     return Padding(
       padding: s.inset,
@@ -1455,15 +1469,87 @@ class _LiveMarkdownSession extends OnoteEditSession {
         if (inlineChildFocused) return const SizedBox.shrink();
         final items = [...editable.contextMenuButtonItems];
         final extra = _spellMenuItems(editable);
+        final picture = _pictureMenuItems(context, editable);
+        final link = _linkMenuItems(context, editable);
         return AdaptiveTextSelectionToolbar.buttonItems(
           anchors: editable.contextMenuAnchors,
-          buttonItems: [...extra, ...items],
+          buttonItems: [...picture, ...link, ...extra, ...items],
         );
       },
       onChanged: (v) {
         onChanged(v);
         _scheduleSpellCheck();
       }));
+
+  /// **"Save image as…" for a picture sitting IN the sentence.**
+  ///
+  /// The block menu offers this for a picture that is a block of its own, and
+  /// that covers the rarer shape: a drop only makes a block when it misses
+  /// every text box. Ctrl+V at the caret, a drop onto a box and Insert ▸ Image
+  /// all splice `![](sha256:…)` into a paragraph instead, and for those the
+  /// picture is characters in THIS field — so this menu is the only one that
+  /// can see it, and the right-click that opens this menu has already put the
+  /// caret on it.
+  ///
+  /// Empty when the caret is not on a picture, which is nearly always, so the
+  /// menu looks exactly as it always did.
+  List<ContextMenuButtonItem> _pictureMenuItems(
+      BuildContext context, EditableTextState editable) {
+    final sel = controller.selection;
+    if (!sel.isValid) return const [];
+    final text = controller.text;
+    final ref = pictureRefAt(text, sel.baseOffset.clamp(0, text.length));
+    if (ref == null) return const [];
+    return [
+      ContextMenuButtonItem(
+        label: 'Save image as…',
+        onPressed: () {
+          editable.hideToolbar();
+          // An in-flow reference records no mime — it is the hash and nothing
+          // else — so the name is worked out from the bytes themselves.
+          unawaited(savePictureBytes(
+            context,
+            app.blob(ref.hash),
+            notHereYet: "That picture isn't here yet — it may still be syncing.",
+          ));
+        },
+      ),
+    ];
+  }
+
+  /// Every other page in this notebook, for the dialog's "or link to a page"
+  /// half. Empty is a perfectly good answer — the section simply does not
+  /// appear — which is what a brand-new notebook shows.
+  List<LinkablePage> _linkablePages() => [
+        for (final p in app.pages)
+          if (p.id != app.pageId) (id: p.id, title: p.title)
+      ];
+
+  /// **"Edit link…", and only when there is a link to edit.**
+  ///
+  /// The owner: *"rightclicking the link should also give me an option to edit
+  /// link, which brings up the same popup. That option should not appear if i
+  /// have not already linked text."* `linkSiteAt` answers both halves — it
+  /// reports an EDIT only when the caret is inside an existing link — so the
+  /// condition here and the behaviour of Ctrl+K cannot drift apart.
+  List<ContextMenuButtonItem> _linkMenuItems(
+      BuildContext context, EditableTextState editable) {
+    final site = linkSiteAt(controller.text, controller.selection);
+    if (!site.ok || !site.isEdit) return const [];
+    return [
+      ContextMenuButtonItem(
+        label: 'Edit link…',
+        onPressed: () {
+          editable.hideToolbar();
+          unawaited(
+              runLinkFlow(context, controller, pages: _linkablePages())
+                  .then((changed) {
+            if (changed) onChanged(controller.text);
+          }));
+        },
+      ),
+    ];
+  }
 
   /// Correction items for the word under the caret, plus "Add to dictionary".
   /// Empty when the click didn't land on a misspelling — the menu then looks

@@ -11,6 +11,7 @@ import 'package:super_clipboard/super_clipboard.dart'
 
 import '../canvas/align_guides.dart';
 import '../canvas/canvas_controller.dart';
+import '../canvas/ink_shapes.dart';
 import '../core/engine.dart';
 import '../core/ids.dart';
 import '../core/onote_ffi.dart';
@@ -253,6 +254,50 @@ class AppState extends ChangeNotifier
   /// Bytes of a blob in the current notebook, or null.
   Uint8List? blob(String hash) =>
       notebookId == null ? null : _repo.getBlob(notebookId!, hash);
+
+  /// **Bumped when bytes that were not readable a moment ago may be now.**
+  ///
+  /// The two halves of a blob travel separately: an op carries the hash, mime
+  /// and size, and the bytes arrive as their own file in the shared folder.
+  /// So a page routinely opens holding a reference to a picture whose bytes
+  /// are still in flight, and [blob] answers null for it — correctly, and
+  /// only for the moment.
+  ///
+  /// Nothing told the picture when that moment passed. A view that had read
+  /// null once kept its placeholder until its State was destroyed outright —
+  /// a page switch, a pull bumping `docRevision`, or a restart — which is the
+  /// shape of the report this exists to fix: *"I sometimes can't see the
+  /// imported images on the canvas. They usually load after a minute or two
+  /// or after restarting openote."* A minute or two is the git cycle; the
+  /// restart is the restart.
+  ///
+  /// A counter rather than a stream of hashes because the question a view has
+  /// is not "did MY bytes arrive" but "is it worth asking again", and the
+  /// cheap honest answer to that is "something landed since you last looked".
+  /// See `ImageBlockView`, which re-reads only when this has moved — a blob
+  /// read is synchronous and megabytes wide, so retrying on every rebuild
+  /// would reinstate the page-switch stall its deferred queue exists to stop.
+  int get blobRevision => _blobRevision;
+  int _blobRevision = 0;
+
+  /// Say that bytes arrived, for a test.
+  ///
+  /// The real callers are a pull, a repair pass and the held-blob sweep —
+  /// none of which a widget test can drive without a second device and a
+  /// folder full of half-delivered files. This is the event itself, so the
+  /// test exercises the same path the app does rather than a stand-in.
+  @visibleForTesting
+  void debugBytesArrived() => _bytesMayHaveArrived();
+
+  void _bytesMayHaveArrived() {
+    // **Guarded, because every caller is asynchronous.** A pull, a repair pass
+    // and a retry timer all reach here, and all of them can land after the
+    // notebook was closed or the app torn down — where `notifyListeners`
+    // throws. The counter still moves: a view built afterwards should see that
+    // something arrived, and it costs nothing to say so.
+    _blobRevision++;
+    if (!_disposed) notifyListeners();
+  }
 
   /// Store bytes in the current notebook, returning the content hash.
   String addBlob(Uint8List bytes, String mime) =>
@@ -593,11 +638,22 @@ class AppState extends ChangeNotifier
 
   bool _gitEnabled = false;
   String? _gitRemote;
+  String? _gitSshKey;
   Timer? _gitDebounce;
 
   /// Is this notebook backed by a git remote?
   bool get gitEnabled => _gitEnabled;
   String? get gitRemote => _gitRemote;
+
+  /// **The SSH private key this notebook authenticates with**, or null for
+  /// whatever the machine's agent and `~/.ssh/config` already offer.
+  ///
+  /// Per notebook, like the remote and unlike the GitHub account, because that
+  /// is the shape of the need it answers (issue #10): *"if you have a separate
+  /// git user (eg on self hosted Forgejo) for your notes"*. The notes go to one
+  /// server as one identity while everything else on the machine keeps using
+  /// the default key.
+  String? get gitSshKey => _gitSshKey;
 
   /// What the last cycle did, for the dialog. Null until one has run.
   String? gitStatus;
@@ -625,6 +681,7 @@ class AppState extends ChangeNotifier
     reloadGitHub();
     _gitEnabled = false;
     _gitRemote = null;
+    _gitSshKey = null;
     gitStatus = null;
     _gitDebounce?.cancel();
     if (notebookId == null) return;
@@ -632,14 +689,14 @@ class AppState extends ChangeNotifier
     if (raw is! Map) return;
     _gitEnabled = raw['enabled'] == true;
     _gitRemote = raw['remote'] as String?;
+    _gitSshKey = raw['sshKey'] as String?;
   }
 
   Future<void> setGitEnabled(bool on, {String? remote}) async {
     if (notebookId == null) return;
     _gitEnabled = on;
     if (remote != null) _gitRemote = remote.trim().isEmpty ? null : remote.trim();
-    _repo.setSetting(_gitKey(notebookId!),
-        on || _gitRemote != null ? {'enabled': on, 'remote': _gitRemote} : null);
+    _persistGitSettings();
     if (on) {
       final git = _git;
       await git.init();
@@ -698,7 +755,45 @@ class AppState extends ChangeNotifier
   /// to make ordinary background syncs authenticate too — otherwise the
   /// create-and-push button would work and the timer that runs a minute later
   /// would start failing, which is the worst of both.
-  GitSync get _git => GitSync(currentNotebook.logDirPath, token: _githubToken);
+  GitSync get _git => GitSync(currentNotebook.logDirPath,
+      token: _githubToken, sshKey: _gitSshKey);
+
+  /// This notebook's git settings row, or no row at all when there is nothing
+  /// left worth remembering.
+  ///
+  /// One writer, so the remote, the key and the enabled flag can never
+  /// disagree about whether the row should exist.
+  void _persistGitSettings() {
+    _repo.setSetting(
+        _gitKey(notebookId!),
+        _gitEnabled || _gitRemote != null || _gitSshKey != null
+            ? {
+                'enabled': _gitEnabled,
+                'remote': _gitRemote,
+                if (_gitSshKey != null) 'sshKey': _gitSshKey,
+              }
+            : null);
+  }
+
+  /// Point this notebook's git at a particular SSH key, or back at the
+  /// machine's default. See [gitSshKey].
+  ///
+  /// Stored in the notebook's settings and NEVER in `.git/config`: that file
+  /// is inside the replicated directory, so a path that is right here is wrong
+  /// on every other machine the notebook reaches.
+  ///
+  /// **Writes the setting and stops.** Routing this through [setGitEnabled] —
+  /// which is where it started, to share the writer — meant that choosing a
+  /// key silently ran `git init`, rewrote `.gitignore`, made a commit and
+  /// pushed. Changing which key you sign in with is not a reason to sync, and
+  /// the dialog has a Sync now button an inch away for when it is.
+  void setGitSshKey(String? path) {
+    if (notebookId == null) return;
+    final v = path?.trim();
+    _gitSshKey = v == null || v.isEmpty ? null : v;
+    _persistGitSettings();
+    notifyListeners();
+  }
 
   void reloadGitHub() {
     final raw = _repo.getSetting(_githubKey);
@@ -1599,6 +1694,9 @@ class AppState extends ChangeNotifier
           'were missing or held bytes that were not what their name said, '
           'and were rewritten — ${proof.salvaged.length} of them from a copy '
           'a cloud client had renamed, the rest from the notebook file');
+      // Rewritten means readable. Whatever was showing a placeholder for one
+      // of these can have another go.
+      _bytesMayHaveArrived();
     }
     if (proof.ok) {
       _cancelBlobRetry(nb);
@@ -2005,6 +2103,9 @@ class AppState extends ChangeNotifier
         if (verified > 0) {
           debugPrint('[openote/sync] $verified late blob file(s) verified '
               'against their name and released to the read path');
+          // "Released to the read path" is exactly the event a picture
+          // holding a placeholder is waiting for.
+          _bytesMayHaveArrived();
         }
         // Awaited: the parse is paced now (see `OpLogStore.readDeviceFrom`),
         // so the ~1 s a first read of a 64.6 MB log costs is spent in ~8 ms
@@ -2012,6 +2113,11 @@ class AppState extends ChangeNotifier
         final pending = await r.pendingForeignOps(_repo.getSetting);
         if (pending.isEmpty) continue;
         total += await _syncPullLocked(nb, r, pending);
+        // A pull is the moment the folder gains files. Said unconditionally
+        // rather than only for `blob.put` ops: the bytes are not carried BY
+        // the op, so a picture whose op folded on an earlier cycle may be
+        // exactly the one whose file has only now landed beside it.
+        _bytesMayHaveArrived();
       } while (_pullAgain);
       return total;
     } finally {
@@ -4025,6 +4131,17 @@ class AppState extends ChangeNotifier
   /// Store a blob during import (images pulled out of a `.one` file).
   String importBlob(String nb, Uint8List bytes, String mime) {
     final hash = _repo.putBlob(nb, bytes, mime);
+    // **Deliberately does NOT say the bytes arrived.** It is the one write
+    // that never rescues a placeholder, and the one that would cost most if
+    // it tried: every local route stores the bytes BEFORE creating the block
+    // that names them — a drop, a paste, the Insert menu and the OneNote
+    // importer all do — so no view is ever waiting on one of these.
+    //
+    // And it runs in bulk. `flushSave` persists every ink stroke through here
+    // on the debounce, and an import writes one per picture, so notifying
+    // from here would fire a rebuild per blob — during a save, while someone
+    // is drawing — and each rebuild would send every missing image back to
+    // the disk. Exactly the storm `blobRevision` exists to avoid.
     // The op records only the hash, mime and size; the bytes are written to
     // `blobs/<sha256>` — content-addressed and immutable, so they need no merge
     // logic and can be fetched lazily (ADR-0006 §3). Putting megabytes of image
@@ -4528,6 +4645,41 @@ class AppState extends ChangeNotifier
   void setPenErasing(bool v) {
     if (penErasing == v) return;
     penErasing = v;
+    notifyListeners();
+  }
+
+  /// **The shape the pen draws instead of following the hand**, or null for
+  /// freehand — which is what it is nearly all of the time.
+  ///
+  /// Issue #10: *"Drawing diagrams with a mouse is really difficult without
+  /// the simple shapes."* Nearly everyone using Openote is on a school laptop
+  /// with a trackpad rather than a tablet with a stylus, so a straight line is
+  /// not a nicety for them; it is the difference between a diagram and a mess.
+  ///
+  /// **A modifier on the pen, not a tool of its own.** The owner: *"all i want
+  /// is to be able to draw diagrams and what not with the pen."* Drawn that
+  /// way it keeps the colour, the size, the highlighter and the eraser exactly
+  /// as they are — a shape is a stroke, so everything that already understands
+  /// ink understands shapes without being told they exist. A sixth entry in
+  /// [Tool] would instead have meant a new case anywhere a tool is compared,
+  /// and a pen whose colour swatches vanished when you picked a rectangle.
+  ///
+  /// Not persisted. Shapes are for a diagram, not for a way of working, and
+  /// finding the pen still stuck on Rectangle tomorrow morning would read as a
+  /// fault rather than as a memory.
+  InkShape? inkShape;
+
+  void setInkShape(InkShape? s) {
+    if (inkShape == s) return;
+    inkShape = s;
+    // Choosing a shape is choosing to draw, the way taking a colour off the
+    // page is: without this, picking Rectangle while the select tool is in
+    // hand puts a control on screen that does nothing until you also find the
+    // pen. Chosen rather than automatic, so reaching for the mouse does not
+    // undo it (see [toolWasAutomatic]).
+    if (s != null && tool != Tool.pen && tool != Tool.highlighter) {
+      setTool(Tool.pen);
+    }
     notifyListeners();
   }
 
@@ -5485,6 +5637,17 @@ class AppState extends ChangeNotifier
   /// Where the click that is about to open an editor landed. Consumed once by
   /// the session on its first build.
   Offset? pendingCaretGlobal;
+
+  /// **Save what the active editor's controller now holds.**
+  ///
+  /// For an edit made straight to the controller — a link inserted by Ctrl+K
+  /// from the Insert menu, say — where the field's own `onChanged` never fires
+  /// because nothing was typed. The same commit [insertTextAtActiveCursor]
+  /// makes, without the insert.
+  void commitActiveEditor() {
+    _commitActiveEditor();
+    notifyListeners();
+  }
 
   void _commitActiveEditor() {
     final ae = activeEditor;

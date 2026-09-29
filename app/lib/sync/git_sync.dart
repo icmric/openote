@@ -37,8 +37,27 @@ import '../model/models.dart';
 /// copied between machines and pasted into bug reports, and a token in an
 /// `-c http.extraHeader=…` argument is visible to every other process on the
 /// machine for as long as git runs. The environment is neither.
+/// Is this an address ssh will be asked to open?
+///
+/// The two shapes git accepts: `ssh://git@host/path`, and the scp-like
+/// `git@host:path` that every server's copy button actually hands out.
+///
+/// Deliberately loose. It decides whether to OFFER the key control, so
+/// guessing wrong costs one extra row on screen — not a broken sync — and the
+/// people this matters to are the ones typing the second shape.
+bool isSshRemote(String remote) {
+  final r = remote.trim();
+  if (r.isEmpty) return false;
+  if (r.startsWith('ssh://')) return true;
+  if (r.startsWith('http://') || r.startsWith('https://')) return false;
+  // `user@host:something`. The colon must come AFTER the `@`, or a Windows
+  // path handed in as a local remote — `C:/Users/me/notes` — reads as a host.
+  final at = r.indexOf('@');
+  return at > 0 && r.indexOf(':', at) > at;
+}
+
 class GitSync {
-  const GitSync(this.dir, {this.token});
+  const GitSync(this.dir, {this.token, this.sshKey});
 
   /// The `.onotebook` directory. The repository root is this directory itself,
   /// so a notebook is a repository and nothing outside it is ever staged.
@@ -50,8 +69,57 @@ class GitSync {
   /// their own credential helper.
   final String? token;
 
+  /// **A specific SSH private key to authenticate with**, or null for
+  /// whatever the user's agent and `~/.ssh/config` already offer.
+  ///
+  /// Issue #10: *"It would be great if it was possible to explicitly use other
+  /// ssh keys for git, so for example if you have a separate git user (eg on
+  /// self hosted Forgejo) for your notes."* Without it, somebody whose default
+  /// key belongs to a different account cannot sync at all — so this is not a
+  /// convenience for them, it is whether the feature works.
+  final String? sshKey;
+
   /// The environment variable the helper reads the token out of.
   static const _tokenVar = 'OPENOTE_GIT_TOKEN';
+
+  /// Arguments that point git's ssh at [sshKey], for one invocation.
+  ///
+  /// **`IdentitiesOnly=yes` is not optional.** Without it `-i` only ADDS a key
+  /// to the set ssh offers, and an agent holding several offers its own first;
+  /// a server that rejects after too many attempts then gives up before the
+  /// right key is ever tried. The symptom is "too many authentication
+  /// failures" from a key that is demonstrably correct — which is the
+  /// situation the person asking for this is already in.
+  ///
+  /// **Forward slashes, always.** git hands this value to a shell to split, so
+  /// the backslashes in a Windows path are escape characters and the path
+  /// arrives mangled. ssh on Windows accepts forward slashes, so the safe form
+  /// is also the portable one.
+  ///
+  /// Quoted, because a path with a space in it is the common case and not the
+  /// exotic one: the default Windows home directory is a person's full name.
+  ///
+  /// Never written into `.git/config`, for the reason the token is not: the
+  /// notebook directory is replicated, and a path that is right on this
+  /// machine is wrong on every other one.
+  List<String> get _sshArgs => sshKey == null || sshKey!.trim().isEmpty
+      ? const []
+      : [
+          '-c',
+          'core.sshCommand=ssh -i "${sshCommandPath(sshKey!)}" '
+              '-o IdentitiesOnly=yes',
+        ];
+
+  /// [sshKey] in the form git's shell can be handed: forward slashes, and any
+  /// embedded double quote escaped rather than refused — legal on Linux,
+  /// pathological, and breaking silently would be worse than handling it.
+  ///
+  /// Exposed because it is the whole of the risk in [_sshArgs].
+  static String sshCommandPath(String key) =>
+      key.trim().replaceAll('\\', '/').replaceAll('"', r'\"');
+
+  /// The ssh arguments, for the test that drives them through git.
+  List<String> get debugSshArgs => _sshArgs;
 
   /// Arguments that make git authenticate as [token], for one invocation.
   ///
@@ -148,7 +216,7 @@ class GitSync {
       return const GitResult(-1, '', 'git is not installed on this computer');
     }
     try {
-      final r = await Process.run(git, [..._authArgs, ...args],
+      final r = await Process.run(git, [..._authArgs, ..._sshArgs, ...args],
               workingDirectory: dir, environment: _env)
           .timeout(timeout ?? const Duration(seconds: 90));
       return GitResult(r.exitCode, '${r.stdout}'.trim(), '${r.stderr}'.trim());
@@ -341,8 +409,13 @@ media/
   /// [token] authenticates a PRIVATE repository — which is what this feature
   /// creates by default, so it is the normal case rather than the exotic one.
   /// Passed through the environment exactly as [push] and [pull] pass it.
+  /// [sshKey] is threaded through but **nothing passes it yet**: a clone
+  /// happens before the notebook exists, so there is no per-notebook key to
+  /// read and no UI asking for one. Somebody joining a notebook on a server
+  /// that wants a non-default key still has to clone it by hand first.
+  /// Stated here rather than left to be discovered.
   static Future<GitResult> clone(String url, String intoDir,
-      {String? token}) async {
+      {String? token, String? sshKey}) async {
     final git = await gitExecutable();
     if (git == null) {
       return const GitResult(-1, '', 'git is not installed on this computer');
@@ -354,10 +427,10 @@ media/
     // A GitSync over the target, purely to borrow the credential-helper
     // arguments and environment. Static because there is no working tree to
     // run in yet — the clone is what creates one.
-    final auth = GitSync(intoDir, token: token);
+    final auth = GitSync(intoDir, token: token, sshKey: sshKey);
     try {
       final r = await Process.run(
-              git, [...auth._authArgs, 'clone', url, intoDir],
+              git, [...auth._authArgs, ...auth._sshArgs, 'clone', url, intoDir],
               environment: auth._env)
           .timeout(const Duration(minutes: 10));
       return GitResult(r.exitCode, '${r.stdout}'.trim(), '${r.stderr}'.trim());

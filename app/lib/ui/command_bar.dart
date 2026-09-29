@@ -32,6 +32,7 @@ import 'settings_dialog.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import '../canvas/ink_shapes.dart';
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
 /// View. OneNote's few-clicks accessibility in Openote's calm language — a
@@ -178,6 +179,10 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         app.inkColor,
         app.customColors.join(','),
         app.penErasing,
+        // Which shape button is lit. Rendered, so the guard test is right to
+        // want it named — without it the row keeps the memoised frame and
+        // picking a shape appears to do nothing at all.
+        app.inkShape,
         app.pickingInkColor,
         app.penSize,
         app.touchDrawing,
@@ -957,6 +962,35 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         onPressed: () => app.setTool(t),
       );
     }
+
+    // **The shapes, and they are always here too — for the reason below.**
+    //
+    // Issue #10: *"Some simple shapes in pen mode — drawing diagrams with a
+    // mouse is really difficult without the simple shapes."* A shape is an
+    // ordinary stroke with its points worked out rather than sampled (see
+    // [AppState.inkShape]), so the colour, size, highlighter and eraser beside
+    // these all keep working on one without being told shapes exist.
+    //
+    // NOT gated on a pen being in hand, though every instinct says to hide
+    // them the rest of the time. That is precisely the bug the colours below
+    // already had: reaching for the mouse is how a toolbar button is pressed,
+    // and reaching for the mouse is also what puts the pen down — so a
+    // pen-only row would vanish as the pointer arrived at it. Choosing a shape
+    // picks the pen up instead, exactly as choosing a colour does.
+    Widget shapeButton(InkShape? shape, IconData icon, String tip) {
+      final on = app.inkShape == shape;
+      return IconButton(
+        icon: Icon(icon, size: 18),
+        tooltip: tip,
+        isSelected: on,
+        visualDensity: VisualDensity.compact,
+        style: IconButton.styleFrom(
+          backgroundColor: on ? scheme.primary.withValues(alpha: .14) : null,
+          foregroundColor: on ? scheme.primary : null,
+        ),
+        onPressed: () => app.setInkShape(shape),
+      );
+    }
     // **The colours are always here.** They used to appear only while a pen,
     // a highlighter or some ink was in hand, and the owner reported what that
     // costs: *"i want it to always be there, not just when im drawing. This
@@ -1053,6 +1087,19 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
           Tool.highlighter, Icons.border_color_outlined, l.barToolHighlighter),
       toolButton(Tool.eraser, Icons.cleaning_services_outlined, l.barToolEraser),
       toolButton(Tool.lasso, Icons.gesture_outlined, l.barToolLasso),
+      const _Div(),
+      // Freehand first, and selected by default: it is what the pen does
+      // almost all of the time, and it is the way back.
+      shapeButton(null, Icons.draw_outlined, 'Freehand'),
+      shapeButton(InkShape.line, Icons.horizontal_rule, InkShape.line.tooltip),
+      shapeButton(
+          InkShape.arrow, Icons.arrow_right_alt, InkShape.arrow.tooltip),
+      shapeButton(
+          InkShape.rectangle, Icons.crop_square, InkShape.rectangle.tooltip),
+      shapeButton(
+          InkShape.ellipse, Icons.circle_outlined, InkShape.ellipse.tooltip),
+      shapeButton(
+          InkShape.triangle, Icons.change_history, InkShape.triangle.tooltip),
       const _Div(),
       for (final (i, c) in colors.indexed)
         swatch(inkOf(i, c), swatchColor(c),

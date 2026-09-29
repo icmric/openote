@@ -12,11 +12,9 @@ import 'state/app_state.dart';
 import 'store/repository.dart';
 import 'theme/onote_theme.dart';
 import 'ui/app_shell.dart';
-import 'editor/focus_debug.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
-  armFocusWatch();
   // The notebook we were launched to open: `openote Physics.onotebook`, or a
   // double-click in the file manager — on the notebook folder itself where the
   // shell will open one, and on the `Open this notebook.onotelink` inside it

@@ -55,6 +55,13 @@ InlineAtomHost blockAtomHost(
       onOpen: onOpen,
       onNeedWidth: onNeedWidth,
       takeInitialCell: (id) => app.takePendingAtomCell(blockId, id),
+      // Read fresh each time the dialog opens: a page added or renamed since
+      // the block was mounted must be in the list, and this widget is built
+      // once per atom id and then kept.
+      linkPages: () => [
+            for (final p in app.pages)
+              if (p.id != app.pageId) (id: p.id, title: p.title)
+          ],
       rememberCell: (id, row, col) {
         app.pendingAtomCell =
             (blockId: blockId, atomId: id, row: row, col: col);
