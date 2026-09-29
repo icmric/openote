@@ -254,13 +254,50 @@ void main() {
       expect((dot.decoration as BoxDecoration).color,
           onoteColorFromHex('#7A3E9D'));
 
+      // **The drag tells the rest of the app once, at the end.**
+      //
+      // The owner: *"Dragging the slider is super laggy."* Every step used to
+      // call `app.refresh()`, which notifies `AppState` and rebuilds the whole
+      // shell — navigator, command bar and a canvas full of blocks — to move a
+      // dot inside a dialog.
+      var notified = 0;
+      void count() => notified++;
+      app.addListener(count);
+
+      final before = app.penSize;
+      final bar = tester.getRect(find.byType(Slider));
+      final g = await tester.startGesture(bar.centerLeft + const Offset(8, 0));
+      for (var i = 0; i < 12; i++) {
+        await g.moveBy(const Offset(18, 0));
+        await tester.pump();
+      }
+      final steps = app.penSize;
+      await g.up();
+      await tester.pumpAndSettle();
+      app.removeListener(count);
+
+      expect(steps, greaterThan(before),
+          reason: 'the drag really did walk through a lot of sizes');
+      expect(notified, 1,
+          reason: 'once, when the finger came off — not once per step. '
+              '`penSize` is a plain field that nothing reads until the next '
+              'stroke is drawn');
+
       // Half-pixel steps, kept half-pixel: 19.5/39 added repeatedly in binary
       // floating point is what produced 3.4000000000000004.
-      await tester.drag(find.byType(Slider), const Offset(40, 0));
-      await tester.pumpAndSettle();
       expect(app.penSize, snapPenSize(app.penSize),
           reason: 'the stored size IS a half — it does not merely print as one');
       expect(app.penSize * 2, (app.penSize * 2).roundToDouble());
+
+      // And it goes further than it did: *"would be nice to be able to make
+      // it a little bigger"*.
+      final wide = await tester.startGesture(bar.centerLeft);
+      await wide.moveTo(bar.centerRight + const Offset(40, 0));
+      await tester.pump();
+      await wide.up();
+      await tester.pumpAndSettle();
+      expect(app.penSize, kPenSizeMax);
+      expect(kPenSizeMax, greaterThan(20.0));
 
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();

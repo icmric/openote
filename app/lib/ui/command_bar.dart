@@ -2075,6 +2075,14 @@ Color currentInkColor(BuildContext context, AppState app) {
 /// it.
 double snapPenSize(double v) => (v * 2).roundToDouble() / 2;
 
+/// **The widest the pen goes.**
+///
+/// The owner: *"would be nice to be able to make it a little bigger"*. 20 was
+/// arbitrary — it was the old toolbar slider's ceiling doubled — and a pen
+/// used to circle a whole diagram, or to annotate a PDF page at low zoom, runs
+/// out at 20 long before it runs out of reasons.
+const double kPenSizeMax = 40;
+
 /// The old slider, kept for anybody who wants 3.5 — with the dot it will draw
 /// shown at the size and colour it will draw it.
 Future<void> _showExactPenSize(BuildContext context, AppState app) {
@@ -2090,15 +2098,11 @@ Future<void> _showExactPenSize(BuildContext context, AppState app) {
       // the full height. The owner: *"The 'exact size' popup has the right
       // length but its height expands as far as it can."*
       content: SizedBox(
-        width: 300,
+        // Wider than it was, because the range is now twice as long and the
+        // travel per half-pixel would otherwise have halved with it.
+        width: 360,
         child: StatefulBuilder(
           builder: (ctx2, setLocal) {
-            void set(double v) {
-              app.penSize = snapPenSize(v);
-              app.refresh();
-              setLocal(() {});
-            }
-
             return Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2106,9 +2110,10 @@ Future<void> _showExactPenSize(BuildContext context, AppState app) {
                 // The dot itself, at the size it will be drawn and in the
                 // colour it will be drawn in — the owner asked for both, and
                 // the second is what makes it a preview rather than a gauge.
-                // A fixed 24px box so the row does not jump as the dot grows.
+                // The box is fixed at the widest dot so the row does not jump
+                // as it grows.
                 SizedBox(
-                  height: 24,
+                  height: kPenSizeMax + 6,
                   child: Center(
                     child: Container(
                       width: app.penSize,
@@ -2124,12 +2129,40 @@ Future<void> _showExactPenSize(BuildContext context, AppState app) {
                 Row(children: [
                   Expanded(
                     child: Slider(
-                      value: app.penSize.clamp(0.5, 20),
+                      value: app.penSize.clamp(0.5, kPenSizeMax),
                       min: 0.5,
-                      max: 20,
-                      divisions: 39, // every half pixel
+                      max: kPenSizeMax,
+                      divisions: (kPenSizeMax / 0.5).round() - 1, // half-pixels
                       label: _penSizeLabel(app.penSize),
-                      onChanged: set,
+                      // **Nothing outside this dialog is told until the drag
+                      // ends.**
+                      //
+                      // The owner: *"Dragging the slider is super laggy, my
+                      // guess is that something in there is running on every
+                      // single value change rather than when it snaps to the
+                      // possible sizes."* The guess is close, and the real
+                      // answer is worse: `Slider` already fires `onChanged`
+                      // only when the DISCRETE value changes, so this ran
+                      // about eighty times across a full drag — and every one
+                      // of them called `app.refresh()`, which notifies
+                      // `AppState` and rebuilds the entire shell. Navigator,
+                      // command bar and a canvas full of blocks, eighty times,
+                      // to move a dot in a dialog.
+                      //
+                      // `penSize` is a plain field that nothing reads until
+                      // the next stroke is drawn, so the drag can simply write
+                      // it and repaint THIS dialog. The rest of the app is
+                      // told once, below, when the finger comes off.
+                      onChanged: (v) {
+                        final next = snapPenSize(v);
+                        if (next == app.penSize) return;
+                        app.penSize = next;
+                        setLocal(() {});
+                      },
+                      // Once. The toolbar's own dots read `penSize` to decide
+                      // which of them is ringed, and that is the only thing
+                      // outside this dialog with anything to redraw.
+                      onChangeEnd: (_) => app.refresh(),
                     ),
                   ),
                   SizedBox(
