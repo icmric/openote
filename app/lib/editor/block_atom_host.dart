@@ -58,6 +58,9 @@ InlineAtomHost blockAtomHost(
       // history has nothing left — which is how Ctrl+Z takes back a row.
       undo: app.undo,
       redo: app.redo,
+      // A page link in a cell follows, the same as one in the sentence
+      // around it.
+      onWikiLink: app.openWikiLink,
       takeInitialCell: (id) => app.takePendingAtomCell(blockId, id),
       // Read fresh each time the dialog opens: a page added or renamed since
       // the block was mounted must be in the list, and this widget is built

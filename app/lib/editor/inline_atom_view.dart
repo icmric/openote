@@ -27,6 +27,7 @@ class InlineAtomHost {
     this.linkPages,
     this.undo,
     this.redo,
+    this.onWikiLink,
   });
 
   /// The atoms this block is carrying, read fresh. Never a snapshot: an atom
@@ -79,6 +80,19 @@ class InlineAtomHost {
   /// [TableBinding.undo]. Null on a read surface.
   final VoidCallback? undo;
   final VoidCallback? redo;
+
+  /// **Follow a page link that is inside an atom.**
+  ///
+  /// The owner: *"If a link is on text in a table, clicking it will enter
+  /// editing mode for the table rather than following the link."* A cell
+  /// being read draws its text through the same inline renderer the
+  /// paragraph does — but it was calling it without this, so a page link in
+  /// a cell had no tap handler at all and the cell's own "open me for
+  /// editing" tap was the only one left to answer.
+  ///
+  /// Null on a surface with nowhere to navigate to, where a link is drawn
+  /// and inert.
+  final void Function(String label, String? id)? onWikiLink;
 
   /// Every other page in the notebook, for the link dialog's "or link to a
   /// page" half. Null on a surface with no notebook behind it — a preview, a
@@ -168,6 +182,7 @@ Widget inlineAtomWidget({
         h.rememberCell == null ? null : (r, c) => h.rememberCell!(id, r, c),
     takeInitialCell: () => h.takeInitialCell?.call(id),
     linkPages: h.linkPages,
+    onWikiLink: h.onWikiLink,
   );
 }
 

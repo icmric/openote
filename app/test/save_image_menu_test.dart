@@ -144,4 +144,44 @@ void main() {
       expect(find.text('Edit'), findsNothing);
     });
   });
+
+  group('a picture in a sentence answers its own right-click', () {
+    // The owner: *"To be able to save an image, i need to be both in editing
+    // mode and have the cursor on the image, right clicking it not in editing
+    // mode or while in editing but with the cursor else where should bring up
+    // the option to save the image."*
+    //
+    // The block's menu cannot answer this, and correctly: a picture in a
+    // sentence is characters in the text, so the block is a PARAGRAPH and
+    // `pictureIn` rightly says it holds no picture.
+
+    testWidgets('and it is the same menu, drawn the same way', (t) async {
+      final app = AppState(_NoopRepo())
+        ..notebookId = 'nb'
+        ..pageId = 'pg';
+      addTearDown(app.cancelPendingSave);
+      await t.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        theme: onoteTheme(Brightness.light),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showPictureMenu(
+                  context, app, 'sha256:abc', const Offset(10, 10)),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ));
+      await t.tap(find.text('open'));
+      await t.pumpAndSettle();
+
+      expect(find.text('Save image as…'), findsOneWidget);
+      // The same row widget the block menu uses, so the two cannot drift
+      // apart visually — which is the other half of what was asked for.
+      expect(find.byIcon(Icons.download_outlined), findsOneWidget);
+      expect(find.byType(PopupMenuItem<String>), findsOneWidget);
+    });
+  });
 }

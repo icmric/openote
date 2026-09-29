@@ -77,6 +77,7 @@ class MarkdownView extends StatefulWidget {
     super.key,
     required this.text,
     required this.baseStyle,
+    this.onPictureMenu,
     this.onToggleCheckbox,
     this.onWikiLink,
     this.imageResolver,
@@ -126,6 +127,18 @@ class MarkdownView extends StatefulWidget {
   /// paragraph is in when its graph is clicked. The link is supposed to work
   /// both ways.
   final Color? Function(String latex)? mathLinkTint;
+
+  /// **Right-click on a picture, with nothing open.**
+  ///
+  /// The owner: *"right clicking it not in editing mode … should bring up the
+  /// option to save the image."* The block's own menu cannot answer this: a
+  /// picture in a sentence is characters in the text, so the BLOCK is a
+  /// paragraph and `pictureIn` rightly says it holds no picture. The picture
+  /// itself is the only thing that knows where it is, so it is the thing that
+  /// answers the click.
+  ///
+  /// Called with the blob reference and where the pointer was.
+  final void Function(String src, Offset at)? onPictureMenu;
 
   @override
   State<MarkdownView> createState() => _MarkdownViewState();
@@ -545,17 +558,24 @@ class _MarkdownViewState extends State<MarkdownView> {
             fit: BoxFit.contain,
             alignment: Alignment.topLeft,
             gaplessPlayback: true);
+        final menu = widget.onPictureMenu;
         return Padding(
           padding: EdgeInsets.only(
               left: indentPx(img.group(1)!.length, baseStyle.fontSize),
               top: sized ? 0 : 4,
               bottom: sized ? 0 : 4),
-          child: sized
-              ? Align(alignment: Alignment.topLeft, child: image)
-              : ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 640),
-                  child: image,
-                ),
+          child: GestureDetector(
+            // Secondary only. Everything else about this picture — a click to
+            // open the box, a drag to move it — still belongs to the block.
+            onSecondaryTapUp:
+                menu == null ? null : (d) => menu(src, d.globalPosition),
+            child: sized
+                ? Align(alignment: Alignment.topLeft, child: image)
+                : ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 640),
+                    child: image,
+                  ),
+          ),
         );
       }
       // Unresolvable blob → fall through to the literal-text rendering below.

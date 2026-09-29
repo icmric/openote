@@ -149,6 +149,7 @@ class InlineTable extends StatefulWidget {
     this.onKeyboard,
     this.onExit,
     this.onOpen,
+    this.onWikiLink,
     this.rememberCell,
     this.takeInitialCell,
     this.linkPages,
@@ -187,6 +188,11 @@ class InlineTable extends StatefulWidget {
   /// for editing and hands the cell straight back as [initialCell], so one
   /// click lands the caret where the pointer was.
   final void Function(int row, int col)? onOpen;
+
+  /// Follow a page link in a cell being READ. Without it a page link has no
+  /// tap of its own, and the cell's "open me for editing" tap is the only
+  /// one left to answer — see [InlineAtomHost.onWikiLink].
+  final void Function(String label, String? id)? onWikiLink;
 
   /// Where the caret was, said as this table is torn down, so that a table
   /// rebuilt in its place the same frame can put it back. See
@@ -1419,8 +1425,8 @@ class _InlineTableState extends State<InlineTable> {
     final text = _data.cells[r][c];
     return Text.rich(
       TextSpan(
-          children:
-              inlineSpans(text.isEmpty ? ' ' : text, style, widget.dark)),
+          children: inlineSpans(
+              text.isEmpty ? ' ' : text, style, widget.dark, widget.onWikiLink)),
       style: style,
     );
   }

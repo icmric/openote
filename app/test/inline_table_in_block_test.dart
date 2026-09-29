@@ -767,6 +767,37 @@ void main() {
     app.cancelPendingSave();
   });
 
+  testWidgets('a page link in a cell follows, rather than opening the table',
+      (t) async {
+    // The owner: *"If a link is on text in a table, clicking it will enter
+    // editing mode for the table rather than following the link."*
+    //
+    // A cell being read draws its text through the same inline renderer the
+    // paragraph does — but it was calling it without a page-link handler, so
+    // a page link in a cell had no tap of its own, and the cell's "open me
+    // for editing" tap was the only one left to answer.
+    const link = InlineAtom(id: 't2', type: 'table', content: {
+      'cells': [
+        ['See', '[[Kinematics|pg-2]]'],
+      ]
+    });
+    final content = <String, dynamic>{
+      'text': 'Before ${link.reference('1x2 table')} after.',
+    };
+    InlineAtom.putIn(content, link);
+    block = Block(type: BlockType.text, x: 0, y: 0, w: 520, content: content);
+    app.blocks = [block];
+    app.editingBlockId = null; // being read, not written
+    await pump(t);
+
+    await t.tap(find.text('Kinematics'));
+    await t.pumpAndSettle();
+
+    expect(app.editingBlockId, isNull,
+        reason: 'the table did NOT open for editing, which is the report');
+    app.cancelPendingSave();
+  });
+
   test('a COPIED table pastes with its cells, not as an empty box', () {
     // Cutting leaves a payload behind for the paste to find. Copying does
     // not — the original stays exactly where it was, so nothing was ever

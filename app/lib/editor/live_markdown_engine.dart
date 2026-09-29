@@ -26,6 +26,7 @@ import 'math_paste_formatter.dart';
 import 'live_markdown_controller.dart';
 import 'onote_text_editor.dart';
 import 'unicode_input.dart';
+import '../ui/context_menus.dart';
 import '../ui/link_dialog.dart';
 import '../ui/save_picture.dart';
 
@@ -66,6 +67,11 @@ class LiveMarkdownEngine extends OnoteTextEditor {
         // never the one being edited at the moment its graph is picked out —
         // which made "it works both ways" true only for maths blocks.
         mathLinkTint: (latex) => app.inlineGraphTint(block.id, latex),
+        // A picture in a sentence answers its own right-click, because the
+        // block's menu cannot: the block is a paragraph, and `pictureIn`
+        // rightly says a paragraph holds no picture.
+        onPictureMenu: (src, at) =>
+            unawaited(showPictureMenu(context, app, src, at)),
         // **A table is a table before you click on it.**
         //
         // The read view mounts the same widget the editing session does, so
@@ -1478,10 +1484,11 @@ class _LiveMarkdownSession extends OnoteEditSession {
         final extra = _spellMenuItems(editable);
         final picture = _pictureMenuItems(context, editable);
         final link = _linkMenuItems(context, editable);
-        return AdaptiveTextSelectionToolbar.buttonItems(
-          anchors: editable.contextMenuAnchors,
-          buttonItems: [...picture, ...link, ...extra, ...items],
-        );
+        // The block menu's clothes, so the two menus a right-click can
+        // produce are one object with two contents — see
+        // [onoteTextContextMenu].
+        return onoteTextContextMenu(
+            context, editable, [...picture, ...link, ...extra, ...items]);
       },
       onChanged: (v) {
         onChanged(v);
@@ -1502,10 +1509,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// menu looks exactly as it always did.
   List<ContextMenuButtonItem> _pictureMenuItems(
       BuildContext context, EditableTextState editable) {
-    final sel = controller.selection;
-    if (!sel.isValid) return const [];
-    final text = controller.text;
-    final ref = pictureRefAt(text, sel.baseOffset.clamp(0, text.length));
+    final ref = _pictureUnderMenu(editable);
     if (ref == null) return const [];
     return [
       ContextMenuButtonItem(
@@ -1522,6 +1526,32 @@ class _LiveMarkdownSession extends OnoteEditSession {
         },
       ),
     ];
+  }
+
+  /// **The picture this menu is about**, which is the one the pointer is on
+  /// rather than the one the caret happens to be beside.
+  ///
+  /// The owner: *"To be able to save an image, i need to be both in editing
+  /// mode and have the cursor on the image… while in editing but with the
+  /// cursor else where should bring up the option to save the image."*
+  ///
+  /// The caret was the only thing asked, on the reasoning that a right-click
+  /// in a text field puts the caret where you clicked. It does — unless what
+  /// you clicked is a picture, because a picture is a `WidgetSpan` with its
+  /// own resize grip and its own gestures, and the field never sees the
+  /// press. So the click position is resolved to a text offset directly, and
+  /// the caret is consulted only as a fallback for a menu opened from the
+  /// keyboard.
+  ({int start, int end, String hash})? _pictureUnderMenu(
+      EditableTextState editable) {
+    final text = controller.text;
+    final at = editable.contextMenuAnchors.primaryAnchor;
+    final hit = editable.renderEditable.getPositionForPoint(at);
+    final under = pictureRefAt(text, hit.offset.clamp(0, text.length));
+    if (under != null) return under;
+    final sel = controller.selection;
+    if (!sel.isValid) return null;
+    return pictureRefAt(text, sel.baseOffset.clamp(0, text.length));
   }
 
   /// Every other page in this notebook, for the dialog's "or link to a page"

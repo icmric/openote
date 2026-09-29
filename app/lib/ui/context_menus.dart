@@ -17,6 +17,113 @@ import 'save_picture.dart';
 
 /// Right-click menus (style guide: most actions within ≤2 clicks).
 
+/// **One right-click menu, worn by both of the things that draw one.**
+///
+/// The owner: *"we need to make the right click menus all the same visually,
+/// we currently have 2."* Quite so — a block's menu is a Material popup with
+/// icons and shortcut hints, while a text field's is Flutter's own selection
+/// toolbar, which is a row of bare words. Same gesture, same kind of list,
+/// two completely different objects on screen.
+///
+/// This gives the text field the block menu's clothes: the same surface, the
+/// same 36px rows, the same icon-then-label-then-shortcut layout. It keeps
+/// `DesktopTextSelectionToolbar` for the SURFACE and the positioning, because
+/// a selection menu has to sit against the selection and that widget already
+/// knows how — the parts worth sharing are the ones you can see.
+Widget onoteTextContextMenu(
+    BuildContext context, EditableTextState editable,
+    List<ContextMenuButtonItem> items) {
+  final l = MaterialLocalizations.of(context);
+  return DesktopTextSelectionToolbar(
+    anchor: editable.contextMenuAnchors.primaryAnchor,
+    children: [
+      for (final item in items)
+        _ToolbarRow(
+          icon: _iconFor(item),
+          label: item.label ?? l.moreButtonTooltip,
+          shortcut: _shortcutFor(item),
+          onPressed: item.onPressed,
+        ),
+    ],
+  );
+}
+
+/// The icon for one toolbar row.
+///
+/// Flutter's own items carry a [ContextMenuButtonType], which is the reliable
+/// thing to switch on. Openote's own are added by label from the editor, so
+/// they are matched by label — which is fragile in general and safe here,
+/// because both ends of the match live in this repository and a miss costs a
+/// missing icon rather than a missing row.
+IconData _iconFor(ContextMenuButtonItem item) => switch (item.type) {
+      ContextMenuButtonType.cut => Icons.cut_outlined,
+      ContextMenuButtonType.copy => Icons.copy_outlined,
+      ContextMenuButtonType.paste => Icons.content_paste_outlined,
+      ContextMenuButtonType.selectAll => Icons.select_all,
+      ContextMenuButtonType.delete => Icons.delete_outline,
+      ContextMenuButtonType.lookUp => Icons.search,
+      ContextMenuButtonType.searchWeb => Icons.travel_explore_outlined,
+      ContextMenuButtonType.share => Icons.share_outlined,
+      ContextMenuButtonType.liveTextInput => Icons.text_fields,
+      ContextMenuButtonType.custom => switch (item.label) {
+          'Save image as…' => Icons.download_outlined,
+          'Edit link…' => Icons.link,
+          'Show as a page window' => Icons.picture_in_picture_alt_outlined,
+          'Add to dictionary' => Icons.library_add_outlined,
+          _ => Icons.spellcheck, // a spelling suggestion: the word itself
+        },
+    };
+
+String? _shortcutFor(ContextMenuButtonItem item) => switch (item.type) {
+      ContextMenuButtonType.cut => 'Ctrl+X',
+      ContextMenuButtonType.copy => 'Ctrl+C',
+      ContextMenuButtonType.paste => 'Ctrl+V',
+      ContextMenuButtonType.selectAll => 'Ctrl+A',
+      _ => null,
+    };
+
+/// One row, laid out exactly as [_item] lays out a block-menu row.
+class _ToolbarRow extends StatelessWidget {
+  const _ToolbarRow({
+    required this.icon,
+    required this.label,
+    required this.shortcut,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? shortcut;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      style: TextButton.styleFrom(
+        alignment: AlignmentDirectional.centerStart,
+        minimumSize: const Size.fromHeight(36),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        shape: const RoundedRectangleBorder(),
+        foregroundColor: Theme.of(context).colorScheme.onSurface,
+        textStyle: const TextStyle(fontSize: 13),
+      ),
+      onPressed: onPressed,
+      child: Row(children: [
+        Icon(icon, size: 16),
+        const SizedBox(width: 10),
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
+        if (shortcut != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 18),
+            child: Text(shortcut!,
+                style: OnoteType.caption
+                    .copyWith(color: context.surfaces.textSecondary)),
+          ),
+      ]),
+    );
+  }
+}
+
 PopupMenuItem<String> _item(String v, IconData icon, String label,
     {bool enabled = true, String? shortcut}) {
   return PopupMenuItem<String>(
@@ -84,6 +191,38 @@ void _turnIntoPageLink(AppState app, Block b) {
   ));
   app.removeBlock(b.id, recordUndo: false);
   app.select(made.id);
+}
+
+/// **The menu one picture in a sentence answers with.**
+///
+/// The owner: *"To be able to save an image, i need to be both in editing
+/// mode and have the cursor on the image, right clicking it not in editing
+/// mode or while in editing but with the cursor else where should bring up
+/// the option to save the image."*
+///
+/// The block's own menu cannot offer this, and correctly: a picture in a
+/// sentence is characters in the text, so the block is a paragraph and
+/// `pictureIn` says — rightly — that it holds no picture. The picture is the
+/// only thing that knows where it is, so it is the thing that answers.
+///
+/// Drawn by the same [showMenu] with the same [_item] rows as every other
+/// right-click in the app.
+Future<void> showPictureMenu(
+    BuildContext context, AppState app, String src, Offset globalPos) async {
+  final action = await showMenu<String>(
+    context: context,
+    position: RelativeRect.fromLTRB(
+        globalPos.dx, globalPos.dy, globalPos.dx, globalPos.dy),
+    items: [_item('save-image', Icons.download_outlined, 'Save image as…')],
+  );
+  if (action != 'save-image' || !context.mounted) return;
+  // An in-flow reference records no mime — it is the hash and nothing else —
+  // so the name is worked out from the bytes themselves.
+  await savePictureBytes(
+    context,
+    app.blob(src),
+    notHereYet: "That picture isn't here yet — it may still be syncing.",
+  );
 }
 
 Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
