@@ -18,6 +18,7 @@ import '../math/evaluate.dart';
 import '../math/math_editor.dart';
 import '../math/math_field.dart';
 import 'block_atom_host.dart';
+import 'emphasis_guard.dart';
 import 'inline_math_editor.dart';
 import 'list_editing.dart';
 import 'math_paste_formatter.dart';
@@ -1436,6 +1437,11 @@ class _LiveMarkdownSession extends OnoteEditSession {
         // touching existing text (AppState.wrapSelection) — this is what
         // makes the queue real: it wraps the very next thing typed.
         _PendingStyleFormatter(app, s.block.id),
+        // LAST, and it has to be: the formatter above is what turns "bold"
+        // into `**bold**` with the caret parked inside the closing markers,
+        // and this one is what stops the very next space from taking that
+        // apart in front of the student. It needs to see the wrapped text.
+        const EmphasisGuardFormatter(),
       ],
       decoration: InputDecoration(
         isDense: true,

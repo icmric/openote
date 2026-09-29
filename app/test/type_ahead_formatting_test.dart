@@ -129,6 +129,50 @@ void main() {
     app.cancelPendingSave();
   });
 
+  testWidgets('and a space at the end of it does not print the asterisks',
+      (t) async {
+    // The owner: *"if i bold (or otherwise style) some text then press space
+    // at the end, it breaks the interpreter and shows the `**`, that is not
+    // what i want at all. It should never under any circumstances show the md
+    // styling chars after the style has been applied."*
+    //
+    // The caret is parked INSIDE the closing markers on purpose — the test
+    // above is what that buys. But it means the space bar aims straight at
+    // the one place a marker may not sit: CommonMark's flanking rule forbids
+    // `**big **`, so the run stopped being a run and four asterisks appeared
+    // in the middle of a sentence.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final c = await open(t, 5);
+    app.wrapSelection('**');
+    await t.pump();
+    for (final ch in ['b', 'i', 'g']) {
+      await type(t, c, ch);
+    }
+    expect(c.text, 'note **big**');
+
+    await type(t, c, ' ');
+
+    expect(c.text, 'note **big** ',
+        reason: 'the space goes to the other side of the marker, which is '
+            'where a word processor puts it and the only place Markdown can '
+            'hold it — `**big **` is not expressible as bold at all');
+    expect(c.selection.baseOffset, 13,
+        reason: 'and the caret follows the space it just typed');
+
+    // The thing the owner actually sees: still one bold run, no loose marks.
+    final runs = [
+      for (final m in mdInlineRe.allMatches(c.text))
+        if (classifyInline(m).kind == MdInline.bold) m
+    ];
+    expect(runs, hasLength(1));
+    expect(classifyInline(runs.single).inner, 'big');
+
+    // And typing on carries the sentence, rather than the bold.
+    await type(t, c, 'o');
+    expect(c.text, 'note **big** o');
+    app.cancelPendingSave();
+  });
+
   testWidgets('Backspace then takes the letter, not the marker', (t) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final c = await open(t, 5);
