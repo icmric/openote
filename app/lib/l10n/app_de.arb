@@ -41,6 +41,8 @@
   "barInkDefaultColour": "Standardtinte — passt sich der Seite an",
   "barInkHighlighterColourTitle": "Markerfarbe",
   "barInkMoreColours": "Weitere Farben…",
+  "barPenSize": "Stiftgröße {size}",
+  "barPenSizeExact": "Genaue Größe…",
   "barInkPickColour": "Farbe von der Seite aufnehmen",
   "barInkPickingHint": "Auf etwas auf der Seite klicken, um dessen Farbe zu übernehmen",
   "barInlineCode": "Code im Text",

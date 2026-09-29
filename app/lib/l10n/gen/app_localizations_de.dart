@@ -148,6 +148,14 @@ class LDe extends L {
   String get barInkMoreColours => 'Weitere Farben…';
 
   @override
+  String barPenSize(String size) {
+    return 'Stiftgröße $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Genaue Größe…';
+
+  @override
   String get barInkPickColour => 'Farbe von der Seite aufnehmen';
 
   @override

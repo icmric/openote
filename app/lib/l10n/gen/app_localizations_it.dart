@@ -148,6 +148,14 @@ class LIt extends L {
   String get barInkMoreColours => 'Altri colori…';
 
   @override
+  String barPenSize(String size) {
+    return 'Spessore $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Dimensione esatta…';
+
+  @override
   String get barInkPickColour => 'Preleva un colore dalla pagina';
 
   @override

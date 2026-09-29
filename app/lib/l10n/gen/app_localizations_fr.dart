@@ -148,6 +148,14 @@ class LFr extends L {
   String get barInkMoreColours => 'Plus de couleurs…';
 
   @override
+  String barPenSize(String size) {
+    return 'Épaisseur $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Taille exacte…';
+
+  @override
   String get barInkPickColour => 'Prélever une couleur sur la page';
 
   @override

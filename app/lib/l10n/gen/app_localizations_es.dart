@@ -149,6 +149,14 @@ class LEs extends L {
   String get barInkMoreColours => 'Más colores…';
 
   @override
+  String barPenSize(String size) {
+    return 'Grosor $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Tamaño exacto…';
+
+  @override
   String get barInkPickColour => 'Tomar un color de la página';
 
   @override

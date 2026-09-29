@@ -41,6 +41,8 @@
   "barInkDefaultColour": "Tinta predefinida — acompanha a página",
   "barInkHighlighterColourTitle": "Cor do marcador",
   "barInkMoreColours": "Mais cores…",
+  "barPenSize": "Espessura {size}",
+  "barPenSizeExact": "Tamanho exato…",
   "barInkPickColour": "Obter uma cor da página",
   "barInkPickingHint": "Clique em algo na página para usar a sua cor",
   "barInlineCode": "Código no texto",

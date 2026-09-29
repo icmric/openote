@@ -41,6 +41,8 @@
   "barInkDefaultColour": "默认墨迹 — 跟随页面",
   "barInkHighlighterColourTitle": "荧光笔的颜色",
   "barInkMoreColours": "更多颜色…",
+  "barPenSize": "笔迹粗细 {size}",
+  "barPenSizeExact": "精确大小…",
   "barInkPickColour": "从页面上拾取颜色",
   "barInkPickingHint": "点击页面上的任意内容以使用它的颜色",
   "barInlineCode": "行内代码",

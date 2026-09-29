@@ -41,6 +41,8 @@
   "barInkDefaultColour": "Inchiostro predefinito — segue la pagina",
   "barInkHighlighterColourTitle": "Colore dell’evidenziatore",
   "barInkMoreColours": "Altri colori…",
+  "barPenSize": "Spessore {size}",
+  "barPenSizeExact": "Dimensione esatta…",
   "barInkPickColour": "Preleva un colore dalla pagina",
   "barInkPickingHint": "Fai clic su qualcosa nella pagina per usarne il colore",
   "barInlineCode": "Codice nel testo",

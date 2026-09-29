@@ -169,9 +169,71 @@ void main() {
         await tester.pump();
         expect(find.byIcon(Icons.colorize_outlined), findsOneWidget,
             reason: '$tool');
-        expect(find.byIcon(Icons.add_circle_outline), findsOneWidget,
+        // A palette, not a plus: `add_circle_outline` beside a row of
+        // colours reads as "add a colour to this row" when what it opens is
+        // the whole picker.
+        expect(find.byIcon(Icons.palette_outlined), findsOneWidget,
             reason: '$tool');
       }
+    });
+
+    testWidgets('pen thickness is a few dots, not a slider to aim at',
+        (tester) async {
+      // The owner: *"The slider to adjust the pen size is not intuitive,
+      // please have just a few options for size, then maybe an option to
+      // adjust it to something more exact or specific."*
+      //
+      // 1-to-10 across 110px is nine pixels per unit, so choosing a thickness
+      // was a drag you had to aim and reading the one you had meant looking
+      // at a handle position rather than at a thickness.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await fixture(tester, 'onote_ink_size_');
+      app.tool = Tool.pen;
+      await drawTab(tester, app);
+
+      expect(find.byType(Slider), findsNothing,
+          reason: 'not on the toolbar any more');
+      for (final v in kPenSizes) {
+        expect(find.byTooltip('Pen size ${v == v.roundToDouble() ? v.toInt() : v}'),
+            findsOneWidget,
+            reason: 'a dot for $v');
+      }
+
+      await tester.tap(find.byTooltip('Pen size 5'));
+      await tester.pump();
+      expect(app.penSize, 5);
+
+      // And anything the four do not cover is still reachable.
+      await tester.tap(find.byTooltip('Exact size…'));
+      await tester.pumpAndSettle();
+      expect(find.byType(Slider), findsOneWidget,
+          reason: 'the slider is behind a button, not gone');
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('the row shows two mixed colours, not four', (tester) async {
+      // *"There are by default a lot of options for colours, more than most
+      // people would want."* Six presets plus four recents plus two buttons
+      // is twelve round things — and the recents were also what made the row
+      // change width as you used it.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await fixture(tester, 'onote_ink_two_');
+      app.tool = Tool.pen;
+      for (final hex in ['111111', '222222', '333333', '444444']) {
+        app.rememberCustomColor(hex);
+      }
+      await drawTab(tester, app);
+
+      // `rememberCustomColor` puts the newest first.
+      expect(find.byTooltip('#444444'), findsOneWidget);
+      expect(find.byTooltip('#333333'), findsOneWidget);
+      expect(find.byTooltip('#222222'), findsNothing,
+          reason: 'the rest are one click away in the picker, which keeps '
+              'every one of them');
+      // `rememberCustomColor` writes the list to settings, which arms a
+      // 400ms workspace save; a pending timer fails the test at teardown.
+      await tester.pump(const Duration(milliseconds: 500));
     });
 
     testWidgets('picking a colour picks up the pen', (tester) async {

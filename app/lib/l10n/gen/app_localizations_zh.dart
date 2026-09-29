@@ -145,6 +145,14 @@ class LZh extends L {
   String get barInkMoreColours => '更多颜色…';
 
   @override
+  String barPenSize(String size) {
+    return '笔迹粗细 $size';
+  }
+
+  @override
+  String get barPenSizeExact => '精确大小…';
+
+  @override
   String get barInkPickColour => '从页面上拾取颜色';
 
   @override

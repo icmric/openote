@@ -359,6 +359,18 @@ abstract class L {
   /// **'More colours…'**
   String get barInkMoreColours;
 
+  /// Tooltip on one of the preset pen-thickness buttons. {size} is the thickness in pixels.
+  ///
+  /// In en, this message translates to:
+  /// **'Pen size {size}'**
+  String barPenSize(String size);
+
+  /// Tooltip on the button that opens a slider for a thickness none of the presets cover.
+  ///
+  /// In en, this message translates to:
+  /// **'Exact size…'**
+  String get barPenSizeExact;
+
   /// Tooltip on the eyedropper button.
   ///
   /// In en, this message translates to:

@@ -147,6 +147,14 @@ class LEn extends L {
   String get barInkMoreColours => 'More colours…';
 
   @override
+  String barPenSize(String size) {
+    return 'Pen size $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Exact size…';
+
+  @override
   String get barInkPickColour => 'Pick a colour off the page';
 
   @override

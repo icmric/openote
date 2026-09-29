@@ -1075,10 +1075,17 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
     // heading should find it under the pen without mixing it again. Presets
     // are filtered out so no colour appears twice in the row.
     final presets = {for (final (i, c) in colors.indexed) inkOf(i, c)};
+    // TWO, not four. The owner: *"There are by default a lot of options for
+    // colours, more than most people would want, and it looks fine but isnt
+    // super nice."* Six presets plus four recents plus two buttons is twelve
+    // round things in a row, and the recents are the half that also made the
+    // row change width as you used it — everything after them shifted sideways
+    // the first few times you mixed a colour. The rest are one click away in
+    // the picker, which keeps all of them.
     final recents = [
       for (final hex in app.customColors)
         if (!presets.contains('#${hex.replaceFirst('#', '')}')) hex,
-    ].take(4).toList();
+    ].take(2).toList();
     return Row(children: [
       toolButton(Tool.select, Icons.near_me_outlined, l.barToolSelect),
       toolButton(Tool.text, Icons.text_fields, l.barToolText),
@@ -1109,8 +1116,11 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       // The full picker - a palette grid, a hue/saturation field and a hex
       // box - is the one that already exists for text colour. One picker, one
       // set of recents, whatever is being coloured.
+      // A palette, not a plus. `add_circle_outline` beside a row of colours
+      // reads as "add a colour" — something you do TO the row — when what it
+      // opens is the whole picker, every colour included.
       IconButton(
-        icon: const Icon(Icons.add_circle_outline, size: 18),
+        icon: const Icon(Icons.palette_outlined, size: 18),
         tooltip: l.barInkMoreColours,
         visualDensity: VisualDensity.compact,
         onPressed: () async {
@@ -1137,18 +1147,18 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
             style:
                 TextStyle(fontSize: 11, color: context.surfaces.textSecondary))
       else
-        SizedBox(
-          width: 110,
-          child: Slider(
-            value: app.penSize,
-            min: 1,
-            max: 10,
-            onChanged: (v) {
-              app.penSize = v;
-              app.refresh();
-            },
+        ...[
+          for (final v in kPenSizes) _penDot(context, app, v, l),
+          // The slider is still here for anybody who wants 3.5 — behind a
+          // button, which is where a control most people never touch belongs.
+          IconButton(
+            icon: const Icon(Icons.tune, size: 16),
+            tooltip: l.barPenSizeExact,
+            isSelected: !kPenSizes.contains(app.penSize),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _showExactPenSize(context, app),
           ),
-        ),
+        ],
       // What is left really is about ONE tool, and says nothing at all when
       // that tool is not the one in hand.
       if (app.tool == Tool.eraser) ...[
@@ -1978,3 +1988,105 @@ class _SubjectBadge extends StatelessWidget {
   }
 }
 
+
+/// **The pen thicknesses somebody actually picks.**
+///
+/// The owner: *"The slider to adjust the pen size is not intuitive, please
+/// have just a few options for size, then maybe an option to adjust it to
+/// something more exact or specific."*
+///
+/// A 1-to-10 slider 110px wide is nine pixels of travel per unit, so choosing
+/// a thickness was a drag you had to aim, and reading the one you had meant
+/// looking at a handle position rather than at a thickness. Four dots drawn at
+/// the size they set answer both: you point at the one that looks right, and
+/// the one you are using is the one that is ringed.
+///
+/// Four rather than five or three: fine, normal, bold, marker. Anything else
+/// is still reachable through the slider, which is now behind a button — where
+/// a control most people never touch belongs.
+const List<double> kPenSizes = [1, 2.5, 5, 8];
+
+/// One thickness, drawn at that thickness.
+Widget _penDot(BuildContext context, AppState app, double v, L l) {
+  final scheme = Theme.of(context).colorScheme;
+  final on = app.penSize == v;
+  // Clamped so the thinnest is still a target you can hit: the DOT grows with
+  // the value, the button it sits in does not.
+  final d = (v * 2.2).clamp(4.0, 18.0);
+  return Tooltip(
+    message: l.barPenSize(_penSizeLabel(v)),
+    child: InkWell(
+      mouseCursor: WidgetStateMouseCursor.clickable,
+      borderRadius: BorderRadius.circular(99),
+      onTap: () {
+        app.penSize = v;
+        app.refresh();
+      },
+      child: Container(
+        width: 26,
+        height: 26,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: on ? scheme.primary.withValues(alpha: .14) : null,
+        ),
+        child: Container(
+          width: d,
+          height: d,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: on ? scheme.primary : context.surfaces.textSecondary,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// `2.5`, but `5` rather than `5.0` — a thickness reads as a number, not as a
+/// float.
+String _penSizeLabel(double v) =>
+    v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+
+/// The old slider, kept for anybody who wants 3.5.
+Future<void> _showExactPenSize(BuildContext context, AppState app) {
+  final l = L.of(context);
+  return showOnoteDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(l.barPenSizeExact),
+      content: StatefulBuilder(
+        builder: (ctx2, setLocal) => Row(mainAxisSize: MainAxisSize.min, children: [
+          SizedBox(
+            width: 240,
+            child: Slider(
+              value: app.penSize.clamp(0.5, 20),
+              min: 0.5,
+              max: 20,
+              // Half-pixel steps: the point of this dialog is a thickness the
+              // presets do not cover, and a continuous slider cannot be read
+              // back or typed again tomorrow.
+              divisions: 39,
+              label: _penSizeLabel(app.penSize),
+              onChanged: (v) {
+                app.penSize = v;
+                app.refresh();
+                setLocal(() {});
+              },
+            ),
+          ),
+          SizedBox(
+            width: 34,
+            child: Text(_penSizeLabel(app.penSize),
+                style: OnoteType.caption, textAlign: TextAlign.end),
+          ),
+        ]),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(L.of(ctx).commonDone)),
+      ],
+    ),
+  );
+}

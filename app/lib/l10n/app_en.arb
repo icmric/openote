@@ -199,6 +199,20 @@
   "@barInkMoreColours": {
     "description": "Tooltip on the button that opens the full colour picker for the pen."
   },
+  "barPenSize": "Pen size {size}",
+  "@barPenSize": {
+    "description": "Tooltip on one of the preset pen-thickness buttons. {size} is the thickness in pixels.",
+    "placeholders": {
+      "size": {
+        "type": "String",
+        "example": "2.5"
+      }
+    }
+  },
+  "barPenSizeExact": "Exact size…",
+  "@barPenSizeExact": {
+    "description": "Tooltip on the button that opens a slider for a thickness none of the presets cover."
+  },
   "barInkPickColour": "Pick a colour off the page",
   "@barInkPickColour": {
     "description": "Tooltip on the eyedropper button."

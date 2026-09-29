@@ -148,6 +148,14 @@ class LPt extends L {
   String get barInkMoreColours => 'Mais cores…';
 
   @override
+  String barPenSize(String size) {
+    return 'Espessura $size';
+  }
+
+  @override
+  String get barPenSizeExact => 'Tamanho exato…';
+
+  @override
   String get barInkPickColour => 'Obter uma cor da página';
 
   @override
