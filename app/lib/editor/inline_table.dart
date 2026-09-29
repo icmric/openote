@@ -313,6 +313,29 @@ final Map<Type, Action<Intent>> _cellsOwnKeys = <Type, Action<Intent>>{
   SelectAllTextIntent: _CellsOwnAction<SelectAllTextIntent>(),
   CopySelectionTextIntent: _CellsOwnAction<CopySelectionTextIntent>(),
   PasteTextIntent: _CellsOwnAction<PasteTextIntent>(),
+  // **Undo and redo, which are the same hijacking with the worst ending.**
+  //
+  // The owner: *"pressing ctrl + z after making several edits to a table just
+  // deletes the whole table rather than undoing the last edit to the table"*.
+  //
+  // These two are not in `EditableText`'s overridable list, which is why the
+  // first pass through this file missed them — they are made overridable one
+  // layer down, by the `UndoHistory` widget `EditableText` builds around
+  // itself. Same mechanism, so same hijacking: the paragraph is an ancestor,
+  // its `UndoHistory` is found as the override, and Ctrl+Z in a cell rewinds
+  // the PARAGRAPH's text instead of the cell's.
+  //
+  // And the paragraph's history goes back past the moment the table was made.
+  // One press and the `![…](onote://atom/…)` reference is gone from the
+  // sentence — which is the whole table, because the reference is the only
+  // thing tying the payload to the note. So the one key everybody reaches for
+  // when they want something back was the fastest way to lose the lot.
+  //
+  // Handing back to `callingAction` gives a cell the undo any text field has:
+  // its own. A structural change (a row, a column) is not in that history and
+  // is still taken back by the page's stack, from outside the table.
+  UndoTextIntent: _CellsOwnAction<UndoTextIntent>(),
+  RedoTextIntent: _CellsOwnAction<RedoTextIntent>(),
   // Deliberately NOT the two tap-outside intents. They decide what a click
   // somewhere else does to this field's focus, which is a question the
   // paragraph is better placed to answer than a cell is — and focus around

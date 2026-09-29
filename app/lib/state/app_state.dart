@@ -5863,6 +5863,15 @@ class AppState extends ChangeNotifier
         y: pos.dy,
         w: 320,
         content: {'text': ''}));
+    // **The same box a click on the page makes**, which is what Enter from
+    // the title is asking for. The owner: *"it opens up a box which has the
+    // old hints for md in it, it should be the same as normally clicking
+    // elsewhere."* It was the same box in every respect but this one flag,
+    // and the flag is what holds the chrome and the `heading (#), list (-)…`
+    // hint back until something is actually typed. Set BEFORE [select]
+    // notifies, for the reason `PageCanvas._createTextAt` gives: any later
+    // and the border flashes on for exactly one frame.
+    pendingEmptyBlockId = b.id;
     select(b.id, edit: true);
   }
 

@@ -386,6 +386,45 @@ void main() {
       app.cancelPendingSave();
     });
 
+    testWidgets('Ctrl+Z takes back a cell edit, and not the whole table',
+        (t) async {
+      // The owner: *"pressing ctrl + z after making several edits to a table
+      // just deletes the whole table rather than undoing the last edit"*.
+      //
+      // Undo and redo are made overridable by `UndoHistory`, one layer below
+      // the actions `EditableText` publishes — so they went on resolving to
+      // the paragraph after the other nineteen were claimed. The paragraph's
+      // history reaches back past the table's own reference, and taking that
+      // away takes the table with it: the payload is still in the block and
+      // nothing points at it any more.
+      //
+      // **This does NOT reproduce that.** The block here mounts with the
+      // reference already in its text, so the paragraph's history has no
+      // state that predates it and nothing for its undo to strip. Reproducing
+      // the report needs the table MADE by Tab inside the session, which is
+      // `inline_table_shell_test.dart`'s ground, not this file's. What is
+      // pinned here is the weaker half that this fixture can honestly show:
+      // a cell's Ctrl+Z does not come back holding the paragraph's value.
+      final c = await inCell(t, 'Potassium');
+      final host =
+          t.widget<TextField>(find.byType(TextField).first).controller!;
+
+      await chord(t, LogicalKeyboardKey.keyZ);
+
+      expect(host.text, contains('onote://atom/t1'),
+          reason: 'the sentence still refers to the table, which is the only '
+              'thing keeping it in the note');
+      expect(tablesIn(block.content), hasLength(1),
+          reason: 'and the table itself is still there');
+      expect(c.text, isNot(contains(InlineAtom.scheme)),
+          reason: 'and the cell was never handed the paragraph\'s own value, '
+              'which is the other way this hijacking shows itself — see the '
+              'Ctrl+Shift+Left case below. Whether the cell had a step in its '
+              'history to take back at this instant is `UndoHistory`\'s '
+              'throttle, and not what this test is about');
+      app.cancelPendingSave();
+    });
+
     testWidgets('Ctrl+Shift+Left selects a word, and only in the cell',
         (t) async {
       final c = await inCell(t, 'hello world');
