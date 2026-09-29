@@ -169,9 +169,28 @@ class InsertGroup {
   final List<InsertItem> items;
 }
 
-/// Where a ribbon press should put [item] — centred on what you are looking
-/// at, which is what every Insert button has always done.
+/// **Where a ribbon press should put [item]: under whatever you were just
+/// writing in, or centred on the view when you were not writing in
+/// anything.**
+///
+/// The owner, about the code block: *"It should also insert it either where
+/// the cursor is or below the last edited text box, if the cursor is not on
+/// the canvas in an otherwise empty box."* Centring on the viewport was the
+/// only rule, so a code block for the paragraph you were mid-way through
+/// landed in the middle of the screen — often on top of something, always
+/// away from the thing it belongs to.
+///
+/// Applied to every item rather than to the code block alone. The complaint
+/// is not about code: a table, an equation and a picture all belong beside
+/// the writing that asked for them, and one Insert button that lands where
+/// you are working while the next lands in the middle of the screen would be
+/// the stranger behaviour of the two.
+///
+/// The exception is an item that lays ITSELF out down the page — the PDF
+/// importers, which declare [Size.zero] and ignore this point entirely.
 Offset insertAnchor(AppState app, InsertItem item) {
+  final near = app.insertNeighbour;
+  if (near != null && item.size != Size.zero) return app.belowBlock(near);
   final c = app.canvas.screenToPage(
       Offset(app.canvas.viewport.width / 2, app.canvas.viewport.height / 2));
   return Offset(c.dx - item.size.width / 2, c.dy - item.size.height / 2);
@@ -298,7 +317,9 @@ final List<InsertGroup> kInsertGroups = [
             x: at.dx,
             y: at.dy,
             w: 400,
-            content: {'language': 'text', 'source': ''}));
+            // Plain text until somebody has said otherwise, and whatever
+            // they last said after that — see [AppState.lastCodeLanguage].
+            content: {'language': app.lastCodeLanguage, 'source': ''}));
         app.select(b.id, edit: true);
       },
     ),

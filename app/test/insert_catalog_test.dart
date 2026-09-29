@@ -159,6 +159,53 @@ void main() {
               'size the block arrives at');
     });
 
+    test('but it lands under the box you were writing in, when there was one',
+        () {
+      // The owner, about the code block: *"It should also insert it either
+      // where the cursor is or below the last edited text box, if the cursor
+      // is not on the canvas in an otherwise empty box."* Centring on the
+      // view was the only rule, so a code block for the paragraph you were
+      // half-way through arrived in the middle of the screen.
+      app.canvas.viewport = const Size(1000, 800);
+      final note = app.addBlock(Block(
+          type: BlockType.text,
+          x: 120,
+          y: 240,
+          w: 300,
+          h: 80,
+          content: {'text': 'a paragraph'}));
+      app.select(note.id, edit: true);
+
+      final code = kInsertItems.firstWhere((i) => i.id == 'code');
+      expect(insertAnchor(app, code), const Offset(120, 332),
+          reason: 'lined up with the box, 12px under it');
+
+      // And it outlives the caret leaving: by the time the Insert button has
+      // been pressed, the cursor is on the Insert button.
+      app.select(null);
+      expect(insertAnchor(app, code), const Offset(120, 332));
+
+      // A PDF lays itself out down the page and says so with a zero size, so
+      // it is the one thing this must not move.
+      final pdf = kInsertItems.firstWhere((i) => i.id == 'pdf');
+      expect(pdf.size, Size.zero);
+      expect(insertAnchor(app, pdf),
+          app.canvas.screenToPage(const Offset(500, 400)));
+
+      app.blocks = [];
+      app.select(null);
+      app.lastEditedBlockId = null;
+      app.cancelPendingSave();
+    });
+
+    test('a new code block opens in the language the last one was set to', () {
+      // *"it should still default to plain text, however it should ideally
+      // automatically set the language to the last set one."*
+      expect(app.lastCodeLanguage, 'text', reason: 'until somebody says');
+      app.rememberCodeLanguage('python');
+      expect(app.lastCodeLanguage, 'python');
+    });
+
     test('and a right-click puts its corner where you clicked', () async {
       if (!haveSqlite) return;
       final table = kInsertItems.firstWhere((i) => i.id == 'table');
@@ -168,6 +215,38 @@ void main() {
   });
 
   group('both surfaces make the same block', () {
+    testWidgets('a new code block really opens in the remembered language',
+        (tester) async {
+      // The unit test above proves the setting; this proves the catalog
+      // actually asks for it, which is the half that can silently be wrong.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      widen(tester);
+      late BuildContext ctx;
+      await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        home: Scaffold(body: Builder(builder: (c) {
+          ctx = c;
+          return const SizedBox();
+        })),
+      ));
+      final code = kInsertItems.firstWhere((i) => i.id == 'code');
+
+      await code.run(ctx, app, const Offset(10, 20));
+      expect(app.blocks.single.content['language'], 'text',
+          reason: 'plain text until somebody has said otherwise');
+
+      app.blocks = [];
+      app.rememberCodeLanguage('dart');
+      await code.run(ctx, app, const Offset(10, 20));
+      expect(app.blocks.single.content['language'], 'dart');
+
+      app.blocks = [];
+      app.select(null);
+      app.lastEditedBlockId = null;
+      app.cancelPendingSave();
+    });
+
     testWidgets('a table from the ribbon and a table from the menu are equal',
         (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');

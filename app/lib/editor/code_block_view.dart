@@ -516,6 +516,10 @@ class _CodeBlockViewState extends State<CodeBlockView> {
     // picking again is the whole of "undoing" a detection.
     widget.block.content['languagePicked'] = true;
     widget.block.content.remove('languageAuto');
+    // The next code block starts here — see [AppState.lastCodeLanguage].
+    // Only from this line, which is the menu: a DETECTED language is the app
+    // guessing, and a guess must not steer the block after it.
+    widget.app.rememberCodeLanguage(choice);
     widget.app.updateBlock(widget.block);
   }
 

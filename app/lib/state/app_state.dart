@@ -4569,6 +4569,33 @@ class AppState extends ChangeNotifier
   String? selectedBlockId; // primary (gets handles/chrome)
   String? editingBlockId;
 
+  /// **The last box somebody was actually writing in**, which outlives the
+  /// caret leaving it.
+  ///
+  /// [editingBlockId] is null the moment focus goes anywhere else — a
+  /// toolbar button, the ribbon — which is exactly when something needs to
+  /// know where the work was. See `insertAnchor`: the owner asked for a new
+  /// block to land *"where the cursor is or below the last edited text box"*,
+  /// and by the time the Insert button has been pressed the cursor is on the
+  /// Insert button.
+  ///
+  /// Cleared with the page, since a block id from another page names nothing
+  /// here.
+  String? lastEditedBlockId;
+
+  /// Where a new block should go when nobody said: just below [b], lined up
+  /// with its left edge.
+  ///
+  /// The gap is the same 12px the align guides settle to, so a block put here
+  /// looks placed rather than dropped.
+  Offset belowBlock(Block b) => Offset(b.x, _rectOf(b).bottom + 12);
+
+  /// The block a new one should be placed under, or null to fall back to the
+  /// middle of the view. Never names a block on another page: [blockById]
+  /// only looks at the open one.
+  Block? get insertNeighbour =>
+      blockById(editingBlockId ?? selectedBlockId ?? lastEditedBlockId ?? '');
+
   /// The block a click just created — or opened — with nothing in it and
   /// nothing typed since: OneNote-style, a caret is live and ready to type,
   /// but the box's own chrome (border, move bar, resize handles) stays
@@ -5968,6 +5995,32 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// **The language the last code block was set to**, which is what the next
+  /// one starts in.
+  ///
+  /// The owner: *"it should still default to plain text, however it should
+  /// ideally automatically set the language to the last set one."* Somebody
+  /// writing up a practical is writing up one language, and picking Python
+  /// out of the menu for the ninth block in a row is nine picks that say the
+  /// same thing.
+  ///
+  /// Plain text is still the FALLBACK — it is what this holds until a real
+  /// choice is made, and a block that was never given a language does not set
+  /// it. Only an explicit pick from the menu counts: a language the app
+  /// GUESSED from the source is not somebody saying what they are writing,
+  /// and letting a guess steer the next block would spread one bad guess
+  /// across a page.
+  ///
+  /// Kept per workspace rather than per notebook: it is a fact about the
+  /// person, not about the notes.
+  String lastCodeLanguage = 'text';
+
+  void rememberCodeLanguage(String id) {
+    if (id == lastCodeLanguage) return;
+    lastCodeLanguage = id;
+    _repo.setSetting('lastCodeLanguage', id);
+  }
+
   /// Cancel a queued style: the caret moved, or something other than a plain
   /// insertion happened at the queued spot.
   void clearPendingMarks() {
@@ -6865,6 +6918,8 @@ class AppState extends ChangeNotifier
     if (nc is bool) navCollapsed = nc;
     final nsc = _repo.getSetting('navSectionsCollapsed');
     if (nsc is bool) navSectionsCollapsed = nsc;
+    final lcl = _repo.getSetting('lastCodeLanguage');
+    if (lcl is String && lcl.isNotEmpty) lastCodeLanguage = lcl;
     loadCollapsedState();
     final slp = _repo.getSetting('sectionLastPage');
     if (slp is Map) {
@@ -7598,6 +7653,8 @@ class AppState extends ChangeNotifier
     _undo.clear();
     _redo.clear();
     renderSizes.clear();
+    // A block id from the page you just left names nothing on this one.
+    lastEditedBlockId = null;
     findMatches = [];
     findQuery = '';
     if (id == null) {
@@ -9694,6 +9751,9 @@ class AppState extends ChangeNotifier
         ..add(id);
       selectedBlockId = id;
       editingBlockId = edit ? id : null;
+      // Remembered here rather than where the caret lands, because this is
+      // the one call every route into a block goes through.
+      if (edit) lastEditedBlockId = id;
     }
     notifyListeners();
   }
