@@ -1,6 +1,6 @@
 import 'l10n/l10n.dart';
 import 'dart:io' show Directory, exit;
-import 'dart:ui' show AppExitResponse;
+import 'dart:ui' show AppExitResponse, ViewFocusEvent;
 
 import 'package:flutter/material.dart';
 
@@ -15,18 +15,51 @@ import 'store/repository.dart';
 import 'theme/onote_theme.dart';
 import 'ui/app_shell.dart';
 
+/// TEMPORARY scaffolding, with [tfLog]: does the window really report that it
+/// lost focus, and exactly when?
+///
+/// One line per event, so the console stays readable enough to see a Tab in
+/// it. `direction` is included because a focus event carrying a traversal
+/// direction came from the platform moving focus deliberately, and one
+/// without came from something else — which is most of the difference between
+/// "Windows took our window" and "the engine emitted this spuriously".
+class _ViewFocusProbe with WidgetsBindingObserver {
+  @override
+  void didChangeViewFocus(ViewFocusEvent event) {
+    tfLog('VIEW ${event.state.name} dir=${event.direction.name} '
+        'view=${event.viewId}');
+  }
+}
+
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   // TEMPORARY: a focus trace for the caret-in-a-table report.
   // Prints `TABLEFOCUS …` lines. Remove with `tfLog` once the
   // trace has said what is moving the caret.
   InlineTable.debugFocusLog = true;
-  // And Flutter's OWN focus logging, which is the right instrument for this:
-  // it prints every focus change with the node that asked, the node that had
-  // it, and the reason — the one thing a hand-rolled trace cannot say. The
-  // table's trace has now shown it disposes nothing and retires nothing, so
-  // whatever takes the caret is outside it, and only this can name it.
-  debugFocusChanges = true;
+  // Flutter's own `debugFocusChanges` has now done its job and is OFF again:
+  // it dumps the entire focus tree on every change, which buries the two
+  // lines that matter. What it found, on the second trace, was this hand-off
+  // and no explanation for it:
+  //
+  //     Scheduling update, current focus is FocusNode(tableCell [PRIMARY
+  //       FOCUS]), next focus will be FocusScopeNode(Root Focus Scope)
+  //     Updating focus from FocusNode(tableCell) to FocusScopeNode(Root
+  //       Focus Scope [PRIMARY FOCUS])
+  //
+  // No `Unfocused node:`, no `Node requesting focus:` — so nothing unfocused
+  // the cell and nothing asked for the focus. Landing on the ROOT scope with
+  // the scope itself as primary focus is `_doRequestFocus(findFirstFocus:
+  // false)`, and in all of `packages/flutter` exactly one caller does that to
+  // the root scope: `_ViewState.didChangeViewFocus`, on
+  // `ViewFocusState.unfocused`, whose comment says it "parks" the focus so no
+  // widget can receive keyboard events.
+  //
+  // That is the engine reporting that the WINDOW lost focus. Flutter is then
+  // behaving correctly, and the caret loss is a symptom. So the question is
+  // no longer which widget takes the caret — it is whether that event really
+  // arrives, and when. Every observer gets it, so this asks directly.
+  WidgetsBinding.instance.addObserver(_ViewFocusProbe());
   // The notebook we were launched to open: `openote Physics.onotebook`, or a
   // double-click in the file manager — on the notebook folder itself where the
   // shell will open one, and on the `Open this notebook.onotelink` inside it
