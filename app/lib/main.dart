@@ -21,6 +21,12 @@ Future<void> main(List<String> args) async {
   // Prints `TABLEFOCUS …` lines. Remove with `tfLog` once the
   // trace has said what is moving the caret.
   InlineTable.debugFocusLog = true;
+  // And Flutter's OWN focus logging, which is the right instrument for this:
+  // it prints every focus change with the node that asked, the node that had
+  // it, and the reason — the one thing a hand-rolled trace cannot say. The
+  // table's trace has now shown it disposes nothing and retires nothing, so
+  // whatever takes the caret is outside it, and only this can name it.
+  debugFocusChanges = true;
   // The notebook we were launched to open: `openote Physics.onotebook`, or a
   // double-click in the file manager — on the notebook folder itself where the
   // shell will open one, and on the `Open this notebook.onotelink` inside it
