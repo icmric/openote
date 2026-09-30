@@ -15,7 +15,9 @@
 
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -529,6 +531,80 @@ void main() {
     expect(caretInACell(), isTrue,
         reason: 'the caret reached the cell and then fell out to the route '
             "scope — the node under it was detached");
+  });
+
+  /// **THE ACTUAL CAUSE, reproduced.**
+  ///
+  /// The stack trace from the running app, caught by overriding `unfocus` on
+  /// the paragraph's node:
+  ///
+  /// ```text
+  /// #0  _ParagraphFocusNode.unfocus         (live_markdown_engine.dart)
+  /// #1  _TextFieldState.build.<anonymous>   (material/text_field.dart:1680)
+  /// #2  SemanticsAnnotationsMixin._performDidLoseAccessibilityFocus
+  /// #4  SemanticsOwner.performAction
+  /// #8  PlatformDispatcher._dispatchSemanticsAction
+  /// #13 RenderView.updateSemantics
+  /// #16 PipelineOwner.flushSemantics
+  /// #18 RendererBinding.drawFrame
+  /// ```
+  ///
+  /// The platform's accessibility bridge sends `didLoseAccessibilityFocus`
+  /// for the paragraph, and `TextField` answers it on every desktop platform
+  /// with exactly one line:
+  ///
+  /// ```dart
+  /// handleDidLoseAccessibilityFocus = () { _effectiveFocusNode.unfocus(); };
+  /// ```
+  ///
+  /// That line is written for a LEAF field. A paragraph here contains fields,
+  /// so accessibility focus moving from the paragraph INTO its own table cell
+  /// is an ordinary, correct thing for the bridge to report — and answering
+  /// it by unfocusing the paragraph throws the cell's caret out of the
+  /// document. The action is not the bug; the assumption underneath it is.
+  ///
+  /// So this test does not simulate the symptom. It dispatches the real
+  /// semantics action through the real `SemanticsOwner`, which is the same
+  /// entry point frame #4 of that stack went through.
+  testWidgets('losing ACCESSIBILITY focus leaves the cell caret alone',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // **Windows, explicitly.** `TextField.build` wires
+    // `handleDidLoseAccessibilityFocus` only under the macOS/linux/windows
+    // arm of its platform switch, and a widget test is Android unless told
+    // otherwise — so without this the action is not wired at all, and the
+    // test passes whether the fix is present or not. It did, until this line.
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    final semantics = t.ensureSemantics();
+    await pumpShell(t, {'text': 'Element'});
+
+    await openBlock(t);
+    final host = t.widget<TextField>(find
+        .descendant(
+            of: find.byType(TextBlockView), matching: find.byType(TextField))
+        .first);
+    host.controller!.selection = const TextSelection.collapsed(offset: 7);
+    await t.pumpAndSettle();
+
+    await key(t, LogicalKeyboardKey.tab);
+    expect(caretInACell(), isTrue, reason: 'the caret is in a cell to begin');
+
+    // The paragraph's own field is the OUTERMOST EditableText in the block;
+    // the cell's is nested inside its spans.
+    final paragraph = t.getSemantics(find
+        .descendant(
+            of: find.byType(TextBlockView), matching: find.byType(EditableText))
+        .first);
+    t.binding.pipelineOwner.semanticsOwner!
+        .performAction(paragraph.id, SemanticsAction.didLoseAccessibilityFocus);
+    await t.pumpAndSettle();
+
+    expect(caretInACell(), isTrue,
+        reason: 'THE BUG: a screen reader moving off the paragraph — or a '
+            'bridge that merely thinks it did — empties the table cell');
+    // Not `addTearDown`: the handle is checked before tear-downs run.
+    semantics.dispose();
+    debugDefaultTargetPlatformOverride = null;
   });
 
   /// **The event `debugFocusChanges` actually recorded.**

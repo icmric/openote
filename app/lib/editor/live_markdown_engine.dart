@@ -19,7 +19,6 @@ import '../math/math_editor.dart';
 import '../math/math_field.dart';
 import '../canvas/portal_view.dart';
 import 'block_atom_host.dart';
-import 'inline_table.dart' show tfLog, InlineTable;
 import 'emphasis_guard.dart';
 import 'inline_math_editor.dart';
 import 'list_editing.dart';
@@ -132,7 +131,7 @@ class LiveMarkdownEngine extends OnoteTextEditor {
       block.id,
       editable: true,
       onKeyboard: session._atomTookKeyboard,
-      onExit: (id) { tfLog('host.onExit($id)'); session._leaveAtom(id); },
+      onExit: session._leaveAtom,
       onNeedWidth: (total) {
         final avail = session.controller.layoutWidth;
         if (avail == null) return;
@@ -239,51 +238,60 @@ class _PendingStyleFormatter extends TextInputFormatter {
   }
 }
 
-/// **The paragraph's own focus node, which refuses to take a cell's caret
-/// with it — and says who asked.**
+/// **A field that contains fields does not let go when told it is done.**
 ///
-/// Six reproductions missed this and `debugFocusChanges` caught it in one:
+/// A paragraph here is a `TextField` whose spans can hold more `TextField`s —
+/// a table cell, an equation. Focus-wise a cell is this node's DESCENDANT, so
+/// this node reports `hasFocus == true` for the whole time a cell has the
+/// caret, and every framework path that means "this field has finished being
+/// edited" spells itself `widget.focusNode.unfocus()`, on this node.
+///
+/// Unfocusing an ancestor takes the descendant with it. The caret leaves the
+/// cell, passes the table's own focus scope, and parks on the route — so the
+/// next keystroke lands in the sentence beside the table, or nowhere.
+///
+/// The one that does it in practice is accessibility, caught in the running
+/// app by overriding this method and printing the stack:
 ///
 /// ```text
-/// FOCUS: Unfocused node:
-///     primary focus was FocusNode#5b072([IN FOCUS PATH])
-///     next focus will be FocusScopeNode#723b0(_ModalScopeState Focus Scope)
+/// #1  _TextFieldState.build.<anonymous>   (material/text_field.dart:1680)
+/// #2  SemanticsAnnotationsMixin._performDidLoseAccessibilityFocus
+/// #4  SemanticsOwner.performAction
+/// #8  PlatformDispatcher._dispatchSemanticsAction
+/// #16 PipelineOwner.flushSemantics
+/// #18 RendererBinding.drawFrame
 /// ```
 ///
-/// `#5b072` is the node sitting directly above the table's own focus scope —
-/// this node — and it is NOT the primary focus at the time. The cell is. So
-/// something unfocuses the PARAGRAPH while a CELL is being typed into, and
-/// because a cell is a focus descendant, the cell's caret leaves with it,
-/// past the table's scope and out to the route. That is the reported bug:
-/// type, Tab, and the caret is gone from the new table.
+/// `TextField` answers `didLoseAccessibilityFocus` with one line, and only on
+/// macOS, Linux and Windows:
 ///
-/// Nothing in `lib/` calls it. The caller is inside the framework, where
-/// several paths spell "this field has finished being edited" as
-/// `widget.focusNode.unfocus()` — `EditableText.connectionClosed`,
-/// `_finalizeEditing`, the desktop tap-outside action. From outside they are
-/// indistinguishable, and each one is wrong here for the same reason: none of
-/// them knows there is a second field nested inside this one.
+/// ```dart
+/// handleDidLoseAccessibilityFocus = () { _effectiveFocusNode.unfocus(); };
+/// ```
 ///
-/// So the refusal does not depend on knowing which. `hasFocus` without
-/// `hasPrimaryFocus` means exactly what it means in [inlineChildFocused] — a
-/// descendant holds the keyboard — and while that is true, this node is not
-/// the field being finished with, whoever is asking.
+/// For a leaf field that is right. For this one it is not, and it is not a
+/// malfunction either: accessibility focus moving from the paragraph into its
+/// own cell is exactly what a screen reader does, and the bridge is correct
+/// to report it. What is wrong is the inference that the FIELD is therefore
+/// finished, when what it lost the caret to is part of itself.
 ///
-/// The stack trace is TEMPORARY scaffolding and comes out with [tfLog]; it is
-/// what will finally name the caller, and it only costs anything while the
-/// flag is on.
+/// Hence the condition, which is the same one [inlineChildFocused] reads and
+/// means the same thing: `hasFocus` without `hasPrimaryFocus` on this node is
+/// a descendant holding the keyboard. While that holds, this field is not the
+/// one being finished with, whoever is asking — so the refusal is stated once
+/// here rather than once per caller, and covers `connectionClosed` and the
+/// desktop tap-outside action on the same grounds.
+///
+/// Guarded by a test that dispatches the real `SemanticsAction` through the
+/// real `SemanticsOwner`, under an explicit Windows platform override —
+/// without which `TextField` never wires the handler and the test passes on a
+/// broken build.
 class _ParagraphFocusNode extends FocusNode {
   _ParagraphFocusNode() : super(debugLabel: 'paragraph');
 
   @override
   void unfocus({UnfocusDisposition disposition = UnfocusDisposition.scope}) {
-    if (hasFocus && !hasPrimaryFocus) {
-      if (InlineTable.debugFocusLog) {
-        tfLog('PARAGRAPH unfocus REFUSED — a descendant holds the caret; '
-            'disposition=$disposition\n${StackTrace.current}');
-      }
-      return;
-    }
+    if (hasFocus && !hasPrimaryFocus) return;
     super.unfocus(disposition: disposition);
   }
 }
@@ -1481,11 +1489,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
         //
         // Nothing else needs doing here: the tap has already put the
         // paragraph's own caret where it landed.
-        // TEMPORARY trace — see `tfLog` in inline_table.dart. This is the
-        // one place the PARAGRAPH takes the caret back off a cell, so if the
-        // table is not throwing it out, this is.
         if (_focus.hasFocus && !_focus.hasPrimaryFocus) {
-          tfLog('paragraph.onTap reclaims the caret from a cell');
           _focus.requestFocus();
         }
         _enterMathOnTapAtLineEnd();

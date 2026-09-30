@@ -138,10 +138,6 @@ double emptyLineHeight(TextStyle style) {
 /// of tables would carry an `EditableText`, a focus node and a gesture
 /// detector per cell for nobody to type into.
 class InlineTable extends StatefulWidget {
-  /// TEMPORARY scaffolding for the caret-in-a-table report — see [tfLog].
-  /// Off in tests, which would otherwise print thousands of lines; the app
-  /// turns it on in `main.dart`.
-  static bool debugFocusLog = false;
 
   const InlineTable({
     super.key,
@@ -245,25 +241,6 @@ class _CellEscape extends Intent {
 
 class _CellLink extends Intent {
   const _CellLink();
-}
-
-/// **TEMPORARY — a focus trace for the caret-in-a-table report.**
-///
-/// The owner has a table whose caret is thrown out on a new row and refuses
-/// to take it back, and I have failed to reproduce it four times: with a link
-/// in a cell, with a row made low on a tall page, with the reveal genuinely
-/// scrolling, and with the reveal removed altogether. The console on their
-/// machine is clean, so nothing is throwing — the focus is being MOVED, by
-/// this file or by the paragraph, and only their machine can say which.
-///
-/// So this prints every focus decision the table makes, with the node that
-/// actually holds the keyboard at that moment. It is scaffolding: it comes
-/// out the moment the trace says what is happening.
-void tfLog(String what) {
-  if (!InlineTable.debugFocusLog) return;
-  final who = FocusManager.instance.primaryFocus;
-  // ignore: avoid_print
-  print('TABLEFOCUS $what | holder=${who?.debugLabel ?? who.runtimeType}');
 }
 
 /// **A cell's own editing keys stay the cell's.**
@@ -479,7 +456,6 @@ class _InlineTableState extends State<InlineTable> {
 
   @override
   void initState() {
-    tfLog('STATE initState  <-- a NEW table widget replaced the old one');
     super.initState();
     _data = widget.binding.read();
     if (widget.editable) _build(_data);
@@ -504,7 +480,6 @@ class _InlineTableState extends State<InlineTable> {
   @override
   void didUpdateWidget(InlineTable old) {
     if (old.editable != widget.editable) {
-      tfLog('editable ${old.editable} -> ${widget.editable}');
     }
     super.didUpdateWidget(old);
     if (!identical(old.revision, widget.revision)) {
@@ -552,7 +527,6 @@ class _InlineTableState extends State<InlineTable> {
 
   @override
   void dispose() {
-    tfLog('STATE dispose  <-- this table is going away');
     widget.revision?.removeListener(_external);
     // **Hand the keyboard back on the way out.** The host stands its own key
     // handling, caret and text-input connection down while a cell holds the
@@ -593,8 +567,6 @@ class _InlineTableState extends State<InlineTable> {
   /// while the table is not editable), and the disposal waits for the frame
   /// it would otherwise have reached into.
   void _retireGrid() {
-    tfLog('retireGrid  <-- every cell node detaches here '
-        '(editable=${widget.editable} grid=${_nodes.length})');
     for (final row in _ctls) {
       _retired.addAll(row);
     }
@@ -654,8 +626,6 @@ class _InlineTableState extends State<InlineTable> {
   /// which is the gesture this table is built around (type, Tab, type, Tab).
   /// Only cells that genuinely disappear are retired.
   void _build(TableData d) {
-    tfLog('build grid ${_nodes.length}x'
-        '${_nodes.isEmpty ? 0 : _nodes.first.length} -> ${d.rows}x${d.cols}');
     final ctls = <List<LiveMarkdownController>>[];
     final nodes = <List<FocusNode>>[];
     final undos = <List<UndoHistoryController>>[];
@@ -793,8 +763,6 @@ class _InlineTableState extends State<InlineTable> {
   /// with the caret already in the cell. Nothing is painted in between.
   void _scopeChanged() {
     if (!mounted) return;
-    tfLog('scopeChanged scopeHasPrimary=${_scope.hasPrimaryFocus} '
-        'scopeHasFocus=${_scope.hasFocus}');
     if (_scope.hasPrimaryFocus) _sendCaretHome();
     _settleKeyboard();
   }
@@ -806,8 +774,6 @@ class _InlineTableState extends State<InlineTable> {
   /// a table with no cells to type into — a read-only table must not trap the
   /// keyboard it was never given.
   void _sendCaretHome() {
-    tfLog('sendCaretHome tries=$_homeTries want=$_wantCell last=$_lastFocused '
-        'editable=${widget.editable} cells=${_ctls.length}');
     if (!widget.editable || _ctls.isEmpty || _rows == 0 || _cols == 0) return;
     // **Bounded within a frame.** A focus change is applied in a microtask,
     // so a cell that took the caret and dropped it again in the same breath
@@ -866,7 +832,6 @@ class _InlineTableState extends State<InlineTable> {
       if (!mounted) return;
       final holding = _anyFocused || _wantCell != null;
       if (holding == _holdingKeyboard) return;
-      tfLog('settleKeyboard -> holding=$holding');
       _holdingKeyboard = holding;
       if (!holding) _undoPushed = false;
       widget.onKeyboard?.call(holding);
@@ -934,7 +899,6 @@ class _InlineTableState extends State<InlineTable> {
   ({int row, int col})? _wantFrom;
 
   void _askForCell(int r, int c) {
-    tfLog('askForCell($r,$c) from=${_focusedCell ?? _lastFocused}');
     _wantFrom = _focusedCell ?? _lastFocused;
     _wantCell = (row: r, col: c);
     _wantTries = 0;
@@ -967,9 +931,6 @@ class _InlineTableState extends State<InlineTable> {
       final built =
           want.row < _nodes.length && want.col < _nodes[want.row].length;
       final holder = _focusedCell;
-      tfLog('pursue want=$want built=$built holder=$holder '
-          'from=$_wantFrom tries=$_wantTries grid=${_nodes.length}x'
-          '${_nodes.isEmpty ? 0 : _nodes.first.length} data=${_rows}x$_cols');
       if (built && holder == want) return stop();
       // **Somebody chose another cell in the meantime — a click. Theirs
       // wins.** But the cell we are coming FROM does not count as somebody
@@ -1439,7 +1400,6 @@ class _InlineTableState extends State<InlineTable> {
             _CellLink:
                 CallbackAction<_CellLink>(onInvoke: (_) => _onLink(r, c)),
             _CellEscape: CallbackAction<_CellEscape>(onInvoke: (_) {
-              tfLog('CellEscape -> onExit');
               widget.onExit?.call();
               return null;
             }),
