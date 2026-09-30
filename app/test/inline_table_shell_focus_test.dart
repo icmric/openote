@@ -488,4 +488,46 @@ void main() {
         reason: 'THE SECOND HALF: clicking into the row you just made kicked '
             'you out again, every time');
   });
+
+  testWidgets('THE OWNERS PATH: a narrow box the app made, word, Tab',
+      (t) async {
+    // The owner's trace, from exactly this: *"I typed a word and pressed tab,
+    // i did not attempt to navigate or do anything other after presseing
+    // tab."* The pursuit SUCCEEDED — the caret reached the cell — and then
+    // the focus fell all the way out to the route's own scope, past the
+    // table's scope, which is what detaching a focused node looks like.
+    //
+    // The difference from the journey test above is the BOX: 320 wide and
+    // auto-sizing, which is what clicking the page makes. A table needs more
+    // width than that, so the box must grow on the very frame the caret is
+    // landing.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await pumpShell(t, {'text': ''});
+    // The width `PageCanvas._createTextAt` gives a box, and auto-width on,
+    // which is the default for one nobody has resized.
+    app.blocks.single.w = 320;
+    await t.pumpAndSettle();
+
+    await openBlock(t);
+    final host = t.widget<TextField>(find
+        .descendant(
+            of: find.byType(TextBlockView), matching: find.byType(TextField))
+        .first);
+    t.testTextInput.enterText('Element');
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+    host.controller!.selection = const TextSelection.collapsed(offset: 7);
+    await t.pumpAndSettle();
+
+    await key(t, LogicalKeyboardKey.tab);
+    expect(tablesIn(app.blocks.single.content), hasLength(1),
+        reason: 'the table was made');
+    // Several frames, because the loss happened AFTER the caret had landed.
+    for (var i = 0; i < 6; i++) {
+      await t.pump(const Duration(milliseconds: 120));
+    }
+    expect(caretInACell(), isTrue,
+        reason: 'the caret reached the cell and then fell out to the route '
+            "scope — the node under it was detached");
+  });
 }

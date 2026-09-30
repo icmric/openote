@@ -1567,13 +1567,44 @@ class LiveMarkdownController extends TextEditingController {
           // so they are in it.
           child: _atom(
             'atom|$id|${host?.editable}|${layoutWidth?.round()}',
-            () => inlineAtomWidget(
-              host: host,
-              id: id,
-              alt: c.inner,
-              style: cBase,
-              dark: dark,
-              maxWidth: layoutWidth,
+            // **Keyed on the atom's id, which is the only stable thing here.**
+            //
+            // A `WidgetSpan`'s child is an ordinary widget in an ordinary
+            // list, and an UNKEYED one is matched by position. The spans
+            // around this atom are rebuilt constantly and change in number —
+            // pressing Tab rewrites the whole line from `Element` to
+            // `![2x2 table](onote://atom/…)` in one go — so the element under
+            // this span was being matched against a different widget and
+            // thrown away. A table's `State` holds its cells' focus nodes, so
+            // throwing it away detaches the node the caret is in: the caret
+            // then falls past the table's own scope (deactivating an element
+            // sets `canRequestFocus = false` on it) and out to the route's.
+            //
+            // Which is what the owner's trace looks like — the pursuit
+            // SUCCEEDED, the caret reached the cell, and the next line showed
+            // it on `_ModalScopeState Focus Scope`.
+            //
+            // **UNPROVEN.** Six attempts to reproduce that in a test have
+            // failed, and a test asserting this element survives a reshaped
+            // paragraph passed with the key removed — so it is not the
+            // demonstration it looked like, and was deleted rather than kept
+            // as decoration. This key is here on principle and precedent, not
+            // on evidence: matching an atom by position is wrong whatever is
+            // causing the report.
+            //
+            // The card and the picture beside this one were keyed from the
+            // start, on their line offsets. An atom has something better: an
+            // id that survives the text moving under it.
+            () => KeyedSubtree(
+              key: ValueKey('atom-$id'),
+              child: inlineAtomWidget(
+                host: host,
+                id: id,
+                alt: c.inner,
+                style: cBase,
+                dark: dark,
+                maxWidth: layoutWidth,
+              ),
             ),
           ),
         ));

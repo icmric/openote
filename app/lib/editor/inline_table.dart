@@ -479,6 +479,7 @@ class _InlineTableState extends State<InlineTable> {
 
   @override
   void initState() {
+    tfLog('STATE initState  <-- a NEW table widget replaced the old one');
     super.initState();
     _data = widget.binding.read();
     if (widget.editable) _build(_data);
@@ -502,6 +503,9 @@ class _InlineTableState extends State<InlineTable> {
 
   @override
   void didUpdateWidget(InlineTable old) {
+    if (old.editable != widget.editable) {
+      tfLog('editable ${old.editable} -> ${widget.editable}');
+    }
     super.didUpdateWidget(old);
     if (!identical(old.revision, widget.revision)) {
       old.revision?.removeListener(_external);
@@ -548,6 +552,7 @@ class _InlineTableState extends State<InlineTable> {
 
   @override
   void dispose() {
+    tfLog('STATE dispose  <-- this table is going away');
     widget.revision?.removeListener(_external);
     // **Hand the keyboard back on the way out.** The host stands its own key
     // handling, caret and text-input connection down while a cell holds the
@@ -588,6 +593,8 @@ class _InlineTableState extends State<InlineTable> {
   /// while the table is not editable), and the disposal waits for the frame
   /// it would otherwise have reached into.
   void _retireGrid() {
+    tfLog('retireGrid  <-- every cell node detaches here '
+        '(editable=${widget.editable} grid=${_nodes.length})');
     for (final row in _ctls) {
       _retired.addAll(row);
     }
@@ -647,6 +654,8 @@ class _InlineTableState extends State<InlineTable> {
   /// which is the gesture this table is built around (type, Tab, type, Tab).
   /// Only cells that genuinely disappear are retired.
   void _build(TableData d) {
+    tfLog('build grid ${_nodes.length}x'
+        '${_nodes.isEmpty ? 0 : _nodes.first.length} -> ${d.rows}x${d.cols}');
     final ctls = <List<LiveMarkdownController>>[];
     final nodes = <List<FocusNode>>[];
     final undos = <List<UndoHistoryController>>[];
