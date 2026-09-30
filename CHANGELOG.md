@@ -70,6 +70,19 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ### Fixed — tables and pictures
 
+- **The caret stays in the cell you just made.** Pressing Tab to turn a word
+  into a table, or Enter to add a row, put the caret in the new cell and then
+  threw it straight back out — so the next thing you typed went into the
+  sentence, or nowhere at all. New cells were the worst of it, and clicking or
+  arrowing back into one did it again.
+
+  The cause was accessibility, not tables. A paragraph here is a text field
+  whose words can contain more text fields, and when accessibility focus moves
+  from the paragraph into one of its own cells, Flutter reads that as "this
+  field is finished being edited" and drops the caret — which on a nested
+  field takes the cell's caret with it. It is a fair thing to conclude about
+  an ordinary field and the wrong thing to conclude about this one, so the
+  paragraph now declines while something inside it is being typed into.
 - **A converted table keeps the width it had.** A table block was a box with a
   width, and a table with no column widths of its own simply filled it; the
   new shape has no box, so it drew at the width of its own text — a table that

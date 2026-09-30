@@ -1,10 +1,12 @@
 # What needs testing, and what I need from you
 
-> Working document · last updated 2026-09-29 · **v1.0.1 is not cut yet** —
-> this is the pass that decides whether it can be.
+> Working document · last updated 2026-09-30 · **v1.0.1 is tagged but its
+> release is still an unpublished draft** — the caret bug below is why, and it
+> is now fixed. This pass decides whether the draft can be published.
 >
-> **§7 is new**, and is the twelve things you reported part-way through this
-> pass. None of it has been near a human.
+> **§1.2 has two new rows** for the fix, and **§9 has two new entries** for
+> what is knowingly still wrong. Everything in §7 — the twelve you reported
+> part-way through this pass — is still unconfirmed by a human.
 >
 > Everything below is **built, covered by automated tests, and never touched
 > by a human**. Tests prove a mechanism; they cannot tell you a gesture feels
@@ -60,6 +62,14 @@ me fixing something and you finding it still broken. Please be unkind to it.
       first.
 - [ ] **Escape** puts the caret back in the paragraph, and the table stays.
 - [ ] **Arrow down from the last row** leaves the table downwards.
+- [ ] **Type a word and press Tab to make a table, then keep typing.** The
+      letters must land in the cell. This was broken in the v1.0.1 build:
+      the caret reached the cell and was then thrown out to nowhere, so the
+      next keystroke went into the sentence or was swallowed.
+- [ ] **The same for a row or a column you have just made** — Enter at the
+      end of a row, Tab at the end of the last one. Go back into that new
+      cell by clicking it and by arrowing into it, and type in both cases.
+      Getting kicked out of *new* cells specifically is what it used to do.
 
 ### 1.3 The thing that must never happen
 
@@ -279,6 +289,20 @@ Not for you to test — recorded here so you are not surprised by them.
   print their numbers instead of asserting them) and widening the budget
   until it only catches a real regression. Your call; I have not touched
   them.
+- **The caret may still blink out of a cell and straight back in.** The fix
+  in v1.0.1 stops the caret being *thrown out and left there*; it does not
+  stop the window itself briefly losing focus, which parks the caret and then
+  restores it. If you see a flicker and can carry on typing, that is this. If
+  you see it leave and **stay** out, that is a new bug — tell me.
+- **The console prints accessibility errors constantly.**
+  `Failed to update ui::AXTree, error: … will not be in the tree` — in normal
+  use, not only around tables. This is real and it is the cause of the two
+  entries above: screen readers cannot read the editor today. It is deferred
+  to v1.0.2 with the evidence written up in
+  [docs/planning/v1.0.2-accessibility-tree.md](docs/planning/v1.0.2-accessibility-tree.md),
+  because the check that fails is in the engine, no automated test here can
+  see it, and it may not be ours. Nothing for you to test — just do not be
+  surprised by it.
 - **A caret parked on a table's scope.** If a cell were to take and drop the
   caret four times inside one frame, the caret would sit on the table itself
   with nothing typeable until you click. I could not make it happen, and the
