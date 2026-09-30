@@ -91,12 +91,20 @@ Block? tableBlockAsText(
   // carried verbatim like everything else. The caller measures, because what
   // a column naturally wants is a question about rendering and this file
   // knows nothing about that.
+  //
+  // **Under `impliedColWidths`, not `colWidths`, and the distinction is the
+  // whole point.** Written as `colWidths` these numbers were indistinguishable
+  // from a width somebody had dragged, so they were used EXACTLY — and every
+  // converted table's columns stopped growing. Typing a longer word into one
+  // wrapped it and left it wrapped for good, because a column only measures
+  // itself when it has no stored width. An implied width is a starting size;
+  // see [TableData.impliedColWidths].
   final fit = _fitted(before, widthsIfNone);
   // Deep-copied so the new block shares no list with the old one.
   final carried = jsonDecode(jsonEncode(<String, dynamic>{
     if (b.content.containsKey('cells')) 'cells': b.content['cells'],
     if (b.content.containsKey('colWidths')) 'colWidths': b.content['colWidths'],
-    if (fit != null) 'colWidths': fit,
+    if (fit != null) 'impliedColWidths': fit,
   })) as Map<String, dynamic>;
   final atom = InlineAtom(
     id: id,
@@ -129,16 +137,22 @@ Block? tableBlockAsText(
   // against the table that SHOULD come out, cells and all.
   final want = fit == null
       ? before
-      : TableData(cells: before.cells, colWidths: fit);
+      : TableData(
+          cells: before.cells,
+          colWidths: before.colWidths,
+          impliedColWidths: fit);
   final back = tablesIn(content);
   if (back.length != 1 || !back.single.sameAs(want)) return null;
   final wrote = InlineAtom.allIn(content)[id]?.content;
   if (wrote == null) return null;
   if (jsonEncode(wrote['cells']) != jsonEncode(b.content['cells'])) return null;
-  // The widths are the one key that may differ, and only in the one way:
-  // added, in full, exactly as the caller asked, to a table that had none.
-  final expectWidths = fit ?? b.content['colWidths'];
-  if (jsonEncode(wrote['colWidths']) != jsonEncode(expectWidths)) return null;
+  // Any width the source stated is carried across untouched...
+  if (jsonEncode(wrote['colWidths']) != jsonEncode(b.content['colWidths'])) {
+    return null;
+  }
+  // ...and the implied widths are the one key that may be ADDED, in full and
+  // exactly as the caller asked, to a table that stated none.
+  if (jsonEncode(wrote['impliedColWidths']) != jsonEncode(fit)) return null;
 
   final j = b.toJson();
   j['type'] = 'text';

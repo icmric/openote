@@ -1183,6 +1183,67 @@ void main() {
           reason: 'and so the word is on one line');
     });
 
+    /// **An implied width is where a column STARTS, not where it stops.**
+    ///
+    /// Reported: *"it wasnt expanding quick enough to keep up with some words
+    /// … depending on what characters i typed it would sometimes expand
+    /// enough to accommodate the word, sometimes not"*.
+    ///
+    /// A column only measures itself when it has no stored width, so the
+    /// widths conversion writes to keep a converted table its original size
+    /// froze every one of its columns. Typing a longer word wrapped it and
+    /// left it wrapped — and whether a given word fitted came down to which
+    /// characters were in it, which is exactly how it looked from outside. A
+    /// table made with Tab has no stored widths and grew perfectly, which is
+    /// why this only ever showed up on converted pages.
+    testWidgets('an implied width grows when the text outgrows it', (t) async {
+      (content['atoms'] as Map)['t1'] = {
+        'id': 't1',
+        'type': 'table',
+        'content': {
+          'cells': [
+            ['Deoxyribonucleic acid']
+          ],
+          'impliedColWidths': [90.0],
+        }
+      };
+      await editor(t);
+      final col = (t.widget<Table>(find.byType(Table)).columnWidths![0]
+              as FixedColumnWidth)
+          .value;
+      expect(col, greaterThan(90.0),
+          reason: 'nobody chose 90 — conversion worked it out — so it is a '
+              'floor, not a ceiling');
+      final cell = find
+          .descendant(
+              of: find.byType(Table), matching: find.byType(EditableText))
+          .first;
+      expect(t.getSize(cell).height, lessThan(30),
+          reason: 'and so the text is on one line');
+    });
+
+    /// The other half, which the fix must not break: a width somebody DRAGGED
+    /// is still used exactly, because dragging a column narrow is how you ask
+    /// for text to wrap in it.
+    testWidgets('a chosen width still does not grow', (t) async {
+      (content['atoms'] as Map)['t1'] = {
+        'id': 't1',
+        'type': 'table',
+        'content': {
+          'cells': [
+            ['Deoxyribonucleic acid']
+          ],
+          'colWidths': [90.0],
+        }
+      };
+      await editor(t);
+      expect(
+          (t.widget<Table>(find.byType(Table)).columnWidths![0]
+                  as FixedColumnWidth)
+              .value,
+          90.0);
+    });
+
     /// **The term that was reported, on one line.**
     ///
     /// *"Its not quite expanding enough to contain the words … if i put a

@@ -231,10 +231,18 @@ void main() {
       final out = tableBlockAsText(b, madeIn: 'test', widthsIfNone: want)!;
       final t = tablesIn(out.content).single;
 
-      expect(t.colWidths, want);
-      expect(t.colWidths.fold<double>(0, (a, c) => a + c), closeTo(604, 0.001),
+      // **Under `impliedColWidths`.** These are numbers conversion worked
+      // out, not ones anybody chose, and a column only measures itself when it
+      // has no CHOSEN width — so writing them as `colWidths` froze every
+      // converted table's columns and typing a longer word into one wrapped it
+      // for good. See [TableData.impliedColWidths].
+      expect(t.colWidths, isEmpty,
+          reason: 'the table still says nothing of its own');
+      expect(t.impliedColWidths, want);
+      expect(t.impliedColWidths.fold<double>(0, (a, c) => a + c),
+          closeTo(604, 0.001),
           reason: 'it fills the box it used to fill');
-      expect(t.colWidths[0], greaterThan(t.colWidths[2]),
+      expect(t.impliedColWidths[0], greaterThan(t.impliedColWidths[2]),
           reason: "the content's own proportions, not equal shares — a "
               'three-character column given a third of 620px looks wrong in a '
               'way a reader notices');
@@ -279,7 +287,7 @@ void main() {
       final b = wide();
       final out = tableBlockAsText(b, madeIn: 'test', widthsIfNone: [1.5, 2.5, 3.5]);
       expect(out, isNotNull);
-      expect(tablesIn(out!.content).single.colWidths, [1.5, 2.5, 3.5],
+      expect(tablesIn(out!.content).single.impliedColWidths, [1.5, 2.5, 3.5],
           reason: 'silly but valid, and honoured exactly — the caller is '
               'trusted to measure, and audited on the shape of what it says');
     });

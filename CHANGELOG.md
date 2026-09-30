@@ -83,6 +83,15 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   field takes the cell's caret with it. It is a fair thing to conclude about
   an ordinary field and the wrong thing to conclude about this one, so the
   paragraph now declines while something inside it is being typed into.
+- **A converted table's columns grow again as you type.** Keeping a converted
+  table at the width it used to have (below) wrote those widths down in the
+  same place as a width you had dragged — and a column with a width of its own
+  does not measure itself, because being left exactly where you put it is the
+  whole point of dragging one. So every converted table's columns were frozen:
+  typing a longer word wrapped it and left it wrapped, and whether any given
+  word fitted came down to which letters were in it. The two are now told
+  apart. A width you chose is still used exactly; a width the conversion
+  worked out is where the column *starts*, and it grows from there.
 - **A column is wide enough for the word in it.** A cell holding something
   like `Deoxyribonucleic acid` broke the last word onto a second line, and
   putting a space after it put it back — which is the tell that a column was

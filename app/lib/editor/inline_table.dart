@@ -1549,8 +1549,16 @@ class _InlineTableState extends State<InlineTable> {
 List<double> tableColumnWidths(TableData d, TextStyle headerStyle) => [
       for (var c = 0; c < d.cols; c++)
         (c < d.colWidths.length && d.colWidths[c] > 1)
+            // Chosen: used exactly, and text too long for it wraps. Dragging
+            // a column narrow is how you ASK for that.
             ? d.colWidths[c]
-            : _measuredColumn(d, c, headerStyle)
+            // Implied: a starting size, not a limit. A converted table opens
+            // at the width it had, and grows from there when its contents no
+            // longer fit — because nobody chose those numbers, conversion
+            // worked them out. See [TableData.impliedColWidths].
+            : math.max(
+                c < d.impliedColWidths.length ? d.impliedColWidths[c] : 0.0,
+                _measuredColumn(d, c, headerStyle))
     ];
 
 /// One column's width, measured from what is in it.

@@ -146,14 +146,38 @@ class InlineAtom {
 /// read a table block — SQL cells, Markdown export, the open-folder export,
 /// PDF, the word count, the importer — each growing their own idea of it.
 class TableData {
-  const TableData({required this.cells, required this.colWidths});
+  const TableData({
+    required this.cells,
+    required this.colWidths,
+    this.impliedColWidths = const [],
+  });
 
   /// Rows of plain strings, rectangular.
   final List<List<String>> cells;
 
   /// Per-column width in pixels; 0 means "work it out". Never shorter than
   /// the column count is not guaranteed — callers index defensively.
+  ///
+  /// **A width in here was CHOSEN** — dragged by hand, or sent by OneNote —
+  /// so it is used exactly, and text too long for it wraps. That is the point
+  /// of dragging a column narrow.
   final List<double> colWidths;
+
+  /// **Widths nobody chose**: what conversion worked out a table used to
+  /// occupy, from the width of the block it used to live in.
+  ///
+  /// Kept apart from [colWidths] because the two mean different things and
+  /// only look alike. A converted table has to open at the size it had — the
+  /// owner: *"it means that many pages end up slightly off when converting
+  /// the tables"* — but nobody sat down and decided those numbers, so they
+  /// must not freeze the column the way a dragged width does. They did: every
+  /// converted table's columns stopped growing, and typing a longer word into
+  /// one wrapped it and left it wrapped.
+  ///
+  /// So a width in here is a STARTING size, not a limit. The column opens at
+  /// it and grows past it when its contents no longer fit. Drag such a column
+  /// and the number moves to [colWidths], where it does mean exactly.
+  final List<double> impliedColWidths;
 
   /// Read a table out of any block content, normalising exactly as the table
   /// editor always has.
@@ -194,18 +218,21 @@ class TableData {
         r.add('');
       }
     }
-    final w = content['colWidths'];
+    List<double> widths(Object? raw) => raw is List
+        ? [for (final v in raw) v is num ? v.toDouble() : 0.0]
+        : const [];
     return TableData(
       cells: grid,
-      colWidths: w is List
-          ? [for (final v in w) v is num ? v.toDouble() : 0.0]
-          : const [],
+      colWidths: widths(content['colWidths']),
+      impliedColWidths: widths(content['impliedColWidths']),
     );
   }
 
   Map<String, dynamic> toContent() => {
         'cells': [for (final r in cells) [...r]],
         if (colWidths.isNotEmpty) 'colWidths': [...colWidths],
+        if (impliedColWidths.isNotEmpty)
+          'impliedColWidths': [...impliedColWidths],
       };
 
   int get rows => cells.length;
@@ -252,7 +279,10 @@ class TableData {
     if (row < 0 || col < 0 || row >= rows || col >= cols) return this;
     final grid = [for (final r in cells) [...r]];
     grid[row][col] = value;
-    return TableData(cells: grid, colWidths: colWidths);
+    return TableData(
+        cells: grid,
+        colWidths: colWidths,
+        impliedColWidths: impliedColWidths);
   }
 
   /// An empty row inserted at [at] (`rows` appends).
@@ -260,7 +290,10 @@ class TableData {
     final i = at.clamp(0, rows);
     final grid = [for (final r in cells) [...r]];
     grid.insert(i, List.filled(cols == 0 ? 1 : cols, '', growable: true));
-    return TableData(cells: grid, colWidths: colWidths);
+    return TableData(
+        cells: grid,
+        colWidths: colWidths,
+        impliedColWidths: impliedColWidths);
   }
 
   /// An empty column inserted at [at] (`cols` appends).
@@ -272,7 +305,9 @@ class TableData {
     final grid = [for (final r in cells) [...r]..insert(i, '')];
     final w = [...colWidths];
     if (w.isNotEmpty) w.insert(i.clamp(0, w.length), 0.0);
-    return TableData(cells: grid, colWidths: w);
+    final im = [...impliedColWidths];
+    if (im.isNotEmpty) im.insert(i.clamp(0, im.length), 0.0);
+    return TableData(cells: grid, colWidths: w, impliedColWidths: im);
   }
 
   /// Without row [at]. The last row is never removed — a table with no rows
@@ -280,7 +315,10 @@ class TableData {
   TableData removeRow(int at) {
     if (rows <= 1 || at < 0 || at >= rows) return this;
     final grid = [for (final r in cells) [...r]]..removeAt(at);
-    return TableData(cells: grid, colWidths: colWidths);
+    return TableData(
+        cells: grid,
+        colWidths: colWidths,
+        impliedColWidths: impliedColWidths);
   }
 
   /// Without column [at]. The last column is never removed, as above.
@@ -289,7 +327,9 @@ class TableData {
     final grid = [for (final r in cells) [...r]..removeAt(at)];
     final w = [...colWidths];
     if (at < w.length) w.removeAt(at);
-    return TableData(cells: grid, colWidths: w);
+    final im = [...impliedColWidths];
+    if (at < im.length) im.removeAt(at);
+    return TableData(cells: grid, colWidths: w, impliedColWidths: im);
   }
 
   /// Same cells, same widths — the test the converter runs before it writes.
@@ -303,6 +343,10 @@ class TableData {
     if (colWidths.length != other.colWidths.length) return false;
     for (var i = 0; i < colWidths.length; i++) {
       if (colWidths[i] != other.colWidths[i]) return false;
+    }
+    if (impliedColWidths.length != other.impliedColWidths.length) return false;
+    for (var i = 0; i < impliedColWidths.length; i++) {
+      if (impliedColWidths[i] != other.impliedColWidths[i]) return false;
     }
     return true;
   }

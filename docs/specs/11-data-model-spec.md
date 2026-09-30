@@ -117,6 +117,16 @@ CommonMark + GFM (tables, task lists, strikethrough) plus documented extensions:
 > }
 > ```
 >
+> **A table atom's two width lists mean different things.** `colWidths` holds
+> widths somebody CHOSE — dragged by hand, or sent by OneNote — and they are
+> used exactly, so text too long for one wraps inside it. `impliedColWidths`
+> holds widths nobody chose: what the table-block conversion worked out a
+> table used to occupy, from the width of the block it used to live in. Those
+> are a starting size rather than a limit, so the column opens at that width
+> and grows past it once its contents no longer fit. Both are optional, both
+> are per-column and 0 means "work it out"; a reader that knows only
+> `colWidths` still draws a converted table, just at its natural width.
+>
 > `type` is a string rather than a `BlockType` because **an atom of a type
 > this build has never heard of must survive being read and written back** — a
 > newer device's notebook is not a corrupt one, and dropping the payload would
