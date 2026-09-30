@@ -3,6 +3,8 @@ import 'dart:io' show Directory, exit;
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
+
+import 'editor/inline_table.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import 'core/single_instance.dart';
@@ -15,6 +17,10 @@ import 'ui/app_shell.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  // TEMPORARY: a focus trace for the caret-in-a-table report.
+  // Prints `TABLEFOCUS …` lines. Remove with `tfLog` once the
+  // trace has said what is moving the caret.
+  InlineTable.debugFocusLog = true;
   // The notebook we were launched to open: `openote Physics.onotebook`, or a
   // double-click in the file manager — on the notebook folder itself where the
   // shell will open one, and on the `Open this notebook.onotelink` inside it

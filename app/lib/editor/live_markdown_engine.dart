@@ -19,6 +19,7 @@ import '../math/math_editor.dart';
 import '../math/math_field.dart';
 import '../canvas/portal_view.dart';
 import 'block_atom_host.dart';
+import 'inline_table.dart' show tfLog;
 import 'emphasis_guard.dart';
 import 'inline_math_editor.dart';
 import 'list_editing.dart';
@@ -131,7 +132,7 @@ class LiveMarkdownEngine extends OnoteTextEditor {
       block.id,
       editable: true,
       onKeyboard: session._atomTookKeyboard,
-      onExit: session._leaveAtom,
+      onExit: (id) { tfLog('host.onExit($id)'); session._leaveAtom(id); },
       onNeedWidth: (total) {
         final avail = session.controller.layoutWidth;
         if (avail == null) return;
@@ -1431,7 +1432,13 @@ class _LiveMarkdownSession extends OnoteEditSession {
         //
         // Nothing else needs doing here: the tap has already put the
         // paragraph's own caret where it landed.
-        if (_focus.hasFocus && !_focus.hasPrimaryFocus) _focus.requestFocus();
+        // TEMPORARY trace — see `tfLog` in inline_table.dart. This is the
+        // one place the PARAGRAPH takes the caret back off a cell, so if the
+        // table is not throwing it out, this is.
+        if (_focus.hasFocus && !_focus.hasPrimaryFocus) {
+          tfLog('paragraph.onTap reclaims the caret from a cell');
+          _focus.requestFocus();
+        }
         _enterMathOnTapAtLineEnd();
       },
       showCursor: !inlineChildFocused,
