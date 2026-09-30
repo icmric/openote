@@ -1182,5 +1182,35 @@ void main() {
       expect(t.getSize(cell).height, lessThan(30),
           reason: 'and so the word is on one line');
     });
+
+    /// **The term that was reported, on one line.**
+    ///
+    /// *"Its not quite expanding enough to contain the words … if i put a
+    /// space at the end of the word it puts it up on a single line as
+    /// expected, but if i then remove it it splits it again"*.
+    ///
+    /// `Deoxyribonucleic acid` wanted 322.5px and the cap was 320, so it was
+    /// capped and broke before `acid`. The cap is a real rule and it stays —
+    /// this pins the case that showed it was set too tight, so that anything
+    /// lowering it again has to argue with a word rather than with a number.
+    testWidgets('a term that used to be capped and wrapped now fits',
+        (t) async {
+      (content['atoms'] as Map)['t1'] = {
+        'id': 't1',
+        'type': 'table',
+        'content': {
+          'cells': [
+            ['Deoxyribonucleic acid']
+          ],
+        }
+      };
+      await editor(t);
+      final cell = find
+          .descendant(
+              of: find.byType(Table), matching: find.byType(EditableText))
+          .first;
+      expect(t.getSize(cell).height, lessThan(30),
+          reason: 'it wrapped onto a second line at a cap of 320');
+    });
   });
 }

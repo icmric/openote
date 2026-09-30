@@ -54,7 +54,21 @@ class TableBinding {
 /// long cells by default, although if i drag the cell out there is no reason it
 /// should stop at that max width"*. So this caps the AUTOMATIC width only. A
 /// width somebody dragged, or one OneNote sent, is used exactly.
-const double kTableColumnCap = 320;
+///
+/// **320 was too tight**, which is what *"its not quite expanding enough to
+/// contain the words"* turned out to be. It is about 22 characters, so
+/// `Deoxyribonucleic acid` — 21 — wanted 322.5px, was capped at 320, and
+/// wrapped one and a half pixels short. A chemistry term a student types every
+/// day is not the "crazy long cell" this was aimed at; a cell holding a
+/// sentence is. 420 is about 29 characters, which fits the terms and still
+/// stops the sentences, and two such columns still sit inside a normal page
+/// box.
+///
+/// The symptom to recognise if this is ever wrong again: a trailing space
+/// FIXING a wrapped word. Whitespace at a line end may overflow, so a space
+/// moves the last break opportunity past the word instead of before it — which
+/// means the column is short by less than one space, not by a word.
+const double kTableColumnCap = 420;
 
 /// The narrowest a column can be dragged. Below this the text is unreadable
 /// and the handle itself becomes hard to grab back.

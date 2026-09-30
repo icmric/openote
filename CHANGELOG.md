@@ -83,6 +83,14 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   field takes the cell's caret with it. It is a fair thing to conclude about
   an ordinary field and the wrong thing to conclude about this one, so the
   paragraph now declines while something inside it is being typed into.
+- **A column is wide enough for the word in it.** A cell holding something
+  like `Deoxyribonucleic acid` broke the last word onto a second line, and
+  putting a space after it put it back — which is the tell that a column was
+  short by less than a space rather than by a word. Two things were: a column
+  did not reserve the few pixels a text field keeps for its own cursor, and
+  the widest a column sizes itself to was about twenty-two characters, which
+  is narrower than a term a student writes every day. It is about twenty-nine
+  now. Dragging a column is unchanged and still overrides both.
 - **A converted table keeps the width it had.** A table block was a box with a
   width, and a table with no column widths of its own simply filled it; the
   new shape has no box, so it drew at the width of its own text — a table that
