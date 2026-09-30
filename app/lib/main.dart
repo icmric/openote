@@ -60,6 +60,14 @@ Future<void> main(List<String> args) async {
   // no longer which widget takes the caret — it is whether that event really
   // arrives, and when. Every observer gets it, so this asks directly.
   WidgetsBinding.instance.addObserver(_ViewFocusProbe());
+  // …and one line per focus change in place of the tree, so the ORDER is
+  // visible. What matters is whether `VIEW unfocused` lands between the cell
+  // taking the caret and the root scope getting it; that is the difference
+  // between the window losing focus and something in here moving it.
+  FocusManager.instance.addListener(() {
+    final f = FocusManager.instance.primaryFocus;
+    tfLog('PRIMARY -> ${f?.debugLabel ?? f.runtimeType}');
+  });
   // The notebook we were launched to open: `openote Physics.onotebook`, or a
   // double-click in the file manager — on the notebook folder itself where the
   // shell will open one, and on the `Open this notebook.onotelink` inside it
