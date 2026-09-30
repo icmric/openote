@@ -1567,7 +1567,19 @@ double _measuredColumn(TableData d, int col, TextStyle headerStyle) {
     tp.dispose();
     if (w > widest) widest = w;
   }
-  return (widest + kTableCellPad.horizontal + 2)
+  // **Padding, the text, and the caret the field keeps for itself.**
+  //
+  // `RenderEditable` lays its text out in `maxWidth - _caretMargin` — a 1px
+  // gap plus the 2px cursor — so an editable cell has three fewer pixels than
+  // its box, and a column measured to hold exactly its text hands that text
+  // three pixels less than it was measured to need. This used to be a bare
+  // `+ 2`, which covered two of those three by luck and left the last to the
+  // rounding in `TextPainter.width`.
+  //
+  // The tell that it was short was a trailing space FIXING a wrapped word:
+  // whitespace at a line end is allowed to overflow, so a space moves the
+  // last break opportunity past the word instead of before it.
+  return (widest + kTableCellPad.horizontal + kEditorCaretMargin)
       .clamp(kTableColumnAuto, kTableColumnCap);
 }
 

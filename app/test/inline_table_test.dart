@@ -1123,5 +1123,64 @@ void main() {
       expect((table.columnWidths![1] as FixedColumnWidth).value,
           kTableColumnCap);
     });
+
+    /// **A word has to still fit once the FIELD has taken its caret margin.**
+    ///
+    /// Reported: *"it ends up wrapping some words. If i put a space at the end
+    /// of the word it puts it up on a single line as expected, but if i then
+    /// remove it it splits it again"*. A trailing space making something FIT
+    /// is the tell: it is the shape of an underestimate smaller than one
+    /// space, not of the cap above.
+    ///
+    /// `RenderEditable` lays its text out in `maxWidth - _caretMargin` — a
+    /// 1px gap plus the 2px cursor — so an editable cell has three pixels
+    /// less room than its box. The column was measured as the text plus
+    /// [kTableCellPad] plus two, which left the word a pixel short of the
+    /// width it had just been measured to need. A trailing space bought about
+    /// four back, because `maxIntrinsicWidth` counts trailing whitespace and
+    /// a line break does not.
+    ///
+    /// Asserted against the box the field is actually given rather than
+    /// against the arithmetic, so it stays true if the padding changes.
+    testWidgets('a column fits its widest word after the caret margin',
+        (t) async {
+      // Uncapped on purpose: at [kTableColumnCap] a column is the cap by
+      // rule, and what is asserted here is the MEASUREMENT.
+      const word = 'Electronegativity';
+      (content['atoms'] as Map)['t1'] = {
+        'id': 't1',
+        'type': 'table',
+        'content': {
+          'cells': [
+            [word]
+          ],
+        }
+      };
+      await editor(t);
+
+      final cell = find
+          .descendant(
+              of: find.byType(Table), matching: find.byType(EditableText))
+          .first;
+      final field = t.widget<EditableText>(cell);
+      final tp = TextPainter(
+        text: TextSpan(text: word, style: field.style),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      addTearDown(tp.dispose);
+
+      final col = (t.widget<Table>(find.byType(Table)).columnWidths![0]
+              as FixedColumnWidth)
+          .value;
+      expect(
+          col,
+          greaterThanOrEqualTo(
+              tp.width + kTableCellPad.horizontal + kEditorCaretMargin),
+          reason: 'a column holds its padding, its text, AND the caret the '
+              'field reserves — without the last it hands the text less than '
+              'it was measured to need');
+      expect(t.getSize(cell).height, lessThan(30),
+          reason: 'and so the word is on one line');
+    });
   });
 }
