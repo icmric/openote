@@ -803,7 +803,7 @@ jobs:
             walks is exactly the number in the source, and every offset in the paragraph
             still means what it says.
 
-            3,563 automated tests run on every push.
+            3,565 automated tests run on every push.
 
             ## Downloads
             - **Windows**: `openote-*-windows-x64-setup.exe` — the installer.
