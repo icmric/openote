@@ -530,4 +530,59 @@ void main() {
         reason: 'the caret reached the cell and then fell out to the route '
             "scope — the node under it was detached");
   });
+
+  /// **The event `debugFocusChanges` actually recorded.**
+  ///
+  /// Six reproductions in this file guessed at a CAUSE and all six missed,
+  /// because the cause is in the framework and does not fire under
+  /// `TestTextInput`. Flutter's own focus log named the event instead:
+  ///
+  /// ```text
+  /// FOCUS: Unfocused node:
+  ///     primary focus was FocusNode#5b072([IN FOCUS PATH])
+  ///     next focus will be FocusScopeNode#723b0(_ModalScopeState Focus Scope)
+  /// ```
+  ///
+  /// `#5b072` is the paragraph's node — the tree dump put it directly above
+  /// `FocusScopeNode(inlineTable)` — and it is IN the focus path rather than
+  /// holding the focus, so a cell had the caret at the time. Several
+  /// framework paths spell "done editing this field" as
+  /// `widget.focusNode.unfocus()`, and each of them lands here.
+  ///
+  /// So this test does not reproduce a cause. It performs the event, on the
+  /// real tree, and asserts the caret survives it. That is the whole of what
+  /// the fix claims, and it fails without it.
+  testWidgets('unfocusing the paragraph does not take the cell caret',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await pumpShell(t, {'text': 'Element'});
+
+    await openBlock(t);
+    final host = t.widget<TextField>(find
+        .descendant(
+            of: find.byType(TextBlockView), matching: find.byType(TextField))
+        .first);
+    host.controller!.selection = const TextSelection.collapsed(offset: 7);
+    await t.pumpAndSettle();
+
+    await key(t, LogicalKeyboardKey.tab);
+    expect(caretInACell(), isTrue, reason: 'the caret is in a cell to begin');
+
+    // The paragraph is an ANCESTOR of the cell, so walk the focus path up to
+    // it rather than trusting a Finder — the trace identified it by position
+    // in exactly this way.
+    FocusNode? node = FocusManager.instance.primaryFocus;
+    while (node != null && node.debugLabel != 'paragraph') {
+      node = node.parent;
+    }
+    expect(node, isNotNull,
+        reason: 'the cell sits inside the paragraph that owns the table');
+
+    node!.unfocus();
+    await t.pumpAndSettle();
+
+    expect(caretInACell(), isTrue,
+        reason: 'THE BUG: unfocusing the paragraph drags its own cell out to '
+            'the route scope, and typing lands beside the table');
+  });
 }

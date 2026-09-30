@@ -19,7 +19,7 @@ import '../math/math_editor.dart';
 import '../math/math_field.dart';
 import '../canvas/portal_view.dart';
 import 'block_atom_host.dart';
-import 'inline_table.dart' show tfLog;
+import 'inline_table.dart' show tfLog, InlineTable;
 import 'emphasis_guard.dart';
 import 'inline_math_editor.dart';
 import 'list_editing.dart';
@@ -236,6 +236,55 @@ class _PendingStyleFormatter extends TextInputFormatter {
       selection: TextSelection.collapsed(offset: at + wrap.caret),
       composing: TextRange.empty,
     );
+  }
+}
+
+/// **The paragraph's own focus node, which refuses to take a cell's caret
+/// with it — and says who asked.**
+///
+/// Six reproductions missed this and `debugFocusChanges` caught it in one:
+///
+/// ```text
+/// FOCUS: Unfocused node:
+///     primary focus was FocusNode#5b072([IN FOCUS PATH])
+///     next focus will be FocusScopeNode#723b0(_ModalScopeState Focus Scope)
+/// ```
+///
+/// `#5b072` is the node sitting directly above the table's own focus scope —
+/// this node — and it is NOT the primary focus at the time. The cell is. So
+/// something unfocuses the PARAGRAPH while a CELL is being typed into, and
+/// because a cell is a focus descendant, the cell's caret leaves with it,
+/// past the table's scope and out to the route. That is the reported bug:
+/// type, Tab, and the caret is gone from the new table.
+///
+/// Nothing in `lib/` calls it. The caller is inside the framework, where
+/// several paths spell "this field has finished being edited" as
+/// `widget.focusNode.unfocus()` — `EditableText.connectionClosed`,
+/// `_finalizeEditing`, the desktop tap-outside action. From outside they are
+/// indistinguishable, and each one is wrong here for the same reason: none of
+/// them knows there is a second field nested inside this one.
+///
+/// So the refusal does not depend on knowing which. `hasFocus` without
+/// `hasPrimaryFocus` means exactly what it means in [inlineChildFocused] — a
+/// descendant holds the keyboard — and while that is true, this node is not
+/// the field being finished with, whoever is asking.
+///
+/// The stack trace is TEMPORARY scaffolding and comes out with [tfLog]; it is
+/// what will finally name the caller, and it only costs anything while the
+/// flag is on.
+class _ParagraphFocusNode extends FocusNode {
+  _ParagraphFocusNode() : super(debugLabel: 'paragraph');
+
+  @override
+  void unfocus({UnfocusDisposition disposition = UnfocusDisposition.scope}) {
+    if (hasFocus && !hasPrimaryFocus) {
+      if (InlineTable.debugFocusLog) {
+        tfLog('PARAGRAPH unfocus REFUSED — a descendant holds the caret; '
+            'disposition=$disposition\n${StackTrace.current}');
+      }
+      return;
+    }
+    super.unfocus(disposition: disposition);
   }
 }
 
@@ -1024,7 +1073,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
   final AppState app;
   final LiveMarkdownController controller;
   final ValueChanged<String> onChanged;
-  final FocusNode _focus = FocusNode();
+  final FocusNode _focus = _ParagraphFocusNode();
 
   /// Debounce so a check runs between keystrokes, not on each one. Checking a
   /// block is sub-millisecond once the dictionary is resident, but re-styling
