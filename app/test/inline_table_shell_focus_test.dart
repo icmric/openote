@@ -358,7 +358,7 @@ void main() {
     }
   });
 
-  testWidgets('THE VIEW FOLLOWS THE CELL, not the paragraph behind it',
+  testWidgets('THE VIEW DOES NOT CHASE ANYTHING while a cell is typed into',
       (t) async {
     // Reported after v1.0.1: *"the caret now jumps around like crazy in and
     // out of the table, making it unuseable."*
@@ -400,12 +400,92 @@ void main() {
     app.cancelPendingSave();
     expect(caretInACell(), isTrue, reason: 'the caret is in a cell');
 
-    final says = app.activeSession!.caretRectGlobal();
-    expect(says, isNotNull, reason: 'it knows where the caret is');
-    final cell = t.getRect(fields.last);
-    expect(cell.inflate(24).contains(says!.center), isTrue,
-        reason: 'the caret it reports must be the one that is blinking — it '
-            "reported the paragraph's instead, at ${says.center}, while the "
-            'cell is at ${cell.center}');
+    // **Nothing to reveal while a cell has the keyboard.**
+    //
+    // It used to answer with the PARAGRAPH's caret, which is stale while a
+    // cell is being typed into — so the page chased a point nobody was
+    // writing at. Answering with the cell's own caret aimed it correctly and
+    // made things worse: a canvas that really does scroll under a table takes
+    // the caret out of it. So the follower stands down here instead, and this
+    // is the assertion that keeps it standing down.
+    expect(app.activeSession!.caretRectGlobal(), isNull,
+        reason: 'a cell holds the keyboard, so there is nothing for the view '
+            "to chase — least of all the paragraph's own caret, which is "
+            'where this started');
+  });
+
+  testWidgets('GETTING BACK INTO A ROW YOU JUST MADE, low on a tall page',
+      (t) async {
+    // Reported after the caret-follow fix: *"when i added a new row it did it
+    // and kicked the carret out, however then if i tried to navigate back into
+    // that bottom row either by arrows or clicking into it, it would just kick
+    // me out again… it seemed to happen in all the new cells."*
+    //
+    // The missing ingredient in every earlier test is a page tall enough for
+    // revealing the caret to actually SCROLL. A table near the top is already
+    // comfortable, `revealGlobalRect` returns without doing anything, and the
+    // interaction cannot happen.
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    const atom = InlineAtom(id: 'tb', type: 'table', content: {
+      'cells': [
+        ['Element', 'Symbol'],
+        ['Sodium', 'Na'],
+      ]
+    });
+    final content = <String, dynamic>{
+      'text': 'Low down ${atom.reference('2x2 table')}',
+    };
+    InlineAtom.putIn(content, atom);
+
+    // Low enough that a new row lands past the bottom of the comfortable
+    // band, so the reveal really does scroll.
+    final nb = app.notebookId!;
+    final page = app.nodes.firstWhere((n) => n.kind == NodeKind.page);
+    block = Block(type: BlockType.text, x: 60, y: 620, w: 480, content: content);
+    app.importPage(nb, page.id, [block], PageProps());
+    app.reloadNodes();
+    await app.selectPage(page.id);
+    app.markOnboardingSeen();
+    t.view.physicalSize = const Size(1400, 900);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
+      theme: onoteTheme(Brightness.light),
+      home: AppShell(app: app),
+    ));
+    await t.pump(const Duration(milliseconds: 900));
+    await t.pumpAndSettle();
+    block = app.blocks.single;
+
+    await t.tapAt(
+        t.getTopLeft(find.byType(TextBlockView)) + const Offset(24, 14));
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+    expect(app.editingBlockId, block.id, reason: 'the block is open');
+
+    final fields = () => find.descendant(
+        of: find.byType(TextBlockView), matching: find.byType(TextField));
+
+    // Into the last cell, then make a row.
+    await t.tap(fields().last);
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+    expect(caretInACell(), isTrue, reason: 'in the last cell');
+
+    await key(t, LogicalKeyboardKey.enter);
+    expect(tablesIn(app.blocks.single.content).single.rows, 3,
+        reason: 'the row was made');
+    expect(caretInACell(), isTrue,
+        reason: 'THE FIRST HALF: making the row kicked the caret out');
+
+    // And now the half that made it unusable: go back into the new row.
+    await t.tap(fields().last);
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+    expect(caretInACell(), isTrue,
+        reason: 'THE SECOND HALF: clicking into the row you just made kicked '
+            'you out again, every time');
   });
 }

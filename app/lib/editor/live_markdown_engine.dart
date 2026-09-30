@@ -1280,51 +1280,38 @@ class _LiveMarkdownSession extends OnoteEditSession {
     }
   }
 
-  /// **The caret an inline child is holding**, when one is.
-  ///
-  /// Reported after v1.0.1: *"the caret now jumps around like crazy in and
-  /// out of the table, making it unuseable."*
-  ///
-  /// [AppState.ensureCaretVisible] asks the session where the caret is, and
-  /// the session answered from the PARAGRAPH's `renderEditable` and the
-  /// paragraph's own selection. While a cell holds the keyboard the paragraph
-  /// is read-only and its selection is wherever it was last left — so every
-  /// keystroke in a cell scrolled the page to a point that had nothing to do
-  /// with where anybody was typing, and the page yanked about on every
-  /// letter.
-  ///
-  /// Both halves of that shipped in the same release: tables moved into the
-  /// paragraph, and the view learned to follow the caret. Each was tested;
-  /// neither test knew about the other.
-  ///
-  /// Null unless an inline child really has the keyboard, so the ordinary
-  /// path below is untouched.
-  Rect? _innerCaretRectGlobal() {
-    if (!inlineChildFocused) return null;
-    final ctx = FocusManager.instance.primaryFocus?.context;
-    if (ctx == null) return null;
-    // A cell's `Focus` sits inside its `EditableText`, so the state that
-    // knows the caret is an ANCESTOR of the node that has it.
-    final st = ctx.findAncestorStateOfType<EditableTextState>();
-    if (st == null) return null;
-    try {
-      final r = st.renderEditable;
-      if (!r.hasSize) return null;
-      final sel = st.textEditingValue.selection;
-      if (!sel.isValid) return null;
-      final local = r.getLocalRectForCaret(
-          TextPosition(offset: sel.extentOffset, affinity: sel.affinity));
-      return local.shift(r.localToGlobal(Offset.zero));
-    } catch (_) {
-      return null;
-    }
-  }
-
   @override
   Rect? caretRectGlobal() {
-    // Whoever actually has the caret answers first.
-    final inner = _innerCaretRectGlobal();
-    if (inner != null) return inner;
+    // **The follower stands down while an inline child has the keyboard.**
+    //
+    // Two reports, one week, same feature. First: the view chased the
+    // PARAGRAPH's stale caret while a cell was being typed into, so the page
+    // yanked about on every letter. Answering with the cell's own caret
+    // instead fixed the aim and made the outcome worse — *"when i added a new
+    // row it did it and kicked the carret out, however then if i tried to
+    // navigate back into that bottom row either by arrows or clicking into it,
+    // it would just kick me out again."*
+    //
+    // Which is the honest lesson: the aim was never the problem. Getting it
+    // RIGHT is what turned "no scroll, because the paragraph's caret happened
+    // to be comfortable" into "a real scroll", and a canvas moving under a
+    // table takes the caret with it. I could not reproduce that in a test —
+    // not with a link in a cell, not with a row made low on a tall page, not
+    // with the scroll genuinely running — so I am not going to keep guessing
+    // at it from inside the thing it breaks.
+    //
+    // So: no scroll at all while a cell holds the keyboard. The cost is that
+    // typing into a cell near the bottom of the window does not bring itself
+    // into view, which is exactly what v1.0.0 did, because a table was a block
+    // and there was no cell to follow. The gain is a table that can be typed
+    // in.
+    //
+    // The rect itself was easy and is not kept: the focused descendant's own
+    // `EditableText`, found from `FocusManager.instance.primaryFocus` — whose
+    // `Focus` sits INSIDE the `EditableText` that knows where the caret is, so
+    // `findAncestorStateOfType` reaches it. Written down rather than left in
+    // the file, because code nothing calls is not a head start.
+    if (inlineChildFocused) return null;
     final st = _editableState();
     if (st == null) return null;
     try {
