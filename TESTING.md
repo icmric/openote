@@ -289,6 +289,13 @@ Not for you to test — recorded here so you are not surprised by them.
   print their numbers instead of asserting them) and widening the budget
   until it only catches a real regression. Your call; I have not touched
   them.
+- **The formatting buttons and chords are grey inside a table cell.** Bold,
+  italic, colour and the rest act on the paragraph's field, and a cell is a
+  different field — so rather than bolding the sentence outside the table,
+  they stand down. Typing Markdown into the cell works and is the way to
+  format one today. Not a regression: a table used to be its own block type,
+  where the buttons were grey as well. Deferred to v1.0.2, written up in
+  [docs/planning/v1.0.2-formatting-in-a-cell.md](docs/planning/v1.0.2-formatting-in-a-cell.md).
 - **The caret may still blink out of a cell and straight back in.** The fix
   in v1.0.1 stops the caret being *thrown out and left there*; it does not
   stop the window itself briefly losing focus, which parks the caret and then

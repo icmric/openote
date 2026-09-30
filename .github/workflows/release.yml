@@ -728,7 +728,9 @@ jobs:
             type a word, press Tab, and it becomes the first cell. Tab again adds a
             column, Enter starts a row, and the caret stays where you put it. Your
             existing tables convert as you open each page, keeping their contents and the
-            width they had.
+            width they had. To format text inside a cell, type the Markdown for it: the
+            toolbar buttons act on the sentence around the table rather than on the
+            cell, so they stand down while you are in one.
 
             **The markup stops showing itself.** Three things you could do by accident
             and see asterisks for:
@@ -803,7 +805,7 @@ jobs:
             walks is exactly the number in the source, and every offset in the paragraph
             still means what it says.
 
-            3,565 automated tests run on every push.
+            3,567 automated tests run on every push.
 
             ## Downloads
             - **Windows**: `openote-*-windows-x64-setup.exe` — the installer.
