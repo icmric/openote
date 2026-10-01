@@ -150,4 +150,90 @@ void main() {
       expect(gcfg().readAsStringSync(), '[broken');
     });
   });
+
+  group('the Claude APP — chat, not Claude Code', () {
+    // The spec's client table said ChatGPT and the Gemini app were impossible
+    // because their connectors run on the vendor's servers and cannot reach
+    // 127.0.0.1. The Claude app was never in that table at all, and it is how
+    // most people use Claude: *"it says it integrates with claude code, but is
+    // this true? … can it also integrate with chat/cowork?"*. It reads a
+    // manifest of the same shape and takes a URL with headers, so the server
+    // already running needs nothing new.
+
+    /// Where the app's config goes, which is a different place per platform.
+    List<String> cfgParts() => switch (Platform.operatingSystem) {
+          'windows' => ['AppData', 'Roaming', 'Claude',
+              'claude_desktop_config.json'],
+          'macos' => ['Library', 'Application Support', 'Claude',
+              'claude_desktop_config.json'],
+          _ => ['.config', 'Claude', 'claude_desktop_config.json'],
+        };
+    String cfgPath() =>
+        [home.path, ...cfgParts()].join(Platform.pathSeparator);
+
+    test('writes a loopback URL and a bearer header where the app reads it',
+        () {
+      final r = connectClaudeApp(port: 27311, token: 'tok', home: home.path);
+      expect(r.status, isNot(ClaudeConnect.failed));
+
+      final cfg = File(cfgPath());
+      expect(cfg.existsSync(), isTrue,
+          reason: 'at the platform path the app actually reads');
+      final root = jsonDecode(cfg.readAsStringSync()) as Map<String, dynamic>;
+      final entry = (root['mcpServers'] as Map)['openote'] as Map;
+      expect(entry['type'], 'http');
+      expect(entry['url'], 'http://127.0.0.1:27311/mcp');
+      expect((entry['headers'] as Map)['Authorization'], 'Bearer tok');
+    });
+
+    test('an existing config is merged, not replaced', () {
+      // Somebody else's servers are somebody else's. The whole reason this
+      // writes a merge rather than a file is that these manifests are shared.
+      final cfg = File(cfgPath())
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync(jsonEncode({
+          'mcpServers': {
+            'someone-else': {'command': 'their-tool'}
+          },
+          'theirSetting': true,
+        }));
+
+      connectClaudeApp(port: 27312, token: 'tok', home: home.path);
+
+      final root = jsonDecode(cfg.readAsStringSync()) as Map<String, dynamic>;
+      final servers = root['mcpServers'] as Map;
+      expect(servers.containsKey('someone-else'), isTrue,
+          reason: 'their server survives');
+      expect(servers.containsKey('openote'), isTrue);
+      expect(root['theirSetting'], isTrue, reason: 'and the rest of the file');
+    });
+
+    test('a moved port is refreshed, like the other connected clients', () {
+      // The port can change between runs if something else held it, so a
+      // connection made once has to keep working.
+      connectClaudeApp(port: 27313, token: 'old', home: home.path);
+      refreshConnectedClients(port: 27999, token: 'new', home: home.path);
+
+      final root =
+          jsonDecode(File(cfgPath()).readAsStringSync()) as Map<String, dynamic>;
+      final entry = (root['mcpServers'] as Map)['openote'] as Map;
+      expect(entry['url'], 'http://127.0.0.1:27999/mcp');
+      expect((entry['headers'] as Map)['Authorization'], 'Bearer new');
+    });
+  });
+
+  group('a client with no button', () {
+    test('the manual block is the same connection, pasteable', () {
+      // Every remaining MCP-capable client wants some spelling of "this URL
+      // with this header". One correct example does not go stale when a vendor
+      // renames a menu, which a button per vendor does.
+      final json = manualConfigJson(27401, 'tok');
+      final root = jsonDecode(json) as Map<String, dynamic>;
+      final entry = (root['mcpServers'] as Map)['openote'] as Map;
+      expect(entry['url'], mcpUrl(27401));
+      expect((entry['headers'] as Map)['Authorization'], 'Bearer tok');
+      expect(json, contains('  "openote"'),
+          reason: 'indented, so a human can read it');
+    });
+  });
 }

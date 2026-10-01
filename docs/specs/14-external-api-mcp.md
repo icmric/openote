@@ -148,19 +148,22 @@ Normative for this dialog and any future connection surface:
   | Tool | Status | Why |
   |---|---|---|
   | Claude Code | ✅ button | user-scope `mcpServers` in `~/.claude.json` |
+  | Claude app (chat) | ✅ button | `mcpServers` in `claude_desktop_config.json` — `%APPDATA%/Claude` on Windows, `~/Library/Application Support/Claude` on macOS, `~/.config/Claude` elsewhere. Takes `url` + `headers`, so this server needs no changes |
   | Gemini CLI | ✅ button | `mcpServers` (`httpUrl`) in `~/.gemini/settings.json` |
-  | ChatGPT app | ❌ impossible today | its connectors run on OpenAI's servers, which cannot reach `127.0.0.1` on the user's machine (and the UI carries no auth header) |
+  | ChatGPT **desktop** app | ⚠️ values to paste | it has its own MCP settings and accepts Streamable HTTP, but they are entered in its UI rather than a file this app may write, and which of its modes allows a local server has been moving. The dialog offers the address and the config block to copy |
+  | ChatGPT **website** | ❌ impossible | its connectors run on OpenAI's servers, which cannot reach `127.0.0.1` on the user's machine |
   | Gemini app | ❌ impossible today | same: cloud-side connectors cannot see a local server |
   | Anything else MCP-capable | Advanced fold | generic config JSON + CLI one-liner |
 
-  > **The revisit condition below has been met — 2026-10-01.** The ChatGPT
-  > **desktop app** now adds MCP servers itself (Settings ▸ MCP servers ▸ Add
-  > server, STDIO **or Streamable HTTP**) in the modes that run locally, which
-  > is exactly the shape this server already has. The ❌ row above is stale and
-  > the table has not been re-tested; the open question is whether that form
-  > can set an `Authorization` header, since §4's bearer token is mandatory.
-  > Written up, with the test to run, in
-  > [docs/planning/v1.0.2.md](../planning/v1.0.2.md) under "Investigations".
+  > **Table revised 2026-10-01.** The Claude *app* was never in it and is how
+  > most people use Claude; it is now a button. ChatGPT's desktop app grew its
+  > own MCP settings, so its row moved from "impossible" to "values to paste" —
+  > the website's row is unchanged and always will be while connectors run
+  > server-side. The one thing still unverified by a human is whether ChatGPT's
+  > form can set an `Authorization` header, which §4's bearer token requires;
+  > if it cannot, allowing a loopback client to authenticate another way is a
+  > security decision, not a convenience. See
+  > [docs/planning/v1.0.2.md](../planning/v1.0.2.md).
 
   The dialog states the ❌ rows in plain words rather than hiding them —
   "can't yet, their connectors run on the company's servers" — so nobody

@@ -52,38 +52,73 @@ String _p(String home, List<String> parts) =>
 
 /// A tool whose MCP connections live in a JSON settings file it owns.
 class _JsonClient {
-  const _JsonClient(this.name, this.configParts, this.markerDir, this.entry);
+  const _JsonClient(this.name, this.configParts, this.markerParts, this.entry);
   final String name;
-  final List<String> configParts;
+
+  /// Config path, relative to the home directory. A FUNCTION because the
+  /// desktop apps put theirs somewhere different on every platform, while the
+  /// CLI tools use one dotfile everywhere.
+  final List<String> Function() configParts;
 
   /// Directory whose presence means "this tool is installed here".
-  final String markerDir;
+  final List<String> Function() markerParts;
   final Map<String, dynamic> Function(int port, String token) entry;
 }
 
+/// What every client that speaks Streamable HTTP wants: a URL and a bearer
+/// header. `type` is stated explicitly because a client that also supports
+/// stdio has to be told which this is.
+Map<String, dynamic> _httpEntry(int port, String token) => {
+      'type': 'http',
+      'url': 'http://127.0.0.1:$port/mcp',
+      'headers': {'Authorization': 'Bearer $token'},
+    };
+
+/// Where a desktop app keeps its config, relative to home.
+///
+/// Windows uses `%APPDATA%`, which is `AppData/Roaming` under the home
+/// directory — spelled out rather than read from the environment so that a
+/// test can point the whole thing at a temporary home.
+List<String> _appSupportDir(String vendor) =>
+    switch (Platform.operatingSystem) {
+      'windows' => ['AppData', 'Roaming', vendor],
+      'macos' => ['Library', 'Application Support', vendor],
+      _ => ['.config', vendor],
+    };
+
+List<String> _appSupportParts(String vendor, String file) =>
+    [..._appSupportDir(vendor), file];
+
 final List<_JsonClient> _clients = [
-  _JsonClient('Claude Code', ['.claude.json'], '.claude',
-      (port, token) => {
-            'type': 'http',
-            'url': 'http://127.0.0.1:$port/mcp',
-            'headers': {'Authorization': 'Bearer $token'},
-          }),
-  _JsonClient('Gemini CLI', ['.gemini', 'settings.json'], '.gemini',
+  _JsonClient('Claude Code', () => ['.claude.json'], () => ['.claude'],
+      _httpEntry),
+  _JsonClient('Gemini CLI', () => ['.gemini', 'settings.json'],
+      () => ['.gemini'],
       (port, token) => {
             'httpUrl': 'http://127.0.0.1:$port/mcp',
             'headers': {'Authorization': 'Bearer $token'},
           }),
+  // **The Claude app, not Claude Code** — which is how most people use Claude,
+  // and the thing that was missing. It reads the same kind of manifest and
+  // takes a `url` with `headers`, so the server this app already runs needs no
+  // changes: Streamable HTTP on loopback with a bearer token is exactly what
+  // it wants.
+  _JsonClient(
+      'Claude app',
+      () => _appSupportParts('Claude', 'claude_desktop_config.json'),
+      () => _appSupportDir('Claude'),
+      _httpEntry),
 ];
 
 ClaudeConnectResult _connect(_JsonClient client,
     {required int port, required String token, String? home}) {
   final h = home ?? userHomeDir();
-  final cfg = File(_p(h, client.configParts));
+  final cfg = File(_p(h, client.configParts()));
 
   // Installed-ness is judged BEFORE we write anything, so our own file
   // can't vouch for a tool that isn't there.
   final existedBefore = cfg.existsSync();
-  var installed = Directory(_p(h, [client.markerDir])).existsSync();
+  var installed = Directory(_p(h, client.markerParts())).existsSync();
 
   Map<String, dynamic> root = {};
   if (existedBefore) {
@@ -145,6 +180,23 @@ ClaudeConnectResult connectGeminiCli(
         {required int port, required String token, String? home}) =>
     _connect(_clients[1], port: port, token: token, home: home);
 
+/// The Claude desktop app — chat, not Claude Code.
+ClaudeConnectResult connectClaudeApp(
+        {required int port, required String token, String? home}) =>
+    _connect(_clients[2], port: port, token: token, home: home);
+
+/// What to show somebody whose client has no button: the exact block to paste.
+///
+/// Every remaining MCP-capable client takes some spelling of "this URL with
+/// this header", so one correct example plus the two values is more use than a
+/// button per vendor — and it does not go stale when a vendor renames a menu.
+String manualConfigJson(int port, String token) =>
+    const JsonEncoder.withIndent('  ').convert({
+      'mcpServers': {'openote': _httpEntry(port, token)}
+    });
+
+String mcpUrl(int port) => 'http://127.0.0.1:$port/mcp';
+
 /// Keep EXISTING connections current (the port can move if another app
 /// held it). Called whenever the server starts; deliberately does nothing
 /// for a tool the user never connected — Openote doesn't write into other
@@ -154,7 +206,7 @@ void refreshConnectedClients(
   final h = home ?? userHomeDir();
   for (final client in _clients) {
     try {
-      final cfg = File(_p(h, client.configParts));
+      final cfg = File(_p(h, client.configParts()));
       if (!cfg.existsSync()) continue;
       final parsed = jsonDecode(cfg.readAsStringSync());
       if (parsed is! Map) continue;

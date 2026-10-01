@@ -132,6 +132,15 @@ class _McpDialogState extends State<_McpDialog> {
                     label: const Text('Connect Gemini CLI'),
                     onPressed: () => _connect(connectGeminiCli),
                   ),
+                  // **The Claude APP, not Claude Code** — which is how most
+                  // people use Claude, and was missing here. It reads its own
+                  // manifest and takes a URL with headers, so the server this
+                  // app already runs needs nothing new.
+                  FilledButton.tonalIcon(
+                    icon: const Icon(Icons.link, size: 16),
+                    label: const Text('Connect Claude app'),
+                    onPressed: () => _connect(connectClaudeApp),
+                  ),
                 ]),
                 if (_result != null)
                   Padding(
@@ -146,17 +155,51 @@ class _McpDialogState extends State<_McpDialog> {
                               : scheme.primary),
                     ),
                   ),
-                const Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: Text(
-                      'ChatGPT and the Gemini app can\'t do this yet: their '
-                      'connectors run on the company\'s servers, which '
-                      'can\'t see apps on your computer. If they add '
-                      'support, a button will appear here.',
-                      style: TextStyle(
-                          fontSize: 11,
-                          height: 1.4,
-                          color: OnoteColors.graphite400)),
+                // **Values to paste, not a button** — because this one is
+                // typed into ChatGPT's own settings rather than read from a
+                // file Openote could write, and which of its modes allows a
+                // local server has been moving. A button that might be
+                // writing nothing is worse than two values and a sentence
+                // saying where they go.
+                //
+                // The ChatGPT WEBSITE still cannot reach a loopback server,
+                // and neither can the Gemini app's. That part is unchanged.
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                          'ChatGPT: the desktop app can take this in its own '
+                          'Settings ▸ MCP servers — look for the '
+                          'mode that runs on your computer. Give it the '
+                          'address below, with the token as an Authorization '
+                          "header. The ChatGPT website can't: its connectors "
+                          "run on OpenAI's servers, which can't see your "
+                          'computer. Same for the Gemini app.',
+                          style: TextStyle(
+                              fontSize: 11,
+                              height: 1.4,
+                              color: OnoteColors.graphite400)),
+                      const SizedBox(height: 6),
+                      Wrap(spacing: 8, runSpacing: 4, children: [
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.link, size: 14),
+                          label: const Text('Copy address',
+                              style: TextStyle(fontSize: 11.5)),
+                          onPressed: () =>
+                              _copy(context, mcpUrl(app.mcpPort!)),
+                        ),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.data_object, size: 14),
+                          label: const Text('Copy configuration',
+                              style: TextStyle(fontSize: 11.5)),
+                          onPressed: () => _copy(context,
+                              manualConfigJson(app.mcpPort!, app.mcpToken!)),
+                        ),
+                      ]),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 4),
                 ExpansionTile(
