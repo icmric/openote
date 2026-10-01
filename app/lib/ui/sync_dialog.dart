@@ -186,11 +186,31 @@ class _SyncDialogState extends State<_SyncDialog> {
         _changing = false;
         _folders = detectCloudFolders();
       });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        duration: const Duration(seconds: 7),
-        content: Text('Notebook moved to $path — open Openote on your other '
-            'device and add it from the same folder.'),
-      ));
+      // **A cloud with a caveat gets a dialog, not a snack bar.**
+      //
+      // The caveat is the one thing the reader has to act on, and it has to be
+      // done in ANOTHER application — so a message that disappears after seven
+      // seconds is the wrong shape for it. The owner, having missed it
+      // entirely in the card's fine print: *"We should probably make it a bit
+      // clearer when people sync to a cloud folder to turn on offline access
+      // (like a lot clearer, potentially even make a popup confirming that its
+      // been moved and saying to turn that on…)"*.
+      //
+      // Openote cannot do it for them. There is no API for the Google Drive or
+      // OneDrive desktop client's offline flag; it is a setting in that
+      // client's own interface, so the best this can do is say so clearly and
+      // open the folder.
+      final moved = app.syncStatus(nb).folder;
+      final caveat = moved == null ? null : cloudCaveat(moved.kind);
+      if (caveat == null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          duration: const Duration(seconds: 7),
+          content: Text('Notebook moved to $path — open Openote on your other '
+              'device and add it from the same folder.'),
+        ));
+      } else {
+        await _offlineAccessDialog(moved!.name, caveat, path);
+      }
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {
@@ -206,6 +226,60 @@ class _SyncDialogState extends State<_SyncDialog> {
         });
       }
     }
+  }
+
+  /// Said once, where it cannot be missed, at the moment it becomes true.
+  Future<void> _offlineAccessDialog(
+      String folderName, String caveat, String path) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Moved — one thing left to do'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Your notebook is in $folderName now, and your other devices '
+                'can pick it up from the same folder.'),
+            const SizedBox(height: 12),
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Icon(Icons.cloud_off_outlined, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: Text(caveat,
+                      style: const TextStyle(fontWeight: FontWeight.w600))),
+            ]),
+            const SizedBox(height: 10),
+            Text(
+                'Openote cannot change that setting for you — it belongs to '
+                '$folderName, not to Openote. Without it, your notes may not '
+                'open when you are offline.',
+                style: TextStyle(
+                    fontSize: 12, color: context.surfaces.textSecondary)),
+            const SizedBox(height: 10),
+            SelectableText(path,
+                style: TextStyle(
+                    fontSize: 11, color: context.surfaces.textSecondary)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              // The folder itself, so the setting is one right-click away.
+              if (await PlatformOpen.folder(path)) return;
+              if (!ctx.mounted) return;
+              ScaffoldMessenger.of(ctx)
+                  .showSnackBar(SnackBar(content: Text("Couldn't open $path")));
+            },
+            child: const Text('Open folder'),
+          ),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Got it')),
+        ],
+      ),
+    );
   }
 
   Future<void> _chooseFolder() async {
@@ -588,8 +662,21 @@ class _SyncDialogState extends State<_SyncDialog> {
     }
   }
 
-  Widget _linkedCard(SyncStatus status, String? path) {
+  Widget _linkedCard(SyncStatus status, String? _) {
     final folder = status.folder!;
+    // **The log directory, not the container.**
+    //
+    // This card is about the folder the notebook SYNCS through, and that is
+    // the `.onotebook` — which is what `status.folder` was derived from
+    // (`isFolderSynced` asks `cloudFolderContaining(notebookLogDir(nb))`).
+    // It used to show `notebookPath`, the `.onote` container, and once a
+    // notebook is demoted that lives in a local cache instead: *"It says that
+    // its in the google drive folder, but then provides a link to a local
+    // folder which is kinda confusing. The google drive folder has the folder
+    // with all the blobs and everything, however the local one just has the
+    // .onote files."* Both statements were true and they were about different
+    // directories. The container has its own card below.
+    final path = app.notebookLogDir(nb);
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
@@ -632,7 +719,18 @@ class _SyncDialogState extends State<_SyncDialog> {
           Row(children: [
             if (path != null)
               TextButton.icon(
-                onPressed: () => PlatformOpen.file(p.dirname(path)),
+                // `folder`, not `file` — and the folder ITSELF, not its
+                // parent. `PlatformOpen.file` checks `File(path).existsSync()`,
+                // which is false for a directory, so this silently did nothing.
+                // The `false` is surfaced now too: a button that cannot say it
+                // failed is indistinguishable from one that is broken, which
+                // is precisely how this went unnoticed.
+                onPressed: () async {
+                  if (await PlatformOpen.folder(path)) return;
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text("Couldn't open $path")));
+                },
                 icon: const Icon(Icons.folder_open, size: 16),
                 label: const Text('Open folder', style: TextStyle(fontSize: 12)),
               ),
@@ -1407,8 +1505,17 @@ class _StorageSectionState extends State<_StorageSection> {
         icon: const Icon(Icons.folder_open, size: 16),
         visualDensity: VisualDensity.compact,
         tooltip: 'Open containing folder',
-        onPressed: () => PlatformOpen.file(
-            isContainer ? p.dirname(path) : path),
+        // Both branches were broken, for one reason: `PlatformOpen.file`
+        // refuses a directory, and `path` here is a directory when this row is
+        // the log folder, while `p.dirname` makes one when it is the
+        // container. See the note on the "Open folder" button above.
+        onPressed: () async {
+          final dir = isContainer ? p.dirname(path) : path;
+          if (await PlatformOpen.folder(dir)) return;
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text("Couldn't open $dir")));
+        },
       ),
     ]);
   }

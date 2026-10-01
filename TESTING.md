@@ -246,6 +246,20 @@ has been near a human. The first two are the ones I would break first.
 
 ---
 
+## 8b. Finding your notebook
+
+- [ ] **Sync ▸ Open folder** actually opens a window. It did nothing before, on
+      both buttons that offer it.
+- [ ] **The path it shows is the `.onotebook`** — the one with `ops/` and
+      `blobs/` in it — and not the local working file. The card above it says
+      which cloud folder that is, and the two should agree now.
+- [ ] **Move a notebook into a Drive or OneDrive folder.** A dialog should
+      appear telling you to turn on offline access for it, with a button that
+      opens the folder. Moving into an ordinary folder should still just show a
+      message bar.
+- [ ] **The working-file card's folder icon** opens a window too, for both the
+      container row and the logs row.
+
 ## 8a. The right-click menu
 
 Three fixes in one place, all reported together and all worth a look.

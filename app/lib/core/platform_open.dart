@@ -1,6 +1,8 @@
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'package:ffi/ffi.dart';
 
 /// Hand a URL or a file to the operating system's default handler.
@@ -75,7 +77,36 @@ abstract final class PlatformOpen {
     return _handOff(path);
   }
 
+  /// Open a DIRECTORY in the file manager.
+  ///
+  /// Separate from [file] because that one's existence check is
+  /// `File(path).existsSync()`, which is **false for a directory** — so the
+  /// sync dialog's "Open folder" button handed it a folder, got `false` back,
+  /// and did nothing at all. Reported as *"the open folder button doesnt work
+  /// at all, ill press it and nothing happens"*.
+  ///
+  /// [file] keeps its stricter check rather than being widened: its other
+  /// callers open an attachment or a video, where a directory is the wrong
+  /// thing and refusing is correct.
+  static Future<bool> folder(String path) async {
+    if (!Directory(path).existsSync()) return false;
+    return _handOff(path);
+  }
+
+  /// **Test seam: what to do once a guard has passed.**
+  ///
+  /// Null is the real platform call. A test sets this so the POSITIVE case can
+  /// be asserted at all — otherwise proving that [folder] opens a directory
+  /// means actually opening one, which launches Explorer on a developer's
+  /// machine and runs `xdg-open` against a temp directory on CI. The guards
+  /// are the part worth pinning, and this is how they can be pinned in both
+  /// directions rather than only where they refuse.
+  @visibleForTesting
+  static Future<bool> Function(String target)? debugHandOff;
+
   static Future<bool> _handOff(String target) async {
+    final hook = debugHandOff;
+    if (hook != null) return hook(target);
     try {
       if (Platform.isWindows) return _shellExecute(target);
       // `Process.start` with an argument LIST goes straight to execve — the

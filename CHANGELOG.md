@@ -2,7 +2,7 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
-## [1.0.1] — 2026-09-30
+## [1.0.1] — 2026-10-01
 
 ### Fixed — the markup never shows itself
 
@@ -67,6 +67,27 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **"Mix your own colour" says what it does.** It was a bare text button in
   the same grey as the labels around it, so the one control that reaches any
   colour at all looked like the least important thing on the dialog.
+
+### Fixed — finding your notebook, and keeping it available offline
+
+- **"Open folder" opens the folder.** It did nothing at all, on either button
+  that offered it: the call behind them checked that the path was a *file*, and
+  a folder is not one, so it declined and said nothing. Both buttons now also
+  tell you when they cannot open something, rather than looking broken.
+- **The sync card names the folder it is actually talking about.** It said your
+  notebook was in Google Drive and then showed a path on your own computer.
+  Both were true and they were about different directories: the folder that
+  syncs is the `.onotebook`, while the working file sits in a local cache once
+  you have moved it off the cloud. The card is about the first of those, and
+  now shows and opens it. The working file has its own card below, as it did.
+- **Moving a notebook into a cloud folder now says what is left to do.** Google
+  Drive and OneDrive can keep files as placeholders rather than real copies, so
+  a notebook in one may not open when you are offline — and the fix is a
+  setting in *their* app, not in Openote. That used to be a line of small grey
+  text, and only appeared for seven seconds in a message bar at the moment it
+  mattered. It is a dialog now, with a button that opens the folder so the
+  setting is one right-click away. Openote cannot change it for you; there is
+  no way to ask those programs to.
 
 ### Fixed — a notebook on Google Drive stops fighting with itself
 
