@@ -59,13 +59,53 @@ class OpLogStore {
   File get manifestFile => File(p.join(dir.path, 'manifest.json'));
   File logFor(String device) => File(p.join(opsDir.path, '$device.oplog'));
 
-  /// Content-addressed blob path. The hash IS the name, so two devices that
-  /// independently store the same image produce the same file — which is why
-  /// blobs need no merge logic at all and can be fetched lazily.
-  File blobFile(String hash) =>
-      File(p.join(blobsDir.path, hash.replaceFirst('sha256:', '')));
+  /// **The suffix exists to stop Google Drive renaming the file.**
+  ///
+  /// A blob was named by its hash and nothing else, which is what lets two
+  /// devices store the same image and produce the same file. Drive treats a
+  /// file with no extension as one whose extension it should work out, and
+  /// renames it — so every launch found the canonical name missing, salvaged
+  /// the bytes from the renamed copy (see [renamedBlobCandidates]), wrote the
+  /// canonical name back, and Drive renamed it again. Measured in a real
+  /// notebook: copies numbered up to `(8)` of identical bytes, and a repair
+  /// line in the log on every single start.
+  ///
+  /// Verified by hand on 2026-10-01: with the suffix, Drive uploads the file,
+  /// identifies the content as an image, and leaves the name alone.
+  ///
+  /// The hash is still the whole of the identity — the suffix is fixed, so two
+  /// devices still agree on the filename without any merge logic, and blob
+  /// REFERENCES are untouched (`sha256:<hash>`, as the op log has always said).
+  static const String blobSuffix = '.blob';
 
-  bool hasBlob(String hash) => blobFile(hash).existsSync();
+  String _bareName(String hash) => hash.replaceFirst('sha256:', '');
+
+  /// Where a blob is written today.
+  File blobFileCanonical(String hash) =>
+      File(p.join(blobsDir.path, '${_bareName(hash)}$blobSuffix'));
+
+  /// Where blobs were written before the suffix, and still are read from.
+  ///
+  /// **Nothing migrates these.** To a cloud client a rename is a delete plus a
+  /// create, so renaming every blob in a notebook would re-upload all of it —
+  /// and a bare file that Drive has not touched is not a problem. Only the
+  /// files Drive actually breaks get the new name, as a side effect of the
+  /// repair that was already running for them.
+  File blobFileLegacy(String hash) =>
+      File(p.join(blobsDir.path, _bareName(hash)));
+
+  /// The file holding [hash], whichever spelling it is under; the canonical
+  /// path when there is none yet, which is where a write would put it.
+  File blobFile(String hash) {
+    final canonical = blobFileCanonical(hash);
+    if (canonical.existsSync()) return canonical;
+    final legacy = blobFileLegacy(hash);
+    if (legacy.existsSync()) return legacy;
+    return canonical;
+  }
+
+  bool hasBlob(String hash) =>
+      blobFileCanonical(hash).existsSync() || blobFileLegacy(hash).existsSync();
 
   /// Bytes of [hash]'s file, or null when there is no file **or it cannot be
   /// read right now** — a cloud client holding a lock, a dehydrated
@@ -103,7 +143,9 @@ class OpLogStore {
   void writeBlob(String hash, Uint8List bytes) {
     if (hasBlob(hash)) return;
     blobsDir.createSync(recursive: true);
-    final target = blobFile(hash);
+    // Canonical, explicitly: `blobFile` would answer with the legacy name if
+    // one happened to exist, and a new blob is never written under it.
+    final target = blobFileCanonical(hash);
     final tmp = File('${target.path}.tmp');
     tmp.writeAsBytesSync(bytes, flush: true);
     tmp.renameSync(target.path);
@@ -128,8 +170,19 @@ class OpLogStore {
   /// [SyncRecorder.proveBlobs] hashes the bytes before believing any of them,
   /// so a half-downloaded file, a `.tmp` from an interrupted write, or a file
   /// somebody named to look like a blob is rejected on its contents.
-  Map<String, File> renamedBlobCandidates() {
-    final out = <String, File>{};
+  Map<String, File> renamedBlobCandidates() => {
+        // First one wins. `<hash>.pdf` and `<hash> (1).pdf` hold the same bytes
+        // by construction — they are copies of one file — so there is nothing
+        // to choose between them.
+        for (final e in renamedBlobCopies().entries) e.key: e.value.first
+      };
+
+  /// [renamedBlobCandidates], but ALL of them per hash rather than the first.
+  ///
+  /// What [tidyRenamedCopies] needs: the point of it is that `(1)` through
+  /// `(8)` all go, and the first-one-wins map cannot say there were eight.
+  Map<String, List<File>> renamedBlobCopies() {
+    final out = <String, List<File>>{};
     if (!blobsDir.existsSync()) return out;
     try {
       for (final e in blobsDir.listSync(followLinks: false)) {
@@ -138,10 +191,11 @@ class OpLogStore {
         if (name.length <= 64) continue; // exactly-the-hash, or not one
         final head = name.substring(0, 64);
         if (!_hex64.hasMatch(head)) continue;
-        // First one wins. `<hash>.pdf` and `<hash> (1).pdf` hold the same
-        // bytes by construction — they are copies of one file — so there is
-        // nothing to choose between them.
-        out.putIfAbsent(head, () => e);
+        // **Not the canonical name.** `<hash>.blob` is where blobs live now,
+        // so it is the file being repaired TO, never a stray copy to salvage
+        // from or delete.
+        if (name == '$head$blobSuffix') continue;
+        (out[head] ??= <File>[]).add(e);
       }
     } catch (_) {
       // A folder we cannot list is a folder with no candidates in it. The
@@ -191,17 +245,75 @@ class OpLogStore {
   /// bytes in hand must use `Repository.holdBlobUntilVerified` instead, which
   /// has only local consequences.
   void discardBlob(String hash) {
-    final f = blobFile(hash);
-    if (f.existsSync()) f.deleteSync();
+    // Both spellings. The caller's next move is `writeBlob`, which refuses
+    // when EITHER exists, so leaving one behind would make the repair a no-op
+    // and the wrong bytes permanent.
+    for (final f in [blobFileCanonical(hash), blobFileLegacy(hash)]) {
+      if (f.existsSync()) f.deleteSync();
+    }
   }
 
-  /// Hashes present in `blobs/`.
+  /// **Delete copies of [hashes] that a cloud client left under other names.**
+  ///
+  /// **Two checks, and both are load-bearing**, because `blobs/` is in the
+  /// shared folder and a deletion replicates to every other device (see
+  /// [discardBlob]):
+  ///
+  /// 1. Good bytes must already be present under a name Openote looks for,
+  ///    re-hashed and not merely counted — so the deletion and the file that
+  ///    replaces it travel together.
+  /// 2. **Each copy must itself hash to [hash].** A name is a claim; only the
+  ///    bytes are proof. `<hash>.pdf` holding something else is not a copy of
+  ///    this blob at all — it could be a half-finished download, or somebody
+  ///    else's file that happens to start with those characters — and deleting
+  ///    it is precisely how a repair becomes the next incident. The owner asked
+  ///    for this one by name: *"worth verifying they are identical then
+  ///    removing copies"*.
+  ///
+  /// This used to leave them, on the grounds that deleting a file nobody asked
+  /// us to delete is how a repair becomes the next incident. The owner asked
+  /// for the opposite once the copies were seen to accumulate without bound:
+  /// *"Definitley worth verifying they are identical then removing copies,
+  /// dont want users to have to go through and manually check for and remove
+  /// redundant copies of blobs."* Bounded by the verification above, and by
+  /// only ever touching names that are a hash plus something.
+  int tidyRenamedCopies(Iterable<String> hashes) {
+    final wanted = {for (final h in hashes) _bareName(h)};
+    if (wanted.isEmpty) return 0;
+    final copies = renamedBlobCopies();
+    var removed = 0;
+    for (final hash in wanted) {
+      final also = copies[hash];
+      if (also == null || also.isEmpty) continue;
+      if (!blobBytesMatch(hash)) continue;
+      for (final f in also) {
+        try {
+          if (sha256Hex(f.readAsBytesSync()) != hash) continue;
+          f.deleteSync();
+          removed++;
+        } catch (_) {
+          // Read-only folder, or the cloud client holding a lock. A copy we
+          // could not remove is tidied on some later open, and meanwhile it is
+          // harmless — it is a duplicate of bytes we have verified.
+        }
+      }
+    }
+    return removed;
+  }
+
+  /// Hashes present in `blobs/`, under either spelling.
   Set<String> blobHashes() {
     if (!blobsDir.existsSync()) return {};
-    return {
-      for (final f in blobsDir.listSync())
-        if (f is File && !f.path.endsWith('.tmp')) p.basename(f.path)
-    };
+    final out = <String>{};
+    for (final f in blobsDir.listSync()) {
+      if (f is! File) continue;
+      final name = p.basename(f.path);
+      if (name.endsWith('.tmp')) continue;
+      final bare =
+          name.endsWith(blobSuffix) ? name.substring(0, name.length - blobSuffix.length) : name;
+      if (_hex64.hasMatch(bare)) out.add(bare);
+    }
+    return out;
   }
 
   bool get exists => dir.existsSync();

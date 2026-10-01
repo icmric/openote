@@ -37,6 +37,7 @@ class BlobProof {
     required this.repaired,
     required this.damaged,
     this.salvaged = const {},
+    this.tidied = 0,
   });
 
   /// Blob files whose bytes were re-hashed. Not "files seen" — the number that
@@ -68,6 +69,12 @@ class BlobProof {
   /// goalposts — see [OpLogStore.renamedBlobCandidates].
   final Set<String> salvaged;
 
+  /// Copies a cloud client had left under other names, removed because good
+  /// bytes were verified present under a name Openote looks for. Not a repair
+  /// and not a failure — it is what stops `<hash> (1)` through `<hash> (8)`
+  /// accumulating. See [OpLogStore.tidyRenamedCopies].
+  final int tidied;
+
   /// True when a rebuild from this log could reconstruct every picture, drawing
   /// and attachment byte for byte. **This is the Step 7 gate.**
   bool get ok => missing.isEmpty && damaged.isEmpty;
@@ -79,7 +86,8 @@ class BlobProof {
   String toString() => 'checked $checked, missing ${missing.length}, '
       'wrong bytes repaired ${repaired.length} '
       '(${salvaged.length} from renamed files), '
-      'wrong bytes unrepairable ${damaged.length}';
+      'wrong bytes unrepairable ${damaged.length}, '
+      'stray copies removed $tidied';
 }
 
 class SyncRecorder {
@@ -593,11 +601,28 @@ class SyncRecorder {
       // starves for the whole run.
       await Future<void>.delayed(const Duration(milliseconds: 1));
     }
+    // **After the repair, and only for blobs whose bytes are now proven.**
+    // Every hash that reached here either verified in place or was rewritten
+    // from verified bytes, so a stray copy of one is genuinely redundant.
+    // `tidyRenamedCopies` re-hashes before deleting anything regardless,
+    // because a deletion in `blobs/` replicates to every other device.
+    //
+    // **Only when something was actually wrong.** Tidying needs a directory
+    // listing, and a notebook whose blobs are all present must not pay for one
+    // — that is the property `renamedBlobCandidates` is lazy to preserve. A
+    // notebook that repaired nothing has nothing to tidy from: stray copies
+    // only exist where a cloud client has been renaming, and renaming is what
+    // puts a hash in `repaired` in the first place.
+    final tidied = repaired.isEmpty
+        ? 0
+        : store.tidyRenamedCopies(
+            [...present, ...repaired].where((h) => !damaged.contains(h)));
     return BlobProof(
         checked: checked,
         missing: missing,
         repaired: repaired,
         damaged: damaged,
+        tidied: tidied,
         salvaged: salvaged);
   }
 

@@ -359,7 +359,13 @@ void main() {
       // reads null — the duplicate answers from its own, empty, blob store.
       expect(repo.getBlob(copy.id, hash), bytes,
           reason: 'the copy kept the picture');
-      expect(File('${copy.logDirPath}/blobs/$hash').existsSync(), isTrue,
+      // Either spelling: a blob is written `<hash>.blob` now — the suffix
+      // stops Google Drive renaming it — and a notebook made before that keeps
+      // its bare filenames, because nothing migrates them.
+      expect(
+          File('${copy.logDirPath}/blobs/$hash.blob').existsSync() ||
+              File('${copy.logDirPath}/blobs/$hash').existsSync(),
+          isTrue,
           reason: 'as its own file, not a read-through to the original');
       expect(Directory('${copy.logDirPath}/ops').existsSync(), isFalse,
           reason: "the logs are the source notebook's history, not the copy's");

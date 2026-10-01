@@ -295,9 +295,102 @@ void main() {
       expect(f.existsSync(), isTrue,
           reason: 'and the name it looks for is back');
       expect(sha256Hex(f.readAsBytesSync()), hash);
-      expect(File('${f.path}.pdf').existsSync(), isTrue,
-          reason: 'the renamed copy is left alone — deleting a file nobody '
-              'asked us to delete is how a repair becomes the next incident');
+      // **This assertion is the reverse of what it was**, and deliberately.
+      // It used to require the renamed copy be left alone, on the grounds that
+      // deleting a file nobody asked us to delete is how a repair becomes the
+      // next incident. That reasoning holds only while the copies are few: in
+      // a real notebook they were seen to reach `(7)` and `(8)` of identical
+      // bytes, because every launch wrote the canonical name back and Drive
+      // renamed it again. The owner asked for them to go, and the safety that
+      // makes it defensible is in `tidyRenamedCopies`: good bytes must be
+      // verified present under a name Openote looks for, by re-hashing, first.
+      expect(File('${f.path}.pdf').existsSync(), isFalse,
+          reason: 'the copy Drive renamed is redundant once the real file is '
+              'back, and these were accumulating without bound');
+      expect(File('${f.path} (1).pdf').existsSync(), isFalse,
+          reason: 'all of them, not just the one salvaged from');
+      expect(proof.tidied, 2);
+    });
+
+test('the file is written with the .blob suffix, and found without it',
+        () async {
+      // The suffix is the fix: Drive renames extensionless files, so the
+      // canonical name now carries one. Verified by hand on 2026-10-01 —
+      // Drive uploads it, identifies the content as an image, and leaves the
+      // name alone.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, app, nb) = await fixture('onote_blob_suffix_');
+      final r = (await app.warmRecorder(nb))!;
+      final bytes = picture(21, size: 96);
+      final hash = sha256Hex(bytes);
+      r.blob(hash, 'image/png', bytes.length, bytes);
+
+      final store = logOf(repo, nb);
+      expect(store.blobFileCanonical(hash).existsSync(), isTrue,
+          reason: 'new blobs are written as <hash>.blob');
+      expect(store.blobFileLegacy(hash).existsSync(), isFalse);
+      expect(store.hasBlob(hash), isTrue);
+      expect(store.blobHashes(), contains(hash),
+          reason: 'the suffix is stripped back off to name the hash');
+      expect(store.readBlob(hash), bytes);
+      expect((await app.proveBlobBytes(nb)).ok, isTrue);
+    });
+
+    test('a blob under the OLD extensionless name is left exactly where it is',
+        () async {
+      // **No migration.** To a cloud client a rename is a delete plus a
+      // create, so renaming every blob in a notebook would re-upload all of
+      // it. A bare file Drive has not touched is not a problem, so it is read
+      // where it lies and nothing rewrites it.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, app, nb) = await fixture('onote_blob_legacy_');
+      final r = (await app.warmRecorder(nb))!;
+      final bytes = picture(22, size: 96);
+      final hash = sha256Hex(bytes);
+      r.blob(hash, 'image/png', bytes.length, bytes);
+
+      final store = logOf(repo, nb);
+      // Put it back under the old spelling, as an existing notebook has it.
+      store.blobFileCanonical(hash).renameSync(store.blobFileLegacy(hash).path);
+      expect(store.blobFileCanonical(hash).existsSync(), isFalse);
+
+      expect(store.hasBlob(hash), isTrue, reason: 'still found');
+      expect(store.readBlob(hash), bytes);
+      expect(store.blobHashes(), contains(hash));
+      final proof = await app.proveBlobBytes(nb);
+      expect(proof.ok, isTrue);
+      expect(proof.repaired, isEmpty, reason: 'nothing was wrong with it');
+      expect(store.blobFileLegacy(hash).existsSync(), isTrue,
+          reason: 'and it was NOT rewritten under the new name — that is a '
+              're-upload of the whole notebook for no benefit');
+      expect(store.blobFileCanonical(hash).existsSync(), isFalse);
+    });
+
+    test('a stray copy is kept when the real file cannot be verified',
+        () async {
+      // The safety rule, stated as a test: `blobs/` is in the shared folder,
+      // so a deletion replicates to every other device. A copy is only
+      // redundant once good bytes are PROVEN present under a name Openote
+      // looks for.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, app, nb) = await fixture('onote_blob_keepcopy_');
+      final r = (await app.warmRecorder(nb))!;
+      final bytes = picture(23, size: 96);
+      final hash = sha256Hex(bytes);
+      r.blob(hash, 'application/pdf', bytes.length, bytes);
+
+      final store = logOf(repo, nb);
+      final copy = File('${store.blobFileLegacy(hash).path}.pdf');
+      copy.writeAsBytesSync(picture(99, size: 96), flush: true);
+      expect(store.tidyRenamedCopies([hash]), 0,
+          reason: 'the copy holds different bytes, so it is not a copy of '
+              'this blob at all and nothing here may delete it');
+      expect(copy.existsSync(), isTrue);
+
+      // And with the real file gone, there is nothing to verify against.
+      store.discardBlob(hash);
+      expect(store.tidyRenamedCopies([hash]), 0);
+      expect(copy.existsSync(), isTrue);
     });
 
     test('a renamed file with the WRONG bytes is not believed', () async {

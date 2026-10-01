@@ -177,10 +177,13 @@ void main() {
 
     expect(syncStateOf(app, nb), SyncState.mirrored);
     expect(logOf(repo, nb).hasBlob(hash), isTrue);
-    expect(
-        File(p.join(cloud.path, 'Images.onotebook', 'blobs', hash))
-            .readAsBytesSync(),
-        image(13),
+    // Either spelling — see the note in local_video_test. The mirror copies
+    // whatever filenames the notebook has, so this follows the source.
+    final mirroredBlobs = p.join(cloud.path, 'Images.onotebook', 'blobs');
+    final withSuffix = File(p.join(mirroredBlobs, '$hash.blob'));
+    final mirrored =
+        withSuffix.existsSync() ? withSuffix : File(p.join(mirroredBlobs, hash));
+    expect(mirrored.readAsBytesSync(), image(13),
         reason: 'the backup has to contain the picture, not a reference to one');
   });
 

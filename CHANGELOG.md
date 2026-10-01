@@ -68,6 +68,23 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   the same grey as the labels around it, so the one control that reaches any
   colour at all looked like the least important thing on the dialog.
 
+### Fixed — a notebook on Google Drive stops fighting with itself
+
+- **Picture files no longer pile up as copies.** On Google Drive, a notebook's
+  picture files were being renamed — Drive gives a file with no extension one
+  it works out for itself — so every launch found them missing, recovered them
+  from the renamed copy, wrote them back, and Drive renamed them again. Copies
+  numbered up to `(8)` of identical bytes, in one real notebook, and a scary
+  line in the log on every single start. Picture files now carry a `.blob`
+  suffix, which Drive leaves alone, and the redundant copies are removed once
+  their bytes are verified to be identical to the real file's.
+
+  Nothing is converted and nothing is re-uploaded: a file your cloud has not
+  touched is left exactly where it is, because renaming every picture in a
+  notebook would mean uploading all of them again. Only files that were
+  actually renamed away get the new name. An older Openote on another device
+  reads the new filenames fine.
+
 ### Fixed — the right-click menu
 
 - **It no longer flashes while the pointer is on it.** Worst in a paragraph

@@ -1694,7 +1694,9 @@ class AppState extends ChangeNotifier
       debugPrint('[openote/sync] ${proof.repaired.length} blob file(s) in $nb '
           'were missing or held bytes that were not what their name said, '
           'and were rewritten — ${proof.salvaged.length} of them from a copy '
-          'a cloud client had renamed, the rest from the notebook file');
+          'a cloud client had renamed, the rest from the notebook file'
+          '${proof.tidied > 0 ? ', and ${proof.tidied} redundant copy/copies '
+              'of them were removed' : ''}');
       // Rewritten means readable. Whatever was showing a placeholder for one
       // of these can have another go.
       _bytesMayHaveArrived();

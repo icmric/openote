@@ -263,7 +263,7 @@ This container is an excellent **single-device** format and a poor **sync unit**
 MyNotebook.onotebook/            ← what a sync client replicates
   manifest.json     ← notebook id, format version, device registry
   ops/<device>.oplog  ← append-only. ONE writer, ever.
-  blobs/<sha256>    ← content-addressed, immutable
+  blobs/<sha256>.blob ← content-addressed, immutable
 
 <workspace>/.cache/<notebook-id>/
   cache.onote       ← THIS container, demoted: local-only, never synced,
@@ -288,6 +288,29 @@ Two consequences matter to third-party implementers:
 2. **Sync granularity is per notebook**, with the manifest deliberately shaped so a section subset can be described later without a format migration (decided 2026-07-27).
 
 The demotion landed 2026-08-16 (§8 above) — but per notebook, and only once a person opts in from the Sync dialog. `.onote` as specified above remains the format for any notebook that has not: it opens the same in every release, and nothing about reading one has changed.
+
+**Blob filenames carry a `.blob` suffix, and a reader must accept both
+spellings.** The hash is still the whole of the identity — the suffix is fixed,
+so two devices independently storing the same image still produce the same
+filename with no merge logic — and blob *references* are unchanged:
+`sha256:<hash>`, as the op log has always said. Only the filename differs.
+
+The suffix exists because of one specific real-world behaviour: **Google Drive
+treats a file with no extension as one whose extension it should work out, and
+renames it.** A notebook on Drive accumulated copies numbered up to `(8)` of
+identical bytes, because every launch found the canonical name missing,
+recovered the bytes from the renamed copy, wrote the canonical name back, and
+Drive renamed it again. With a suffix present, Drive uploads the file,
+identifies the content, and leaves the name alone (verified by hand,
+2026-10-01).
+
+Notebooks written before this keep their extensionless filenames and are read
+as they are. **Nothing migrates them**, deliberately: to a sync client a rename
+is a delete plus a create, so renaming every blob in a notebook would re-upload
+all of it, and a bare filename no cloud client has touched is not a problem.
+Only files that have actually been renamed away get the new name, as part of the
+repair that was already recovering them. An implementation should therefore look
+for `<hash>.blob` first, then `<hash>`, and write new blobs under the former.
 
 **One caveat for anyone reading a `.onotebook` today.** For a notebook that has **not yet been demoted** — the default, until someone opts in — the container is still authoritative and `blobs/` is a shadow copy, written **only for notebooks that are shared** (in a sync folder, or mirrored). A local-only, not-yet-demoted notebook has a complete `ops/` and an absent or sparse `blobs/`: the `blob.put` ops name every image, the bytes live in the container's `blobs` table, and Openote copies them out the moment the notebook starts syncing. Concretely: *a `.onotebook` you were given by another device is complete; a `.onotebook` sitting beside its `.onote` on the machine that made it may not be, and the `.onote` beside it is why that is not data loss.* This is a property of shadow mode, not of the format — **once a notebook is demoted, `blobs/` is the only home and is always complete**, which is also what the Sync dialog's "Stop keeping pictures twice…" control is checking for before it deletes anything.
 
