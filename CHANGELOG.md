@@ -68,6 +68,14 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   the same grey as the labels around it, so the one control that reaches any
   colour at all looked like the least important thing on the dialog.
 
+### Fixed — the right-click menu says what its rows do
+
+- **Every row reads as its action.** Cut, Copy, Paste and Select all were all
+  labelled "More". A menu row for one of Flutter's own actions carries a type
+  rather than a label, and turning that into words in your language is the
+  menu's job — Openote's menu was not doing it, so each of them fell back to a
+  placeholder.
+
 ### Fixed — tables and pictures
 
 - **The caret stays in the cell you just made.** Pressing Tab to turn a word

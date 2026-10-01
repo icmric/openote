@@ -289,6 +289,12 @@ Not for you to test — recorded here so you are not surprised by them.
   print their numbers instead of asserting them) and widening the budget
   until it only catches a real regression. Your call; I have not touched
   them.
+- **The right-click menu flashes while the pointer is on it**, badly when a
+  picture shares the sentence. Long-standing, not new in v1.0.1 — the cause is
+  found and measured, but the obvious fix breaks undo after a toolbar format,
+  so it waits rather than trading one bug for a quieter one. Written up in
+  [docs/planning/v1.0.2-the-menu-that-flashes.md](docs/planning/v1.0.2-the-menu-that-flashes.md).
+  The menu's row labels, which all read "More", ARE fixed.
 - **The formatting buttons and chords are grey inside a table cell.** Bold,
   italic, colour and the rest act on the paragraph's field, and a cell is a
   different field — so rather than bolding the sentence outside the table,

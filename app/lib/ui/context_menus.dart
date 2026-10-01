@@ -33,14 +33,20 @@ import 'save_picture.dart';
 Widget onoteTextContextMenu(
     BuildContext context, EditableTextState editable,
     List<ContextMenuButtonItem> items) {
-  final l = MaterialLocalizations.of(context);
   return DesktopTextSelectionToolbar(
     anchor: editable.contextMenuAnchors.primaryAnchor,
     children: [
       for (final item in items)
         _ToolbarRow(
           icon: _iconFor(item),
-          label: item.label ?? l.moreButtonTooltip,
+          // **Not `item.label`**, which is null for every one of Flutter's own
+          // items: a `ContextMenuButtonItem` carries a TYPE, and the toolbar
+          // is what turns that into words in the reader's language. Falling
+          // back to a placeholder labelled every standard row "More" —
+          // reported as *"the tooltips for paste and select just say More
+          // which seems very wrong"*. Openote's own items set a label and
+          // this hands those straight back, so both kinds read properly.
+          label: AdaptiveTextSelectionToolbar.getButtonLabel(context, item),
           shortcut: _shortcutFor(item),
           onPressed: item.onPressed,
         ),
