@@ -117,6 +117,28 @@ git commit -s -m "your message"
 
 That adds a `Signed-off-by:` line certifying you have the right to submit the work under the project's licence — AGPL-3.0-or-later for the app, Apache-2.0 for `onote_core`, CC0-1.0 for `docs/specs/` ([ADR-0005](docs/adr/ADR-0005-licensing.md), [LICENSING.md](LICENSING.md)). There is deliberately no CLA: it would buy the project an option to relicense that we are not preserving. Contributors will be credited.
 
+## Branches
+
+`master` is the released branch — it should always be what the latest published
+release was cut from. Work does not land on it directly.
+
+```
+master                  ← releases only, tagged from here
+  └── v1.0.2            ← one branch per patch/minor release
+        ├── feature-a    ← one branch per piece of work
+        └── feature-b
+```
+
+- **A release branch per version**, named for it: `v1.0.2`.
+- **A branch per piece of work**, off the release branch, merged back into it.
+- **The release branch merges into `master`** when the release is ready, and
+  the tag is cut there — see [docs/RELEASING.md](docs/RELEASING.md), which
+  assumes you are on `master` for good reasons it explains.
+
+The default branch is `master`, not `main`. It is not being renamed: people
+have the repository cloned now, and a rename breaks their remotes and any open
+pull request for no benefit.
+
 ## Releasing
 
 Full runbook: [docs/RELEASING.md](docs/RELEASING.md). The one rule that has
