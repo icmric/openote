@@ -301,8 +301,15 @@ renames it.** A notebook on Drive accumulated copies numbered up to `(8)` of
 identical bytes, because every launch found the canonical name missing,
 recovered the bytes from the renamed copy, wrote the canonical name back, and
 Drive renamed it again. With a suffix present, Drive uploads the file,
-identifies the content, and leaves the name alone (verified by hand,
-2026-10-01).
+identifies the content, and leaves the name alone.
+
+Verified on a real notebook, 2026-10-01: by hand first — a file renamed to
+`.blob` was uploaded, classified by Drive as an image, and left alone — and
+then in the app. The first open under the new scheme migrated **3** blobs and
+removed **62** redundant copies of them, and a full relaunch afterwards
+repaired nothing at all. Sixty-two duplicate files of identical bytes is what
+the old scheme had accumulated in one notebook, which is the measure of why
+this is worth a suffix.
 
 Notebooks written before this keep their extensionless filenames and are read
 as they are. **Nothing migrates them**, deliberately: to a sync client a rename

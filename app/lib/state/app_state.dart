@@ -1691,12 +1691,25 @@ class AppState extends ChangeNotifier
       // file means something ELSE touched the folder — a cloud client, a
       // bad disk, an antivirus quarantine, a restore from a broken backup,
       // a person tidying it by hand — and that tends to recur.
+      // **Only the sources that actually contributed.** This used to read
+      // "N of them from a copy a cloud client had renamed, the rest from the
+      // notebook file" unconditionally, which claims a remainder that is
+      // usually zero: a renaming cloud client salvages every one of them, so
+      // the real line said "3 of them … the rest from the notebook file" with
+      // no rest. A diagnostic whose whole purpose is to mean something cannot
+      // afford a clause that is false most of the time it prints.
+      final fromContainer = proof.repaired.length - proof.salvaged.length;
+      final where = [
+        if (proof.salvaged.isNotEmpty)
+          '${proof.salvaged.length} from a copy a cloud client had renamed',
+        if (fromContainer > 0) '$fromContainer from the notebook file',
+      ].join(', ');
       debugPrint('[openote/sync] ${proof.repaired.length} blob file(s) in $nb '
           'were missing or held bytes that were not what their name said, '
-          'and were rewritten — ${proof.salvaged.length} of them from a copy '
-          'a cloud client had renamed, the rest from the notebook file'
-          '${proof.tidied > 0 ? ', and ${proof.tidied} redundant copy/copies '
-              'of them were removed' : ''}');
+          'and were rewritten${where.isEmpty ? '' : ' — $where'}'
+          '${proof.tidied > 0 ? ', and ${proof.tidied} redundant '
+              '${proof.tidied == 1 ? 'copy' : 'copies'} of them '
+              '${proof.tidied == 1 ? 'was' : 'were'} removed' : ''}');
       // Rewritten means readable. Whatever was showing a placeholder for one
       // of these can have another go.
       _bytesMayHaveArrived();
