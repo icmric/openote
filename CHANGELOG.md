@@ -68,13 +68,25 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   the same grey as the labels around it, so the one control that reaches any
   colour at all looked like the least important thing on the dialog.
 
-### Fixed — the right-click menu says what its rows do
+### Fixed — the right-click menu
 
+- **It no longer flashes while the pointer is on it.** Worst in a paragraph
+  with a picture in it, where it flickered continuously and made the menu
+  unusable. The menu is drawn above the box that opened it, so moving onto the
+  menu counted as leaving the box — and the box redrew itself for that, which
+  rebuilt the field inside it, which threw the open menu away and put a new one
+  back a frame later. The pointer then landed on the box again and the whole
+  thing repeated. Hovering now only redraws the box when hovering can actually
+  change what you see, which it cannot while you are typing in it.
 - **Every row reads as its action.** Cut, Copy, Paste and Select all were all
   labelled "More". A menu row for one of Flutter's own actions carries a type
   rather than a label, and turning that into words in your language is the
   menu's job — Openote's menu was not doing it, so each of them fell back to a
   placeholder.
+- **Paste is always offered**, greyed out when there is nothing to paste rather
+  than missing altogether. A row that is absent reads as "this app cannot
+  paste"; a row that is greyed reads as "there is nothing on the clipboard",
+  which is the true one and what every other editor on Windows shows.
 
 ### Fixed — tables and pictures
 

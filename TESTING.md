@@ -246,6 +246,22 @@ has been near a human. The first two are the ones I would break first.
 
 ---
 
+## 8a. The right-click menu
+
+Three fixes in one place, all reported together and all worth a look.
+
+- [ ] **Right-click in a paragraph and move the mouse around the menu.** It
+      must not flash — including over the top of the menu and along its edges,
+      which is where it used to, and including in a paragraph that has a
+      picture in it, which is where it was worst.
+- [ ] **The same with the caret inside a table cell**, and in a sentence with
+      an equation in it.
+- [ ] **Every row says what it does** — Cut, Copy, Paste, Select all. They all
+      used to read "More".
+- [ ] **Paste is there even with nothing on the clipboard**, greyed out rather
+      than missing. Copy something and right-click again: it should become
+      pressable, and paste.
+
 ## 8. Editor odds and ends
 
 - [ ] **Ctrl+B then type** — the new words come out bold, and stop when you
@@ -289,19 +305,13 @@ Not for you to test — recorded here so you are not surprised by them.
   print their numbers instead of asserting them) and widening the budget
   until it only catches a real regression. Your call; I have not touched
   them.
-- **The right-click menu flashes while the pointer is on it**, badly when a
-  picture shares the sentence. Long-standing, not new in v1.0.1 — the cause is
-  found and measured, but the obvious fix breaks undo after a toolbar format,
-  so it waits rather than trading one bug for a quieter one. Written up in
-  [docs/planning/v1.0.2-the-menu-that-flashes.md](docs/planning/v1.0.2-the-menu-that-flashes.md).
-  The menu's row labels, which all read "More", ARE fixed.
 - **The formatting buttons and chords are grey inside a table cell.** Bold,
   italic, colour and the rest act on the paragraph's field, and a cell is a
   different field — so rather than bolding the sentence outside the table,
   they stand down. Typing Markdown into the cell works and is the way to
   format one today. Not a regression: a table used to be its own block type,
   where the buttons were grey as well. Deferred to v1.0.2, written up in
-  [docs/planning/v1.0.2-formatting-in-a-cell.md](docs/planning/v1.0.2-formatting-in-a-cell.md).
+  [docs/planning/v1.0.2.md](docs/planning/v1.0.2.md) §2.
 - **The caret may still blink out of a cell and straight back in.** The fix
   in v1.0.1 stops the caret being *thrown out and left there*; it does not
   stop the window itself briefly losing focus, which parks the caret and then
@@ -312,7 +322,7 @@ Not for you to test — recorded here so you are not surprised by them.
   use, not only around tables. This is real and it is the cause of the two
   entries above: screen readers cannot read the editor today. It is deferred
   to v1.0.2 with the evidence written up in
-  [docs/planning/v1.0.2-accessibility-tree.md](docs/planning/v1.0.2-accessibility-tree.md),
+  [docs/planning/v1.0.2.md](docs/planning/v1.0.2.md) §1,
   because the check that fails is in the engine, no automated test here can
   see it, and it may not be ours. Nothing for you to test — just do not be
   surprised by it.

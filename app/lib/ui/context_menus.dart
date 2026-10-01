@@ -33,10 +33,28 @@ import 'save_picture.dart';
 Widget onoteTextContextMenu(
     BuildContext context, EditableTextState editable,
     List<ContextMenuButtonItem> items) {
+  // **Paste is always offered, greyed when there is nothing to paste.**
+  //
+  // Flutter leaves the row out altogether unless the clipboard reports
+  // something pasteable (`pasteEnabled` is `!readOnly && status ==
+  // pasteable`), so an empty clipboard produced a menu with no Paste in it at
+  // all — reported as *"the menu is also missing the option to paste which is
+  // fairly major"*. Missing and disabled say very different things: one reads
+  // as "this app cannot paste", the other as "there is nothing on the
+  // clipboard". Every other editor on Windows shows the second.
+  //
+  // Only when the field could accept a paste at all; a read-only one is right
+  // to say nothing.
+  final rows = [...items];
+  if (!editable.widget.readOnly &&
+      !rows.any((i) => i.type == ContextMenuButtonType.paste)) {
+    rows.add(const ContextMenuButtonItem(
+        onPressed: null, type: ContextMenuButtonType.paste));
+  }
   return DesktopTextSelectionToolbar(
     anchor: editable.contextMenuAnchors.primaryAnchor,
     children: [
-      for (final item in items)
+      for (final item in rows)
         _ToolbarRow(
           icon: _iconFor(item),
           // **Not `item.label`**, which is null for every one of Flutter's own

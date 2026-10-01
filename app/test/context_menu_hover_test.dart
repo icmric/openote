@@ -22,6 +22,7 @@ import 'package:flutter/foundation.dart'
     show debugDefaultTargetPlatformOverride;
 import 'package:flutter/gestures.dart' show kSecondaryButton, PointerDeviceKind;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/l10n/l10n.dart';
@@ -236,11 +237,7 @@ void main() {
       expect(seenMenuElements, hasLength(1),
           reason: 'the menu was torn down and rebuilt mid-hover');
     });
-    // SKIPPED: this reproduces a bug that is NOT fixed. Left in because it
-    // is the measurement — three elements plain, five with a picture — and
-    // whoever picks this up should not have to find it again. The obvious fix
-    // breaks undo; see docs/planning/v1.0.2-the-menu-that-flashes.md.
-  }, skip: true);
+  });
 
   testWidgets('nor when a picture shares the sentence', (t) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
@@ -251,6 +248,49 @@ void main() {
           reason: 'worse with a picture: five elements, reported as '
               '"flash rapidly … never ceasing"');
     });
-    // SKIPPED, as above.
-  }, skip: true);
+  });
+
+  /// **Paste is offered even when the clipboard is empty.**
+  ///
+  /// Reported: *"the menu is also missing the option to paste which is fairly
+  /// major"*. Flutter omits the row entirely unless the clipboard reports
+  /// something pasteable, so an empty clipboard produced a menu with no Paste
+  /// in it — which reads as "this app cannot paste" rather than "there is
+  /// nothing to paste".
+  ///
+  /// The clipboard is mocked EMPTY here, which is the case that was broken;
+  /// with text on it Flutter supplies the row itself.
+  testWidgets('Paste is offered, disabled, with an empty clipboard', (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await onWindows(() async {
+      t.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform, (MethodCall call) async {
+        if (call.method == 'Clipboard.hasStrings') {
+          return <String, dynamic>{'value': false};
+        }
+        return null;
+      });
+      addTearDown(() => t.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null));
+
+      await pumpShell(t, 'A sentence to right-click inside of.');
+      await openBlock(t);
+      await t.tapAt(
+          t.getTopLeft(find.byType(TextBlockView)) + const Offset(24, 14),
+          buttons: kSecondaryButton);
+      await t.pumpAndSettle();
+
+      final menu = find.byType(DesktopTextSelectionToolbar);
+      final paste = find.descendant(of: menu, matching: find.text('Paste'));
+      expect(paste, findsOneWidget, reason: 'the row was absent entirely');
+      // Disabled, not merely present: a row you can press and that does
+      // nothing is worse than one that says it cannot be pressed.
+      final button = t.widget<TextButton>(find
+          .ancestor(of: paste, matching: find.byType(TextButton))
+          .first);
+      expect(button.onPressed, isNull,
+          reason: 'there is nothing on the clipboard to paste');
+      app.cancelPendingSave();
+    });
+  });
 }

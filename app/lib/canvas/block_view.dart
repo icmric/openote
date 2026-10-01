@@ -79,6 +79,34 @@ class _BlockViewState extends State<BlockView> {
   bool _hoverBody = false;
   bool _hoverChrome = false;
   bool get _hover => _hoverBody || _hoverChrome;
+
+  /// **Rebuild for hover only when hover can change what is drawn.**
+  ///
+  /// `_hover` is read in exactly two places: whether the chrome shows, and the
+  /// idle border colour. Both consult `editing` and `selected` FIRST, so while
+  /// the box is being edited or is selected, the value of `_hover` cannot
+  /// affect a single pixel — and rebuilding anyway costs something real.
+  ///
+  /// Rebuilding this block rebuilds the text field inside it, which hands
+  /// `EditableText` a newly-created `contextMenuBuilder` closure.
+  /// `EditableTextState.didUpdateWidget` answers a changed builder by
+  /// disposing its whole selection overlay and re-showing the toolbar a frame
+  /// later — so an open right-click menu vanishes for a frame. The menu is
+  /// drawn in the `Overlay`, above this block, so while it is gone the pointer
+  /// falls through to the body's own `MouseRegion`, which enters, rebuilds,
+  /// and loses the menu again: *"it will flash rapidly while my mouse is on
+  /// it, never ceasing"*.
+  ///
+  /// That also explains why it depended on where in the menu the pointer was.
+  /// Over the part of the menu that overlaps this block the pointer re-enters
+  /// and the loop continues; over the part hanging past the block's edge there
+  /// is nothing to enter, so it settles.
+  void _setHover({bool? body, bool? chrome}) {
+    if (body != null) _hoverBody = body;
+    if (chrome != null) _hoverChrome = chrome;
+    if (editing || selected) return;
+    setState(() {});
+  }
   bool _dragUndoPushed = false;
   bool _resizeUndoPushed = false;
 
@@ -334,8 +362,8 @@ class _BlockViewState extends State<BlockView> {
   Widget _moveBar(BuildContext context, Color primaryColor, bool dark) {
     final live = selected || editing;
     return MouseRegion(
-      onEnter: (_) => setState(() => _hoverChrome = true),
-      onExit: (_) => setState(() => _hoverChrome = false),
+      onEnter: (_) => _setHover(chrome: true),
+      onExit: (_) => _setHover(chrome: false),
       cursor: SystemMouseCursors.move,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -614,8 +642,8 @@ class _BlockViewState extends State<BlockView> {
     };
 
     final body = MouseRegion(
-      onEnter: (_) => setState(() => _hoverBody = true),
-      onExit: (_) => setState(() => _hoverBody = false),
+      onEnter: (_) => _setHover(body: true),
+      onExit: (_) => _setHover(body: false),
       cursor: _editableType && !editing
           ? SystemMouseCursors.text
           : MouseCursor.defer,
@@ -757,8 +785,8 @@ class _BlockViewState extends State<BlockView> {
                   child: showChrome
                       ? _moveBar(context, primaryColor, dark)
                       : MouseRegion(
-                          onEnter: (_) => setState(() => _hoverChrome = true),
-                          onExit: (_) => setState(() => _hoverChrome = false),
+                          onEnter: (_) => _setHover(chrome: true),
+                          onExit: (_) => _setHover(chrome: false),
                           child: const SizedBox.expand(),
                         ),
                 ),
