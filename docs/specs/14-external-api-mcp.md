@@ -153,6 +153,15 @@ Normative for this dialog and any future connection surface:
   | Gemini app | ❌ impossible today | same: cloud-side connectors cannot see a local server |
   | Anything else MCP-capable | Advanced fold | generic config JSON + CLI one-liner |
 
+  > **The revisit condition below has been met — 2026-10-01.** The ChatGPT
+  > **desktop app** now adds MCP servers itself (Settings ▸ MCP servers ▸ Add
+  > server, STDIO **or Streamable HTTP**) in the modes that run locally, which
+  > is exactly the shape this server already has. The ❌ row above is stale and
+  > the table has not been re-tested; the open question is whether that form
+  > can set an `Authorization` header, since §4's bearer token is mandatory.
+  > Written up, with the test to run, in
+  > [docs/planning/v1.0.2.md](../planning/v1.0.2.md) under "Investigations".
+
   The dialog states the ❌ rows in plain words rather than hiding them —
   "can't yet, their connectors run on the company's servers" — so nobody
   hunts for a setting that does not exist. Revisit if either vendor ships
