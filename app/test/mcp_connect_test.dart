@@ -306,6 +306,51 @@ void main() {
     });
   });
 
+  group('what the buttons colour themselves from', () {
+    // Blue when connected, brass when not. Read from the files rather than
+    // remembered, because a flag held in Openote would go stale the moment
+    // somebody edited the entry in the other tool — and a button claiming a
+    // connection that is not there is worse than showing nothing.
+
+    test('nothing connected on a fresh machine', () {
+      final c = connectedClients(home: home.path);
+      expect(c.claudeCode, isFalse);
+      expect(c.claudeApp, isFalse);
+      expect(c.geminiCli, isFalse);
+      expect(c.chatGpt, isFalse);
+    });
+
+    test('each tool is reported on its own, and only once connected', () {
+      connectChatGpt(port: 27601, token: 'tok', home: home.path);
+      var c = connectedClients(home: home.path);
+      expect(c.chatGpt, isTrue);
+      expect(c.claudeApp, isFalse, reason: 'one button, not all of them');
+      expect(c.claudeCode, isFalse);
+
+      connectClaudeApp(port: 27601, token: 'tok', home: home.path);
+      c = connectedClients(home: home.path);
+      expect(c.chatGpt, isTrue);
+      expect(c.claudeApp, isTrue);
+      expect(c.claudeCode, isFalse);
+    });
+
+    test("somebody else's config does not count as connected", () {
+      // A file that exists, is valid, and has servers in it — just not ours.
+      // Colouring that button blue would be a straightforward lie.
+      File([home.path, '.claude.json'].join(Platform.pathSeparator))
+          .writeAsStringSync('{"mcpServers":{"theirs":{"url":"x"}}}');
+      expect(connectedClients(home: home.path).claudeCode, isFalse);
+    });
+
+    test('an unreadable config answers no rather than throwing', () {
+      // The question is whether a working connection exists, and one that
+      // cannot be read is not one. Throwing here would take the dialog down.
+      File([home.path, '.claude.json'].join(Platform.pathSeparator))
+          .writeAsStringSync('{ this is not json');
+      expect(connectedClients(home: home.path).claudeCode, isFalse);
+    });
+  });
+
   group('a client with no button', () {
     test('the manual block is the same connection, pasteable', () {
       // Every remaining MCP-capable client wants some spelling of "this URL

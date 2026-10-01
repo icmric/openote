@@ -353,6 +353,48 @@ String manualConfigJson(int port, String token) =>
 
 String mcpUrl(int port) => 'http://127.0.0.1:$port/mcp';
 
+/// Which tools already have Openote in their configuration.
+///
+/// **Read from the files, not remembered.** A flag stored in Openote would go
+/// stale the moment somebody edits or removes the entry in the other tool —
+/// and then the button would claim a connection that is not there, which is
+/// worse than not showing the state at all.
+({bool claudeCode, bool claudeApp, bool geminiCli, bool chatGpt})
+    connectedClients({String? home}) {
+  final h = home ?? userHomeDir();
+  return (
+    claudeCode: _jsonHasOpenote(_p(h, _clients[0].configParts())),
+    geminiCli: _jsonHasOpenote(_p(h, _clients[1].configParts())),
+    claudeApp: _jsonHasOpenote(_p(h, _clients[2].configParts())),
+    chatGpt: _tomlHasOpenote(_p(h, ['.codex', 'config.toml'])),
+  );
+}
+
+bool _jsonHasOpenote(String path) {
+  try {
+    final f = File(path);
+    if (!f.existsSync()) return false;
+    final parsed = jsonDecode(f.readAsStringSync());
+    if (parsed is! Map) return false;
+    final servers = parsed['mcpServers'];
+    return servers is Map && servers.containsKey('openote');
+  } catch (_) {
+    // Unreadable or malformed answers "no": the question is whether a working
+    // connection exists, and one we cannot read is not one.
+    return false;
+  }
+}
+
+bool _tomlHasOpenote(String path) {
+  try {
+    final f = File(path);
+    return f.existsSync() &&
+        f.readAsStringSync().contains(_codexServerTable);
+  } catch (_) {
+    return false;
+  }
+}
+
 /// Keep EXISTING connections current (the port can move if another app
 /// held it). Called whenever the server starts; deliberately does nothing
 /// for a tool the user never connected — Openote doesn't write into other

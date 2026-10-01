@@ -31,6 +31,12 @@ class _McpDialogState extends State<_McpDialog> {
 
   ClaudeConnectResult? _result;
 
+  @override
+  void initState() {
+    super.initState();
+    _refreshLinked();
+  }
+
   /// The one-line setup for other MCP clients' CLIs, shown under Advanced.
   String get _cli => 'claude mcp add --transport http --scope user openote '
       'http://127.0.0.1:${app.mcpPort}/mcp '
@@ -47,12 +53,52 @@ class _McpDialogState extends State<_McpDialog> {
   }
 }''';
 
+  /// Which tools Openote is already in, re-read after every connect so a
+  /// button changes colour the moment it becomes true.
+  ///
+  /// Held in state rather than read in `build`: this dialog rebuilds on every
+  /// notification the app makes, and four file reads per rebuild to colour
+  /// four buttons is not a trade worth making.
+  ({bool claudeCode, bool claudeApp, bool geminiCli, bool chatGpt})? _linked;
+
+  void _refreshLinked() {
+    try {
+      _linked = connectedClients();
+    } catch (_) {
+      // Unknown is a fine answer; the buttons simply all read "Connect".
+      _linked = null;
+    }
+  }
+
   void _connect(
       ClaudeConnectResult Function({required int port, required String token})
           connector) {
     setState(() {
       _result = connector(port: app.mcpPort!, token: app.mcpToken!);
+      _refreshLinked();
     });
+  }
+
+  /// **Blue means connected, brass means not.**
+  ///
+  /// The two styles were already in use here and carried no meaning — Claude
+  /// Code was filled and the rest tonal, which just looked arbitrary. Tying
+  /// them to the one fact the reader wants makes the row consistent AND
+  /// informative, and needs no colour that is not already in the theme.
+  ///
+  /// A connected button stays pressable: pressing it again rewrites the entry,
+  /// which is how a moved port or a regenerated token is put right by hand.
+  Widget _clientButton(
+      String name,
+      bool connected,
+      ClaudeConnectResult Function({required int port, required String token})
+          connector) {
+    final icon = Icon(connected ? Icons.link : Icons.link_off, size: 16);
+    final label = Text(connected ? '$name — connected' : 'Connect $name');
+    void press() => _connect(connector);
+    return connected
+        ? FilledButton.icon(icon: icon, label: label, onPressed: press)
+        : FilledButton.tonalIcon(icon: icon, label: label, onPressed: press);
   }
 
   Widget _snippet(BuildContext context, String text) => Container(
@@ -121,36 +167,21 @@ class _McpDialogState extends State<_McpDialog> {
                 ),
               if (app.mcpEnabled) ...[
                 const SizedBox(height: 10),
+                // One row, one style rule — see [_clientButton].
+                //
+                // The two apps are the ones most people actually use, so they
+                // come first; the CLIs follow. "Claude app" and "ChatGPT app"
+                // are named as apps deliberately, because the websites cannot
+                // do this and the distinction is the whole point.
                 Wrap(spacing: 8, runSpacing: 8, children: [
-                  FilledButton.icon(
-                    icon: const Icon(Icons.link, size: 16),
-                    label: const Text('Connect Claude Code'),
-                    onPressed: () => _connect(connectClaudeCode),
-                  ),
-                  FilledButton.tonalIcon(
-                    icon: const Icon(Icons.link, size: 16),
-                    label: const Text('Connect Gemini CLI'),
-                    onPressed: () => _connect(connectGeminiCli),
-                  ),
-                  // **The Claude APP, not Claude Code** — which is how most
-                  // people use Claude, and was missing here. It reads its own
-                  // manifest and takes a URL with headers, so the server this
-                  // app already runs needs nothing new.
-                  FilledButton.tonalIcon(
-                    icon: const Icon(Icons.link, size: 16),
-                    label: const Text('Connect Claude app'),
-                    onPressed: () => _connect(connectClaudeApp),
-                  ),
-                  // **The ChatGPT desktop app, per OpenAI's own docs.** It
-                  // shares `~/.codex/config.toml` with the Codex CLI and the
-                  // IDE extension, and takes a Streamable HTTP server with
-                  // static headers — so it gets a real button, not a note.
-                  // Its WEBSITE does not read that file and never can.
-                  FilledButton.tonalIcon(
-                    icon: const Icon(Icons.link, size: 16),
-                    label: const Text('Connect ChatGPT app'),
-                    onPressed: () => _connect(connectChatGpt),
-                  ),
+                  _clientButton('Claude app', _linked?.claudeApp ?? false,
+                      connectClaudeApp),
+                  _clientButton('ChatGPT app', _linked?.chatGpt ?? false,
+                      connectChatGpt),
+                  _clientButton('Claude Code', _linked?.claudeCode ?? false,
+                      connectClaudeCode),
+                  _clientButton('Gemini CLI', _linked?.geminiCli ?? false,
+                      connectGeminiCli),
                 ]),
                 if (_result != null)
                   Padding(
