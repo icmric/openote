@@ -222,6 +222,90 @@ void main() {
     });
   });
 
+  group('the ChatGPT desktop app — TOML, not JSON', () {
+    // OpenAI's own docs: the desktop app, the Codex CLI and the IDE extension
+    // all read ~/.codex/config.toml — the same path on every platform — and it
+    // takes a Streamable HTTP server with static headers. The WEBSITE does not
+    // read that file, which is why the website can never reach a loopback
+    // server however its settings screen looks.
+    String cfgPath() =>
+        [home.path, '.codex', 'config.toml'].join(Platform.pathSeparator);
+
+    test('writes the table ChatGPT reads, with the bearer header', () {
+      final r = connectChatGpt(port: 27501, token: 'tok', home: home.path);
+      expect(r.status, isNot(ClaudeConnect.failed));
+      final text = File(cfgPath()).readAsStringSync();
+      expect(text, contains('[mcp_servers.openote]'));
+      expect(text, contains('url = "http://127.0.0.1:27501/mcp"'));
+      expect(text, contains('[mcp_servers.openote.http_headers]'));
+      expect(text, contains('"Authorization" = "Bearer tok"'));
+    });
+
+    test('their tables, settings and comments all survive', () {
+      // The reason this edits by the line rather than parsing and re-emitting:
+      // a rewrite would reformat their file and throw away the comments.
+      File(cfgPath())
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync('# my notes about this file\n'
+            'model = "gpt-5"\n'
+            '\n'
+            '[mcp_servers.theirs]\n'
+            'command = "their-tool"\n');
+
+      connectChatGpt(port: 27502, token: 'tok', home: home.path);
+
+      final text = File(cfgPath()).readAsStringSync();
+      expect(text, contains('# my notes about this file'),
+          reason: 'their comment');
+      expect(text, contains('model = "gpt-5"'), reason: 'their settings');
+      expect(text, contains('[mcp_servers.theirs]'), reason: 'their server');
+      expect(text, contains('command = "their-tool"'));
+      expect(text, contains('[mcp_servers.openote]'), reason: 'and ours');
+    });
+
+    test('connecting twice leaves ONE of our tables, not two', () {
+      connectChatGpt(port: 27503, token: 'old', home: home.path);
+      connectChatGpt(port: 27504, token: 'new', home: home.path);
+      final text = File(cfgPath()).readAsStringSync();
+      expect('[mcp_servers.openote]'.allMatches(text).length, 1,
+          reason: 'the old table is replaced, not appended beside');
+      expect(text, contains('27504'));
+      expect(text, isNot(contains('27503')));
+      expect(text, contains('Bearer new'));
+      expect(text, isNot(contains('Bearer old')));
+    });
+
+    test('a moved port is refreshed', () {
+      connectChatGpt(port: 27505, token: 'old', home: home.path);
+      refreshConnectedClients(port: 27999, token: 'new', home: home.path);
+      final text = File(cfgPath()).readAsStringSync();
+      expect(text, contains('27999'));
+      expect(text, contains('Bearer new'));
+    });
+
+    test('a file we are not already in is left alone by a refresh', () {
+      // Openote does not write into another tool's config uninvited.
+      File(cfgPath())
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync('model = "gpt-5"\n');
+      refreshConnectedClients(port: 27999, token: 'tok', home: home.path);
+      expect(File(cfgPath()).readAsStringSync(), 'model = "gpt-5"\n');
+    });
+
+    test('a file this editor cannot reason about is refused, not mangled', () {
+      // A multi-line array: a line-based edit could land inside their value,
+      // so it declines and says so — the same promise the JSON path makes for
+      // JSON it cannot parse.
+      const hairy = 'things = [\n  "one",\n  "two",\n]\n';
+      File(cfgPath())
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync(hairy);
+      final r = connectChatGpt(port: 27506, token: 'tok', home: home.path);
+      expect(r.status, ClaudeConnect.failed);
+      expect(File(cfgPath()).readAsStringSync(), hairy, reason: 'untouched');
+    });
+  });
+
   group('a client with no button', () {
     test('the manual block is the same connection, pasteable', () {
       // Every remaining MCP-capable client wants some spelling of "this URL

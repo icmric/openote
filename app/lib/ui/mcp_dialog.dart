@@ -141,6 +141,16 @@ class _McpDialogState extends State<_McpDialog> {
                     label: const Text('Connect Claude app'),
                     onPressed: () => _connect(connectClaudeApp),
                   ),
+                  // **The ChatGPT desktop app, per OpenAI's own docs.** It
+                  // shares `~/.codex/config.toml` with the Codex CLI and the
+                  // IDE extension, and takes a Streamable HTTP server with
+                  // static headers — so it gets a real button, not a note.
+                  // Its WEBSITE does not read that file and never can.
+                  FilledButton.tonalIcon(
+                    icon: const Icon(Icons.link, size: 16),
+                    label: const Text('Connect ChatGPT app'),
+                    onPressed: () => _connect(connectChatGpt),
+                  ),
                 ]),
                 if (_result != null)
                   Padding(
@@ -170,13 +180,12 @@ class _McpDialogState extends State<_McpDialog> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                          'ChatGPT: the desktop app can take this in its own '
-                          'Settings ▸ MCP servers — look for the '
-                          'mode that runs on your computer. Give it the '
-                          'address below, with the token as an Authorization '
-                          "header. The ChatGPT website can't: its connectors "
-                          "run on OpenAI's servers, which can't see your "
-                          'computer. Same for the Gemini app.',
+                          "The ChatGPT website can't be connected: its "
+                          "connectors run on OpenAI's servers, which can't "
+                          'see your computer. The button above is for the '
+                          'desktop app, which reads its settings from this '
+                          'computer. The Gemini app is the website case too '
+                          '— its CLI has a button.',
                           style: TextStyle(
                               fontSize: 11,
                               height: 1.4,

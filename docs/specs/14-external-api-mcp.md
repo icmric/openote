@@ -150,20 +150,25 @@ Normative for this dialog and any future connection surface:
   | Claude Code | ✅ button | user-scope `mcpServers` in `~/.claude.json` |
   | Claude app (chat) | ✅ button | `mcpServers` in `claude_desktop_config.json` — `%APPDATA%/Claude` on Windows, `~/Library/Application Support/Claude` on macOS, `~/.config/Claude` elsewhere. Takes `url` + `headers`, so this server needs no changes |
   | Gemini CLI | ✅ button | `mcpServers` (`httpUrl`) in `~/.gemini/settings.json` |
-  | ChatGPT **desktop** app | ⚠️ values to paste | it has its own MCP settings and accepts Streamable HTTP, but they are entered in its UI rather than a file this app may write, and which of its modes allows a local server has been moving. The dialog offers the address and the config block to copy |
+  | ChatGPT **desktop** app | ✅ button | `[mcp_servers.openote]` in `~/.codex/config.toml` — the same path on every platform, shared with the Codex CLI and the IDE extension. TOML, so it is edited by the line rather than re-emitted, to keep the user's comments |
   | ChatGPT **website** | ❌ impossible | its connectors run on OpenAI's servers, which cannot reach `127.0.0.1` on the user's machine |
   | Gemini app | ❌ impossible today | same: cloud-side connectors cannot see a local server |
   | Anything else MCP-capable | Advanced fold | generic config JSON + CLI one-liner |
 
   > **Table revised 2026-10-01.** The Claude *app* was never in it and is how
-  > most people use Claude; it is now a button. ChatGPT's desktop app grew its
-  > own MCP settings, so its row moved from "impossible" to "values to paste" —
-  > the website's row is unchanged and always will be while connectors run
-  > server-side. The one thing still unverified by a human is whether ChatGPT's
-  > form can set an `Authorization` header, which §4's bearer token requires;
-  > if it cannot, allowing a loopback client to authenticate another way is a
-  > security decision, not a convenience. See
-  > [docs/planning/v1.0.2.md](../planning/v1.0.2.md).
+  > most people use Claude; it is now a button. ChatGPT's desktop app is a
+  > button too: OpenAI's documentation gives a config FILE,
+  > `~/.codex/config.toml`, shared with the Codex CLI and the IDE extension,
+  > accepting a Streamable HTTP URL with static `http_headers` — so §4's
+  > bearer token is carried and nothing on the server changed. The website's
+  > row is unchanged and always will be while connectors run server-side.
+  >
+  > `http_headers` and not `bearer_token_env_var`: the latter names an
+  > environment variable, which Openote cannot set inside another app's
+  > process. The token is therefore in the file in clear, as it already is in
+  > the JSON configs — hence the dialog calling it a password.
+  >
+  > Not yet confirmed by a human: that the desktop app picks the entry up.
 
   The dialog states the ❌ rows in plain words rather than hiding them —
   "can't yet, their connectors run on the company's servers" — so nobody
