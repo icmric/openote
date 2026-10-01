@@ -80,6 +80,7 @@ in [docs/planning/v1.0.2.md](docs/planning/v1.0.2.md).
 |---|---|
 | **Screen readers can't read the editor** | The Windows accessibility bridge rejects our semantics tree. Console errors, and no usable Narrator/NVDA support. |
 | **Formatting buttons are grey in a table cell** | Type Markdown in the cell instead — that works. |
+| **Opening a cloud notebook freezes the app** | Only when its folder is not set "Available offline". Set that on each device; the app reads synchronously and waits on the download. |
 | **Text scaling is ignored** | Columns and auto-sized boxes are measured at 100%, so Windows' "Make text bigger" misreports widths. |
 | **Images dropped on empty canvas can't be inlined** | Two code paths for one thing. Drop onto a text box and it inlines properly. |
 

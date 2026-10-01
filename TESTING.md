@@ -319,6 +319,14 @@ Not for you to test — recorded here so you are not surprised by them.
   print their numbers instead of asserting them) and widening the budget
   until it only catches a real regression. Your call; I have not touched
   them.
+- **Opening a notebook from a cloud folder that is not "Available offline"
+  freezes the app.** Minutes, with no explanation, and it may not recover. The
+  cause is this app reading files synchronously on the thread that draws, so a
+  placeholder the cloud client has to download blocks everything. Set the
+  notebook's folder to be available offline on every device and it does not
+  happen. Deferred to v1.0.2 §6, which includes the finding that Windows can
+  be ASKED whether a file is a placeholder, so the warning need not be shown
+  to people who already did it.
 - **The formatting buttons and chords are grey inside a table cell.** Bold,
   italic, colour and the rest act on the paragraph's field, and a cell is a
   different field — so rather than bolding the sentence outside the table,
