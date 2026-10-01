@@ -551,6 +551,32 @@ class _LiveMarkdownSession extends OnoteEditSession {
       _mathFocus.hasFocus ||
       _atomFocus.value;
 
+  /// **Is the keyboard going spare, or is somebody typing into something?**
+  ///
+  /// Asked before this paragraph claims the keyboard on a rebuild. Focus
+  /// parked on a `FocusScopeNode` means nobody is editing anything — that is
+  /// what the framework does when a field is disposed or unfocused, and it is
+  /// the state a newly-opened block is claimed from. A plain [FocusNode] with
+  /// a context belongs to a widget that asked for it, and taking it off them
+  /// is the bug this guards.
+  ///
+  /// Nodes in this paragraph's own path are excluded from "somebody else"
+  /// before this is reached, by the `hasFocus` and [inlineChildFocused] tests
+  /// beside it.
+  bool get _keyboardIsGoingSpare {
+    final holder = FocusManager.instance.primaryFocus;
+    if (holder == null || holder is FocusScopeNode) return true;
+    // **Or held by something ABOVE this field in its own path** — the
+    // canvas's traversal node, or the block's own `Focus`. That is where a
+    // click which opened this block leaves the keyboard, so claiming it is
+    // the whole purpose of the caller; a first version of this guard allowed
+    // only the scope case and stopped a newly-opened box taking the caret at
+    // all, which the test beside it caught.
+    //
+    // Anything else is a field in some other block, being typed into.
+    return _focus.ancestors.contains(holder);
+  }
+
   /// Escape, or Tab off the end of a table: the keyboard comes back to the
   /// paragraph with the caret just after the atom.
   ///
@@ -1436,7 +1462,22 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // cells looks exactly like that for one frame — nothing focused inside
       // a field that is being edited — and claiming it there is how the caret
       // ended up beside a table instead of in the row that had just been made.
-      if (!_focus.hasFocus && !inlineChildFocused) _focus.requestFocus();
+      //
+      // **And unless somebody else's field is being typed into.** Running
+      // after every build makes this a standing claim rather than the one-off
+      // it reads as, and the running app rebuilds constantly — so clicking
+      // into the "evaluate at value" field put the caret there and the next
+      // rebuild took it straight back: *"it will move the caret into it as if
+      // it was going to edit it, but then it will just dispear from it and
+      // the other box never looses focus."*
+      //
+      // A `BlockType.substitute` is not in `_editableType`, so tapping its
+      // field never makes it the editing block and this paragraph stays the
+      // editing block — which is why being the editing block is not the test.
+      // The test is whether the keyboard is actually going spare.
+      if (!_focus.hasFocus && !inlineChildFocused && _keyboardIsGoingSpare) {
+        _focus.requestFocus();
+      }
     });
     return Padding(
       padding: s.inset,
