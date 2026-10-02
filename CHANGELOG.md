@@ -2,6 +2,52 @@
 
 All notable changes to Openote. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) with the caveat that **the file format has its own versioning** (File Format Spec §2) and format compatibility is the promise that matters most here.
 
+## [Unreleased]
+
+### Fixed — the caret stays where you put it
+
+- **Clicking a box while another one is open now works.** The caret used to
+  land there and vanish again on the next redraw, leaving the box you came
+  from still lit. Two different things were taking the keyboard back — the
+  paragraph you were in, and the equation you were in — and each had been
+  written to pick it up once when a box opened, but was running after every
+  redraw. They now ask whether the keyboard is actually free. The box you
+  came from also closes properly, which it did not before.
+
+### Added — equations take formulas, not just functions of x
+
+- **Plug values into a formula with more than one letter in it.** `F = m·a`,
+  `v = u + at`, `A = l·w`, `c = √(a² + b²)` — every one of these used to be
+  refused with "unknown m". An Evaluate box now asks for each letter the
+  formula needs, in the order it is written, and the answer is **named**:
+  `v = 14`, not a bare `= 14`. While it is waiting it says which letters it
+  is waiting for. Letters keep the case you wrote them in, so `V = I·R` asks
+  for I and R.
+- **Evaluate is a button on the equation toolbar**, beside Graph, instead of
+  the second item of a `⋯` menu. Nobody finds a feature by opening a fold.
+- **Prefilled large operators.** The blank ones are unchanged, and beside
+  them are the forms you write over and over: `∑` from i = 1 to n, `∑` to
+  infinity, `∏` from i = 1 to n, `∫` from a to b with its `dx`, and limits
+  as x → 0 and x → ∞. The caret lands exactly where the maths goes.
+
+### Changed — the toolbar behaves the same way everywhere
+
+- **Every tab switch animates.** Home to Insert always had the fade; Home to
+  Draw, Home to Page and Draw to Page cut straight across. All four now
+  behave the same.
+- **The Equation badge is a button.** Tapping another tab while an equation
+  was open used to be a one-way trip — the equation's own controls were gone
+  until you closed it and opened it again. Press the badge to go back.
+- **The equation toolbar is in a more logical order**, and every drawer is
+  named with a word: `∑ ∫` is now **Calculus**, and it has collected the
+  derivative, the partial and the prime that were filed under Shapes, so
+  differentiating and integrating are no longer two different drawers. The
+  row reads shapes → arithmetic → comparisons → calculus → Greek → sets →
+  functions → subjects, which is the order the topics arrive in at school.
+- **The equation toolbar fits any window.** On a narrow one the far drawers
+  fold into a **More** drawer, under their own headings, rather than running
+  off the edge where only a drag could reach them.
+
 ## [1.0.1] — 2026-10-01
 
 ### Fixed — the markup never shows itself

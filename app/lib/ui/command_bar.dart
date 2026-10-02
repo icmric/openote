@@ -84,13 +84,17 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
     final equation = _equationFaceShowing;
     final m = app.activeMath;
     if (equation && m != null) {
+      // **The equation face COMPACTS**, which is why it is not in a
+      // `SingleChildScrollView` any more. Same reason Insert is not: a
+      // horizontal `Scrollable` offers its child an unbounded width — that is
+      // what lets content wider than the window scroll — and a row that is
+      // handed infinity folds nothing. `MathBar` folds its own doors now, so
+      // it needs the real width. See `math_bar.dart`'s `_doorStrip`.
       return KeyedSubtree(
         key: const ValueKey('equation'),
-        child: ScrollConfiguration(
-          behavior: const _ToolbarScroll(),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: EquationFace(
+        child: SizedBox(
+          width: double.infinity,
+          child: EquationFace(
               math: m,
               onDrawGraph: m.drawGraph,
               onEvaluateAtValue: m.evaluateAtValue,
@@ -103,7 +107,6 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                       ? AngleMode.radians
                       : AngleMode.degrees),
               recentIds: app.recentMathIds,
-            ),
           ),
         ),
       );
@@ -1994,10 +1997,15 @@ class _ToolbarScroll extends MaterialScrollBehavior {
 /// be — and deliberately not a tab.
 ///
 /// A pill, because the token file reserves the full radius for badges and no
-/// other control in the bar is that shape. No `InkWell`, no `onTap`, no
-/// underline ever: it cannot be pressed, so it cannot be misread as a fifth
-/// tab, and the ambiguity is removed by removing the behaviour rather than by
-/// styling around it.
+/// other control in the bar is that shape — and **no underline ever**, which
+/// is what keeps it from being misread as a fifth tab.
+///
+/// It used to have no `InkWell` and no `onTap` either, on the reasoning that
+/// removing the behaviour removed the ambiguity. That held until tapping a
+/// tab mid-equation became a way OFF the equation's controls, at which point
+/// the unpressable badge was the only thing on screen that could have been
+/// the way back and wasn't. It presses now; it is still not a tab, because it
+/// is a pill that exists only while its subject does.
 class _SubjectBadge extends StatelessWidget {
   const _SubjectBadge({
     required this.icon,

@@ -255,9 +255,30 @@ void _qol() {
       // Nineteen of the shapes had no `typeIt` at all, so the only way to a
       // matrix was the mouse. The route is what makes moving twelve chips off
       // the row honest.
-      for (final item in mathItems.where((i) => i.cat == MathCat.structure)) {
+      //
+      // A VARIANT is exempt, and `MathItem.variantOf` is how it says so: a
+      // prefilled `∑` from i = 1 to n is the `sum` shape with its slots
+      // already filled, and `\sum` plus the slots is the route to it. A
+      // control word of its own would be a string nobody would guess sitting
+      // in the autocorrect table.
+      for (final item in mathItems.where(
+          (i) => i.cat == MathCat.structure && i.variantOf == null)) {
         expect(item.typeIt, isNotNull,
             reason: '${item.id} can only be reached with the mouse');
+      }
+    });
+
+    test('and a variant names a shape that really has one', () {
+      // The exemption above is only honest if `variantOf` points at something
+      // real and reachable — otherwise it is a way to opt out of the rule.
+      for (final item in mathItems.where((i) => i.variantOf != null)) {
+        final parent = mathItemsById[item.variantOf];
+        expect(parent, isNotNull,
+            reason: '${item.id} is a variant of "${item.variantOf}", '
+                'which does not exist');
+        expect(parent!.typeIt, isNotNull,
+            reason: '${item.id} is exempt via ${parent.id}, which has no '
+                'keyboard route either');
       }
     });
   });

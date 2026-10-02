@@ -41,6 +41,7 @@ class MathItem {
     this.aliases = const [],
     this.typeIt,
     this.alsoTypeIt = const [],
+    this.variantOf,
   });
 
   /// Stable identifier — used by "recently used" and by tests.
@@ -76,6 +77,20 @@ class MathItem {
   /// insertion needs its OWN slots — sharing one node between two insertions
   /// is how an editor ends up with two carets in the same box.
   final List<MNode> Function() build;
+
+  /// **The id of the blank shape this is a filled-in copy of.**
+  ///
+  /// `sumin` is `sum` with `i=1` and `n` already in its slots — not a
+  /// different shape, the same one with less typing left to do.
+  ///
+  /// It carries a rule rather than only a fact. `math_tex_safety_test.dart`
+  /// requires every structure to have a [typeIt], so that moving chips off
+  /// the row leaves nothing reachable by mouse alone; a variant is exempt,
+  /// because the shape it is a variant of has the route and the student can
+  /// always type `\sum` and fill the slots themselves. Giving `\sumin` a
+  /// control word of its own would put a string nobody would guess into the
+  /// autocorrect table, which is clutter rather than access.
+  final String? variantOf;
 
   /// Everything this should match on, lowercased.
   Iterable<String> get searchTerms =>
@@ -236,6 +251,140 @@ final List<MathItem> _structures = [
     build: () => [
       MScript(
           base: MRow([_s(r'\prod', cls: MClass.op)]), sub: MRow(), sup: MRow())
+    ],
+  ),
+  // ── The same operators, already filled in ───────────────────────────
+  //
+  // *"Id also like there to be some prefilled options for some of the
+  // large/complex operators (i.e. have the default blank ones like we do now,
+  // but then also have some common uses as options to reduce some
+  // headache)."*
+  //
+  // The headache is real and it is not the symbol: it is typing `i`, `=`, `1`
+  // into a subscript, Tab, `n` into a superscript, Tab — six keystrokes and
+  // two slot moves before writing any of the maths you were actually thinking
+  // about. These are the forms a student writes over and over, and the blank
+  // ones above are untouched.
+  //
+  // **Where the caret lands is why these work.** `insertNodes` puts it in the
+  // first empty slot and, when there is none, in the parent row immediately
+  // AFTER the structure — so a sum with both limits filled leaves the caret
+  // exactly where the summand goes, and `\int_a^b □ dx` leaves it between the
+  // sign and the `dx`. Nothing had to be added for that.
+  //
+  // No `typeIt` on any of them, deliberately: the blank ones own `\sum`,
+  // `\int` and `\lim`, and a second control word for a variant nobody would
+  // guess is a shortcut that only exists to collide.
+  MathItem(
+    id: 'sumin',
+    variantOf: 'sum',
+    cat: MathCat.structure,
+    name: 'sum from i = 1 to n',
+    preview: r'\sum_{i=1}^{n}',
+    aliases: ['sigma', 'series', 'add up', 'total', 'sum i'],
+    build: () => [
+      MScript(
+        base: MRow([_s(r'\sum', cls: MClass.op)]),
+        sub: MRow([
+          _s('i', cls: MClass.letter),
+          _s('=', cls: MClass.rel),
+          _s('1', cls: MClass.digit),
+        ]),
+        sup: MRow([_s('n', cls: MClass.letter)]),
+      )
+    ],
+  ),
+  MathItem(
+    id: 'suminf',
+    variantOf: 'sum',
+    cat: MathCat.structure,
+    name: 'sum to infinity',
+    preview: r'\sum_{n=1}^{\infty}',
+    aliases: ['sigma', 'infinite series', 'converge'],
+    build: () => [
+      MScript(
+        base: MRow([_s(r'\sum', cls: MClass.op)]),
+        sub: MRow([
+          _s('n', cls: MClass.letter),
+          _s('=', cls: MClass.rel),
+          _s('1', cls: MClass.digit),
+        ]),
+        sup: MRow([_s(r'\infty')]),
+      )
+    ],
+  ),
+  MathItem(
+    id: 'prodin',
+    variantOf: 'prod',
+    cat: MathCat.structure,
+    name: 'product from i = 1 to n',
+    preview: r'\prod_{i=1}^{n}',
+    aliases: ['multiply all', 'pi product'],
+    build: () => [
+      MScript(
+        base: MRow([_s(r'\prod', cls: MClass.op)]),
+        sub: MRow([
+          _s('i', cls: MClass.letter),
+          _s('=', cls: MClass.rel),
+          _s('1', cls: MClass.digit),
+        ]),
+        sup: MRow([_s('n', cls: MClass.letter)]),
+      )
+    ],
+  ),
+  MathItem(
+    id: 'intdx',
+    variantOf: 'int',
+    cat: MathCat.structure,
+    name: 'definite integral, with dx',
+    preview: r'\int_{a}^{b}\square\,dx',
+    aliases: ['area under', 'integrate', 'between', 'limits'],
+    build: () => [
+      MScript(
+        base: MRow([_s(r'\int', cls: MClass.op)]),
+        sub: MRow([_s('a', cls: MClass.letter)]),
+        sup: MRow([_s('b', cls: MClass.letter)]),
+      ),
+      // The caret arrives between the sign and these two, which is the whole
+      // point of writing the `dx` for them.
+      _s('d', cls: MClass.letter),
+      _s('x', cls: MClass.letter),
+    ],
+  ),
+  MathItem(
+    id: 'limx0',
+    variantOf: 'lim',
+    cat: MathCat.structure,
+    name: 'limit as x goes to 0',
+    preview: r'\lim_{x \to 0}',
+    aliases: ['approaches', 'tends to', 'continuity'],
+    build: () => [
+      MScript(
+        base: MRow([_s(r'\lim', cls: MClass.func)]),
+        sub: MRow([
+          _s('x', cls: MClass.letter),
+          _s(r'\to', cls: MClass.rel),
+          _s('0', cls: MClass.digit),
+        ]),
+      )
+    ],
+  ),
+  MathItem(
+    id: 'limxinf',
+    variantOf: 'lim',
+    cat: MathCat.structure,
+    name: 'limit as x goes to infinity',
+    preview: r'\lim_{x \to \infty}',
+    aliases: ['approaches', 'tends to', 'end behaviour', 'asymptote'],
+    build: () => [
+      MScript(
+        base: MRow([_s(r'\lim', cls: MClass.func)]),
+        sub: MRow([
+          _s('x', cls: MClass.letter),
+          _s(r'\to', cls: MClass.rel),
+          _s(r'\infty'),
+        ]),
+      )
     ],
   ),
   MathItem(
