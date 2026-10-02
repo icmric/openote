@@ -35,7 +35,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/l10n/l10n.dart';
 import 'package:openote/math/active_math.dart';
-import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/theme/onote_theme.dart';
