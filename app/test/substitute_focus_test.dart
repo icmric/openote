@@ -26,6 +26,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/editor/substitute_block_view.dart';
 import 'package:openote/editor/text_block_view.dart';
 import 'package:openote/l10n/l10n.dart';
+import 'package:openote/math/math_field.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -74,7 +75,16 @@ void main() {
         y: 120,
         w: 420,
         content: {'text': 'A sentence to be editing.'});
-    app.importPage(nb, page.id, [text], PageProps());
+    // An UNRELATED equation, well away from both — the second claimant.
+    // Reported separately: *"if im in a maths equation (any maths equation,
+    // even one not linked to that evaluator) it still has the same issue."*
+    final maths = Block(
+        type: BlockType.math,
+        x: 620,
+        y: 120,
+        w: 300,
+        content: {'latex': 'a^2+b^2', 'display': true});
+    app.importPage(nb, page.id, [text, maths], PageProps());
     app.reloadNodes();
     await app.selectPage(page.id);
     app.markOnboardingSeen();
@@ -160,6 +170,85 @@ void main() {
         .first;
     expect(t.widget<TextField>(field).focusNode?.hasPrimaryFocus, isTrue,
         reason: 'opening a sentence must still put the caret in it');
+  });
+
+  testWidgets('clicking the value field while an EQUATION is open keeps it',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // The same bug at its second site. `MathField.build` registers the same
+    // kind of post-frame reclaim the paragraph did — `if (mounted &&
+    // !_focus.hasFocus) _focus.requestFocus()` — so an open equation held
+    // the keyboard against a click into any field outside its own block,
+    // whether or not that field's block had anything to do with it.
+    await pumpShell(t);
+
+    final maths = app.blocks.firstWhere((b) => b.type == BlockType.math);
+    app.select(maths.id, edit: true);
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+    expect(app.editingBlockId, maths.id, reason: 'the equation is open');
+
+    await t.tap(valueField());
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+
+    // Rebuilds, because the theft lands on a LATER build — same reason as
+    // the paragraph case above.
+    app.refreshChrome();
+    for (var i = 0; i < 5; i++) {
+      await t.pump(const Duration(milliseconds: 80));
+    }
+
+    expect(valueFieldHasFocus(t), isTrue,
+        reason: 'THE BUG: the equation takes the keyboard straight back');
+  });
+
+  testWidgets('and an equation still takes the keyboard when it is opened',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // The regression guard for the above, matching the paragraph's. That
+    // reclaim is why an equation can be typed into at all — reported as *"i
+    // cant actually type anything right off the bat"* — so a fix that stops
+    // it doing its job is not a fix.
+    await pumpShell(t);
+
+    final maths = app.blocks.firstWhere((b) => b.type == BlockType.math);
+    app.select(maths.id, edit: true);
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+
+    expect(find.byType(MathField), findsOneWidget);
+    final node = t.widget<Focus>(find
+            .descendant(of: find.byType(MathField), matching: find.byType(Focus))
+            .first)
+        .focusNode;
+    expect(node?.hasPrimaryFocus, isTrue,
+        reason: 'opening an equation must still put the caret in it');
+  });
+
+  testWidgets('clicking the value field closes the block that was open',
+      (t) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    // *"the original one i was editing before still seems to stay selected
+    // which is kinda odd"* — a tap on a TextField is won by the field, never
+    // reaches `BlockView._tap`, and so nothing ended the sentence's session.
+    await pumpShell(t);
+
+    await t.tapAt(
+        t.getTopLeft(find.byType(TextBlockView)) + const Offset(24, 14));
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+    expect(app.editingBlockId, isNotNull);
+
+    await t.tap(valueField());
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+
+    expect(app.editingBlockId, isNull,
+        reason: 'the sentence is no longer being edited');
+    expect(app.selectedBlockId,
+        app.blocks.firstWhere((b) => b.type == BlockType.substitute).id,
+        reason: 'and the block the student is in is the selected one');
   });
 
   testWidgets('clicking the value field a SECOND time still works', (t) async {

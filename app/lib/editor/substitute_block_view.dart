@@ -29,6 +29,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/focus_claim.dart';
 import '../math/graph_plot.dart';
 import '../math/math_view.dart';
 import '../model/models.dart';
@@ -52,13 +53,46 @@ class _SubstituteBlockViewState extends State<SubstituteBlockView> {
 
   late final TextEditingController _controller =
       TextEditingController(text: b.content['value'] as String? ?? '');
-  final FocusNode _focus = FocusNode();
+  final FocusNode _focus = FocusNode(debugLabel: 'substitute value');
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_focusChanged);
+  }
 
   @override
   void dispose() {
+    _focus.removeListener(_focusChanged);
     _controller.dispose();
     _focus.dispose();
     super.dispose();
+  }
+
+  /// **Clicking this field closes whatever block was open before it.**
+  ///
+  /// A tap on a `TextField` is won by the field's own gesture recognizer, so
+  /// it never reaches `BlockView._tap` and nothing told the app that the
+  /// student had left the sentence or the equation they were in. The reported
+  /// symptom was the other box staying lit: *"the original one i was editing
+  /// before still seems to stay selected which is kinda odd"* — and the
+  /// reported WORKAROUND, clicking the containing box first, is precisely
+  /// `_tap` being allowed to run. This does what that click did.
+  ///
+  /// It is also the deeper half of the focus fight. A block left open goes on
+  /// rebuilding, and both the paragraph and the equation editor claim the
+  /// keyboard from their own builds; ending the session removes the claimant
+  /// rather than only guarding it (see [keyboardIsGoingSpare], which guards
+  /// the frame between this focus change and the rebuild).
+  ///
+  /// `select` without `edit:` because `BlockType.substitute` has no editing
+  /// session of its own to open — the field IS the interaction, and the block
+  /// around it is merely selected, exactly as a click on its body leaves it.
+  void _focusChanged() {
+    if (!_focus.hasFocus) return;
+    final app = widget.app;
+    if (app.editingBlockId == null && app.selectedBlockId == b.id) return;
+    app.select(b.id);
   }
 
   void _onChanged(String text) {

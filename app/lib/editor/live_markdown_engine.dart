@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../markdown/md_render.dart';
 import '../markdown/md_syntax.dart';
+import '../core/focus_claim.dart';
 import '../core/ids.dart';
 import '../update/app_update.dart' show kAppVersion;
 import '../model/inline_atom.dart';
@@ -551,31 +552,13 @@ class _LiveMarkdownSession extends OnoteEditSession {
       _mathFocus.hasFocus ||
       _atomFocus.value;
 
-  /// **Is the keyboard going spare, or is somebody typing into something?**
-  ///
-  /// Asked before this paragraph claims the keyboard on a rebuild. Focus
-  /// parked on a `FocusScopeNode` means nobody is editing anything — that is
-  /// what the framework does when a field is disposed or unfocused, and it is
-  /// the state a newly-opened block is claimed from. A plain [FocusNode] with
-  /// a context belongs to a widget that asked for it, and taking it off them
-  /// is the bug this guards.
+  /// Whether this paragraph may claim the keyboard — [keyboardIsGoingSpare],
+  /// which [MathField] now asks the same question of and for the same reason.
   ///
   /// Nodes in this paragraph's own path are excluded from "somebody else"
   /// before this is reached, by the `hasFocus` and [inlineChildFocused] tests
   /// beside it.
-  bool get _keyboardIsGoingSpare {
-    final holder = FocusManager.instance.primaryFocus;
-    if (holder == null || holder is FocusScopeNode) return true;
-    // **Or held by something ABOVE this field in its own path** — the
-    // canvas's traversal node, or the block's own `Focus`. That is where a
-    // click which opened this block leaves the keyboard, so claiming it is
-    // the whole purpose of the caller; a first version of this guard allowed
-    // only the scope case and stopped a newly-opened box taking the caret at
-    // all, which the test beside it caught.
-    //
-    // Anything else is a field in some other block, being typed into.
-    return _focus.ancestors.contains(holder);
-  }
+  bool get _keyboardIsGoingSpare => keyboardIsGoingSpare(_focus);
 
   /// Escape, or Tab off the end of a table: the keyboard comes back to the
   /// paragraph with the caret just after the atom.

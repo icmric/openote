@@ -18,6 +18,7 @@ import 'package:flutter/gestures.dart'
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/focus_claim.dart';
 import '../theme/tokens.dart';
 import 'answer_menu.dart';
 import 'math_editor.dart';
@@ -654,9 +655,21 @@ class MathFieldState extends State<MathField> {
     // type anything right off the bat". The text editor claims focus the same
     // way and for the same reason: the host decides THAT a block is being
     // edited, but the field only exists after this build.
+    //
+    // **And only when the keyboard is actually free** — see
+    // [keyboardIsGoingSpare]. This runs after every build, which makes it a
+    // standing claim rather than the one-off it reads as, and an equation
+    // held the keyboard against a click into any field outside its own
+    // block: *"if im in a maths equation (any maths equation, even one not
+    // linked to that evaluator) it still has the same issue, it will
+    // highlight the box and move the caret in while i click, but then
+    // imedietley bring it back to the equation like i never even clicked
+    // it."*
     if (widget.autofocus) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_focus.hasFocus) _focus.requestFocus();
+        if (mounted && !_focus.hasFocus && keyboardIsGoingSpare(_focus)) {
+          _focus.requestFocus();
+        }
       });
     }
 
