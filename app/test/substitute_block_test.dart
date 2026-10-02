@@ -291,6 +291,37 @@ void main() {
       app.cancelPendingSave();
     });
 
+    testWidgets('and one name keeps the old spelling in step', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The same notebook opened by a v1.0.1 build, which reads `value` and
+      // knows nothing of `values`. Reading both spellings stops v1.0.2
+      // losing what v1.0.1 wrote; this is the other direction.
+      final s = app.insertSubstitute(latex: 'y=3x+10');
+      await pump(tester, s);
+      await tester.enterText(find.byType(TextField), '2');
+      await tester.pump();
+      expect(s.content['value'], '2',
+          reason: 'a v1.0.1 build can still show this');
+      expect(s.content['values'], {'x': '2'});
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and several names do not pretend to', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // `value` never recorded WHICH variable it was, and a v1.0.1 build
+      // labels whatever it finds `x`. It cannot evaluate a formula with
+      // several names anyway, so there is nothing to be in step with — and
+      // writing one of them there would be a number under the wrong label.
+      final s = app.insertSubstitute(latex: 'v=u+a*t');
+      await pump(tester, s);
+      await tester.enterText(find.byType(TextField).at(0), '2');
+      await tester.pump();
+      expect(s.content['value'], '',
+          reason: 'left exactly as insertSubstitute made it');
+      expect(s.content['values'], {'u': '2'});
+      app.cancelPendingSave();
+    });
+
     testWidgets('a value stored the pre-v1.0.2 way still shows', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       // One string under `value`, which is all a block could hold before the

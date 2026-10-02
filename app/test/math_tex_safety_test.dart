@@ -268,6 +268,31 @@ void _qol() {
       }
     });
 
+    test('and a variant shows on its face exactly what it inserts', () {
+      // Nothing tied a button's PREVIEW to what pressing it builds, and the
+      // first cut of the prefilled integral drifted: its face read
+      // `\int_{a}^{b}\square\,dx`, promising an empty box for the
+      // integrand, while it built `\int_{a}^{b}dx` with no box at all. The
+      // caret lands in the right place either way, so only the face was
+      // wrong — and a face that promises an affordance the equation does not
+      // have is the kind of thing nobody reports, they just stop trusting
+      // the buttons.
+      //
+      // Variants only, and that is not a cop-out: a variant has no empty
+      // slots by definition, which is the whole of what makes it one, so its
+      // LaTeX is fully determined. A BLANK shape's preview legitimately
+      // differs, because it draws `\square` where the built tree has a
+      // genuinely empty row.
+      String squash(String tex) => tex.replaceAll(' ', '');
+      for (final item in mathItems.where((i) => i.variantOf != null)) {
+        final preview = item.preview;
+        expect(preview, isNotNull, reason: '${item.id} has no face');
+        final row = MRow()..addAll(item.build());
+        expect(squash(rowToTex(row, const MathTexCtx())), squash(preview!),
+            reason: '${item.id} shows one thing and inserts another');
+      }
+    });
+
     test('and a variant names a shape that really has one', () {
       // The exemption above is only honest if `variantOf` points at something
       // real and reachable — otherwise it is a way to opt out of the rule.

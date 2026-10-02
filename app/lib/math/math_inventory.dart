@@ -337,7 +337,12 @@ final List<MathItem> _structures = [
     variantOf: 'int',
     cat: MathCat.structure,
     name: 'definite integral, with dx',
-    preview: r'\int_{a}^{b}\square\,dx',
+    // **No `\square` on the face.** A blank shape's preview shows boxes
+    // because it HAS empty slots; this one has none — the caret simply lands
+    // between the sign and the `dx`, which is what `insertNodes` does when
+    // every slot is full. A box drawn here would promise an affordance that
+    // is not in the equation you get.
+    preview: r'\int_{a}^{b}dx',
     aliases: ['area under', 'integrate', 'between', 'limits'],
     build: () => [
       MScript(
