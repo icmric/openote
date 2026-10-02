@@ -71,9 +71,17 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
   ///
   /// Tapping a tab mid-equation is the way out, for the rare case of wanting
   /// Home's formatting while an equation is open.
+  /// Whether the row is showing the equation's palette right now — an
+  /// equation is open AND the student has not tabbed off this one.
+  ///
+  /// Read by the badge as well as by [_face], because the badge is now how
+  /// you get back and has to say whether you are already there.
+  bool get _equationFaceShowing =>
+      objectFaceOf(app) == ObjectFace.equation &&
+      !identical(_tabbedAwayFrom, app.activeMath);
+
   Widget _face(BuildContext context) {
-    final equation = objectFaceOf(app) == ObjectFace.equation &&
-        !identical(_tabbedAwayFrom, app.activeMath);
+    final equation = _equationFaceShowing;
     final m = app.activeMath;
     if (equation && m != null) {
       return KeyedSubtree(
@@ -115,16 +123,38 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
       return KeyedSubtree(
           key: const ValueKey(1), child: _insertRow(context));
     }
-    return ScrollConfiguration(
-      behavior: const _ToolbarScroll(),
-      child: SingleChildScrollView(
-        key: ValueKey(_tab),
-        scrollDirection: Axis.horizontal,
-        child: switch (_tab) {
-          2 => _drawRow(context),
-          _tabPage => PageFace(app: app),
-          _ => _homeRow(context),
-        },
+    // **The key goes on the OUTERMOST widget**, which is what the
+    // [AnimatedSwitcher] below actually compares.
+    //
+    // It used to sit on the `SingleChildScrollView` inside an unkeyed
+    // `ScrollConfiguration`, so three of the four faces handed the switcher
+    // the same thing: a `ScrollConfiguration` with a null key. `canUpdate`
+    // says that is the same widget, so it rebuilt in place instead of
+    // transitioning — and the two faces that DID carry a key at the top,
+    // Insert and the equation, animated normally. Reported exactly along
+    // that seam:
+    //
+    //   *"there are animations between the bars which is great, however this
+    //   is only for home and insert, going to and from draw and page from
+    //   home just cuts (and vice versa), between home and page cuts, but
+    //   from insert to home or page (and vice versa) has the animation, this
+    //   must all be consistent."*
+    //
+    // Home↔Insert crosses the keyed/unkeyed boundary, so it animated; every
+    // pair that stayed on the unkeyed side cut. One key, at the top, for
+    // every face.
+    return KeyedSubtree(
+      key: ValueKey(_tab),
+      child: ScrollConfiguration(
+        behavior: const _ToolbarScroll(),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: switch (_tab) {
+            2 => _drawRow(context),
+            _tabPage => PageFace(app: app),
+            _ => _homeRow(context),
+          },
+        ),
       ),
     );
   }
@@ -274,14 +304,38 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                 // fast (Fitts's law) and always land.
                 for (var i = 0; i < _tabCount; i++)
                   _tabButton(scheme, i, tabs[i]),
-                // **A badge, not a tab.** It says what the row below is
-                // about and it cannot be pressed, so there is nothing here to
-                // be moved onto and nothing to be moved back from. It sits
-                // where the old Maths tab sat, deliberately: same place,
-                // opposite kind.
+                // **A badge that is also the way back.**
+                //
+                // It was deliberately unpressable — "there is nothing here to
+                // be moved onto and nothing to be moved back from" — which
+                // was true of the row but not of the student. Tapping a tab
+                // mid-equation IS a way off it, and it was one-way:
+                // `_tabbedAwayFrom` is set and nothing could ever clear it,
+                // so the palette was gone until the equation was closed and
+                // reopened. Reported:
+                //
+                //   *"there is a button labled "equation" which pops up in
+                //   the toolbar when editing an equation, this is good,
+                //   however it does not function as a button. If i click out
+                //   of it into one of the other tabs, i am unable to go back
+                //   into this toolbar, even though im still in the equation
+                //   editing mode, meaning i have to click out of the equation
+                //   and back in for this to become accessable again."*
+                //
+                // So it presses. It still is not a tab — it exists only while
+                // an equation does, and it is drawn as a chip in the place
+                // the old Maths tab sat — but it now carries which face the
+                // row is showing, which is the one thing the student needed
+                // it to say.
                 if (objectFaceOf(app) == ObjectFace.equation)
                   _SubjectBadge(
-                      icon: Icons.functions, label: l.barEquationBadge),
+                    icon: Icons.functions,
+                    label: l.barEquationBadge,
+                    selected: _equationFaceShowing,
+                    onTap: _equationFaceShowing
+                        ? null
+                        : () => setState(() => _tabbedAwayFrom = null),
+                  ),
                 const Spacer(),
                 // The trailing cluster COMPACTS rather than scrolling.
                 //
@@ -1945,7 +1999,12 @@ class _ToolbarScroll extends MaterialScrollBehavior {
 /// tab, and the ambiguity is removed by removing the behaviour rather than by
 /// styling around it.
 class _SubjectBadge extends StatelessWidget {
-  const _SubjectBadge({required this.icon, required this.label});
+  const _SubjectBadge({
+    required this.icon,
+    required this.label,
+    this.selected = true,
+    this.onTap,
+  });
 
   final IconData icon;
 
@@ -1953,34 +2012,61 @@ class _SubjectBadge extends StatelessWidget {
   /// "tools".
   final String label;
 
+  /// Whether the command row is showing this subject's own controls. False
+  /// means the student has tabbed away from them while the subject is still
+  /// open, which is the state [onTap] exists to leave.
+  final bool selected;
+
+  /// Press to bring the row back to this subject. Null when it is already
+  /// showing — a control that does nothing when pressed is worse than one
+  /// that cannot be.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
     final l = L.of(context);
+    // Filled while its controls are on the row, outlined once they are not:
+    // the same "here / go here" pair the tab row makes with its underline,
+    // in the register a chip can say it in.
+    final chip = Container(
+      height: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: selected ? accent.withValues(alpha: 0.10) : Colors.transparent,
+        border: selected
+            ? null
+            : Border.all(color: accent.withValues(alpha: 0.45)),
+        borderRadius: BorderRadius.circular(OnoteRadius.full),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 14, color: accent),
+        const SizedBox(width: 4),
+        Text(label,
+            style: OnoteType.caption
+                .copyWith(fontWeight: FontWeight.w600, color: accent)),
+      ]),
+    );
     return ExcludeFocus(
+      // **Not focusable, even now that it is pressable.** The whole point of
+      // pressing it is to get back to an equation that is still open, and an
+      // equation that lost the keyboard on the way back would be a poor
+      // trade. `InkWell` handles the tap either way.
       child: Padding(
         padding: const EdgeInsets.only(left: 6),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-              width: 1, height: 18, color: context.surfaces.border),
+          Container(width: 1, height: 18, color: context.surfaces.border),
           const SizedBox(width: 6),
           Tooltip(
-            message: l.barEscWhenDone,
-            child: Container(
-              height: 22,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(OnoteRadius.full),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(icon, size: 14, color: accent),
-                const SizedBox(width: 4),
-                Text(label,
-                    style: OnoteType.caption.copyWith(
-                        fontWeight: FontWeight.w600, color: accent)),
-              ]),
-            ),
+            message: selected ? l.barEscWhenDone : l.barBackToEquation,
+            child: onTap == null
+                ? chip
+                : InkWell(
+                    mouseCursor: WidgetStateMouseCursor.clickable,
+                    borderRadius: BorderRadius.circular(OnoteRadius.full),
+                    onTap: onTap,
+                    child: chip,
+                  ),
           ),
         ]),
       ),

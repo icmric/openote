@@ -18,6 +18,7 @@
   "barEquationBadge": "Equação",
   "barEraserSplit": "Corta os traços onde você esfrega",
   "barEraserWhole": "Apaga o traço inteiro que você tocar",
+  "barBackToEquation": "Voltar às ferramentas de equação",
   "barEscWhenDone": "Esc quando terminar",
   "barExport": "Exportar",
   "barExportCanvas": "Para o Obsidian Canvas (.canvas)",

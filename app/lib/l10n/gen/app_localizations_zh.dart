@@ -70,6 +70,9 @@ class LZh extends L {
   String get barEraserWhole => '碰到哪一笔就整笔擦掉';
 
   @override
+  String get barBackToEquation => '返回公式工具';
+
+  @override
   String get barEscWhenDone => '完成后按 Esc';
 
   @override

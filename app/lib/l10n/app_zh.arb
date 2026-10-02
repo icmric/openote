@@ -18,6 +18,7 @@
   "barEquationBadge": "公式",
   "barEraserSplit": "从擦过的地方把笔画断开",
   "barEraserWhole": "碰到哪一笔就整笔擦掉",
+  "barBackToEquation": "返回公式工具",
   "barEscWhenDone": "完成后按 Esc",
   "barExport": "导出",
   "barExportCanvas": "用于 Obsidian Canvas (.canvas)",

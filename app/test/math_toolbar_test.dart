@@ -615,38 +615,42 @@ void main() {
     });
 
     group('evaluating at a value', () {
-      // Unlike Graph, this lives in the fold rather than on the row itself —
-      // a deliberate, smaller-footprint choice for a second command sharing
-      // the same equation, not an oversight; these pin that placement down
-      // the same way the Graph tests above pin ITS placement.
-      testWidgets('is one item behind the more menu, not a row button',
+      // **This used to live in the fold, and these tests used to pin it
+      // there** — "a deliberate, smaller-footprint choice for a second
+      // command sharing the same equation, not an oversight". The owner
+      // reversed it twice over, once gently and once not:
+      //
+      //   *"this is super helpful and i like it (although its rather buried
+      //   away at the moment, this isnt ideal because those who would want it
+      //   probably wont just stumble across it)"*
+      //
+      //   *"We are also hiding this option in a menu, making it hard to find,
+      //   anoying to get to, and basically impossible to just stumble across,
+      //   which is how most people learn about these features."*
+      //
+      // Stumbling across it was the requirement the fold could not meet, so
+      // it is a labelled button beside Graph — the other thing you can do
+      // with the equation you just wrote.
+      testWidgets('is a labelled button on the row, beside Graph',
           (tester) async {
         var evaluated = 0;
         await pumpBar(tester,
             onInsert: (_) {}, onEvaluateAtValue: () => evaluated++);
-        expect(find.textContaining('Evaluate'), findsNothing,
-            reason: 'nothing on the row itself until the menu is opened');
-
-        await tester.tap(find.byTooltip('More'));
-        await tester.pumpAndSettle();
-        expect(find.textContaining('Evaluate at a value'), findsOneWidget);
-        await tester.tap(find.textContaining('Evaluate at a value'));
+        expect(find.text('Evaluate'), findsOneWidget,
+            reason: 'readable without opening anything');
+        await tester.tap(find.text('Evaluate'));
         await tester.pumpAndSettle();
         expect(evaluated, 1);
       });
 
-      testWidgets('is greyed out when there is nothing to evaluate',
-          (tester) async {
-        // Same rule the LaTeX toggle already follows for `latexAvailable`:
-        // a menu item that does nothing when pressed is worse than none.
-        await pumpBar(tester, onInsert: (_) {}, onEvaluateAtValue: null);
+      testWidgets('and is no longer in the fold at all', (tester) async {
+        // Two routes to one command is how a menu quietly becomes the place
+        // people look first again.
+        await pumpBar(tester,
+            onInsert: (_) {}, onEvaluateAtValue: () {});
         await tester.tap(find.byTooltip('More'));
         await tester.pumpAndSettle();
-        final item = tester.widget<PopupMenuItem<String>>(
-            find.ancestor(
-                of: find.textContaining('Evaluate at a value'),
-                matching: find.byType(PopupMenuItem<String>)));
-        expect(item.enabled, isFalse);
+        expect(find.textContaining('Evaluate at a value'), findsNothing);
       });
 
       testWidgets('is on the LaTeX face too, the same as Graph', (tester) async {
@@ -655,9 +659,7 @@ void main() {
             onInsert: (_) {},
             latexMode: true,
             onEvaluateAtValue: () => evaluated++);
-        await tester.tap(find.byTooltip('More'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.textContaining('Evaluate at a value'));
+        await tester.tap(find.text('Evaluate'));
         await tester.pumpAndSettle();
         expect(evaluated, 1);
       });

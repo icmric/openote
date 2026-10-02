@@ -18,6 +18,7 @@
   "barEquationBadge": "Formel",
   "barEraserSplit": "Trennt Striche dort, wo du reibst",
   "barEraserWhole": "Entfernt jeden Strich, den du berührst",
+  "barBackToEquation": "Zurück zu den Gleichungswerkzeugen",
   "barEscWhenDone": "Esc, wenn du fertig bist",
   "barExport": "Exportieren",
   "barExportCanvas": "Für Obsidian Canvas (.canvas)",

@@ -71,6 +71,9 @@ class LEn extends L {
   String get barEraserWhole => 'Removes any stroke you touch';
 
   @override
+  String get barBackToEquation => 'Back to the equation tools';
+
+  @override
   String get barEscWhenDone => 'Esc when you are done';
 
   @override

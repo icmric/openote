@@ -555,7 +555,11 @@ class _MathBarState extends State<MathBar> {
             style: OnoteType.small.copyWith(color: s.textSecondary),
           ),
         ),
-        _GraphButton(onDrawGraph: widget.onDrawGraph, surfaces: s),
+        ..._doButtons(
+          onDrawGraph: widget.onDrawGraph,
+          onEvaluateAtValue: widget.onEvaluateAtValue,
+          surfaces: s,
+        ),
         _AngleSwitch(
           mode: widget.angleMode,
           onToggle: widget.onToggleAngleMode,
@@ -565,7 +569,6 @@ class _MathBarState extends State<MathBar> {
           latexMode: widget.latexMode,
           latexAvailable: widget.latexAvailable,
           onToggleLatex: widget.onToggleLatex,
-          onEvaluateAtValue: widget.onEvaluateAtValue,
           surfaces: s,
         ),
       ]);
@@ -594,7 +597,11 @@ class _MathBarState extends State<MathBar> {
         surfaces: s,
         onTap: () => _toggle('__search'),
       ),
-      _GraphButton(onDrawGraph: widget.onDrawGraph, surfaces: s),
+      ..._doButtons(
+        onDrawGraph: widget.onDrawGraph,
+        onEvaluateAtValue: widget.onEvaluateAtValue,
+        surfaces: s,
+      ),
       _AngleSwitch(
         mode: widget.angleMode,
         onToggle: widget.onToggleAngleMode,
@@ -604,7 +611,6 @@ class _MathBarState extends State<MathBar> {
         latexMode: widget.latexMode,
         latexAvailable: widget.latexAvailable,
         onToggleLatex: widget.onToggleLatex,
-        onEvaluateAtValue: widget.onEvaluateAtValue,
         surfaces: s,
       ),
     ]);
@@ -749,23 +755,52 @@ class _Sep extends StatelessWidget {
 /// notify — any emptiness captured here would be one keystroke stale — so the
 /// question "is there anything to graph" is asked when the button is pressed,
 /// and answered there.
-class _GraphButton extends StatelessWidget {
-  const _GraphButton({required this.onDrawGraph, required this.surfaces});
+/// **The two things you can DO with the equation you have written**, in the
+/// same shape, beside each other.
+///
+/// Graph was a labelled button on the row and Evaluate was the second item of
+/// the `⋯` menu, which is an odd pair of homes for two halves of one idea.
+/// The owner, on the one in the menu: *"this is super helpful and i like it
+/// ... although its rather buried away at the moment, this isnt ideal because
+/// those who would want it probably wont just stumble across it"*, and again:
+/// *"We are also hiding this option in a menu, making it hard to find,
+/// anoying to get to, and basically impossible to just stumble across, which
+/// is how most people learn about these features."*
+///
+/// Stumbling across it is the whole requirement, and nothing that lives
+/// behind an ellipsis is ever stumbled across.
+///
+/// Always enabled. The callback is a closure rather than a flag precisely
+/// because `setActiveMath` is called from the editor's own build and does not
+/// notify — any emptiness captured here would be one keystroke stale — so the
+/// question "is there anything to graph" is asked when the button is pressed,
+/// and answered there.
+class _DoButton extends StatelessWidget {
+  const _DoButton({
+    required this.icon,
+    required this.label,
+    required this.tooltip,
+    required this.onTap,
+    required this.surfaces,
+  });
 
-  final VoidCallback? onDrawGraph;
+  final IconData icon;
+  final String label;
+  final String tooltip;
+  final VoidCallback? onTap;
   final OnoteSurfaces surfaces;
 
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.only(right: 3),
         child: Tooltip(
-          message: 'Draw this equation as a graph beside it',
+          message: tooltip,
           child: SizedBox(
             height: OnoteSize.button,
             child: InkWell(
               mouseCursor: WidgetStateMouseCursor.clickable,
               borderRadius: BorderRadius.circular(5),
-              onTap: onDrawGraph,
+              onTap: onTap,
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(5),
@@ -776,10 +811,10 @@ class _GraphButton extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.show_chart,
+                      Icon(icon,
                           size: OnoteIcon.sm, color: surfaces.textPrimary),
                       const SizedBox(width: 4),
-                      Text('Graph',
+                      Text(label,
                           style: OnoteType.small.copyWith(
                             fontWeight: FontWeight.w600,
                             color: surfaces.textPrimary,
@@ -793,6 +828,32 @@ class _GraphButton extends StatelessWidget {
         ),
       );
 }
+
+/// Graph and Evaluate, together, in the order a student meets them.
+List<Widget> _doButtons({
+  required VoidCallback? onDrawGraph,
+  required VoidCallback? onEvaluateAtValue,
+  required OnoteSurfaces surfaces,
+}) =>
+    [
+      _DoButton(
+        icon: Icons.show_chart,
+        label: 'Graph',
+        tooltip: 'Draw this equation as a graph beside it',
+        onTap: onDrawGraph,
+        surfaces: surfaces,
+      ),
+      _DoButton(
+        icon: Icons.calculate_outlined,
+        // Not "Evaluate at a value…" — the menu's wording, three words long
+        // because a menu row has the room and an ellipsis to spend. The
+        // tooltip says the rest.
+        label: 'Evaluate',
+        tooltip: 'Put values into this equation and see the result, beside it',
+        onTap: onEvaluateAtValue,
+        surfaces: surfaces,
+      ),
+    ];
 
 class _AngleSwitch extends StatelessWidget {
   const _AngleSwitch({
@@ -852,14 +913,12 @@ class _MoreMenu extends StatelessWidget {
     required this.latexMode,
     required this.latexAvailable,
     required this.onToggleLatex,
-    this.onEvaluateAtValue,
     required this.surfaces,
   });
 
   final bool latexMode;
   final bool latexAvailable;
   final VoidCallback onToggleLatex;
-  final VoidCallback? onEvaluateAtValue;
   final OnoteSurfaces surfaces;
 
   @override
@@ -869,7 +928,6 @@ class _MoreMenu extends StatelessWidget {
         icon: Icon(Icons.more_horiz, size: OnoteIcon.sm, color: surfaces.textPrimary),
         onSelected: (v) {
           if (v == 'latex') onToggleLatex();
-          if (v == 'evaluate') onEvaluateAtValue?.call();
           if (v == 'help') showShortcutOverlay(context);
         },
         itemBuilder: (_) => [
@@ -880,11 +938,9 @@ class _MoreMenu extends StatelessWidget {
                 ? 'Back to the buttons'
                 : 'Write the LaTeX by hand'),
           ),
-          PopupMenuItem<String>(
-            value: 'evaluate',
-            enabled: onEvaluateAtValue != null,
-            child: const Text('Evaluate at a value…'),
-          ),
+          // Evaluate used to be here, as the second row. It is a button on the
+          // row now — see [_DoButton] — because a thing nobody stumbles across
+          // may as well not exist.
           // **With the backslashes.** This line used to read "type sqrt, sum,
           // theta", and typing `sqrt` and a space gives you the four letters:
           // the build-up requires the leading `\`, deliberately, so that

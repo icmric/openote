@@ -72,6 +72,9 @@ class LDe extends L {
   String get barEraserWhole => 'Entfernt jeden Strich, den du berührst';
 
   @override
+  String get barBackToEquation => 'Zurück zu den Gleichungswerkzeugen';
+
+  @override
   String get barEscWhenDone => 'Esc, wenn du fertig bist';
 
   @override
