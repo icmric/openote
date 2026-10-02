@@ -36,6 +36,7 @@ import '../canvas/ink_painter.dart' show colorFromHex;
 import '../math/latex_compat.dart';
 import '../media/pdf_pages.dart';
 import '../math/graph_plot.dart';
+import '../math/substitute.dart';
 import '../model/models.dart';
 import '../model/inline_atom.dart';
 import '../state/app_state.dart';
@@ -1111,10 +1112,11 @@ pw.Widget? _graphWidget(Block b, double h) {
 /// word — this is the one place that string is actually built, and the one
 /// a test can check directly.
 @visibleForTesting
-String substituteLine(String latex, String value) {
-  if (value.isEmpty) return latex;
-  final outcome = substituteInto(graphSourceFromLatex(latex), value);
-  return '$latex   (${outcome.variable} = $value → ${outcome.result.display})';
+String substituteLine(Map<String, dynamic> content) {
+  final latex = (content['latex'] as String? ?? '').trim();
+  final at = substituteProjection(content);
+  if (at == null) return latex;
+  return '$latex   (${at.given} → ${at.answer})';
 }
 
 /// A substitute block, as plain text: the equation, and — once a value has
@@ -1124,8 +1126,7 @@ String substituteLine(String latex, String value) {
 pw.Widget? _substituteWidget(Block b) {
   final latex = b.content['latex'] as String? ?? '';
   if (latex.isEmpty) return null;
-  final value = (b.content['value'] as String? ?? '').trim();
-  return pw.Text(substituteLine(latex, value),
+  return pw.Text(substituteLine(b.content),
       style: const pw.TextStyle(fontSize: 10));
 }
 

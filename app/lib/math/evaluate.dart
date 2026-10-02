@@ -230,9 +230,145 @@ CompiledMath compileFunction(String input, {String variable = 'x'}) {
   return CompiledMath.ok(at, variable: variable);
 }
 
+/// A formula of however many names it mentions, ready to be given values.
+///
+/// [CompiledMath]'s sibling, and deliberately not an extension of it. A curve
+/// is a function of ONE variable by definition — that is what makes `at` a
+/// `double Function(double)` and what the painter samples — so widening it
+/// would have made every graph carry a map it has no use for. A formula is
+/// the other shape: `A = l*w` is not a curve, it is two numbers in and one
+/// out, and until now this app had no way to say that at all.
+class CompiledFormula {
+  const CompiledFormula.ok(this.call, {required this.variables})
+      : error = null,
+        isOk = true;
+  const CompiledFormula.err(this.error)
+      : call = null,
+        variables = const [],
+        isOk = false;
+
+  /// Give it a value for every name in [variables], get a number. Returns NaN
+  /// where the formula has no value for those particular numbers — `sqrt` of
+  /// a negative, a log of zero — which is a gap rather than a failure of the
+  /// formula itself, the same rule [CompiledMath.at] follows.
+  final double Function(Map<String, double> values)? call;
+
+  /// Every name this formula needs a value for, **in the order they are
+  /// written**. That order is not cosmetic: it is the order the fields appear
+  /// in, and a student reading `v = u + a*t` expects to be asked for u, then
+  /// a, then t.
+  final List<String> variables;
+
+  final String? error;
+  final bool isOk;
+}
+
+/// **Compile [input] without being told what its variable is called.**
+///
+/// [compileFunction] has to be told, and binds exactly one name — which is
+/// why, measured rather than assumed, NOTHING but `x` worked: `F=m*a`,
+/// `v=u+a*t`, `A=l*w` and `c=sqrt(a^2+b^2)` were every one of them refused
+/// with `unknown "m"`, `unknown "u"`, `unknown "l"`, `unknown "a"`. The
+/// owner's report: *"its unable to handle multi variable stuff at the
+/// moment."*
+///
+/// ## How the names are found
+///
+/// There is no tree to walk. A [MathExpr] is a closure — that is the whole
+/// design, because a curve is several hundred samples and re-parsing per
+/// sample measured 33 times the cost — so nothing here can be inspected.
+///
+/// What it CAN do is complain. An unbound name throws [_UnknownName] the
+/// moment it is reached, so the formula is run, the name it asks for is bound,
+/// and it is run again until it stops asking. Each pass gets one name further,
+/// in evaluation order, which for this grammar is the order they are written.
+///
+/// The alternative was a list of every function and constant the parser knows,
+/// to subtract from the letters in the source. That list already exists, twice
+/// (`_functions`, `_constants`, plus `log2`-style names built by pattern), and
+/// a third copy that drifted would start asking students for a value of `sin`.
+/// Asking the parser is asking the one authority there is.
+///
+/// Bound to 1 rather than 0 while probing, because 0 is the value that makes
+/// `1/c` infinite and `log(c)` a gap, and a formula that goes NaN mid-walk
+/// stops telling us about the names further along it.
+CompiledFormula compileFormula(String input) {
+  final src = input.trim();
+  if (src.isEmpty) return const CompiledFormula.err('empty');
+  if (src.contains('=')) {
+    return const CompiledFormula.err('give me one side of the equals sign');
+  }
+  final MathExpr expr;
+  try {
+    final p = _Parser(src);
+    expr = p.parseExpression();
+    p.skipSpace();
+    if (!p.atEnd) return CompiledFormula.err('unexpected "${p.rest}"');
+  } on _EvalError catch (e) {
+    return CompiledFormula.err(e.message);
+  } catch (_) {
+    return const CompiledFormula.err('could not read that');
+  }
+
+  final found = <String>[];
+  final probe = <String, double>{};
+  // One pass per name, and a formula cannot need more names than it has
+  // characters — so this cannot run away even if the grammar grows a shape
+  // that asks for the same name twice.
+  for (var pass = 0; pass <= src.length; pass++) {
+    try {
+      expr(probe);
+      break;
+    } on _UnknownName catch (e) {
+      if (probe.containsKey(e.name)) break; // asked twice: nothing learnt
+      found.add(e.name);
+      probe[e.name] = 1;
+    } on _EvalError catch (e) {
+      // A real complaint about the maths rather than about a name — `3!!`,
+      // a function given too few arguments. The student gets the parser's
+      // own words, which is what they would have got at the calculator.
+      return CompiledFormula.err(e.message);
+    } catch (_) {
+      // A gap at these particular numbers. Nothing more to learn by
+      // probing, and the formula is still a formula.
+      break;
+    }
+  }
+
+  double call(Map<String, double> values) {
+    try {
+      return expr(values);
+    } on _EvalError {
+      return double.nan;
+    } catch (_) {
+      return double.nan;
+    }
+  }
+
+  return CompiledFormula.ok(call, variables: List.unmodifiable(found));
+}
+
+/// Every name [input] needs a value for, in the order they are written.
+///
+/// Empty when it needs none — a formula that is already just a number — and
+/// empty when it cannot be read at all, which the caller distinguishes with
+/// [compileFormula] when it needs to.
+List<String> freeVariables(String input) => compileFormula(input).variables;
+
 class _EvalError implements Exception {
   _EvalError(this.message);
   final String message;
+}
+
+/// A name with no value bound to it, carrying the name itself.
+///
+/// The message is unchanged — `unknown "c"` is what the student has always
+/// been shown, and [compileFunction] still matches on it — but [freeVariables]
+/// needs the name back out, and reading it out of the sentence again would be
+/// a contract held together by a regular expression.
+class _UnknownName extends _EvalError {
+  _UnknownName(this.name) : super('unknown "$name"');
+  final String name;
 }
 
 /// Recursive-descent parser over the linear grammar's numeric subset.
@@ -467,7 +603,12 @@ class _Parser {
     while (i < s.length && (_isLetter(s[i]) || _isDigit(s[i]))) {
       i++;
     }
-    final name = s.substring(start, i).toLowerCase();
+    // Folded for the LOOKUP — `SIN(x)` is sin — but the spelling is kept for
+    // the variable case below, where it is the student's own and is about to
+    // be printed back to them beside a field. `V = I*R` asking for `i` and
+    // `r` reads like a different formula from the one they wrote.
+    final raw = s.substring(start, i);
+    final name = raw.toLowerCase();
 
     // Constant?
     final k = _constants[name];
@@ -526,8 +667,10 @@ class _Parser {
       // Deferring the complaint to that moment is what lets one grammar
       // serve both, and the message is unchanged either way.
       return (v) {
-        final bound = v[name];
-        if (bound == null) throw _EvalError('unknown "$name"');
+        // The folded name second, so every existing caller — all of which
+        // bind a name they folded themselves — keeps working unchanged.
+        final bound = v[raw] ?? v[name];
+        if (bound == null) throw _UnknownName(raw);
         return bound;
       };
     }

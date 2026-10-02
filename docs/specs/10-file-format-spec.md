@@ -339,6 +339,26 @@ What "frozen" binds:
 
 ### Changelog
 
+- **v1.0.2 (nothing bumped)** — a `substitute` block's typed values move from
+  `content.value`, a single string, to `content.values`, a map keyed by
+  variable name. The block could hold only one value because the evaluator
+  could bind only one name; it can now hold a formula of several (`v = u + a*t`
+  asks for three), so one string cannot say which number belongs to which name.
+
+  **Both spellings are read and the old one is not rewritten**, the same rule
+  `.blob` follows above and for the same reason: a notebook is shared between
+  releases, and a migration that fired on *reading* would make an older build
+  lose a number it can still display perfectly well. A reader should take
+  `values` when present and non-empty, and otherwise treat `value` as the first
+  variable the formula asks for — which is the only name it could ever have
+  been. `values` is written the moment a field is edited, and `value` is left
+  behind untouched.
+
+  No version is bumped because nothing here is a new op kind or a new column:
+  `content` is a block's own JSON, whose unknown fields every release has been
+  required to round-trip since v0.2.0 (Data Model Spec §2). A v1.0.1 build
+  opening a notebook written by v1.0.2 shows the value it understands and
+  preserves the one it does not.
 - **v1.0.0 (op-log `v: 2`; container still v1)** — adds the `block.patch` op
   kind: a single splice (`at`, `del`, `ins`, in UTF-16 code units snapped to
   whole runes) against one string-valued key of a block's `content`, replacing

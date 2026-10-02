@@ -5,7 +5,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 
-import '../math/graph_plot.dart';
+import '../math/substitute.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import 'md_common.dart';
@@ -262,14 +262,13 @@ _Markdown _pageMarkdown(String title, List<Block> blocks, String assetPrefix) {
         // Same reasoning as a graph: what travels is the equation, plus
         // whatever value was last plugged into it.
         final stex = b.content['latex'] as String? ?? '';
-        final sval = (b.content['value'] as String? ?? '').trim();
+        final sat = substituteProjection(b.content);
         if (stex.isNotEmpty) {
-          if (sval.isEmpty) {
+          if (sat == null) {
             buf.writeln('Evaluate:\n\n\$\$\n$stex\n\$\$\n');
           } else {
-            final outcome = substituteInto(graphSourceFromLatex(stex), sval);
             buf.writeln('Evaluate:\n\n\$\$\n$stex\n\$\$\n\nat '
-                '${outcome.variable} = $sval: ${outcome.result.display}\n');
+                '${sat.given}: ${sat.answer}\n');
           }
         }
       case BlockType.code:
@@ -342,14 +341,13 @@ Map<String, dynamic> _jsonCanvas(List<Block> blocks, String assetPrefix) {
         // Same reasoning as a graph: a substitute block travels as the text
         // of its equation and, when there is one, the value plugged into it.
         final slatex = b.content['latex'] as String? ?? '';
-        final sval = (b.content['value'] as String? ?? '').trim();
+        final snode = substituteProjection(b.content);
         String stext;
-        if (sval.isEmpty) {
+        if (snode == null) {
           stext = 'Evaluate \$$slatex\$';
         } else {
-          final outcome = substituteInto(graphSourceFromLatex(slatex), sval);
-          stext = 'Evaluate \$$slatex\$ at ${outcome.variable} = $sval: '
-              '${outcome.result.display}';
+          stext =
+              'Evaluate \$$slatex\$ at ${snode.given}: ${snode.answer}';
         }
         nodes.add({
           'id': b.id,

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../markdown/md_render.dart';
 import '../markdown/md_syntax.dart';
+import '../core/focus_claim.dart';
 import '../core/ids.dart';
 import '../update/app_update.dart' show kAppVersion;
 import '../model/inline_atom.dart';
@@ -550,6 +551,14 @@ class _LiveMarkdownSession extends OnoteEditSession {
       (_focus.hasFocus && !_focus.hasPrimaryFocus) ||
       _mathFocus.hasFocus ||
       _atomFocus.value;
+
+  /// Whether this paragraph may claim the keyboard — [keyboardIsGoingSpare],
+  /// which [MathField] now asks the same question of and for the same reason.
+  ///
+  /// Nodes in this paragraph's own path are excluded from "somebody else"
+  /// before this is reached, by the `hasFocus` and [inlineChildFocused] tests
+  /// beside it.
+  bool get _keyboardIsGoingSpare => keyboardIsGoingSpare(_focus);
 
   /// Escape, or Tab off the end of a table: the keyboard comes back to the
   /// paragraph with the caret just after the atom.
@@ -1436,7 +1445,22 @@ class _LiveMarkdownSession extends OnoteEditSession {
       // cells looks exactly like that for one frame — nothing focused inside
       // a field that is being edited — and claiming it there is how the caret
       // ended up beside a table instead of in the row that had just been made.
-      if (!_focus.hasFocus && !inlineChildFocused) _focus.requestFocus();
+      //
+      // **And unless somebody else's field is being typed into.** Running
+      // after every build makes this a standing claim rather than the one-off
+      // it reads as, and the running app rebuilds constantly — so clicking
+      // into the "evaluate at value" field put the caret there and the next
+      // rebuild took it straight back: *"it will move the caret into it as if
+      // it was going to edit it, but then it will just dispear from it and
+      // the other box never looses focus."*
+      //
+      // A `BlockType.substitute` is not in `_editableType`, so tapping its
+      // field never makes it the editing block and this paragraph stays the
+      // editing block — which is why being the editing block is not the test.
+      // The test is whether the keyboard is actually going spare.
+      if (!_focus.hasFocus && !inlineChildFocused && _keyboardIsGoingSpare) {
+        _focus.requestFocus();
+      }
     });
     return Padding(
       padding: s.inset,
