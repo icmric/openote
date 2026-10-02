@@ -253,6 +253,68 @@ class MathEditor {
     return out;
   }
 
+  /// Brackets that WRAP a highlighted run rather than replacing it, keyed by
+  /// the character typed and carrying the TeX for both ends.
+  ///
+  /// The curly pair is `\{`/`\}`, not `{`/`}`, and **both** ends need it:
+  /// [MDelim] emits `\left$left … \right$right`, and `\left{` is not a
+  /// delimiter — TeX reads it as `\left` followed by a group and gives up.
+  /// Escaping only the closing end is how the first cut of this produced
+  /// `\left{ x+1\right\{`, which is wrong twice over.
+  static const Map<String, ({String left, String right})> wrapBrackets = {
+    '(': (left: '(', right: ')'),
+    '[': (left: '[', right: ']'),
+    '{': (left: r'\{', right: r'\}'),
+  };
+
+  /// **Highlight a run, press `(`, and it is wrapped rather than replaced.**
+  ///
+  /// Reported: *"Highlighting a section of an equation then pressing an
+  /// opening bracket like (, [, or { should wrap the selected text in it
+  /// rather than replace it. Want the same behaviour that we have in general
+  /// writing. Should keep all the original structure of the maths that gets
+  /// wrapped too."*
+  ///
+  /// The structure survives because **the nodes themselves are moved**, not
+  /// re-parsed. A selection here is always a contiguous run of siblings in one
+  /// row — that is a property of how it is built, by `extendBy` and by the
+  /// hit table's boundaries, both of which step OVER a structure rather than
+  /// into it — so wrapping it is taking those nodes out and putting the same
+  /// objects into the bracket's body. A fraction in the middle of the run is
+  /// still that fraction, with its own slots and anything inside them,
+  /// because nothing has looked at it.
+  ///
+  /// A growing [MDelim], not two `MSym` brackets: what has just been wrapped
+  /// can be any height — that is rather the point of wrapping it — and a
+  /// bracket that does not grow around a fraction is the thing it is there to
+  /// avoid.
+  ///
+  /// **The run stays selected afterwards**, which is what
+  /// `WrapSelectionFormatter` does in prose (`baseOffset: sel.start + 1`), and
+  /// the request was explicitly for the same behaviour. It also means a
+  /// second bracket wraps again rather than replacing what the first one did.
+  bool wrapSelection(String open) {
+    final pair = wrapBrackets[open];
+    if (pair == null || !hasSelection) return false;
+    final row = caretRow;
+    final start = selectionStart, end = selectionEnd;
+    final taken = <MNode>[
+      for (var i = start; i < end; i++) row.children[i],
+    ];
+    for (var i = end; i > start; i--) {
+      row.removeAt(i - 1);
+    }
+    final d = MDelim(left: pair.left, right: pair.right);
+    d.body.addAll(taken);
+    row.insert(start, d);
+    _anchorRow = d.body;
+    _anchorIndex = 0;
+    caretRow = d.body;
+    caretIndex = d.body.length;
+    _openText = null;
+    return true;
+  }
+
   /// Remove the highlighted run. Returns false when there was none.
   bool deleteSelection() {
     if (!hasSelection) return false;
@@ -643,6 +705,10 @@ class MathEditor {
   /// One typed character. Returns false only when nothing at all happened.
   bool insertChar(String ch) {
     if (ch.isEmpty) return false;
+    // **An opening bracket wraps a highlight; everything else replaces it.**
+    // Before the delete, because the delete is what used to throw the
+    // student's selected working away — see [wrapSelection].
+    if (wrapSelection(ch)) return true;
     // Typing over a highlight replaces it, the way it does in every editor.
     deleteSelection();
 

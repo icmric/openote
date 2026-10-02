@@ -763,7 +763,8 @@ class _MathBarState extends State<MathBar> {
     return Row(mainAxisSize: MainAxisSize.min, children: [
       for (final id in kMathQuickShapes)
         if (mathItemsById[id] case final item?)
-          MathChip(item: item, onTap: widget.onInsert, surfaces: s),
+          MathChip(
+              item: item, onTap: widget.onInsert, surfaces: s, dense: true),
       _Sep(surfaces: s),
       // **The doors compact; everything else is pinned.**
       //
@@ -1150,15 +1151,62 @@ class _MoreMenu extends StatelessWidget {
 }
 
 
+/// **One offer, drawn at a size you can actually read.**
+///
+/// Reported: *"The boxes to select maths stuff is quite small, particularly an
+/// issue for large operators. I dont know if it would be better to boost the
+/// size of all the items or just the large operators, but worth finding a
+/// solution."*
+///
+/// Both, as it turns out, because the measurement says they are one problem.
+/// Every chip was a fixed 34×32 box with a `FittedBox(scaleDown)` inside it,
+/// and **27 of the 231 previews do not fit that box** at the 12px they were
+/// drawn at — so they were silently shrunk, by as much as a third. The
+/// tallest is `\sum` at 37.3px, because its limits stack above and below; the
+/// widest is `\gcd(a,b)` at 98.2px.
+///
+/// A uniform cell cannot serve both: 98px wide for every symbol is absurd,
+/// and 34px crushes a summation. So the cell is **uniform in height and
+/// follows its content in width**, between a floor and a ceiling. A `π` is a
+/// square; a prefilled sum is wider; `\gcd` is wider still. `FittedBox` only
+/// starts scaling past the ceiling, which is what keeps the one or two
+/// genuinely enormous templates from setting the width of the whole panel.
+///
+/// No measuring pass is needed for that, which is the nice part:
+/// `ConstrainedBox` with a min and a max, around a `FittedBox` that
+/// shrink-wraps its child, gives `clamp(natural, min, max)` by itself.
 class MathChip extends StatelessWidget {
   const MathChip({
     super.key,
     required this.item,
     required this.onTap,
     required this.surfaces,
+    this.dense = false,
   });
 
+  /// The old fixed cell, kept for the four quick shapes that sit on the
+  /// command row itself. That row is 44px tall and a picker-sized chip would
+  /// fill it edge to edge; its four previews are also the four simplest in
+  /// the table. The complaint was about the pickers, where the large
+  /// operators live.
+  final bool dense;
+
+  /// The dense cell's width, and the floor for a roomy one.
   static const double size = 34;
+
+  /// A roomy cell: tall enough for `\sum`'s stacked limits at [previewFont]
+  /// without any scaling, and never narrower than it is tall.
+  static const double roomyHeight = 44;
+  static const double roomyMinWidth = 40;
+
+  /// The ceiling. `\gcd(a,b)` measures 106px at [previewFont]; past this the
+  /// `FittedBox` takes over, which costs a couple of per cent on two rows
+  /// rather than making every panel as wide as its worst case.
+  static const double roomyMaxWidth = 104;
+
+  /// 13, not 12. The boxes being small was half the report and the glyphs
+  /// inside them were the other half.
+  static const double previewFont = 13;
 
   final MathItem item;
   final ValueChanged<MathItem> onTap;
@@ -1182,9 +1230,16 @@ class MathChip extends StatelessWidget {
       child: Tooltip(
         message: tip,
         waitDuration: const Duration(milliseconds: 350),
-        child: SizedBox(
-          width: size,
-          height: OnoteSize.button,
+        child: ConstrainedBox(
+          constraints: dense
+              ? const BoxConstraints.tightFor(
+                  width: size, height: OnoteSize.button)
+              : const BoxConstraints(
+                  minWidth: roomyMinWidth,
+                  maxWidth: roomyMaxWidth,
+                  minHeight: roomyHeight,
+                  maxHeight: roomyHeight,
+                ),
           child: InkWell(
             mouseCursor: WidgetStateMouseCursor.clickable,
             borderRadius: BorderRadius.circular(5),
@@ -1194,28 +1249,44 @@ class MathChip extends StatelessWidget {
                 borderRadius: BorderRadius.circular(5),
                 border: Border.all(color: surfaces.border),
               ),
-              child: Center(
-                child: preview != null
-                    ? IgnorePointer(
-                        child: FittedBox(
+              child: Padding(
+                // Room for the glyph to not touch its own border, which at
+                // the old size there was none of.
+                padding: EdgeInsets.symmetric(
+                    horizontal: dense ? 1 : 5, vertical: dense ? 0 : 2),
+                child: Center(
+                  // **`widthFactor`, or nothing shrink-wraps.** An `Align`
+                  // given loose constraints expands to the largest it is
+                  // allowed, so without this every chip came out at the
+                  // ceiling — 240 of 240 — and "width follows the content"
+                  // was a comment describing nothing. With it the Align
+                  // takes its child's width, and the min/max still apply
+                  // because `Align` constrains the result.
+                  widthFactor: dense ? null : 1,
+                  child: preview != null
+                      ? IgnorePointer(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: OnoteMath(
+                              preview,
+                              compact: true,
+                              textStyle: TextStyle(
+                                  fontSize: dense ? 12 : previewFont,
+                                  color: surfaces.textPrimary),
+                            ),
+                          ),
+                        )
+                      : FittedBox(
                           fit: BoxFit.scaleDown,
-                          child: OnoteMath(
-                            preview,
-                            compact: true,
-                            textStyle: TextStyle(
-                                fontSize: 12, color: surfaces.textPrimary),
+                          child: Text(
+                            item.label ?? item.name,
+                            maxLines: 1,
+                            style: TextStyle(
+                                fontSize: dense ? 14 : 17,
+                                color: surfaces.textPrimary),
                           ),
                         ),
-                      )
-                    : FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          item.label ?? item.name,
-                          maxLines: 1,
-                          style: TextStyle(
-                              fontSize: 14, color: surfaces.textPrimary),
-                        ),
-                      ),
+                ),
               ),
             ),
           ),

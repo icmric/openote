@@ -126,6 +126,60 @@ void main() {
           isNot(ra.build().first.texOf(kStoreCtx)));
     });
 
+    test('every UNADVERTISED route works too, and is its own', () {
+      // `alsoTypeIt` is the list of commands an item answers to without
+      // advertising them — the LaTeX synonym, the standard abbreviation, the
+      // spelling a student actually types. Asked for directly: *"id ideally
+      // like to have multiple aliases for some (like for infinity, currently
+      // \infty will auto convert into the symbol, but id like to also be able
+      // to type \inf and \infinity)."*
+      //
+      // The table is built with `putIfAbsent`, deliberately, so an advertised
+      // route can never be taken away. The consequence is that an entry here
+      // can be SILENTLY dead, and three were on the first attempt: `\deg` is
+      // the polynomial-degree function, `\circ` is composition and `\dot` is
+      // the accent. Every one of them already owned, and rightly — and each
+      // had been listed as a second route to something else, where it did
+      // nothing at all. Dead data that reads as a feature.
+      for (final item in mathItems) {
+        for (final t in item.alsoTypeIt) {
+          final m = RegExp(r'^\\([A-Za-z0-9]+)$').firstMatch(t);
+          if (m == null) continue;
+          final word = m.group(1)!;
+          final owner = mathControlWords[word];
+          expect(owner, isNotNull,
+              reason: '$t is listed on ${item.id} and types nothing');
+          expect(owner!.id, item.id,
+              reason: '$t is listed on ${item.id} but types ${owner.id} — '
+                  'either it is already owned, in which case drop it, or it '
+                  'belongs to this row and the passes disagree');
+        }
+      }
+    });
+
+    test('a symbol answers to the word a student would call it', () {
+      // The derived pass: every single-word NAME becomes a control word. One
+      // rule rather than an alias hand-written per row and missed on most of
+      // them. Names only, never aliases — an alias is loose on purpose, for a
+      // search box that RANKS, and theta's alias "angle" turning `\angle`
+      // into a theta would steal another symbol's own name.
+      for (final (word, id) in [
+        ('infinity', 'infty'),
+        ('integral', 'int'),
+        ('limit', 'lim'),
+        ('derivative', 'ddx'),
+        ('fraction', 'frac'),
+        ('gradient', 'nabla'),
+      ]) {
+        expect(mathControlWords[word]?.id, id, reason: word);
+      }
+      // And the words it must NOT have taken.
+      expect(mathControlWords['angle']?.id, 'angle',
+          reason: "theta's alias must not steal the angle symbol's own name");
+      expect(mathControlWords.containsKey('e'), isFalse,
+          reason: 'a one-letter name is not a command');
+    });
+
     test('every tooltip route actually works when typed', () {
       // The tips line under the ⋯ menu used to teach `sqrt`, `sum`, `theta`
       // with no backslash, which types four letters. Every advertised route

@@ -185,6 +185,42 @@ class _SubstituteBlockViewState extends State<SubstituteBlockView> {
     return [for (final name in names) (name, _slots[name]!)];
   }
 
+  /// The width `AppState.insertSubstitute` gives a new block, and therefore
+  /// the width at which [_scale] is 1.
+  static const double kBaseWidth = 260;
+
+  /// **How much bigger than default to draw everything, from the box's own
+  /// width.**
+  ///
+  /// Reported: *"The equation solver is smaller text wise than the text on
+  /// the rest of the page with no way of scaling it up, it should by default
+  /// be larger and more readable, but also have a way of increasing its size
+  /// (whether than be resizing the actual thing itself like we have with
+  /// images or if it works off system scaling …)."*
+  ///
+  /// Measured, and the complaint was exact: page body text is
+  /// `kEditorBodyFontSize` (15), an equation in a box of its own is
+  /// `kMathBlockFontSize` (22), and this block drew its equation at **16**
+  /// and every label, field and answer at `OnoteType.small` — **12**. So the
+  /// answer, the thing the block exists to show, was a fifth smaller than
+  /// the prose around it.
+  ///
+  /// The defaults are now the app's own: the equation at the size a maths
+  /// block uses, the labels at body size, the answer between them and bold.
+  ///
+  /// The scale is the first of the two options asked for — resizing the thing
+  /// itself, the way an image works — because it needs no new control and no
+  /// stored field, and dragging the box is already how a block is made
+  /// bigger. **The trade is real and worth stating:** width now does two
+  /// jobs, so a box widened to fit a long equation also enlarges the text.
+  /// It only ever grows (the floor is 1) and it stops at 2.2, so neither end
+  /// can get silly, and dragging back undoes it.
+  ///
+  /// The other option — the platform text scale — is a bigger piece of work
+  /// that nothing in the app reads yet (v1.0.2 §1), and this block should
+  /// follow it when that lands rather than invent its own setting first.
+  double get _scale => (b.w / kBaseWidth).clamp(1.0, 2.2);
+
   @override
   Widget build(BuildContext context) {
     final s = context.surfaces;
@@ -212,6 +248,7 @@ class _SubstituteBlockViewState extends State<SubstituteBlockView> {
     final source = substituteSourceFromLatex(latex);
     final slots = _slotsFor(source.variables);
     final answer = answerFor(source, _values);
+    final scale = _scale;
 
     return Padding(
       padding: const EdgeInsets.all(OnoteSpace.x5),
@@ -222,8 +259,12 @@ class _SubstituteBlockViewState extends State<SubstituteBlockView> {
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
+            // The size an equation in a box of its own is drawn at, because
+            // that is what this is. It was 16 — one point above body text.
             child: OnoteMath(latex,
-                textStyle: TextStyle(fontSize: 16, color: s.textPrimary),
+                textStyle: TextStyle(
+                    fontSize: kMathBlockFontSize * scale,
+                    color: s.textPrimary),
                 compact: true),
           ),
           if (slots.isNotEmpty) ...[
@@ -241,34 +282,46 @@ class _SubstituteBlockViewState extends State<SubstituteBlockView> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   for (final (name, slot) in slots)
-                    _field(context, name, slot, slots.length),
+                    _field(context, name, slot, slots.length, scale),
                 ],
               ),
             ),
           ],
           const SizedBox(height: OnoteSpace.x4),
-          _answer(context, source, answer),
+          _answer(context, source, answer, scale),
         ],
       ),
     );
   }
 
   /// One `name = [ ]` pair.
-  Widget _field(BuildContext context, String name, _Slot slot, int of) {
+  Widget _field(BuildContext context, String name, _Slot slot, int of,
+      double scale) {
     final s = context.surfaces;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('$name =',
-            style: OnoteType.small.copyWith(
-                color: s.textSecondary, fontWeight: FontWeight.w600)),
-        const SizedBox(width: OnoteSpace.x3),
+        // `Flexible`, so a long name at a large scale gives way rather than
+        // overflowing the row it shares with the field. One or two
+        // characters is the norm and never reaches this.
+        Flexible(
+          child: Text('$name =',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: OnoteType.ui.copyWith(
+                  fontSize: kEditorBodyFontSize * scale,
+                  color: s.textSecondary,
+                  fontWeight: FontWeight.w600)),
+        ),
+        SizedBox(width: OnoteSpace.x3 * scale),
         SizedBox(
           // Narrower when there are several, so three fit the 260px block
           // `AppState.insertSubstitute` makes without wrapping, while one
-          // keeps the room the single-field block was built with.
-          width: of > 2 ? 56 : 84,
-          height: OnoteSize.button,
+          // keeps the room the single-field block was built with. Scaled
+          // with the type, or a widened box would grow the words and leave
+          // the fields behind.
+          width: (of > 2 ? 56 : 84) * scale,
+          height: OnoteSize.button * scale,
           child: TextField(
             controller: slot.controller,
             focusNode: slot.focus,
@@ -285,12 +338,14 @@ class _SubstituteBlockViewState extends State<SubstituteBlockView> {
               FilteringTextInputFormatter.allow(
                   RegExp(r'[0-9a-zA-Z.+\-*/^() ]')),
             ],
-            style: OnoteType.small
-                .copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+            style: OnoteType.ui.copyWith(
+                fontSize: kEditorBodyFontSize * scale,
+                fontFeatures: const [FontFeature.tabularFigures()]),
             decoration: InputDecoration(
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: OnoteSpace.x3, vertical: OnoteSpace.x3),
+              contentPadding: EdgeInsets.symmetric(
+                  horizontal: OnoteSpace.x3 * scale,
+                  vertical: OnoteSpace.x3 * scale),
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(OnoteRadius.sm),
                   borderSide: BorderSide(color: s.border)),
@@ -310,8 +365,8 @@ class _SubstituteBlockViewState extends State<SubstituteBlockView> {
   /// so it reads as output rather than as another thing to fill in, and its
   /// NAME, so `v = 14` says what the 14 is instead of leaving `= 14` to be
   /// matched against the equation above by eye.
-  Widget _answer(
-      BuildContext context, SubstituteSource source, SubstituteAnswer answer) {
+  Widget _answer(BuildContext context, SubstituteSource source,
+      SubstituteAnswer answer, double scale) {
     final s = context.surfaces;
     final scheme = Theme.of(context).colorScheme;
     final result = answer.result;
@@ -330,10 +385,11 @@ class _SubstituteBlockViewState extends State<SubstituteBlockView> {
       text = name == null ? '= $value' : '$name = $value';
     }
 
+    final gotIt = result != null && result.isOk;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-          horizontal: OnoteSpace.x4, vertical: OnoteSpace.x3),
+      padding: EdgeInsets.symmetric(
+          horizontal: OnoteSpace.x4 * scale, vertical: OnoteSpace.x3 * scale),
       decoration: BoxDecoration(
         color: failed
             ? scheme.error.withValues(alpha: 0.08)
@@ -346,10 +402,13 @@ class _SubstituteBlockViewState extends State<SubstituteBlockView> {
         text,
         // Wraps rather than ellipsising: an error is a sentence, and a
         // sentence cut off at the box edge is no use to anybody.
-        style: (result != null && result.isOk
-                ? OnoteType.uiStrong
-                : OnoteType.small)
-            .copyWith(
+        style: OnoteType.ui.copyWith(
+          // **The answer is the biggest text in the block**, because it is
+          // the one thing the block is for — between body size and the
+          // equation's own. What is NOT an answer stays at body size: a
+          // prompt and an error are sentences to read, not numbers to see.
+          fontSize: (gotIt ? kAnswerFontSize : kEditorBodyFontSize) * scale,
+          fontWeight: gotIt ? FontWeight.w600 : FontWeight.w400,
           color: failed
               ? scheme.error
               : result == null
@@ -360,6 +419,9 @@ class _SubstituteBlockViewState extends State<SubstituteBlockView> {
       ),
     );
   }
+
+  /// The answer's own size: above body text, below the equation it came from.
+  static const double kAnswerFontSize = 18;
 
   /// `u, a and t` — the list a sentence needs rather than a joined array.
   String _list(List<String> names) {

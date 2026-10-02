@@ -181,6 +181,38 @@ void main() {
     });
   });
 
+  group('wrapping a selection can never produce undrawable TeX', () {
+    testWidgets('every bracket, around every structure the palette offers',
+        (tester) async {
+      // The same generated sweep as Backspace above, and for the same
+      // reason: wrapping moves real nodes into a `\left…\right` pair, so
+      // anything the palette can build can end up inside one.
+      //
+      // The curly pair is why this is worth sweeping rather than spot
+      // checking. `MDelim` emits `\left$left`, and `\left{` is not a
+      // delimiter — TeX reads it as `\left` followed by a group and gives
+      // up — so both ends need escaping, and the first cut escaped only the
+      // closing one and produced `\left{ x+1\right\{`.
+      for (final open in MathEditor.wrapBrackets.keys) {
+        for (final item in mathItems.where((i) => i.cat == MathCat.structure)) {
+          final e = MathEditor.empty()..insertItem(item);
+          e.insertChar('x');
+          // Select the whole root row, then wrap it.
+          e.placeAt(0);
+          while (e.caretIndex < e.root.length) {
+            e.extendBy(1);
+          }
+          if (!e.hasSelection) continue;
+          expect(e.wrapSelection(open), isTrue, reason: '${item.id} / $open');
+          final r = await render(tester, e.latex);
+          expect(r.drew, isTrue,
+              reason: '${item.id} wrapped in `$open` stores ${e.latex}, '
+                  'which cannot be drawn');
+        }
+      }
+    });
+  });
+
   group('the shortcuts do not fire on ordinary maths', () {
     test('x < -3 stays an inequality', () {
       // `<-` used to become ←, and the space between could not stop it because

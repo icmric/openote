@@ -18,6 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/substitute_block_view.dart';
 import 'package:openote/l10n/l10n.dart';
+import 'package:openote/math/math_view.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -246,10 +247,15 @@ void main() {
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
+            // **The block's own width, not a fixed 260.** On the canvas
+            // `BlockView` sizes a block to `b.w`, so the type scale and the
+            // room available move together; a harness that pinned the width
+            // while a test changed `w` created a geometry the app cannot
+            // produce, and the Row inside duly overflowed.
             builder: (_, __) => Align(
               alignment: Alignment.topLeft,
               child: SizedBox(
-                  width: 260, child: SubstituteBlockView(block: s, app: app)),
+                  width: s.w, child: SubstituteBlockView(block: s, app: app)),
             ),
           ),
         ),
@@ -424,6 +430,89 @@ void main() {
               ?.text, '3',
           reason: 'l kept what was typed into it');
       expect(find.text('enter h'), findsOneWidget);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('nothing in it is smaller than the page it sits on',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // *"The equation solver is smaller text wise than the text on the rest
+      // of the page with no way of scaling it up, it should by default be
+      // larger and more readable."*
+      //
+      // Measured, and exact: the equation was drawn at 16 against a
+      // `kMathBlockFontSize` of 22, and every label, field and answer at
+      // `OnoteType.small` — 12 — against a `kEditorBodyFontSize` of 15. The
+      // answer, the one thing the block exists to show, was a fifth smaller
+      // than the prose around it.
+      final s = app.insertSubstitute(latex: 'y=3x+10');
+      await pump(tester, s);
+      await tester.enterText(find.byType(TextField), '2');
+      await tester.pump();
+
+      double sizeOf(String text) =>
+          tester.widget<Text>(find.text(text)).style!.fontSize!;
+
+      expect(sizeOf('y = 16'), greaterThan(kEditorBodyFontSize),
+          reason: 'the ANSWER is the biggest text in the block');
+      expect(sizeOf('x ='), greaterThanOrEqualTo(kEditorBodyFontSize),
+          reason: 'and a label is never smaller than body text');
+      expect(
+          tester
+              .widget<TextField>(find.byType(TextField))
+              .style!
+              .fontSize!,
+          greaterThanOrEqualTo(kEditorBodyFontSize),
+          reason: 'nor is what you type into it');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and the equation is drawn at equation size', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final s = app.insertSubstitute(latex: 'y=3x+10');
+      await pump(tester, s);
+      final math = tester.widget<OnoteMath>(find.byType(OnoteMath));
+      expect(math.textStyle.fontSize, kMathBlockFontSize,
+          reason: 'it IS an equation in a box of its own');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('widening the box scales it up, and only up', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The first of the two ways offered: *"whether than be resizing the
+      // actual thing itself like we have with images."* No new control, and
+      // dragging a block is already how it is made bigger.
+      final s = app.insertSubstitute(latex: 'y=3x+10');
+      await pump(tester, s);
+      final atBase =
+          tester.widget<OnoteMath>(find.byType(OnoteMath)).textStyle.fontSize!;
+
+      s.w = 520; // twice the width insertSubstitute gives it
+      app.refreshChrome();
+      await tester.pumpAndSettle();
+      expect(
+          tester.widget<OnoteMath>(find.byType(OnoteMath)).textStyle.fontSize!,
+          greaterThan(atBase * 1.5),
+          reason: 'twice the width, near twice the type');
+
+      // Narrower than the base must NOT shrink it below the default — the
+      // whole complaint was that it was too small.
+      s.w = 120;
+      app.refreshChrome();
+      await tester.pumpAndSettle();
+      expect(
+          tester.widget<OnoteMath>(find.byType(OnoteMath)).textStyle.fontSize!,
+          atBase,
+          reason: 'the floor is the default');
+
+      // And it stops, so a page-wide box cannot produce absurd type.
+      s.w = 4000;
+      app.refreshChrome();
+      await tester.pumpAndSettle();
+      expect(
+          tester.widget<OnoteMath>(find.byType(OnoteMath)).textStyle.fontSize!,
+          atBase * 2.2,
+          reason: 'capped');
       app.cancelPendingSave();
     });
 
