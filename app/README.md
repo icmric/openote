@@ -137,6 +137,14 @@ Two things that have each produced a "my fix didn't work" false alarm:
   `pdfrxFlutterInitialize()` on the root isolate before the document API is
   touched; `main.dart` does this. If you refactor startup, keep it there.
 
+## Saving and closing
+
+Autosave is debounced. Closing the window waits for pending and in-flight page
+saves and the workspace registry write. If either fails, the window stays open
+and the status bar exposes the error; fix the storage problem and close again
+to retry. Installing an update uses the same save check before launching the
+installer. Force-killing the process cannot perform this check.
+
 ## How the Rust core slots in
 
 `lib/core/engine.dart` defines the `DocumentEngine` seam, and one of two
