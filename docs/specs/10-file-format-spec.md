@@ -345,14 +345,27 @@ What "frozen" binds:
   could bind only one name; it can now hold a formula of several (`v = u + a*t`
   asks for three), so one string cannot say which number belongs to which name.
 
-  **Both spellings are read and the old one is not rewritten**, the same rule
-  `.blob` follows above and for the same reason: a notebook is shared between
-  releases, and a migration that fired on *reading* would make an older build
-  lose a number it can still display perfectly well. A reader should take
-  `values` when present and non-empty, and otherwise treat `value` as the first
-  variable the formula asks for — which is the only name it could ever have
-  been. `values` is written the moment a field is edited, and `value` is left
-  behind untouched.
+  **Both spellings are read, and reading one never rewrites the other**, the
+  same rule `.blob` follows above and for the same reason: a notebook is
+  shared between releases, and a migration that fired on *reading* would make
+  an older build lose a number it can still display perfectly well. A reader
+  should take `values` when present and non-empty, and otherwise treat `value`
+  as the first variable the formula asks for — which is the only name it could
+  ever have been.
+
+  On WRITING, `values` is authoritative and is written the moment a field is
+  edited. **While the formula has exactly one variable, `value` is written
+  alongside it**, so a release that knows only the old spelling still displays
+  the number instead of an empty field — one notebook open on two machines
+  running two releases is the ordinary case, not a corner one. With several
+  variables `value` is left untouched, because it never recorded *which*
+  variable it held and a reader that only understands it cannot evaluate such
+  a formula anyway; a number there would sit under the wrong label.
+
+  `values` winning means a value typed by an older build and then edited by a
+  newer one resolves to the newer one. There is no per-key timestamp to
+  arbitrate with, and last-writer-wins per block is what the op log has always
+  done.
 
   No version is bumped because nothing here is a new op kind or a new column:
   `content` is a block's own JSON, whose unknown fields every release has been

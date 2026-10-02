@@ -113,6 +113,21 @@ class _SubstituteBlockViewState extends State<SubstituteBlockView> {
     // Written as a whole map, so the first touch of any field also commits
     // the migrated reading of an old `value` rather than dropping it.
     b.content['values'] = _values..[name] = text;
+    // **And the old spelling stays in step while there is only one name.**
+    //
+    // [storedValues] reads both, which is what stops a v1.0.2 build losing
+    // what a v1.0.1 build wrote. This is the other direction: a v1.0.1 build
+    // reads `value` and knows nothing of `values`, so without this it shows
+    // an empty field for a number that is sitting right there in the file.
+    // The same notebook on two machines running two releases is not a corner
+    // case — it is how the owner tests.
+    //
+    // Only while there is ONE name, because that is the only case where the
+    // old spelling can be true: it never recorded which variable it belonged
+    // to, and a v1.0.1 build labels whatever it finds `x`. A formula with
+    // several names cannot be evaluated by that build at all, so there is
+    // nothing there to be in step with.
+    if (_variables.length == 1) b.content['value'] = text;
     b.updatedAt = nowMs();
     widget.app.markDirty();
     setState(() {});
