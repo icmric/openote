@@ -124,6 +124,83 @@ void main() {
     }
   });
 
+  group('a large operator inside a growing bracket', () {
+    // Measured, and not on the list at the top of `latex_compat.dart`: the
+    // renderer cannot draw a bare large operator as a DIRECT child of a
+    // `\left…\right` pair. Not the empty script group and not the limits —
+    // `\left( \sum \right)` has neither and still fails. One layer of braces
+    // is enough.
+    //
+    // Reachable before the wrap feature existed (insert a grower, then a
+    // summation inside it) and reachable in one keystroke now, which is how
+    // it was found.
+    test('gets braces round the body', () {
+      expect(renderableLatex(r'\left( \sum \right) '),
+          r'\left( {\sum }\right)');
+      expect(renderableLatex(r'\left( \sum _{x}^{y}\right) '),
+          r'\left( {\sum _{x}^{y}}\right)');
+    });
+
+    test('nested, and only the pair that needs it', () {
+      // The OUTER body here ends with `\right]`, not with an operator, so it
+      // draws today and comes through untouched. Only the inner pair, whose
+      // body really does end with the summation, is braced.
+      expect(renderableLatex(r'\left( \left[ \sum \right] \right) '),
+          r'\left( \left[ {\sum }\right] \right)');
+    });
+
+    test('the delimiter can be a command, not just a character', () {
+      expect(renderableLatex(r'\left\{ \sum \right\} '),
+          r'\left\{ {\sum }\right\}');
+    });
+
+    test('and a body that already draws is left exactly alone', () {
+      // The narrowness is the point. Bracing every body broke the `cases`
+      // rewrite's own expectation in this file — harmless to render, but a
+      // compatibility layer reaching equations it has no business in is how
+      // the layer becomes the bug.
+      for (final tex in [
+        r'\left( a+b\right)',
+        r'\left( \frac{1}{2}\right)',
+        r'\left\lfloor x\right\rfloor',
+        r'\left( \sum +a\right)',
+        r'\left( \sum a\right)',
+        r'\left( \sum \frac{1}{2}\right)',
+        r'\left( a+\sum _{x}^{y}+b\right)',
+      ]) {
+        expect(renderableLatex(tex), tex, reason: tex);
+      }
+    });
+
+    testWidgets('and it draws, where it used to fall back', (t) async {
+      for (final tex in [
+        r'\left( \sum \right) ',
+        r'\left( \sum _{i=1}^{n}\right) ',
+        r'\left( \int _{a}^{b}\right) ',
+        r'\left( \lim _{x}\right) ',
+        r'\left[ \prod \right] ',
+      ]) {
+        await t.pumpWidget(MaterialApp(
+          localizationsDelegates: kOnoteLocalizations,
+          supportedLocales: kOnoteLocales,
+          home: Scaffold(
+            body: OnoteMath(tex, textStyle: const TextStyle(fontSize: 18)),
+          ),
+        ));
+        await t.pumpAndSettle();
+        expect(find.byType(MathSourceFallback), findsNothing, reason: tex);
+      }
+    });
+
+    test('malformed input is left exactly as it is', () {
+      // A `\left` with no `\right` is not this function's to repair, and a
+      // half-rewritten equation would be worse than the one it was given.
+      for (final tex in [r'\left( x', r'x\right) ', r'\left']) {
+        expect(renderableLatex(tex), tex.trim(), reason: tex);
+      }
+    });
+  });
+
   group('the rewriter does not overreach', () {
     test(r'a \\ inside an environment is that environment’s break', () {
       // Wrapping here would nest cases inside an array and change the layout.

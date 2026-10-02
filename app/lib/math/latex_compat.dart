@@ -39,7 +39,187 @@ String renderableLatex(String tex, {String? answerFill}) {
   s = _rewriteEnvironments(s);
   s = _rewriteControlSequences(s);
   s = _wrapTopLevelBreaks(s);
+  s = _groupDelimiterBodies(s);
   return s.trim();
+}
+
+/// **A large operator at the END of a `\left…\right` body is not drawn.**
+///
+/// Not on the list at the top of this file, and narrower than it first looks.
+/// Measured against the raw renderer, with this rewrite switched off:
+///
+/// ```
+/// \left( \sum \right)                 FAIL
+/// \left( a+\sum \right)               FAIL
+/// \left( \frac{1}{2}\sum \right)      FAIL
+/// \left( \sum _{x}^{y}\right)         FAIL
+/// \left( \lim _{x}\right)             FAIL
+/// \left( \sum +a\right)               OK
+/// \left( \sum a\right)                OK
+/// \left( \sum \frac{1}{2}\right)      OK
+/// \left( a+\sum _{x}^{y}+b\right)     OK
+/// ```
+///
+/// So it is not the empty script group, not the limits, and not "an operator
+/// inside a grower" — it is an operator, with whatever scripts it carries,
+/// being the LAST thing before `\right`. The renderer appears to go looking
+/// for the operand an operator should have and find a delimiter instead. One
+/// layer of braces round the body is enough to stop it.
+///
+/// Reachable before this existed — insert a grower from the palette, then a
+/// summation inside it — and reachable in **one keystroke** now that
+/// highlighting a run and pressing `(` wraps it
+/// ([MathEditor.wrapSelection]), which is how it was found.
+///
+/// ## Why only then, and why the body rather than the operator
+///
+/// Only then because this must not touch LaTeX that already draws. Bracing
+/// every body broke two existing expectations in this file's own tests,
+/// including the `cases` rewrite's `\left\{\begin{array}…\right.` — harmless
+/// as far as rendering goes, but a rewrite that reaches equations it has no
+/// business in is how a compatibility layer becomes the bug.
+///
+/// The BODY rather than the operator because bracing the operator alone
+/// changes spacing: `{\sum _{x}^{y}}` measures pixel-identical on its own but
+/// takes `a+\sum _{x}^{y}+b` from **112.2 px to 121.1 px**, since a group is
+/// an ordinary atom where an operator is not. A group boundary placed where
+/// there is already a delimiter costs nothing, and the ordinary cases
+/// measured — `a+b`, `x`, a fraction, square and curly brackets — come out
+/// pixel-identical.
+///
+/// ## Why here and not in `MDelim.texOf`
+///
+/// Because this fixes equations that are **already written**. The stored form
+/// is ordinary LaTeX and stays that way — it is what an importer or another
+/// tool reads — and a renderer's shortcoming has no business in it. A
+/// notebook written last month gets this too.
+String _groupDelimiterBodies(String s) {
+  if (!s.contains(r'\left')) return s;
+  // Every pair's body gets braces, innermost included: an outer body's
+  // braces do not help the `\left` nested inside it.
+  final opens = <int>[];
+  final marks = <(int, String)>[];
+  var i = 0;
+  while (i < s.length) {
+    if (s.startsWith(r'\left', i)) {
+      final after = _afterDelimiter(s, i + 5);
+      if (after < 0) return s; // malformed — leave it exactly as it is
+      // Past the space the writer put after the delimiter, so the brace
+      // reads `\left( {…` rather than `\left({ …`. Cosmetic, and the stored
+      // form is read by people.
+      var body = after;
+      while (body < s.length && s[body] == ' ') {
+        body++;
+      }
+      opens.add(body);
+      i = after;
+      continue;
+    }
+    if (s.startsWith(r'\right', i)) {
+      final after = _afterDelimiter(s, i + 6);
+      if (after < 0 || opens.isEmpty) return s; // malformed or unbalanced
+      final open = opens.removeLast();
+      // Only the bodies that actually fail. Anything that draws today must
+      // come through this function untouched.
+      if (_endsWithLargeOperator(s.substring(open, i))) {
+        marks
+          ..add((open, '{'))
+          ..add((i, '}'));
+      }
+      i = after;
+      continue;
+    }
+    i++;
+  }
+  // A `\left` with no `\right` is not ours to repair.
+  if (opens.isNotEmpty || marks.isEmpty) return s;
+  marks.sort((a, b) => b.$1.compareTo(a.$1)); // back to front
+  var out = s;
+  for (final (at, brace) in marks) {
+    out = out.substring(0, at) + brace + out.substring(at);
+  }
+  return out;
+}
+
+/// The large operators — the ones KaTeX sets limits above and below.
+///
+/// Everything the palette can build, plus the rest of the standard set, so an
+/// imported equation is covered as well as a written one. The generated sweep
+/// in `math_tex_safety_test.dart` wraps every structure the palette offers and
+/// checks it draws, which is what would catch an omission here.
+const Set<String> _largeOperators = {
+  'sum', 'prod', 'coprod',
+  'int', 'iint', 'iiint', 'oint', 'oiint', 'intop', 'smallint',
+  'lim', 'liminf', 'limsup', 'injlim', 'projlim',
+  'varinjlim', 'varprojlim', 'varliminf', 'varlimsup',
+  'bigcup', 'bigcap', 'bigsqcup', 'biguplus',
+  'bigvee', 'bigwedge', 'bigodot', 'bigoplus', 'bigotimes',
+  'max', 'min', 'sup', 'inf', 'det', 'gcd', 'Pr', 'arg',
+};
+
+/// Whether [body] finishes with a large operator and nothing but its own
+/// scripts — the shape the renderer cannot draw against a `\right`.
+///
+/// Read from the END, skipping whitespace and any `_{…}` / `^{…}` the
+/// operator carries, because `\sum _{i=1}^{n}` has to count and a regular
+/// expression cannot be trusted with the nested braces in `^{n^{2}}`.
+bool _endsWithLargeOperator(String body) {
+  var i = body.length;
+  bool skipSpace() {
+    while (i > 0 && body[i - 1] == ' ') {
+      i--;
+    }
+    return true;
+  }
+
+  skipSpace();
+  // Peel off trailing script groups, innermost brace matching done properly.
+  while (i > 0 && body[i - 1] == '}') {
+    var depth = 0;
+    var j = i;
+    while (j > 0) {
+      final c = body[j - 1];
+      if (c == '}') depth++;
+      if (c == '{') {
+        depth--;
+        if (depth == 0) break;
+      }
+      j--;
+    }
+    if (depth != 0 || j < 2) return false; // unbalanced
+    final marker = body[j - 2];
+    if (marker != '_' && marker != '^') break; // a group, not a script
+    i = j - 2;
+    skipSpace();
+  }
+  // What is left must end with one of the commands.
+  if (i == 0) return false;
+  var k = i;
+  while (k > 0 && _isLetter(body.codeUnitAt(k - 1))) {
+    k--;
+  }
+  if (k == i || k == 0 || body[k - 1] != '\\') return false;
+  return _largeOperators.contains(body.substring(k, i));
+}
+
+/// The index just past the delimiter token that follows `\left` or `\right`.
+///
+/// One character (`(`, `[`, `|`, `.`, `<`) or a command (`\{`, `\lfloor`,
+/// `\langle`, `\vert`). Returns -1 when there is no token at all, which means
+/// the LaTeX is malformed and nothing here should touch it.
+int _afterDelimiter(String s, int from) {
+  var i = from;
+  while (i < s.length && s[i] == ' ') {
+    i++;
+  }
+  if (i >= s.length) return -1;
+  if (s[i] != '\\') return i + 1;
+  var j = i + 1;
+  if (j < s.length && !_isLetter(s.codeUnitAt(j))) return j + 1; // `\{`, `\|`
+  while (j < s.length && _isLetter(s.codeUnitAt(j))) {
+    j++;
+  }
+  return j == i + 1 ? -1 : j;
 }
 
 /// Strip the maths-mode delimiters. `Math.tex` is already *in* maths mode, so a
