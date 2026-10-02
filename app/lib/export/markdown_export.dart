@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:path/path.dart' as p;
 
-import '../math/graph_plot.dart';
+import '../math/substitute.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../store/media_store.dart';
@@ -148,16 +148,12 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
         // carries the equation and the value last typed into it, which is
         // the thing a reader can actually do something with.
         final latex = b.content['latex'] as String? ?? '';
-        final value = (b.content['value'] as String? ?? '').trim();
+        final at = substituteProjection(b.content);
         if (latex.isNotEmpty) {
-          if (value.isEmpty) {
+          if (at == null) {
             buf.writeln('Evaluate \$$latex\$\n');
           } else {
-            final source = graphSourceFromLatex(latex);
-            final outcome = substituteInto(source, value);
-            buf.writeln(
-                'Evaluate \$$latex\$ at ${outcome.variable} = $value: '
-                '${outcome.result.display}\n');
+            buf.writeln('Evaluate \$$latex\$ at ${at.given}: ${at.answer}\n');
           }
         }
       case BlockType.board:

@@ -262,7 +262,9 @@ void main() {
       final s = app.insertSubstitute(latex: 'y=3x+10');
       await pump(tester, s);
       expect(find.byType(TextField), findsOneWidget);
-      expect(find.textContaining('enter a value'), findsOneWidget);
+      // Names what it is waiting for rather than saying "enter a value",
+      // which with several fields does not say WHICH.
+      expect(find.text('enter x'), findsOneWidget);
       app.cancelPendingSave();
     });
 
@@ -272,7 +274,9 @@ void main() {
       await pump(tester, s);
       await tester.enterText(find.byType(TextField), '2');
       await tester.pump();
-      expect(find.text('= 16'), findsOneWidget);
+      // Named, not a bare `= 16`: *"ensure the answer is clear, as at the
+      // moment its not super clear to me."*
+      expect(find.text('y = 16'), findsOneWidget);
       app.cancelPendingSave();
     });
 
@@ -282,7 +286,38 @@ void main() {
       await pump(tester, s);
       await tester.enterText(find.byType(TextField), '2');
       await tester.pump();
-      expect(s.content['value'], '2');
+      expect(s.content['values'], {'x': '2'},
+          reason: 'keyed by name, because there can be more than one now');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('a value stored the pre-v1.0.2 way still shows', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // One string under `value`, which is all a block could hold before the
+      // equation was allowed more than one name. Read, not rewritten — so a
+      // v1.0.1 build opening the same notebook still shows it.
+      final s = app.insertSubstitute(latex: 'y=3x+10');
+      s.content.remove('values');
+      s.content['value'] = '2';
+      await pump(tester, s);
+      expect(find.text('y = 16'), findsOneWidget);
+      expect(s.content.containsKey('values'), isFalse,
+          reason: 'reading a notebook is not editing it');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('and touching a field commits the migrated reading',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final s = app.insertSubstitute(latex: 'v=u+a*t');
+      s.content.remove('values');
+      s.content['value'] = '2';
+      await pump(tester, s);
+      // `2` was the only value an old block had, so it belongs to the first
+      // name — u — and typing into `a` must not lose it.
+      await tester.enterText(find.byType(TextField).at(1), '3');
+      await tester.pump();
+      expect(s.content['values'], {'u': '2', 'a': '3'});
       app.cancelPendingSave();
     });
 
@@ -292,8 +327,86 @@ void main() {
       await pump(tester, s);
       await tester.enterText(find.byType(TextField), '+');
       await tester.pump();
-      expect(find.text('= 16'), findsNothing);
+      expect(find.text('y = 16'), findsNothing);
       expect(tester.takeException(), isNull);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('a formula with three names gets three fields', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The whole point: *"its unable to handle multi variable stuff at the
+      // moment."* Before this, `v=u+a*t` showed one field labelled `x =` and
+      // the error `unknown "u"` where the answer should be.
+      final s = app.insertSubstitute(latex: 'v=u+a*t');
+      await pump(tester, s);
+      expect(find.byType(TextField), findsNWidgets(3));
+      expect(find.text('u ='), findsOneWidget);
+      expect(find.text('a ='), findsOneWidget);
+      expect(find.text('t ='), findsOneWidget);
+      expect(find.text('enter u, a and t'), findsOneWidget);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('filling them in works it out', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final s = app.insertSubstitute(latex: 'v=u+a*t');
+      await pump(tester, s);
+      await tester.enterText(find.byType(TextField).at(0), '2');
+      await tester.enterText(find.byType(TextField).at(1), '3');
+      await tester.enterText(find.byType(TextField).at(2), '4');
+      await tester.pump();
+      expect(find.text('v = 14'), findsOneWidget);
+      expect(s.content['values'], {'u': '2', 'a': '3', 't': '4'});
+      app.cancelPendingSave();
+    });
+
+    testWidgets('a partly filled block says what it is still waiting for',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // The common state for a block with three fields, and not an error.
+      final s = app.insertSubstitute(latex: 'v=u+a*t');
+      await pump(tester, s);
+      await tester.enterText(find.byType(TextField).at(1), '3');
+      await tester.pump();
+      expect(find.text('enter u and t'), findsOneWidget);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('editing the equation keeps the values that still apply',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // An equation can change under a block that is on screen — a graph and
+      // a substitute both follow theirs live. Fields are keyed by name so the
+      // ones that survive keep their numbers.
+      final s = app.insertSubstitute(latex: 'A=l*w');
+      await pump(tester, s);
+      await tester.enterText(find.byType(TextField).at(0), '3');
+      await tester.enterText(find.byType(TextField).at(1), '7');
+      await tester.pump();
+      expect(find.text('A = 21'), findsOneWidget);
+
+      s.content['latex'] = 'A=l*w*h';
+      app.refreshChrome();
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNWidgets(3));
+      expect(tester.widget<TextField>(find.byType(TextField).at(0)).controller
+              ?.text, '3',
+          reason: 'l kept what was typed into it');
+      expect(find.text('enter h'), findsOneWidget);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('a formula needing nothing just shows its value',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      // `x = 3` used to be refused with the GRAPHER's words — "a vertical
+      // line has no value to work out" — because a substitute block borrowed
+      // the grapher's reading whole. Read as a formula it has no names to
+      // fill in and the answer is simply 3.
+      final s = app.insertSubstitute(latex: 'x=3');
+      await pump(tester, s);
+      expect(find.byType(TextField), findsNothing);
+      expect(find.text('x = 3'), findsOneWidget);
       app.cancelPendingSave();
     });
 
@@ -305,11 +418,11 @@ void main() {
       await pump(tester, s);
       await tester.enterText(find.byType(TextField), '2');
       await tester.pump();
-      expect(find.text('= 16'), findsOneWidget);
+      expect(find.text('y = 16'), findsOneWidget);
 
       app.pushEquationToSubstitutes(eq.id, 'y=2x+6');
       await tester.pump();
-      expect(find.text('= 10'), findsOneWidget);
+      expect(find.text('y = 10'), findsOneWidget);
       app.cancelPendingSave();
     });
 
