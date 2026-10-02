@@ -18,6 +18,7 @@
   "barEquationBadge": "Equazione",
   "barEraserSplit": "Spezza i tratti dove strofini",
   "barEraserWhole": "Toglie tutto il tratto che tocchi",
+  "barBackToEquation": "Torna agli strumenti per le equazioni",
   "barEscWhenDone": "Premi Esc quando hai finito",
   "barExport": "Esporta",
   "barExportCanvas": "Per Obsidian Canvas (.canvas)",

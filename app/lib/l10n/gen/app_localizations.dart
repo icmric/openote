@@ -203,7 +203,7 @@ abstract class L {
   /// **'Due date…'**
   String get barDueDateSet;
 
-  /// A label, not a button: it appears in the tab row while an equation is being written, to say what the row below is about.
+  /// Appears in the tab row while an equation is being written, to say what the command row below is about. Pressable: after tapping another tab it brings the equation's controls back.
   ///
   /// In en, this message translates to:
   /// **'Equation'**
@@ -221,7 +221,13 @@ abstract class L {
   /// **'Removes any stroke you touch'**
   String get barEraserWhole;
 
-  /// Tooltip on the badge shown while an equation is open. 'Esc' is the Escape key.
+  /// Tooltip on the Equation badge after the user has tapped another tab while the equation is still open. Pressing it brings the equation's own controls back to the command row.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to the equation tools'**
+  String get barBackToEquation;
+
+  /// Tooltip on the badge shown while an equation is open and its own controls are on the row. 'Esc' is the Escape key.
   ///
   /// In en, this message translates to:
   /// **'Esc when you are done'**

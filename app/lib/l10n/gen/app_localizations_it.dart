@@ -72,6 +72,9 @@ class LIt extends L {
   String get barEraserWhole => 'Toglie tutto il tratto che tocchi';
 
   @override
+  String get barBackToEquation => 'Torna agli strumenti per le equazioni';
+
+  @override
   String get barEscWhenDone => 'Premi Esc quando hai finito';
 
   @override

@@ -72,6 +72,9 @@ class LPt extends L {
   String get barEraserWhole => 'Apaga o traço inteiro que você tocar';
 
   @override
+  String get barBackToEquation => 'Voltar às ferramentas de equação';
+
+  @override
   String get barEscWhenDone => 'Esc quando terminar';
 
   @override

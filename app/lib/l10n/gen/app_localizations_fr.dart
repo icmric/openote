@@ -72,6 +72,9 @@ class LFr extends L {
   String get barEraserWhole => 'Enlève tout trait que vous touchez';
 
   @override
+  String get barBackToEquation => 'Revenir aux outils d\'équation';
+
+  @override
   String get barEscWhenDone => 'Échap quand vous avez fini';
 
   @override

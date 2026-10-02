@@ -287,12 +287,21 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle();
-      final w = tester.getSize(find.byType(MathBar)).width;
-      // See math_toolbar_test.dart for where the headroom went: Graph moved
-      // out of the fold and onto the row.
-      expect(w, lessThan(1240),
-          reason: 'measured $w px; the row has to fit the smallest window '
-              'the app opens, which is 1280');
+      // **What this used to assert, and why it no longer can.** `width <
+      // 1240`: a promise that the natural row fits the smallest window the
+      // app opens. The headroom went on a door per kind of thing, then on a
+      // Calculus door and an Evaluate button, and the row measures 1415. It
+      // folds its far doors instead of paying — see `math_bar.dart`'s
+      // `_doorStrip`, and `math_toolbar_test.dart` for the pair of tests
+      // that now hold the promise at both widths.
+      //
+      // What matters HERE is only that the angle switch keeps its place when
+      // that happens: the doors are what folds, and DEG is not a door.
+      tester.view.physicalSize = const Size(1280, 900);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: 'no overflow at 1280');
+      expect(find.text('DEG'), findsOneWidget,
+          reason: 'a mode you have to be able to SEE does not fold');
     });
   });
 }

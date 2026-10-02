@@ -72,6 +72,9 @@ class LEs extends L {
   String get barEraserWhole => 'Quita el trazo entero que toques';
 
   @override
+  String get barBackToEquation => 'Volver a las herramientas de ecuaciones';
+
+  @override
   String get barEscWhenDone => 'Pulsa Esc cuando termines';
 
   @override

@@ -77,7 +77,7 @@
   },
   "barEquationBadge": "Equation",
   "@barEquationBadge": {
-    "description": "A label, not a button: it appears in the tab row while an equation is being written, to say what the row below is about."
+    "description": "Appears in the tab row while an equation is being written, to say what the command row below is about. Pressable: after tapping another tab it brings the equation's controls back."
   },
   "barEraserSplit": "Splits strokes where you rub",
   "@barEraserSplit": {
@@ -87,9 +87,13 @@
   "@barEraserWhole": {
     "description": "Tooltip: the eraser removes a whole pen stroke at once."
   },
+  "barBackToEquation": "Back to the equation tools",
+  "@barBackToEquation": {
+    "description": "Tooltip on the Equation badge after the user has tapped another tab while the equation is still open. Pressing it brings the equation's own controls back to the command row."
+  },
   "barEscWhenDone": "Esc when you are done",
   "@barEscWhenDone": {
-    "description": "Tooltip on the badge shown while an equation is open. 'Esc' is the Escape key."
+    "description": "Tooltip on the badge shown while an equation is open and its own controls are on the row. 'Esc' is the Escape key."
   },
   "barExport": "Export",
   "@barExport": {
