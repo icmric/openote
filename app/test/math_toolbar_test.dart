@@ -22,6 +22,8 @@ import 'package:openote/math/math_view.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
+import 'package:openote/theme/onote_theme.dart';
+import 'package:openote/theme/tokens.dart';
 import 'package:openote/ui/command_bar.dart';
 import 'package:openote/ui/math_bar.dart';
 
@@ -331,6 +333,97 @@ void main() {
       expect(app.blocks.where((b) => b.type == BlockType.graph), isEmpty);
       expect(app.blocks.where((b) => b.type == BlockType.substitute), isEmpty);
       settle();
+    });
+  });
+
+  group('a chip is big enough to read', () {
+    // *"The boxes to select maths stuff is quite small, particularly an issue
+    // for large operators. I dont know if it would be better to boost the
+    // size of all the items or just the large operators, but worth finding a
+    // solution."*
+    //
+    // Both, because measuring says they are one problem: **27 of the 231
+    // previews did not fit the old fixed 34x32 cell** and were silently
+    // shrunk by the `FittedBox` inside it. The tallest is `\sum` at 37.3px,
+    // whose limits stack above and below; the widest is `\gcd(a,b)` at
+    // 98.2px. One cell size cannot serve both, so the cell is uniform in
+    // height and follows its content in width.
+
+    Future<Size> chip(WidgetTester tester, String id,
+        {bool dense = false}) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: kOnoteLocalizations,
+        supportedLocales: kOnoteLocales,
+        theme: onoteTheme(Brightness.light),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: MathChip(
+                item: mathItemsById[id]!,
+                onTap: (_) {},
+                surfaces: OnoteSurfaces.light,
+                dense: dense),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      return tester.getSize(find.byType(MathChip));
+    }
+
+    testWidgets('tall enough for a summation, which is what prompted it',
+        (tester) async {
+      final s = await chip(tester, 'sum');
+      // The preview measures 37.3px at 12px type and 40.4 at the 13 it is
+      // drawn at now; the old cell was 32 high.
+      expect(s.height, greaterThanOrEqualTo(MathChip.roomyHeight));
+      expect(s.height, greaterThan(OnoteSize.button),
+          reason: 'the old cell was the height of a toolbar button');
+    });
+
+    testWidgets('and its width follows what is in it', (tester) async {
+      // The part that cannot be done with one number. `\gcd(a,b)` needs
+      // nearly three times the width of a `\sum`, and a cell sized for the
+      // first would make every panel absurd.
+      final sum = await chip(tester, 'sum');
+      final gcd = await chip(tester, 'fn-gcd');
+      final pi = await chip(tester, 'pi');
+      expect(gcd.width, greaterThan(sum.width * 2));
+      expect(pi.width, lessThan(gcd.width));
+      expect(sum.height, gcd.height,
+          reason: 'uniform HEIGHT is what keeps a Wrap of these tidy');
+    });
+
+    testWidgets('never past the ceiling, so one template cannot set the width',
+        (tester) async {
+      // Six rows are wide enough to hit it — the gcd/lcm/max/min/nCr/nPr
+      // templates — and they scale down a couple of per cent rather than
+      // making every panel as wide as the worst case.
+      for (final id in ['fn-gcd', 'fn-lcm', 'fn-nCr', 'fn-nPr']) {
+        final s = await chip(tester, id);
+        expect(s.width, lessThanOrEqualTo(MathChip.roomyMaxWidth + 4),
+            reason: id);
+      }
+    });
+
+    testWidgets('nothing in the whole table overflows its cell',
+        (tester) async {
+      for (final item in mathItems) {
+        await chip(tester, item.id);
+        expect(tester.takeException(), isNull, reason: item.id);
+      }
+    });
+
+    testWidgets('the four on the command row stay dense', (tester) async {
+      // That row is 44px tall and a picker-sized chip would fill it edge to
+      // edge. Its four previews are also the four simplest in the table, and
+      // the complaint was about the pickers, where the operators live.
+      for (final id in kMathQuickShapes) {
+        final s = await chip(tester, id, dense: true);
+        expect(s.height, OnoteSize.button, reason: id);
+      }
     });
   });
 
