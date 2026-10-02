@@ -29,6 +29,14 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   them are the forms you write over and over: `∑` from i = 1 to n, `∑` to
   infinity, `∏` from i = 1 to n, `∫` from a to b with its `dx`, and limits
   as x → 0 and x → ∞. The caret lands exactly where the maths goes.
+- **A symbol answers to more than one shortcut.** `\infty`, `\inf` and
+  `\infinity` all give you ∞, and every symbol now also answers to the word
+  it is called by — `\integral`, `\limit`, `\derivative`, `\fraction`,
+  `\gradient`. Plus the short forms you would reach for anyway: `\le`, `\ge`,
+  `\ne`, `\x`, `\empty`, `\del`, `\degree`, `\arrow`.
+- **Highlight part of an equation and press `(`, `[` or `{` to wrap it**
+  rather than replace it — the same thing brackets do in ordinary writing.
+  What you wrapped keeps its structure: a fraction is still a fraction.
 
 ### Changed — the toolbar behaves the same way everywhere
 
@@ -47,6 +55,14 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **The equation toolbar fits any window.** On a narrow one the far drawers
   fold into a **More** drawer, under their own headings, rather than running
   off the edge where only a drag could reach them.
+- **The buttons in those drawers are big enough to read.** Twenty-seven of
+  them were being quietly shrunk to fit a box built for a single character —
+  worst of all the large operators, whose limits stack above and below. Each
+  button is now as wide as what is in it.
+- **The Evaluate box is readable.** Its answer used to be smaller than the
+  writing on the page around it; the equation is now drawn at the size an
+  equation gets, the answer is the biggest thing in the box, and making the
+  box wider makes all of it bigger.
 
 ## [1.0.1] — 2026-10-01
 
