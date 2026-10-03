@@ -58,13 +58,11 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:sqlite3/open.dart';
-import 'package:sqlite3/sqlite3.dart';
+import '../store/sqlite_backend.dart';
 
 import '../core/onote_ffi.dart';
 import '../ink/ink_codec.dart';
@@ -266,7 +264,7 @@ void importWriterMain((SendPort, Map<Object?, Object?>) message) {
   }
 
   Future<void> run() async {
-    Database? db;
+    CommonDatabase? db;
     // The terminal message is BUILT here and SENT in the `finally`, after the
     // container is closed. Sending it inline looked fine and wasn't: the main
     // isolate reopens the notebook the instant it hears "done", and it won an
@@ -275,7 +273,7 @@ void importWriterMain((SendPort, Map<Object?, Object?>) message) {
     Map<String, Object?>? terminal;
     try {
       if (config.sqliteLibrary != null) {
-        open.overrideForAll(() => DynamicLibrary.open(config.sqliteLibrary!));
+        useSqliteLibraryAt(config.sqliteLibrary!);
       }
 
       final Map<String, dynamic> parsed;
@@ -372,7 +370,7 @@ void importWriterMain((SendPort, Map<Object?, Object?>) message) {
     } catch (e, st) {
       terminal = {'t': 'error', 'message': '$e', 'stack': '$st'};
     } finally {
-      // ALWAYS, including after a cancel. sqlite3's Database is a native
+      // ALWAYS, including after a cancel. sqlite3's CommonDatabase is a native
       // resource; an isolate that exits without disposing leaks the handle for
       // the life of the process — and on Windows an open handle is why the
       // teardown's file delete would then fail, leaving a half-imported
@@ -397,7 +395,7 @@ class IsolateImportSink implements ImportSink {
 
   /// Open a sink over an already-open container, attaching an op-log recorder
   /// unless logging is off.
-  factory IsolateImportSink.open(Database db, ImportWriterConfig config) {
+  factory IsolateImportSink.open(CommonDatabase db, ImportWriterConfig config) {
     final writer = NotebookWriter(db);
     // **Built even with the log switched off.** From v0.17 Step 6 the
     // container stores no blob bytes, so this store is the only place an

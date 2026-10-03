@@ -15,7 +15,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:sqlite3/sqlite3.dart';
+import 'sqlite_backend.dart';
 
 const onoteApplicationId = 0x4F4E4F54; // "ONOT"
 
@@ -146,7 +146,7 @@ class NotebookFileMissing implements Exception {
 /// Reachable today, without any migration: `Repository._db` opened whatever
 /// path the registry named with no existence check at all, so an unmounted
 /// drive, a cloud client that had evicted the file, or a container the user
-/// moved in Explorer produced a valid `Database` with 0 nodes and 0 pages and
+/// moved in Explorer produced a valid `CommonDatabase` with 0 nodes and 0 pages and
 /// left a 73,728-byte file behind — after which `notebookFileProblem` reports
 /// it as *"looks like a notebook"* and the real one is no longer registered.
 ///
@@ -156,7 +156,7 @@ class NotebookFileMissing implements Exception {
 /// path, fabricated an empty database, and renamed it over the real
 /// container — which `File.renameSync` on Windows does silently. 329 pages
 /// became 73,728 bytes with `integrity_check` reporting `ok`.
-Database openExistingOnote(String path,
+CommonDatabase openExistingOnote(String path,
     {required String notebookId, required String title}) {
   // `typeSync`, not `existsSync`: a *directory* where the container belongs is
   // the state `reclaimFreeSpace`'s own test constructs deliberately, and
@@ -169,8 +169,8 @@ Database openExistingOnote(String path,
   return openOnote(path, notebookId: notebookId, title: title);
 }
 
-Database openOnote(String path, {required String notebookId, required String title}) {
-  final db = sqlite3.open(path);
+CommonDatabase openOnote(String path, {required String notebookId, required String title}) {
+  final db = openSqliteFile(path);
   // **Read this BEFORE writing anything**, which is why it is the first
   // statement rather than sitting with the other `PRAGMA` reads below. It is
   // a pure read — it opens no transaction and creates no page — and the whole
@@ -274,7 +274,7 @@ Database openOnote(String path, {required String notebookId, required String tit
 /// notebook and show it (matrix row D5), and [NotebookWriter.writePage] falls
 /// back to the old conditional INSERT when it meets the key still in place, so
 /// a container this could not rewrite keeps saving.
-void _dropBlobRefsBlobsFk(Database db) {
+void _dropBlobRefsBlobsFk(CommonDatabase db) {
   try {
     final rows = db.select(
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='blob_refs'");
@@ -330,7 +330,7 @@ void _dropBlobRefsBlobsFk(Database db) {
 /// mid-read, the volume is gone — and a failure here must never stop the app
 /// closing. The data is already durable either way; this is about the file's
 /// size, not its contents.
-void checkpointAndClose(Database db) {
+void checkpointAndClose(CommonDatabase db) {
   try {
     db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
   } catch (_) {
@@ -340,7 +340,7 @@ void checkpointAndClose(Database db) {
 }
 
 /// Idempotent DDL — safe to run on every open (all `IF NOT EXISTS`).
-void _ensureSchema(Database db) {
+void _ensureSchema(CommonDatabase db) {
   db.execute('''
     CREATE TABLE IF NOT EXISTS notebook_meta (
       key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -450,7 +450,7 @@ void _ensureSchema(Database db) {
 }
 
 /// First-create-only: stamp the format identity and seed notebook metadata.
-void _seedNotebook(Database db, {required String notebookId, required String title}) {
+void _seedNotebook(CommonDatabase db, {required String notebookId, required String title}) {
   db.execute('PRAGMA application_id = $onoteApplicationId;');
   db.execute('PRAGMA user_version = $onoteFormatMajor;');
   final now = DateTime.now().millisecondsSinceEpoch;

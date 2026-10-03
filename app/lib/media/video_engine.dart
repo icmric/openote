@@ -25,13 +25,17 @@
 library;
 
 import 'dart:async';
-import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-import 'package:ffi/ffi.dart';
 import 'package:path_provider/path_provider.dart';
+
+// The two DLL-loading FFI calls live in the native half; the web half has no
+// engine to load, and says so as a `const` so [VideoEngine.load] can answer
+// before touching the `Directory` and `File` work below it.
+import 'video_engine_native.dart'
+    if (dart.library.js_interop) 'video_engine_web.dart';
 
 import '../store/notebook_writer.dart' show sha256Hex;
 import '../update/app_update.dart' show kAppVersion;
@@ -168,33 +172,8 @@ abstract final class VideoEngine {
   /// name, which is what the deferred `LoadLibrary("libmpv-2.dll")` inside the
   /// plugin then finds.
   static bool load() {
-    if (!isInstalled) return false;
-    try {
-      _addToDllSearchPath(_dir.path);
-      for (final f in files) {
-        DynamicLibrary.open('${_dir.path}/${f.name}');
-      }
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /// `SetDllDirectoryW`. Belt and braces beside the explicit opens above: a
-  /// library that loads a *sibling* we have not named — ANGLE picks its
-  /// backend at run time — has to be able to find it too.
-  static void _addToDllSearchPath(String dir) {
-    if (!Platform.isWindows) return;
-    final kernel32 = DynamicLibrary.open('kernel32.dll');
-    final setDllDirectory = kernel32.lookupFunction<
-        Int32 Function(Pointer<Utf16>),
-        int Function(Pointer<Utf16>)>('SetDllDirectoryW');
-    final p = dir.toNativeUtf16();
-    try {
-      setDllDirectory(p);
-    } finally {
-      calloc.free(p);
-    }
+    if (!platformCanLoadEngine || !isInstalled) return false;
+    return platformLoadEngineLibraries(_dir.path, [for (final f in files) f.name]);
   }
 
   /// Where the archive comes from. A release asset of the running version, so

@@ -8,7 +8,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:sqlite3/sqlite3.dart';
+import 'sqlite_backend.dart';
 
 import '../core/ids.dart';
 import '../core/open_target.dart' show workingCopyFileName;
@@ -229,12 +229,12 @@ class ContainerDemotion {
       : 'refused: $refusal';
 }
 
-/// Workspace + notebook persistence. One SQLite Database handle per open
+/// Workspace + notebook persistence. One SQLite CommonDatabase handle per open
 /// .onote (File Format Spec §2); workspace.json registry per spec §7.
 class Repository {
   Repository._(this.workspaceDir);
   final Directory workspaceDir;
-  final Map<String, Database> _open = {}; // notebookId -> db
+  final Map<String, CommonDatabase> _open = {}; // notebookId -> db
   final List<NotebookRef> notebooks = [];
   // Soft-deleted notebooks (ORG-7). Their .onote file stays on disk so a
   // restore is lossless; purge removes the file for good.
@@ -924,7 +924,7 @@ class Repository {
     }
   }
 
-  Database _db(String notebookId) {
+  CommonDatabase _db(String notebookId) {
     final nb = notebooks.firstWhere((n) => n.id == notebookId);
     return _open.putIfAbsent(notebookId,
         () => openExistingOnote(nb.file, notebookId: nb.id, title: nb.title));
@@ -2118,7 +2118,7 @@ class Repository {
     _writeReclaimMarker(notebookId, 'rebuild-from-log');
     final tmpPath = _rebuildTempPath(ref.file);
     final asidePath = _rebuildAsidePath(ref.file);
-    Database? fresh;
+    CommonDatabase? fresh;
     try {
       // Never onto an existing destination, anywhere in this method.
       // `File.renameSync` on Windows replaces silently — verified directly, and
@@ -2878,7 +2878,7 @@ class Repository {
   /// 329 pages "identical" over 278 hashes with no bytes anywhere and 193 broken
   /// image blocks. Gate 4 in [rebuildContainerFromLog] re-hashes the files; this
   /// is only the half that compares structure and content.
-  List<String> _rebuildDifferences(Database db, Materializer state) {
+  List<String> _rebuildDifferences(CommonDatabase db, Materializer state) {
     final out = <String>[];
     for (final r in db.select('SELECT id,kind,parent_id,title,position,color,'
         'level,created_at,updated_at,deleted_at FROM nodes')) {
@@ -2989,7 +2989,7 @@ class Repository {
     return 'application/octet-stream';
   }
 
-  static int _count(Database db, String table) =>
+  static int _count(CommonDatabase db, String table) =>
       db.select('SELECT count(*) c FROM $table').first['c'] as int;
 
   /// How many blob files one background hash costs, matching
@@ -3420,7 +3420,7 @@ class Repository {
   bool hasNode(String notebookId, String nodeId) =>
       _db(notebookId).select('SELECT 1 FROM nodes WHERE id=?', [nodeId]).isNotEmpty;
 
-  List<String> _descendants(Database db, String id) {
+  List<String> _descendants(CommonDatabase db, String id) {
     final out = <String>[id];
     final queue = [id];
     while (queue.isNotEmpty) {

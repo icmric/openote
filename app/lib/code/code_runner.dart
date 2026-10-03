@@ -28,14 +28,12 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter_js/javascriptcore/jscore_runtime.dart';
 import 'package:flutter_js/quickjs/quickjs_runtime2.dart';
-import 'package:sqlite3/open.dart';
-import 'package:sqlite3/sqlite3.dart';
+import '../store/sqlite_backend.dart';
 
 /// How long a run may take before it is stopped.
 const kCodeRunTimeout = Duration(seconds: 5);
@@ -204,10 +202,8 @@ String _identifier(String raw, String fallback) {
 
 Map<String, dynamic> _runSql(Map<String, Object?> p) {
   final lib = p['sqlite'] as String?;
-  if (lib != null) {
-    open.overrideForAll(() => DynamicLibrary.open(lib));
-  }
-  final db = sqlite3.openInMemory();
+  if (lib != null) useSqliteLibraryAt(lib);
+  final db = openSqliteInMemory();
   try {
     // Every table block on the page, mounted twice: as t1…tn (predictable)
     // and, when the first header cell yields a usable name, as a view under
