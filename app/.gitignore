@@ -28,7 +28,11 @@ build/
 # folder and git will never mention it.
 ios/
 android/
-web/
+
+# `web/` came off this list in v1.0.2 for the browser demo, and the warning
+# above is why it is hand-written rather than generated: a throwaway
+# `flutter create --platforms=web` on this repo also stripped pdfium_flutter
+# from all three desktop plugin registrants. See web/README.md.
 
 # UI screenshot harness output (test/ui_screenshots_test.dart). Review
 # artifacts, not goldens: font rasterisation differs per machine, so committing
