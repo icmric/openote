@@ -1,9 +1,10 @@
-import 'dart:ffi';
-import 'dart:io';
-
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
-import 'package:ffi/ffi.dart';
+// The platform call lives in the native half; the web half opens a URL in a
+// tab and answers false for local paths, which is already what this class
+// documents for "no handler".
+import 'platform_open_native.dart'
+    if (dart.library.js_interop) 'platform_open_web.dart';
 
 /// Hand a URL or a file to the operating system's default handler.
 ///
@@ -73,7 +74,7 @@ abstract final class PlatformOpen {
 
   /// Open a local file with whatever application owns its type.
   static Future<bool> file(String path) async {
-    if (!File(path).existsSync()) return false;
+    if (!platformFileExists(path)) return false;
     return _handOff(path);
   }
 
@@ -89,7 +90,7 @@ abstract final class PlatformOpen {
   /// callers open an attachment or a video, where a directory is the wrong
   /// thing and refusing is correct.
   static Future<bool> folder(String path) async {
-    if (!Directory(path).existsSync()) return false;
+    if (!platformDirectoryExists(path)) return false;
     return _handOff(path);
   }
 
@@ -107,60 +108,6 @@ abstract final class PlatformOpen {
   static Future<bool> _handOff(String target) async {
     final hook = debugHandOff;
     if (hook != null) return hook(target);
-    try {
-      if (Platform.isWindows) return _shellExecute(target);
-      // `Process.start` with an argument LIST goes straight to execve — the
-      // target is argv[1] and no shell ever sees it, so metacharacters in a
-      // note's link are inert.
-      await Process.start(Platform.isMacOS ? 'open' : 'xdg-open', [target]);
-      return true;
-    } catch (_) {
-      return false; // no handler registered, or the launcher is missing
-    }
+    return platformHandOff(target);
   }
-
-  /// Windows: `ShellExecuteW`, **not** `cmd /c start`.
-  ///
-  /// This replaced `Process.start('cmd', ['/c', 'start', '', target])`, and the
-  /// reason is worth keeping. `cmd.exe` does not parse its command line the way
-  /// the C runtime does: it applies its own metacharacter handling — `&`, `|`,
-  /// `^`, `<`, `>` — to whatever it receives, *after* the ordinary argument
-  /// quoting has been applied. Ordinary quoting therefore does not neutralise
-  /// them. And `&` is perfectly legal in a URL (it separates query parameters),
-  /// so the scheme allow-list above does not help either: a link in an imported
-  /// or shared notebook could carry one.
-  ///
-  /// I have not demonstrated an exploit — that needs a Windows box this
-  /// development environment does not have — and the claim here is deliberately
-  /// the weaker one: **we were handing attacker-controlled text to a command
-  /// interpreter, and there is no reason to.** `ShellExecuteW` is the actual
-  /// Win32 API for "open this with its default handler". It takes the target as
-  /// a single wide-string parameter, so there is no command line and nothing to
-  /// parse. It is also what every other implementation of this function uses.
-  ///
-  /// Returns false on any failure code. `ShellExecuteW` reports success as an
-  /// HINSTANCE greater than 32, which is a historical quirk rather than a typo.
-  static bool _shellExecute(String target) {
-    final op = 'open'.toNativeUtf16();
-    final file = target.toNativeUtf16();
-    try {
-      final r = _shellExecuteW(0, op, file, nullptr, nullptr, _swShowNormal);
-      return r > 32;
-    } finally {
-      calloc
-        ..free(op)
-        ..free(file);
-    }
-  }
-
-  static const int _swShowNormal = 1;
-
-  static final _shellExecuteW = DynamicLibrary.open('shell32.dll')
-      .lookupFunction<
-          IntPtr Function(IntPtr hwnd, Pointer<Utf16> operation,
-              Pointer<Utf16> file, Pointer<Utf16> params,
-              Pointer<Utf16> directory, Int32 showCmd),
-          int Function(int hwnd, Pointer<Utf16> operation, Pointer<Utf16> file,
-              Pointer<Utf16> params, Pointer<Utf16> directory,
-              int showCmd)>('ShellExecuteW');
 }
