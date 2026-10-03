@@ -23,6 +23,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -32,6 +33,7 @@ import 'package:openote/state/app_state.dart';
 import 'package:openote/store/notebook_writer.dart' show sha256Hex;
 import 'package:openote/store/repository.dart';
 import 'package:openote/sync/op_log.dart';
+import 'package:openote/sync/sync_recorder.dart';
 
 import 'support/sqlite.dart';
 
@@ -603,20 +605,59 @@ test('the file is written with the .blob suffix, and found without it',
 
       expect(proof.checked, 21);
       expect(proof.ok, isTrue);
-      expect(ticks, greaterThan(10),
-          reason: 'the window has to get turns while the proof runs');
+
+      // **The window gets turns because the hashing is somewhere else**, and
+      // that is checked by asking where it ran rather than by counting how
+      // often a 1 ms timer managed to fire.
+      //
+      // This assertion used to be `ticks > 10`. The tick count is a proxy for
+      // "this isolate was free", and on a loaded machine the OS starves the
+      // timer with the code entirely correct — observed at 6, 7 and 9 ticks
+      // on three consecutive runs, against a threshold of 10, with nothing
+      // wrong. Lowering the threshold would only move the flake.
+      //
+      // Note that 21 blobs is ONE batch (`_proveBatch` is 32), so the ticks
+      // were never counting batch boundaries: they were counting the UI
+      // isolate being idle while `Isolate.run` hashed. That is exactly the
+      // property, and it has a name.
+      expect(SyncRecorder.debugHashIsolate, isNotNull,
+          reason: 'the hashing must have been handed off at all');
+      expect(SyncRecorder.debugHashIsolate,
+          isNot(Isolate.current.debugName),
+          reason: 'the 4 MB blob must not be hashed on the isolate the app '
+              'draws on. Inline the hashing and this reports "main"');
+      expect(SyncRecorder.debugHashBatches, 1,
+          reason: '21 blobs is one batch of 32');
+
       expect(worstMs, lessThan(150),
           reason: 'worst single block. Hash the 4 MB blob on this isolate '
               'instead and this is ~360 ms — one visibly dropped frame per '
               'large drawing, at every open');
       // ignore: avoid_print
-      print('[step5] proveBlobs 21 blobs (one 4 MB): ticks=$ticks '
+      print('[step5] proveBlobs 21 blobs (one 4 MB): '
+          'hashedOn=${SyncRecorder.debugHashIsolate} '
+          'batches=${SyncRecorder.debugHashBatches} ticks=$ticks '
           'worstBlockMs=$worstMs');
-      // `retry`, because the meter is wall-clock: on an oversubscribed CI
-      // runner the OS can starve this isolate long enough to blow the budget
-      // with the code entirely correct. The mutation this test exists for —
+      // `retry` is still here for `worstMs`, which is wall-clock by nature and
+      // is the backstop for the ways to freeze that the isolate's name cannot
+      // see — a long synchronous read before the hand-off, say. On an
+      // oversubscribed runner the OS can blow that budget with the code
+      // entirely correct.
+      //
+      // **`worstMs` was NOT catching the regression it claims to**, and this
+      // comment used to say it did: "the mutation this test exists for —
       // hashing the 4 MB blob ON this isolate — blocks deterministically on
-      // every attempt, so a retry cannot launder it.
+      // every attempt, so a retry cannot launder it." Checked by making that
+      // mutation (`Isolate.run` → `Future.sync`, one word): `worstMs` came in
+      // under 150 and did not fire at all, because hashing 4 MB inline is
+      // simply fast on a 2026 desktop. The 164 ms measurement behind the
+      // number is from the owner's Honours-4 notebook's 1.8 MB ink blob on
+      // ITS hardware, and a budget calibrated on the slow machine is no
+      // guard at all on the fast one.
+      //
+      // So the test had it wrong in both directions: `ticks` failed on
+      // correct code, and `worstMs` passed on broken code. The isolate name
+      // is what makes the claim, and it failed on all three attempts.
     }, retry: 2);
 
     test('materialising a whole notebook of pictures does not freeze the app',
@@ -651,18 +692,24 @@ test('the file is written with the .blob suffix, and found without it',
       timer.cancel();
 
       expect(app2.syncMissingBlobs(nb), isEmpty);
-      expect(ticks, greaterThan(20),
+
+      // One hand-back per blob copied, counted where it happens. This was
+      // `ticks > 20` — the same wall-clock proxy as the test above, and the
+      // same latent flake, though it has far more headroom (40 real 1 ms
+      // delays rather than one `Isolate.run`) and was never observed
+      // failing. The pacing is a property of the loop, so the loop counts it.
+      expect(SyncRecorder.debugBackfillYields, 40,
           reason: 'the backfill fsyncs once per blob; unpaced, a real '
               'notebook is hundreds of them in one turn of the event loop');
       expect(worstMs, lessThan(500),
           reason: 'worst single block, including the log replay the warm does '
               'before the backfill starts');
       // ignore: avoid_print
-      print('[step5] backfill+prove 40 blobs: ticks=$ticks '
+      print('[step5] backfill+prove 40 blobs: '
+          'yields=${SyncRecorder.debugBackfillYields} ticks=$ticks '
           'worstBlockMs=$worstMs');
-      // Same rule as the meter above: wall-clock budgets retry, because an
-      // oversubscribed runner can starve a correct implementation past them;
-      // the unpaced-backfill mutation blocks on every attempt regardless.
+      // `retry` stays for `worstMs` alone, for the same reason as above. The
+      // unpaced-backfill mutation now fails the yield count outright.
     }, retry: 2);
   });
 

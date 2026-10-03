@@ -444,6 +444,7 @@ class SyncRecorder {
     required Uint8List? Function(String hash) read,
   }) async {
     if (!materialiseBlobs) return 0;
+    debugBackfillYields = 0;
     var copied = 0;
     for (final b in index) {
       if (store.hasBlob(b.hash) && state.blobs.contains(b.hash)) continue;
@@ -459,6 +460,7 @@ class SyncRecorder {
       // backfill. One millisecond per blob lets the loop actually wait, which
       // is when Win32 delivers input.
       await Future<void>.delayed(const Duration(milliseconds: 1));
+      debugBackfillYields++;
     }
     if (copied > 0) {
       debugPrint('[openote/sync] backfilled $copied blob(s) into '
@@ -510,6 +512,10 @@ class SyncRecorder {
   Future<BlobProof> proveBlobs({
     Uint8List? Function(String hash)? read,
   }) async {
+    // Per proof, so a test can count this run's batches without having to
+    // remember to reset first.
+    debugHashIsolate = null;
+    debugHashBatches = 0;
     final missing = <String>{};
     final repaired = <String>{};
     final damaged = <String>{};
@@ -631,13 +637,51 @@ class SyncRecorder {
   /// blobs cannot make the notebook feel stuck at open.
   static const int _proveBatch = 32;
 
+  /// **Which isolate the last background hash actually ran on**, and how many
+  /// batches it took. Written by [_hashFiles], read only by a test.
+  ///
+  /// `proveBlobs` promises the hashing happens off the UI isolate, and that
+  /// promise had only a wall-clock proxy behind it: a 1 ms `Timer.periodic`
+  /// whose tick count stood in for "the window was free". On a loaded machine
+  /// the OS starves that timer with the code entirely correct — observed at
+  /// 6–9 ticks against a threshold of 10 — so the test failed for a reason
+  /// that had nothing to do with the property.
+  ///
+  /// The isolate's own name is the property itself, reported from inside and
+  /// compared against this isolate's. It is deliberately a NAME and not a
+  /// flag, because a flag can only say "it did not run here", which a version
+  /// that stopped hashing in the background altogether would also satisfy —
+  /// silently. See `blob_proof_test.dart`.
+  ///
+  /// Static, so two notebooks proving at the same time would interleave these
+  /// — which is why nothing in the app reads them, and why a test that does
+  /// proves one notebook at a time. They are a record of the last hand-off,
+  /// not a tally.
+  @visibleForTesting
+  static String? debugHashIsolate;
+  @visibleForTesting
+  static int debugHashBatches = 0;
+
+  /// **How many times the last backfill handed the event loop back.**
+  ///
+  /// One per blob copied, which is the fact its test was reaching for through
+  /// a tick count. Same reasoning as [debugHashIsolate]: the pacing is a
+  /// property of this loop and can be counted here, where a 1 ms timer's
+  /// luck does not come into it.
+  @visibleForTesting
+  static int debugBackfillYields = 0;
+
   /// Read and SHA-256 each path, off this isolate, in order.
   ///
   /// Returns null for a path it could not read — a permission error, a file a
   /// cloud client has locked. "I could not check" must never come back looking
   /// like a match, and null matches no hash.
-  static Future<List<String?>> _hashFiles(List<String> paths) =>
-      Isolate.run(() => [
+  static Future<List<String?>> _hashFiles(List<String> paths) async {
+    final done = await Isolate.run(() => (
+          // One string read, sent back once per 32 files. See
+          // [debugHashIsolate] for what it buys.
+          where: Isolate.current.debugName,
+          hashes: <String?>[
             for (final path in paths)
               () {
                 try {
@@ -646,7 +690,12 @@ class SyncRecorder {
                   return null;
                 }
               }()
-          ]);
+          ],
+        ));
+    debugHashIsolate = done.where;
+    debugHashBatches++;
+    return done.hashes;
+  }
 
   // ── Ingestion: other devices' logs ───────────────────────────────────
 
