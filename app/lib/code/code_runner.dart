@@ -28,12 +28,15 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:isolate';
 
-import 'package:flutter_js/javascriptcore/jscore_runtime.dart';
-import 'package:flutter_js/quickjs/quickjs_runtime2.dart';
 import '../store/sqlite_backend.dart';
+
+// flutter_js has no web build — 2,681 of the 8,284 errors a web build
+// reported. The engine lives in the native half; the web half declines, and
+// says why it does not simply use the browser's.
+import 'js_engine_native.dart'
+    if (dart.library.js_interop) 'js_engine_web.dart';
 
 /// How long a run may take before it is stopped.
 const kCodeRunTimeout = Duration(seconds: 5);
@@ -362,11 +365,15 @@ String _cell(Object? v) {
 }
 
 Map<String, dynamic> _runJs(Map<String, Object?> p) {
-  // Constructed directly — see the library comment. macOS/iOS use the
-  // system JavaScriptCore; everything else the bundled QuickJS.
-  final rt = (Platform.isMacOS || Platform.isIOS)
-      ? JavascriptCoreRuntime()
-      : QuickJsRuntime2();
+  // Null where there is no engine to run it in — a web build, which declines
+  // to use the browser's own for a reason `js_engine_web.dart` sets out. The
+  // Code block is greyed out there, so this is the backstop rather than the
+  // message anybody is expected to read.
+  final rt = platformStartJs();
+  if (rt == null) {
+    return CodeOutput.error('Running code is not available in this build.')
+        .toJson();
+  }
   try {
     // The whole world the cell gets. `tables` is data already on the page;
     // console/print capture into a buffer this side reads back.
@@ -386,7 +393,7 @@ Map<String, dynamic> _runJs(Map<String, Object?> p) {
       final alias = _identifier(t.name, 't$i');
       tableJson[alias] = rows;
     }
-    rt.evaluate('''
+    rt.eval('''
 globalThis.__onoteOut = [];
 (function () {
   function fmt(x) {
@@ -401,18 +408,18 @@ globalThis.__onoteOut = [];
 })();
 globalThis.tables = ${jsonEncode(tableJson)};
 ''');
-    final res = rt.evaluate(p['source'] as String? ?? '');
-    final captured = rt.evaluate('JSON.stringify(globalThis.__onoteOut)');
+    final res = rt.eval(p['source'] as String? ?? '');
+    final captured = rt.eval('JSON.stringify(globalThis.__onoteOut)');
     final lines = <String>[];
     try {
-      final decoded = jsonDecode(captured.stringResult);
+      final decoded = jsonDecode(captured.text);
       if (decoded is List) lines.addAll(decoded.map((e) => '$e'));
     } catch (_) {}
     if (res.isError) {
-      final err = [...lines, res.stringResult].join('\n');
+      final err = [...lines, res.text].join('\n');
       return CodeOutput.error(_cap(err)).toJson();
     }
-    final value = res.stringResult;
+    final value = res.text;
     if (value.isNotEmpty && value != 'undefined' && value != 'null') {
       lines.add(value);
     }
