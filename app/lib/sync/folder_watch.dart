@@ -6,7 +6,7 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
+import '../store/fs.dart';
 
 /// Watches a notebook's op directory and calls back when a *foreign* log
 /// changes.

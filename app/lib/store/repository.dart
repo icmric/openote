@@ -1,6 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' hide Directory, File, FileMode, FileStat,
+    FileSystemEntity, FileSystemEntityType, FileSystemException,
+    OSError, RandomAccessFile;
+
+import 'fs.dart';
+import 'workspace_fs.dart';
 import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -312,11 +317,25 @@ class Repository {
   /// find it and step aside before it paints a window (see
   /// `core/single_instance.dart`).
   static Future<Directory> resolveWorkspaceDir() async {
-    Future<Directory?> at(Future<Directory> Function() base,
+    // **The browser demo has one place and no decision to make.** Everything
+    // below is about which of two real folders a real operating system will
+    // let us write to; a tab has neither folder and no Controlled Folder
+    // Access to dodge. `path_provider` has no web implementation either, so
+    // the loop below would fail every candidate and throw the StateError at
+    // the end — which is what the demo did before this line existed.
+    if (!workspaceIsOnDisk) {
+      return Directory('/openote')..createSync(recursive: true);
+    }
+
+    // Takes a function returning a PATH rather than one returning a
+    // `Directory`, because `path_provider`'s are `dart:io` directories and the
+    // workspace's are whichever this build uses (see store/fs.dart). A string
+    // is the one thing both halves agree about.
+    Future<Directory?> at(Future<String> Function() base,
         {required bool create}) async {
       try {
         final root = await base();
-        final dir = Directory(p.join(root.path, 'Openote'));
+        final dir = Directory(p.join(root, 'Openote'));
         if (create) await dir.create(recursive: true);
         return dir;
       } catch (_) {
@@ -325,17 +344,17 @@ class Repository {
     }
 
     // Already living in app data: nothing to decide.
-    final appData = await at(getApplicationSupportDirectory, create: false);
+    final appData = await at(() async => (await getApplicationSupportDirectory()).path, create: false);
     if (appData != null && _looksLikeWorkspace(appData)) return appData;
 
     // Already living in Documents: stay, so nobody's notes move on their own.
-    final docs = await at(getApplicationDocumentsDirectory, create: false);
+    final docs = await at(() async => (await getApplicationDocumentsDirectory()).path, create: false);
     if (docs != null && _looksLikeWorkspace(docs)) return docs;
 
     // A fresh install, and the whole point of this method: app data, where
     // Controlled Folder Access has no say.
-    final made = await at(getApplicationSupportDirectory, create: true) ??
-        await at(getApplicationDocumentsDirectory, create: true);
+    final made = await at(() async => (await getApplicationSupportDirectory()).path, create: true) ??
+        await at(() async => (await getApplicationDocumentsDirectory()).path, create: true);
     if (made == null) {
       throw StateError(
           'Openote could not create a workspace folder in app data or Documents.');

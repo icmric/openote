@@ -16,7 +16,11 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' hide Directory, File, FileMode, FileStat,
+    FileSystemEntity, FileSystemEntityType, FileSystemException,
+    OSError, RandomAccessFile;
+
+import '../store/fs.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 

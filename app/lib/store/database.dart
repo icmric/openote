@@ -11,7 +11,7 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
+import 'fs.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint;

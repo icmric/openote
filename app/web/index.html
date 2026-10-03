@@ -40,6 +40,21 @@
       var b = document.getElementById('boot');
       if (b) b.remove();
     });
+    // If the app never gets as far as a first frame, say so here. Flutter's own
+    // in-window error screen cannot help with a failure that happens before it
+    // exists, and the alternative is a page that sits on "Loading…" forever.
+    function bootFailed(detail) {
+      var b = document.getElementById('boot');
+      if (!b || b.dataset.failed) return;
+      b.dataset.failed = '1';
+      b.textContent = 'The demo did not start. ' + detail;
+    }
+    window.addEventListener('error', function (e) {
+      bootFailed((e.error && e.error.toString()) || e.message || '');
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      bootFailed((e.reason && e.reason.toString()) || '');
+    });
   </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>

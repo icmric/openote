@@ -13,7 +13,7 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
+import '../store/fs.dart';
 import 'dart:isolate';
 import 'dart:math' as math;
 
