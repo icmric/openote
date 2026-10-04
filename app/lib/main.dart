@@ -88,7 +88,12 @@ Future<void> main(List<String> args) async {
   // builds one — so without this, opening a PDF throws
   // "Pdfrx.getCacheDirectory is not set" before pdfium is even touched.
   // Must run on the root isolate, before any PDF work.
-  pdfrxFlutterInitialize();
+  // Skipped in the browser demo, and this one is about weight rather than
+  // correctness: the call makes pdfrx fetch `pdfium.wasm` eagerly, 3.8 MB on
+  // the first load, for a feature the demo greys out anyway because every PDF
+  // route starts at a file picker. v0.11 already strips the same file out of
+  // desktop releases for the same reason.
+  if (Capabilities.has(Capability.localFiles)) pdfrxFlutterInitialize();
   // Resolve libmpv once, here, rather than the first time a block tries to
   // play something: on a Linux box without it, `MediaKit.ensureInitialized`
   // throws, and a throw inside a widget build is a red screen where a "you
