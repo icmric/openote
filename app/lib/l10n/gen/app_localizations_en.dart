@@ -1536,6 +1536,9 @@ class LEn extends L {
   String get shellSavedOnDevice => 'Saved on this device';
 
   @override
+  String get shellDemoNothingSaved => 'Demo — nothing is saved';
+
+  @override
   String get shellSaving => 'Saving…';
 
   @override

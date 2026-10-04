@@ -5,6 +5,7 @@ import 'dart:io' hide Directory, File, FileMode, FileStat,
     OSError, RandomAccessFile;
 
 import '../core/off_thread.dart';
+import 'demo_notebook.dart';
 import 'fs.dart';
 import 'workspace_fs.dart';
 import 'dart:math' as math;
@@ -250,7 +251,14 @@ class Repository {
     final repo = Repository._(dir);
     await repo._loadWorkspace();
     if (repo.notebooks.isEmpty) {
-      await repo.createNotebook('My Notebook');
+      // The browser demo opens on something rather than on a blank page: a
+      // visitor who sees an empty rectangle learns nothing about what this is.
+      // See store/demo_notebook.dart, which is content and no machinery.
+      if (workspaceIsOnDisk) {
+        await repo.createNotebook('My Notebook');
+      } else {
+        await seedDemoNotebook(repo);
+      }
     }
     return repo;
   }

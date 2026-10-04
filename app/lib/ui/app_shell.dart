@@ -13,6 +13,7 @@ import '../model/models.dart';
 import '../model/tags.dart';
 import '../core/onote_ffi.dart';
 import '../state/app_state.dart';
+import '../store/workspace_fs.dart';
 import '../theme/onote_theme.dart';
 import 'alert_popup.dart';
 import 'import_progress.dart';
@@ -1847,6 +1848,16 @@ class _StatusBar extends StatelessWidget {
       ),
       child: Row(
         children: [
+          // **The browser demo says one thing here and nothing anywhere
+          // else.** The save indicator below is true and reassuring on a
+          // desktop and a lie in a tab, where the whole workspace is in RAM
+          // and a refresh is a new machine. So it is replaced rather than
+          // added to: resident, not dismissible (a banner you can close is a
+          // banner somebody closes and then loses work to), no modal on
+          // entry, and no second copy in the sidebar. See v1.0.2 §16.
+          if (!workspaceIsOnDisk)
+            const _DemoNotice()
+          else
           Tooltip(
             message: failed
                 ? '${problem.message}\n\nMore detail.'
@@ -2192,4 +2203,30 @@ class _NudgeIntent extends Intent {
   final int dx;
   final int dy;
   final bool fine;
+}
+
+/// The demo's one line, in the slot the save indicator usually occupies.
+///
+/// Asked for with a constraint — *"keeping the principle 'less is more' when
+/// it comes to words in instructions, dont overload users"* — so it is six
+/// words, said once, and nothing repeats it anywhere else in the app. No
+/// explanation of why, because the only thing a visitor needs to act on is
+/// that their typing will not survive the tab.
+class _DemoNotice extends StatelessWidget {
+  const _DemoNotice();
+
+  @override
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.info_outline,
+              size: OnoteIcon.sm, color: context.surfaces.textSecondary),
+          const SizedBox(width: 5),
+          Text(
+            L.of(context).shellDemoNothingSaved,
+            style: TextStyle(
+                fontSize: 11, color: context.surfaces.textSecondary),
+          ),
+        ],
+      );
 }

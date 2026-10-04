@@ -2543,6 +2543,12 @@ abstract class L {
   /// **'Saved on this device'**
   String get shellSavedOnDevice;
 
+  /// Status-bar line in the browser demo, shown instead of the save indicator. One line, resident, never dismissible — see docs/planning/v1.0.2.md §16.
+  ///
+  /// In en, this message translates to:
+  /// **'Demo — nothing is saved'**
+  String get shellDemoNothingSaved;
+
   /// Shown while a page is being written to disk.
   ///
   /// In en, this message translates to:

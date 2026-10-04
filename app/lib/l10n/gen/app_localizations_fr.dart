@@ -1548,6 +1548,9 @@ class LFr extends L {
   String get shellSavedOnDevice => 'Enregistré sur cet appareil';
 
   @override
+  String get shellDemoNothingSaved => 'Démo — rien n’est enregistré';
+
+  @override
   String get shellSaving => 'Enregistrement…';
 
   @override

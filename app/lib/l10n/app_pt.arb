@@ -427,6 +427,7 @@
   "shellRustMissing": "Rodando com o motor em Dart puro. Compile a biblioteca onote-core para ligar o núcleo Rust.",
   "shellSavedLocally": "Esta página está salva no seu arquivo .onote local.",
   "shellSavedOnDevice": "Salvo neste dispositivo",
+  "shellDemoNothingSaved": "Demonstração — nada é guardado",
   "shellSaving": "Salvando…",
   "shellTagGroup": "{tag}  ({count})",
   "shellTagTheLine": "Marcar a linha em que você está",

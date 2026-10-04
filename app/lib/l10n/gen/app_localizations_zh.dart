@@ -1479,6 +1479,9 @@ class LZh extends L {
   String get shellSavedOnDevice => '已保存在本机';
 
   @override
+  String get shellDemoNothingSaved => '演示版 — 内容不会保存';
+
+  @override
   String get shellSaving => '正在保存…';
 
   @override
