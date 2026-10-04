@@ -4,6 +4,21 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added — try Openote in a browser before you download it
+
+- **There is a web demo.** It opens on a notebook with three pages already in
+  it — writing, equations, a plotted graph, a table, flashcards — so you can
+  see what the app is before deciding whether to install it. Everything you
+  can reach works for real: it is the same editor, not a picture of one.
+- **Nothing in the demo is saved**, and the status bar says so in six words
+  and never mentions it again. The whole notebook lives in the tab's memory
+  and goes when you refresh. Nothing is written to your computer, and nothing
+  is sent anywhere.
+- **Features a browser cannot do are greyed out rather than hidden** —
+  pictures, PDFs, video, file attachments, code blocks, OneNote import. They
+  are still on the toolbar, and hovering one says why it is off, because what
+  the app can do is part of what the demo is there to show.
+
 ### Fixed — the caret stays where you put it
 
 - **Clicking a box while another one is open now works.** The caret used to

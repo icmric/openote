@@ -96,7 +96,7 @@ void _writeStartHere(Repository repo, String notebookId, String pageId) {
       'Drag one by the bar along its top. Nothing is locked to a line.\n\n'
       '- [ ] Click an empty patch and type something\n'
       '- [ ] Drag this box somewhere else\n'
-      '- [ ] Try the Draw tab and scribble\n',
+      '- [ ] Pick the pen in the Draw tab and scribble\n',
       x: 80,
       y: 280,
       w: 420,
