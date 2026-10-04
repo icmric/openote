@@ -335,7 +335,6 @@ final List<InsertGroup> kInsertGroups = [
     ),
     InsertItem(
       id: 'code',
-      needs: Capability.codeBlocks,
       icon: Icons.code,
       label: (l) => l.insertCode,
       size: const Size(400, 80),

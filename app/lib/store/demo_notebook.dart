@@ -122,6 +122,31 @@ void _writeStartHere(Repository repo, String notebookId, String pageId) {
       y: 500,
       w: 420,
     ),
+    _text(
+      '## Code, with the colours\n'
+      'Pick a language or let it guess. On the desktop, SQL and JavaScript '
+      'also *run*; here they do not, so the Run button stays away.',
+      x: 570,
+      y: 500,
+      w: 370,
+    ),
+    // Python, deliberately: it highlights well, students recognise it, and it
+    // is not one of the two languages that execute — so this block looks the
+    // same in the demo as it does in the app, with nothing missing from it.
+    Block(
+      type: BlockType.code,
+      x: 570,
+      y: 650,
+      w: 370,
+      content: {
+        'language': 'python',
+        'source': 'def energy(m, c=299792458):\n'
+            '    # Rest energy, in joules.\n'
+            '    return m * c ** 2\n'
+            '\n'
+            'print(energy(0.001))  # a paperclip\n',
+      },
+    ),
     Block(
       type: BlockType.table,
       x: 80,

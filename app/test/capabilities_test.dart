@@ -51,6 +51,10 @@ void main() {
       const gatedElsewhere = {
         Capability.folderSync,
         Capability.onenoteImport,
+        // Gated inside the code block rather than on the insert item, because
+        // the block itself works everywhere — only the Run button, Ctrl+Enter
+        // and the "Run" badge go, and all three ask `isRunnableLanguage`.
+        Capability.runCode,
       };
 
       final named = {
@@ -91,7 +95,6 @@ void main() {
         'file': Capability.localFiles,
         'table-file': Capability.localFiles,
         'video': Capability.video,
-        'code': Capability.codeBlocks,
       };
 
       final actual = {

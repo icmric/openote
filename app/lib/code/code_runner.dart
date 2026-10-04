@@ -50,9 +50,21 @@ const kMaxOutputChars = 64 * 1024;
 /// becomes a widget the canvas lays out.
 const kMaxOutputRows = 200;
 
-/// Languages the Run button appears for.
+/// Languages the Run button appears for **in this build**.
+///
+/// The second half of that sentence is the whole of the web demo's code-block
+/// story. A code block is pure Dart — the editor, the language picker and
+/// `code_highlight.dart` have no native dependency at all — so writing and
+/// highlighting code works in a browser exactly as it does on the desktop.
+/// Only *running* needs an engine, and `js_engine_web.dart` sets out why the
+/// browser's own is declined rather than used.
+///
+/// Answering it here rather than at each button is what keeps the three
+/// places that ask — the Run button, Ctrl+Enter, and the "Run" badge beside a
+/// language in the picker — from being able to disagree.
 bool isRunnableLanguage(String? language) =>
-    language == 'sql' || language == 'js' || language == 'javascript';
+    platformCanRunJs &&
+    (language == 'sql' || language == 'js' || language == 'javascript');
 
 /// A page table handed to the run: [name] is the raw first header cell (the
 /// runner sanitises), [cells] the padded rectangular grid, header first.

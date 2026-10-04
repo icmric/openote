@@ -87,8 +87,13 @@ enum Capability {
   /// Decoding and playing a video file.
   video,
 
-  /// Running the contents of a code block.
-  codeBlocks,
+  /// **Running** the contents of a code block — not having one.
+  ///
+  /// The distinction earns its keep: a code block is pure Dart, so the editor,
+  /// the language picker and the syntax highlighting all work in a browser.
+  /// Only execution needs an engine. Gating the block on this was the first
+  /// shape of it and it threw away a feature that worked.
+  runCode,
 }
 
 abstract final class Capabilities {
@@ -105,7 +110,7 @@ abstract final class Capabilities {
         Capability.video => platformCanLoadEngine,
         // `js_engine_web.dart` explains why the browser's own engine is
         // declined rather than used.
-        Capability.codeBlocks => platformCanRunJs,
+        Capability.runCode => platformCanRunJs,
       };
 
   /// True when every capability is present — i.e. an ordinary desktop build.
