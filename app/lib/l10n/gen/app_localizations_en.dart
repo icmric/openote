@@ -1539,6 +1539,9 @@ class LEn extends L {
   String get shellDemoNothingSaved => 'Demo — nothing is saved';
 
   @override
+  String get commandNotInDemo => 'Not in the web demo';
+
+  @override
   String get shellSaving => 'Saving…';
 
   @override

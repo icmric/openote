@@ -969,8 +969,12 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
               icon: item.icon,
               label: item.label(l),
               inline: _InsertButton(app: app, item: item),
-              onPressed: () =>
-                  item.run(context, app, insertAnchor(app, item)),
+              // Null where this build cannot do it, which greys the folded
+              // entry rather than removing it. Same answer as the inline
+              // button's, from the same `item.available`.
+              onPressed: item.available
+                  ? () => item.run(context, app, insertAnchor(app, item))
+                  : null,
               submenu: item.extras.isEmpty
                   ? null
                   : [
@@ -980,15 +984,19 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                       ToolbarSubmenuItem(
                         icon: item.icon,
                         label: item.label(l),
-                        onPressed: () =>
-                            item.run(context, app, insertAnchor(app, item)),
+                        onPressed: item.available
+                            ? () =>
+                                item.run(context, app, insertAnchor(app, item))
+                            : null,
                       ),
                       for (final extra in item.extras)
                         ToolbarSubmenuItem(
                           icon: extra.icon,
                           label: extra.label(l),
-                          onPressed: () => extra.run(
-                              context, app, insertAnchor(app, extra)),
+                          onPressed: extra.available
+                              ? () => extra.run(
+                                  context, app, insertAnchor(app, extra))
+                              : null,
                         ),
                     ],
             ),
@@ -1890,6 +1898,12 @@ class _InsertButton extends StatelessWidget {
   /// already carry; a wordless one leads with its name, so nothing on the row
   /// is nameless.
   String _tip(L l) {
+    // **An unavailable item leads with its name and says why**, even when it
+    // is a labelled button whose hover would normally add nothing. A greyed
+    // control that will not say what is wrong with it is worse than no
+    // control: the one thing it has to communicate is that the app can do
+    // this and this build cannot.
+    if (!item.available) return '${item.label(l)} — ${l.commandNotInDemo}';
     if (item.showLabel) return item.tooltip?.call(l) ?? '';
     return item.tooltip == null
         ? item.label(l)
@@ -1909,6 +1923,9 @@ class _InsertButton extends StatelessWidget {
       _run(context, item);
     }
 
+    // Disabled rather than hidden. Flutter greys a null `onPressed` for us, so
+    // there is no second style to keep in step with the enabled one.
+    final onPressed = item.available ? press : null;
     final l = L.of(context);
     return Tooltip(
       message: _tip(l),
@@ -1916,12 +1933,12 @@ class _InsertButton extends StatelessWidget {
           ? CommandButton(
               icon: item.icon,
               label: item.label(l),
-              onPressed: press,
+              onPressed: onPressed,
             )
           : IconButton(
               icon: Icon(item.icon, size: OnoteIcon.sm),
               visualDensity: VisualDensity.compact,
-              onPressed: press,
+              onPressed: onPressed,
             ),
     );
   }

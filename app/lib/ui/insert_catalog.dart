@@ -57,6 +57,7 @@ import '../export/csv_import.dart';
 import '../export/pdf_import.dart';
 import '../model/models.dart';
 import '../l10n/l10n.dart';
+import '../core/capabilities.dart';
 import '../state/app_state.dart';
 import '../store/media_store.dart';
 import 'insert_portal_dialog.dart';
@@ -81,6 +82,7 @@ class InsertItem {
     this.opensPicker = false,
     this.showLabel = true,
     this.onMenu = true,
+    this.needs,
     this.extras = const [],
   });
 
@@ -141,6 +143,30 @@ class InsertItem {
   /// A field rather than a second list, so the difference is one word beside
   /// the item that has it, and the test can read it.
   final bool onMenu;
+
+  /// **What this item needs from the platform, or null when it needs
+  /// nothing.**
+  ///
+  /// Null is the common case and costs nothing to get right: most things on
+  /// this list are pure Dart and work anywhere, so they say nothing and
+  /// nobody has to think about them. An item that names a [Capability] is
+  /// greyed out, with its own reason on hover, wherever that capability is
+  /// absent — the browser demo being the only such build today.
+  ///
+  /// **The dependency, not the availability.** It would be easier to write
+  /// `web: false` here, and it would rot: the value that greys the button
+  /// would be a second copy of the value that drives the fallback behind it,
+  /// and the two would disagree within a release or two. Naming the
+  /// capability means [Capabilities.has] answers both from one place.
+  ///
+  /// A field rather than a second list, for the reason [onMenu] gives: the
+  /// difference is one word beside the item that has it, and the test can
+  /// read it.
+  final Capability? needs;
+
+  /// True when this build can actually do this. The ribbon and the menu both
+  /// ask, so neither can be the one that forgets.
+  bool get available => needs == null || Capabilities.has(needs!);
 
   /// The extra choices behind a split button's arrow. A plain menu ignores
   /// these and offers the main action only, which is the right default in
@@ -287,6 +313,7 @@ final List<InsertGroup> kInsertGroups = [
       extras: [
         InsertItem(
           id: 'table-file',
+      needs: Capability.localFiles,
           icon: Icons.grid_on_outlined,
           label: (l) => l.insertTableFromFile,
           tooltip: (l) => l.insertTableFromFileTip,
@@ -308,6 +335,7 @@ final List<InsertGroup> kInsertGroups = [
     ),
     InsertItem(
       id: 'code',
+      needs: Capability.codeBlocks,
       icon: Icons.code,
       label: (l) => l.insertCode,
       size: const Size(400, 80),
@@ -344,6 +372,7 @@ final List<InsertGroup> kInsertGroups = [
   InsertGroup(title: (l) => l.insertGroupBringIn, items: [
     InsertItem(
       id: 'image',
+      needs: Capability.localFiles,
       icon: Icons.image_outlined,
       // "Picture", not "Image": one is a word a student uses.
       label: (l) => l.insertPicture,
@@ -353,6 +382,7 @@ final List<InsertGroup> kInsertGroups = [
     ),
     InsertItem(
       id: 'pdf',
+      needs: Capability.localFiles,
       icon: Icons.picture_as_pdf_outlined,
       label: (l) => l.insertPdfSlides,
       opensPicker: true,
@@ -360,6 +390,7 @@ final List<InsertGroup> kInsertGroups = [
       extras: [
         InsertItem(
           id: 'pdf-here',
+      needs: Capability.localFiles,
           icon: Icons.vertical_align_bottom,
           label: (l) => l.insertPdfPrintout,
           opensPicker: true,
@@ -369,6 +400,7 @@ final List<InsertGroup> kInsertGroups = [
         ),
         InsertItem(
           id: 'pdf-pages',
+      needs: Capability.localFiles,
           icon: Icons.auto_stories_outlined,
           label: (l) => l.insertPdfPerSlide,
           opensPicker: true,
@@ -378,6 +410,7 @@ final List<InsertGroup> kInsertGroups = [
         ),
         InsertItem(
           id: 'pdf-card',
+      needs: Capability.localFiles,
           icon: Icons.branding_watermark_outlined,
           label: (l) => l.insertPdfAsCard,
           opensPicker: true,
@@ -391,6 +424,7 @@ final List<InsertGroup> kInsertGroups = [
     ),
     InsertItem(
       id: 'video',
+      needs: Capability.video,
       icon: Icons.play_circle_outline,
       label: (l) => l.insertVideo,
       tooltip: (l) => l.insertVideoTip,
@@ -400,6 +434,7 @@ final List<InsertGroup> kInsertGroups = [
     ),
     InsertItem(
       id: 'file',
+      needs: Capability.localFiles,
       icon: Icons.attach_file,
       label: (l) => l.insertFile,
       opensPicker: true,

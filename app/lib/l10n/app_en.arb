@@ -2071,6 +2071,10 @@
     "description": "Status-bar text when everything is written and the notebook is not synced anywhere."
   },
   "shellDemoNothingSaved": "Demo — nothing is saved",
+  "commandNotInDemo": "Not in the web demo",
+  "@commandNotInDemo": {
+    "description": "Hover text on a toolbar or menu item the web demo cannot run. Short on purpose: the control is greyed, and the only thing it has to say is that the app can do this and this build cannot."
+  },
   "@shellDemoNothingSaved": {
     "description": "Status-bar line in the browser demo, shown instead of the save indicator. One line, resident, never dismissible — see docs/planning/v1.0.2.md §16."
   },

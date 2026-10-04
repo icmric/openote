@@ -428,6 +428,7 @@
   "shellSavedLocally": "这一页已保存到你本地的 .onote 文件中。",
   "shellSavedOnDevice": "已保存在本机",
   "shellDemoNothingSaved": "演示版 — 内容不会保存",
+  "commandNotInDemo": "网页演示版中不可用",
   "shellSaving": "正在保存…",
   "shellTagGroup": "{tag}（{count}）",
   "shellTagTheLine": "标记当前所在的行",

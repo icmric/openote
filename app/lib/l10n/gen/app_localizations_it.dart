@@ -1552,6 +1552,9 @@ class LIt extends L {
   String get shellDemoNothingSaved => 'Demo — non viene salvato nulla';
 
   @override
+  String get commandNotInDemo => 'Non disponibile nella demo web';
+
+  @override
   String get shellSaving => 'Salvataggio…';
 
   @override

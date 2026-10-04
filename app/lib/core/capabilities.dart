@@ -103,9 +103,9 @@ abstract final class Capabilities {
         // every caller already falls back; on the web it is absent for good.
         Capability.onenoteImport => OnoteCore.available,
         Capability.video => platformCanLoadEngine,
-        // Asked rather than assumed: the engine is constructed per run, and
-        // `js_engine_web.dart` explains why the browser's own is declined.
-        Capability.codeBlocks => _jsRuns ??= _probeJs(),
+        // `js_engine_web.dart` explains why the browser's own engine is
+        // declined rather than used.
+        Capability.codeBlocks => platformCanRunJs,
       };
 
   /// True when every capability is present — i.e. an ordinary desktop build.
@@ -113,14 +113,4 @@ abstract final class Capabilities {
   static bool get allPresent =>
       Capability.values.every(has);
 
-  static bool? _jsRuns;
-
-  static bool _probeJs() {
-    final s = platformStartJs();
-    s?.dispose();
-    return s != null;
-  }
-
-  /// Forget the cached probe. For tests that move the platform underneath us.
-  static void debugReset() => _jsRuns = null;
 }

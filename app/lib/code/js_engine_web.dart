@@ -16,4 +16,6 @@ library;
 
 import 'js_session.dart';
 
+const bool platformCanRunJs = false;
+
 JsSession? platformStartJs() => null;

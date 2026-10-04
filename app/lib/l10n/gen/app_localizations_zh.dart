@@ -1482,6 +1482,9 @@ class LZh extends L {
   String get shellDemoNothingSaved => '演示版 — 内容不会保存';
 
   @override
+  String get commandNotInDemo => '网页演示版中不可用';
+
+  @override
   String get shellSaving => '正在保存…';
 
   @override

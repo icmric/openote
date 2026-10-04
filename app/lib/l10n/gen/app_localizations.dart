@@ -2549,6 +2549,12 @@ abstract class L {
   /// **'Demo — nothing is saved'**
   String get shellDemoNothingSaved;
 
+  /// Hover text on a toolbar or menu item the web demo cannot run. Short on purpose: the control is greyed, and the only thing it has to say is that the app can do this and this build cannot.
+  ///
+  /// In en, this message translates to:
+  /// **'Not in the web demo'**
+  String get commandNotInDemo;
+
   /// Shown while a page is being written to disk.
   ///
   /// In en, this message translates to:

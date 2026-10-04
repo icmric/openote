@@ -598,27 +598,45 @@ class _Tile extends StatelessWidget {
   final bool indented;
 
   @override
-  Widget build(BuildContext context) => InkWell(
-        mouseCursor: WidgetStateMouseCursor.clickable,
-        borderRadius: BorderRadius.circular(OnoteRadius.sm),
-        onTap: () => Navigator.of(context).pop(item.id),
-        child: SizedBox(
-          height: 30,
-          child: Padding(
-            padding: EdgeInsets.only(left: indented ? 20 : 6, right: 6),
-            child: Row(children: [
-              Icon(item.icon, size: 16),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(item.menuLabel(L.of(context)),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 13,
-                        color: indented ? surfaces.textSecondary : null)),
-              ),
-            ]),
-          ),
+  Widget build(BuildContext context) {
+    // Greyed where this build cannot do it — same rule the Paste row above
+    // already follows, and for the same reason: *"a menu whose rows move
+    // about is a menu you cannot learn"*. In the demo it does a second job,
+    // which is to show a visitor that the feature exists at all. The answer
+    // comes from `item.available`, the one the ribbon asks too.
+    final off = !item.available;
+    final l = L.of(context);
+    final tile = InkWell(
+      mouseCursor: off
+          ? SystemMouseCursors.basic
+          : WidgetStateMouseCursor.clickable,
+      borderRadius: BorderRadius.circular(OnoteRadius.sm),
+      onTap: off ? null : () => Navigator.of(context).pop(item.id),
+      child: SizedBox(
+        height: 30,
+        child: Padding(
+          padding: EdgeInsets.only(left: indented ? 20 : 6, right: 6),
+          child: Row(children: [
+            Icon(item.icon, size: 16, color: off ? surfaces.textDisabled : null),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(item.menuLabel(l),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: off
+                          ? surfaces.textDisabled
+                          : indented
+                              ? surfaces.textSecondary
+                              : null)),
+            ),
+          ]),
         ),
-      );
+      ),
+    );
+    return off
+        ? Tooltip(message: '${item.label(l)} — ${l.commandNotInDemo}', child: tile)
+        : tile;
+  }
 }

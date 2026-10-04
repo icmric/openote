@@ -428,6 +428,7 @@
   "shellSavedLocally": "Esta página está guardada en tu archivo .onote local.",
   "shellSavedOnDevice": "Guardado en este dispositivo",
   "shellDemoNothingSaved": "Demostración: no se guarda nada",
+  "commandNotInDemo": "No disponible en la demostración web",
   "shellSaving": "Guardando…",
   "shellTagGroup": "{tag}  ({count})",
   "shellTagTheLine": "Etiquetar la línea en la que estás",
