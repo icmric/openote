@@ -6,6 +6,7 @@
 library;
 
 import 'dart:ffi';
+import 'dart:typed_data';
 
 import 'package:sqlite3/common.dart';
 import 'package:sqlite3/open.dart' as sqlite_open;
@@ -16,6 +17,10 @@ Future<void> platformInitSqlite() async {}
 CommonDatabase platformOpenSqliteFile(String path) => sqlite3.open(path);
 
 CommonDatabase platformOpenSqliteInMemory() => sqlite3.openInMemory();
+
+/// Nothing to do: there is a real filesystem here, and the bytes are already
+/// on it. See the web half, where there is not.
+void platformSeedSqliteFile(String path, Uint8List bytes) {}
 
 const bool platformSqliteLibraryIsSelectable = true;
 

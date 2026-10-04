@@ -15,6 +15,10 @@ promise: `store/sqlite_backend_web.dart` registers SQLite's
 FTS5 index are all real and all live in the tab's heap. Not OPFS, not
 IndexedDB, not `localStorage`. A refresh is a new notebook.
 
+The notebook it opens with is `../assets/demo/demo.onote` — a real container,
+edited in Openote itself. See `assets/demo/README.md`; nothing in Dart needs
+touching to change what the demo says.
+
 Which features are offered and which are greyed out is not decided here. It
 is derived from `core/capabilities.dart`, which asks each feature's own web
 half the question that feature already had to answer in order to compile. See

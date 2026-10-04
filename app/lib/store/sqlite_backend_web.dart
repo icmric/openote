@@ -19,10 +19,18 @@
 /// about 730 KB and the fetch happens once, in parallel with the first frame.
 library;
 
+import 'dart:typed_data';
+
 import 'package:sqlite3/common.dart';
 import 'package:sqlite3/wasm.dart';
+import 'package:typed_data/typed_buffers.dart';
 
 WasmSqlite3? _sqlite;
+
+/// Held on to so that [platformSeedSqliteFile] can put bytes into it. The VFS
+/// owns the only copy of every database in the demo, so this reference is
+/// also, quite literally, the whole workspace.
+InMemoryFileSystem? _vfs;
 
 /// Fetch and instantiate `sqlite3.wasm`, then point it at an in-memory disk.
 ///
@@ -33,7 +41,9 @@ Future<void> platformInitSqlite() async {
   final sqlite = await WasmSqlite3.loadFromUrl(Uri.parse('sqlite3.wasm'));
   // `makeDefault` so an unprefixed path — which is every path the workspace
   // builds — lands here rather than in a VFS that would try to persist.
-  sqlite.registerVirtualFileSystem(InMemoryFileSystem(), makeDefault: true);
+  final vfs = InMemoryFileSystem();
+  sqlite.registerVirtualFileSystem(vfs, makeDefault: true);
+  _vfs = vfs;
   _sqlite = sqlite;
 }
 
@@ -58,6 +68,23 @@ CommonDatabase platformOpenSqliteInMemory() {
   // `:memory:` rather than the in-memory VFS: this one is for the SQL code
   // block, which wants a scratch database with no filename at all.
   return sqlite.openInMemory();
+}
+
+/// Put a whole database into the VFS before anything opens it.
+///
+/// This is how the demo notebook arrives: it ships as `assets/demo/demo.onote`
+/// — a real container, authored in Openote itself — and is handed to SQLite
+/// here rather than being built row by row from Dart.
+///
+/// The key is whatever [InMemoryFileSystem.xFullPathName] would make of
+/// [path], asked of the VFS rather than guessed, because that is the name
+/// SQLite will look the file up by when it opens it.
+void platformSeedSqliteFile(String path, Uint8List bytes) {
+  final vfs = _vfs;
+  if (vfs == null) {
+    throw StateError('initSqlite() must be awaited before seeding a database.');
+  }
+  vfs.fileData[vfs.xFullPathName(path)] = Uint8Buffer()..addAll(bytes);
 }
 
 const bool platformSqliteLibraryIsSelectable = false;

@@ -25,6 +25,8 @@ library;
 
 export 'package:sqlite3/common.dart';
 
+import 'dart:typed_data';
+
 import 'package:sqlite3/common.dart';
 
 import 'sqlite_backend_native.dart'
@@ -54,6 +56,15 @@ CommonDatabase openSqliteInMemory() => platformOpenSqliteInMemory();
 /// web, where there is no library to point at — and harmless there, because
 /// the callers that use it pass a path they only have on a desktop.
 void useSqliteLibraryAt(String path) => platformUseSqliteLibraryAt(path);
+
+/// Put [bytes] where [openSqliteFile] will find them at [path].
+///
+/// Exists for one caller: the browser demo ships its notebook as an asset
+/// (`assets/demo/demo.onote`) and has to hand the container to SQLite before
+/// anything opens it. A no-op on a desktop build, where there is a real disk
+/// and whoever wrote the file has already put the bytes on it.
+void seedSqliteFile(String path, Uint8List bytes) =>
+    platformSeedSqliteFile(path, bytes);
 
 /// True when the backend can be told where its library lives — i.e. when
 /// [useSqliteLibraryAt] does something. Lets a caller skip assembling a path
