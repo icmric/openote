@@ -4,9 +4,9 @@ import 'dart:io' hide Directory, File, FileMode, FileStat,
     FileSystemEntity, FileSystemEntityType, FileSystemException,
     OSError, RandomAccessFile;
 
+import '../core/off_thread.dart';
 import 'fs.dart';
 import 'workspace_fs.dart';
-import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -3022,7 +3022,7 @@ class Repository {
   /// file — 1.8 MB of binary ink — is a 164 ms block that no per-file yield can
   /// divide. Null for anything unreadable, which matches no hash.
   static Future<List<String?>> _hashFiles(List<String> paths) =>
-      Isolate.run(() => [
+      offThread(() => [
             for (final path in paths)
               () {
                 try {
