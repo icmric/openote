@@ -42,9 +42,21 @@ This build carries **FTS5** and RTREE (and not FTS3/4), which matters: search
 is FTS5 and the schema creates a virtual table at notebook-open, so a build
 without it would fail on the first page rather than on the first search.
 
-## Building
+## Building and running it
 
     flutter build web --release
 
 Output lands in `build/web/`. It is a static site: any host that serves files
 will do, and there is no server side to this at all.
+
+**It must be served over http, not opened from disk.** Double-clicking
+`build/web/index.html` gives a `file://` page, and such a page is not allowed
+to `fetch` — so the app cannot load `sqlite3.wasm` and does not start. There
+is nothing to configure; it just has to come off a server:
+
+    cd build/web && python3 -m http.server
+
+then open the address it prints. `index.html` checks for this case and says so
+rather than failing with "TypeError: Failed to fetch", and
+`sqlite_backend_web.dart` reports the URL and the reason if the fetch fails
+for any other cause (wrong path, wrong content type).

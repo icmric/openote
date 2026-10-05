@@ -19,11 +19,16 @@
 /// about 730 KB and the fetch happens once, in parallel with the first frame.
 library;
 
+import 'dart:js_interop';
 import 'dart:typed_data';
 
 import 'package:sqlite3/common.dart';
 import 'package:sqlite3/wasm.dart';
 import 'package:typed_data/typed_buffers.dart';
+import 'package:web/web.dart' as web;
+
+/// Beside `index.html` in the build output, and committed in `web/`.
+const kSqliteWasmFile = 'sqlite3.wasm';
 
 WasmSqlite3? _sqlite;
 
@@ -38,7 +43,19 @@ InMemoryFileSystem? _vfs;
 /// here again and re-instantiating would silently discard the open databases.
 Future<void> platformInitSqlite() async {
   if (_sqlite != null) return;
-  final sqlite = await WasmSqlite3.loadFromUrl(Uri.parse('sqlite3.wasm'));
+  final url = Uri.parse(kSqliteWasmFile);
+  final WasmSqlite3 sqlite;
+  try {
+    sqlite = await WasmSqlite3.loadFromUrl(url);
+  } catch (e) {
+    // **This runs before `runApp`, so it is the one failure the app's own
+    // in-window error screen cannot report** — it lands in the plain-HTML
+    // handler in `web/index.html` instead, which has nothing but the message.
+    // So the message has to carry the diagnosis, and `TypeError: Failed to
+    // fetch` on its own does not: it names no URL and does not distinguish
+    // "not deployed" from "cannot be requested at all".
+    throw StateError(await _whyWasmFailed(url, e));
+  }
   // `makeDefault` so an unprefixed path — which is every path the workspace
   // builds — lands here rather than in a VFS that would try to persist.
   final vfs = InMemoryFileSystem();
@@ -91,3 +108,36 @@ const bool platformSqliteLibraryIsSelectable = false;
 
 /// Nothing to point at: the implementation is the wasm module already loaded.
 void platformUseSqliteLibraryAt(String path) {}
+
+/// Turn a failed wasm load into a sentence that says what to do about it.
+///
+/// Asks the question again with a plain `fetch`, because the three realistic
+/// causes are told apart by the answer and not by the exception:
+///
+/// * **no answer at all** — the page is on a `file://` path, where fetch is
+///   not allowed. This is the common one: `flutter build web` produces a
+///   folder, and opening its `index.html` by double-clicking is the obvious
+///   thing to try and cannot work.
+/// * **an answer with a status** — the file is not where the page expects,
+///   usually a build served from a sub-path without a matching `--base-href`.
+/// * **an answer with the wrong content type** — the host does not know what
+///   a `.wasm` is. WebAssembly refuses to compile anything but
+///   `application/wasm`.
+Future<String> _whyWasmFailed(Uri url, Object cause) async {
+  final where = Uri.base.resolveUri(url);
+  try {
+    final r = await web.window.fetch(where.toString().toJS).toDart;
+    if (!r.ok) {
+      return 'Could not load $where — the server answered ${r.status}. '
+          'It should sit beside index.html in the build output. ($cause)';
+    }
+    final type = r.headers.get('content-type') ?? 'nothing';
+    return 'Could not load $where — the server sent it as "$type", and '
+        'WebAssembly only accepts application/wasm. ($cause)';
+  } catch (_) {
+    return 'Could not request $where at all. The demo has to be served over '
+        'http: a page opened straight from a file on disk is not allowed to '
+        'fetch anything. From the build output, `python3 -m http.server` and '
+        'then open the address it prints. ($cause)';
+  }
+}

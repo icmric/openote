@@ -55,6 +55,16 @@
     window.addEventListener('unhandledrejection', function (e) {
       bootFailed((e.reason && e.reason.toString()) || '');
     });
+    // Said up front rather than waited for, because it cannot come right:
+    // `flutter build web` produces a folder, double-clicking its index.html is
+    // the obvious thing to try, and a page on a file:// path is not allowed to
+    // fetch — so the app cannot load its own engine. Without this the first
+    // symptom is "TypeError: Failed to fetch", which names nothing.
+    if (location.protocol === 'file:') {
+      bootFailed('It has to be served over http — a page opened straight from '
+        + 'a file on disk cannot load the files the app needs. In the build '
+        + 'output run: python3 -m http.server');
+    }
   </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
