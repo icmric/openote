@@ -16,8 +16,23 @@ For step 3, prefer **Back up this notebook** (or any route that writes a copy)
 over dragging the file out of your workspace. The container is open in WAL
 mode while the app is running, so the `.onote` on its own can be missing the
 last few saves; the backup goes through `VACUUM INTO`, which asks SQLite for a
-complete, self-contained database at a consistent point. Closing Openote first
-and then copying also works.
+complete database at a consistent point. Closing Openote first and then
+copying also works.
+
+## ⚠ Handwriting does not travel in the container
+
+**Ink and pictures are stored in `blobs/<sha256>` beside the log directory,
+not inside the `.onote`** (v0.17 Step 6). So a container copied on its own —
+however you copy it — arrives with references that resolve to nothing, and the
+ink is simply absent. An earlier version of this file recommended copying the
+container without saying so, and that is how the demo notebook ended up with
+eight ink blocks whose blobs were nowhere: see `docs/planning/v1.0.2.md`
+§18c, and §17 for the grey page it used to cause.
+
+Until a self-contained export exists (`refillContainerBlobs` is the operation
+that would do it — §18c), **do not put handwriting in the demo notebook.**
+Everything else — text, maths, graphs, tables, flashcards, code — lives in the
+container and travels fine.
 
 ## Things worth knowing
 
