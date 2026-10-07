@@ -573,7 +573,16 @@ void main() {
         reason: 'the first batch reported only after '
             '$measuresAtFirstProgress of $measuresTotal measurement '
             'round-trips — layout is being done up front again');
-  });
+    // **Not the default 30 s.** This test imports 300 pages of real work, and
+    // `flutter test` runs files in parallel — so on a loaded machine it ran
+    // out of time and reported a `TimeoutException`, which is a failure about
+    // throughput by a test whose only claim is about ordering. Observed in a
+    // full-suite run on 2026-10-07; it passes alone every time.
+    //
+    // The same shape bit this test once before, which is what the counting
+    // comment above is about: the assertion was de-timed and the harness
+    // timeout was left behind to go on measuring the machine.
+  }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('a discarded import leaves nothing behind, not even a log directory',
       () async {
