@@ -1,4 +1,6 @@
 import 'dart:io';
+
+import '../ink/ink_storage.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -276,7 +278,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final hit = _strokeCache[b.id];
     if (hit != null && hit.rev == b.updatedAt) return hit.strokes;
     final decoded = [
-      for (final sj in b.content['strokes'] as List)
+      for (final sj in InkStorage.strokesOf(b.content))
         Stroke.fromJson((sj as Map).cast<String, dynamic>()),
     ];
     _strokeCache[b.id] = (rev: b.updatedAt, strokes: decoded);
@@ -516,7 +518,7 @@ class _PageCanvasState extends State<PageCanvas> {
     for (final b in app.blocks.reversed) {
       if (b.type == BlockType.ink &&
           nowMs() - b.updatedAt < 2000 &&
-          (b.content['strokes'] as List).length < 512) {
+          InkStorage.strokesOf(b.content).length < 512) {
         target = b;
         break;
       }
@@ -524,7 +526,7 @@ class _PageCanvasState extends State<PageCanvas> {
     target ??= app.addBlock(
         Block(type: BlockType.ink, x: 0, y: 0, content: {'strokes': []}),
         recordUndo: false);
-    (target.content['strokes'] as List).add(w.toJson());
+    (target.content[kStrokesKey] as List).add(w.toJson());
     _refitInkBounds(target);
     app.updateBlock(target);
     setState(() => _wet = null);
@@ -550,7 +552,7 @@ class _PageCanvasState extends State<PageCanvas> {
       // This runs per pointer sample, so skipping distant blocks before looking
       // at any stroke is what keeps erasing cheap on an ink-heavy page.
       if (!_blockRect(b).inflate(radius).contains(pt)) continue;
-      final strokes = (b.content['strokes'] as List);
+      final strokes = InkStorage.strokesOf(b.content);
       // Reuse the decoded strokes rather than re-parsing JSON per sample.
       final decoded = _strokesOf(b);
       final out = <Map<String, dynamic>>[];
@@ -615,7 +617,7 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     if (changed) {
       app.blocks.removeWhere(
-          (b) => b.type == BlockType.ink && (b.content['strokes'] as List).isEmpty);
+          (b) => b.type == BlockType.ink && InkStorage.strokesOf(b.content).isEmpty);
       app.markDirty();
       setState(() {});
     }
@@ -623,7 +625,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _refitInkBounds(Block b) {
     var mnx = double.infinity, mny = double.infinity, mxx = -1e18, mxy = -1e18;
-    for (final sj in b.content['strokes'] as List) {
+    for (final sj in InkStorage.strokesOf(b.content)) {
       final s = Stroke.fromJson((sj as Map).cast<String, dynamic>());
       final bb = s.bounds();
       mnx = math.min(mnx, bb.minX);
@@ -675,7 +677,7 @@ class _PageCanvasState extends State<PageCanvas> {
     for (final b in app.blocks.where((b) => b.type == BlockType.ink)) {
       final keep = <dynamic>[];
       var blockChanged = false;
-      for (final sj in (b.content['strokes'] as List)) {
+      for (final sj in InkStorage.strokesOf(b.content)) {
         final s = Stroke.fromJson((sj as Map).cast<String, dynamic>());
         if (_strokeInsidePoly(s, poly)) {
           gathered.add(sj.cast<String, dynamic>());

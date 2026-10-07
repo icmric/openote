@@ -56,6 +56,22 @@ abstract final class InkStorage {
   static bool isLegacyForm(Map<String, dynamic> content) =>
       content[kStrokesKey] is List;
 
+  /// The working stroke list, or an empty one.
+  ///
+  /// **The canvas's safe door onto `content['strokes']`.** Every reader there
+  /// used to cast it unchecked, so a block that was not in working form — a
+  /// ref whose blob is missing, a legacy shape, anything a future format adds
+  /// — threw during build and took the whole page down as a grey rectangle.
+  /// [toWorking] is what normally guarantees the key is there; this is what
+  /// makes a page survive the day it does not.
+  ///
+  /// Mutating the result is safe only when [isLegacyForm] is true; the empty
+  /// list handed back otherwise is const.
+  static List<dynamic> strokesOf(Map<String, dynamic> content) {
+    final s = content[kStrokesKey];
+    return s is List ? s : const <dynamic>[];
+  }
+
   /// How many strokes, WITHOUT opening a blob.
   ///
   /// Several callers only want a count — the export summaries, and the canvas's
@@ -190,10 +206,26 @@ abstract final class InkStorage {
     if (base is String && base.isNotEmpty) {
       final bytes = getBlob(base);
       if (bytes == null) {
-        // Ref present, bytes absent. Leave the ref alone — a save must not
-        // then overwrite it with an empty stroke list, which is exactly how a
-        // half-synced notebook would lose its ink.
-        return content;
+        // **Ref present, bytes absent.** The ref is kept — a save must not
+        // overwrite it with an empty stroke list, which is exactly how a
+        // half-synced notebook would lose its ink. [toPersisted] guarantees
+        // that: content in ref form has its working strokes dropped on the way
+        // out and the identical descriptor put back.
+        //
+        // But it returns an EMPTY WORKING LIST rather than the content
+        // untouched, and that difference is the whole of this fix. Untouched
+        // meant no `strokes` key at all, and every reader on the canvas does
+        // `content['strokes'] as List` — so one unresolvable blob threw a
+        // TypeError out of `_strokesOf` during build and took the entire page
+        // down with it. In a release build that is an `ErrorWidget`: a plain
+        // grey rectangle over the canvas, with no way back in and nothing
+        // said. Found on the owner's own demo notebook, whose eight ink blocks
+        // all referenced blobs that were no longer on disk.
+        //
+        // The doc comment above this method already promised the right
+        // behaviour — *"an ink block that draws nothing rather than a page
+        // that fails to open"* — and the code did the opposite.
+        return _blank(content);
       }
       try {
         strokes.addAll(InkCodec.decode(bytes,
@@ -202,7 +234,9 @@ abstract final class InkStorage {
             // Ids derive from the blob so they are stable across decodes.
             idPrefix: base.length > 20 ? base.substring(base.length - 12) : base));
       } catch (_) {
-        return content;
+        // Bytes that are there but will not decode: same answer. The block
+        // draws nothing, the ref survives, the page opens.
+        return _blank(content);
       }
     }
     // Overlays, for when the incremental scheme lands. Absent today.
@@ -230,6 +264,14 @@ abstract final class InkStorage {
     out[kStrokesKey] = [for (final s in live) s.toJson()];
     return out;
   }
+
+  /// The content with an empty working stroke list beside its untouched ref.
+  ///
+  /// "Draws nothing" has to be said in the working vocabulary, because that is
+  /// the only vocabulary the canvas reads. Saying it by omission is what the
+  /// grey page was.
+  static Map<String, dynamic> _blank(Map<String, dynamic> content) =>
+      Map<String, dynamic>.of(content)..[kStrokesKey] = const <dynamic>[];
 
   /// Run-length indices: `"12,40-57,900"`.
   static Set<int> _parseGone(Object? raw) {
