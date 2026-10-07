@@ -46,3 +46,16 @@ test-results.json
 # does not. The generated `L` class under lib/l10n/gen is deliberately NOT
 # ignored: see the reasoning in l10n.yaml.
 l10n-untranslated.txt
+
+# **A notebook's live log directory, wherever one lands in the tree.**
+# Opening a `.onote` makes the folder it sits in that notebook's log directory
+# — so opening `assets/demo/demo.onote` in place pointed a real notebook at
+# this repository and it began writing ops and blobs here. The asset is meant
+# to be copied into a workspace and opened from there; `assets/demo/README.md`
+# now says so. This is the net under that instruction, because the instruction
+# did not hold the first time it mattered.
+*.onotebook/
+# The same thing one level down: a log directory's own contents, if one is
+# ever created directly in the tree rather than inside a `.onotebook`.
+assets/**/ops/
+assets/**/manifest.json

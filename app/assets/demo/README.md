@@ -19,6 +19,24 @@ last few saves; the backup goes through `VACUUM INTO`, which asks SQLite for a
 complete database at a consistent point. Closing Openote first and then
 copying also works.
 
+## ⚠ Do not open this file where it sits
+
+**Copy it into your workspace first, and open it from there.**
+
+Opening a `.onote` makes the folder it is in that notebook's **live log
+directory**: from then on Openote writes that notebook's ops and blobs beside
+it. Opening this asset in place therefore points a real notebook at this
+repository, and it starts filling `assets/demo/` with working files.
+
+That is not hypothetical. It is how it went the first time (2026-10-05), and
+it did real damage: one of the two demo notebooks ended up logging into
+`build/web/assets/assets/demo/demo.onotebook/`, which `flutter clean` and the
+next `flutter build web` deleted — taking that notebook's handwriting blobs
+with it. See `docs/planning/v1.0.2.md` §19f.
+
+`.gitignore` now catches the files, but it cannot catch the data loss, so:
+copy, then open.
+
 ## ⚠ Handwriting does not travel in the container
 
 **Ink and pictures are stored in `blobs/<sha256>` beside the log directory,
