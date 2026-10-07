@@ -13,8 +13,8 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
-import 'dart:isolate';
+import '../core/off_thread.dart';
+import '../store/fs.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -276,7 +276,7 @@ class SyncRecorder {
   /// found by test, not by the compiler.
   static Future<(Materializer, Map<String, int>, int)> _replayInIsolate(
       String notebookPath, String? logDir) {
-    return Isolate.run(() {
+    return offThread(() {
       final store = OpLogStore.forNotebook(notebookPath, logDir: logDir);
       final all = store.readAll();
       var lamport = 0;
@@ -677,10 +677,10 @@ class SyncRecorder {
   /// cloud client has locked. "I could not check" must never come back looking
   /// like a match, and null matches no hash.
   static Future<List<String?>> _hashFiles(List<String> paths) async {
-    final done = await Isolate.run(() => (
+    final done = await offThread(() => (
           // One string read, sent back once per 32 files. See
           // [debugHashIsolate] for what it buys.
-          where: Isolate.current.debugName,
+          where: offThreadName,
           hashes: <String?>[
             for (final path in paths)
               () {

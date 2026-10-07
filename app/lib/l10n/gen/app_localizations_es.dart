@@ -1541,6 +1541,12 @@ class LEs extends L {
   String get shellSavedOnDevice => 'Guardado en este dispositivo';
 
   @override
+  String get shellDemoNothingSaved => 'Demostración: no se guarda nada';
+
+  @override
+  String get commandNotInDemo => 'No disponible en la demostración web';
+
+  @override
   String get shellSaving => 'Guardando…';
 
   @override

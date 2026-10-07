@@ -1542,6 +1542,12 @@ class LPt extends L {
   String get shellSavedOnDevice => 'Salvo neste dispositivo';
 
   @override
+  String get shellDemoNothingSaved => 'Demonstração — nada é guardado';
+
+  @override
+  String get commandNotInDemo => 'Não disponível na demonstração web';
+
+  @override
   String get shellSaving => 'Salvando…';
 
   @override

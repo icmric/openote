@@ -1549,6 +1549,12 @@ class LIt extends L {
   String get shellSavedOnDevice => 'Salvato su questo dispositivo';
 
   @override
+  String get shellDemoNothingSaved => 'Demo — non viene salvato nulla';
+
+  @override
+  String get commandNotInDemo => 'Non disponibile nella demo web';
+
+  @override
   String get shellSaving => 'Salvataggio…';
 
   @override

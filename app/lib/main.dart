@@ -1,16 +1,20 @@
 import 'l10n/l10n.dart';
-import 'dart:io' show Directory, exit;
+import 'dart:io' show exit;
+
+import 'store/fs.dart';
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 
 import 'package:pdfrx/pdfrx.dart';
 
+import 'core/capabilities.dart';
 import 'core/single_instance.dart';
 import 'core/startup_args.dart';
 import 'media/video_playback.dart';
 import 'state/app_state.dart';
 import 'store/repository.dart';
+import 'store/sqlite_backend.dart';
 import 'theme/onote_theme.dart';
 import 'ui/app_shell.dart';
 
@@ -24,34 +28,59 @@ Future<void> main(List<String> args) async {
   // hands over a path whether that path is a file or a directory. See
   // core/startup_args.dart, and core/open_target.dart for which of the two it
   // turned out to be.
-  final requested = notebookPathFromArgs(args);
+  // Get SQLite ready before anything can ask for a database. A no-op on a
+  // desktop build, where the library is linked; on the web it fetches and
+  // instantiates sqlite3.wasm, which `Repository.open()` cannot wait for
+  // because it opens synchronously once it starts.
+  await initSqlite();
 
-  // BEFORE runApp, and this ordering is the whole point: if another Openote is
-  // already running on this workspace it takes the notebook and we exit
-  // without ever painting. A window that appears and immediately vanishes
-  // would be worse than either outcome.
-  //
-  // The cost is that the first frame now waits on resolving the workspace
-  // folder and one file lock — a `mkdir` and an `open` — which is a few
-  // milliseconds against the "the app takes ages to appear" work below. There
-  // is no way to know whether this process is allowed to exist without asking.
+  // The notebook we were launched to open: `openote Physics.onotebook`, or a
+  // double-click in the file manager — on the notebook folder itself where the
+  // shell will open one, and on the `Open this notebook.onotelink` inside it
+  // everywhere else (v0.17 Step 8b). Parsed before anything else because the
+  // single-instance hand-off below needs to know what to hand over, and it
+  // hands over a path whether that path is a file or a directory. See
+  // core/startup_args.dart, and core/open_target.dart for which of the two it
+  // turned out to be.
+  final requested =
+      Capabilities.has(Capability.localFiles) ? notebookPathFromArgs(args) : null;
+
   SingleInstance? instance;
-  var handedOver = false;
-  try {
-    final dir = await Repository.resolveWorkspaceDir();
-    instance = await SingleInstance.claim(dir, openPath: requested);
-    handedOver = instance == null;
-  } catch (_) {
-    // The workspace folder could not even be resolved. Say nothing here and
-    // carry on: `Repository.open()` is about to fail the same way, and it
-    // fails into the in-window error screen below instead of into a process
-    // that dies with no window at all.
-    instance = null;
+  // **Everything from here to runApp is desktop-only**, and it is gated as one
+  // block rather than call by call because it is one idea: a process, with
+  // argv, that can be the second copy of itself. A browser tab is none of
+  // those — there is no argv to parse, no lock to take, no window to raise,
+  // and no `exit`. Skipping it is not a degraded mode, it is the absence of a
+  // question.
+  if (Capabilities.has(Capability.localFiles)) {
+    // BEFORE runApp, and this ordering is the whole point: if another Openote
+    // is already running on this workspace it takes the notebook and we exit
+    // without ever painting. A window that appears and immediately vanishes
+    // would be worse than either outcome.
+    //
+    // The cost is that the first frame now waits on resolving the workspace
+    // folder and one file lock — a `mkdir` and an `open` — which is a few
+    // milliseconds against the "the app takes ages to appear" work below.
+    // There is no way to know whether this process is allowed to exist without
+    // asking.
+    var handedOver = false;
+    try {
+      final dir = await Repository.resolveWorkspaceDir();
+      instance = await SingleInstance.claimAt(dir.path, openPath: requested);
+      handedOver = instance == null;
+    } catch (_) {
+      // The workspace folder could not even be resolved. Say nothing here and
+      // carry on: `Repository.open()` is about to fail the same way, and it
+      // fails into the in-window error screen below instead of into a process
+      // that dies with no window at all.
+      instance = null;
+    }
+    // Outside the try on purpose. A null `instance` means "we handed over,
+    // stop" on one path and "carry on without a claim" on the other, so the
+    // decision is spelled with its own flag rather than left for a reader to
+    // infer.
+    if (handedOver) exit(0);
   }
-  // Outside the try on purpose. A null `instance` means "we handed over, stop"
-  // on one path and "carry on without a claim" on the other, so the decision
-  // is spelled with its own flag rather than left for a reader to infer.
-  if (handedOver) exit(0);
 
   // pdfrx wires its own statics (asset loader, and the cache directory pdfium
   // needs for its font cache) inside this call. Its *widgets* do it implicitly
@@ -59,7 +88,12 @@ Future<void> main(List<String> args) async {
   // builds one — so without this, opening a PDF throws
   // "Pdfrx.getCacheDirectory is not set" before pdfium is even touched.
   // Must run on the root isolate, before any PDF work.
-  pdfrxFlutterInitialize();
+  // Skipped in the browser demo, and this one is about weight rather than
+  // correctness: the call makes pdfrx fetch `pdfium.wasm` eagerly, 3.8 MB on
+  // the first load, for a feature the demo greys out anyway because every PDF
+  // route starts at a file picker. v0.11 already strips the same file out of
+  // desktop releases for the same reason.
+  if (Capabilities.has(Capability.localFiles)) pdfrxFlutterInitialize();
   // Resolve libmpv once, here, rather than the first time a block tries to
   // play something: on a Linux box without it, `MediaKit.ensureInitialized`
   // throws, and a throw inside a widget build is a red screen where a "you
@@ -67,7 +101,7 @@ Future<void> main(List<String> args) async {
   // Awaited: on Windows this also resolves whether the downloaded engine is
   // present, and a page that renders its video cards before that answer is
   // known shows "needs the video player" to somebody who already has it.
-  await VideoPlayback.probe();
+  if (Capabilities.has(Capability.video)) await VideoPlayback.probe();
   // Paint a window IMMEDIATELY; open the workspace behind it. Blocking runApp
   // on Repository.open + init left the window invisible until SQLite and the
   // restored page were fully loaded ("the app takes ages to appear").

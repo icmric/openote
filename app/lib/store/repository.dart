@@ -1,14 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:isolate';
+import 'dart:io' hide Directory, File, FileMode, FileStat,
+    FileSystemEntity, FileSystemEntityType, FileSystemException,
+    OSError, RandomAccessFile;
+
+import '../core/off_thread.dart';
+import 'demo_notebook.dart';
+import 'fs.dart';
+import 'workspace_fs.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:sqlite3/sqlite3.dart';
+import 'sqlite_backend.dart';
 
 import '../core/ids.dart';
 import '../core/open_target.dart' show workingCopyFileName;
@@ -229,12 +235,12 @@ class ContainerDemotion {
       : 'refused: $refusal';
 }
 
-/// Workspace + notebook persistence. One SQLite Database handle per open
+/// Workspace + notebook persistence. One SQLite CommonDatabase handle per open
 /// .onote (File Format Spec §2); workspace.json registry per spec §7.
 class Repository {
   Repository._(this.workspaceDir);
   final Directory workspaceDir;
-  final Map<String, Database> _open = {}; // notebookId -> db
+  final Map<String, CommonDatabase> _open = {}; // notebookId -> db
   final List<NotebookRef> notebooks = [];
   // Soft-deleted notebooks (ORG-7). Their .onote file stays on disk so a
   // restore is lossless; purge removes the file for good.
@@ -245,7 +251,14 @@ class Repository {
     final repo = Repository._(dir);
     await repo._loadWorkspace();
     if (repo.notebooks.isEmpty) {
-      await repo.createNotebook('My Notebook');
+      // The browser demo opens on something rather than on a blank page: a
+      // visitor who sees an empty rectangle learns nothing about what this is.
+      // See store/demo_notebook.dart, which is content and no machinery.
+      if (workspaceIsOnDisk) {
+        await repo.createNotebook('My Notebook');
+      } else {
+        await seedDemoNotebook(repo);
+      }
     }
     return repo;
   }
@@ -312,11 +325,25 @@ class Repository {
   /// find it and step aside before it paints a window (see
   /// `core/single_instance.dart`).
   static Future<Directory> resolveWorkspaceDir() async {
-    Future<Directory?> at(Future<Directory> Function() base,
+    // **The browser demo has one place and no decision to make.** Everything
+    // below is about which of two real folders a real operating system will
+    // let us write to; a tab has neither folder and no Controlled Folder
+    // Access to dodge. `path_provider` has no web implementation either, so
+    // the loop below would fail every candidate and throw the StateError at
+    // the end — which is what the demo did before this line existed.
+    if (!workspaceIsOnDisk) {
+      return Directory('/openote')..createSync(recursive: true);
+    }
+
+    // Takes a function returning a PATH rather than one returning a
+    // `Directory`, because `path_provider`'s are `dart:io` directories and the
+    // workspace's are whichever this build uses (see store/fs.dart). A string
+    // is the one thing both halves agree about.
+    Future<Directory?> at(Future<String> Function() base,
         {required bool create}) async {
       try {
         final root = await base();
-        final dir = Directory(p.join(root.path, 'Openote'));
+        final dir = Directory(p.join(root, 'Openote'));
         if (create) await dir.create(recursive: true);
         return dir;
       } catch (_) {
@@ -325,17 +352,17 @@ class Repository {
     }
 
     // Already living in app data: nothing to decide.
-    final appData = await at(getApplicationSupportDirectory, create: false);
+    final appData = await at(() async => (await getApplicationSupportDirectory()).path, create: false);
     if (appData != null && _looksLikeWorkspace(appData)) return appData;
 
     // Already living in Documents: stay, so nobody's notes move on their own.
-    final docs = await at(getApplicationDocumentsDirectory, create: false);
+    final docs = await at(() async => (await getApplicationDocumentsDirectory()).path, create: false);
     if (docs != null && _looksLikeWorkspace(docs)) return docs;
 
     // A fresh install, and the whole point of this method: app data, where
     // Controlled Folder Access has no say.
-    final made = await at(getApplicationSupportDirectory, create: true) ??
-        await at(getApplicationDocumentsDirectory, create: true);
+    final made = await at(() async => (await getApplicationSupportDirectory()).path, create: true) ??
+        await at(() async => (await getApplicationDocumentsDirectory()).path, create: true);
     if (made == null) {
       throw StateError(
           'Openote could not create a workspace folder in app data or Documents.');
@@ -924,7 +951,7 @@ class Repository {
     }
   }
 
-  Database _db(String notebookId) {
+  CommonDatabase _db(String notebookId) {
     final nb = notebooks.firstWhere((n) => n.id == notebookId);
     return _open.putIfAbsent(notebookId,
         () => openExistingOnote(nb.file, notebookId: nb.id, title: nb.title));
@@ -2118,7 +2145,7 @@ class Repository {
     _writeReclaimMarker(notebookId, 'rebuild-from-log');
     final tmpPath = _rebuildTempPath(ref.file);
     final asidePath = _rebuildAsidePath(ref.file);
-    Database? fresh;
+    CommonDatabase? fresh;
     try {
       // Never onto an existing destination, anywhere in this method.
       // `File.renameSync` on Windows replaces silently — verified directly, and
@@ -2878,7 +2905,7 @@ class Repository {
   /// 329 pages "identical" over 278 hashes with no bytes anywhere and 193 broken
   /// image blocks. Gate 4 in [rebuildContainerFromLog] re-hashes the files; this
   /// is only the half that compares structure and content.
-  List<String> _rebuildDifferences(Database db, Materializer state) {
+  List<String> _rebuildDifferences(CommonDatabase db, Materializer state) {
     final out = <String>[];
     for (final r in db.select('SELECT id,kind,parent_id,title,position,color,'
         'level,created_at,updated_at,deleted_at FROM nodes')) {
@@ -2989,7 +3016,7 @@ class Repository {
     return 'application/octet-stream';
   }
 
-  static int _count(Database db, String table) =>
+  static int _count(CommonDatabase db, String table) =>
       db.select('SELECT count(*) c FROM $table').first['c'] as int;
 
   /// How many blob files one background hash costs, matching
@@ -3003,7 +3030,7 @@ class Repository {
   /// file — 1.8 MB of binary ink — is a 164 ms block that no per-file yield can
   /// divide. Null for anything unreadable, which matches no hash.
   static Future<List<String?>> _hashFiles(List<String> paths) =>
-      Isolate.run(() => [
+      offThread(() => [
             for (final path in paths)
               () {
                 try {
@@ -3420,7 +3447,7 @@ class Repository {
   bool hasNode(String notebookId, String nodeId) =>
       _db(notebookId).select('SELECT 1 FROM nodes WHERE id=?', [nodeId]).isNotEmpty;
 
-  List<String> _descendants(Database db, String id) {
+  List<String> _descendants(CommonDatabase db, String id) {
     final out = <String>[id];
     final queue = [id];
     while (queue.isNotEmpty) {

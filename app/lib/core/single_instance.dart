@@ -89,6 +89,15 @@ class SingleInstance {
   /// **without painting a window**, which is why this runs before `runApp` and
   /// not inside the boot widget. A second window that appears and vanishes is
   /// worse than either outcome on its own.
+  /// [claim], named by path.
+  ///
+  /// `main` resolves the workspace through `store/fs.dart`, whose `Directory`
+  /// is `dart:io`'s on a desktop and an in-memory stand-in in the browser
+  /// demo. This file is desktop-only — it takes a real OS file lock — so it
+  /// takes the one thing both spellings agree about.
+  static Future<SingleInstance?> claimAt(String dir, {String? openPath}) =>
+      claim(Directory(dir), openPath: openPath);
+
   static Future<SingleInstance?> claim(Directory dir, {String? openPath}) async {
     RandomAccessFile? lock;
     try {

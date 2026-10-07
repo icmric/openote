@@ -427,6 +427,8 @@
   "shellRustMissing": "Läuft mit der reinen Dart-Engine. Baue die onote-core-Bibliothek, um den Rust-Kern einzubinden.",
   "shellSavedLocally": "Diese Seite ist in deiner lokalen .onote-Datei gespeichert.",
   "shellSavedOnDevice": "Auf diesem Gerät gespeichert",
+  "shellDemoNothingSaved": "Demo — nichts wird gespeichert",
+  "commandNotInDemo": "Nicht in der Web-Demo",
   "shellSaving": "Wird gespeichert…",
   "shellTagGroup": "{tag}  ({count})",
   "shellTagTheLine": "Die Zeile markieren, in der du bist",

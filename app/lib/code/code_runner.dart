@@ -28,14 +28,15 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ffi';
-import 'dart:io';
 import 'dart:isolate';
 
-import 'package:flutter_js/javascriptcore/jscore_runtime.dart';
-import 'package:flutter_js/quickjs/quickjs_runtime2.dart';
-import 'package:sqlite3/open.dart';
-import 'package:sqlite3/sqlite3.dart';
+import '../store/sqlite_backend.dart';
+
+// flutter_js has no web build — 2,681 of the 8,284 errors a web build
+// reported. The engine lives in the native half; the web half declines, and
+// says why it does not simply use the browser's.
+import 'js_engine_native.dart'
+    if (dart.library.js_interop) 'js_engine_web.dart';
 
 /// How long a run may take before it is stopped.
 const kCodeRunTimeout = Duration(seconds: 5);
@@ -49,9 +50,21 @@ const kMaxOutputChars = 64 * 1024;
 /// becomes a widget the canvas lays out.
 const kMaxOutputRows = 200;
 
-/// Languages the Run button appears for.
+/// Languages the Run button appears for **in this build**.
+///
+/// The second half of that sentence is the whole of the web demo's code-block
+/// story. A code block is pure Dart — the editor, the language picker and
+/// `code_highlight.dart` have no native dependency at all — so writing and
+/// highlighting code works in a browser exactly as it does on the desktop.
+/// Only *running* needs an engine, and `js_engine_web.dart` sets out why the
+/// browser's own is declined rather than used.
+///
+/// Answering it here rather than at each button is what keeps the three
+/// places that ask — the Run button, Ctrl+Enter, and the "Run" badge beside a
+/// language in the picker — from being able to disagree.
 bool isRunnableLanguage(String? language) =>
-    language == 'sql' || language == 'js' || language == 'javascript';
+    platformCanRunJs &&
+    (language == 'sql' || language == 'js' || language == 'javascript');
 
 /// A page table handed to the run: [name] is the raw first header cell (the
 /// runner sanitises), [cells] the padded rectangular grid, header first.
@@ -204,10 +217,8 @@ String _identifier(String raw, String fallback) {
 
 Map<String, dynamic> _runSql(Map<String, Object?> p) {
   final lib = p['sqlite'] as String?;
-  if (lib != null) {
-    open.overrideForAll(() => DynamicLibrary.open(lib));
-  }
-  final db = sqlite3.openInMemory();
+  if (lib != null) useSqliteLibraryAt(lib);
+  final db = openSqliteInMemory();
   try {
     // Every table block on the page, mounted twice: as t1…tn (predictable)
     // and, when the first header cell yields a usable name, as a view under
@@ -366,11 +377,15 @@ String _cell(Object? v) {
 }
 
 Map<String, dynamic> _runJs(Map<String, Object?> p) {
-  // Constructed directly — see the library comment. macOS/iOS use the
-  // system JavaScriptCore; everything else the bundled QuickJS.
-  final rt = (Platform.isMacOS || Platform.isIOS)
-      ? JavascriptCoreRuntime()
-      : QuickJsRuntime2();
+  // Null where there is no engine to run it in — a web build, which declines
+  // to use the browser's own for a reason `js_engine_web.dart` sets out. The
+  // Code block is greyed out there, so this is the backstop rather than the
+  // message anybody is expected to read.
+  final rt = platformStartJs();
+  if (rt == null) {
+    return CodeOutput.error('Running code is not available in this build.')
+        .toJson();
+  }
   try {
     // The whole world the cell gets. `tables` is data already on the page;
     // console/print capture into a buffer this side reads back.
@@ -390,7 +405,7 @@ Map<String, dynamic> _runJs(Map<String, Object?> p) {
       final alias = _identifier(t.name, 't$i');
       tableJson[alias] = rows;
     }
-    rt.evaluate('''
+    rt.eval('''
 globalThis.__onoteOut = [];
 (function () {
   function fmt(x) {
@@ -405,18 +420,18 @@ globalThis.__onoteOut = [];
 })();
 globalThis.tables = ${jsonEncode(tableJson)};
 ''');
-    final res = rt.evaluate(p['source'] as String? ?? '');
-    final captured = rt.evaluate('JSON.stringify(globalThis.__onoteOut)');
+    final res = rt.eval(p['source'] as String? ?? '');
+    final captured = rt.eval('JSON.stringify(globalThis.__onoteOut)');
     final lines = <String>[];
     try {
-      final decoded = jsonDecode(captured.stringResult);
+      final decoded = jsonDecode(captured.text);
       if (decoded is List) lines.addAll(decoded.map((e) => '$e'));
     } catch (_) {}
     if (res.isError) {
-      final err = [...lines, res.stringResult].join('\n');
+      final err = [...lines, res.text].join('\n');
       return CodeOutput.error(_cap(err)).toJson();
     }
-    final value = res.stringResult;
+    final value = res.text;
     if (value.isNotEmpty && value != 'undefined' && value != 'null') {
       lines.add(value);
     }

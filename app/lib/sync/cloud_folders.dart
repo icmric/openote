@@ -24,6 +24,8 @@ library;
 
 import 'dart:io';
 
+import '../store/workspace_fs.dart';
+
 import 'package:path/path.dart' as p;
 
 /// A sync location we can offer the user.
@@ -56,6 +58,17 @@ enum CloudKind {
 }
 
 String? _env(String key) {
+  // **Guarded, because `Platform.environment` throws in a web build** rather
+  // than coming back empty, and this is reached from the navigator's header on
+  // every build. The throw took the whole sidebar down: Flutter replaced it
+  // with an `ErrorWidget`, which in a release build is a plain grey rectangle
+  // and in a stretched Column is a hundred thousand pixels of one — exactly
+  // the failure `_NotebookHeader` already documents having seen once before.
+  //
+  // There are no cloud folders in a tab, so the empty answer below is true as
+  // well as safe: `detectCloudFolders` returns nothing, the dot says "This
+  // computer only", and nothing else has to know.
+  if (!workspaceIsOnDisk) return null;
   final v = Platform.environment[key];
   return (v == null || v.isEmpty) ? null : v;
 }

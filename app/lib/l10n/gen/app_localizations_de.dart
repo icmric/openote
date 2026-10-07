@@ -1548,6 +1548,12 @@ class LDe extends L {
   String get shellSavedOnDevice => 'Auf diesem Gerät gespeichert';
 
   @override
+  String get shellDemoNothingSaved => 'Demo — nichts wird gespeichert';
+
+  @override
+  String get commandNotInDemo => 'Nicht in der Web-Demo';
+
+  @override
   String get shellSaving => 'Wird gespeichert…';
 
   @override

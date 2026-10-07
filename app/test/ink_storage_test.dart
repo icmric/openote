@@ -562,16 +562,39 @@ void main() {
   group('the storage boundary on its own', () {
     test('a missing blob leaves the reference alone', () {
       // A notebook joined from a remote can legitimately hold a ref whose
-      // bytes have not arrived. Returning an empty stroke list would let the
-      // next save overwrite the reference with nothing — losing the ink for
-      // everyone, permanently.
-      final content = <String, dynamic>{
-        'ink': {'v': 1, 'base': 'sha256:deadbeef', 'n': 5, 'o': [0, 0]}
-      };
+      // bytes have not arrived, and losing that ink on the next save would be
+      // permanent and silent. That is the property this test is for.
+      //
+      // **It used to assert object identity — `same(content)` — and that was
+      // the wrong guarantee.** Returning the content untouched left no
+      // `strokes` key at all, and every reader on the canvas cast
+      // `content['strokes'] as List` unchecked; one unresolvable blob threw
+      // during build and turned the whole page into a grey rectangle. Found on
+      // the owner's own notebook, 2026-10-07. See ink_missing_blob_test.dart.
+      //
+      // So the working form is now an EMPTY stroke list beside the untouched
+      // descriptor, and the fear the old assertion encoded is tested directly
+      // instead: put it through a save and prove nothing was re-encoded and
+      // the identical ref came back. `toPersisted` checks `isRefForm` first,
+      // which is what makes that true.
+      final ref = {'v': 1, 'base': 'sha256:deadbeef', 'n': 5, 'o': [0, 0]};
+      final content = <String, dynamic>{'ink': ref};
+
       final out = InkStorage.toWorking(content, (_) => null);
-      expect(out, same(content), reason: 'unchanged, ref intact');
+      expect(out['ink'], same(ref), reason: 'the ref itself is untouched');
+      expect(out['strokes'], isEmpty,
+          reason: 'the canvas needs the key to exist, holding nothing');
       expect(InkStorage.strokeCount(out), 5,
           reason: 'and it still knows how much is missing');
+
+      var encoded = 0;
+      final saved = InkStorage.toPersisted(out, (_) {
+        encoded++;
+        return 'must not happen';
+      });
+      expect(encoded, 0, reason: 'a save must not re-encode what it cannot see');
+      expect(saved['ink'], same(ref), reason: 'the same ref goes back to disk');
+      expect(saved.containsKey('strokes'), isFalse);
     });
 
     test('an unparseable stroke stops the conversion rather than dropping it',
