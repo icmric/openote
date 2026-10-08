@@ -189,10 +189,19 @@ Clicking it switches between a decimal and a fraction. The fraction is offered
 when the *working* was fractional, and refused when there is nothing to switch to:
 a whole number, or a decimal no tidy fraction reproduces.
 
-## 6. Export & interchange
-- Markdown export: `$latex$` / `$$latex$$` verbatim.
-- **MathML export** derived from canonical LaTeX at export time (library-based; correctness over speed — it runs only on export). Accessibility surfaces (screen readers) use the same derivation.
-- Import: `$…$`/`$$…$$` LaTeX recognized from Markdown/paste; OneNote import maps its native math (UnicodeMath-flavored) through the §3 grammar — the deliberate side-effect of choosing a UnicodeMath-compatible core.
+## 6. Export and interchange
+
+**Markdown** carries the LaTeX verbatim, as `$latex$` or `$$latex$$`.
+
+**Import** recognises `$…$` and `$$…$$` from Markdown and from a paste. OneNote's
+own maths arrives as MathML and is converted to LaTeX through the §3 grammar,
+which is the deliberate dividend of choosing a UnicodeMath-compatible core.
+
+**MathML export is specified and not built.** Deriving it from the stored LaTeX at
+export time is the intended route — correctness over speed, since it runs only on
+export — and the same derivation should feed screen readers. Today an equation
+exports as LaTeX only, so a tool that wants MathML has to convert it itself.
+Tracked in [the backlog](../planning/backlog.md).
 
 ## 7. Conformance test seed *(informative)*
 

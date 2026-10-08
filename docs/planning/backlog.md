@@ -110,7 +110,37 @@ It is a writing job, not a design one. `app/lib/ink/ink_codec.dart` documents th
 format thoroughly and the encoding is deterministic; it needs transcribing into
 the spec as a byte layout, with a worked example.
 
-### 1.8 Finish the translation coverage
+### 1.8 MathML export · **S–M**
+
+[Maths spec §6](../specs/12-math-input-spec.md) specifies it and nothing builds
+it, so an equation leaves Openote as LaTeX only. Two consumers want it: a tool
+importing an exported notebook, and a screen reader — which is the same audience
+as the accessibility work in [v1.0.2](v1.0.2.md), and the reason this is worth
+more than its size suggests.
+
+Derive it from the stored LaTeX at export time rather than storing it. There is
+already a MathML parser in the tree, `onenote/mathml_latex.dart`, going the other
+way for OneNote import; it is a reference for the vocabulary, not something to
+reverse.
+
+### 1.9 Two acceptance criteria this project set itself and did not meet
+
+Both are [ADR-0004](../adr/ADR-0004-editor-engine.md)'s, and both are small.
+
+**The opening `$` of an inline equation is still a character the caret steps
+onto**, so one press of an arrow key moves nothing you can see. Criterion 3 asked
+for the equation to behave as a single atom, and arrowing into one now hands over
+to the equation editor properly — this last step is what is left of it. Measured on
+`a $x^2$ b`: eight presses of the right arrow from the start give offsets 1, 2, 3,
+3, 3, 3, 3, 3. Update the ADR's own table when it is fixed, rather than this line
+alone.
+
+**A CJK and IME pass on Windows and Linux**, criterion 5, has never been done.
+Composition is inherited from a stock `TextField` rather than reimplemented, so it
+is probably fine. "Probably" is the problem, and it needs somebody who types in one
+of those languages rather than a test.
+
+### 1.10 Finish the translation coverage
 
 Several dialogs are still Dart string literals rather than `.arb` messages —
 sync, AI access, the planner and study panels, and the passcode dialog, whose
