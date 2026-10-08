@@ -26,6 +26,7 @@ Ranked by value ÷ effort, which is not the order things were thought of.
 | 2 | **Split `AppState`** | M | It holds most of the app's state and keeps growing, because every feature since the last split landed in it. This is the tax on everything below. §1.2 |
 | 3 | **Blob garbage collection** | M | Nothing has ever deleted a blob. Unblocked now there is one store rather than two. §1.3 |
 | 4 | **Fix the imported-image mime label** | S | Every image imported from OneNote is labelled `image/png`, so the open-folder export names a JPEG `.png`. §1.4 |
+| 5 | **Specify the ink blob format** | S | The one place the format spec does not let somebody else read a notebook. §1.7 |
 | 5 | Dark slides | S | Annotating a white 2× raster at night is a flashlight. |
 | 6 | Page thumbnails for slide sections | S–M | A 60-slide deck is navigated by eye; the outline is text only. |
 | 7 | Group / ungroup | M | The last piece of CANVAS-7. Alignment guides shipped without it. |
@@ -98,7 +99,18 @@ with asserts stripped — release and profile only. Every open inline equation
 broke its paragraph's layout in the build a student downloads, and the whole
 suite passed. A sweep is the only way to check for more.
 
-### 1.7 Finish the translation coverage
+### 1.7 Specify the ink blob format · **S**
+
+[Ink spec §2.2](../specs/13-ink-data-spec.md) describes the reference an ink
+block stores and then says the bytes behind it are not specified here. That is
+the one place the openness guarantee is unmet: an independent implementation can
+read every other part of a notebook and cannot draw the handwriting.
+
+It is a writing job, not a design one. `app/lib/ink/ink_codec.dart` documents the
+format thoroughly and the encoding is deterministic; it needs transcribing into
+the spec as a byte layout, with a worked example.
+
+### 1.8 Finish the translation coverage
 
 Several dialogs are still Dart string literals rather than `.arb` messages —
 sync, AI access, the planner and study panels, and the passcode dialog, whose
