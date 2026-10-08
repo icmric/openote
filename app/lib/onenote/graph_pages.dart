@@ -3,19 +3,13 @@
 ///
 /// ## Why this exists
 ///
-/// Openote could only take a notebook a human had exported from OneNote by
-/// hand: open OneNote, find the notebook, File ▸ Export, wait, come back,
-/// import. The owner: *"It already feels like a bit hostile design … this is
-/// probably one of the highest friction parts of the whole app as it is right
-/// as they are setting it up."*
-///
-/// It was worse than friction on two of the three platforms. **OneNote for Mac
-/// cannot export a notebook at all** — no `.one`, no `.onepkg`, only a page at
-/// a time as PDF — and there is no OneNote for Linux. Checked on the owner's
-/// own machine, the usual workaround does not exist either: the whole OneDrive
-/// tree contained exactly one stray `.one` and no `.onetoc2`, because a modern
+/// The only other way in is a file a human exported from OneNote by hand, and on
+/// two of the three platforms that is not merely high-friction but impossible.
+/// **OneNote for Mac cannot export a notebook at all** — no `.one`, no `.onepkg`,
+/// only one page at a time as PDF — and there is no OneNote for Linux. The usual
+/// workaround of finding the files in OneDrive does not exist either: a modern
 /// notebook lives in OneNote's own cloud store and is never synced to disk as
-/// files. So for a Mac user with a large notebook there was no route in at all.
+/// files, so a real OneDrive tree holds no `.onetoc2` at all.
 ///
 /// Microsoft Graph is the one door open on every platform. It hands back a
 /// page as HTML rather than as the binary revision store, which costs

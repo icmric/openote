@@ -276,54 +276,45 @@ class Repository {
   /// Where the workspace lives: **app data first, and Documents only if a
   /// notebook is already there.**
   ///
+  /// Public because `main()` needs the answer before it opens anything — the
+  /// single-instance lock lives in this folder, and a second Openote has to find
+  /// it and step aside before it paints a window.
+  ///
   /// ## Why not Documents, which is where this used to go
   ///
-  /// Windows Defender's **Controlled Folder Access** — its anti-ransomware
-  /// feature — guards Documents, Desktop, Pictures, Videos, Music and
-  /// Favourites, and refuses writes from any program not on its allow list.
-  /// Openote is not on it, so every write into `Documents\Openote` was
-  /// refused and the app came up saying it could not read the notebook.
-  /// Measured on the owner's machine, repeatedly, over three weeks:
+  /// Windows Defender's **Controlled Folder Access** guards Documents, Desktop,
+  /// Pictures, Videos, Music and Favourites, and refuses writes from any program
+  /// not on its allow list. Openote is not on it, so every write into
+  /// `Documents\Openote` was refused and the app came up unable to read the
+  /// notebook.
   ///
-  ///     Event 1123: openote.exe has been blocked from modifying
-  ///     %userprofile%\Documents\Openote\ by Controlled Folder Access
-  ///
-  /// Three things about that are worth writing down, because all three are
-  /// the opposite of what the symptom suggests:
+  /// Three things about that are the opposite of what the symptom suggests, and
+  /// each one cost time:
   ///
   ///  1. **Nothing was detected as malware.** SQLite merely happened to be
-  ///     holding the pen when the write was refused, so the failure surfaced
-  ///     as a database error and read as "Defender is blocking SQLite".
-  ///  2. **Code signing would not have helped.** Controlled Folder Access is
-  ///     an allow list, not a reputation check; signed and well-known
-  ///     applications are blocked by it too until a human allows them.
-  ///  3. **The old fallback could never fire.** It fell back to app data only
-  ///     when `dir.create()` THREW — and creating a directory that already
-  ///     exists succeeds, blocked or not. It tested creatability and the
-  ///     thing that fails is writability.
+  ///     holding the pen when the write was refused, so it surfaced as a database
+  ///     error and read as "Defender is blocking SQLite".
+  ///  2. **Code signing would not help.** This is an allow list, not a reputation
+  ///     check — signed and well-known applications are blocked too.
+  ///  3. **The old fallback could never fire.** It fell back to app data only when
+  ///     `dir.create()` threw, and creating a directory that already exists
+  ///     succeeds whether writes are blocked or not. It tested creatability, and
+  ///     the thing that fails is writability.
   ///
-  /// App data is not on the guarded list, so a fresh install cannot hit any of
-  /// this. Notebooks are still reachable from anywhere the student likes: the
-  /// sync folder, "Save the whole notebook as folders and files…", and opening
-  /// a `.onotebook` by double-click all work on paths of their choosing.
+  /// App data is not guarded, so a fresh install cannot hit any of this. Notebooks
+  /// stay reachable from anywhere: a sync folder, the open-folder export, and
+  /// double-clicking a `.onotebook` all work on paths of the user's choosing.
   ///
-  /// ## Why an existing Documents workspace is left where it is
+  /// ## Why an existing Documents workspace is left alone
   ///
-  /// Moving somebody's notes without asking is worse than the bug. If a
-  /// workspace is already in Documents this keeps using it, and
-  /// [workspaceIsWritable] is what the shell asks before deciding whether to
-  /// offer the move — because a Documents workspace on a machine with the
-  /// feature turned off is working perfectly and must not be disturbed.
+  /// Moving somebody's notes without asking is worse than the bug. A workspace
+  /// already in Documents keeps being used, and [workspaceIsWritable] is what the
+  /// shell asks before offering to move it — because a Documents workspace on a
+  /// machine with the feature turned off works perfectly and must not be disturbed.
   ///
-  /// Note the one-way constraint if it is NOT working: reading out of
-  /// Documents is allowed and writing into app data is allowed, but *deleting*
-  /// from Documents is itself a modification and is refused. So the move is a
-  /// copy that leaves the original in place.
-  ///
-  /// Public because `main()` needs the answer *before* it opens anything: the
-  /// single-instance lock lives in this folder, and a second Openote has to
-  /// find it and step aside before it paints a window (see
-  /// `core/single_instance.dart`).
+  /// **If it is not working, the move is a copy.** Reading out of Documents is
+  /// allowed and writing into app data is allowed, but *deleting* from Documents is
+  /// itself a modification and is refused, so the original stays where it is.
   static Future<Directory> resolveWorkspaceDir() async {
     // **The browser demo has one place and no decision to make.** Everything
     // below is about which of two real folders a real operating system will

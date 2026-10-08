@@ -1,18 +1,31 @@
 # ADR-0007 — Blob storage and garbage collection
 
-> **Status:** Proposed · 2026-08-05 · **amended 2026-08-06**
-> **Supersedes nothing.** Refines [ADR-0006](ADR-0006-sync-transport-and-text-model.md) §3.
-> **Related:** E1/E2 in [v0.4-and-beyond](../planning/v0.4-and-beyond.md) ·
-> [v0.10 storage wave 1a](../planning/v0.10-responsiveness-and-storage.md#1a-single-copy-blobs--shipped-2026-08-06)
+> **Status:** Accepted, **not built**. Nothing has ever deleted a blob.
+> **Refines** [ADR-0006](ADR-0006-sync-transport-and-text-model.md) §3.
+> **Related:** [backlog §1.3](../planning/backlog.md) · [v1.0.2](../planning/v1.0.2.md)
 >
-> **Amendment (2026-08-06).** The double-store below is **no longer universal**:
-> storage wave 1a made `.onotebook/blobs/` materialise only for notebooks that
-> are in a sync folder or mirrored, taking a measured 2.23× overhead to 1.23×
-> for everything else. Two consequences for the GC designed here, both
-> simplifying: the sweep must treat an **absent or sparse `blobs/` as normal**
-> rather than as damage, and for a local-only notebook there is only the
-> container's `blobs` table to sweep. The grace-period reasoning is unchanged
-> and still unbuilt.
+> **Two things below have been overtaken, and the decision is better for both.**
+>
+> Step 1 shipped: blob bytes left the container entirely in v0.17 Step 6, and
+> `.onotebook/blobs/` is now the only home for every notebook, synced or not. So
+> the double-store the Context describes is gone, there is one store to sweep
+> rather than two, and the Blocker at the foot of this document is spent —
+> rebuild-from-log became the real join path, which is what it was waiting for.
+>
+> **The reachability list in "The problem GC actually has to solve" is wrong in
+> three places**, and this is the part to read before writing any sweep:
+>
+> * **Version history is not a root.** `page_versions` was withdrawn in v0.17
+>   Step 8a and is no longer created. Point 2 below can go.
+> * **The op log is a root, and it is the hard one.** It is append-only and
+>   never compacted, so it permanently names every blob ever written. A sweep
+>   that treats a `blob.put` as a reference can therefore collect *nothing*.
+>   This is the real obstacle, and it is why the forget op in
+>   [v1.0.2](../planning/v1.0.2.md) exists as a sketch — a blob has to be
+>   positively retired, not merely unreferenced.
+> * **The clipboard and the undo stack are roots too.** A blob whose only
+>   reference was just cut is reachable from the cut. Both are session-scoped,
+>   which bounds the problem, but neither is in the list below.
 
 ## Context
 
@@ -57,14 +70,20 @@ this needs a decision rather than a patch.
 
 ## Decision
 
-**Three separate changes, in this order. Only the first two are safe today.**
+**Three changes, in this order.** The first has shipped.
 
-### 1. Stop double-storing (blocked on E2 — see below)
+### 1. Stop double-storing — shipped
 
-Make `.onotebook/blobs/` the single home and have the container hold no bytes.
-This is not a GC change at all: it halves the cost with no deletion logic and
-no reachability question. It **is** the ADR-0006 §3 container demotion wearing
-a different hat, and it inherits that work's blocker.
+`.onotebook/blobs/` is the single home and the container holds no bytes. Not a
+GC change at all: it halved the cost with no deletion logic and no reachability
+question, which is why it was worth doing first.
+
+It had one prerequisite, and the reason is worth keeping: joining a shared
+notebook used to mean copying the `.onote` out of the shared folder, so removing
+the container from that folder would have left a second device with nothing to
+join — and the failure would have been silent at the moment of the move,
+surfacing later on a different machine. Rebuild-from-log had to become a real,
+verified join path first. It did, and it is now the only one.
 
 ### 2. Collect only what this device can prove is unreferenced, and only
       inside a grace period
@@ -114,33 +133,14 @@ version of a delete-user-data feature should be one the user chose to run.
 - The 30-day grace period ties GC to the recycle-bin retention, which is
   currently hard-coded and which the PRD wants configurable (ORG-7). Making
   retention configurable now has a second consumer.
-- Step 1 must not ship before the join path stops depending on the container
-  being in the shared folder (below).
-
-## Blocker, recorded here because it also blocks E2
-
-`Repository.openExistingNotebook` joins a shared notebook by **copying the
-`.onote` out of the shared folder**. That is the whole mechanism. Demoting the
-container — removing it from the synced folder — therefore leaves a second
-device with nothing to join: `rebuild-from-log` exists in shadow mode with a
-test, but it has never been the user-facing join path and "rebuild-from-log on
-real data" is still on the carried-verification list.
-
-So the real order is:
-
-1. Make **rebuild-from-log** a real, verified join path.
-2. Then demote the container (E2), which also gives blob de-duplication (E1
-   step 1) for free.
-3. Then GC (E1 step 2/3), against a single blob store.
-
-Attempting (2) before (1) produces a notebook a second device cannot open, and
-the failure is silent at the moment of the move — it only surfaces later, on a
-different machine. That is the worst possible shape for a data bug, and it is
-why the demotion was reverted rather than shipped when this was discovered.
+- A blob store with one home has no "which copy is right" question, which is
+  the quiet dividend of step 1 and the reason the sweep below is simpler than
+  the one this ADR was first written against.
 
 ## Revisit triggers
 
-- A user reports Openote filling a disk before step 2 lands — pull step 3
-  forward against the container's `blobs` table alone.
+- A user reports Openote filling a disk. The report-only half (step 3) is
+  worth shipping on its own: telling somebody what is reclaimable costs none of
+  the risk of reclaiming it.
 - Audio notes (P7) get scheduled: they make the cost per lecture permanent and
   the grace period more expensive to be wrong about.

@@ -1,44 +1,30 @@
-/// The **Maths** tab of the toolbar (plan: v0.18 §5.2, revised four times).
+/// The **Maths** tab of the toolbar, shown only while an equation is being written
+/// and gone the moment you finish.
 ///
-/// It appears only while an equation is being written and goes away the moment
-/// you finish — a contextual tab, the way OneNote does it.
-///
-/// **Round one** put the palette inside the equation's own box. The owner:
-/// *"this isnt great. I want them in the bar up the top like it is in
-/// onenote."*
-///
-/// **Round two** put it in the toolbar and it was, in their word, chaotic —
-/// and measurably so: **1725–2230 px** against an app whose default window is
-/// **1280**, with no scrollbar and a mouse wheel that did nothing, so the
-/// search box and the LaTeX escape hatch sat off the right-hand edge.
-/// Twenty-seven controls, eighteen ragged-width chips in a flat run, then
-/// eight word-labelled drop-downs — each of which opened a gallery **one
-/// symbol per row** (Greek was a 1119 px column), because a `Container` with
-/// an `alignment` expands to its loose constraints.
-///
-/// **Round three** collapsed all of that to twelve controls behind one
-/// Symbols door, which fitted — and then had room to spare. The owner: *"We
-/// have more space to play with in that bar than your using, so we can break
-/// symbols, opperators, large opperators, functions, etc out into their own
-/// things."*
-///
-/// **Round four — this one.** A door per KIND of thing, because one marked
-/// "Symbols" is a filing cabinet: a student after a summation still has to
-/// know it is filed under symbols rather than under shapes.
+/// **A door per KIND of thing, not one marked "Symbols".** A single door is a
+/// filing cabinet: a student after a summation then has to know it is filed under
+/// symbols rather than under shapes. This layout is the fourth attempt and the
+/// three before it are in the archived v0.18 plan; what each of them ran into was
+/// width. The default window is **1280 px** and an earlier arrangement needed
+/// 1725–2230, so the search box and the LaTeX escape hatch sat off the right edge
+/// with no scrollbar. Anything added here has to fit.
 ///
 /// ```
 ///  1/2  x^2  root  (box)  |  Shapes Operators Compare Calculus Greek Sets
 ///                            Functions Subjects  |  find  Graph Evaluate  DEG  ...
 /// ```
 ///
-/// Every door carries its arrow again (cut in round three for width, asked
-/// for back), the panels are owned by the BAR rather than by each button so a
-/// second door opens on the FIRST click, and the entrance is 90 ms rather than
-/// Material's ~300.
+/// **The panels are owned by the bar, not by each button**, so a second door opens
+/// on the FIRST click rather than needing one to dismiss the last. The entrance is
+/// 90 ms, against Material's ~300.
 ///
-/// The rules kept throughout: the shapes never move (their positions ARE the
-/// muscle memory), every tooltip teaches the keyboard route, the search speaks
-/// plain student, and the LaTeX view is one item behind the ellipsis.
+/// Four rules, each learned the hard way:
+///
+///  * **The shapes never move.** Their positions *are* the muscle memory.
+///  * **Every tooltip teaches the keyboard route**, so the palette is a way to
+///    learn the syntax rather than a replacement for it.
+///  * **The search speaks plain student** — "times", not the backslash name.
+///  * **The LaTeX view is one item behind the ellipsis**, never on the bar.
 library;
 
 import 'package:flutter/material.dart';

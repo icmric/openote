@@ -1,39 +1,65 @@
 # Openote Data Model Specification
 
-> **Document status:** Draft v0.1 · Last updated 2026-07-22
-> **Purpose:** The concrete, implementable definition of Openote's document model — identity rules, every block type's fields, the text model, and the live-embed (transclusion) reference model. The [File Format Spec](10-file-format-spec.md) defines where these structures live; this document defines what they are.
-> **Related:** [Architecture §3–§4a](../04-architecture-overview.md) · [Math Input Spec](12-math-input-spec.md) · [Ink Data Spec](13-ink-data-spec.md)
-> **Notation:** structures are shown as JSON (the exact shape used in the `page_mirror` / Page JSON and the open-folder export). The CRDT mapping is §8.3 of the File Format Spec; field names are identical.
+> **Normative for the shape of a page**: identity rules, every block type's
+> fields, the text model, and the live-embed reference model. The [file format
+> spec](10-file-format-spec.md) says where these structures live; this says what
+> they are.
+>
+> Structures are shown as JSON — the exact shape used in `page_mirror`, in the op
+> log's `block.set`, and in the open-folder export. All three are the same bytes.
+>
+> **Related:** [File format](10-file-format-spec.md) · [Maths](12-math-input-spec.md) · [Ink](13-ink-data-spec.md) · [MCP API](14-external-api-mcp.md)
 
 ---
 
 ## 1. The tree
 
 ```
-Workspace ─▶ Notebook ─▶ [SectionGroup*] ─▶ Section ─▶ Page (level 0..2) ─▶ Block*
+Workspace → Notebook → [SectionGroup*] → Section → Page (level 0..2) → Block*
 ```
 
-- `SectionGroup` nests arbitrarily; `Section` contains only pages; a `Page` with `level > 0` is a subpage of the nearest preceding page at `level-1`.
-- Ordering at every level uses **fractional-index position strings** (lexicographic order; insertion between neighbors never renumbers siblings — CRDT- and sync-friendly).
+A `SectionGroup` nests arbitrarily. A `Section` contains only pages. A `Page` with
+`level > 0` is a subpage of the nearest preceding page at `level - 1`.
 
-## 2. Identity (the load-bearing rules — OPEN-12)
+Ordering at every level uses **fractional-index position strings**, compared
+lexicographically. Inserting between two neighbours never renumbers their
+siblings, which is what lets two devices insert in the same place without
+conflicting.
 
-1. Every entity (notebook, section group, section, page, block, frame) gets a **UUIDv7** at creation. UUIDv7 is time-ordered → B-tree-friendly primary keys and rough creation-time forensics for free.
-2. IDs are **eager** (assigned at creation, not first reference) and **immutable**. *Rationale (from prior-art research): lazy, text-persisted IDs are the root cause of Obsidian/Logseq's chronic broken-reference bugs (IDs destroyed by cut/paste, merges, external edits). Eager IDs in a database-native model cost nothing and eliminate the class.*
-3. **Never reuse or duplicate an ID.** Paste/duplicate/import always mints new IDs (with an ID-map so intra-selection links are rewritten to the new copies).
-4. **Cut/paste within the app preserves IDs** (it is a move).
-5. **Split:** the fragment containing the original block's first character keeps the ID; other fragments get new IDs.
-6. **Merge:** the surviving (first) block keeps its ID; each absorbed block's ID is recorded in the survivor's `absorbedIds` list — a **redirect alias** so inbound refs degrade to "nearest surviving container" instead of dangling.
-7. Refs are always `(pageId, blockId)`-shaped — never titles, paths, or coordinates — making them immune to rename and move.
+## 2. Identity
 
-## 3. The Block envelope
+The rules here are load-bearing: references in this format are made of ids, so
+anything that breaks an id breaks a link.
 
-Every block shares this envelope; `content` is per-type (§5–§7):
+1. **Every entity gets a UUIDv7 at creation** — notebook, section group, section,
+   page, block, frame. v7 is time-ordered, which makes it a well-behaved primary
+   key and gives rough creation-time forensics for nothing.
+2. **Ids are eager and immutable**: assigned at creation, not at first reference,
+   and never rewritten. Lazy ids persisted in text are the root cause of the
+   chronic broken-reference bugs in Obsidian and Logseq, where cut-and-paste, a
+   merge or an external edit destroys them. In a database-native model eager ids
+   cost nothing and remove the whole class.
+3. **Never reuse or duplicate an id.** Paste, duplicate and import all mint new
+   ones, carrying an id-map so that links *within* the pasted selection are
+   rewritten to point at the new copies rather than the originals.
+4. **Cut and paste inside the app preserves ids**, because that is a move.
+5. **Splitting a block:** the fragment holding the original's first character
+   keeps the id. The others get new ones.
+6. **Merging blocks:** the survivor keeps its id, and each absorbed block's id
+   goes into the survivor's `absorbedIds`. That list is a redirect alias, so an
+   inbound reference degrades to "the nearest surviving container" instead of
+   dangling.
+7. **A reference is always `(pageId, blockId)`** — never a title, a path or a
+   coordinate. That is what makes it immune to renaming and moving.
+
+## 3. The block envelope
+
+Every block shares this envelope. `content` is per type, and §4 is the registry.
 
 ```jsonc
 {
   "id": "0198f3c2-7b1e-7cc3-9f10-3d2a8c41e977",
-  "type": "text",                    // §5–§7 registry
+  "type": "text",                    // §4 registry
   "x": 120.0, "y": 96.0,             // canvas position, logical px (page space)
   "w": 340.0, "h": null,             // width; h=null → auto-height from content
   "rotation": 0,                     // degrees, reserved (0 in v1)
@@ -52,32 +78,116 @@ Every block shares this envelope; `content` is per-type (§5–§7):
 
 **Unknown-field rule:** readers MUST preserve fields they don't understand (round-trip unknown keys); writers MUST NOT emit fields with semantics conflicting with this spec. This is the forward-compatibility contract.
 
-**Page-level properties:** `background` (`"blank" | "ruled" | "grid" | "dotted"`), `gridSize` (px, default 24), `pageWidth` (logical px, default 1100 — the page-surface width per CANVAS-1 v0.4: at normal zoom the page presents *seamlessly*, filling the window as one continuous surface; zoomed out it presents as a bounded sheet whose height/right edge grow with content), `defaultPlacement` (default **snapped** — snap-to-grid is on by default, with the alignment grid visible only while a block is being dragged), `tags`, `titleBlockId` (optional).
+### 3.1 Page properties
 
-## 4. Block type registry (v1)
+A page carries its own properties beside its blocks, under `page` in the Page
+JSON. Unknown keys round-trip, by the same rule as a block's.
 
-| `type` | Phase | Content summary |
-|--------|-------|-----------------|
-| `text` | M | rich text (§5) |
-| `ink` | M | stroke set → [Ink Data Spec](13-ink-data-spec.md) |
-| `math` | M | display math (§5.4) |
-| `image` | M | blob ref + sizing |
-| `code` | M | language + source |
-| `file` | M/P2 | blob ref + display metadata |
-| `table` | P2 | rows/cols of rich-text cells — **also an inline atom inside a text container** (§5.2) |
-| `frame` | P2 | named region (§6) |
-| `embed` | P2 | live transclusion (§7) |
-| `shape`, `connector` | P3 | reserved |
+| Key | | |
+|---|---|---|
+| `background` | `"blank"` \| `"ruled"` \| `"grid"` \| `"dotted"` | default `"blank"` |
+| `gridSize` | px | default 24 |
+| `pageWidth` | logical px | default 1100 — see below |
+| `layout` | `"canvas"` \| `"paged"` | default `"canvas"` |
+| `paperSize` | `"A3"` \| `"A4"` \| `"A5"` \| `"Letter"` \| `"Legal"` \| `"Tabloid"` | only meaningful when `layout` is `"paged"` |
+| `landscape` | boolean | as above |
 
-Unknown `type`: render a placeholder preserving the envelope + content verbatim (never drop).
+**`layout` is per page, not per notebook**, and deliberately so: one notebook
+holds lecture notes you scribble on and an essay you have to hand in, and forcing
+one shape on both is why people keep two apps. A canvas page is boundless and
+free — blocks go where you put them. A paged page is a sheet of a fixed size that
+you write down, more like a word processor.
+
+**The three paged keys are written only when they say something.** A canvas page
+emits none of them, so its JSON is byte-identical to what every earlier release
+wrote. That matters beyond tidiness: emitting them unconditionally would rewrite
+every page in every notebook on the next save, and hand the op log a diff for all
+of them.
+
+`pageWidth` is the width of the presented page surface. At normal zoom the page
+fills the window as one continuous surface; zoomed out it presents as a bounded
+sheet whose height and right edge grow with content.
+
+## 4. Block types
+
+`type` is the registry below. A reader that meets a `type` it does not know MUST
+render a placeholder and MUST preserve the envelope and `content` verbatim — the
+rule that lets a notebook written by a newer release round-trip through an older
+one without losing work.
+
+| `type` | `content` | |
+|---|---|---|
+| `text` | `{text, atoms?}` | Markdown with extensions, plus anything inline that is not text. §5 |
+| `ink` | `{ink}` or legacy `{strokes}` | [Ink spec](13-ink-data-spec.md) §2.2 |
+| `math` | `{latex, display}` | Canonical LaTeX. §5.4 |
+| `image` | `{blob, w?, h?}` or `{pdf, page}` | A blob reference, or one rendered page of a stored PDF |
+| `file` | `{blob, mime, name, size?}`, `{media, name, size}` or `{url}` | An attachment, a video or audio file, or a link |
+| `code` | `{language, source, output?, ranAt?}` | §4.1 |
+| `table` | `{cells, colWidths?, impliedColWidths?}` | Also an inline atom. §5.2 |
+| `flashcard` | `{front, back}` | Two faces of a card. The study system also reads the `?[front](back)` line form inside a text block |
+| `board` | `{columns: [{title, cards: [string]}]}` | Columns of draggable cards |
+| `graph` | `{latex, view: {x0, x1, y0, y1}, fitY}` | A curve plotted from an equation. §4.2 |
+| `substitute` | `{latex, values: {name: string}, value?}` | An equation with values plugged in. §4.2 |
+| `embed` | `{ref, snapshotBlob?, snapshotAt?, scale}` | A live window onto another page. §7 |
+| `frame` | `{label, background, collapsed}` | **Reserved.** §6 |
+
+### 4.1 Code blocks
+
+`language` is one of the supported language names; `source` is the text.
+`output`, when present, is the result of the last run, and `ranAt` is when. Both
+are stored so a cell's result survives a reload and reaches another device, and
+neither is ever re-executed on open — **nothing runs without a click.**
+
+A reader MUST treat `output` as data. It is not evidence that the code is safe,
+and a reader that executes a cell it did not run is doing something this format
+does not ask for.
+
+### 4.2 Graphs and substitutions
+
+Both hold an equation and something derived from it, and both are additive block
+types a reader may not know.
+
+A `graph` plots `latex` as a curve. `view` is the window it is looking through,
+in graph coordinates, and is stored rather than derived so that panning and
+zooming are undoable and travel between devices. `fitY` true means the vertical
+range is chosen to fit the curve; it goes false the moment somebody moves the
+view by hand.
+
+A `substitute` evaluates `latex` with a value bound to each variable it names.
+`values` is keyed by variable name. `value` is the pre-v1.0.2 spelling, a single
+string with no name attached — see the [file format
+spec](10-file-format-spec.md#changelog) for which to read and when each is
+written.
+
+Neither solves anything: nothing is rearranged and nothing is solved for an
+unknown.
 
 ## 5. Text model
 
 ### 5.1 Structure
 
-> **Implementation status (2026-07-27).** The app does **not** store this model yet — a text block's content is an interim Markdown string in `content['text']`. That is now the highest-value gap in the spec-vs-code reconciliation, and the reason is [ADR-0006](../adr/ADR-0006-sync-transport-and-text-model.md): an opaque string makes the smallest representable edit *"the whole block is now this"*, so two people editing different sentences of one paragraph cannot both win, and no sync layer can fix that afterwards. Per-character convergence needs the sequence identity this section defines. The migration has exactly one landing site — `OnoteTextEditor.serialize`/`deserialize`/`textStorageKey` ([ADR-0004](../adr/ADR-0004-editor-engine.md)) — so nothing above the editor seam changes.
+**What is stored today is a Markdown string**, in `content.text`, with anything
+that is not text alongside it in `content.atoms` (§5.2). Every notebook on disk
+holds that shape, and a reader implementing this specification should implement
+it first.
 
-`text` block content is a list of **paragraph-level nodes**, each with inline content:
+The structured model below is **specified and not built**. It is the target, and
+knowing why it is the target explains a limitation a reader will otherwise
+discover by accident: an opaque string makes the smallest representable edit
+*"the whole block is now this"*, so two devices editing different sentences of
+one paragraph cannot both win. The op log narrows what a keystroke costs — see
+the file format spec's `block.patch` — but it cannot make those two edits
+converge. That needs per-element identity, which is what this section defines.
+
+The migration has one landing site by design:
+`OnoteTextEditor.serialize` / `deserialize` / `textStorageKey`
+([ADR-0004](../adr/ADR-0004-editor-engine.md)). Nothing above the editor seam
+changes, which is what makes it a contained piece of work rather than a rewrite.
+
+#### The structured form (designed, not built)
+
+`text` block content becomes a list of **paragraph-level nodes**, each with
+inline content:
 
 ```jsonc
 "content": {
@@ -92,101 +202,181 @@ Unknown `type`: render a placeholder preserving the envelope + content verbatim 
 }
 ```
 
-Inline spans: `{ "t": "run", "text": "…", "marks": ["bold","italic","underline","strike","code","highlight"], "color": null, "link": null }` plus **atomic inline objects**: `{"t":"math","latex":"…"}` (inline math chip), `{"t":"image","blob":"sha256:…","w":240,"h":null,"alt":""}` (inline image, sized to the line flow; `h:null` = aspect-preserving), `{"t":"tag","tag":"todo"}`, `{"t":"pageLink","pageId":"…","blockId":null,"notebookId":null}` (wiki-link chip).
+A run is
+`{"t": "run", "text": "…", "marks": ["bold", "italic", "underline", "strike", "code", "highlight"], "color": null, "link": null}`.
+Alongside runs sit **atomic inline objects**: `{"t": "math", "latex": "…"}`,
+`{"t": "image", "blob": "sha256:…", "w": 240, "h": null, "alt": ""}` — `h: null`
+preserves the aspect ratio — `{"t": "tag", "tag": "todo"}`, and
+`{"t": "pageLink", "pageId": "…", "blockId": null, "notebookId": null}`.
 
-> **Mixed content is the rule, not the exception (normative).** A `text` block is a **container of mixed content**: prose, inline math, inline images, tags, and links coexist in one block's flow — the user never has to leave a block to add an equation or picture mid-paragraph (the OneNote text-container behavior). The *standalone* block types (`image`, `math`, `ink`, …) exist for content placed freely on the canvas *outside* any text flow; "insert image/equation" inserts **inline** when the caret is in text, and creates a standalone block when invoked on empty canvas. Display math typed on its own line within a text block (`$$…$$`) renders as a full-width line within that block — still inside the block. Ink is the one deliberate exception (strokes don't reflow with text; overlaying ink on a text area simply layers an ink block above it).
+#### Mixed content is the rule, not the exception (normative)
 
-### 5.2 Markdown mapping (normative for export/import)
-CommonMark + GFM (tables, task lists, strikethrough) plus documented extensions: `==highlight==`, `[[wiki-links]]` (exported as `[title](onote://notebook/page#block)` in strict-Markdown mode), inline math `$…$`, block math `$$…$$`, inline images `![alt](assets/<hash>.<ext>)`. Everything in §5.1 has a defined Markdown projection; `color` degrades to plain text with a documented HTML-span option. The editor renders Markdown syntax **in place as typed** (TEXT-2/4); the *stored* form is always the structured model above — Markdown is a projection, not the storage.
+A `text` block is a **container of mixed content**: prose, maths, pictures, tags
+and links coexist in one block's flow, and nobody has to leave a block to add an
+equation or a picture mid-paragraph. This is OneNote's text-container behaviour
+and it is deliberate.
 
-> **In-container image references (interim dialect).** While text storage is the interim Markdown string, an in-flow image (§5.1's `{"t":"image"}` atomic inline) is written `![alt](sha256:<hash>)` — the `src` is the blob-store content address, resolved by the renderer at paint time and rewritten to `assets/<hash>.<ext>` on open-folder export. An image on its own line renders block-level within the text flow (the OneNote "image as a list item" case, which the `.one` importer produces); readers that don't resolve `sha256:` URIs degrade to the literal Markdown. The structured-model migration maps these 1:1 onto `{"t":"image","blob":…}` inlines.
->
-> **Authoring.** Dropping or pasting a picture onto a text container splices this reference in, on a line of its own (the renderer matches it line-anchored, so one sharing a line with prose would print as source). The picture is therefore ordinary characters in the container's own text, which is what makes it selectable, cuttable and pasteable with no special handling — the blob store is content-addressed and never garbage-collected, so a reference cut and pasted later still resolves. While editing, the reference stays visible as dimmed monospace text rather than being swapped for the picture: the live editor's span tree must reproduce the raw text character-for-character, and a `WidgetSpan` would replace N characters with one `U+FFFC` and desync every selection offset. A drop that hits no text container still creates a standalone image block.
+The standalone block types — `image`, `math`, `graph` and the rest — exist for
+content placed freely on the canvas *outside* any text flow. "Insert a picture"
+or "insert an equation" therefore means two different things depending on where
+the caret is: **inline when it is in text, a standalone block when it is not.**
 
-> **In-container atoms (interim dialect).** A thing that is not text, living
-> inside a text container, is written `![alt](onote://atom/<id>)` with its
-> payload beside the text in the same block:
->
-> ```jsonc
-> "content": {
->   "text": "Results: ![3x2 table — update Openote to see it](onote://atom/0198…) and it holds.",
->   "atoms": {
->     "0198…": {"id": "0198…", "type": "table",
->               "content": {"cells": [["a","b"]], "colWidths": [0, 120]}}
->   }
-> }
-> ```
->
-> **A table atom's two width lists mean different things.** `colWidths` holds
-> widths somebody CHOSE — dragged by hand, or sent by OneNote — and they are
-> used exactly, so text too long for one wraps inside it. `impliedColWidths`
-> holds widths nobody chose: what the table-block conversion worked out a
-> table used to occupy, from the width of the block it used to live in. Those
-> are a starting size rather than a limit, so the column opens at that width
-> and grows past it once its contents no longer fit. Both are optional, both
-> are per-column and 0 means "work it out"; a reader that knows only
-> `colWidths` still draws a converted table, just at its natural width.
->
-> `type` is a string rather than a `BlockType` because **an atom of a type
-> this build has never heard of must survive being read and written back** — a
-> newer device's notebook is not a corrupt one, and dropping the payload would
-> delete their work on the next sync. The payload is a block's own `content`
-> shape, so it rides through `Block.toJson`/`fromJson`, the op log's
-> `block.set`, `read_page`, `append_blocks` and the open-folder export with no
-> new schema anywhere.
->
-> **Payload in the host block, not as a sibling block.** Cut, copy, undo and
-> sync then move the text and its atoms as one thing: there are no orphans to
-> collect, and every path that walks a page's blocks — culling, marquee,
-> z-order, an exporter's y/x sort — needs no "skip the inline ones" clause.
-> An atom whose reference is deleted has its payload dropped, and one whose
-> reference arrives without a payload (a paste) has it recalled from the
-> session's memory of what was cut or copied.
->
-> **The alt text is load-bearing**, which is unusual for alt text: it is what
-> every renderer that cannot draw the atom shows instead — an older build of
-> Openote, a foreign Markdown viewer, an export. For a table it therefore says
-> both what the thing is and what to do about it.
->
-> **Markdown projection.** `page.md` writes each atom as its native Markdown
-> (a table becomes a GFM table, §5.2's "everything has a projection");
-> `page.json` keeps the reference, and is the fidelity path. An atom this
-> build cannot project keeps its reference verbatim — valid CommonMark, so a
-> foreign reader shows the alt text rather than a syntax error.
->
-> **`table` is therefore both a block type and an atom type.** A table on the
-> canvas outside any text flow is still a `table` block; a table inside a
-> paragraph is an atom in that paragraph's `content.atoms`. One widget draws
-> both, and existing table blocks are converted to atoms in the background
-> (verified cell-for-cell before each write, and left alone if that check
-> fails).
+Display maths typed on its own line inside a text block (`$$…$$`) renders
+full-width, still inside that block.
 
-### 5.3 Anchors for embeds
-A `range` embed target uses `(startBlockId, endBlockId)` at block granularity in v1. Sub-block (line-level) anchoring is deliberately deferred: inside a CRDT text block, stable positions require anchoring to CRDT item IDs, which is planned as `range.startOffset/endOffset` opaque anchor tokens in a minor revision (kept out of v1 for simplicity; the field names are reserved).
+**Ink is the one deliberate exception.** Strokes do not reflow with text, so ink
+over a text area is an ink block layered above it, never part of its flow.
 
-### 5.4 Math blocks
-`math` content: `{ "latex": "\\sum_{n=1}^{\\infty} \\frac{1}{n^2}", "display": true }` — canonical LaTeX only (the [Math Input Spec](12-math-input-spec.md) defines how linear input normalizes into it; MathML is derived on export, never stored).
+### 5.2 The Markdown dialect
 
-## 6. Frames (named regions)
+**CommonMark + GFM** — tables, task lists, strikethrough — plus five documented
+extensions:
+
+| | |
+|---|---|
+| `==highlight==` | |
+| `[[wiki-links]]` | exported as `[title](onote://notebook/page#block)` in strict-Markdown mode |
+| `$…$` and `$$…$$` | inline and display maths |
+| `![alt](sha256:<hash>)` | an in-flow picture, §5.2.1 |
+| `![alt](onote://atom/<id>)` | anything else that is not text, §5.2.2 |
+
+Everything in §5.1's structured form has a defined projection into this dialect.
+`color` degrades to plain text, with a documented HTML-span option.
+
+The editor renders this syntax **in place as typed**: markers collapse when a
+construct completes and reappear when the caret enters it, so a reader never
+sees raw asterisks. On export, `![alt](sha256:…)` is rewritten to
+`assets/<hash>.<ext>`, which is what makes the exported folder readable by any
+Markdown tool.
+
+#### 5.2.1 Pictures in a text flow
+
+An in-flow picture is written `![alt](sha256:<hash>)`. The `src` is the blob
+store's content address, resolved by the renderer at paint time. A reader that
+does not resolve `sha256:` URIs degrades to the literal Markdown, which is valid
+CommonMark rather than a syntax error. The structured-model migration maps these
+one-to-one onto `{"t": "image", "blob": …}` inlines.
+
+**A reference must sit on a line of its own.** The renderer matches it
+line-anchored, so one sharing a line with prose prints as source. That is the
+OneNote "image as a list item" case, which the `.one` importer produces.
+
+Because the picture is ordinary characters in the container's own text, it is
+selectable, cuttable and pasteable with no special handling. **A blob is
+immutable and nothing deletes one today**, so a reference cut and pasted later
+still resolves. Any future collection of unreferenced blobs has to treat the
+clipboard and the undo stack as roots, or this stops being true — see
+[ADR-0007](../adr/ADR-0007-blob-lifecycle.md).
+
+While the block is being edited the reference stays visible as dimmed monospace
+rather than being swapped for the picture. The live editor's span tree must
+reproduce the raw text character for character, and a `WidgetSpan` replaces N
+characters with one `U+FFFC`, which would desync every selection offset.
+
+#### 5.2.2 Inline atoms — anything else that is not text
+
+A thing that is not text, living inside a text container, is written
+`![alt](onote://atom/<id>)`, with its payload beside the text in the same block:
 
 ```jsonc
-{ "type": "frame", "content": { "label": "Derivation", "background": null, "collapsed": false } }
+"content": {
+  "text": "Results: ![3x2 table — update Openote to see it](onote://atom/0198…) and it holds.",
+  "atoms": {
+    "0198…": {"id": "0198…", "type": "table",
+              "content": {"cells": [["a", "b"]], "colWidths": [0, 120]}}
+  }
+}
 ```
-- A frame is an ordinary block whose bounds define a region; blocks inside carry `frameId` and **move with the frame**.
-- Frames are the preferred **spatial embed target**: they have identity, they grow/move with their content, and they appear in backlinks. (Raw-rect embeds drift as the user rearranges the canvas — research on Miro/Figma converges on frame-like objects as the durable region primitive.)
-- The "Embed this region" marquee gesture auto-creates an **implicit frame** (`label:""`, invisible chrome) so every region embed gets a durable target.
 
-## 7. Embed model (live transclusion — EMBED-*)
+**`type` is a string rather than one of §4's names**, because an atom of a type
+this build has never heard of must survive being read and written back. A newer
+device's notebook is not a corrupt one, and dropping the payload would delete
+their work on the next sync. The payload is a block's own `content` shape, so it
+rides through every path a block takes — the op log's `block.set`, the MCP tools,
+the open-folder export — with no new schema anywhere.
 
-> **Implementation status (v0.13).** Shipped first: `page` and `rect` targets,
-> same-notebook only, resolution order **live → tombstone**. `snapshotBlob` is
-> deliberately not written yet — a snapshot is a copy, and for a same-notebook
-> embed the source is always local, so the snapshot buys nothing until
-> cross-notebook embeds exist; the field stays reserved. `rect` shipped before
-> `frame` because frames are not implemented; the marquee-to-implicit-frame
-> promotion in §6 remains the target once they are. `block`/`range` targets and
-> the §7.4 deletion warning are unimplemented; an embed carrying an
-> unimplemented target renders as an inert chip, never an error.
+**The payload lives in the host block, not as a sibling.** Cut, copy, undo and
+sync then move the text and its atoms as one thing: there are no orphans to
+collect, and every path that walks a page's blocks — culling, marquee selection,
+z-order, an exporter's reading-order sort — needs no "skip the inline ones"
+clause. An atom whose reference is deleted has its payload dropped; one whose
+reference arrives without a payload, which is what a paste looks like, has it
+recalled from the session's memory of what was cut.
+
+**The alt text is load-bearing**, which is unusual for alt text. It is what every
+renderer that cannot draw the atom shows instead — an older build of Openote, a
+foreign Markdown viewer, an export. For a table it should therefore say both what
+the thing is and what to do about it.
+
+`page.md` writes each atom as its native Markdown, so a table becomes a GFM
+table. `page.json` keeps the reference and is the fidelity path. An atom this
+build cannot project keeps its reference verbatim, which is valid CommonMark, so
+a foreign reader shows the alt text rather than a syntax error.
+
+**`table` is therefore both a block type and an atom type.** A table on the
+canvas outside any text flow is a `table` block; a table inside a paragraph is an
+atom in that paragraph's `content.atoms`. One widget draws both.
+
+##### A table's two width lists mean different things
+
+`colWidths` holds widths somebody **chose** — dragged by hand, or sent by
+OneNote. They are used exactly, so text too long for a column wraps inside it.
+
+`impliedColWidths` holds widths nobody chose: what a conversion worked out a
+table used to occupy, from the width of the block it used to live in. Those are a
+starting size rather than a limit, so the column opens at that width and grows
+past it once its contents no longer fit.
+
+Both are optional and per column, and `0` means "work it out". A reader that
+knows only `colWidths` still draws a converted table, just at its natural width.
+
+### 5.3 Anchors for embeds
+
+A `range` embed target addresses blocks, not offsets: `(startBlockId,
+endBlockId)`. Sub-block anchoring is deferred rather than forgotten — a stable
+position inside a paragraph needs per-element identity, which §5.1's structured
+form provides and the stored string does not. `range.startOffset` and
+`range.endOffset` are reserved for it.
+
+### 5.4 Maths blocks
+
+```jsonc
+{"latex": "\\sum_{n=1}^{\\infty} \\frac{1}{n^2}", "display": true}
+```
+
+**Canonical LaTeX only.** The [maths spec](12-math-input-spec.md) defines how
+linear input normalises into it. MathML is derived on export and never stored,
+and rendered output is never stored at all.
+
+## 6. Frames — reserved
+
+A frame would be an ordinary block whose bounds define a region, with the blocks
+inside it carrying `frameId` and moving with it.
+
+```jsonc
+{"type": "frame", "content": {"label": "Derivation", "background": null, "collapsed": false}}
+```
+
+**Nothing creates one.** The type is reserved, a reader should expect never to
+meet it, and it MUST round-trip like any other unknown block if it does.
+
+It is specified because it is the shape a durable *spatial* embed target wants:
+frames have identity, they grow and move with their content, and they appear in
+backlinks, where a raw rectangle drifts as soon as somebody rearranges the canvas.
+Prior art on Miro and Figma converges on frame-like objects for the same reason.
+Until frames exist, §7's `rect` target is what region embeds use, with the
+drifting that implies.
+
+## 7. Embeds — a live window onto another page
+
+> **What is built:** the `page` and `rect` targets, same-notebook only, resolving
+> live then falling back to a tombstone. `block` and `range` targets round-trip
+> and render as an inert chip rather than an error, and `frame` waits on §6.
+>
+> **`snapshotBlob` is deliberately not written.** A snapshot is a copy, and for a
+> same-notebook embed the source is always local, so it buys nothing until
+> cross-notebook embeds exist. The field stays reserved, and §7.3 describes what
+> it is for rather than what happens.
 
 ### 7.1 The reference
 
@@ -212,32 +402,78 @@ A `range` embed target uses `(startBlockId, endBlockId)` at block granularity in
 ```
 
 ### 7.2 Semantics (normative)
-1. **Read-only.** v1 embeds never accept edits; the renderer mounts read-only. (EMBED-9 reserves editable synced blocks; nothing here precludes them.)
-2. **Live.** While the source page's doc is loaded, the embed subscribes to its changes and re-renders. Rendering uses the same block renderers as a normal page — an embed is a viewport onto real blocks, not a copy.
-3. **Resolution order:** live source doc → snapshot blob (with "syncing…" affordance if the doc is expected but not yet local) → tombstone (§7.4).
-4. **Click-through:** activating the embed (empty area or its source badge) navigates to `(pageId, target)`; links inside the embedded content keep their own behavior.
-5. **Range semantics:** all blocks with `start ≤ position ≤ end` in the source page's block order; if exactly one endpoint has been deleted, the range degrades to the surviving endpoint's block plus a "range endpoint missing" badge (both deleted → tombstone).
-6. **Frame semantics:** the frame block + all blocks whose `frameId` matches, rendered in source-page layout, cropped to the frame bounds.
+
+1. **Read-only.** An embed never accepts edits; the renderer mounts read-only.
+   EMBED-9 reserves editable synced blocks, and nothing here precludes them.
+2. **Live.** While the source page is loaded, the embed subscribes to its changes
+   and re-renders. It uses the same block renderers as an ordinary page, because
+   an embed is a viewport onto real blocks rather than a copy of them.
+3. **Resolution order:** the live source, then the snapshot blob — showing
+   "syncing…" if the source is expected but not yet local — then a tombstone
+   (§7.4).
+4. **Click-through.** Activating the embed, by its empty area or its source badge,
+   navigates to `(pageId, target)`. Links inside the embedded content keep their
+   own behaviour.
+5. **A `range`** is every block between its two endpoints in the source page's
+   block order. If exactly one endpoint has been deleted it degrades to the
+   survivor plus a badge saying so; if both have, it becomes a tombstone.
+6. **A `frame`** is the frame block plus every block whose `frameId` matches,
+   rendered in the source page's layout and cropped to the frame's bounds.
 
 ### 7.3 Snapshot cache
-On every successful live render (throttled; RECOMMENDED ≥ 1/min or on host-page save), the host writes a **snapshot blob**: the target's Page-JSON fragment + rendered thumbnail (`application/x-onote-snapshot+json`). One mechanism serves instant paint, offline rendering, tombstones, and export inlining (EMBED-8: PDF inlines the snapshot with a "from: *Page*" caption).
 
-### 7.4 Broken refs & deletion
-- Source deleted → tombstone: snapshot rendered grayed + "source deleted" badge + actions **Remove embed** / **Detach as static copy** (materializes the snapshot as real blocks with fresh IDs).
-- Deleting a page/block/frame with inbound `refs` entries triggers a warning: "This content is embedded in N pages." (The `refs` projection makes this O(1).)
+On each successful live render, throttled to roughly once a minute or to the host
+page's save, the host writes a **snapshot blob**: the target's Page JSON fragment
+plus a rendered thumbnail, under the mime type
+`application/x-onote-snapshot+json`.
+
+One mechanism serves four purposes — painting instantly, rendering offline,
+drawing a tombstone, and inlining into an export, where a PDF carries the
+snapshot with a "from *Page*" caption.
+
+### 7.4 Broken references
+
+**The source was deleted** → a tombstone: the snapshot greyed out, a "source
+deleted" badge, and two actions. *Remove embed* deletes it; *detach as a static
+copy* materialises the snapshot as real blocks with fresh ids.
+
+**Deleting something with inbound `refs` rows** warns first — "this content is
+embedded in N pages". The `refs` projection is what makes that question cheap
+enough to ask on every delete.
 
 ### 7.5 Cycles
-Render-time cycle detection over the ancestor chain of `(pageId, targetKey)`; on revisit → placeholder chip ("circular embed — open source"). Depth cap **3** as backstop. MUST live in the shared renderer used by screen, print, and export (the Obsidian PDF-export infinite-loop bug is the canonical failure this rule prevents).
 
-## 8. Invariants (testable)
+Cycle detection runs at render time over the ancestor chain of
+`(pageId, targetKey)`. On revisiting one, the embed draws a placeholder chip
+reading "circular embed — open source". A depth cap of **3** is the backstop.
 
-1. Every `id` in a notebook is unique; no block references a nonexistent `frameId` on the same page.
-2. `page_mirror` ≡ projection(CRDT doc) after every save.
-3. Deleting a page removes its `blob_refs`; unreferenced blobs are GC-eligible only after export-safety checks.
-4. For every embed/pageLink in any page's mirror, a matching `refs` row exists (index completeness).
-5. No render path can recurse deeper than the cycle cap.
-6. Round-trip: Page JSON → import → Page JSON is byte-stable modulo timestamps (`absorbedIds` preserved).
+**This MUST live in the shared renderer** used by the screen, printing and every
+export. Putting it anywhere else is how Obsidian's PDF export came to loop
+forever, which is the canonical failure this rule exists to prevent.
+
+## 8. Invariants
+
+Each of these is checkable, and each has a test behind it.
+
+1. **Ids are unique** within a notebook, and no block names a `frameId` that does
+   not exist on its own page.
+2. **The container agrees with the log.** Replaying every operation reproduces
+   `page_mirror`, `nodes` and the projections. This is not a nicety: it is the
+   check that makes the container safely rebuildable, and it is what a second
+   device uses to join a notebook.
+3. **Deleting a page removes its `blob_refs` rows.** The blob bytes stay — nothing
+   deletes a blob today — so this is about the root set being accurate, not about
+   reclaiming space.
+4. **Index completeness.** For every embed and page link in any page, a matching
+   `refs` row exists.
+5. **No render path recurses past the cycle cap.**
+6. **Round-trip is byte-stable.** Page JSON → read → write → Page JSON differs
+   only in timestamps. `absorbedIds` survives, and so does every field this build
+   does not understand.
 
 ---
 
-*This model is implementation-ready but not frozen; field additions ride minor format versions under the unknown-field rule (§3). Breaking changes require a major version and a migration note in the File Format Spec.*
+*This model is implementation-ready and not frozen. Field additions ride minor
+format versions under the unknown-field rule in §3. A breaking change needs a
+major version and a migration note in the [file format
+spec](10-file-format-spec.md#compatibility-promise).*

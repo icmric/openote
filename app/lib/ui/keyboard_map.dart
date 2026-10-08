@@ -1,4 +1,4 @@
-/// THE keyboard map — docs/planning/v0.16-keyboard-control.md §1.
+/// THE keyboard map — docs/planning/archive/v0.16-keyboard-control.md §1.
 ///
 /// Every shortcut in the app, as data. Two consumers keep it honest: the
 /// Ctrl+/ reference overlay renders this table (so the documentation cannot

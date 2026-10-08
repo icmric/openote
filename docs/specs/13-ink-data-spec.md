@@ -1,6 +1,6 @@
 # Openote Ink Data Model Specification
 
-> **Document status:** Draft v0.1 · Last updated 2026-07-22
+> **Normative for stroke capture, storage and interchange.** Covers INK-1…11.
 > **Purpose:** The concrete stroke data model — capture, storage, rendering, and InkML interchange — for INK-1…11. Written against the decided pipeline: Flutter pointer events → `perfect_freehand` outlines → `CustomPainter`, per [ADR-0001](../adr/ADR-0001-application-framework.md) and the Saber reference architecture.
 > **Priority note:** per stakeholder direction, ink is a required feature but **near-native latency is a non-goal** — this spec optimizes for lossless storage, natural rendering, and openness, not for front-buffer tricks.
 
@@ -15,34 +15,94 @@
 
 ## 2. Storage model
 
-An `ink` block ([Data Model Spec §4](11-data-model-spec.md)) contains a stroke set. Strokes use **parallel arrays** (compact, cache-friendly, CRDT-friendly — a stroke is written once, immutable thereafter; erasure and transforms are separate ops):
+A stroke is the shape below. **It is the working shape, not the stored one** —
+see §2.2, which is what actually goes on disk.
 
 ```jsonc
-"content": {
-  "strokes": [
-    {
-      "id": "0198f3c2-…",           // UUIDv7 (lasso ops & sync address strokes)
-      "brush": {
-        "tool": "pen",              // "pen" | "highlighter" | "pencil" (P2)
-        "color": "#211F1B",          // content-ink token or hex
-        "size": 2.5,                 // base width, logical px
-        "opacity": 1.0               // highlighter ≈ 0.4
-      },
-      "x": [120.5, 121.2, …],        // page-space, float
-      "y": [96.0, 96.8, …],
-      "p": [0.42, 0.47, …],          // pressure 0–1; omitted → no pressure data
-      "tx": [], "ty": [],            // tilt degrees; empty → not captured
-      "t": [0, 8, 17, …],            // ms offsets from strokeStart
-      "strokeStart": 1753142400000   // epoch ms
-    }
-  ]
+{
+  "id": "0198f3c2-…",           // UUIDv7 (lasso ops and sync address strokes)
+  "brush": {
+    "tool": "pen",              // "pen" | "highlighter" | "pencil"
+    "color": "#211F1B",         // content-ink token or hex
+    "size": 2.5,                // base width, logical px
+    "opacity": 1.0              // highlighter is about 0.4
+  },
+  "x": [120.5, 121.2, …],       // page-space, float
+  "y": [96.0, 96.8, …],
+  "p": [0.42, 0.47, …],         // pressure 0-1; omitted means no pressure data
+  "tx": [], "ty": [],           // tilt; empty means not captured
+  "t": [0, 8, 17, …],           // ms offsets from strokeStart
+  "strokeStart": 1753142400000  // epoch ms
 }
 ```
 
-- **In the CRDT** (File Format Spec §5.2): each stroke is one immutable value in the block's stroke list — no per-point CRDT ops. In the mirror/Page JSON, arrays appear as above; number precision: positions to 0.01 px, pressure to 0.001 (quantization is allowed at write time and documented so hashes are stable).
-- **`strokeStart` is data, never a clock reading.** It is the origin the `t` offsets are measured from, and it is encoded into the content-addressed ink blob (File Format Spec §3, `blobs` — "content-addressed, deduplicated"). A writer that has no start time for a stroke MUST write `0`; stamping the current time makes byte-identical handwriting hash differently on every write, so a re-import stores the whole ink payload again — in the container *and* in the append-only op log. The OneNote importer did exactly that: two sections re-imported wrote 82 further blobs and 2.9 MB for handwriting already on disk. OneNote's own ink carries no timing, so `0` (and an empty `t`) is what an import states.
-- **Erase by stroke** removes the stroke value; **erase by area** (INK-6) splits affected strokes into new strokes (new IDs) covering the surviving segments — the original's ID goes to the longest survivor's `absorbedIds`-equivalent (`splitFrom` field) for lasso-history continuity.
-- **Grouping:** consecutive strokes within a short gap (default 2 s, config) share an `ink` block; the lasso can regroup. One block per page-sized drawing is an anti-pattern (kills culling granularity); the writer SHOULD start a new ink block beyond 512 strokes.
+Parallel arrays rather than a list of points: compact, cache-friendly, and a
+stroke is written once and immutable thereafter, so erasure and transforms are
+separate operations rather than edits.
+
+**`strokeStart` is data, never a clock reading.** It is the origin the `t`
+offsets are measured from, and it is hashed into the content-addressed blob. A
+writer with no start time for a stroke MUST write `0`. Stamping the current time
+makes byte-identical handwriting hash differently on every write, so a re-import
+stores the whole ink payload again — in the container *and* in the append-only op
+log. The OneNote importer did exactly that: two sections re-imported wrote 82
+further blobs and 2.9 MB for handwriting already on disk. OneNote's own ink
+carries no timing, so `0` and an empty `t` is what an import states.
+
+### 2.1 Grouping, erasing, splitting
+
+- **Erase by stroke** removes the stroke. **Erase by area** splits affected
+  strokes into new strokes with new ids covering the surviving segments; the
+  original's id goes to the longest survivor's `splitFrom`, for lasso-history
+  continuity.
+- Consecutive strokes within a short gap (default 2 s) share one `ink` block, and
+  the lasso can regroup. One block per page-sized drawing is an anti-pattern
+  because it destroys culling granularity; a writer SHOULD start a new block
+  beyond 512 strokes.
+
+### 2.2 What is actually stored: a blob reference
+
+> **⚠ Changed in v0.11.** An `ink` block's `content` does **not** hold the array
+> above. It holds a reference to a binary blob:
+>
+> ```jsonc
+> "content": {"ink": {
+>   "v": 1,
+>   "base": "sha256:…",   // the strokes
+>   "add": [],            // reserved: erase/append overlays
+>   "gone": "",           // reserved: run-length removed indices
+>   "n": 612,             // stroke count, so counting never opens a blob
+>   "o": [minX, minY]     // the origin the blob's coordinates are relative to
+> }}
+> ```
+>
+> The reason was measured: a real imported notebook's op log was 67.7 MB, and
+> 63.1 MB of it was 113 ink blocks — 1,828,431 points at **36.2 bytes per point**,
+> because a point was `[123.45678901234567,456.78901234567890]` in JSON, stored
+> twice. The same content as bytes is **1.86 bytes per point**, a 19.4×
+> reduction against 3.6× for simply gzipping the JSON.
+>
+> `add` and `gone` are read on the way in and preserved on the way out, so an
+> incremental-overlay scheme can land later without a second migration of
+> everyone's handwriting.
+>
+> **The legacy inline form is read for ever.** A reader MUST handle both: an
+> `ink` key means the reference form, a `strokes` key means the array above.
+>
+> **This document does not yet specify the blob's bytes**, which means an
+> independent implementation cannot render Openote ink today — the one place this
+> project's openness guarantee is currently unmet. The format is deterministic
+> and documented in `app/lib/ink/ink_codec.dart`: a magic `OIS1`, coordinates
+> quantised to **1/16 px**, delta-encoded between consecutive points, written
+> column-major (all x deltas, then all y, then pressure) with LEB128 varints and
+> zigzag for signed deltas, then deflated. Pressure is one byte; tilt is 1/64 of
+> whatever unit the source used, round-tripped rather than interpreted.
+> **Writing that out properly here is outstanding work**, tracked in
+> [the backlog](../planning/backlog.md).
+>
+> Note the quantisation supersedes §2's old promise of 0.01 px in JSON. 1/16 px
+> is 0.0625, which at the canvas's maximum 8× zoom is 0.0078 px on screen —
+> finer than that promise in the only place it matters.
 
 ## 3. Coordinate & transform rules
 
@@ -82,4 +142,6 @@ The model is recognition-ready without committing to a recognizer: strokes carry
 
 ---
 
-*This spec plus `perfect_freehand`'s published parameters is sufficient to render Openote ink pixel-faithfully outside Openote — the test of openness for the ink layer.*
+*The test of openness for the ink layer is that this document plus
+`perfect_freehand`'s published parameters is enough to render Openote ink
+faithfully outside Openote. **It is not, yet** — §2.2 says what is missing.*

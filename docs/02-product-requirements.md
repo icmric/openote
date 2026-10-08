@@ -1,22 +1,11 @@
 # Openote — Product Requirements Document (PRD)
 
-> **Document status:** v0.7 · **Implementation phase** · Last updated 2026-08-05
-> **v0.7 (2026-08-05):** shipped since the v0.6 audit — tags (TEXT-5) including
-> OneNote import, vector PDF export and annotated-slide re-export (closing the
-> P4/Phase-B-step-4 remainder), printing, flashcards and study stats, the
-> planner (dates · reminders · ICS timetable), the two-column navigator, and
-> bundled fonts (PLAT-1). **PLAT-5 (accessibility) is now measurably failing,
-> not merely unaudited:** the 2026-08-05 contrast pass found the default
-> metadata colour at 2.80:1 against a 4.5:1 requirement — see
-> [Style Guide §3.3](05-style-guide.md) and
-> [v0.6](planning/v0.6-ui-revamp.md), which owns the fix.
-> **v0.6 (this revision):** every requirement below was audited against the code on 2026-07-27 — **25 done · 47 partial · 6 missing · 24 deferred by design** out of 102. Per-requirement evidence lives in the [Phase 1 exit review](reviews/2026-07-code-review-phase1-exit.md); the [Roadmap](../ROADMAP.md) now carries `[~]` markers naming the exact sub-requirements that are unmet. CANVAS-1's body text was corrected to match the shipped behaviour (default width 1100, top-left anchoring, fit-to-width on open). **Counts for reference:** CANVAS has 12 IDs, ORG 10, TEXT 12 (incl. TEXT-1a), MATH 8, INK 11, MEDIA 7, EMBED 9, OPEN 12, SYNC 9, PLAT 10, CODE 2 — §11's traceability table understates several of these.
-> **v0.5 changes (iterations 7–9):** the page is now **fully seamless** — the backdrop is the page colour at every zoom (no "page-on-canvas" split), and zooming out lets you place content out in the margin, which extends the page; unused space reconstrains to content (CANVAS-1 v0.5). Added **text auto-width** (grows with content to a max, locks on manual resize), **inline text colour** (`{{#RRGGBB …}}` with a last-colour "flick" hotkey Ctrl+Shift+C) and **box-level font family** (TEXT-14/15); **tables** (MEDIA-3) with spreadsheet-style cell navigation; **backlinks** (TEXT-8); **recycle bin** (ORG-7); the **tabbed command bar** + right-click menus + block clipboard (UI overhaul). New-page cursor lands in the **in-page title**; Enter there drops into the first body box. Math **evaluation/CAS**, **point-and-click math UI**, and **sandboxed code execution** recorded as future "everything-app" goals (Roadmap ▸ Beyond).
-> **v0.4 changes (stakeholder-directed, iterations 4–6):** CANVAS-1 refined again — the page presents **seamlessly** at normal zoom (fills the window as one continuous page; the bounded-sheet-on-backdrop look appears only when zoomed out): "a page that can be a canvas," not "a page on a canvas." CANVAS-3 extended with **intelligent placement** (align to writing margin/neighbours; ongoing margin snap on drop). CANVAS-5 amended: **snap-to-grid is ON by default** and the grid is **visible only while dragging** a block. TEXT-2/4 **delivered as true as-you-type rendering** (live-Markdown controller: markers collapse on completion, reveal on caret entry). New **TEXT-13: wrap-selection** — typing a paired character over a selection wraps it (VS Code style). ORG amended: sections, groups, and pages-with-subpages are **collapsible**; pages **drag-and-drop** between sections and onto pages (subpage). Titles edit **in-page**. Keyboard shortcuts must never shadow text input (F-8 class).
-> **v0.3 change:** CANVAS-1 refined — the unbounded canvas now *presents* as an auto-growing **page surface** (OneNote-like), per stakeholder direction; see the [iteration-2 code review](reviews/2026-07-code-review-mvp-iter2.md).
-> **v0.2 changes:** added **live page embeds / transclusion** (§5.6, EMBED-*); reprioritized ink per stakeholder guidance (near-native latency is no longer a hard requirement — startup speed, consistency, and feature richness rank above it); added the stable-block-identity format requirement (OPEN-12) that embeds depend on; open questions updated now that the framework and stack are provisionally decided (see [ADRs](adr/README.md)).
-> **Owner:** Eric · **Audience:** Core team, contributors
-> **Related:** [Product Vision](00-product-vision.md) · [OneNote Teardown](01-onenote-teardown.md) · [Technology Evaluation](03-technology-evaluation.md) · [Architecture Overview](04-architecture-overview.md) · [Style Guide](05-style-guide.md)
+> Every feature area specified as identified, prioritised requirements, plus
+> the MVP definition. Priorities are MoSCoW: **Must** / **Should** / **Could** /
+> **Won't (now)**. A requirement ID (`CANVAS-3`, `OPEN-12`) is the stable name
+> used by the roadmap, the specs and the code; IDs are never reused.
+>
+> **Related:** [Vision](00-product-vision.md) · [OneNote teardown](01-onenote-teardown.md) · [Technology evaluation](03-technology-evaluation.md) · [Architecture](04-architecture-overview.md) · [Style guide](05-style-guide.md)
 
 ---
 
@@ -131,7 +120,8 @@ The single most important area. This is what makes Openote *Openote* and not ano
 | MATH-5 | **Complex notation support:** summation/product/integral with limits, matrices, cases, nested fractions, roots with degree, decorated operators (notation "around the sides"), per the stakeholder's explicit requirement. | Must | M |
 | MATH-6 | Math renders **natively** (no separate app feel), re-renders crisply at any zoom/theme, and remains **editable** (source-preserved). | Must | M |
 | MATH-7 | **Optional input modes:** AsciiMath as a casual syntax; ink-to-math (see Ink). | Could | P2 |
-| MATH-8 | **Solving / step-by-step / graphing.** | **Won't (now)** | — |
+| MATH-8 | **Evaluation and graphing.** An expression evaluates to a number; a formula takes a value for each variable it names and reports the result; `f(x)` plots as a curve. Nothing is rearranged or solved for an unknown. | Should | P2 |
+| MATH-9 | **Step-by-step working.** Showing how an answer was reached. | **Won't (now)** | — |
 
 ### 5.4 Ink & handwriting
 
@@ -254,7 +244,7 @@ The MVP is the smallest build that is *unmistakably Openote* and genuinely usefu
 - **The open, documented file format v1**, local-first, no size limits, crash-safe, inspectable; Markdown + PDF export. *(OPEN-1–5, 10, 11; OPEN-7 partial)*
 - Light/dark themes; the core of the style guide; baseline accessibility. *(PLAT-1, 4, 7, 9)*
 
-**Explicitly deferred past MVP:** sync/collaboration, OneNote import, **live embeds/transclusion (EMBED-2+)**, ink recognition, backlinks/graph, tables, OCR, audio, web clipper, templates, phone/web, and math solving.
+**Explicitly deferred past MVP:** sync and collaboration, OneNote import, **live embeds (EMBED-2+)**, ink recognition, backlinks, tables, OCR, audio, web clipper, templates, phone and web, maths evaluation and graphing.
 
 **MVP success test:** *A OneNote user installs Openote on Linux, recreates a typical page — mixed typed text, a hand-drawn diagram, and a summation equation, freely arranged — saves it as an open file on their own disk, and reopens it cleanly. Nothing about that flow required a Microsoft account, a subscription, or a supported OS list that excludes them.*
 

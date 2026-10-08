@@ -1,7 +1,29 @@
 # ADR-0008: Password-protecting a page, section or section group
 
-> **Status:** Proposed — design only, no protection code written yet · 2026-08-07
-> **Related:** [ADR-0003](ADR-0003-storage-container.md) (SQLite `.onote`) · [ADR-0006](ADR-0006-sync-transport-and-text-model.md) (op log, §6a.4 reserves `Op.encryption`) · [Data Model](../specs/11-data-model-spec.md) · [File Format Spec](../specs/10-file-format-spec.md)
+> **Status:** Accepted as a design. **Not built** — and what ships instead is the
+> thing §1 argues against, shipped knowingly.
+> **Related:** [ADR-0003](ADR-0003-storage-container.md) (SQLite `.onote`) · [ADR-0006](ADR-0006-sync-transport-and-text-model.md) (op log, §6a.4 reserves `Op.encryption`) · [Data model](../specs/11-data-model-spec.md) · [File format](../specs/10-file-format-spec.md)
+>
+> **Read this before trusting the padlock.** `state/page_protection.dart` is a
+> passcode gate inside the app. It stops someone picking up your unlocked laptop
+> and reading a page. It does nothing against anyone holding the `.onote` file —
+> the notes stay in plaintext there, and in the op log that syncs to your cloud
+> folder. That is exactly what §1 below calls security theatre, and it was built
+> anyway, because the alternative on the table was nothing at all for an
+> indefinite period.
+>
+> What makes it defensible rather than a lie is that the dialog says so, in plain
+> words, before the first page is ever locked: *"This hides the page inside
+> Openote. It does not encrypt it. Anyone who has your notebook file can still
+> read this page."* §1's warning — that a decorative padlock is found out only
+> when it matters — is answered by disclosure rather than by encryption.
+>
+> **Whether that is good enough is a product call and not a settled one.** If the
+> answer is no, the feature should be withdrawn rather than left. If yes, this
+> ADR stays the design for doing it properly. The passcode is salted-hashed
+> either way — not because it defends anything here, but because people reuse
+> passcodes and writing a reused one into a plaintext file would be a real harm
+> this feature has no business causing.
 
 ## Why this exists now
 
@@ -31,13 +53,14 @@ seconds, and, worse, in the op log that syncs to the user's Google Drive folder.
 That is not a theoretical objection. Page content is read by full-table scans
 that never go near the page view. Verified in the current tree:
 
-| Reader | Where | What it sees |
-|---|---|---|
-| Notebook search | `repository.dart:922` — `SELECT page_id FROM page_mirror WHERE json LIKE ?` | every page's full JSON |
-| Content scan | `repository.dart:937` — `SELECT json FROM page_mirror` | every page |
-| Blob-reference scan | `repository.dart:987` — `SELECT page_id, json FROM page_mirror` | every page |
-| Version history | `page_versions.snapshot` (`database.dart:93`) | past copies of the page |
-| The op log | `.onotebook/ops/<device>.oplog` | every `block.set` payload, **synced to the cloud** |
+| Reader | What it sees |
+|---|---|
+| Notebook search — `SELECT page_id FROM page_mirror WHERE json LIKE ?` | every page's full JSON |
+| The content scan and the blob-reference scan, both `SELECT … FROM page_mirror` | every page |
+| The op log, `.onotebook/ops/<device>.oplog` | every `block.set` payload, **synced to the cloud** |
+
+Version history was a fourth reader when this was written. `page_versions` has
+since been withdrawn, which removes one copy and changes nothing else.
 
 So a student who protects a page and then types a word from it into the search
 box gets it straight back. **A dialog is bypassed by the app's own search.**
@@ -75,7 +98,7 @@ Protection attaches to a **node** — a page, a section, or a section group —
 because that is what the ask names and what the navigator shows.
 
 A correction worth recording, because the obvious-looking field is the wrong
-one: `Block.access` (`models.dart:180`, "reserved (SYNC-9)") is **not** for
+one: `Block.access` (`models.dart`, "reserved (SYNC-9)") is **not** for
 this. SYNC-9 is multi-user block ownership and edit-locking for classroom
 collaboration — a write-permission field with no secret in it, on the wrong
 entity. Using it would collide with a planned feature and put a per-subtree

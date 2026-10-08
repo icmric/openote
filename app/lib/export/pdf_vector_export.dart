@@ -1196,9 +1196,10 @@ pw.Font? _mono;
 ///
 /// BORROWED, not bundled, and that is a trade made deliberately: a CJK face
 /// alone is 16 MB or more, which would roughly double an install already
-/// larger than the user wants (docs/planning/install-size-findings.md). Every
-/// desktop that can DISPLAY these scripts already has a font for them, so the
-/// export reads one off disk when it needs one and embeds only the glyphs used.
+/// larger than the user wants (`docs/planning/archive/install-size-findings.md`).
+/// Every desktop that can DISPLAY these scripts already has a font for them, so
+/// the export reads one off disk when it needs one and embeds only the glyphs
+/// used.
 ///
 /// All best-effort: a missing path, a format the encoder will not read, a
 /// locked file — each is skipped. An export that loses a script is bad; one

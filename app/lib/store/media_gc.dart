@@ -1,16 +1,12 @@
 /// Which copied-in videos nothing points at any more — and, far more
 /// importantly, which ones something still does.
 ///
-/// `media_store.dart` has said since videos shipped that a sweep would need to
-/// enumerate "every reference across live pages, trashed pages and the op log",
-/// and that "getting that scan wrong deletes a lecture that undo cannot bring
-/// back". That list turned out to be short. The full set of places a stored
-/// name can survive is enumerated in [VideoSweep.sources]; the scan takes all
-/// of them.
+/// [VideoSweep.sources] is the full set of places a stored name can survive, and
+/// the scan takes all of them.
 ///
-/// **The rule this file exists to enforce: a wrong KEEP costs disk space, a
-/// wrong DELETE costs somebody's lecture.** Every decision here is therefore
-/// asymmetric on purpose, and three of them are worth stating outright.
+/// **The rule this file exists to enforce: a wrong KEEP costs disk space, a wrong
+/// DELETE costs somebody's lecture.** Every decision here is asymmetric on purpose,
+/// and three are worth stating outright.
 ///
 ///  * **The match is a raw substring search for the stored filename, not a
 ///    parse.** Asking "does this page decode to a block whose `content.media`

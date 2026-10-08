@@ -1,18 +1,26 @@
-/// The on-disk operation log — `.onotebook/ops/<device>.oplog`.
+/// Reading and writing a notebook's `.onotebook` directory.
 ///
-/// Layout (ADR-0006 §3):
 /// ```
-/// MyNotebook.onotebook/
-///   manifest.json        notebook id, format version, sync scope
-///   ops/<device>.oplog   append-only, ONE writer, ever
-///   blobs/<sha256>       content-addressed (not yet written here)
+/// MyNotebook.onotebook/        what a sync client replicates
+///   manifest.json              notebook id, format version, sync scope, devices
+///   ops/<device>.oplog         append-only, JSON Lines, ONE writer ever
+///   blobs/<sha256>.blob        content-addressed, immutable
+///   media/<uuid>.<ext>         video and audio
 /// ```
 ///
-/// Today this sits **beside** the `.onote` container and shadows it: the
-/// container is still authoritative and the log is written alongside, so that
-/// "rebuild from the log and compare" is a live check rather than a leap of
-/// faith. When the flip happens the container becomes `cache.onote` inside this
-/// directory and stops being synced.
+/// **One writer per file is the load-bearing property**, and the reason every
+/// write path here appends to this device's own log and no other. Two devices can
+/// then never produce competing versions of one file, so a sync client has
+/// nothing to disambiguate.
+///
+/// **The working copy is never inside this directory.** For a shared notebook
+/// this *is* the cloud folder, and a live WAL SQLite database inside a folder
+/// that something else replicates file by file is the torn-database hazard the
+/// whole design exists to avoid. A demoted container lives at
+/// `<workspace>/.cache/<notebook-id>/cache.onote`; an un-demoted one is a sibling
+/// of this directory. Neither is in here, and nothing should put one here.
+///
+/// Full format in `docs/specs/10-file-format-spec.md` §3.
 library;
 
 import 'dart:convert';

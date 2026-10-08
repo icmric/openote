@@ -1,10 +1,10 @@
 # OneNote Teardown & Gap Analysis
 
-> **Document status:** v1.0 · **Evidence base — stable** · Last updated 2026-07-22, reviewed 2026-08-05
-> This is a teardown of a competitor, not a description of Openote, so it does
-> not go stale as the app is built. Reviewed 2026-08-05: still accurate.
-> **Purpose:** A structured teardown of Microsoft OneNote — what it does, what it does *better than anyone*, and where it fails users — used to define what Openote must match, what it must fix, and what it can safely skip.
-> **Related:** [Product Vision](00-product-vision.md) · [Product Requirements](02-product-requirements.md)
+> What OneNote does, what it does better than anyone, and where it fails its
+> users — the evidence base behind the requirements. This describes a
+> competitor rather than Openote, so it does not go stale as the app is built.
+>
+> **Related:** [Vision](00-product-vision.md) · [Requirements](02-product-requirements.md)
 
 ---
 

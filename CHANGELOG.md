@@ -880,7 +880,7 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   repository. Adding a language is a single `.arb` file and a codegen run —
   no code to change — which is exactly how the six languages above arrived a
   day later. The rest of the migration is tracked in
-  [v0.24 — the road to 1.0](docs/planning/v0.24-road-to-1.0.md).
+  [v0.24 — the road to 1.0](docs/planning/archive/v0.24-road-to-1.0.md).
 
 ### Fixed — layout and consistency in the dialogs (2026-09-02)
 
@@ -1443,7 +1443,7 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **A new equation takes the keyboard straight away.** Nothing you typed
   registered until you happened to click a button on the bar.
 - **A space is a space.** There was no way to put one in at all.
-- **Only `\commands` turn into symbols now.** Typing `lpha` then a space
+- **Only `\commands` turn into symbols now.** Typing `\alpha` then a space
   gives you α; typing `alpha` gives you the word alpha. Before, the editor
   converted any word it recognised — so writing "a in b", "sin x" or "cap" in
   your own sentence turned into symbols you never asked for. An unrecognised
@@ -2091,7 +2091,7 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
   thread until it finishes — the UI always gets its answer on time.
 - Other languages (including ones installed on your system) are planned —
   behind real per-platform OS sandboxing, not a trust prompt. See
-  docs/planning/v0.14-local-code.md.
+  docs/planning/archive/v0.14-local-code.md.
 
 ### Added — a task board on the page
 
@@ -2342,7 +2342,7 @@ Some pages still lay out wrongly: a text box can be drawn over a diagram, two
 boxes can land on top of each other, paragraphs can come in out of order, and
 blank lines between bullets are dropped. The content itself is imported — it is
 the positions that are wrong. Diagnosed in
-`docs/planning/v0.11-size-and-speed-overhaul.md`.
+`docs/planning/archive/v0.11-size-and-speed-overhaul.md`.
 
 ### Fixed — passcodes now behave like passcodes
 
@@ -2664,7 +2664,7 @@ one. See docs/RELEASING.md.
 ### Fixed — the app no longer freezes while it works (2026-08-06)
 
 Four reports, one thread. Full reasoning and every measurement in
-[the v0.10 plan](docs/planning/v0.10-responsiveness-and-storage.md).
+[the v0.10 plan](docs/planning/archive/v0.10-responsiveness-and-storage.md).
 
 - **Importing a notebook no longer locks the app up.** The whole import — read,
   parse, write — moved to a second isolate. Measured on a 200-page notebook:
@@ -3000,7 +3000,7 @@ From 0.2.0 onward: **notebooks created by any Openote release open in every late
 - There is no first-party sync service, by design — Openote never talks to a server, so nothing of yours passes through us.
 - Two people editing **the same paragraph at the same moment** in a shared notebook resolve last-writer-wins. Different pages, different blocks and different paragraphs all merge correctly; true concurrent editing of one paragraph waits for the structured text model.
 
-*(This entry grows as the release is built — see [docs/planning/v0.2-release-plan.md](docs/planning/v0.2-release-plan.md) for the full plan.)*
+*(This entry grows as the release is built — see [docs/planning/archive/v0.2-release-plan.md](docs/planning/archive/v0.2-release-plan.md) for the full plan.)*
 
 ## [0.1.0] · unreleased baseline
 

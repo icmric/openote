@@ -1,52 +1,64 @@
 # Contributing to Openote
 
-Thank you for your interest in Openote — an open-source, cross-platform alternative to Microsoft OneNote, built so that no one is ever locked into their notes again.
+Thanks for your interest. Openote is an open-source cross-platform alternative to Microsoft OneNote, built so nobody is ever locked into their notes again.
 
-> **Current phase: implementation.** There is a working desktop app — Flutter/Dart in [`app/`](app/README.md) plus a native Rust core in [`rust/onote_core/`](rust/onote_core/README.md). Start with [`app/README.md`](app/README.md) to build and run it, and read [`INTEGRATION.md`](rust/onote_core/INTEGRATION.md) (including its **stale-DLL warning**) before touching the core. Design critique on [`docs/`](docs/README.md) is still very welcome.
->
-> **Before submitting code:** `flutter analyze` must be clean of errors and warnings, `flutter test` (1,071 tests) and `cargo test` (53 tests) must pass, and `cargo clippy --all-targets` must be clean. Match the surrounding comment density — this codebase explains *why*, not *what*.
+There is a working desktop app: Flutter/Dart in [`app/`](app/README.md) plus a native Rust core in [`rust/onote_core/`](rust/onote_core/README.md). Start with [`app/README.md`](app/README.md) to build and run it, and read [`INTEGRATION.md`](rust/onote_core/INTEGRATION.md) — including its stale-DLL warning — before touching the core. Design critique on [`docs/`](docs/README.md) is welcome too.
 
-> **Never assert on wall-clock time.** `flutter test` runs test files in
-> parallel, so a `Stopwatch` bar measures how much CPU the machine had going
-> spare — it passes alone, fails in a full suite, and fails *every* time on a
-> two-core CI runner. This has taken CI down twice: once on a study-cache ratio,
-> once on four per-keystroke bars and an import-progress ratio, each while the
-> code under test was working perfectly.
->
-> Count the work instead, on the one code path the change exists to alter:
-> `Repository.debugSharedPageReads`, `Repository.debugPageDecodes`,
-> `OpLogStore.debugDirectoryListings` and
-> `ImportWriterHandle.debugMeasureRequests` all exist for this. A working cache
-> adds zero and a broken one adds hundreds, and neither answer moves with the
-> weather.
->
-> **Pair every `expect(count, 0)` with a test that makes the same counter move.**
-> A counter watching the wrong layer reads zero for the wrong reason, and the
-> guard is then worthless while looking strict — which is exactly what happened
-> the first time these were converted.
->
-> Wall-clock is equally untestable in *product* code that a widget test drives:
-> the sidebar's double-click window uses an injectable `sidebarNow` for the same
-> reason.
->
-> **A timeout is the one number that should be generous.** It is a hang guard,
-> not a performance bar, so it must clear the slowest machine that will ever run
-> it. The `test` package's 30-second default is chosen for an ordinary unit
-> test; a case that spawns real subprocesses (the git suites run `init`,
-> `config`, `clone`, `commit`, `push`) takes 20 s on an idle sixteen-core
-> machine and simply does not fit. Those files carry
-> `@Timeout(Duration(minutes: 3))`, and the failure it prevents is the nastiest
-> kind: intermittent, one platform, one test at a time, reported as
-> "TimeoutException after 0:00:30" with nothing in it about git.
+## Before submitting code
 
-> **Reproducing a CI-only failure: constrain the cores, don't add load.** GitHub
-> runners have about two. Piling burner threads onto a sixteen-core box does not
-> emulate that — the suite passed sixteen burners deep and still failed on CI.
-> Pinning the test process to two cores reproduced it on the first run
-> (`$p.ProcessorAffinity = [IntPtr]3` around `flutter test`), and turned one
-> intermittent failure into six deterministic ones.
+`flutter analyze` clean of errors and warnings, `flutter test` and `cargo test` passing, `cargo clippy --all-targets` clean.
 
-> **Licensing is ratified** ([ADR-0005](docs/adr/ADR-0005-licensing.md), 2026-07-27): **AGPL-3.0-or-later** for the app, **Apache-2.0** for `onote_core`, **CC0-1.0** for the format specs. Contributions are accepted under the licence of the directory they touch. See [LICENSING.md](LICENSING.md) — and note the invariant that **`onote_core` must never gain a copyleft dependency**.
+**Comments explain why, not what.** Lead with one line saying what the thing is for. Then the contract a caller needs and any invariant that is not obvious from the code. Put a comment about one edge case *at* that case, not at the top of the file.
+
+What does **not** belong in a comment: measurements, a quote from a bug report, the history of what the code used to be, or an argument against an approach that was not taken. All four are worth recording — in the commit message, or in the planning document for the release. Keeping them next to the code means the same fact exists in two places that can disagree, and it is the code's copy that goes stale.
+
+### Writing tests
+
+**Never assert on wall-clock time.** `flutter test` runs files in parallel, so
+a `Stopwatch` bar measures how much CPU the machine had spare. It passes
+alone, fails in a full suite, and fails every time on a two-core CI runner.
+This has taken CI down twice while the code under test was working perfectly.
+
+Count the work instead, on the one path your change exists to alter.
+`Repository.debugSharedPageReads`, `Repository.debugPageDecodes`,
+`OpLogStore.debugDirectoryListings` and `ImportWriterHandle.debugMeasureRequests`
+exist for this: a working cache adds zero and a broken one adds hundreds,
+and neither answer moves with the weather. Product code that a widget test
+drives needs the same treatment — the sidebar's double-click window takes an
+injectable `sidebarNow`.
+
+**Pair every `expect(count, 0)` with a test that makes the same counter move.**
+A counter watching the wrong layer reads zero for the wrong reason, and the
+guard is then worthless while looking strict.
+
+**A timeout is a hang guard, not a performance bar**, so make it generous
+enough for the slowest machine that will ever run it. The 30-second default
+suits an ordinary unit test; a file that spawns real subprocesses — the git
+suites run `init`, `config`, `clone`, `commit`, `push` — takes 20 s on an idle
+sixteen-core machine and does not fit. Those carry
+`@Timeout(Duration(minutes: 3))`. The failure this prevents is the nastiest
+kind: intermittent, one platform, one test at a time, reported as
+"TimeoutException after 0:00:30" with nothing in it about git.
+
+**Never put a control character in a source file.** Ripgrep treats a file holding
+one as binary and skips it, so the file becomes invisible to every code search —
+which is how nine hundred lines of one widget hid from the audits looking for
+defects in it. The trap is a backslash escape typed through a shell that
+interprets it — `\frac` arrives as a form feed followed by `rac`, and
+`\alpha` as a bell followed by `lpha`. Write `\u000c` if you genuinely need one.
+`test/source_hygiene_test.dart` enforces this over `lib/` and `test/`.
+
+**To reproduce a CI-only failure, constrain the cores rather than adding**
+**load.** GitHub runners have about two. Burner threads on a sixteen-core box
+do not emulate that — the suite passed sixteen burners deep and still failed
+on CI. Pinning the test process to two cores
+(`$p.ProcessorAffinity = [IntPtr]3` around `flutter test`) reproduced it on
+the first run and turned one intermittent failure into six deterministic ones.
+
+One invariant worth knowing before you add a dependency: **`onote_core` must
+never gain a copyleft one.** It is Apache-2.0 so that any tool, including a
+closed one, can read and write `.onote` files — see
+[LICENSING.md](LICENSING.md).
 
 ## Ways to help right now
 
@@ -61,12 +73,22 @@ Thank you for your interest in Openote — an open-source, cross-platform altern
 - **CRDTs & local-first sync** (Yjs/`yrs`, Loro, Automerge; E2E-encrypted sync)
 - **Math input & rendering** (UnicodeMath/LaTeX/MathML, KaTeX/MathJax/MathLive)
 - **Open file-format design** and long-term data durability
-- **Flutter, Qt, or the other candidate frameworks** — especially real ink/text experience
-- **Accessibility** on custom-drawn canvases
+- **Accessibility** on custom-drawn canvases — the editor's semantics tree is
+  rejected by the Windows bridge today, which is the single worst defect we have
 
-**3. Review the decisions.** The major technical decisions are recorded as [Architecture Decision Records](docs/adr/README.md) — framework (Flutter + Rust core), CRDT (Loro), storage container (SQLite `.onote`), editor engine (keep the engine we own, behind a swappable seam), licensing (proposed), and the sync storage layout (proposed). Each documents its revisit triggers; reasoned challenges backed by evidence are welcome.
+**3. Review the decisions.** The major technical decisions are recorded as
+[Architecture Decision Records](docs/adr/README.md), each with the context, the
+options weighed, and explicit revisit triggers. A reasoned challenge backed by
+evidence is welcome — several of these are marked provisional precisely because
+they should be reopened if the evidence changes.
 
-**4. Prototype a spike.** The remaining open work is spike-shaped: the editor-engine bake-off ([ADR-0004](docs/adr/ADR-0004-editor-engine.md)), the first-party canvas core, the Saber-style ink pipeline feel-check, and the Loro-via-FFI round-trip benchmark. If you want to build one, say so in an issue — spike evidence settles arguments here.
+**4. Run a build nobody has run.** The most useful thing anyone with a Mac or
+a Linux machine can do: CI builds all three platforms on every push, and only
+Windows has been used by a human. Launch it, import a PDF (pdfium is a
+per-platform native binary and the likeliest thing to fail differently), draw
+something, sync a notebook between two machines, and open an issue about
+whatever went wrong. Same for ink on real stylus hardware — pressure, tilt,
+palm rejection and the barrel button cannot be tested headlessly.
 
 **5. Translate Openote.** This is the one job that needs no Dart at all. Copy `app/lib/l10n/app_en.arb` to `app/lib/l10n/app_<code>.arb`, translate the values, drop the `@` description entries (those belong to the English template), and run `flutter gen-l10n` from `app/`. Nothing else changes — the list of supported languages is generated from the files present, and any message you leave out falls back to English, so a partial translation is a useful contribution rather than a broken build.
 
@@ -78,7 +100,7 @@ Two things to know before you start. The English `.arb` is still growing: the
 welcome flow, the toolbars, the navigator, the insert catalogue and Settings
 read their words from it, but several dialogs (sync, AI access, the planner and
 study panels) are still Dart string literals — the order they are being
-converted in is in [v0.24 §1](docs/planning/v0.24-road-to-1.0.md). And every
+converted in is in [v0.24 §1](docs/planning/archive/v0.24-road-to-1.0.md). And every
 message carries an `@` entry describing where it appears and what any
 placeholder holds; read it, because it is the only context you get, and it is
 where "this is a Windows menu path", "this is a file extension, leave it alone"
