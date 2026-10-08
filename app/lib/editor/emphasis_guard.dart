@@ -1,13 +1,9 @@
 /// **Markers and the text they style are never separated.**
 ///
-/// The owner asked for one thing, twice: *"It should never under any
-/// circumstances show the md styling chars after the style has been applied,
-/// it should act like a wysiwyg editor but allow for markdown interpretation
-/// too as a shortcut. It does not have to functionally be designed that way,
-/// however it must behave like that to a user."*
-///
-/// Markdown emphasis is fragile in exactly two places, and both are reachable
-/// with one keystroke:
+/// The requirement is that the app behave as a WYSIWYG editor while still taking
+/// Markdown as a shortcut, so the styling characters are never on screen once a
+/// style has been applied. That makes emphasis fragile in exactly two places, and
+/// both are reachable with one keystroke:
 ///
 ///  1. **A marker may not sit against a space.** `_b` in `md_syntax.dart` is
 ///     `\*\*(?![\s*])(.+?)(?<![\s*])\*\*`, which is CommonMark's flanking rule
@@ -20,12 +16,10 @@
 ///
 ///  2. **A marker is nothing without its partner.** The markers cannot be
 ///     seen, so a selection dragged over a bold word is really a selection
-///     over some of `**big**`, and deleting it left `**` behind — *"if i back
-///     select a bold word it will remove it but leave ** at the start, so it
-///     doesnt remove it all"*. [LiveMarkdownController.markerAwareDelete]
-///     already answers this for a Backspace at a marker edge, but it takes a
-///     collapsed caret only and returns null for a selection, which then falls
-///     through to the field's own delete.
+///     over some of `**big**`, and deleting it left `**` behind.
+///     [LiveMarkdownController.markerAwareDelete] answers this for a Backspace at
+///     a marker edge, but it takes a collapsed caret only and returns null for a
+///     selection, which then falls through to the field's own delete.
 ///
 /// Three rules, in the order they are asked:
 ///

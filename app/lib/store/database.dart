@@ -247,33 +247,26 @@ CommonDatabase openOnote(String path, {required String notebookId, required Stri
 
 /// Rewrite `blob_refs` without its foreign key onto `blobs(hash)`.
 ///
-/// **The one schema change v0.17 Step 6 could not avoid**, and the plan says
-/// this step needs no migration at all — it does. Step 6 stops the container
-/// storing blob bytes, so from that release on there is no `blobs` row for any
-/// new picture. `writePage` records the page's blob references unconditionally
-/// now (it has to: `blob_refs` is ADR-0007's GC root set, and a root set that
-/// can only name bytes the container holds names nothing once the container
-/// holds nothing). With the key still present that INSERT raises a constraint
-/// violation *inside `writePage`'s savepoint*, which fails the whole page save
-/// — the same shape as the sync-pull failure `sync_blobs_test.dart` was
-/// written for, but on every save of every page with an image.
+/// With the key in place, every page carrying a picture fails its INSERT — inside
+/// the savepoint that writes the page, so the whole save fails. The key meant
+/// "blobs this page reaches THAT THIS CONTAINER HOLDS", and since v0.17 Step 6 the
+/// container holds none: bytes go to `.onotebook/blobs/` and `blob_refs` has to
+/// record them regardless, because it is ADR-0007's garbage-collection root set.
 ///
 /// `CREATE TABLE IF NOT EXISTS` does not alter a table that already exists, so
-/// changing the DDL above fixes new notebooks only; every notebook already on
-/// disk has to be rewritten here. SQLite cannot drop a constraint in place, so
-/// this is the documented twelve-step procedure
-/// (<https://sqlite.org/lang_altertable.html>) reduced to what applies: build
-/// the replacement, copy, drop, rename.
+/// changing the DDL above fixes new notebooks only. SQLite cannot drop a
+/// constraint in place, so this is the documented procedure
+/// (<https://sqlite.org/lang_altertable.html>) reduced to what applies: build the
+/// replacement, copy, drop, rename.
 ///
-/// **Not a format bump.** `user_version` stays 1 deliberately — v2 is Step 8's,
-/// and a build that predates this one opens a rewritten container perfectly
-/// well: its `writePage` uses the old `SELECT … FROM blobs` form, which simply
-/// records fewer rows, exactly as it does today.
+/// **Not a format bump.** `user_version` stays 1 deliberately, and a build that
+/// predates this opens a rewritten container perfectly well — its `writePage` uses
+/// the old `SELECT … FROM blobs` form and simply records fewer rows.
 ///
-/// Best-effort by design. A read-only volume or a full disk must still open the
-/// notebook and show it (matrix row D5), and [NotebookWriter.writePage] falls
-/// back to the old conditional INSERT when it meets the key still in place, so
-/// a container this could not rewrite keeps saving.
+/// **Best-effort by design.** A read-only volume or a full disk must still open the
+/// notebook and show it, and [NotebookWriter.writePage] falls back to the old
+/// conditional INSERT when it meets the key still in place, so a container this
+/// could not rewrite keeps saving.
 void _dropBlobRefsBlobsFk(CommonDatabase db) {
   try {
     final rows = db.select(
@@ -315,21 +308,17 @@ void _dropBlobRefsBlobsFk(CommonDatabase db) {
 
 /// Fold the write-ahead log back into the database, then close.
 ///
-/// **Measured, on a real workspace:** `My Notebook.onote` was 2.8 MB with a
-/// **4.1 MB** `-wal` beside it, and a 94 MB container carried 7.4 MB. SQLite
-/// only checkpoints automatically at a page threshold and never truncates the
-/// file, so a session that ends between thresholds leaves the whole WAL on
-/// disk — permanently, because the next open starts appending again rather
-/// than reclaiming it.
+/// SQLite only checkpoints automatically at a page threshold and never truncates
+/// the file, so a session that ends between thresholds leaves the whole WAL on
+/// disk permanently — the next open appends rather than reclaiming it. Real
+/// notebooks have carried several megabytes of it.
 ///
-/// `TRUNCATE` (not `PASSIVE` or `FULL`) is the mode that actually returns the
-/// space: the other two fold the pages in and leave the file at its
-/// high-water mark, which is exactly the state being fixed.
+/// **`TRUNCATE`, not `PASSIVE` or `FULL`**: the other two fold the pages in and
+/// leave the file at its high-water mark, which is the state being fixed.
 ///
 /// Best-effort. A checkpoint can legitimately fail — another connection is
-/// mid-read, the volume is gone — and a failure here must never stop the app
-/// closing. The data is already durable either way; this is about the file's
-/// size, not its contents.
+/// mid-read, the volume is gone — and that must never stop the app closing. The
+/// data is durable either way; this is about the file's size.
 void checkpointAndClose(CommonDatabase db) {
   try {
     db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
@@ -391,31 +380,22 @@ void _ensureSchema(CommonDatabase db) {
       dst_page_id TEXT NOT NULL, dst_notebook TEXT, dst_target TEXT,
       PRIMARY KEY (src_page_id, src_block_id, kind));
     CREATE INDEX IF NOT EXISTS idx_refs_dst ON refs(dst_page_id);
-    -- **`page_versions` is deliberately NOT created** (v0.17 plan, decision 1 /
-    -- Step 8a). It held up to thirty full copies of every page — bounded by how
-    -- long a notebook had been edited, i.e. by nothing — and the two tables
-    -- below replace it with what the owner actually asked for. Nothing in `lib/`
-    -- reads or writes it any more, so a table created here would be a table that
-    -- only ever grew. Notebooks already on disk keep their rows, inert, until
-    -- the opt-in migration in `Repository.demoteContainerToCache` drops them;
-    -- that is the one place the bytes go, so it is the one place that has to say
-    -- so out loud before it runs.
-    -- Simplified version history (v0.17 plan, Step 8a). Both tables are
-    -- DERIVED from the op log and neither is synced: dropping them costs a
-    -- rebuild, never a note. See `store/history_store.dart`.
+    -- **`page_versions` is deliberately NOT created.** It held up to thirty full
+    -- copies of every page, bounded by how long a notebook had been edited —
+    -- i.e. by nothing. Nothing reads or writes it any more. Notebooks already on
+    -- disk keep their rows, inert, until the opt-in migration in
+    -- `Repository.demoteContainerToCache` drops them.
     --
-    -- `block_authors` holds ONE row per block that currently exists, which is
-    -- the whole difference from `page_versions` above — that table is bounded
-    -- by how long a notebook has been edited, i.e. by nothing, and this one by
-    -- how big the notebook is. It declares the `ON DELETE CASCADE` that
-    -- `page_versions` never did, so the orphan class commit 1be2d28 had to
-    -- sweep up cannot recur here; the need for that repair is designed out
-    -- rather than fixed again.
+    -- The two tables below replace it. Both are DERIVED from the op log and
+    -- neither is synced, so dropping them costs a rebuild and never a note.
+    -- `block_authors` holds one row per block that currently exists, which is
+    -- what bounds it by the size of the notebook rather than by its age, and it
+    -- declares the `ON DELETE CASCADE` that `page_versions` never did.
     --
-    -- `block_kind`, `chars` and `pins` are not decoration. They are what makes
-    -- a LATER `block.remove` classifiable: without them, a lecture recording
-    -- deleted in a session after the one that added it is indistinguishable
-    -- from a deleted comma, and the ten-deep list would fill with editing.
+    -- `block_kind`, `chars` and `pins` are what make a LATER `block.remove`
+    -- classifiable. Without them a lecture recording deleted in a session after
+    -- the one that added it is indistinguishable from a deleted comma, and the
+    -- ten-deep list fills with editing.
     CREATE TABLE IF NOT EXISTS block_authors (
       page_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
       block_id TEXT NOT NULL,

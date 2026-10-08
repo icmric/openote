@@ -19,7 +19,7 @@ void main() {
       // pages rather than only ones with real field codes.
       expect(textNeedsFieldRepair(r'costs $5'), isTrue);
       expect(textNeedsFieldRepair('﷟HYPERLINK "https://a.test"'), isTrue);
-      expect(textNeedsFieldRepair(' field '), isTrue);
+      expect(textNeedsFieldRepair('\u0013 field \u0015'), isTrue);
       expect(textNeedsFieldRepair('ordinary prose'), isFalse);
     });
   });

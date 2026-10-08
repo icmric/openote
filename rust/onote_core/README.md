@@ -1,10 +1,14 @@
 # onote-core
 
-The Rust core for Openote. This is the seam described in
-`app/lib/core/engine.dart` and [ADR-0002](../../docs/adr/ADR-0002-crdt-library.md):
-the place where the fast, portable, well-tested parts of the document model
-live, shared identically across every platform and exposed to the Flutter app
-through [`flutter_rust_bridge`](https://cjycode.com/flutter_rust_bridge/).
+The Rust core for Openote: the fast, portable, well-tested parts of the document
+model, shared identically across every platform. It holds the page-content model,
+content hashing and the OneNote importers.
+
+**Reached over hand-written `dart:ffi`**, from `app/lib/core/onote_ffi.dart`. There
+is an optional `bridge` feature for `flutter_rust_bridge` and nothing uses it.
+
+**The core does no sync and no CRDT work.** Sync is Dart, over the operation log of
+[ADR-0006](../../docs/adr/ADR-0006-sync-transport-and-text-model.md).
 
 It ships **nothing that end users must install.** The core is compiled at build
 time into a small native library that links into the app; users still get a
@@ -15,12 +19,12 @@ dependency, not a runtime one.
 
 | Module | Responsibility |
 | --- | --- |
-| `mirror` | The page **mirror** model (the open glass-box JSON from File Format Spec §4) and a deterministic, conflict-free `merge` of two page snapshots — the seed of cross-device sync (SYNC-1/2). |
+| `mirror` | The page-content model — the JSON the container holds, per [file format spec §5](../../docs/specs/10-file-format-spec.md) — and a deterministic `merge` of two page snapshots. **The merge is never called on the save path**: sync is Dart, over the op log. |
 | `ids` | A dependency-free FNV-1a content hash for cheap "did this page change?" sync gating. |
 | `onenote` | A reverse-engineered MS-ONESTORE/MS-ONE reader (OPEN-8): pages in tab order with subpage levels, **separate text boxes at true positions** with styling, lists, in-flow + floating images, Office-linear-math → LaTeX equations, and MS-ISF ink with pressure. Also the `dump_*` diagnostics used to reverse-engineer the format. |
 | `onepkg` | Whole-notebook `.onepkg` import: LZX cabinet extraction (single-pass per folder) + **parallel per-section parsing** across cores. |
 | `ffi` | The C-ABI shim the app links today via `dart:ffi` (see `app/lib/core/onote_ffi.dart`). Every entry point catches panics so nothing unwinds across the ABI. |
-| `api` | The thin surface `flutter_rust_bridge` turns into Dart bindings (opt-in, for a future FRB integration). |
+| `api` | The surface the optional `bridge` feature would expose. Unused: the app reaches the core through the C ABI in `ffi` instead. |
 
 ### Vendored dependency: `vendor/cab`
 
@@ -40,11 +44,12 @@ That is a *reference consulted, not a dependency*: no MPL-2.0 code is copied int
 
 **Release profile note:** `opt-level = 3` (not `"z"`) — size-optimising measurably slowed LZX decompression and parsing. `panic = "unwind"` is **required**: the FFI layer's `catch_unwind` guards depend on it.
 
-`merge` is intentionally CRDT-*shaped* — commutative, associative, and
-idempotent over the snapshot-exchange model — so the Loro-backed engine
-(ADR-0002) can replace it behind the same API without touching the Dart call
-sites. It stops deliberately short of inventing a second tombstone scheme for
-deletions; that is Loro's job when it lands.
+`merge` is intentionally CRDT-*shaped* — commutative, associative and idempotent
+over the snapshot-exchange model — so a real CRDT could replace it behind the same
+API without touching any Dart. It stops short of inventing a tombstone scheme for
+deletions, which is why it is **add-wins and cannot converge an offline delete**,
+and why nothing calls it on the save path. A single-device save is authoritative
+there, and add-wins merging would resurrect a block somebody had just deleted.
 
 ## Verify your toolchain (no Flutter needed)
 

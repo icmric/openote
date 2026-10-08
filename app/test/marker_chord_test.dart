@@ -637,7 +637,7 @@ void main() {
       await press(tester, LogicalKeyboardKey.keyB, character: 'b', ctrl: true);
       expect(ctl.text, '**hello** world');
       await press(tester, LogicalKeyboardKey.keyZ,
-          character: '', ctrl: true);
+          character: '\u001a', ctrl: true);
       expect(app.activeEditor!.controller.text, 'hello world',
           reason: 'Ctrl+Z is undo, not a marker chord');
       await flush(tester);

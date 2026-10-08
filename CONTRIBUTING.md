@@ -40,6 +40,14 @@ sixteen-core machine and does not fit. Those carry
 kind: intermittent, one platform, one test at a time, reported as
 "TimeoutException after 0:00:30" with nothing in it about git.
 
+**Never put a control character in a source file.** Ripgrep treats a file holding
+one as binary and skips it, so the file becomes invisible to every code search —
+which is how nine hundred lines of one widget hid from the audits looking for
+defects in it. The trap is a backslash escape typed through a shell that
+interprets it — `\frac` arrives as a form feed followed by `rac`, and
+`\alpha` as a bell followed by `lpha`. Write `\u000c` if you genuinely need one.
+`test/source_hygiene_test.dart` enforces this over `lib/` and `test/`.
+
 **To reproduce a CI-only failure, constrain the cores rather than adding**
 **load.** GitHub runners have about two. Burner threads on a sixteen-core box
 do not emulate that — the suite passed sixteen burners deep and still failed

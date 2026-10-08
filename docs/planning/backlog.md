@@ -26,7 +26,7 @@ Ranked by value ÷ effort, which is not the order things were thought of.
 | 2 | **Split `AppState`** | M | It holds most of the app's state and keeps growing, because every feature since the last split landed in it. This is the tax on everything below. §1.2 |
 | 3 | **Blob garbage collection** | M | Nothing has ever deleted a blob. Unblocked now there is one store rather than two. §1.3 |
 | 4 | **Fix the imported-image mime label** | S | Every image imported from OneNote is labelled `image/png`, so the open-folder export names a JPEG `.png`. §1.4 |
-| 5 | **Specify the ink blob format** | S | The one place the format spec does not let somebody else read a notebook. §1.7 |
+| 5 | **Specify the ink blob format** | S | The one place the format spec does not let somebody else read a notebook. §1.8 |
 | 5 | Dark slides | S | Annotating a white 2× raster at night is a flashlight. |
 | 6 | Page thumbnails for slide sections | S–M | A 60-slide deck is navigated by eye; the outline is text only. |
 | 7 | Group / ungroup | M | The last piece of CANVAS-7. Alignment guides shipped without it. |
@@ -92,14 +92,26 @@ mime, so the open folder contains JPEGs named `.png`. Sniff the magic bytes.
 streams. The half of this that *lied* — a drop that landed nothing and said
 nothing — is fixed; the progress half is not.
 
-### 1.6 `lib/` must not touch a `debug*` member outside an assert
+### 1.6 Keep source files searchable
+
+`test/source_hygiene_test.dart` now refuses any control character in `lib/` or
+`test/`, because ripgrep treats a file containing one as binary and skips it
+entirely. That is how nine hundred lines of `text_block_view.dart` became
+invisible to every code search in the repo.
+
+The rule is live and the trap is one keystroke away: a LaTeX escape typed into a
+comment through a shell that interprets it becomes a control character silently.
+Ten files were carrying one when the check was widened, and two of them were tests
+whose assertions had been vacuous as a result.
+
+### 1.7 `lib/` must not touch a `debug*` member outside an assert
 
 `RenderObject.debugNeedsLayout` is assigned inside an `assert`, so it throws
 with asserts stripped — release and profile only. Every open inline equation
 broke its paragraph's layout in the build a student downloads, and the whole
 suite passed. A sweep is the only way to check for more.
 
-### 1.7 Specify the ink blob format · **S**
+### 1.8 Specify the ink blob format · **S**
 
 [Ink spec §2.2](../specs/13-ink-data-spec.md) describes the reference an ink
 block stores and then says the bytes behind it are not specified here. That is
@@ -110,7 +122,7 @@ It is a writing job, not a design one. `app/lib/ink/ink_codec.dart` documents th
 format thoroughly and the encoding is deterministic; it needs transcribing into
 the spec as a byte layout, with a worked example.
 
-### 1.8 MathML export · **S–M**
+### 1.9 MathML export · **S–M**
 
 [Maths spec §6](../specs/12-math-input-spec.md) specifies it and nothing builds
 it, so an equation leaves Openote as LaTeX only. Two consumers want it: a tool
@@ -123,7 +135,7 @@ already a MathML parser in the tree, `onenote/mathml_latex.dart`, going the othe
 way for OneNote import; it is a reference for the vocabulary, not something to
 reverse.
 
-### 1.9 Two acceptance criteria this project set itself and did not meet
+### 1.10 Two acceptance criteria this project set itself and did not meet
 
 Both are [ADR-0004](../adr/ADR-0004-editor-engine.md)'s, and both are small.
 
@@ -140,7 +152,30 @@ Composition is inherited from a stock `TextField` rather than reimplemented, so 
 is probably fine. "Probably" is the problem, and it needs somebody who types in one
 of those languages rather than a test.
 
-### 1.10 Finish the translation coverage
+### 1.11 `cloud_sync_test`'s purge assertion still flakes
+
+*"Purging a joined notebook leaves the other device alone"* passes alone and fails
+under a full suite, roughly once in several runs:
+
+```
+Expected: null
+  Actual: 'GREW   ops\<device>.oplog  1489 -> 1936 B'
+```
+
+**Do not weaken the assertion.** Byte equality is the right bar — a purge that
+appended one op to a log in a shared folder would replicate the deletion to every
+other device, which is the data-loss class commit 320e0be was.
+
+The test has been de-flaked three times and its comments record each cause: the
+watcher's stop was not awaited, then a pull that watch had already fired, then the
+fact that settling drains the jobs in flight at the moment it looks and not the one
+that starts a millisecond later. The current baseline waits for two consecutive
+reads to agree, and this is a fourth occurrence of the same shape — **something
+still appends to the shared folder after both devices' auto-sync is off.** That is
+worth finding on its own terms, because a write nobody expects into a replicated
+folder is interesting whether or not a test is watching.
+
+### 1.12 Finish the translation coverage
 
 Several dialogs are still Dart string literals rather than `.arb` messages —
 sync, AI access, the planner and study panels, and the passcode dialog, whose

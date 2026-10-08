@@ -1,30 +1,17 @@
-/// **The command row's two faces** — the band of chrome that belongs to what
-/// you are touching.
+/// **The command row's two faces** — the band of chrome that belongs to what you
+/// are touching.
 ///
-/// The owner, on the old contextual Maths tab: *"moving the user to a new menu
-/// up there when entering maths mode without them doing anything is jarring
-/// and its best to not force any navigation."*
+/// > The tab row belongs to the student. The command row belongs to the tab they
+/// > chose — and lends itself to an equation while they are writing one.
 ///
-/// The whole answer, in one sentence:
+/// That is the whole design, and it exists because moving somebody to a new tab
+/// when they start an equation, without them asking, is jarring. The equation
+/// palette borrows the command row and leaves their tab where it was.
 ///
-/// > The tab row belongs to the student. The command row belongs to the tab
-/// > they chose — and lends itself to an equation while they are writing one.
-///
-/// ## The band that used to be here
-///
-/// These lived on a third strip of their own, 36 px under the command row,
-/// permanent so that the chrome was 32 + 44 + 36 px in every state and the
-/// canvas box never moved. The owner, once the app had been used for a while:
-/// *"We still have this extra bar of options under the existing menu bar (the
-/// one with page rule options, fitting, zoom, etc). Lets move all of that into
-/// its own tab called 'Page'."*
-///
-/// Right — and the reasoning that put the band there survives the move
-/// unharmed, because the invariant was never "there are three strips", it was
-/// **the chrome does not change height**. It is 32 + 44 in every state now.
-/// The page controls are a tab like any other, and the equation palette
-/// borrows the command row without moving anybody's tab, exactly as it used to
-/// borrow the row below.
+/// **The invariant is that the chrome does not change height.** It is 32 + 44 px in
+/// every state, so the canvas never moves under the pointer. These controls spent a
+/// release on a third permanent strip to achieve that; the strip went and the
+/// invariant did not, because it was never "there are three strips".
 ///
 /// ## Hard rules for anything added here
 ///

@@ -1,15 +1,10 @@
 /// **Plug values into an equation, see the result.**
 ///
-/// The graph's sibling for a single point rather than a curve. Reported
-/// alongside the graph work: *"would love a way to be able to sub in a value
-/// for x or whatever variable and get the result, this doesnt have to be
-/// linked to the graph though"* — and, on where the UI for it should live,
-/// *"Primarily a dedicated small block ... but also id love the ability to
-/// inline it too even if its just a shortcut."* The inline half is the same
-/// `ActiveMathEditor.evaluateAtValue` closure the graph button already uses
-/// (see `math_bar.dart`); this file is the small block.
+/// The graph block's sibling, for a single point rather than a curve. The inline
+/// equivalent is the same `ActiveMathEditor.evaluateAtValue` closure the graph
+/// button uses; this file is the standalone block.
 ///
-/// ## What it stores, and why
+/// ## What it stores
 ///
 /// ```
 /// content: {
@@ -17,24 +12,26 @@
 ///   'from':      '<block id>',  // the equation it follows, when there is one
 ///   'fromLatex': 'u+a*t',       // an equation INSIDE a sentence has no id
 ///   'values':    {'u':'2','a':'3','t':'4'},  // what was typed, per name
-///   'value':     '2',           // ONE name's worth, written before v1.0.2
+///   'value':     '2',           // the pre-v1.0.2 spelling — see below
 /// }
 /// ```
 ///
-/// Same reasoning as the graph block throughout: a block that only pointed
-/// at its equation would show nothing once that equation was deleted, so the
-/// latex is copied in and `from`/`fromLatex` is how it follows
-/// (`AppState.pushEquationToSubstitutes`, `pushInlineEquationToSubstitutes`).
+/// **The latex is copied in rather than referenced.** A block that only pointed at
+/// its equation would show nothing once that equation was deleted.
+/// `from`/`fromLatex` is how it follows the original when the original changes.
 ///
 /// ### `value` and `values`
 ///
-/// `value` was a single string, because a substitute block could only ever
-/// have one field — see [substituteSourceFromLatex] for why that was and what
-/// changed. Both spellings are read, the same two-spelling rule the `.blob`
-/// suffix migration follows: an older notebook's `value` becomes the first
-/// variable's entry on the first read, and `value` is then left alone rather
-/// than deleted, so a v1.0.1 build opening the same notebook still shows what
-/// the student typed. Nothing writes it any more.
+/// `value` was a single string, because a substitute block could only ever have
+/// one field — [substituteSourceFromLatex] says why that was and what changed.
+///
+/// **Both spellings are read, and `value` is still written while the formula has
+/// exactly one variable.** That keeps a v1.0.1 build showing the number instead of
+/// an empty field, and one notebook open on two machines running two releases is
+/// the ordinary case here rather than a corner one. With several variables `value`
+/// is left untouched: it never recorded *which* variable it held, so an older build
+/// would print the number under the wrong label, and it cannot evaluate such a
+/// formula anyway.
 ///
 /// A value whose name has gone out of the equation is also kept. It costs a
 /// short string, and it means editing `v = u + a*t` into `v = u + a` and back

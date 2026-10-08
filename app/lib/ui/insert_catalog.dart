@@ -1,17 +1,10 @@
 /// **Everything you can add to a page, defined once.**
 ///
-/// The owner's report: *"In insert, we have some redundant options (such as
-/// text box, that doesnt need to be there), and it also just feels kinda
-/// messy at the moment"*, and of the canvas's right-click menu, *"this should
-/// more closley match the insert menu we already have"*.
-///
-/// The two surfaces had drifted because each carried its own copy of the
-/// work. `_insertTable` on the ribbon and `case 'table'` in the menu both
-/// spelled out the literal `[['Header','Header'],['','']]`; board and page
-/// window were duplicated the same way; and the menu had a CSV importer the
-/// ribbon did not while the ribbon had eight things the menu did not. This
-/// file is the single list they now both render, so "the menu matches Insert"
-/// is true by construction rather than by anyone remembering.
+/// **The Insert ribbon and the canvas's right-click menu render this one list**,
+/// so "the menu matches Insert" is true by construction rather than by anyone
+/// remembering. They had drifted badly when each carried its own copy of the work:
+/// both spelled out the same literal table, board and page window were duplicated,
+/// and each surface had items the other did not.
 ///
 /// **The ribbon is one row of thirteen; the menu shows ten of them.**
 ///

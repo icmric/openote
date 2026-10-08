@@ -1,58 +1,41 @@
-/// Don't rebuild a subtree whose inputs have not changed.
+/// Skip rebuilding a subtree whose inputs have not changed.
 ///
-/// **The problem this solves.** `AppState.markDirty()` runs on every
-/// keystroke — it has to, because the auto-width measurement that makes a box
-/// grow as you type happens in the parent's build — and `AppShell` wraps the
-/// whole application in one `ListenableBuilder`. So a character typed in the
-/// middle of a paragraph rebuilds the command bar and the object row, neither
-/// of which can possibly look different for it.
+/// `AppState.markDirty()` runs on every keystroke, and `AppShell` wraps the whole
+/// application in one `ListenableBuilder`, so a character typed in a paragraph
+/// rebuilds the command bar and the object row — neither of which can possibly
+/// look different for it. Mixing this in stops that.
 ///
-/// Measured on the `ui_perf_probe` notebook (3 sections × 30 pages, 40 blocks
-/// on the open page, 1500×950), median frame after `markDirty()`, debug build,
-/// by stubbing each region out in turn:
+/// **What it does NOT do:** `build` still runs, and [memoInputs] is still
+/// evaluated, on every notification. Anything that reads a value and puts it in
+/// that list stays exactly as live as it was. Only the *construction of the widget
+/// tree* is skipped, and only when every listed value compares equal to last time.
 ///
-/// | region | cost of one keystroke frame |
-/// |---|---|
-/// | command bar | 31.6 ms |
-/// | object row | 15.2 ms |
-/// | navigator | 2.3 ms — already memoised, by hand, in `AppShell._navigator` |
-/// | everything else | 13.6 ms |
+/// ## What goes in [memoInputs]
 ///
-/// The navigator row is the point: this technique already existed here and
-/// already worked; it was written once, inline, for one widget.
+/// Every value read off a model, a controller or a global, **and every
+/// constructor parameter of the widget itself**. The widget's own fields are on
+/// the list rather than handled for you because `didUpdateWidget` is no help: a
+/// parent that rebuilds constructs a fresh instance every frame, which is the
+/// situation this exists for, so treating that as a change would mean the cache
+/// never survived a frame.
 ///
-/// **What this does NOT do.** `build` still runs, and [memoInputs] is still
-/// evaluated, on every single notification — so anything that reads a value
-/// and puts it in the list stays exactly as live as it was. Only the
-/// *construction of the widget tree* is skipped, and only when every one of
-/// those values compares equal to last time.
+/// Two categories are handled for you and **must not** be listed:
 ///
-/// **The failure mode, named so it can be avoided.** A value the subtree
-/// RENDERS but [memoInputs] does not list goes stale: the change lands in the
-/// state and paints only when something else happens to invalidate the memo.
-/// That is a bug which passes a quick look and fails in real use, so it is not
-/// left to discipline — `test/chrome_memo_test.dart` reads the source of every
-/// widget using this mixin, finds each `app.<member>` it touches, and fails if
-/// one is neither declared in [memoInputs] nor listed there as an action that
-/// renders nothing.
+///  * **Inherited widgets** — theme, media query, translations, text direction.
+///    `didChangeDependencies` drops the cache, which covers every one of them
+///    including ones added later.
+///  * **This `State`'s own fields**, as long as they change through `setState`,
+///    which drops the cache too.
 ///
-/// Two categories of input are handled for you and must NOT be listed:
+/// ## The failure mode, named so it can be avoided
 ///
-///  * **Inherited widgets** — theme, media query, translations, text
-///    direction. `didChangeDependencies` drops the cache, which covers every
-///    one of them including ones added later.
-///  * **This `State`'s own fields**, as long as they are changed through
-///    `setState`, which drops the cache too.
-///
-/// Everything else belongs in [memoInputs] — every value read off a model, a
-/// controller or a global, **and every constructor parameter of the widget
-/// itself**. The widget's own fields are on that list rather than handled
-/// here because `didUpdateWidget` is no help: a parent that rebuilds
-/// constructs a fresh instance every frame, which is the whole situation this
-/// exists for, so treating that as a change would mean the cache never
-/// survived a single frame. (It did not, on the first attempt: the memo made
-/// the bar measurably *slower* — 67.5 ms against a 62.7 ms baseline — because
-/// it did all the same work plus building the key.)
+/// A value the subtree RENDERS but [memoInputs] does not list goes stale: the
+/// change lands in the state and paints only when something else happens to
+/// invalidate the memo. That is a bug which passes a quick look and fails in real
+/// use, so it is not left to discipline. `test/chrome_memo_test.dart` reads the
+/// source of every widget using this mixin, finds each `app.<member>` it touches,
+/// and fails if one is neither declared in [memoInputs] nor listed there as an
+/// action that renders nothing.
 library;
 
 import 'package:flutter/foundation.dart';

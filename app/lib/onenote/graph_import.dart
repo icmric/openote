@@ -1,25 +1,19 @@
 /// **Importing a OneNote notebook over the internet, a section at a time.**
 ///
-/// The owner, on why this is not one long wait:
-///
-/// > *"if the user selects something then has to sit and wait for 30s for a
-/// > large notebook to import with nothing happening on the screen and not
-/// > being able to do anything it would be a pretty poor experience"*
-///
-/// So nothing here batches to the end. A section's pages are fetched,
-/// converted and **written** before the next section is written, and the write
-/// goes through the same `AppState` funnel every other edit does — which means
-/// the section appears in the navigator, with its pages in it, the moment it
-/// lands. A student watches their notebook arrive rather than watching a
-/// spinner, and can read the parts already in while the rest is still coming.
+/// **Nothing here batches to the end**, because a student who picks a notebook and
+/// then watches a frozen window for thirty seconds has no idea whether it is
+/// working. A section's pages are fetched, converted and **written** before the
+/// next section is written, and the write goes through the same `AppState` funnel
+/// every other edit does — so the section appears in the navigator, pages and all,
+/// the moment it lands. The notebook arrives in front of you, and the parts already
+/// in are readable while the rest is still coming.
 ///
 /// Between every batch the loop yields to the event loop, so typing, scrolling
 /// and painting all continue.
 ///
 /// ## Fetching ahead, writing in order
 ///
-/// The owner again: *"do you recon we could import several sections in
-/// paralell too"*. The **fetching** can, and now does — it is all waiting on
+/// The **fetching** runs in parallel — it is all waiting on
 /// the network. The **writing** cannot: the sink is a transaction on one
 /// isolate, and every node carries a position that decides where it appears,
 /// so two sections interleaving their writes would shuffle the notebook.

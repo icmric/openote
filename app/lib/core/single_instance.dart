@@ -1,23 +1,18 @@
 /// One Openote per workspace, and a way to hand it a notebook.
 ///
-/// **Why single instance rather than a second window.** Windows' default,
-/// once `.onote` is associated with the app, is to start a whole new
-/// `openote.exe` for every double-click. Each of those opens the same
-/// `workspace.json` registry and — the moment two of them land on one
-/// notebook, which is exactly what happens when you double-click the notebook
-/// you already have open — the same WAL SQLite container from two processes.
-/// That is the corruption ADR-0006 §3 is written against ("cache.onote ←
-/// local-only SQLite; never synced"), and this project has already shipped one
-/// bug where two devices shared one container. The registry is no safer: it is
-/// rewritten wholesale by whichever process saves last, so a notebook created
-/// in one window disappears when the other writes.
+/// **Why single instance rather than a second window.** Once `.onote` is
+/// associated with the app, Windows starts a whole new `openote.exe` for every
+/// double-click. Two of those open the same `workspace.json` — which is rewritten
+/// wholesale by whichever saves last, so a notebook created in one window
+/// disappears when the other writes — and, the moment both land on one notebook,
+/// the same WAL SQLite container from two processes. That is the corruption
+/// ADR-0006 §3 exists to prevent.
 ///
-/// The alternative — teach the app to be multi-process-safe — is a large piece
-/// of work whose payoff is a second window nobody asked for. Openote has ONE
-/// workspace and switching notebooks is already a first-class operation
-/// (`AppState.selectNotebook`), so the running instance switching to the
-/// notebook you double-clicked is both the cheap answer and the one that
-/// matches what the app already is.
+/// Making the app multi-process-safe instead is a large piece of work whose payoff
+/// is a second window nobody asked for. Openote has ONE workspace, and switching
+/// notebooks is already a first-class operation, so the running instance switching
+/// to the notebook you double-clicked is both cheaper and closer to what the app
+/// already is.
 ///
 /// **The protocol**, deliberately files rather than a socket. The app already
 /// treats a listening port as something to ask permission for (the MCP server
