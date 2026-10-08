@@ -73,7 +73,7 @@ Local code
     on their system, if we can access that in a sandboxed way
     → SQL and JS cells SHIPPED (Run button / Ctrl+Enter; page tables are
       queryable; output persists and syncs). Remaining, staged in
-      docs/planning/v0.14-local-code.md: page sessions + Run All,
+      docs/planning/archive/v0.14-local-code.md: page sessions + Run All,
       write-back behind a confirm, chart output (shared with the Tables
       graphing design), and system interpreters — which need REAL OS
       sandboxing per platform (AppContainer / bubblewrap / sandbox-exec),
@@ -141,7 +141,7 @@ Everything in one box
       placeholder that occupies exactly one code unit, so not a single caret
       offset moves. That is the existence proof; the open question is whether
       one general inline-atom syntax can carry every block type instead of a
-      bespoke regex per kind. Designed in docs/planning/v0.18-visual-maths.md.
+      bespoke regex per kind. Designed in docs/planning/archive/v0.18-visual-maths.md.
 
 Consistency/UX
     Ensure all blocks are consistent in their behaviours, being able to be copy and pasted, consistent navigation, formatting etc. Most objects should be able to share a box with each other, however for stuff like code blocks could stick with being their own thing if its not practical to mix them in.

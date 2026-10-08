@@ -766,7 +766,7 @@ Still outstanding: CI itself has never executed (needs a push), and macOS/Linux 
 
 **172 Dart + 29 Rust tests pass; analyzer clean; `cargo clippy -D warnings` clean; CI GREEN on Windows, macOS and Linux.** That last one closes the longest-standing unverified claim in the project: PLAT-1 said all three desktop OSes were first-class, and until this pass only Windows had ever built.
 
-Worked the [v0.2 release plan](../planning/v0.2-release-plan.md) tier by tier. Nine commits on `release/v0.2`.
+Worked the [v0.2 release plan](../planning/archive/v0.2-release-plan.md) tier by tier. Nine commits on `release/v0.2`.
 
 ### T.1 What CI caught that local checks did not
 

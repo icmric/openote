@@ -1,6 +1,6 @@
 # Openote Math Input & Storage Specification
 
-> **Document status:** Draft v0.2 · Last updated 2026-08-19
+> **Normative for maths input, storage and export.** Covers MATH-1…8.
 > **Build-up is now REAL.** §1's "build-as-you-type" and §2's de-build were
 > written as intent and shipped as a LaTeX text field with a preview beneath
 > it. `v0.18` closed that gap: `math/math_tree.dart` holds the editing tree,
@@ -28,7 +28,7 @@
   a CAS: nothing is solved and nothing is rearranged. A curve is `f(x)`
   sampled and drawn, which is the same evaluator the calculator already uses
   compiled once instead of per point — see `math/graph_plot.dart` and
-  `docs/planning/v0.23-tidy-maths-and-graphs.md`.
+  `docs/planning/archive/v0.23-tidy-maths-and-graphs.md`.
 
 ## 2. Entering & leaving math
 

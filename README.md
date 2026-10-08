@@ -92,7 +92,7 @@ Longer-standing defects are carried openly in the
 v1.0.2 clears the list above. Beyond that: searchable vector PDF export
 (today's is a raster capture), splitting `AppState`, and real use of the macOS
 and Linux builds. The ranked backlog is
-[here](docs/planning/v0.4-and-beyond.md#1-what-to-do-next); the phase plan is in
+[here](docs/planning/backlog.md#1-what-to-do-next); the phase plan is in
 the [roadmap](ROADMAP.md).
 
 ## Documentation

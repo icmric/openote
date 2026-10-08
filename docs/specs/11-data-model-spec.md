@@ -1,6 +1,8 @@
 # Openote Data Model Specification
 
-> **Document status:** Draft v0.1 · Last updated 2026-07-22
+> **Normative for the shape of a page.** The [file format
+> spec](10-file-format-spec.md) says where these structures live; this says
+> what they are.
 > **Purpose:** The concrete, implementable definition of Openote's document model — identity rules, every block type's fields, the text model, and the live-embed (transclusion) reference model. The [File Format Spec](10-file-format-spec.md) defines where these structures live; this document defines what they are.
 > **Related:** [Architecture §3–§4a](../04-architecture-overview.md) · [Math Input Spec](12-math-input-spec.md) · [Ink Data Spec](13-ink-data-spec.md)
 > **Notation:** structures are shown as JSON (the exact shape used in the `page_mirror` / Page JSON and the open-folder export). The CRDT mapping is §8.3 of the File Format Spec; field names are identical.

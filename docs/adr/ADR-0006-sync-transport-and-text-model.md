@@ -1,7 +1,21 @@
 # ADR-0006: Sync transport and the text model it requires
 
-> **Status:** Proposed — groundwork only; no sync code is being written yet · 2026-07-27
-> **Related:** [ADR-0002](ADR-0002-crdt-library.md) (Loro) · [ADR-0003](ADR-0003-storage-container.md) (SQLite `.onote`) · [ADR-0004](ADR-0004-editor-engine.md) (editor seam) · [Data Model §5](../specs/11-data-model-spec.md)
+> **Status: Accepted and built.** The transport ships — a synced folder and a git
+> remote, both working — and the container demotion is opt-in per notebook and
+> reversible. **The text model half (§4) is not built**, and is the one thing
+> here still outstanding.
+>
+> **Related:** [ADR-0002](ADR-0002-crdt-library.md) (CRDT) · [ADR-0003](ADR-0003-storage-container.md) (SQLite `.onote`) · [ADR-0004](ADR-0004-editor-engine.md) (editor seam) · [File format §11](../specs/10-file-format-spec.md) · [Data model §5](../specs/11-data-model-spec.md)
+>
+> Two departures from §4's sequencing, both deliberate. **Step 4 (Loro) has not
+> happened and its scope has narrowed** — see ADR-0002. And **`block.patch`
+> arrived instead of `text.splice`**: §6a.1 reserved new op kinds for finer text
+> edits, and the one that shipped is a splice against a string-valued key of a
+> block's `content`, carrying a fingerprint of the text it was computed from.
+> That bought the size win (whole-block writes were 52.6% of a real log) without
+> the structured model, so it narrows the cost of a keystroke without making two
+> edits to one paragraph converge. The modelling failure §4 describes is real and
+> still open.
 
 ## Why this exists now
 
@@ -81,6 +95,18 @@ change.
 
 ## 3. Decision: an append-only per-device op log, with the container as a cache
 
+> **Which one is authoritative depends on the notebook, and that is the whole
+> state of the transition.** The demotion is opt-in per notebook, so a notebook
+> that has taken it has an authoritative log and a rebuildable cache, and one
+> that has not has an authoritative container with the log written alongside as a
+> shadow. `app_state.dart` says the second because it has to hold for both: a log
+> it cannot write is then a degraded check rather than lost data. Both sentences
+> are true, of different notebooks, and that is intended rather than unresolved.
+>
+> The end state is one notebook at a time, not a flag day. What makes it safe to
+> sit here indefinitely is that the shadow log is continuously checked against
+> the container it shadows.
+
 The layout that satisfies dumb file sync, real merging, and live collaboration
 at once:
 
@@ -145,9 +171,6 @@ at once:
 > ops), so there is nothing for a snapshot to optimise — and superseding one
 > would mean *deleting* a file inside the synced set, which is the one thing the
 > one-writer-per-file property does not cover.
->
-> The identical diagram in **spec §11** (`docs/specs/10-file-format-spec.md`)
-> needs the same amendment and has not had it yet.
 
 The load-bearing property is **one writer per file**. A device only ever appends
 to its own log, so two devices can never produce conflicting versions of the same
@@ -201,24 +224,20 @@ The migration has one place to land, by design: `OnoteTextEditor.serialize` /
 implements the conversion; nothing above the seam changes. That seam existing is
 why this is a contained piece of work rather than an editor rewrite.
 
-### Sequencing (nothing here is built yet)
+### Sequencing
 
-1. **Stable identity everywhere.** Blocks already have stable ids; pages and
-   nodes need the same guarantee across import and restore. Cheap, and every
-   later step depends on it.
-2. **Model the op log and write it alongside today's saves.** Log first, derive
-   the container from it, and keep the current save path as the check: if a
-   rebuild-from-log doesn't reproduce the container byte-for-byte, the log is
-   incomplete. This is testable before any network code exists.
-3. **Markdown → `nodes`.** Behind the editor seam, with the byte-stable
+Stable identity, the op log, and the transports are built. What remains is the
+text model, and it is the last two steps:
+
+1. **Markdown to `nodes`.** Behind the editor seam, with the byte-stable
    round-trip ADR-0004 criterion 4 asks for.
-4. **Loro for the text sequence**, replacing the hand-rolled ordering. ADR-0002
-   assumed `flutter_rust_bridge`; we hand-wrote `dart:ffi` instead, so that
-   integration assumption needs re-testing at this point.
-5. **Transports last** — local folder, then a provider, then live.
+2. **A sequence CRDT for the text itself** — and re-argue the choice before
+   integrating anything (ADR-0002), because it was made on movable-tree fit and
+   the op log covers that now.
 
-Steps 1–3 are useful on their own even if sync slipped indefinitely, which is the
-main reason to sequence it this way.
+Worth recording about the steps that are done: the check step 2 was sequenced
+for — rebuild-from-log reproducing the container — earned its keep beyond the
+check. It is now the path a second device uses to join a notebook.
 
 ## 5. Alternatives rejected
 

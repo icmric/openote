@@ -1,7 +1,17 @@
 # ADR-0001: Application framework — Flutter/Dart UI with a Rust core
 
-> **Status:** Accepted (provisional) · 2026-07-22
-> **Deciders:** Eric (stakeholder) via priority direction; analysis in [Technology Evaluation](../03-technology-evaluation.md)
+> **Status:** Accepted, and exercised on every case it worried about.
+> **Deciders:** Eric, via priority direction; analysis in the [technology evaluation](../03-technology-evaluation.md)
+>
+> Two corrections. The core is reached by **hand-written `dart:ffi`, not
+> `flutter_rust_bridge`** — the crate keeps an optional `bridge` feature and
+> nothing uses it. And the Rust core does **no CRDT or sync work**: it parses
+> OneNote files, hashes content and merges mirrors. Sync is Dart, over the op log
+> of [ADR-0006](ADR-0006-sync-transport-and-text-model.md).
+>
+> The core is also **optional at runtime** — without its library the app falls
+> back to a pure-Dart engine and loses only OneNote import, which is what makes
+> the browser build possible at all.
 
 ## Context
 

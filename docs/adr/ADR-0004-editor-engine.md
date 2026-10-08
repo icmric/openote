@@ -1,7 +1,12 @@
 # ADR-0004: Rich-text editor engine — keep the engine we own, behind a seam
 
-> **Status:** **Accepted** — the incumbent engine wins on the spike criteria; the bake-off is not run · decided 2026-07-27 (opened 2026-07-22)
-> **Related:** [Technology Evaluation §7.2](../03-technology-evaluation.md) · [Data Model Spec §5](../specs/11-data-model-spec.md)
+> **Status: Accepted.** The incumbent engine wins on the spike criteria, so the
+> bake-off was deliberately not run.
+> **Related:** [Technology evaluation §7.2](../03-technology-evaluation.md) · [Data model §5](../specs/11-data-model-spec.md) · [ADR-0006 §4](ADR-0006-sync-transport-and-text-model.md)
+>
+> The seam is what this ADR was really for, and it has held: revisit trigger 2
+> (sync needing a structured text model) has since been reached, and the
+> migration it points at still has exactly one landing site.
 
 ## Decision
 

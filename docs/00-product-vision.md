@@ -1,14 +1,11 @@
 # Openote — Product Vision
 
-> **Document status:** v1.0 · **Implementation phase** · Last updated 2026-08-05
-> **Still accurate.** This document has needed no correction as the app was
-> built — the problem statement, the six principles and the non-goals all held.
-> The only note worth adding: principle §5.6 ("the interface is calm… we favor a
-> clean surface over a crowded ribbon") is the one the 2026-08 UI review found
-> the *implementation* falling short of, not through clutter but through
-> inconsistency. See [v0.6 — the UI revamp](planning/v0.6-ui-revamp.md).
-> **Owner:** Eric · **Audience:** Core team, contributors, prospective collaborators
-> **Related documents:** [OneNote Teardown & Gap Analysis](01-onenote-teardown.md) · [Product Requirements](02-product-requirements.md) · [Technology Evaluation](03-technology-evaluation.md) · [Architecture Overview](04-architecture-overview.md) · [Style Guide](05-style-guide.md)
+> Why Openote exists, who it is for, and what it deliberately is not. The
+> problem statement and the six principles have held since they were written;
+> the non-goals in §9 are the part that gets revisited, and each one says where
+> it now stands.
+>
+> **Related:** [OneNote teardown](01-onenote-teardown.md) · [Requirements](02-product-requirements.md) · [Technology evaluation](03-technology-evaluation.md) · [Architecture](04-architecture-overview.md) · [Style guide](05-style-guide.md)
 
 ---
 
@@ -135,14 +132,14 @@ Concretely, over the horizons below:
 
 ## 9. Non-goals
 
-Saying no is how the canvas stays sacred and the schedule stays real. For the foreseeable future, Openote is **not**:
+Saying no is how the canvas stays sacred and the schedule stays real. Openote is **not**:
 
-- **A OneNote clone down to the pixel.** We copy what is excellent (the freeform model, the hierarchy, ink, math) and deliberately improve or drop what is not (the cluttered ribbon, the cloud tether, the format).
-- **A math *solver* or CAS.** Like OneNote's underlying editor, we make it easy to *write* complex equations beautifully. We do not commit to *solving* them in v1. (This keeps us out of a very deep well and focuses effort on the entry/rendering experience users actually asked for.)
-- **A full office suite, task manager, or PM tool.** We are a notebook. Integrations can come later; scope creep into project management will not.
-- **A cloud service you must use.** Sync is optional infrastructure, never the product's center of gravity.
-- **An AI product.** We are not chasing an AI-first positioning. AI-assisted features, if any, come far later and remain optional.
-- **A handwriting-recognition research project.** v1 stores ink losslessly and renders it beautifully; recognition (ink-to-text, ink-to-math) is a later, optional layer, not a launch blocker. There is, honestly, no mature fully-open cross-platform online handwriting recognizer today — we will not architect as though one exists.
+- **A OneNote clone down to the pixel.** We copy what is excellent — the freeform model, the hierarchy, ink, maths — and improve or drop what is not: the cluttered ribbon, the cloud tether, the format.
+- **A CAS, or a step-by-step solver.** Equations evaluate, formulas take values, and functions plot. What we do not do is *rearrange* an equation or show the working, which is a genuinely deep well and the part students would most want to be right.
+- **Built for task management.** A task board and a planner exist because a student's week belongs beside their notes, and anyone who wants neither can ignore both. What the canvas will not become is a project-management tool that happens to take notes.
+- **A cloud service you must use.** Sync is optional infrastructure, never the centre of gravity.
+- **An AI product.** AI features stay optional and off by default. The MCP server is the shape this takes: your notes, your tools, your choice to switch it on.
+- **A handwriting-recognition project.** Ink is stored losslessly and rendered well; recognition is a later optional layer. There is no mature fully-open cross-platform recogniser today and we do not architect as though one exists.
 
 ---
 

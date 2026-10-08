@@ -2,7 +2,7 @@
 
 This is the design and specification documentation for **Openote**, an open-source, natively cross-platform alternative to Microsoft OneNote.
 
-> **Status (2026-08-11, v0.7.1):** the project is well past planning. A working Flutter + Rust application lives in [`app/`](../app/README.md) and [`rust/onote_core/`](../rust/onote_core/README.md), with **1,071 Dart + 53 Rust tests green**. Phase 1's MVP and most of Phase 2 are implemented; the Phase 3 headline feature (the reverse-engineered **OneNote `.one`/`.onepkg` importer**) works on real notebooks. Since v0.6 the surface has grown fast — git sync with join-by-link, password-protected pages, an MCP server for AI tools, local code cells, keyboard control — and the [standing backlog](planning/v0.4-and-beyond.md) is the ranked list of what has not. These documents are therefore **living specs describing intent**, not a pre-code plan: where a document and the code disagree, the disagreement is a bug in one of them — see the [reviews](#reviews) for the last full reconciliation.
+> **Status (2026-08-11, v0.7.1):** the project is well past planning. A working Flutter + Rust application lives in [`app/`](../app/README.md) and [`rust/onote_core/`](../rust/onote_core/README.md), with **1,071 Dart + 53 Rust tests green**. Phase 1's MVP and most of Phase 2 are implemented; the Phase 3 headline feature (the reverse-engineered **OneNote `.one`/`.onepkg` importer**) works on real notebooks. Since v0.6 the surface has grown fast — git sync with join-by-link, password-protected pages, an MCP server for AI tools, local code cells, keyboard control — and the [standing backlog](planning/backlog.md) is the ranked list of what has not. These documents are therefore **living specs describing intent**, not a pre-code plan: where a document and the code disagree, the disagreement is a bug in one of them — see the [reviews](#reviews) for the last full reconciliation.
 
 ## Reading order
 
@@ -54,7 +54,7 @@ Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/AD
 ## Supporting documents
 
 - [Roadmap](../ROADMAP.md) — phased plan from MVP to collaboration.
-- [Planning documents](planning/README.md) — one per release-sized piece of work, kept after shipping: what was reported, what was measured, which options were weighed, and what it cost. The index separates **open** plans from shipped reasoning and from the one plan that was **rejected**. Currently v0.2 → v0.16, plus the ranked standing backlog in [v0.4-and-beyond](planning/v0.4-and-beyond.md).
+- [Planning documents](planning/README.md) — one per release-sized piece of work, kept after shipping: what was reported, what was measured, which options were weighed, and what it cost. The index separates **open** plans from shipped reasoning and from the one plan that was **rejected**. Currently v0.2 → v0.16, plus the ranked standing backlog in [v0.4-and-beyond](planning/backlog.md).
 - [Releasing](RELEASING.md) — how a commit on `master` becomes a download: the three commands, the four manual steps (publishing the draft, the two Cloudflare secrets, pointing the domain, and the signing decision), what each platform artifact is, why the site is a Worker rather than static hosting, and what to do when a job fails.
 - [The pre-release checklist](pre-release-checklist.md) — the manual pass run on the
   packaged build before every release. Action and expected result, about 35
@@ -69,7 +69,7 @@ Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/AD
 
 - **Sync Protocol Specification** — still deferred, but the reason has changed. [ADR-0006](adr/ADR-0006-sync-transport-and-text-model.md) replaced the planned CRDT relay with an append-only per-device op log synced through any ordinary folder, so there is no protocol to specify until a *server* transport is wanted. What exists is documented in the ADR and in [File Format Spec §11](specs/10-file-format-spec.md).
 - **License ratification** (ADR-0005) — process-gated, not writing-gated.
-- **The container demotion** — ADR-0006's own endgame, planned as format 1.1 in the [v0.10 plan](planning/v0.10-responsiveness-and-storage.md#14-wave-2--the-overhaul-demote-the-container-adr-0006s-own-endgame). Gated on the two-machine sync testing in [TESTING](../TESTING.md).
+- **The container demotion** — ADR-0006's own endgame, planned as format 1.1 in the [v0.10 plan](planning/archive/v0.10-responsiveness-and-storage.md#14-wave-2--the-overhaul-demote-the-container-adr-0006s-own-endgame). Gated on the two-machine sync testing in [TESTING](../TESTING.md).
 
 ## Document conventions
 

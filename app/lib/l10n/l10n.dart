@@ -7,7 +7,7 @@
 ///
 /// **This is a migration in progress, not a finished job.** Most of the app
 /// still holds its words as Dart string literals; the surfaces converted so
-/// far are listed in `docs/planning/v0.24-road-to-1.0.md`, and
+/// far are listed in `docs/planning/archive/v0.24-road-to-1.0.md`, and
 /// `test/l10n_test.dart` fails if one of them grows a new hardcoded string.
 /// Convert a surface at a time, and add its file to that guard when you do.
 library;

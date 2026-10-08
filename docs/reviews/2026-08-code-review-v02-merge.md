@@ -261,12 +261,12 @@ than only recommendations. **309 Dart + 41 Rust tests pass; analyzer clean.**
 | Finding | Outcome |
 |---|---|
 | **C.1** foreign change dropped mid-pull | **Fixed.** A `_pullAgain` flag drives a loop, so the re-entrancy guard keeps its purpose (never two concurrent container writes, so no double-apply) while gaining liveness. Both properties have a test. |
-| **C.2** `AppState` god object | **Deferred, scheduled.** Item E3 of [v0.4-and-beyond](../planning/v0.4-and-beyond.md), explicitly *before* v0.4 features so they don't land in it. |
+| **C.2** `AppState` god object | **Deferred, scheduled.** Item E3 of [v0.4-and-beyond](../planning/backlog.md), explicitly *before* v0.4 features so they don't land in it. |
 | **C.3** blob duplication + no GC | **Deferred with a corrected diagnosis.** De-duplication is not a standalone change: SQLite is what the app reads and `.onotebook/blobs/` is what sync replicates, so removing either breaks a real path — it **is** the C.4 container demotion, and GC needs its own ADR because a blob is referenced by pages, history snapshots *and* unsynced foreign logs. E1/E2 of v0.4. |
 | **C.4** container in the synced folder | **Deferred**, now paired with C.3 as one piece of work. |
 | **C.5** hygiene | **Done 2026-08-04** — and the diagnosis was wrong in a useful way; see §H below. |
 | **D.2** vector PDF export | **Shipped.** Text as embedded-subset Inter with a `/ToUnicode` CMap (so Ctrl+F and copy-paste work in any reader), ink as stroked PDF paths, images embedded, tall pages paginated into sheets. `buildPagePdf` is factored out so **printing (P13)** and **annotated-slide re-export (Phase B step 4)** reuse it. Seven tests. |
-| **§E** product suggestions | **Recorded** in [v0.4-and-beyond.md](../planning/v0.4-and-beyond.md) with sizes, rationale and blockers, rather than living in a review. |
+| **§E** product suggestions | **Recorded** in [backlog.md](../planning/backlog.md) with sizes, rationale and blockers, rather than living in a review. |
 
 ### Two bugs found by use, not by review
 

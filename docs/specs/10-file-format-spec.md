@@ -1,6 +1,7 @@
 # Openote File Format Specification (`.onote`)
 
-> **Document status:** Draft v0.2 (format version `1`) · Last updated 2026-08-16
+> **Format version 1**, frozen since v0.2.0 — a notebook written by any
+> release opens in every later one (§12).
 > **Licence:** **CC0-1.0** ([`LICENSE`](LICENSE)) — ratified in [ADR-0005](../adr/ADR-0005-licensing.md). Implement it freely; no attribution required.
 > **Audience:** Openote implementers and third-party tool authors. This document is publishable as the standalone public specification of the format.
 > **Related:** [Architecture §5](../04-architecture-overview.md) · [Data Model Spec](11-data-model-spec.md) · [ADR-0003 (container)](../adr/ADR-0003-storage-container.md) · **[ADR-0006 (sync layout)](../adr/ADR-0006-sync-transport-and-text-model.md)**

@@ -1,20 +1,16 @@
 # Openote — Style Guide & Design System
 
-> **Document status:** v0.5 · **Implementation phase** · Last updated 2026-08-05
-> **Reality check (2026-08-05):** colour tokens (§3) are implemented verbatim in
-> `app/lib/theme/onote_theme.dart`; **fonts are bundled** (§4.1 met — Inter +
-> JetBrains Mono, 2026-08-04); tags (§7) shipped, including OneNote import; the
-> command bar (§7), navigator (§7b, rewritten this revision to match the
-> 2026-08-04 two-column redesign), study panel and planner all exist. What is
-> **not** yet real is the connective tissue: there is no token layer between
-> this document and the widgets, no component themes behind the Material
-> defaults, and one specified pairing fails its own AA rule (§3.3 note). The
-> [v0.6 UI revamp plan](planning/v0.6-ui-revamp.md) is the audit of that gap
-> and the plan to close it; the **operative values** it fixed are folded into
-> this revision (§4.2a, §5.2, §3.7, §6, §7c) and marked *operative* — they are
-> what new code must use.
-> **Purpose:** The single source of truth for how Openote looks, feels, and speaks — brand, color, type, spacing, components, canvas interaction, motion, accessibility, and voice. Written so a designer or developer can build a consistent, professional product from it.
-> **Related:** [Product Vision](00-product-vision.md) · [PRD](02-product-requirements.md) · [v0.6 UI revamp](planning/v0.6-ui-revamp.md)
+> How Openote looks, feels and speaks: brand and voice, colour, typography,
+> spacing, icons, component patterns, canvas interaction, motion and
+> accessibility. Values marked *operative* are what new code must use.
+>
+> **Not yet verified against the shipped app.** The colour tokens, the type
+> ramp and the surface roles are implemented in `theme/tokens.dart` and
+> `theme/onote_theme.dart`, but no one has read this document against them
+> line by line, so treat a disagreement as an open question rather than as a
+> bug in the code. Noted in the [backlog](planning/backlog.md).
+>
+> **Related:** [Vision](00-product-vision.md) · [Requirements](02-product-requirements.md)
 
 ---
 
@@ -750,7 +746,7 @@ Microcopy examples: empty page → "Click anywhere to start writing, or grab the
 ## 13. Tokens & next steps
 
 This guide defines the *system*; realising it is now a concrete, staged plan —
-**[v0.6 — the UI revamp](planning/v0.6-ui-revamp.md)** — whose first two
+**[v0.6 — the UI revamp](planning/archive/v0.6-ui-revamp.md)** — whose first two
 stages produce the two artifacts this section has asked for since v0.1:
 
 1. **`app/lib/theme/tokens.dart`** — the operative values of §4.2a, §5.1–5.3,

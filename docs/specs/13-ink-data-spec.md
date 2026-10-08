@@ -1,6 +1,6 @@
 # Openote Ink Data Model Specification
 
-> **Document status:** Draft v0.1 · Last updated 2026-07-22
+> **Normative for stroke capture, storage and interchange.** Covers INK-1…11.
 > **Purpose:** The concrete stroke data model — capture, storage, rendering, and InkML interchange — for INK-1…11. Written against the decided pipeline: Flutter pointer events → `perfect_freehand` outlines → `CustomPainter`, per [ADR-0001](../adr/ADR-0001-application-framework.md) and the Saber reference architecture.
 > **Priority note:** per stakeholder direction, ink is a required feature but **near-native latency is a non-goal** — this spec optimizes for lossless storage, natural rendering, and openness, not for front-buffer tricks.
 
