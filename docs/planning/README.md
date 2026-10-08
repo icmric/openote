@@ -27,7 +27,6 @@ starting the work.
 | Document | |
 |---|---|
 | [onenote-over-graph.md](onenote-over-graph.md) | What Microsoft Graph actually sends, measured against a real notebook rather than read out of the documentation |
-| [spec-drift-review.md](spec-drift-review.md) | Known gaps between the specs and the code, being worked through |
 
 ## House style
 
