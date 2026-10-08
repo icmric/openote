@@ -1443,7 +1443,7 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 - **A new equation takes the keyboard straight away.** Nothing you typed
   registered until you happened to click a button on the bar.
 - **A space is a space.** There was no way to put one in at all.
-- **Only `\commands` turn into symbols now.** Typing `lpha` then a space
+- **Only `\commands` turn into symbols now.** Typing `\alpha` then a space
   gives you α; typing `alpha` gives you the word alpha. Before, the editor
   converted any word it recognised — so writing "a in b", "sin x" or "cap" in
   your own sentence turned into symbols you never asked for. An unrecognised
