@@ -600,9 +600,6 @@ class LPt extends L {
   String get insertTableFromFileTip => 'CSV ou Excel';
 
   @override
-  String get insertTemplate => 'Modelo';
-
-  @override
   String get insertTextBox => 'Caixa';
 
   @override
@@ -620,9 +617,6 @@ class LPt extends L {
   String navAllCount(int total) {
     return 'Todos os $total';
   }
-
-  @override
-  String get navApplyTemplate => 'Aplicar modelo';
 
   @override
   String get navBinEmpty => 'Nada apagado.';
@@ -743,9 +737,6 @@ class LPt extends L {
   String get navMenuAddFavourite => 'Adicionar aos favoritos';
 
   @override
-  String get navMenuApplyTemplate => 'Aplicar um modelo…';
-
-  @override
   String get navMenuCopyLink => 'Copiar o link da página';
 
   @override
@@ -800,9 +791,6 @@ class LPt extends L {
   String get navMenuRemovePasscode => 'Tirar a senha…';
 
   @override
-  String get navMenuSaveTemplate => 'Salvar como modelo…';
-
-  @override
   String get navMenuSetExam => 'Definir a data da prova…';
 
   @override
@@ -843,10 +831,6 @@ class LPt extends L {
   String get navNoSections => 'Ainda não há seções.\nCrie uma para começar.';
 
   @override
-  String get navNoTemplates =>
-      'Ainda não há modelos — use antes “Salvar como modelo…”.';
-
-  @override
   String get navNotebooksTip =>
       'Cadernos — trocar, renomear, duplicar, importar';
 
@@ -868,9 +852,6 @@ class LPt extends L {
   String get navSave => 'Salvar';
 
   @override
-  String get navSaveTemplateTitle => 'Salvar como modelo';
-
-  @override
   String navSavedTo(String path) {
     return 'Salvo em $path';
   }
@@ -880,14 +861,6 @@ class LPt extends L {
 
   @override
   String get navSection => 'Seção';
-
-  @override
-  String get navTemplateNameHint => 'Nome do modelo';
-
-  @override
-  String navTemplateSaved(String name) {
-    return 'Modelo “$name” salvo';
-  }
 
   @override
   String get navUntitled => 'Sem título';

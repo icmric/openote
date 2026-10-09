@@ -2342,12 +2342,6 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         _nodeItem('print', Icons.print_outlined, l.navMenuPrint),
         _nodeItem('copylink', Icons.link, l.navMenuCopyLink),
         _nodeItem('history', Icons.history, l.navMenuRecentChanges),
-        _nodeItem('template', Icons.bookmark_add_outlined, l.navMenuSaveTemplate),
-        // Laying out a whole page is not INSERTING something into it, which
-        // is why this left the Insert ribbon. It belongs beside saving one —
-        // and beside where "No templates yet" already sends people.
-        _nodeItem('applytemplate', Icons.dashboard_customize_outlined,
-            l.navMenuApplyTemplate),
       ],
       const PopupMenuDivider(),
       // Available on every kind, because the ask was "a page ... a section, or
@@ -2465,15 +2459,6 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       await _onPage(app, node.id, () async {
         if (context.mounted) await showVersionHistory(context, app);
       });
-    case 'template':
-      await _onPage(app, node.id, () async {
-        if (context.mounted) await _promptSaveTemplate(context, app);
-      });
-    case 'applytemplate':
-      // NOT brought home: applying a template CHANGES this page, and leaving
-      // somebody somewhere else after changing it is worse than moving them.
-      if (app.pageId != node.id) await app.selectPage(node.id);
-      if (context.mounted) await promptApplyTemplate(context, app);
     case 'delete':
       final messenger = ScaffoldMessenger.of(context);
       final l = L.of(context);
@@ -2483,26 +2468,6 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       if (app.node(node.id) == null) {
         showDeletedSnackBar(messenger, l, app, node);
       }
-  }
-}
-
-Future<void> _promptSaveTemplate(BuildContext context, AppState app) async {
-  final l = L.of(context);
-  // Through [promptForText], which owns the field's controller in the dialog's
-  // own State. This used to build the field here and `controller.dispose()`
-  // straight after the await — the route is popped by then but its 150 ms exit
-  // transition has not finished, so the field was still mounted and still
-  // rebuilding against a dead controller. Same defect as the new-notebook
-  // prompt, which is what crashed the app.
-  final name = await promptForText(context,
-      title: l.navSaveTemplateTitle,
-      okLabel: l.navSave,
-      hintText: l.navTemplateNameHint);
-  if (name == null) return;
-  app.saveCurrentAsTemplate(name);
-  if (context.mounted) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(l.navTemplateSaved(name))));
   }
 }
 
@@ -2587,33 +2552,6 @@ String _examMenuLabel(
       ? formatExamDate(exam, now)
       : '${formatExamDate(exam, now)}, ${examTimeLabel(context, minute)}';
   return 'Exam $when · ${formatCountdown(daysBetween(now, exam))}…';
-}
-
-/// Lay a saved template over this page.
-///
-/// Offered here AND on the Insert ribbon. This menu is where the app already
-/// talks about templates, and where its own "no templates yet" message sends
-/// people; the ribbon is where a student who has used the app for a term
-/// looks. One command, two entrances, which is why this is public.
-Future<void> promptApplyTemplate(BuildContext context, AppState app) async {
-  final names = app.templateNames();
-  if (names.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(L.of(context).navNoTemplates)));
-    return;
-  }
-  final choice = await showOnoteDialog<String>(
-    context: context,
-    builder: (ctx) => SimpleDialog(
-      title: Text(L.of(ctx).navApplyTemplate),
-      children: [
-        for (final n in names)
-          SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, n), child: Text(n)),
-      ],
-    ),
-  );
-  if (choice != null) app.applyTemplate(choice);
 }
 
 /// Do something that needs [pageId] open, then go back to where you were.

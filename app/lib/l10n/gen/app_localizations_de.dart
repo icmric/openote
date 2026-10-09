@@ -602,9 +602,6 @@ class LDe extends L {
   String get insertTableFromFileTip => 'CSV oder Excel';
 
   @override
-  String get insertTemplate => 'Vorlage';
-
-  @override
   String get insertTextBox => 'Textfeld';
 
   @override
@@ -622,9 +619,6 @@ class LDe extends L {
   String navAllCount(int total) {
     return 'Alle $total';
   }
-
-  @override
-  String get navApplyTemplate => 'Vorlage anwenden';
 
   @override
   String get navBinEmpty => 'Nichts gelöscht.';
@@ -746,9 +740,6 @@ class LDe extends L {
   String get navMenuAddFavourite => 'Zu den Favoriten';
 
   @override
-  String get navMenuApplyTemplate => 'Eine Vorlage anwenden…';
-
-  @override
   String get navMenuCopyLink => 'Link zur Seite kopieren';
 
   @override
@@ -803,9 +794,6 @@ class LDe extends L {
   String get navMenuRemovePasscode => 'Code entfernen…';
 
   @override
-  String get navMenuSaveTemplate => 'Als Vorlage speichern…';
-
-  @override
   String get navMenuSetExam => 'Prüfungsdatum setzen…';
 
   @override
@@ -847,10 +835,6 @@ class LDe extends L {
       'Noch keine Abschnitte.\nLege einen an, um loszulegen.';
 
   @override
-  String get navNoTemplates =>
-      'Noch keine Vorlagen — nimm zuerst „Als Vorlage speichern…“.';
-
-  @override
   String get navNotebooksTip =>
       'Notizbücher — wechseln, umbenennen, duplizieren, importieren';
 
@@ -872,9 +856,6 @@ class LDe extends L {
   String get navSave => 'Speichern';
 
   @override
-  String get navSaveTemplateTitle => 'Als Vorlage speichern';
-
-  @override
   String navSavedTo(String path) {
     return 'Gespeichert unter $path';
   }
@@ -884,14 +865,6 @@ class LDe extends L {
 
   @override
   String get navSection => 'Abschnitt';
-
-  @override
-  String get navTemplateNameHint => 'Name der Vorlage';
-
-  @override
-  String navTemplateSaved(String name) {
-    return 'Vorlage „$name“ gespeichert';
-  }
 
   @override
   String get navUntitled => 'Ohne Titel';

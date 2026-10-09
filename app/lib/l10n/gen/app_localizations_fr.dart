@@ -601,9 +601,6 @@ class LFr extends L {
   String get insertTableFromFileTip => 'CSV ou Excel';
 
   @override
-  String get insertTemplate => 'Modèle';
-
-  @override
   String get insertTextBox => 'Zone';
 
   @override
@@ -622,9 +619,6 @@ class LFr extends L {
   String navAllCount(int total) {
     return 'Voir les $total';
   }
-
-  @override
-  String get navApplyTemplate => 'Appliquer un modèle';
 
   @override
   String get navBinEmpty => 'Rien de supprimé.';
@@ -746,9 +740,6 @@ class LFr extends L {
   String get navMenuAddFavourite => 'Ajouter aux favoris';
 
   @override
-  String get navMenuApplyTemplate => 'Appliquer un modèle…';
-
-  @override
   String get navMenuCopyLink => 'Copier le lien vers la page';
 
   @override
@@ -803,9 +794,6 @@ class LFr extends L {
   String get navMenuRemovePasscode => 'Enlever le code…';
 
   @override
-  String get navMenuSaveTemplate => 'Enregistrer comme modèle…';
-
-  @override
   String get navMenuSetExam => 'Définir la date d\'examen…';
 
   @override
@@ -847,10 +835,6 @@ class LFr extends L {
       'Pas encore de section.\nCréez-en une pour commencer.';
 
   @override
-  String get navNoTemplates =>
-      'Pas encore de modèle — utilisez d\'abord « Enregistrer comme modèle… ».';
-
-  @override
   String get navNotebooksTip =>
       'Carnets — changer, renommer, dupliquer, importer';
 
@@ -872,9 +856,6 @@ class LFr extends L {
   String get navSave => 'Enregistrer';
 
   @override
-  String get navSaveTemplateTitle => 'Enregistrer comme modèle';
-
-  @override
   String navSavedTo(String path) {
     return 'Enregistré dans $path';
   }
@@ -884,14 +865,6 @@ class LFr extends L {
 
   @override
   String get navSection => 'Section';
-
-  @override
-  String get navTemplateNameHint => 'Nom du modèle';
-
-  @override
-  String navTemplateSaved(String name) {
-    return 'Modèle « $name » enregistré';
-  }
 
   @override
   String get navUntitled => 'Sans titre';

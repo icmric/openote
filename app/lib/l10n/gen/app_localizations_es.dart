@@ -602,9 +602,6 @@ class LEs extends L {
   String get insertTableFromFileTip => 'CSV o Excel';
 
   @override
-  String get insertTemplate => 'Plantilla';
-
-  @override
   String get insertTextBox => 'Cuadro';
 
   @override
@@ -622,9 +619,6 @@ class LEs extends L {
   String navAllCount(int total) {
     return 'Ver las $total';
   }
-
-  @override
-  String get navApplyTemplate => 'Aplicar plantilla';
 
   @override
   String get navBinEmpty => 'No hay nada borrado.';
@@ -745,9 +739,6 @@ class LEs extends L {
   String get navMenuAddFavourite => 'Añadir a favoritos';
 
   @override
-  String get navMenuApplyTemplate => 'Aplicar una plantilla…';
-
-  @override
   String get navMenuCopyLink => 'Copiar el enlace a la página';
 
   @override
@@ -802,9 +793,6 @@ class LEs extends L {
   String get navMenuRemovePasscode => 'Quitar el código…';
 
   @override
-  String get navMenuSaveTemplate => 'Guardar como plantilla…';
-
-  @override
   String get navMenuSetExam => 'Poner la fecha del examen…';
 
   @override
@@ -845,10 +833,6 @@ class LEs extends L {
   String get navNoSections => 'Aún no hay secciones.\nCrea una para empezar.';
 
   @override
-  String get navNoTemplates =>
-      'Aún no hay plantillas — usa antes «Guardar como plantilla…».';
-
-  @override
   String get navNotebooksTip =>
       'Cuadernos — cambiar, renombrar, duplicar, importar';
 
@@ -870,9 +854,6 @@ class LEs extends L {
   String get navSave => 'Guardar';
 
   @override
-  String get navSaveTemplateTitle => 'Guardar como plantilla';
-
-  @override
   String navSavedTo(String path) {
     return 'Guardado en $path';
   }
@@ -882,14 +863,6 @@ class LEs extends L {
 
   @override
   String get navSection => 'Sección';
-
-  @override
-  String get navTemplateNameHint => 'Nombre de la plantilla';
-
-  @override
-  String navTemplateSaved(String name) {
-    return 'Plantilla «$name» guardada';
-  }
 
   @override
   String get navUntitled => 'Sin título';
