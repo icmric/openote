@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/focus_claim.dart';
 import '../export/pdf_vector_export.dart';
 import '../export/print_page.dart';
 import '../model/models.dart';
@@ -1664,7 +1665,10 @@ class _InlineRenameState extends State<_InlineRename> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _focus.requestFocus();
+      // Same hazard as the page title: this field is opened by a click and
+      // can only ask once it exists, so it asks through `claimKeyboard` to
+      // stop a standing claim on the canvas taking the keyboard back.
+      claimKeyboard(_focus);
       _c.selection =
           TextSelection(baseOffset: 0, extentOffset: _c.text.length);
     });

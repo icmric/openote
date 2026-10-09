@@ -21,6 +21,7 @@
 
 import 'dart:io';
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -119,6 +120,21 @@ void main() {
     app.cancelPendingSave();
   }
 
+  /// **A click of a given [kind], down and up.**
+  ///
+  /// `tester.tap` sends a TOUCH pointer, and the pointer kind turns out to
+  /// decide this bug: Flutter unfocuses a text field when a click lands
+  /// outside it on desktop, and only for a mouse. Touch keeps the focus, so
+  /// a touch tap never leaves the keyboard looking spare and never meets the
+  /// claim that steals it. Three versions of this file passed while the
+  /// owner's mouse failed.
+  Future<void> clickAt(WidgetTester t, Offset p, PointerDeviceKind kind) async {
+    final g = await t.startGesture(p, kind: kind);
+    await g.up();
+    await t.pumpAndSettle();
+    app.cancelPendingSave();
+  }
+
   /// **Does the title's own field hold the caret?**
   ///
   /// Sharper than "did the holder change", which is what the first version of
@@ -204,37 +220,56 @@ void main() {
     await closeTitle(t);
   });
 
-  testWidgets('THE REPORTED JOURNEY: edit a paragraph, THEN click the title',
-      (t) async {
-    // *"once you are on the page"* is the part that matters. With nothing
-    // being edited the title keeps the caret perfectly well — the test above
-    // proves that — because the claim that steals it belongs to a paragraph
-    // whose editing session is OPEN. Opening one first is the difference
-    // between a test that passes and the bug the owner meets.
-    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-    await pumpShell(t, [paragraph()]);
+  for (final kind in const [PointerDeviceKind.touch, PointerDeviceKind.mouse])
+    testWidgets('THE REPORTED JOURNEY ($kind): edit a paragraph, THEN click '
+        'the title', (t) async {
+      // *"once you are on the page"* is the part that matters. With nothing
+      // being edited the title keeps the caret perfectly well — the test
+      // above proves that — so opening a paragraph first is the difference
+      // between a test that passes and the bug the owner meets.
+      //
+      // **And the MOUSE case is the one that was shipped broken.** A mouse
+      // down outside a field unfocuses it (Flutter's desktop default), which
+      // parks focus on a scope; the title then asked for the keyboard from a
+      // post-frame callback, and the paragraph's standing claim ran later in
+      // that same frame, read the scope as "going spare", and took it back —
+      // leaving the title open, empty and unfocused. *"seems to take 2 clicks
+      // to actually start editing the title."* `claimKeyboard` is the fix.
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await pumpShell(t, [paragraph()]);
 
-    await t.tapAt(
-        t.getTopLeft(find.byType(TextBlockView).first) + const Offset(24, 14));
-    await t.pumpAndSettle();
-    app.cancelPendingSave();
-    expect(app.editingBlockId, isNotNull,
-        reason: 'precondition: a paragraph is open and claiming');
+      await clickAt(
+          t,
+          t.getTopLeft(find.byType(TextBlockView).first) +
+              const Offset(24, 14),
+          kind);
+      expect(app.editingBlockId, isNotNull,
+          reason: 'precondition: a paragraph is open and claiming');
 
-    await t.tap(find.descendant(
-        of: find.byType(PageTitleView), matching: find.text('Untitled page')));
-    await t.pumpAndSettle();
-    app.cancelPendingSave();
-    expect(titleHasCaret(t), isTrue,
-        reason: 'the caret reaches the title. Holder is ${focusHolder()}');
+      await clickAt(
+          t,
+          t.getCenter(find.descendant(
+              of: find.byType(PageTitleView),
+              matching: find.text('Untitled page'))),
+          kind);
+      expect(titleHasCaret(t), isTrue,
+          reason: 'ONE click must be enough. Holder is ${focusHolder()}');
 
-    await settleFrames(t);
+      await settleFrames(t);
 
-    expect(titleHasCaret(t), isTrue,
-        reason: 'and keeps it with a paragraph open. Holder is now '
-            '${focusHolder()}');
-    await closeTitle(t);
-  });
+      expect(titleHasCaret(t), isTrue,
+          reason: 'and it keeps it with a paragraph open. Holder is now '
+              '${focusHolder()}');
+
+      // And the keyboard really is the title's: type and see where it lands.
+      t.testTextInput.enterText('Osmosis');
+      await t.pumpAndSettle();
+      app.cancelPendingSave();
+      expect(find.widgetWithText(TextField, 'Osmosis'), findsOneWidget,
+          reason: 'the letters belong to the title');
+
+      await closeTitle(t);
+    });
 
   testWidgets('a paragraph keeps the caret when clicked into', (t) async {
     // The first of the two already fixed, pinned here so the family lives in

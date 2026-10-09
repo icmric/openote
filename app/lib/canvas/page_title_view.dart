@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/focus_claim.dart';
 import '../editor/wrap_selection.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
@@ -60,7 +61,11 @@ class _PageTitleViewState extends State<PageTitleView> {
     widget.app.setTitleEditing(true);
     setState(() => _editing = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _focus.requestFocus();
+      // `claimKeyboard`, not a bare `requestFocus`: a paragraph's standing
+      // claim runs later in this same frame and would take the keyboard
+      // straight back, which is what made this take two clicks. The whole
+      // sequence is in `core/focus_claim.dart`.
+      claimKeyboard(_focus);
       _controller.selection =
           TextSelection(baseOffset: 0, extentOffset: _controller.text.length);
     });
