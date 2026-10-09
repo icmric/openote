@@ -609,6 +609,12 @@ class _GroupHeader extends StatefulWidget {
 
 class _GroupHeaderState extends State<_GroupHeader> {
   bool _renaming = false;
+
+  /// Turn this row into a field. The menu's Rename and the double-click are
+  /// the same gesture as far as the row is concerned.
+  void _startRename() {
+    if (mounted) setState(() => _renaming = true);
+  }
   final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
@@ -664,9 +670,11 @@ class _GroupHeaderState extends State<_GroupHeader> {
                 },
           onTapDown: (d) => _downPos = d.globalPosition,
           onSecondaryTapUp: (d) => showNodeMenu(context, app, group,
-              canIndent: false, position: d.globalPosition),
+              canIndent: false,
+              position: d.globalPosition,
+              onRename: _startRename),
           onLongPress: () => showNodeMenu(context, app, group,
-              canIndent: false, position: _downPos),
+              canIndent: false, position: _downPos, onRename: _startRename),
           child: Container(
             decoration: target
                 ? BoxDecoration(
@@ -1304,6 +1312,12 @@ class _SectionHeader extends StatefulWidget {
 
 class _SectionHeaderState extends State<_SectionHeader> {
   bool _renaming = false;
+
+  /// Turn this row into a field. The menu's Rename and the double-click are
+  /// the same gesture as far as the row is concerned.
+  void _startRename() {
+    if (mounted) setState(() => _renaming = true);
+  }
   final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
@@ -1382,9 +1396,11 @@ class _SectionHeaderState extends State<_SectionHeader> {
             },
       onTapDown: (d) => _downPos = d.globalPosition,
       onSecondaryTapUp: (d) => showNodeMenu(context, app, section,
-          canIndent: false, position: d.globalPosition),
+          canIndent: false,
+          position: d.globalPosition,
+          onRename: _startRename),
       onLongPress: () => showNodeMenu(context, app, section,
-          canIndent: false, position: _downPos),
+          canIndent: false, position: _downPos, onRename: _startRename),
       child: Container(
         decoration: pageTarget
             ? BoxDecoration(
@@ -1750,6 +1766,12 @@ class _PageTile extends StatefulWidget {
 
 class _PageTileState extends State<_PageTile> {
   bool _renaming = false;
+
+  /// Turn this row into a field. The menu's Rename and the double-click are
+  /// the same gesture as far as the row is concerned.
+  void _startRename() {
+    if (mounted) setState(() => _renaming = true);
+  }
   final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
@@ -1874,9 +1896,11 @@ class _PageTileState extends State<_PageTile> {
               },
         onTapDown: (d) => _downPos = d.globalPosition,
         onSecondaryTapUp: (d) => showNodeMenu(context, app, page,
-            canIndent: true, position: d.globalPosition),
+            canIndent: true,
+            position: d.globalPosition,
+            onRename: _startRename),
         onLongPress: () => showNodeMenu(context, app, page,
-            canIndent: true, position: _downPos),
+            canIndent: true, position: _downPos, onRename: _startRename),
         child: Container(
           decoration: subpageTarget
               ? BoxDecoration(
@@ -1979,7 +2003,18 @@ PopupMenuItem<String> _nodeItem(String v, IconData icon, String label,
     child: Row(children: [
       Icon(icon, size: 16, color: color),
       const SizedBox(width: 10),
-      Text(label, style: TextStyle(fontSize: 13, color: color)),
+      // **Expanded, like the canvas menu this claims to mirror.** A bare
+      // `Text` here sizes to its content, and a popup menu is narrower than
+      // the longest label in this menu ("Sort pages by last edited", and the
+      // exam row carries a date) — so the row overflowed by up to 98px, which
+      // is a layout error Flutter paints a striped banner over. It went
+      // unnoticed because nothing opened this menu in a test until
+      // `node_menu_rename_test.dart` did.
+      Expanded(
+        child: Text(label,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 13, color: color)),
+      ),
     ]),
   );
 }
@@ -2209,10 +2244,23 @@ void _keyboardEnteredRow(AppState app) {
 }
 
 /// Pop-out node menu (§7a.1): a compact menu anchored at the pointer, focused
-/// on actions that can *only* be done here. Rename lives inline (double-click
-/// the title) so it's not in this list; reorder + structural moves are.
+/// on actions that can *only* be done here — reorder and structural moves.
+///
+/// **Rename is here too, despite also being inline.** It used to be left out
+/// on the grounds that double-clicking the title already does it, which is
+/// true and was not enough: a right-click menu is where people look for "what
+/// can I do to this thing", and an action missing from it reads as an action
+/// that does not exist. It is first in the list because it is the one most
+/// often wanted.
+///
+/// [onRename] turns the row itself into a field rather than opening a dialog,
+/// which is the same thing the double-click does — the row owns that state, so
+/// the menu asks it rather than reaching for it. Required, so a new kind of
+/// row cannot quietly ship without it.
 Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
-    {required bool canIndent, required Offset position}) async {
+    {required bool canIndent,
+    required Offset position,
+    required VoidCallback onRename}) async {
   final l = L.of(context);
   final isPage = node.kind == NodeKind.page;
   final isSection = node.kind == NodeKind.section;
@@ -2227,6 +2275,8 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       position.dy,
     ),
     items: [
+      _nodeItem('rename', Icons.edit_outlined, l.navMenuRename),
+      const PopupMenuDivider(),
       _nodeItem('up', Icons.keyboard_arrow_up, l.navMenuMoveUp),
       _nodeItem('down', Icons.keyboard_arrow_down, l.navMenuMoveDown),
       if (isSection) ...[
@@ -2303,6 +2353,8 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
   );
   if (!context.mounted) return;
   switch (action) {
+    case 'rename':
+      onRename();
     case 'protect':
       final set = await askNewPasscode(context, node.title);
       if (set == null) return;

@@ -763,6 +763,9 @@ class LZh extends L {
   String get navMenuRecentChanges => '最近的修改…';
 
   @override
+  String get navMenuRename => '重命名';
+
+  @override
   String get navMenuRemoveExam => '移除考试日期';
 
   @override

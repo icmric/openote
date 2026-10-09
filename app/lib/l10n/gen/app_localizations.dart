@@ -1337,6 +1337,12 @@ abstract class L {
   /// **'Recent changes…'**
   String get navMenuRecentChanges;
 
+  /// Context-menu item. Renames a page, section or section group; the row turns into a field in place.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get navMenuRename;
+
   /// Context-menu item.
   ///
   /// In en, this message translates to:

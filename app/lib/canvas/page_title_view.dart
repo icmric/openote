@@ -31,7 +31,8 @@ class _PageTitleViewState extends State<PageTitleView> {
 
   /// Write the in-flight title back to the page it belongs to.
   void _commitTo(String pageId) {
-    if (widget.app.node(pageId) == null) return; // page gone — nothing to rename
+    // page gone — nothing to rename
+    if (widget.app.node(pageId) == null) return;
     final t = _controller.text.trim();
     widget.app.renameNode(pageId, t.isEmpty ? 'Untitled page' : t);
   }
@@ -60,8 +61,8 @@ class _PageTitleViewState extends State<PageTitleView> {
     setState(() => _editing = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focus.requestFocus();
-      _controller.selection = TextSelection(
-          baseOffset: 0, extentOffset: _controller.text.length);
+      _controller.selection =
+          TextSelection(baseOffset: 0, extentOffset: _controller.text.length);
     });
   }
 
@@ -101,51 +102,78 @@ class _PageTitleViewState extends State<PageTitleView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_editing)
-            TextField(
-              controller: _controller,
-              focusNode: _focus,
-              style: titleStyle,
-              maxLines: 1,
-              // Wrap-on-selection, same as every other content field.
-              inputFormatters: const [
-                WrapSelectionFormatter(
-                    pairs: WrapSelectionFormatter.bracketPairs,
-                    autoCloseFences: false)
-              ],
-              decoration: OnoteInput.bare.copyWith(
-                hintText: 'Page title',
-              ),
-              onSubmitted: (_) {
-                _commit();
-                // Enter from the title → straight into the first body box.
-                widget.app.startBodyFromTitle();
-              },
-              onTapOutside: (_) {
-                if (_editing) _commit();
-              },
-            )
-          else
-            Semantics(
-              label: 'Page title: ${page.title}',
-              button: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _startEdit,
-                child: Text(
-                  isPlaceholder ? 'Untitled page' : page.title,
-                  style: titleStyle.copyWith(
-                    color: isPlaceholder ? OnoteColors.graphite400 : titleColor,
+          // **The title claims its own pointer.**
+          //
+          // v1.0.2 item 6: *"A page title cannot be edited once you are on
+          // the page — the caret lands and jumps back out."* It was never a
+          // focus claim. The canvas's select handler is a translucent
+          // `Listener` above everything and runs on the SAME pointer as this
+          // band's `GestureDetector` — winning a gesture arena means nothing
+          // to a raw pointer listener — so one tap both opened the title AND
+          // ran the canvas's click-on-empty-page rule, which makes a new text
+          // box and gives IT the keyboard. The title field was left open,
+          // empty and unfocused beside a fresh paragraph collecting the
+          // typing. Measured: `holder=paragraph, titleEditing=true,
+          // blocks=[…, 'Photosynthesis']`.
+          //
+          // `claimedPointers` is the mechanism the scroll bar and the
+          // selection buttons already use for exactly this collision.
+          //
+          // Around the title ROW and not the whole band, deliberately: the
+          // band spans the page width, and claiming all of it would stop a
+          // click to the right of the title starting a box — which is a thing
+          // people do. Inside the `IgnorePointer` the canvas wraps this in, so
+          // an ink tool still draws over the band and claims nothing.
+          Listener(
+            onPointerDown: (e) => widget.app.claimedPointers.add(e.pointer),
+            child: _editing
+                ? TextField(
+                    controller: _controller,
+                    focusNode: _focus,
+                    style: titleStyle,
+                    maxLines: 1,
+                    // Wrap-on-selection, same as every other content field.
+                    inputFormatters: const [
+                      WrapSelectionFormatter(
+                          pairs: WrapSelectionFormatter.bracketPairs,
+                          autoCloseFences: false)
+                    ],
+                    decoration: OnoteInput.bare.copyWith(
+                      hintText: 'Page title',
+                    ),
+                    onSubmitted: (_) {
+                      _commit();
+                      // Enter from the title → straight into the first body box.
+                      widget.app.startBodyFromTitle();
+                    },
+                    onTapOutside: (_) {
+                      if (_editing) _commit();
+                    },
+                  )
+                : Semantics(
+                    label: 'Page title: ${page.title}',
+                    button: true,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _startEdit,
+                      child: Text(
+                        isPlaceholder ? 'Untitled page' : page.title,
+                        style: titleStyle.copyWith(
+                          color: isPlaceholder
+                              ? OnoteColors.graphite400
+                              : titleColor,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
+          ),
           const SizedBox(height: 2),
           Text(
             _dateLine(page.createdAt),
-            style: const TextStyle(fontSize: 12, color: OnoteColors.graphite400),
+            style:
+                const TextStyle(fontSize: 12, color: OnoteColors.graphite400),
           ),
           const SizedBox(height: 6),
           Container(
@@ -157,8 +185,18 @@ class _PageTitleViewState extends State<PageTitleView> {
   }
 
   static const _months = [
-    'January', 'February', 'March', 'April', 'May', 'June', 'July',
-    'August', 'September', 'October', 'November', 'December'
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December'
   ];
   static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 

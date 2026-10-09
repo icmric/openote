@@ -787,6 +787,9 @@ class LEn extends L {
   String get navMenuRecentChanges => 'Recent changes…';
 
   @override
+  String get navMenuRename => 'Rename';
+
+  @override
   String get navMenuRemoveExam => 'Remove exam date';
 
   @override

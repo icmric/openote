@@ -788,6 +788,9 @@ class LFr extends L {
   String get navMenuRecentChanges => 'Modifications récentes…';
 
   @override
+  String get navMenuRename => 'Renommer';
+
+  @override
   String get navMenuRemoveExam => 'Enlever la date d\'examen';
 
   @override
