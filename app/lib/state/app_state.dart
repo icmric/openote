@@ -8630,6 +8630,53 @@ class AppState extends ChangeNotifier
   /// So the position is not guessed. The section's pages are put in the order
   /// they should be in and renumbered — the same thing `sortSection` does, and
   /// bounded the same way, by the number of pages in one section.
+  /// **The shape of the page a new page is filed next to.**
+  ///
+  /// A page's shape is its [PageProps] — ruling or grid, grid size, width,
+  /// and whether it is a boundless canvas or a sheet of paper. A new page
+  /// takes it from [filedAfter], the page it is being inserted beneath, or
+  /// from the last page already in the section when it is going at the end.
+  ///
+  /// **Why from the neighbour rather than from the page on screen.** Only the
+  /// paper size and orientation were ever carried over, and they were taken
+  /// from whatever page you happened to be looking at — so setting a section
+  /// to grid paper did nothing for the next page in it, while adding a page
+  /// to Maths straight after reading an essay in English dragged the essay's
+  /// shape across. Pages live in sections, so the neighbour is the honest
+  /// source: set your Maths pages to grid once and new Maths pages are grid,
+  /// with nothing to configure and no setting to find.
+  ///
+  /// This is what replaced page templates for the LAYOUT half of the job
+  /// ([duplicatePage] is the other half): the shape applies itself instead of
+  /// being asked for, which is the only version of it that costs no clicks.
+  ///
+  /// Null when the section has no pages yet — then the defaults are right.
+  Future<PageProps?> _shapeToInherit(
+      String sectionId, TreeNode? filedAfter) async {
+    final nb = notebookId;
+    if (nb == null) return null;
+    final existing = pagesOf(sectionId);
+    final src = filedAfter ?? (existing.isEmpty ? null : existing.last);
+    if (src == null) return null;
+    // The open page's props are the ones on the SCREEN, which can be newer
+    // than the ones on disk — the shape may have been changed a moment ago.
+    final from =
+        src.id == pageId ? pageProps : (await engine.loadPage(nb, src.id)).props;
+    // A copy: `PageProps` is mutable, and the new page must not share the
+    // object the page it was modelled on is still using.
+    return PageProps.fromJson(from.toJson());
+  }
+
+  /// Give the page just created in [sectionId] the shape of its neighbour.
+  ///
+  /// Written BEFORE the page is opened, so [selectPage] loads it the way it
+  /// loads any other page's and nothing has to be marked dirty.
+  Future<void> _inheritShape(String sectionId, TreeNode? filedAfter,
+      String newPageId) async {
+    final shape = await _shapeToInherit(sectionId, filedAfter);
+    if (shape != null) importPage(notebookId!, newPageId, const <Block>[], shape);
+  }
+
   Future<void> addPage({String? sectionId}) async {
     sectionId ??= sectionOf(pageId) ??
         nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
@@ -8668,17 +8715,18 @@ class AppState extends ChangeNotifier
       }
     }
 
-    // Inherit the shape of the page you were on BEFORE it is replaced by the
-    // new one's props. A notebook you are writing an essay in should not drop
-    // back to open canvas every time you start the next page.
-    final inherit = pageProps.isPaged
-        ? (paper: pageProps.paperSize, landscape: pageProps.landscape)
-        : null;
+    // The shape of the page it is filed next to — see [_shapeToInherit]. A
+    // notebook you are writing an essay in should not drop back to open
+    // canvas every time you start the next page, and a section you set to
+    // grid paper should stay grid paper.
+    await _inheritShape(sectionId, current, n.id);
     reloadNodes();
     await selectPage(n.id);
-    if (inherit != null) {
+    if (pageProps.isPaged) {
+      // A sheet needs its body box, and its blocks pulled inside the paper.
+      // That is [setPageLayout]'s work, not a property assignment's.
       setPageLayout('paged',
-          paper: inherit.paper, landscape: inherit.landscape);
+          paper: pageProps.paperSize, landscape: pageProps.landscape);
     }
     pendingTitleEdit = n.id; // cursor lands in the title (OneNote behaviour)
     notifyListeners();
@@ -8714,10 +8762,103 @@ class AppState extends ChangeNotifier
       p.position = 'a${(seq++).toString().padLeft(15, '0')}';
       _putNode(notebookId!, p);
     }
+    // From the page it is filed under, for the same reason as [addPage].
+    await _inheritShape(sectionId, current, n.id);
     reloadNodes();
     await selectPage(n.id);
+    if (pageProps.isPaged) {
+      setPageLayout('paged',
+          paper: pageProps.paperSize, landscape: pageProps.landscape);
+    }
     pendingTitleEdit = n.id;
     notifyListeners();
+  }
+
+  /// **Copy a page — everything on it — to a new page just below it.**
+  ///
+  /// The honest version of what page templates were reaching for. A layout
+  /// you want again is a page you keep, and copying one needs no new noun, no
+  /// picker and no preview, because you are looking at the thing you are
+  /// about to copy. The owner on templates: *"at the moment they really arent
+  /// that helpful at all, i havent personally used them beyond basic testing,
+  /// and i think in their current format they arent actually useful to really
+  /// anyone."*
+  ///
+  /// Sub-pages are NOT copied: this is one page, filed after the source's
+  /// whole subtree so it can never land between a page and its children.
+  /// Returns the copy's id, or null when there was nothing to copy.
+  Future<String?> duplicatePage(String pageId) async {
+    final nb = notebookId;
+    final src = node(pageId);
+    final sectionId = src?.parentId;
+    if (nb == null ||
+        src == null ||
+        src.kind != NodeKind.page ||
+        sectionId == null) {
+      return null;
+    }
+    // The source is usually the page being looked at, and its last keystroke
+    // may still be sat on the save debounce. Copy what is on the SCREEN, not
+    // what was last written to disk.
+    await flushSave();
+    final data = await engine.loadPage(nb, pageId);
+
+    final siblings = pagesOf(sectionId);
+    final at = siblings.indexWhere((p) => p.id == pageId);
+    if (at < 0) return null;
+    final copy = TreeNode(
+      kind: NodeKind.page,
+      // The same words [Repository.duplicateNotebook] uses, so the two things
+      // in this app that duplicate are named the same way.
+      title: '${src.title} copy',
+      parentId: sectionId,
+      level: src.level,
+      position: _nextPosition(),
+    );
+    // Past everything indented beneath the source, the rule [addPage] follows.
+    var after = at;
+    while (after + 1 < siblings.length &&
+        siblings[after + 1].level > src.level) {
+      after++;
+    }
+    final ordered = [...siblings]..insert(after + 1, copy);
+    var seq = nowMs();
+    for (final p in ordered) {
+      p.position = 'a${(seq++).toString().padLeft(15, '0')}';
+      _putNode(nb, p);
+    }
+
+    // **A new id for every block.** A block id is the handle that a reminder,
+    // a flashcard's review history and a link hold a block by, so a copy that
+    // reused them would answer for the original — two pages laying claim to
+    // one review schedule. Blob references are copied AS THEY ARE: the bytes
+    // are content-addressed, so a picture is shared rather than stored twice.
+    final copied = [
+      for (final b in data.blocks)
+        Block.fromJson({...b.toJson(), 'id': newId()})
+    ];
+    importPage(nb, copy.id, copied, data.props);
+
+    // **A locked page must not launder into an unlocked copy.** A passcode on
+    // the section above is inherited for free, because a lock is resolved by
+    // walking UP from the page — but one on the page itself has to come
+    // along. The copy is exactly as unlocked as the source is at this moment,
+    // which is the honest answer: reading the source is what you just did.
+    final own = protectionFor(pageId);
+    if (own != null) {
+      _repo.setSetting(_protectKey(copy.id), own.toJson());
+      _protectedIds.add(copy.id);
+      if (_unlocked.containsKey(pageId)) {
+        _unlocked[copy.id] = _unlocked[pageId];
+      }
+      _gateRevision++;
+    }
+
+    reloadNodes();
+    await selectPage(copy.id);
+    pendingTitleEdit = copy.id; // the first thing anybody does is name it
+    notifyListeners();
+    return copy.id;
   }
 
   void renameNode(String id, String title) {

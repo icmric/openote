@@ -789,6 +789,9 @@ class LIt extends L {
   String get navMenuRecentChanges => 'Modifiche recenti…';
 
   @override
+  String get navMenuDuplicate => 'Duplica';
+
+  @override
   String get navMenuRename => 'Rinomina';
 
   @override

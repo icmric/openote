@@ -785,6 +785,9 @@ class LPt extends L {
   String get navMenuRecentChanges => 'Alterações recentes…';
 
   @override
+  String get navMenuDuplicate => 'Duplicar';
+
+  @override
   String get navMenuRename => 'Renomear';
 
   @override

@@ -2280,6 +2280,12 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
     ),
     items: [
       _nodeItem('rename', Icons.edit_outlined, l.navMenuRename),
+      // Beside Rename rather than down with print and PDF: these two are the
+      // things you do to the page ITSELF, and everything below is about where
+      // it sits or what comes out of it. Pages only — duplicating a section
+      // would mean copying every page in it, which is a different question.
+      if (isPage)
+        _nodeItem('duplicate', Icons.copy_all_outlined, l.navMenuDuplicate),
       const PopupMenuDivider(),
       _nodeItem('up', Icons.keyboard_arrow_up, l.navMenuMoveUp),
       _nodeItem('down', Icons.keyboard_arrow_down, l.navMenuMoveDown),
@@ -2357,6 +2363,10 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
   );
   if (!context.mounted) return;
   switch (action) {
+    case 'duplicate':
+      // No snackbar: the copy opens, with its title selected, which says
+      // what happened better than a message about it would.
+      await app.duplicatePage(node.id);
     case 'rename':
       onRename();
     case 'protect':

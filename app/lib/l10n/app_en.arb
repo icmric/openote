@@ -1058,6 +1058,10 @@
   "@navMenuRecentChanges": {
     "description": "Context-menu item: the page's own history."
   },
+  "navMenuDuplicate": "Duplicate",
+  "@navMenuDuplicate": {
+    "description": "Context-menu item on a page. Makes a copy of the page, filed directly beneath it and named \"<title> copy\"."
+  },
   "navMenuRename": "Rename",
   "@navMenuRename": {
     "description": "Context-menu item. Renames a page, section or section group; the row turns into a field in place."

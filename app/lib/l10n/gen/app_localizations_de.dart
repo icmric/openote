@@ -788,6 +788,9 @@ class LDe extends L {
   String get navMenuRecentChanges => 'Letzte Änderungen…';
 
   @override
+  String get navMenuDuplicate => 'Duplizieren';
+
+  @override
   String get navMenuRename => 'Umbenennen';
 
   @override
