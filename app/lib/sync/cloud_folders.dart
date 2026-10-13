@@ -25,6 +25,7 @@ library;
 import 'dart:io';
 
 import '../store/workspace_fs.dart';
+import 'volume_label.dart';
 
 import 'package:path/path.dart' as p;
 
@@ -34,14 +35,77 @@ class CloudFolder {
     required this.name,
     required this.path,
     required this.kind,
+    this.account,
   });
 
+  /// What the provider is called — "Google Drive", "OneDrive (work)". Used in
+  /// prose, so it stays a provider name rather than growing a path or an email.
   final String name;
   final String path;
   final CloudKind kind;
 
+  /// Which account or volume this one is, when the platform can say.
+  ///
+  /// Google Drive mounts **one drive letter per signed-in account**, so a
+  /// personal and a work account are two rows both called "Google Drive" and
+  /// nothing on screen says which is which. The volume label carries the
+  /// address — Windows truncates it to 32 characters, which keeps the part that
+  /// identifies it. Null whenever the platform has nothing to add.
+  final String? account;
+
+  /// The provider, and whatever tells one mount from another:
+  /// `Google Drive · name@example.com (G:)`, or just `OneDrive`.
+  String get label {
+    final where = _mountLetter(path);
+    final who = _tidyVolumeLabel(account);
+    if (who != null && where != null) return '$name · $who ($where)';
+    if (who != null) return '$name · $who';
+    if (where != null) return '$name · $where';
+    return name;
+  }
+
   /// Whether the directory still exists — a provider can be uninstalled.
   bool get exists => Directory(path).existsSync();
+}
+
+/// The drive letter [path] sits on, or null when it does not start with one.
+String? _driveLetterOf(String path) {
+  if (path.length < 2 || path[1] != ':') return null;
+  final c = path[0].toUpperCase();
+  return (c.codeUnitAt(0) >= 65 && c.codeUnitAt(0) <= 90) ? c : null;
+}
+
+/// `G:` when [path] is a provider's own mounted volume, null when it is an
+/// ordinary folder.
+///
+/// A drive letter is worth showing when it is the thing that distinguishes two
+/// mounts, `G:\\My Drive` against `I:\\My Drive`. It is noise on
+/// `C:\\Users\\me\\OneDrive`, where it only ever says the system drive and
+/// "OneDrive · C:" tells nobody anything. The test is whether the path sits
+/// directly under the drive root.
+String? _mountLetter(String path) {
+  final letter = _driveLetterOf(path);
+  if (letter == null) return null;
+  final parent = p.dirname(p.normalize(path));
+  return p.equals(parent, '$letter:\\') ? '$letter:' : null;
+}
+
+/// A volume label with Windows' truncation tidied away.
+///
+/// Labels cap at 32 characters and Google Drive sets longer ones, so what comes
+/// back is `name@example.com -...` or `name@example.com - Google D...` — the
+/// second ending mid-word. When a label is truncated, cut back to the last
+/// ` - ` separator if there is one: the address identifies the account, and the
+/// provider's own name is already beside it.
+String? _tidyVolumeLabel(String? label) {
+  var v = label?.trim();
+  if (v == null || v.isEmpty) return null;
+  if (!v.endsWith('...')) return v;
+  v = v.substring(0, v.length - 3).trimRight();
+  final cut = v.lastIndexOf(' - ');
+  if (cut > 0) v = v.substring(0, cut);
+  v = v.replaceFirst(RegExp(r'[\s-]+$'), '');
+  return v.isEmpty ? null : v;
 }
 
 enum CloudKind {
@@ -135,12 +199,23 @@ List<CloudFolder> detectCloudFolders() {
   void add(String name, String path, CloudKind kind) {
     if (!Directory(path).existsSync()) return;
     if (out.any((f) => p.equals(f.path, path))) return;
-    out.add(CloudFolder(name: name, path: path, kind: kind));
+    final letter = _driveLetterOf(path);
+    out.add(CloudFolder(
+      name: name,
+      path: path,
+      kind: kind,
+      // Only for a mounted drive. A folder under the home directory has no
+      // label to read, and asking for one would be a syscall per candidate on
+      // a path that runs on every open of the sync dialog.
+      account: letter == null ? null : platformVolumeLabel(letter),
+    ));
   }
 
   // ── Google Drive ──
   if (Platform.isWindows) {
     // The current client mounts a virtual drive; "My Drive" is the synced root.
+    // One letter PER SIGNED-IN ACCOUNT, which is why the row needs the volume
+    // label to be distinguishable — see [CloudFolder.account].
     for (final letter in 'GHIJKLMNOPQ'.split('')) {
       add('Google Drive', '$letter:\\My Drive', CloudKind.googleDrive);
     }

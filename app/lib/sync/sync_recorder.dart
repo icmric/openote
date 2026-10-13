@@ -157,6 +157,8 @@ class SyncRecorder {
     String? logDir,
     required Object? Function(String key) readSetting,
     required void Function(String key, Object? value) writeSetting,
+    int? Function()? seqOf,
+    void Function(int seq)? rememberSeq,
     bool materialiseBlobs = true,
   }) {
     final store = OpLogStore.forNotebook(notebookPath, logDir: logDir);
@@ -166,6 +168,8 @@ class SyncRecorder {
       notebookId: notebookId,
       readSetting: readSetting,
       writeSetting: writeSetting,
+      seqOf: seqOf,
+      rememberSeq: rememberSeq,
     );
     if (device.forked) {
       // Not silent: an install that forked was almost certainly cloned or
@@ -194,7 +198,10 @@ class SyncRecorder {
       state: state,
       lamport: lamport,
       seq: seq,
-      onSeq: (s) => writeSetting(DeviceIdentity.seqKey(notebookId), s),
+      onSeq: (s) {
+        rememberSeq?.call(s);
+        writeSetting(DeviceIdentity.seqKey(notebookId), s);
+      },
       materialiseBlobs: materialiseBlobs,
     );
     // Seed the title so a notebook that has never been renamed still carries
@@ -225,6 +232,8 @@ class SyncRecorder {
     String? logDir,
     required Object? Function(String key) readSetting,
     required void Function(String key, Object? value) writeSetting,
+    int? Function()? seqOf,
+    void Function(int seq)? rememberSeq,
     bool materialiseBlobs = true,
   }) async {
     final store = OpLogStore.forNotebook(notebookPath, logDir: logDir);
@@ -242,6 +251,8 @@ class SyncRecorder {
       readSetting: readSetting,
       writeSetting: writeSetting,
       lastSeqOf: (id) => seqByDevice[id] ?? 0,
+      seqOf: seqOf,
+      rememberSeq: rememberSeq,
     );
     if (device.forked) {
       debugPrint('[openote/sync] device id forked to ${device.id} — another '
@@ -256,7 +267,10 @@ class SyncRecorder {
       state: state,
       lamport: lamport,
       seq: seqByDevice[device.id] ?? 0,
-      onSeq: (s) => writeSetting(DeviceIdentity.seqKey(notebookId), s),
+      onSeq: (s) {
+        rememberSeq?.call(s);
+        writeSetting(DeviceIdentity.seqKey(notebookId), s);
+      },
       materialiseBlobs: materialiseBlobs,
     );
   }
@@ -324,12 +338,18 @@ class SyncRecorder {
     // `AppState` rather than the thing the user is told by. Same pattern as
     // `Repository._saveWorkspace`'s `registryReadOnly` return.
     if (logIsAhead) return;
+    // **Remembered BEFORE the append, not after.** `_op` has already advanced
+    // `_seq` past every op in this batch, so this reserves the range rather
+    // than reporting it. The ordering is the whole fix: a crash between the two
+    // lines leaves the record ahead of the log, which reads as "nothing
+    // unexpected" on the next open. The other order left the log ahead of the
+    // record, which reads as a second writer and forked the device id.
+    onSeq(_seq);
     store.append(device.id, ops);
     for (final op in ops) {
       state.apply(op);
     }
     _written += ops.length;
-    onSeq(_seq);
   }
 
   // ── Recording ────────────────────────────────────────────────────────

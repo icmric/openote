@@ -8,6 +8,10 @@
 > one means part of it is done, or a decision has been taken that changes the
 > rest of it.
 
+Copy and pasting
+    Option to insert link from website where content was copied from
+
+
 PPTX Thumbnail
     (The PDF half of this shipped as the card import.) PPTX has no renderer
     here — a .pptx still lands as a plain attachment. Rendering it needs

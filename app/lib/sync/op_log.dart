@@ -413,6 +413,85 @@ class OpLogStore {
     ]..sort();
   }
 
+  /// When [device] last wrote, from the op itself — or null when that cannot be
+  /// read.
+  ///
+  /// **The device's own clock, not the file's mtime.** A sync client copying a
+  /// log sets the mtime to the moment of the copy, and a git pull rewrites the
+  /// file outright, so an mtime says when this machine *received* the log
+  /// rather than when that device wrote it. The last op's `ts` travels with the
+  /// op and means the same thing everywhere.
+  ///
+  /// Reads the **tail**, because this is on the path that paints the sync chip
+  /// and the biggest real log measured is 1.6 MB. A torn last line is the normal
+  /// shape of an append-only file, so it walks backwards to the first line that
+  /// parses. Null when none does — one op larger than the window, an unreadable
+  /// file, a log with nothing in it — and a null must be read as "unknown",
+  /// never as "idle".
+  int? lastWriteAt(String device, {int tailBytes = 64 * 1024}) {
+    final f = logFor(device);
+    RandomAccessFile? raf;
+    try {
+      if (!f.existsSync()) return null;
+      raf = f.openSync();
+      final len = raf.lengthSync();
+      if (len == 0) return null;
+      final from = len > tailBytes ? len - tailBytes : 0;
+      raf.setPositionSync(from);
+      final bytes = raf.readSync(len - from);
+      final text = utf8.decode(bytes, allowMalformed: true);
+      final lines = text.split('\n');
+      for (var i = lines.length - 1; i >= 0; i--) {
+        final line = lines[i].trim();
+        if (line.isEmpty) continue;
+        final op = Op.decode(line);
+        if (op != null && op.timestamp > 0) return op.timestamp;
+      }
+      return null;
+    } catch (_) {
+      // A locked or vanished file is not an error here; the caller treats an
+      // unknown as present, which is the conservative direction.
+      return null;
+    } finally {
+      try {
+        raf?.closeSync();
+      } catch (_) {}
+    }
+  }
+
+  /// The devices that have written within [within], plus any whose last write
+  /// cannot be read.
+  ///
+  /// **Why this is not [deviceIds].** That is a directory listing, and `ops/`
+  /// keeps every log any device ever wrote — nothing deletes one. An identity
+  /// that stops being used therefore counts for ever: a reinstall, a restored
+  /// backup, or the identity fork in `device_identity.dart` each leave a log
+  /// behind, and "how many devices have this notebook" climbs and never comes
+  /// back down. Measured on a real notebook: three logs, two machines.
+  ///
+  /// Replay still needs [deviceIds] and must keep using it — an old device's
+  /// ops are as valid as any other, and dropping them would lose content. This
+  /// is only for telling somebody how many devices are *in use*.
+  ///
+  /// An unreadable last write counts as active, deliberately: being told about
+  /// a device that has gone quiet is a much smaller problem than being told a
+  /// device you are holding does not exist.
+  /// [alsoCount] is this installation's own id, which counts whether or not it
+  /// has written lately — somebody looking at the notebook is holding a device
+  /// that has it, and a count that said zero while they were reading would be
+  /// absurd. Measured on a real notebook: every log was five weeks old, so the
+  /// age test alone answered "0 devices" for a notebook that was open.
+  List<String> activeDeviceIds(
+      {Duration within = const Duration(days: 30), String? alsoCount}) {
+    final cutoff = DateTime.now().millisecondsSinceEpoch - within.inMilliseconds;
+    final out = <String>{
+      for (final d in deviceIds())
+        if ((lastWriteAt(d) ?? cutoff) >= cutoff) d
+    };
+    if (alsoCount != null && alsoCount.isNotEmpty) out.add(alsoCount);
+    return out.toList()..sort();
+  }
+
   /// Every op in one device's log, in write order.
   ///
   /// Unparseable lines are skipped, not fatal — see [Op.decode]. A log whose
