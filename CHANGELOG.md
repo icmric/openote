@@ -4,6 +4,42 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — the page title takes one click
+
+- **Clicking a page's title lets you type in it.** It used to open the title
+  and then hand the keyboard somewhere else: the letters went into a box that
+  had appeared on the page, and it took a second click on the title to get the
+  caret back. Two separate things were doing it. The same click was also being
+  read as a click on the blank page, which is what makes a new box; and when
+  you came to the title from a paragraph you had been writing in, that
+  paragraph took the keyboard back a moment later.
+
+### Added — Rename and Duplicate, on the right-click menu
+
+- **Rename is in the right-click menu** for a page, a section and a section
+  group. Double-clicking the name has always worked — it was just the only
+  way, and a right-click menu is where people look to find out what they can
+  do to a thing.
+- **Duplicate makes a copy of a page**, filed directly beneath it with its
+  name ready to be typed over. Pictures are not stored twice: the copy points
+  at the same ones. A page with a passcode on it makes a copy with the same
+  passcode.
+
+### Changed — a new page looks like the page above it, and templates are gone
+
+- **A new page takes its ruling, grid, width and paper from the page it is
+  filed next to.** Set a section's pages to graph paper once and the next page
+  in it is graph paper. Before, only the paper size came across, and it came
+  from whichever page you happened to be looking at — so adding a page to
+  Maths straight after reading an essay in English gave you a page shaped like
+  the essay.
+- **Page templates have been removed.** They asked you to choose a layout from
+  a list of names, showing you nothing of what it would do, from a menu you
+  could only reach once the page already existed — and what they laid down was
+  a few headings. A layout you want again is a page you keep: Duplicate copies
+  it, and you can look at it first. **Nothing you saved has been deleted** —
+  anything kept as a template is still in your workspace.
+
 ### Fixed — the device count, and why it kept climbing
 
 - **"N devices" counts devices that are in use**, not every identity that ever
