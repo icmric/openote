@@ -67,6 +67,7 @@ import 'builtin_templates.dart';
 import 'planner_state.dart';
 import 'study_state.dart';
 import '../sync/device_identity.dart';
+import '../sync/device_seq.dart';
 import '../sync/folder_watch.dart';
 import '../sync/op.dart';
 import '../sync/op_log.dart';
@@ -1249,8 +1250,26 @@ class AppState extends ChangeNotifier
   /// open of every imported notebook.
   void rememberImportedSeq(String nb, int seq) {
     if (seq <= 0) return;
+    _seqStoreFor(nb).write(seq);
     _repo.setSetting(DeviceIdentity.seqKey(nb), seq);
   }
+
+  /// Where [nb]'s last-written seq is remembered durably.
+  ///
+  /// **Local**, because the record only means anything as a claim about this
+  /// installation — a copy inside the notebook would travel to a second one and
+  /// agree with it. See `sync/device_seq.dart`.
+  ///
+  /// **And its own directory, not `.cache/<id>/`.** That one belongs to the
+  /// container demotion, which treats anything in it as the leftovers of a
+  /// migration that never committed: `Repository._settleDemotion` deletes it on
+  /// every open of a notebook that is not demoted, and `demoteContainerToCache`
+  /// clears it before it starts. Either would take the record with it.
+  ///
+  /// `findOrphanFiles` collects only `.onote`, `.onotebook` and stray WAL files,
+  /// so this is invisible to it and cannot be offered to anybody as a leftover.
+  DeviceSeqStore _seqStoreFor(String nb) => DeviceSeqStore(
+      Directory(p.join(_repo.workspaceDir.path, '.devseq', nb)));
 
   /// The recorder for [nb], opening one **synchronously** if none exists.
   ///
@@ -1281,6 +1300,8 @@ class AppState extends ChangeNotifier
         logDir: ref.logDir,
         readSetting: _repo.getSetting,
         writeSetting: _repo.setSetting,
+        seqOf: _seqStoreFor(nb).read,
+        rememberSeq: _seqStoreFor(nb).write,
         // **Always, not only when the notebook looks shared** (v0.17 plan,
         // Step 5). `notebookIsShared` was a disk trade that quietly made the
         // log unable to rebuild the notebook it describes: measured on the
@@ -1402,6 +1423,8 @@ class AppState extends ChangeNotifier
         logDir: ref.logDir,
         readSetting: _repo.getSetting,
         writeSetting: _repo.setSetting,
+        seqOf: _seqStoreFor(nb).read,
+        rememberSeq: _seqStoreFor(nb).write,
         // Unconditional, exactly as in `_recorderFor` — see the note there.
         materialiseBlobs: true,
       );
@@ -2961,7 +2984,12 @@ class AppState extends ChangeNotifier
     // as long as the replay took. A status read must never pay a writer's
     // setup cost. (A side effect goes with it: painting a dot no longer
     // *creates* `.onotebook` directories for notebooks that had none.)
-    final n = _bareLog(nb)?.deviceIds().length ?? 0;
+    // `activeDeviceIds`, NOT `deviceIds`. A listing of `ops/` counts every
+    // identity that ever wrote, and nothing deletes a log — so a reinstall, a
+    // restored backup or an identity fork each add one for ever and the number
+    // only ever climbs. See `OpLogStore.activeDeviceIds`.
+    final me = _repo.getSetting(DeviceIdentity.settingsKey) as String?;
+    final n = _bareLog(nb)?.activeDeviceIds(alsoCount: me).length ?? 0;
     _deviceCountCache[nb] = (count: n, at: now);
     return n;
   }
@@ -2975,6 +3003,14 @@ class AppState extends ChangeNotifier
   }
 
   final Map<String, ({int count, int at})> _deviceCountCache = {};
+
+  /// Drop [nb]'s cached device count, for a test that changes the logs under it.
+  ///
+  /// The cache holds for five seconds so that painting a dot does not list a
+  /// directory on every frame, which means a test writing a log and asking again
+  /// gets the stale answer and passes for the wrong reason.
+  @visibleForTesting
+  void invalidateDeviceCountForTest(String nb) => _deviceCountCache.remove(nb);
 
   /// Re-check sync status periodically, and notify only when it CHANGES.
   ///

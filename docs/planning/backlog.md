@@ -152,7 +152,39 @@ Composition is inherited from a stock `TextField` rather than reimplemented, so 
 is probably fine. "Probably" is the problem, and it needs somebody who types in one
 of those languages rather than a test.
 
-### 1.11 `cloud_sync_test`'s purge assertion still flakes
+### 1.11 Nothing ever deletes an orphaned op log
+
+`ops/` keeps every log any device ever wrote. The device **count** no longer
+counts the abandoned ones, but the files stay — on a real notebook that is 1.6 MB
+of history from a laptop that last wrote in September.
+
+The identity fork that was minting them is fixed, so this stops growing. What is
+left is the backlog of ones already there, and removing one is **deleting
+content**: an old device's ops are as valid as any other, and the materialiser
+reads them to build the notebook. Dropping a log drops whatever only it recorded.
+
+So this is the same question as §1.3, and wants the same answer: retire a log
+deliberately, with evidence that everything in it has been superseded, rather
+than sweeping by age. Worth doing together.
+
+### 1.12 The blob repair leaves Drive's old duplicates behind · **S**
+
+Measured on the owner's notebook: **17 files, about 5 MB**, named
+`<hash> (1).pdf` through `<hash> (8).pdf`.
+
+These are from before the `.blob` suffix landed, so the cause is fixed and the
+pile is not growing — every one is dated the day before the fix ran. What the
+repair did was recover the *bytes* (the canonical file is there) without removing
+the copies, because it looks for `<hash>` and `<hash>.blob` and these have a
+space and a provider-chosen extension.
+
+**The safety property is unusually good here, which is why it is worth doing:**
+the hash is the filename, so a file called `<hash> (N).anything` whose contents
+hash to `<hash>` is *provably* a redundant copy of a file we already have. Verify
+the bytes, then delete. It cannot be wrong about what it is removing, which is not
+something that can be said of §1.3.
+
+### 1.13 `cloud_sync_test`'s purge assertion still flakes
 
 *"Purging a joined notebook leaves the other device alone"* passes alone and fails
 under a full suite, roughly once in several runs:
@@ -175,7 +207,7 @@ still appends to the shared folder after both devices' auto-sync is off.** That 
 worth finding on its own terms, because a write nobody expects into a replicated
 folder is interesting whether or not a test is watching.
 
-### 1.12 Finish the translation coverage
+### 1.14 Finish the translation coverage
 
 Several dialogs are still Dart string literals rather than `.arb` messages —
 sync, AI access, the planner and study panels, and the passcode dialog, whose

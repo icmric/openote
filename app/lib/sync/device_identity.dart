@@ -56,6 +56,8 @@ class DeviceIdentity {
     required Object? Function(String key) readSetting,
     required void Function(String key, Object? value) writeSetting,
     int Function(String id)? lastSeqOf,
+    int? Function()? seqOf,
+    void Function(int seq)? rememberSeq,
   }) {
     var id = readSetting(settingsKey) as String?;
     if (id == null || id.isEmpty) {
@@ -66,8 +68,19 @@ class DeviceIdentity {
       // to the check rather than special-casing.
     }
 
-    final remembered = (readSetting(seqKey(notebookId)) as num?)?.toInt() ?? 0;
     final onDisk = (lastSeqOf ?? store.lastSeq)(id);
+
+    // **No record means adopt the log, not suspect it.** `seqOf` returns null
+    // when this installation has never written one: a fresh notebook, or a
+    // build from before the record was durable. Reading that absence as zero
+    // is what the old code did — `?? 0` turned "I do not know" into "I have
+    // written nothing" — and it forks every existing device once on upgrade.
+    final recorded = seqOf?.call();
+    if (recorded == null) {
+      rememberSeq?.call(onDisk);
+      return DeviceIdentity(id: id, forked: false);
+    }
+    final remembered = recorded;
 
     if (onDisk > remembered) {
       // Someone else wrote as us. We cannot tell which ops were theirs, and
@@ -76,7 +89,7 @@ class DeviceIdentity {
       // the old id; we simply stop claiming to be them.
       final fresh = newId();
       writeSetting(settingsKey, fresh);
-      writeSetting(seqKey(notebookId), 0);
+      rememberSeq?.call(0);
       return DeviceIdentity(id: fresh, forked: true);
     }
 

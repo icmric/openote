@@ -4,6 +4,36 @@ All notable changes to Openote. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Fixed — the device count, and why it kept climbing
+
+- **"N devices" counts devices that are in use**, not every identity that ever
+  wrote. It was a listing of the log files in a notebook, and nothing deletes
+  one, so a reinstall or a restored backup added one for ever. It now counts
+  devices that have written in the last month, plus the one you are using
+  whether or not it has. The timestamp comes from the last change that device
+  made, not from the file, so a cloud client copying a log does not make an old
+  device look new.
+- **A crash no longer gives this computer a second identity**, which is what was
+  creating the extra logs. Openote remembers how far it has written into each
+  notebook, and forks its own identity if the notebook turns out to have gone
+  further — the one honest sign that a second copy of Openote is writing to the
+  same place. That memory lived in a file written a moment after the fact, so
+  closing the lid at the wrong time, or a crash, left it behind and the identity
+  forked for no reason. It is now written before the change it covers, and
+  somewhere that survives.
+- **Nothing is lost either way.** An old device's history is still read when a
+  notebook is rebuilt; it simply stops being counted as somebody's laptop.
+
+### Added — which Google Drive account is which
+
+- **The folder picker names the account.** Google Drive mounts one drive letter
+  per signed-in account, so two accounts were two identical rows both saying
+  "Google Drive". Each now carries the account it belongs to and its drive
+  letter — `Google Drive · you@example.com (G:)`.
+- Drives that cannot say anything useful are left alone: a folder inside your
+  home directory is still just "Dropbox", with no drive letter to add noise.
+
+
 ### Added — try Openote in a browser before you download it
 
 - **There is a web demo.** It opens on a notebook with three pages already in
